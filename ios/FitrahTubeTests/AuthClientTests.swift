@@ -145,6 +145,21 @@ import Testing
 
     // MARK: - UnavailableAuthClient (what the app builds with no GoogleService-Info.plist: CI, any checkout without the owner's file)
 
+    /// CF-A-55 (e): the fake deletes ONLY the account it is named for — anybody else signed in is
+    /// refused unrecorded and stays signed in, as the real client's compare-then-delete does.
+    @Test func theFakeClientDeletesOnlyTheAccountItIsNamedFor() async throws {
+        let client = FakeAuthClient(state: .signedOut, user: Self.user)
+        _ = try await client.signIn(email: "a@b.test", password: "p")
+
+        await #expect(throws: AuthErrorCode.unknown) { try await client.deleteUser(expecting: "someone-else") }
+        #expect(client.operations.isEmpty)
+        #expect(await client.currentUser()?.uid == Self.user.uid)
+
+        try await client.deleteUser(expecting: Self.user.uid)
+        #expect(client.operations == [.deleteUser])
+        #expect(await client.currentUser() == nil)
+    }
+
     @Test func theUnavailableClientYieldsSignedOutOnceAndFinishes() async {
         var seen: [AuthState] = []
         for await state in UnavailableAuthClient().state { seen.append(state) }
@@ -179,6 +194,6 @@ import Testing
         await #expect(throws: AuthErrorCode.unknown) { try await client.reauthenticate(password: "p") }
         await #expect(throws: AuthErrorCode.unknown) { try await client.updatePassword("p") }
         await #expect(throws: AuthErrorCode.unknown) { try await client.verifyBeforeUpdateEmail("a@b.test") }
-        await #expect(throws: AuthErrorCode.unknown) { try await client.deleteUser() }
+        await #expect(throws: AuthErrorCode.unknown) { try await client.deleteUser(expecting: "uid-a") }
     }
 }

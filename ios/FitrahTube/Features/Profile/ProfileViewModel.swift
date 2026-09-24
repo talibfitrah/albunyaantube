@@ -150,6 +150,8 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
         let name = draft.displayName == original.displayName ? nil : sent.displayName
         let dob = draft.dateOfBirth == original.dateOfBirth
             ? nil : draft.dateOfBirth.map { ProfileBootstrapViewModel.wireDate($0, calendar: calendar) }
+        // Whose request this is, read before it goes out: a 422 can land after another account arrived.
+        let issuedFor = session.currentUid
         do {
             let updated = try await account.updateProfile(displayName: name, dateOfBirth: dob,
                                                           phoneNumber: nil)
@@ -181,7 +183,7 @@ nonisolated enum ProfileUiState: Sendable, Equatable {
             // none. The verdict is terminal and the teardown is owed whatever this screen's state
             // has become in the meantime — a state check could only skip it.
             if case .ageIneligible = error {
-                await session.terminateAgeIneligible()
+                await session.terminateAgeIneligible(for: issuedFor)
                 state = .signedOut
                 return
             }

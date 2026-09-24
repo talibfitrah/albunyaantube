@@ -230,8 +230,9 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// scripted refusal still *reached* Firebase and is worth recording, but a delete with nobody
     /// signed in never touched a credential at all — recording it is the exact lie this guard
     /// exists to stop.
-    func deleteUser() async throws(AuthErrorCode) {
-        guard signedInUser() != nil else { throw AuthErrorCode.unknown }
+    /// CF-A-55 (e): and only the account it names — anybody else signed in is refused unrecorded.
+    func deleteUser(expecting uid: String) async throws(AuthErrorCode) {
+        guard signedInUser()?.uid == uid else { throw AuthErrorCode.unknown }
         try record(.deleteUser)
         transition(to: .signedOut)
     }

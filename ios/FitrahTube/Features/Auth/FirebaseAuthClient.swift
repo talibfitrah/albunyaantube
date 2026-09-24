@@ -188,8 +188,16 @@ nonisolated final class FirebaseAuthClient: AuthClient {
         try await mapped { try await Self.requireUser().sendEmailVerification(beforeUpdatingEmail: new) }
     }
 
-    func deleteUser() async throws(AuthErrorCode) {
-        try await mapped { try await Self.requireUser().delete() }
+    /// The read, the comparison and the call to `delete()` run with no suspension between them
+    /// (`User` is non-`Sendable`, so it is re-read here rather than handed in); `User.delete()`
+    /// acts on its OWN instance (12.19.1, `User.swift:948-974`), so an account arriving after this
+    /// read is not the one deleted.
+    func deleteUser(expecting uid: String) async throws(AuthErrorCode) {
+        try await mapped {
+            let user = try Self.requireUser()
+            guard user.uid == uid else { throw AuthErrorCode.unknown }
+            try await user.delete()
+        }
     }
 
     /// Local only — the listener above turns it into `.signedOut`. Stage 5 / C1.3: the keychain

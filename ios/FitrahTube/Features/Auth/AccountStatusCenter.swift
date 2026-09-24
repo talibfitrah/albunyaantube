@@ -47,37 +47,31 @@ nonisolated struct AccountStatusSignal: Sendable, Equatable {
 /// returns immediately.
 @MainActor @Observable final class AccountStatusCenter {
 
-    /// Buffered depth ONE, resolved by TERMINAL PRECEDENCE rather than by arrival order. Depth one
-    /// is not a simplification — every event here is terminal and the consumer routes once — but
-    /// "last writer wins" was: `.deleted` is the only one that wipes the device, and it must not be
-    /// losable to a `.blocked` or a `.signedOut` that happened to hop later.
-    private(set) var pending: AccountStatusSignal?
+    /// At most ONE signal per uid (nil = unattributed), its most terminal event: `.deleted` is the
+    /// only one that wipes and must not lose to a later `.blocked`/`.signedOut` for the same
+    /// account. Other uids' signals are never evicted (CF-A-55 (b)) — each is accepted or refused
+    /// on its own by `AccountSession.handle`. Kept least terminal first, unattributed first on a
+    /// tie, so the drain (`RootView.routeAll`) acts on the most terminal one last.
+    private var held: [AccountStatusSignal] = []
 
-    /// The merge happens INSIDE the `@MainActor` hop, so two concurrent posts are serialised by the
-    /// actor and the survivor is the most terminal of them.
-    ///
-    /// Strictly more severe always wins — that is the original rule and the whole point of the
-    /// buffer. The TIE is where attribution changed things (Task 33, review I1). It used to be
-    /// last-writer-wins, which `Swift.max` gives you, and that stayed harmless while every signal
-    /// was equally actionable. It is not any more: an UNATTRIBUTED signal is honoured
-    /// unconditionally while an attributed one can be refused, so a tie that evicts the
-    /// unattributed one can turn a verdict that would have acted into one that does nothing — the
-    /// user's own account deletion posting a bare `.deleted` and losing the slot to a stale
-    /// attributed `.deleted` for an account that has since been replaced. So: a tie keeps an
-    /// unattributed signal already held, and is otherwise the old last-writer rule.
+    /// The next signal `consume()` hands over, nil when none is held.
+    var pending: AccountStatusSignal? { held.first }
+
+    /// Merged INSIDE the `@MainActor` hop, so concurrent posts are serialised by the actor.
     nonisolated func post(_ event: AccountStatusEvent, for uid: String? = nil) {
         Task { @MainActor in
-            let incoming = AccountStatusSignal(event: event, uid: uid)
-            guard let held = self.pending else { self.pending = incoming; return }
-            if incoming.event > held.event || (incoming.event == held.event && held.uid != nil) {
-                self.pending = incoming
+            if let index = self.held.firstIndex(where: { $0.uid == uid }) {
+                guard event > self.held[index].event else { return }
+                self.held.remove(at: index)
             }
+            self.held.append(AccountStatusSignal(event: event, uid: uid))
+            self.held.sort { $0.event != $1.event ? $0.event < $1.event : ($0.uid == nil && $1.uid != nil) }
         }
     }
 
-    /// Reading it clears it — the consumer routes once and a re-render must not route again.
+    /// Hands over the next held signal and drops it — the consumer routes each once, and a
+    /// re-render must not route it again.
     func consume() -> AccountStatusSignal? {
-        defer { pending = nil }
-        return pending
+        held.isEmpty ? nil : held.removeFirst()
     }
 }

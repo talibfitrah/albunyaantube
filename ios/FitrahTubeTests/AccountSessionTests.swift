@@ -919,7 +919,7 @@ struct AccountSessionTests {
         let running = try await signedIn(auth, session)
         defer { running.cancel() }
 
-        await session.terminateAgeIneligible()
+        await session.terminateAgeIneligible(for: FakeAuthClient.defaultUser.uid)
 
         #expect(auth.operations == [.deleteUser],
                 "the credential the server permanently refused outlived the verdict")
@@ -943,7 +943,7 @@ struct AccountSessionTests {
         for _ in 0..<500 where session.state != .signedOut { await Task.yield() }
         #expect(session.state == .signedOut)
 
-        await session.terminateAgeIneligible()
+        await session.terminateAgeIneligible(for: FakeAuthClient.defaultUser.uid)
         // `AccountStatusCenter.post` hops to the main actor, so the event lands a turn later.
         for _ in 0..<500 where status.pending == nil { await Task.yield() }
 

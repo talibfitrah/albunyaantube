@@ -350,9 +350,15 @@ struct ProfileBootstrapViewModelTests {
     ///
     /// So the teardown happens WITH the verdict — one delete, one sign-out, one `.signedOut` — and
     /// the flag is what keeps the message on screen across it.
+    ///
+    /// CF-A-55 (e): the delete names the account, so the session has to know who that is — as it
+    /// always does in the app, where this screen only follows a `/me` that `start()` drove.
     @Test func anAgeIneligibleResponseTearsTheSessionDownWithTheVerdict() async {
         let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
-                           responses: [.json(422, #"{"code":"AGE_INELIGIBLE"}"#)])
+                           responses: [.json(200, Self.pendingJSON), .json(422, #"{"code":"AGE_INELIGIBLE"}"#)])
+        let running = Task { await fixture.session.start() }; defer { running.cancel() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while fixture.session.state.me == nil, ContinuousClock.now < deadline { await Task.yield() }
         fill(fixture.model)
         await fixture.model.submit()
 

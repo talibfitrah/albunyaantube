@@ -162,7 +162,11 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode)
     func updatePassword(_ new: String) async throws(AuthErrorCode)
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode)
-    func deleteUser() async throws(AuthErrorCode)
+    /// CF-A-55 (e): deletes `uid`'s credential and nobody else's. Firebase's delete acts on whoever
+    /// it holds when it RUNS, so a caller's earlier "who is signed in?" can be stale by then — an
+    /// account arriving in between lost its credential. A conformer compares and deletes with no
+    /// suspension between them, and throws when it holds anybody else (or nobody).
+    func deleteUser(expecting uid: String) async throws(AuthErrorCode)
     /// Stage 5 / C1.3: THROWS. `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain
     /// write succeeded, so a swallowed failure left the app reporting signed-out while still minting
     /// bearers for the previous account — and the next launch restored it.
@@ -209,7 +213,7 @@ nonisolated struct UnavailableAuthClient: AuthClient {
     func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { throw .unknown }
     func updatePassword(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { throw .unknown }
-    func deleteUser() async throws(AuthErrorCode) { throw .unknown }
+    func deleteUser(expecting uid: String) async throws(AuthErrorCode) { throw .unknown }
     func signOut() throws(AuthErrorCode) {}
     func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? { nil }
 }

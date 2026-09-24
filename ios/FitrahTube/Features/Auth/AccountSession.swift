@@ -6,21 +6,24 @@ import Observation
 /// Firebase user, so no later `/me` can re-trigger `handleDeletion()` — without a durable marker
 /// the cleanup is not deferred, it is unreachable forever.
 @MainActor protocol DeletionMarking: AnyObject, Sendable {
-    var pendingUid: String? { get set }
+    /// Every account a device wipe is still owed for (CF-A-52): a SET, because one slot let a
+    /// second deletion's debt overwrite the first's, and a refused arm with the slot taken
+    /// recorded nothing at all.
+    var pendingUids: Set<String> { get set }
 
     /// The last account whose `/me` SUCCEEDED on this device (CF-A-51 — a sign-in alone is not
-    /// proof), kept DURABLY and never cleared by a sign-out (Task 34 / CF-A-44). `pendingUid`
+    /// proof), kept DURABLY and never cleared by a sign-out (Task 34 / CF-A-44). `pendingUids`
     /// alone cannot be redeemed safely, because the
     /// question "may this wipe still run?" has two answers that look identical at launch: with
     /// nobody signed in, the deleted account being gone (redeem) and somebody ELSE's library
     /// sitting on the device (never device-wide; by uid only) both present as `currentUser == nil`. The in-memory
     /// `lastKnownUid` cannot answer it either — it is nil at launch, which is exactly when the
-    /// redemption runs. With `pendingUid` above, this is all that outlives the process.
+    /// redemption runs. With `pendingUids` above, this is all that outlives the process.
     var lastSignedInUid: String? { get set }
 }
 
-/// The production marker: two `UserDefaults` keys. `pendingUid` is written before the detached
-/// cleanup starts and cleared only once the wipe reported no error. `lastSignedInUid` is written
+/// The production marker: two `UserDefaults` keys. A uid joins `pendingUids` before the detached
+/// cleanup starts and leaves only once a wipe that covered it reported no error. `lastSignedInUid` is written
 /// by `fetch` once `/me` has SUCCEEDED for that account (CF-A-51), and cleared — only while it
 /// still names that account — by a redeemed deletion and by the age-ineligible teardown.
 @MainActor final class UserDefaultsDeletionMarker: DeletionMarking {
@@ -30,11 +33,17 @@ import Observation
 
     init(defaults: UserDefaults) { self.defaults = defaults }
 
-    var pendingUid: String? {
-        get { defaults.string(forKey: Self.defaultsKey) }
+    /// An array under the SAME key. A build before CF-A-52 stored one string there, which
+    /// `stringArray` does not read, so that value is read as a one-element set — and the first
+    /// write replaces it with the array.
+    var pendingUids: Set<String> {
+        get {
+            if let uids = defaults.stringArray(forKey: Self.defaultsKey) { return Set(uids) }
+            return defaults.string(forKey: Self.defaultsKey).map { [$0] } ?? []
+        }
         set {
-            if let newValue { defaults.set(newValue, forKey: Self.defaultsKey) }
-            else { defaults.removeObject(forKey: Self.defaultsKey) }
+            if newValue.isEmpty { defaults.removeObject(forKey: Self.defaultsKey) }
+            else { defaults.set(newValue.sorted(), forKey: Self.defaultsKey) }
         }
     }
 
@@ -50,7 +59,7 @@ import Observation
 /// The default, so the seven suites that never delete need no store at all — and so no test can
 /// write a pending-deletion flag into `UserDefaults.standard`.
 @MainActor final class InMemoryDeletionMarker: DeletionMarking {
-    var pendingUid: String?
+    var pendingUids: Set<String> = []
     var lastSignedInUid: String?
     init() {}
 }
@@ -110,7 +119,40 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// the request -- Android binds once per launch, from the splash (`SplashFragment.kt:129-141`).
     private var boundUid: String?
 
-    private(set) var state: AccountState = .signedOut
+    private(set) var state: AccountState = .signedOut {
+        didSet {
+            switch state {
+            case .failed(_, let message) where state != oldValue: failureNotice = message
+            case .loaded: failureNotice = nil
+            default: break
+            }
+        }
+    }
+
+    /// The sign-in wall's banner (`SignInScreen`): why THIS attempt, drop or launch failed, handed
+    /// over once. Read off `state` it was not one-shot — `.failed` outlives the drop that shows it,
+    /// so a re-created wall (`initial: true`) raised an old failure again (Cubic follow-up). Set by
+    /// every change INTO `.failed`, and by `reportFailure(_:)`; a loaded account has none.
+    private(set) var failureNotice: String?
+
+    /// CF-A-59: an account whose deletion has started, the offline manager's save refusal. On
+    /// record before the detached cleanup's first await (`handleDeletion` inserts the marker
+    /// synchronously) and kept after the debt is paid, because a save parked across the whole
+    /// wipe must not land either. A deleted uid cannot sign back in, so it costs nothing.
+    func isDeparted(_ uid: String) -> Bool {
+        !uid.isEmpty && (marker.pendingUids.contains(uid) || paidDebts.contains(uid))
+    }
+    /// The debts `redeemed(_:)` has paid in this process — the other half of `isDeparted`.
+    private var paidDebts: Set<String> = []
+
+    func consumeFailureNotice() -> String? {
+        defer { failureNotice = nil }
+        return failureNotice
+    }
+
+    /// CF-A-60: a failure raised by a screen the same sign-out is dismissing
+    /// (`DeleteAccountViewModel`'s refusal), handed to the wall's existing banner instead.
+    func reportFailure(_ message: String) { failureNotice = message }
     /// The signed-in Firebase identity, which is NOT `state.me`: `SplashRouter.outcome` needs
     /// `hasPasswordProvider`/`isEmailVerified` (spec §13), and neither is on the backend's account
     /// record. Set from the auth stream, so it is populated before `/me` has answered.
@@ -209,6 +251,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // (a background relaunch before first unlock), which is not a sign-out.
                 if dropped || protectedDataAvailable() { records?.clear() }
                 user = nil
+                needsRecheck = false
                 scope(to: "")
                 // A failed `/me` with no record already signed out (`fetch`) and left its reason
                 // for the wall's banner; this `.signedOut` is that drop's echo.
@@ -249,7 +292,14 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// Runs BEFORE the auth stream so a marker left by a deletion never has a signed-in account
     /// racing it back onto the screen.
     func resumePendingDeletion() async {
-        guard let pending = marker.pendingUid else { return }
+        // CF-A-52: every debt on record, each under the rule below. `where` is re-evaluated per
+        // element, so a debt an earlier device wipe already paid (`coveredDebts`) is skipped.
+        for pending in marker.pendingUids.sorted() where marker.pendingUids.contains(pending) {
+            await resume(pending)
+        }
+    }
+
+    private func resume(_ pending: String) async {
         let signedIn = await auth.currentUser()?.uid
         // THE INVARIANT: the DEVICE wipe runs only on POSITIVE evidence that the pending account is
         // the one holding this device — it is signed in right now, or nobody is and the durable
@@ -266,7 +316,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         //     what B had accumulated since. Task 33 made that more reachable by writing a marker on
         //     the bare-401 path. (UNVERIFIED, no probe: a locked device holding a stored session
         //     may present the same way — but before first unlock `UserDefaults` is likely
-        //     unreadable too, so `pendingUid` reads nil above and this is never reached.)
+        //     unreadable too, so `pendingUids` reads empty above and this is never reached.)
         //   * Round 3 / item 1: nobody signed in and NO holder on record, because
         //     `terminateAgeIneligible()` had forgotten an under-13 account in between.
         // CF-A-51: the durable record is written only by a `/me` that SUCCEEDED (`fetch`). An
@@ -280,12 +330,14 @@ nonisolated enum AccountState: Sendable, Equatable {
             // and the device id) and the debt falls
             // through to the by-uid arm below. The pending account signing back in is no takeover.
             var takenOverInsideTheWipe = false
+            var covered: Set<String> = []
             let wipeError = await wipe {
                 takenOverInsideTheWipe = observedTakeover(of: pending)
+                if !takenOverInsideTheWipe { covered = coveredDebts() }
                 return takenOverInsideTheWipe
             }
             if !takenOverInsideTheWipe {
-                if wipeError == nil { redeemed(pending) }
+                if wipeError == nil { redeemed(pending); covered.forEach(redeemed) }
                 return
             }
         }
@@ -307,12 +359,28 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// would quietly downgrade it to a row-only delete.
     ///
     /// `uid` is the account the wipe RAN for, captured when the debt was recorded — never
-    /// `marker.pendingUid` read at completion: a second account deleted while the first wipe was
+    /// the marker read at completion: a second account deleted while the first wipe was
     /// still running owns the marker by then, and the first completion used to clear ITS debt.
     private func redeemed(_ uid: String) {
         if marker.lastSignedInUid == uid { marker.lastSignedInUid = nil }
-        if marker.pendingUid == uid { marker.pendingUid = nil }
+        marker.pendingUids.remove(uid)
+        paidDebts.insert(uid)
     }
+
+    /// CF-A-52 (a) + (b): the debts a DEVICE wipe pays besides its own, read synchronously inside
+    /// its takeover check — i.e. immediately before its deletes, which take every row, offline
+    /// copy and per-uid key on the device. Left on record, the next launch device-wiped again and
+    /// took the guest rows made since. NOT a debt whose own deletion is still running in this
+    /// process (`runningDebts`): that account's rows can still be written after these deletes, and
+    /// its own cleanup is the one that pays it.
+    private func coveredDebts() -> Set<String> { marker.pendingUids.subtracting(runningDebts) }
+
+    /// The uids whose `performDeletion` is still running — CF-A-52 (b). Added when the latch is
+    /// taken, removed when that cleanup returns.
+    /// ponytail: a Set, so the SAME uid deleted twice at once (sign out, back in, delete again
+    /// while the first cleanup still runs) is released by whichever finishes first; a count per
+    /// uid if that ever matters.
+    private var runningDebts: Set<String> = []
 
     /// Fix round 1 / I2: the refresh currently running, handed to a second caller instead of a
     /// second request. `SignInViewModel.land()` refreshes on the same auth transition `start()` is
@@ -652,6 +720,9 @@ nonisolated enum AccountState: Sendable, Equatable {
             return false
         }
         user = nil
+        // The re-check is the dropped account's (Cubic follow-up); a REFUSED sign-out above keeps
+        // it, because that account is still signed in.
+        needsRecheck = false
         scope(to: "")
         state = end
         return true
@@ -728,26 +799,36 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// `try?`: the tokens are already revoked server-side, so a failure here changes nothing the
     /// user can act on (`AgeIneligibleViewModel.kt:36-40` logs and proceeds).
     ///
+    /// Patch round P1: `issuedFor` is the account the refused request was SENT for, read by the
+    /// caller before it went out — the 422 can land after the child was signed out and another
+    /// account arrived. Nothing runs unless the child is still who this session holds or just
+    /// held, and the drop is re-checked after the delete's await.
+    ///
     /// Stage 9 / P2a: `.signedOut` is posted UNCONDITIONALLY, mirroring `handleDeletion`'s
-    /// `.deleted` and for the same reason. `auth.deleteUser()` fires the Firebase listener across
+    /// `.deleted` and for the same reason. `auth.deleteUser(expecting:)` fires the Firebase listener across
     /// its own suspension, so `start()`'s stream arm can reach `.signedOut` first — and
     /// `dropSession()` then returns false, which is how the profile path came to announce NOTHING
     /// to the per-account holders. A terminal announcement that depends on who won that race is a
     /// coin toss.
-    func terminateAgeIneligible() async {
+    func terminateAgeIneligible(for issuedFor: String?) async {
+        // Round 3 / item 3: `?? lastKnownUid`, because Firebase can force-sign the child out, and
+        // `start()` can drain that `.signedOut`, before the 422 is processed.
+        func stillTheChild() -> Bool { issuedFor != nil && (user?.uid ?? lastKnownUid) == issuedFor }
+        guard let leaving = issuedFor, stillTheChild() else { return }
         // BEFORE the awaits: the screen has to be up while the delete runs, or the drop below
         // renders the bare sign-in wall for as long as Firebase takes to answer.
         isAgeIneligible = true
-        // Round 2 / item 5: captured BEFORE the awaits — the delete clears `user`. Round 3 / item 3:
-        // `?? lastKnownUid`, because Firebase can force-sign the child out, and `start()` can drain
-        // that `.signedOut`, before the 422 is processed — `user` is nil by then and
-        // `lastKnownUid` is what survives that sign-out by design.
-        let leaving = user?.uid ?? lastKnownUid
-        try? await auth.deleteUser()
+        // CF-A-55 (e): the child's credential, never whoever Firebase holds by the time this runs.
+        try? await auth.deleteUser(expecting: leaving)
+        // Somebody else arrived inside the delete: the session, the screen and the announcement are theirs.
+        guard stillTheChild() else {
+            isAgeIneligible = false
+            return
+        }
         dropSession()
         // The account is deleted through Firebase, so its uid does not stay behind as the device's
         // holder. Only while the record still names it, for `redeemed(_:)`'s reason.
-        if let leaving, marker.lastSignedInUid == leaving { marker.lastSignedInUid = nil }
+        if marker.lastSignedInUid == leaving { marker.lastSignedInUid = nil }
         status.post(.signedOut)
     }
 
@@ -758,7 +839,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// .blocked -> signOut; .deleted -> the device wipe; .signedOut -> signOut.
     /// Task 33 / CF-A-44: a verdict is honoured only by the account it was minted FOR.
     ///
-    /// `handleDeletion()` below stamps `marker.pendingUid` from whoever is signed in right now and
+    /// `handleDeletion()` below stamps the marker from whoever is signed in right now and
     /// wipes that account's scope — so a `.deleted` recorded for A and delivered after B completed a
     /// sign-in destroyed B's library and wrote B's uid into A's marker. The RECORD end has carried
     /// the uid since Cubic round 6 / P2b; this is the delivery end, where it stopped.
@@ -816,9 +897,9 @@ nonisolated enum AccountState: Sendable, Equatable {
         if let verdictUid, verdictUid != user?.uid, verdictUid != lastKnownUid {
             // CF-A-55 (a): a debt like any other, so durable BEFORE the work — this arm returns
             // ahead of the marker write below, and a delete that failed or was killed part-way was
-            // never retried. Only into a FREE slot (the marker holds one uid, CF-A-52), never an
-            // empty uid (Stage 7 fix 2 / M2), and `redeemed` clears it only while it names this uid.
-            if marker.pendingUid == nil, !verdictUid.isEmpty { marker.pendingUid = verdictUid }
+            // never retried. Beside any other debt on record (CF-A-52), never an empty uid (Stage 7
+            // fix 2 / M2), and `redeemed` removes this uid only.
+            if !verdictUid.isEmpty { marker.pendingUids.insert(verdictUid) }
             // CF-A-50: the scoped delete is async now (it pays the offline debt through the
             // manager), so the arm returns the task that pays it — the marker is already written.
             return Task { if await wipeRows(verdictUid) == nil { redeemed(verdictUid) } }
@@ -856,7 +937,8 @@ nonisolated enum AccountState: Sendable, Equatable {
         // by the time this runs.
         var owed: String?
         if let uid = verdictUid ?? user?.uid ?? state.me?.uid, !uid.isEmpty {
-            marker.pendingUid = uid
+            marker.pendingUids.insert(uid)
+            runningDebts.insert(uid)
             owed = uid
         }
         // No `@MainActor in` on the closure: `performDeletion` carries the isolation and the hop.
@@ -903,11 +985,12 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// to compare against and nothing to delete by uid, and `user` was nil at the latch or `owed`
     /// would exist — so anyone signed in now arrived since, and then nothing here runs at all.
     private func performDeletion(owed: String?) async {
+        defer { if let owed { runningDebts.remove(owed) } }
         func takenOver() async -> Bool {
             guard let owed else { return user != nil }
             // Firebase too, asked FIRST so the session's own fields are read after the hop: an
             // account Firebase already holds that neither `start()` nor the seed has observed is
-            // invisible to `user`/`lastKnownUid`, and `deleteUser()` deletes whoever Firebase holds.
+            // invisible to `user`/`lastKnownUid`, and signing in or out under them is theirs.
             let held = await auth.currentUser()?.uid
             return (held != nil && held != owed) || observedTakeover(of: owed)
         }
@@ -925,8 +1008,10 @@ nonisolated enum AccountState: Sendable, Equatable {
         // Taken over INSIDE the wipe's own awaits (CF-A-55 (c)): the wiper asked immediately
         // before its deletes and ran none of them, so this is the arm above, one check later.
         var takenOverInsideTheWipe = false
+        var covered: Set<String> = []
         let wipeError = await wipe {
             takenOverInsideTheWipe = observedTakeover(of: owed)
+            if !takenOverInsideTheWipe { covered = coveredDebts() }
             return takenOverInsideTheWipe
         }
         guard !takenOverInsideTheWipe else {
@@ -935,15 +1020,21 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
         // Stage 5 / C2.2: a wipe that hit a full or corrupt store keeps the marker, so the next
         // launch tries again rather than leaving the rows on disk under an "account deleted" alert.
-        if wipeError == nil, let owed { redeemed(owed) }
+        if wipeError == nil {
+            if let owed { redeemed(owed) }
+            covered.forEach(redeemed)
+        }
         // `try?`: the server has already deleted the account, so there is nothing to roll back and
         // nowhere to route a failure to. A Firebase user whose `delete()` was refused
         // (`requiresRecentLogin`) is signed out below anyway, and its next `/me` answers the 403
         // envelope — the same terminal path, without a re-auth prompt for an account that no longer
         // exists. Stage 3 / I1: read HERE, so a `true` that arrived while the wipe was running
         // still deletes the credential, and always before `dropSession()`. CF-A-53: and never
-        // once somebody else holds the device — `deleteUser()` deletes whoever Firebase holds.
-        if deletingFirebase, await !takenOver() { try? await auth.deleteUser() }
+        // once somebody else holds the device (`deleteUser(expecting:)` also refuses anyone but `owed`).
+        // CF-A-55 (e): and it names `owed` — the check above is an await old by the time Firebase
+        // runs the delete, and an account arriving in between would be the one deleted. No `owed`,
+        // no delete: there is no account to name.
+        if deletingFirebase, let owed, await !takenOver() { try? await auth.deleteUser(expecting: owed) }
         // Taken over AFTER the wiper's deletes — in the Firebase delete, or by an account only
         // Firebase knew about when the wiper asked: what is done is done, but the session is
         // theirs — no sign-out, no `.deleted` — and the stores `LocalAccountWiper` re-scoped to

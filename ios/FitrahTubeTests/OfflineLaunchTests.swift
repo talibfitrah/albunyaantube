@@ -354,6 +354,69 @@ struct OfflineLaunchTests {
         #expect(!session.needsRecheck)
     }
 
+    /// Cubic follow-up: the re-check belongs to the account on screen, so a drop ends it — by the
+    /// app's own sign-out and by Firebase's (`start()`'s `.signedOut` arm). Left set, a reconnect
+    /// re-asked `/me` for whoever signed in next, or for nobody.
+    @Test(arguments: [false, true])
+    func aDroppedSessionNeedsNoRecheck(firebaseSignedOut: Bool) async throws {
+        records.save(Self.me(), uid: "fake-uid")
+        let (session, auth, running) = await launch([Self.offline()])
+        defer { running.cancel() }
+        #expect(session.needsRecheck, "the precondition: a launch on the offline record")
+
+        if firebaseSignedOut {
+            try auth.signOut()
+            let deadline = ContinuousClock.now + .seconds(10)
+            while session.user != nil, ContinuousClock.now < deadline { await Task.yield() }
+        } else {
+            session.signOut()
+        }
+
+        #expect(session.user == nil)
+        #expect(!session.needsRecheck, "the dropped account's re-check outlived it")
+    }
+
+    /// The direction that fix could be wrong in: a REFUSED sign-out leaves the account signed in,
+    /// so its re-check stays.
+    @Test func aRefusedSignOutKeepsTheRecheck() async {
+        records.save(Self.me(), uid: "fake-uid")
+        let (session, auth, running) = await launch([Self.offline()])
+        defer { running.cancel() }
+        auth.nextError = .unknown
+
+        session.signOut()
+
+        #expect(session.user != nil, "the precondition: the sign-out was refused")
+        #expect(session.needsRecheck)
+    }
+
+    /// Cubic follow-up: the wall's banner is the failure of THIS attempt or launch, handed over
+    /// once. It used to be read off `state`, which stays `.failed` after the drop, so a re-created
+    /// sign-in wall (`initial: true`) raised the same old failure again.
+    @Test func theWallsFailureBannerIsHandedOverOnce() async {
+        let (session, _, running) = await launch([Self.offline()])
+        defer { running.cancel() }
+
+        #expect(session.consumeFailureNotice() == String(localized: "auth_error_network"))
+        #expect(session.consumeFailureNotice() == nil, "a re-created wall showed the old failure again")
+    }
+
+    /// The direction that could be wrong: a NEW failure after the old one was shown is still shown,
+    /// and a failure is never shown over an account that has since loaded.
+    @Test func aLaterFailureIsShownAndALoadedAccountShowsNone() async {
+        let (session, _, running) = await launch([Self.offline(), Self.offline(), .json(200, Self.meJSON)])
+        defer { running.cancel() }
+        _ = session.consumeFailureNotice()
+
+        await session.refresh(maxAttempts: 1)
+        #expect(session.state.isFailed, "the precondition: a second failed attempt")
+        #expect(session.consumeFailureNotice() == String(localized: "auth_error_network"))
+
+        await session.refresh(maxAttempts: 1)
+        #expect(session.state.me != nil)
+        #expect(session.consumeFailureNotice() == nil)
+    }
+
     /// A reconnect with an account `/me` already confirmed sends nothing.
     @Test func aReconnectWithAConfirmedAccountSendsNoMe() async throws {
         let auth = FakeAuthClient(state: .signedOut)

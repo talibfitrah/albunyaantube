@@ -127,6 +127,9 @@ import Observation
         state.error = nil
 
         if !state.profileSaved {
+            // Whose request this is, read BEFORE it goes out: the 422 can land after this account
+            // was signed out and another one arrived (the task outlives the screen).
+            let issuedFor = session.currentUid
             do {
                 _ = try await account.completeProfile(
                     displayName: state.displayName.trimmingCharacters(in: .whitespacesAndNewlines),
@@ -157,7 +160,7 @@ import Observation
                     // so the Firebase delete never ran at all. `RootView` presents the terminal
                     // screen on `session.isAgeIneligible`, over whatever the outcome now resolves
                     // to; the terminal screen IS the message, so no inline error either.
-                    await session.terminateAgeIneligible()
+                    await session.terminateAgeIneligible(for: issuedFor)
                     return
                 default:
                     state.isLoading = false

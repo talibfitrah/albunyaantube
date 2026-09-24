@@ -98,10 +98,13 @@ nonisolated enum DeleteAccountState: Equatable {
         // UNATTRIBUTED: it takes a fresh latch (which then swallows the real verdict for the
         // account that did hold this device), device-wipes for nobody and posts a `.deleted` no
         // account can be matched to. The generic refusal already says WHAT happened, and nothing
-        // it cannot know. `.failedUnknown` is the honest end state; whether its banner is
-        // actually SEEN depends on whether the signed-out shell has already replaced this screen.
+        // it cannot know. `.failedUnknown` is the honest end state. CF-A-60: the same sign-out
+        // dismisses this screen, so its banner is also handed to the sign-in wall's, same words.
         guard let deleting = session.currentUid else {
             state = .failedUnknown
+            if let key = Self.messageKey(for: state) {
+                session.reportFailure(String(localized: String.LocalizationValue(key)))
+            }
             return
         }
         do {

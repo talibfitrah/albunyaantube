@@ -140,6 +140,9 @@ actor OfflineManager: OfflineSaving {
     /// that actually answers, so a parked re-resolve does not spend the one budget it never used.
     private var pendingForceRefresh: Set<String> = []
     private var lastProgressPersist: [String: Date] = [:]
+    /// CF-A-59: whether a save for this owner must be refused — an account being deleted
+    /// (`AccountSession.isDeparted`). Asked on the main actor, in the same job as the insert.
+    private let refusesOwner: @MainActor @Sendable (String) -> Bool
 
     /// Test hook: which ids currently wait on a retry timer.
     var pendingRetryIds: Set<String> { Set(retries.keys) }
@@ -154,7 +157,8 @@ actor OfflineManager: OfflineSaving {
          baseDirectory: URL,
          gate: @escaping @Sendable (String) async -> GateAnswer,
          now: @escaping @Sendable () -> Date,
-         downloadsEnabled: @escaping @Sendable () async -> Bool = { true }) {
+         downloadsEnabled: @escaping @Sendable () async -> Bool = { true },
+         refusesOwner: @escaping @MainActor @Sendable (String) -> Bool = { _ in false }) {
         self.store = store
         self.engine = engine
         self.resolver = resolver
@@ -164,6 +168,7 @@ actor OfflineManager: OfflineSaving {
         self.gate = gate
         self.now = now
         self.downloadsEnabled = downloadsEnabled
+        self.refusesOwner = refusesOwner
         directory = OfflineStorage.directoryURL(base: baseDirectory)
         Task { [engine] in
             for await event in engine.events { await self.handle(event) }
@@ -173,14 +178,24 @@ actor OfflineManager: OfflineSaving {
     // MARK: - OfflineSaving
 
     func save(videoId: String, quality: String, audioOnly: Bool, metadata: OfflineMetadata) async {
-        // The upsert trap (`OfflineStore.insert`): the old task and file go BEFORE the row is replaced.
-        if let old = await read(videoId: videoId) {
-            await tearDown(old)
+        let owner = metadata.userId
+        // Refused BEFORE the upsert's tear-down: `videoId` is unique across accounts, so the old
+        // copy may be the device holder's (patch round P3).
+        let (refused, old) = await MainActor.run { [refusesOwner, store] in
+            (refusesOwner(owner), store.item(videoId: videoId).flatMap(Row.init))
         }
+        guard !refused else { return }
+        // The upsert trap (`OfflineStore.insert`): the old task and file go BEFORE the row is replaced.
+        if let old { await tearDown(old) }
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
                                createdAt: now(), userId: metadata.userId)
-        await write { store in try store.insert(item) }
+        // CF-A-59: asked again IN the insert's job — the wipe's id snapshot runs on this executor,
+        // so a save whose owner started departing while it was suspended above never lands behind it.
+        await write { [refusesOwner] store in
+            guard !refusesOwner(owner) else { return }
+            try store.insert(item)
+        }
         await schedule()
     }
 
@@ -1134,10 +1149,6 @@ actor OfflineManager: OfflineSaving {
 
     private func read(id: String) async -> Row? {
         await MainActor.run { store.item(id: id).flatMap(Row.init) }
-    }
-
-    private func read(videoId: String) async -> Row? {
-        await MainActor.run { store.item(videoId: videoId).flatMap(Row.init) }
     }
 
     private func readAll() async -> [Row] {

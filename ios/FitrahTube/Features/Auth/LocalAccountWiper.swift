@@ -99,10 +99,8 @@ import SwiftData
         // save's partial bytes, which the retry does not restore (see the contract above).
         // Cubic r3 (P2): and it is taken AFTER the cancel, not before — a save that completes
         // inside `cancelAll()`'s own await would otherwise insert its row past a snapshot taken
-        // ahead of it. NOT a closed race (CF-A-59): `OfflineManager.save` can still suspend before
-        // its insert, miss the cancel AND this snapshot, and insert while `deleteAll` below is
-        // awaiting — that row and its file then survive a wipe that reports success. Closing it
-        // needs a barrier in the one inserter, not a wider snapshot.
+        // ahead of it. CF-A-59: a save for the departing account that suspended before its insert
+        // is refused at the insert (`OfflineManager.save`, `AccountSession.isDeparted`).
         let offlineIds: [String]
         do { offlineIds = try self.offlineIds(nil) } catch { return error }
         // R7-P2: the offline rows are the FIRST thing this deletes and were the one step that could

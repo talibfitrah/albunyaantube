@@ -128,6 +128,25 @@ struct AppContainerTests {
         #expect(container.meFeed.weeks.isEmpty)
     }
 
+    /// Patch round P2, the WIRING: the container's offline manager refuses a save for an account
+    /// whose deletion is on record, and only for that account.
+    @Test func theOfflineManagerRefusesSavesForAnAccountBeingDeleted() async throws {
+        let suite = "fitrahtube.departed-save-wiring-tests"
+        let defaults = try #require(UserDefaults(suiteName: suite))
+        defaults.removePersistentDomain(forName: suite)
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let container = AppContainer.fake(defaults: defaults)
+        UserDefaultsDeletionMarker(defaults: defaults).pendingUids = ["uid-a"]
+
+        for (uid, video) in [("uid-a", "xc7keR2piUM"), ("uid-b", "vidOwnerB00")] {
+            await container.offlineManager.save(videoId: video, quality: "360p", audioOnly: true,
+                                                metadata: OfflineMetadata(title: "Lecture", userId: uid))
+        }
+
+        #expect(container.offlineStore.items.map(\.userId) == ["uid-b"],
+                "a departing account's save landed, or another account's was refused")
+    }
+
     /// Review I3, the WIRING. `AccountSession`'s `wipeRows` has a default so its 20-odd test call
     /// sites compile unchanged, and that default REFUSES — so a container that forgot to pass the
     /// real one keeps the marker forever and never deletes the departed account's rows.
@@ -148,7 +167,7 @@ struct AppContainerTests {
         }
         container.favorites.currentUserId = ""
         let marker = UserDefaultsDeletionMarker(defaults: defaults)
-        marker.pendingUid = "uid-a"
+        marker.pendingUids = ["uid-a"]
         marker.lastSignedInUid = "uid-b"
 
         await container.session.resumePendingDeletion()
@@ -157,7 +176,7 @@ struct AppContainerTests {
         #expect(container.favorites.items.isEmpty, "the departed account's rows were stranded on the device")
         container.favorites.currentUserId = "uid-b"
         #expect(container.favorites.items.count == 1, "the account that holds the device lost its library")
-        #expect(marker.pendingUid == nil)
+        #expect(marker.pendingUids.isEmpty)
     }
 
     /// Task 36 round 2 / P2, the WIRING of the wiper's takeover check. Constructed, never raced:
@@ -186,7 +205,7 @@ struct AppContainerTests {
         #expect(container.session.state.me?.uid == holder, "the precondition is an account the session has observed")
         try auth.signOut()
         let marker = UserDefaultsDeletionMarker(defaults: defaults)
-        marker.pendingUid = "uid-a"
+        marker.pendingUids = ["uid-a"]
         marker.lastSignedInUid = "uid-a"
 
         await container.session.resumePendingDeletion()
@@ -195,7 +214,7 @@ struct AppContainerTests {
         #expect(container.favorites.items.count == 1, "the device wipe ran over an account the session had observed")
         container.favorites.currentUserId = "uid-a"
         #expect(container.favorites.items.isEmpty, "the departed account's debt was not paid by uid")
-        #expect(marker.pendingUid == nil)
+        #expect(marker.pendingUids.isEmpty)
     }
 
     /// Fix round 1 / M3 + M5, one row for both halves of `approvals`' transport.
@@ -303,6 +322,41 @@ struct AppContainerTests {
         other.post(.deleted)
         for _ in 0..<10 { await Task.yield() }
         #expect(other.consume()?.uid == nil, "a stale attributed verdict kept the slot")
+    }
+
+    /// CF-A-55 (b) / CF-A-52: a per-uid buffer. A's attributed `.deleted` (the completion
+    /// announcement is attributed since round 2 / I1) was EVICTED by a stale attributed `.deleted`
+    /// for another account — last writer on a tie — which `handle` then refused, so A never saw
+    /// its terminal alert. Both are held now, each to be accepted or refused on its own.
+    @Test func aStaleAttributedVerdictCannotEvictAnotherAccountsSignal() async {
+        let center = AccountStatusCenter()
+        center.post(.deleted, for: "uid-a")
+        center.post(.deleted, for: "uid-stale")
+        for _ in 0..<10 { await Task.yield() }
+
+        var drained: [AccountStatusSignal] = []
+        while let signal = center.consume() { drained.append(signal) }
+        #expect(Set(drained.compactMap(\.uid)) == ["uid-a", "uid-stale"], "one account's verdict evicted another's")
+        #expect(center.pending == nil)
+    }
+
+    /// Patch round P3: severity ranks WITHIN a uid only. A stale, more severe `.deleted` for X used
+    /// to clear every held signal, evicting B's valid `.blocked`. The same uid still collapses to
+    /// its most severe event, and the drain runs least severe first so the most terminal one acts
+    /// last (a `.signedOut` routed after a `.deleted` would drop the session under the wipe).
+    @Test func aStaleSevereVerdictNeverEvictsAnotherAccountsSignal() async {
+        let center = AccountStatusCenter()
+        center.post(.blocked, for: "uid-b")
+        center.post(.deleted, for: "uid-stale")
+        center.post(.blocked, for: "uid-stale")
+        center.post(.signedOut)
+        for _ in 0..<10 { await Task.yield() }
+
+        var drained: [AccountStatusSignal] = []
+        while let signal = center.consume() { drained.append(signal) }
+        #expect(drained == [AccountStatusSignal(event: .signedOut, uid: nil),
+                            AccountStatusSignal(event: .blocked, uid: "uid-b"),
+                            AccountStatusSignal(event: .deleted, uid: "uid-stale")])
     }
 
     /// The other order, for the same reason: whichever arrives second, `.deleted` is what routes.

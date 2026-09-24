@@ -580,7 +580,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             now: { Date() },
             // The SAME config read `PlayerScreen`'s Save button consults (Task 6 review fold-in:
             // the manager refuses to START new work while the kill-switch is off).
-            downloadsEnabled: { [innerTube] in await innerTube.remoteConfig.current().isDownloadsEnabled })
+            downloadsEnabled: { [innerTube] in await innerTube.remoteConfig.current().isDownloadsEnabled },
+            // CF-A-59: no save lands for an account whose deletion has started.
+            refusesOwner: { [weak self] in self?.session.isDeparted($0) ?? false })
         observeOfflineGate(manager)
         return manager
     }

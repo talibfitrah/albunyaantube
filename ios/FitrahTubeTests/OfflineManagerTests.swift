@@ -27,6 +27,8 @@ struct OfflineManagerTests {
         /// something other than `.gone`).
         nonisolated(unsafe) var gates: [String: GateAnswer] = [:]
         nonisolated(unsafe) var decision: Decision = .allowed
+        /// Owners whose saves the manager must refuse — the departed accounts (`AccountSession`).
+        nonisolated(unsafe) var refusedOwners: Set<String> = []
         /// Per-video overrides of `decision` (the starvation test blocks one id, allows the rest).
         nonisolated(unsafe) var decisions: [String: Decision] = [:]
         /// Ids whose limiter check suspends until removed (same 1 ms-poll gate as
@@ -195,7 +197,8 @@ struct OfflineManagerTests {
                 if let onNow = flags.onNow { flags.onNow = nil; onNow() }
                 return flags.now
             },
-            downloadsEnabled: { await flags.downloadsEnabled() })
+            downloadsEnabled: { await flags.downloadsEnabled() },
+            refusesOwner: { flags.refusedOwners.contains($0) })
         return Rig(manager: manager, store: store, container: container, engine: engine,
                    resolver: resolver, flags: flags, base: base)
     }
@@ -2717,6 +2720,69 @@ struct OfflineManagerTests {
         #expect(rig.store.items.allSatisfy { $0.status == OfflineStatus.cancelled.rawValue })
         #expect(rig.resolver.calls.isEmpty, "a cancel-all must not burn a resolve on a row it is stopping")
         #expect(rig.engine.starts.isEmpty, "a cancel-all must never start a row it is stopping")
+    }
+
+    /// CF-A-59: a save for a departing account must never land. It used to be refused only if it
+    /// STARTED before the wipe's `cancelAll()` — one started during `deleteAll` (the UI is live
+    /// until the drop) inserted after the id snapshot and survived a wipe booked as paid. The
+    /// refusal is by OWNER now, checked in the insert's own main-actor write; `false` is the other
+    /// direction: an owner nobody is deleting still saves in the same window.
+    @Test(arguments: [true, false])
+    func aSaveStartedDuringTheWipeIsRefusedOnlyForADepartingOwner(departing: Bool) async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let doomed = makeOfflineItem("vid-doomed0", title: "Lecture", status: .completed, userId: "uid-a")
+        try rig.store.insert(doomed)
+        rig.engine.cancelHeld = [doomed.id]
+        rig.flags.refusedOwners = ["uid-a"]
+        let wiping = Task { await rig.manager.deleteAll([doomed.id]) }
+        await waitUntil { rig.engine.cancelEntered.contains(doomed.id) }
+
+        var metadata = Self.metadata
+        metadata.userId = departing ? "uid-a" : "uid-b"
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+        rig.engine.cancelHeld = []
+        _ = await wiping.value
+
+        #expect((rig.persisted(videoId: Self.lectureVideoId) == nil) == departing,
+                departing ? "a save for the departing account landed after the wipe's snapshot"
+                          : "another owner's save was refused")
+    }
+
+    /// …and a save already PARKED before its insert when its owner starts departing — parked in the
+    /// upsert's tear-down (`engine.cancel`), the one deterministic handle on that window.
+    @Test func aSaveParkedBeforeItsInsertIsRefusedOnceItsOwnerIsDeparting() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let old = makeOfflineItem(Self.lectureVideoId, title: "Lecture", status: .completed, userId: "uid-a")
+        try rig.store.insert(old)
+        rig.engine.cancelHeld = [old.id]
+        var metadata = Self.metadata
+        metadata.userId = "uid-a"
+        let saving = Task { [metadata] in
+            await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+        }
+        await waitUntil { rig.engine.cancelEntered.contains(old.id) }
+
+        rig.flags.refusedOwners = ["uid-a"]
+        rig.engine.cancelHeld = []
+        await saving.value
+
+        #expect(rig.persisted(videoId: Self.lectureVideoId) == nil, "the departed account's parked save inserted")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Patch round P3: a refused save must refuse BEFORE the upsert tears the old copy down.
+    /// `videoId` is unique across accounts, so the old copy can be the device holder's.
+    @Test func aRefusedSaveLeavesTheHoldersCopyOfTheSameVideoAlone() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let holders = makeOfflineItem(Self.lectureVideoId, title: "Lecture", status: .completed, userId: "uid-b")
+        try rig.store.insert(holders)
+        rig.flags.refusedOwners = ["uid-a"]
+        var metadata = Self.metadata
+        metadata.userId = "uid-a"
+
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+
+        #expect(rig.persisted(id: holders.id) != nil, "a departed account's refused save destroyed the holder's copy")
     }
 
     // MARK: - Sweep (Task 7 calls it; the gate answer is injected)

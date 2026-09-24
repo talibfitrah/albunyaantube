@@ -222,7 +222,7 @@ struct LocalAccountWiperTests {
         fixture.defaults.set(1.0, forKey: EmailVerificationViewModel.lastSentKey(uid: "uid-a"))
         fixture.defaults.set(2.0, forKey: EmailVerificationViewModel.lastSentKey(uid: "uid-b"))
         let marker = InMemoryDeletionMarker()
-        marker.pendingUid = "uid-a"
+        marker.pendingUids = ["uid-a"]
         marker.lastSignedInUid = "uid-b"
         let holder = AuthUser(uid: "uid-b", email: "b@fitrah.test", isEmailVerified: true, providerIDs: ["password"])
         let deviceWipes = Mutex(0)
@@ -250,7 +250,7 @@ struct LocalAccountWiperTests {
                 "a key naming the deleted account outlived its rows")
         #expect(fixture.defaults.double(forKey: EmailVerificationViewModel.lastSentKey(uid: "uid-b")) == 2.0,
                 "the scoped delete took a key belonging to the account that holds the device")
-        #expect(marker.pendingUid == nil, "the debt was paid and the marker still claims it")
+        #expect(marker.pendingUids.isEmpty, "the debt was paid and the marker still claims it")
         #expect(marker.lastSignedInUid == "uid-b", "paying A's debt forgot who holds the device now")
     }
 
@@ -314,7 +314,8 @@ struct LocalAccountWiperTests {
         let error = await wiper.wipeRows(of: "uid-a")
 
         #expect(error is StoreFull, "a failed offline fetch was swallowed and the debt booked as paid")
-        #expect(await fixture.offline.calls.isEmpty, "the manager was asked to delete with no ids to delete")
+        #expect(await fixture.offline.calls.isEmpty,
+                "the manager was asked to delete with no ids to delete")
         #expect(fixture.owners(FavoriteVideo.self, \.userId) == ["uid-a"], "the rows went while the offline half was never read — a retry then finds nothing to do")
     }
 

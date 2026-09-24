@@ -81,8 +81,8 @@ struct RootView: View {
             // envelope here from whatever isolation the request ran on. `consume()` clears it, so a
             // re-render cannot route the user twice.
             .onChange(of: container.accountStatus.pending) { _, pending in
-                guard pending != nil, let signal = container.accountStatus.consume() else { return }
-                Self.route(signal, session: container.session, alert: &alert)
+                guard pending != nil else { return }
+                Self.routeAll(from: container.accountStatus, session: container.session, alert: &alert)
             }
             // R7-P1 #3: the terminal under-13 screen, presented OVER whatever the outcome
             // resolves to rather than routed to. The 422 tears the session down as it lands
@@ -179,6 +179,13 @@ struct RootView: View {
         // wiping nothing — would be the worse half of the bug rather than the fix.
         guard session.handle(signal.event, for: signal.uid) else { return }
         if let terminal = AccountStatusAlert(signal.event) { alert = terminal }
+    }
+
+    /// CF-A-55 (b): the centre holds one signal PER UID, and each is accepted or refused on its
+    /// own — a stale one refused first must not stop the next from routing. Least terminal first,
+    /// so the most terminal accepted one acts last and its alert is the one left standing.
+    static func routeAll(from center: AccountStatusCenter, session: AccountSession, alert: inout AccountStatusAlert?) {
+        while let signal = center.consume() { route(signal, session: session, alert: &alert) }
     }
 
     private func dropToSignIn() {

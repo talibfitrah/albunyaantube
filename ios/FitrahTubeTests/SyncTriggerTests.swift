@@ -321,7 +321,7 @@ struct SyncTriggerTests {
         defer { running.cancel() }
         #expect(session.syncableUid == Self.uid)
 
-        await session.terminateAgeIneligible()
+        await session.terminateAgeIneligible(for: Self.uid)
         #expect(session.syncableUid == nil)
     }
 
