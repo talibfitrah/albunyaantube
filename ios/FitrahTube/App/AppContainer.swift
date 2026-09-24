@@ -154,7 +154,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// failable init) rather than assuming `FitrahTubeApp.init()`'s warm-up already ran: `live()` is
     /// evaluated from a stored-property initializer, which Swift runs BEFORE that body. The call is
     /// idempotent. With no `GoogleService-Info.plist` — this machine, CI and every fresh checkout —
-    /// it returns nil and the app gets `UnavailableAuthClient`, i.e. a guest that cannot sign in.
+    /// it returns nil and the app gets `UnavailableAuthClient`, i.e. a sign-in wall that cannot sign in.
     ///
     /// Stage 4 / M3: the substitution itself is `#if DEBUG`, exactly as `injectedAccountStatusJSON`
     /// already is. It was never REACHABLE in Release (`live()` passes nothing and
@@ -254,6 +254,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // sends one `/me`, and a sign-out-then-sign-in inside the same screenshot run sends
         // another. A dry queue throws `exhausted`, which is a fixture bug and must look like one —
         // so it is short, not endless.
+        // `-fitrah-fake-offline`: every request fails as if the device had no network, for the manual
+        // offline-launch check (`accountRecords`).
+        if isFixture, LaunchArguments.debug.contains("-fitrah-fake-offline") {
+            return ScriptedTransport(Array(repeating: .failing(URLError(.notConnectedToInternet)), count: 4))
+        }
         if isFixture { return ScriptedTransport(Array(repeating: .json(200, fixtureAccountJSON), count: 4)) }
         #endif
         return AuthorizedTransport(base: URLSessionTransport(), apiHost: apiBaseURL.host() ?? "",
@@ -443,7 +448,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// nothing useful to do with a dirty row while the device is offline, and a push that starts
     /// there just burns the retry ladder. Driven by `FitrahTubeApp`'s `network.isOnline` observer.
     func connectivityChanged(isOnline: Bool) {
-        guard isOnline, let uid = session.syncableUid else { return }
+        guard isOnline else { return }
+        // Owner 2026-09-24: an account restored from the offline record (or whose last `/me`
+        // failed) gets the server's answer the moment it can; a confirmed one is not re-asked
+        // (Android's rule). Unstructured, for `refresh`'s leader rule (the foreground hook's shape).
+        if session.needsRecheck { Task { await session.refreshIfSignedIn(maxAttempts: 1) } }
+        guard let uid = session.syncableUid else { return }
         pushDirtySoon(uid: uid)
     }
 
@@ -481,14 +491,28 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    // Task 24: sign-in binds once `/me` has landed,
                                                    // and `dropSession` unbinds -- the ONE teardown
                                                    // path, so the deletion needs no wiring of its own.
-                                                   sync: sync)
+                                                   sync: sync,
+                                                   records: accountRecords,
+                                                   protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+
+    /// The offline-launch record (`AccountRecordStore`). A fixture gets none, so no test or preview
+    /// routes on a record another one wrote; the screenshot rig's `-fitrah-fake-auth` launches get
+    /// one, so a manual offline-launch check (sign in, then relaunch with `-fitrah-fake-offline`)
+    /// has a record to read back. No automated test drives it.
+    private(set) lazy var accountRecords: AccountRecordStore? = {
+        #if DEBUG
+        if isFixture, !LaunchArguments.debug.contains("-fitrah-fake-auth") { return nil }
+        #endif
+        return AccountRecordStore(url: URL.applicationSupportDirectory.appending(path: "account-record.json"))
+    }()
 
     /// Phase 4 Task 18: ruling C13's device wipe, built ON DEMAND rather than stored. Reaching for
     /// `session` must not construct `offlineManager` — that builds a background `URLSession`, which
     /// every test and preview that only wants an account would then pay for.
     private func makeWiper() -> LocalAccountWiper {
         LocalAccountWiper(offline: offlineManager, stores: userScopedStores,
-                          modelContainer: modelContainer, searchHistory: searchHistory, defaults: userDefaults)
+                          modelContainer: modelContainer, searchHistory: searchHistory, defaults: userDefaults,
+                          records: accountRecords)
     }
 
     /// Fix round 1 / M5: a FIXTURE never burns real wall clock. Its `authorizedTransport` holds one

@@ -271,18 +271,16 @@ struct MeViewModelTests {
         #expect(apple.enabledKebabItems.count + 1 == google.enabledKebabItems.count)
     }
 
-    /// The kebab's ONE live destination, end to end: sign out drops the session, and ruling C5's
-    /// tab-root decision then renders the guest screen again.
-    @Test func signingOutDropsTheSessionAndTheTabRootFallsBackToGuest() async throws {
+    /// The kebab's ONE live destination, end to end: sign out drops the session (and `RootView`
+    /// then routes to the sign-in wall).
+    @Test func signingOutDropsTheSession() async throws {
         let session = try await makeSession(role: "user")
         let model = makeModel(session: session, stores: makeStores())
-        // Stage 8 / S2: `MeTabRoot.arm(signedIn:state:)` is what the screen actually switches on;
-        // the two-arm `showsSignedInScreen` this used to read was the decision it replaced.
-        #expect(MeTabRoot.arm(signedIn: session.user != nil, state: session.state) == .signedIn)
+        #expect(session.state.me != nil)
 
         model.signOut()
 
         #expect(session.state == .signedOut)
-        #expect(MeTabRoot.arm(signedIn: session.user != nil, state: session.state) == .guest)
+        #expect(session.user == nil)
     }
 }

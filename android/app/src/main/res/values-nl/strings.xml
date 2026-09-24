@@ -817,6 +817,50 @@
     <string name="me_awaiting_pending_label">In afwachting van beoordeling</string>
     <string name="me_tab_content">Inhoud</string>
     <string name="me_tab_pending">In afwachting (%1$d)</string>
+    <!-- ar/nl translations for keys that shipped English-only (iOS sign-in gate) -->
+    <string name="about_version_format">Versie %1$s (%2$d)</string>
+    <string name="auth_sign_in_title">Inloggen</string>
+    <string name="auth_sign_up_title">Account aanmaken</string>
+    <string name="auth_email_hint">E-mail</string>
+    <string name="auth_password_hint">Wachtwoord</string>
+    <string name="auth_sign_in_button">Inloggen</string>
+    <string name="auth_sign_up_button">Account aanmaken</string>
+    <string name="auth_forgot_password">Wachtwoord vergeten?</string>
+    <string name="auth_create_account_link">Nog geen account? Maak er een aan</string>
+    <string name="auth_have_account_link">Heb je al een account? Log in</string>
+    <string name="auth_divider_or">of</string>
+    <string name="auth_google_button">Doorgaan met Google</string>
+    <string name="auth_password_reset_sent">E-mail om je wachtwoord te herstellen is verstuurd</string>
+    <string name="auth_error_invalid_email">Dat e-mailadres lijkt niet te kloppen</string>
+    <string name="auth_error_wrong_password">E-mail of wachtwoord is onjuist</string>
+    <string name="auth_error_user_disabled">Dit account is geblokkeerd. Neem contact op met de ondersteuning.</string>
+    <string name="auth_error_email_in_use">Er bestaat al een account met dat e-mailadres</string>
+    <string name="auth_error_weak_password">Wachtwoord moet minstens 6 tekens bevatten</string>
+    <string name="auth_error_too_many_requests">Te veel pogingen — wacht even en probeer het opnieuw</string>
+    <string name="auth_error_google">Inloggen met Google is mislukt</string>
+    <string name="auth_error_password_reset_failed">Kon de herstel-e-mail niet versturen</string>
+    <string name="channels_empty_title">Nog geen kanalen</string>
+    <string name="channels_empty_subtitle">Goedgekeurde kanalen verschijnen hier</string>
+    <string name="playlists_empty_title">Nog geen afspeellijsten</string>
+    <string name="playlists_empty_subtitle">Goedgekeurde afspeellijsten verschijnen hier</string>
+    <string name="clear_filter">Filter wissen</string>
+    <string name="search_clear">Zoekopdracht wissen</string>
+    <string name="dev_settings_title">Ontwikkelaarsinstellingen</string>
+    <string name="dev_settings_done">Klaar</string>
+    <string name="category_filter_cleared">Categoriefilter gewist</string>
+    <string name="category_filter_error">Kon het categoriefilter niet toepassen</string>
+    <string name="navigation_error">Navigeren is mislukt. Probeer het opnieuw.</string>
+    <string name="player_geo_restricted">Deze video is niet beschikbaar in jouw regio.</string>
+    <string name="player_stream_expired">Stream verlopen. Bezig met vernieuwen…</string>
+    <string name="player_rate_limited">Te veel verzoeken. Wacht even.</string>
+    <string name="player_refreshing_stream">Stream-URL\'s vernieuwen…</string>
+    <string name="cd_live_stream_thumbnail">Miniatuur van livestream</string>
+    <string name="settings_icon_wifi">Pictogram voor instelling Alleen WiFi</string>
+    <string name="settings_icon_background_play">Pictogram voor instelling Achtergrond afspelen</string>
+    <plurals name="dev_settings_steps_away">
+        <item quantity="one">Je bent nog %d stap verwijderd van ontwikkelaar worden</item>
+        <item quantity="other">Je bent nog %d stappen verwijderd van ontwikkelaar worden</item>
+    </plurals>
 
 </resources>
 

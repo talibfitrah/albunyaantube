@@ -35,7 +35,7 @@ import Foundation
     }
 
     /// Shared by `remove(_:)` (the store's only mutation entry point takes a `ContentItem`) and by
-    /// `FavoritesView`/`MeGuestView` to build the `VideoRow` each row renders -- `type`/`category`/
+    /// `FavoritesView`/`MeFavoritesSection` to build the `VideoRow` each row renders -- `type`/`category`/
     /// stats are irrelevant to a favorite and left nil.
     func contentItem(for item: FavoriteVideo) -> ContentItem {
         ContentItem(id: item.videoId, type: .video, title: item.title, category: nil, description: nil,

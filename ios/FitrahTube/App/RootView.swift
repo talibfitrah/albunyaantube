@@ -64,9 +64,9 @@ struct RootView: View {
             .task { await container.session.start() }
             // EVERY arrival on the sign-in wall (owner ruling 2026-09-24) — a sign-out from Settings
             // or the Me kebab, a Firebase force sign-out, a terminal verdict, account deletion, the
-            // under-13 teardown, AND the two that leave Firebase holding a user (a refused sign-out,
-            // a failed `/me`) — ends what the last session left running. Keyed on the DESTINATION,
-            // not `user == nil`, for exactly those two (patch round 3). View-layer glue, like the
+            // under-13 teardown, a failed `/me` (which signs out), AND a refused sign-out, which
+            // leaves Firebase holding a user — ends what the last session left running. Keyed on
+            // the DESTINATION, not `user == nil`, for exactly that last one (patch round 3). View-layer glue, like the
             // foreground and connectivity hooks (CF-A-12); the work is `didRoute(to:…)`.
             .onChange(of: outcome.destination) { _, destination in
                 Self.didRoute(to: destination, router: router, container: container)
@@ -114,10 +114,11 @@ struct RootView: View {
     /// The launch decision, recomputed whenever settings or the session change. `user` is the
     /// Firebase identity (spec §13 needs `hasPasswordProvider`/`isEmailVerified`, neither of which
     /// is on the backend's account record); `status` is nil until `/me` answers. A loaded account
-    /// keeps its record through a failed refresh (`AccountSession.fetch`). With no record, only a
-    /// round positively in flight (`.loading`, which `start()` writes in the same turn it sets
-    /// `user`) holds the spinner; anything else — failed, a refused sign-out, a cancelled round —
-    /// is the wall, never a hold with nothing left to end it (patch round 3).
+    /// keeps its record through a failed refresh, and an offline launch routes on the persisted
+    /// one (`AccountSession.fetch`). With no record, only a round positively in flight
+    /// (`.loading`, which `start()` writes in the same turn it sets `user`) holds the spinner;
+    /// anything else — a refused sign-out, a cancelled round — is the wall, never a hold with
+    /// nothing left to end it (patch round 3).
     static func outcome(onboardingCompleted: Bool, session: AccountSession) -> SplashOutcome {
         let user = session.user
         return SplashRouter.outcome(onboardingCompleted: onboardingCompleted,

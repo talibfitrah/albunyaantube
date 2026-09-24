@@ -7,7 +7,7 @@ import GoogleSignIn
 ///
 /// Every member is safe to call with NO `GoogleService-Info.plist`. That file is git-ignored and
 /// USER-BLOCKED, so the absent path is the one this machine, CI and every fresh checkout take: the
-/// app comes up as a guest and nothing here traps.
+/// app comes up on the sign-in wall and nothing here traps.
 nonisolated enum FirebaseBootstrap {
     /// Whether the bundle carries a Firebase options file. `copy-firebase-plist.sh` (a `test.sh`
     /// pre-stage) is what puts one there, and it exits 0 when the source is absent.

@@ -337,8 +337,8 @@ struct DeleteAccountTests {
     }
 
     /// The other edge of the same seed: it only ever ADDS an identity. A round also starts with no
-    /// identity when nobody is signed in at all — the Retry cards in `MeTabRoot` and `SettingsView`
-    /// call `refresh()` unguarded — and Firebase answers nil there. Writing THAT over
+    /// identity when nobody is signed in at all — `refresh()` itself is unguarded
+    /// (`refreshIfSignedIn` is the guarded door) — and Firebase answers nil there. Writing THAT over
     /// `lastKnownUid` would forget the account that just left, which is review C1's defect again:
     /// its late verdict refused, the wipe silently disabled.
     ///

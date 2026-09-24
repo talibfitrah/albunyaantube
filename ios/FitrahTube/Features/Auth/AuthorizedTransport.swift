@@ -73,7 +73,12 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // and the box was still nil. `refreshRefusal(nil)` answers nil by construction (round 6 /
         // P2b), so the verdict was recorded and then unreadable: no `.deleted`, no wipe. A GUEST
         // still reads nil here, which is the leak that guard exists to stop.
-        if let uid = await currentUid() { signedFor.withLock { $0 = uid } }
+        let holder = await currentUid()
+        if let holder { signedFor.withLock { $0 = holder } }
+        // Whether ANY attempt carried a bearer. A signed-in holder whose every mint failed sent
+        // the request unsigned, and the backend's 401 then speaks about the missing header, not
+        // the account (review round, P1).
+        let minted = Mutex(false)
         // Task 33 / CF-A-45: published from a `defer`, so a THROWING retry cannot take the verdict
         // with it. `refreshRefusal` CONSUMES as it reads — the box is cleared — and a refused forced
         // mint re-sends the signed original (`BearerRetry`), which can throw on a dropped
@@ -91,6 +96,7 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
             allowed: BearerScope.allows(request.url, apiHost: apiHost),
             token: { forceRefresh in
                 if let token = await tokens.idToken(forceRefresh: forceRefresh) {
+                    minted.withLock { $0 = true }
                     signedFor.withLock { $0 = token.identity }
                     return token
                 }
@@ -127,6 +133,15 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
         // request, and only for a request that was in bearer scope to begin with; it runs AFTER
         // this line on the success path, preserving the original order (403 envelope, then refusal).
         postStatusEvent(for: request, response, signedFor: signedFor.withLock { $0 })
+        // A mint that failed on the network is a transport failure, never a verdict. One that failed
+        // because the user is invalid (`userNotFound`, `userDisabled`, `invalidUserToken`,
+        // `userTokenExpired`) has already signed them out inside the SDK
+        // (`User.signOutIfTokenIsInvalid`, firebase-ios-sdk 12.19.1); when that maps to a verdict
+        // (`refused`) the 401 is returned as the verdict it is.
+        if holder != nil, response.status == 401, !minted.withLock({ $0 }), refused.withLock({ $0 }) == nil,
+           BearerScope.allows(request.url, apiHost: apiHost) {
+            throw URLError(.userAuthenticationRequired)
+        }
         return response
     }
 

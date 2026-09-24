@@ -851,5 +851,54 @@
     <string name="me_awaiting_pending_label">قيد المراجعة</string>
     <string name="me_tab_content">المحتوى</string>
     <string name="me_tab_pending">قيد المراجعة (%1$d)</string>
+    <!-- ar/nl translations for keys that shipped English-only (iOS sign-in gate) -->
+    <string name="about_version_format">الإصدار %1$s (%2$d)</string>
+    <string name="ok">حسنًا</string>
+    <string name="auth_sign_in_title">تسجيل الدخول</string>
+    <string name="auth_sign_up_title">إنشاء حساب</string>
+    <string name="auth_email_hint">البريد الإلكتروني</string>
+    <string name="auth_password_hint">كلمة المرور</string>
+    <string name="auth_sign_in_button">تسجيل الدخول</string>
+    <string name="auth_sign_up_button">إنشاء حساب</string>
+    <string name="auth_forgot_password">هل نسيت كلمة المرور؟</string>
+    <string name="auth_create_account_link">ليس لديك حساب؟ أنشئ حسابًا</string>
+    <string name="auth_have_account_link">لديك حساب بالفعل؟ سجّل الدخول</string>
+    <string name="auth_divider_or">أو</string>
+    <string name="auth_google_button">المتابعة باستخدام Google</string>
+    <string name="auth_password_reset_sent">تم إرسال رسالة إعادة تعيين كلمة المرور</string>
+    <string name="auth_error_invalid_email">يبدو أن البريد الإلكتروني غير صحيح</string>
+    <string name="auth_error_wrong_password">البريد الإلكتروني أو كلمة المرور غير صحيحة</string>
+    <string name="auth_error_user_disabled">تم حظر هذا الحساب. تواصل مع الدعم.</string>
+    <string name="auth_error_email_in_use">يوجد حساب بالفعل بهذا البريد الإلكتروني</string>
+    <string name="auth_error_weak_password">يجب أن تتكون كلمة المرور من 6 أحرف على الأقل</string>
+    <string name="auth_error_too_many_requests">محاولات كثيرة جدًا — يرجى الانتظار ثم المحاولة مرة أخرى</string>
+    <string name="auth_error_google">تعذّر تسجيل الدخول باستخدام Google</string>
+    <string name="auth_error_password_reset_failed">تعذّر إرسال رسالة إعادة التعيين</string>
+    <string name="channels_empty_title">لا توجد قنوات بعد</string>
+    <string name="channels_empty_subtitle">ستظهر القنوات المعتمدة هنا</string>
+    <string name="playlists_empty_title">لا توجد قوائم تشغيل بعد</string>
+    <string name="playlists_empty_subtitle">ستظهر قوائم التشغيل المعتمدة هنا</string>
+    <string name="clear_filter">مسح الفلتر</string>
+    <string name="search_clear">مسح البحث</string>
+    <string name="dev_settings_title">إعدادات المطوّر</string>
+    <string name="dev_settings_done">تم</string>
+    <string name="category_filter_cleared">تم مسح فلتر الفئة</string>
+    <string name="category_filter_error">تعذّر تطبيق فلتر الفئة</string>
+    <string name="navigation_error">تعذّر التنقل. يرجى المحاولة مرة أخرى.</string>
+    <string name="player_geo_restricted">هذا الفيديو غير متاح في منطقتك.</string>
+    <string name="player_stream_expired">انتهت صلاحية البث. جارٍ التحديث…</string>
+    <string name="player_rate_limited">طلبات كثيرة جدًا. يرجى الانتظار قليلًا.</string>
+    <string name="player_refreshing_stream">جارٍ تحديث روابط البث…</string>
+    <string name="cd_live_stream_thumbnail">الصورة المصغّرة للبث المباشر</string>
+    <string name="settings_icon_wifi">أيقونة إعداد واي فاي فقط</string>
+    <string name="settings_icon_background_play">أيقونة إعداد التشغيل في الخلفية</string>
+    <plurals name="dev_settings_steps_away">
+        <item quantity="zero">بقيت %d خطوة لتصبح مطوّرًا</item>
+        <item quantity="one">بقيت خطوة واحدة لتصبح مطوّرًا</item>
+        <item quantity="two">بقيت خطوتان لتصبح مطوّرًا</item>
+        <item quantity="few">بقيت %d خطوات لتصبح مطوّرًا</item>
+        <item quantity="many">بقيت %d خطوة لتصبح مطوّرًا</item>
+        <item quantity="other">بقيت %d خطوة لتصبح مطوّرًا</item>
+    </plurals>
 
 </resources>

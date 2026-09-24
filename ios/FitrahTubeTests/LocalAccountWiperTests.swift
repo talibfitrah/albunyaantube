@@ -56,7 +56,7 @@ struct LocalAccountWiperTests {
         let wiper = LocalAccountWiper(offline: offline,
                                       stores: [favorites, playlists, subscriptions],
                                       modelContainer: container, searchHistory: searchHistory,
-                                      defaults: defaults)
+                                      defaults: defaults, records: nil)
         return Fixture(wiper: wiper, container: container, offline: offline, offlineStore: offlineStore,
                        favorites: favorites, playlists: playlists, subscriptions: subscriptions,
                        searchHistory: searchHistory, defaults: defaults, suiteName: suiteName)
@@ -308,7 +308,7 @@ struct LocalAccountWiperTests {
         try seedRows(fixture, uids: ["uid-a"])
         let wiper = LocalAccountWiper(offline: fixture.offline,
                                       stores: [fixture.favorites], modelContainer: fixture.container,
-                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults,
+                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults, records: nil,
                                       offlineIds: { _ in throw StoreFull() })
 
         let error = await wiper.wipeRows(of: "uid-a")
@@ -336,7 +336,7 @@ struct LocalAccountWiperTests {
         fixture.searchHistory.add("tafsir")
         let wiper = LocalAccountWiper(offline: fixture.offline,
                                       stores: [fixture.favorites], modelContainer: fixture.container,
-                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults,
+                                      searchHistory: fixture.searchHistory, defaults: fixture.defaults, records: nil,
                                       offlineIds: { _ in throw StoreFull() })
 
         let error = await wiper.wipe(unlessTakenOver: { false })

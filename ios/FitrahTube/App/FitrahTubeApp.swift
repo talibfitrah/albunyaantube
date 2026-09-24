@@ -100,14 +100,14 @@ struct FitrahTubeApp: App {
                     // Stage 5 / C2.1 + C4.2: NOTHING else re-reads `/me`. `AccountSession.refresh()`
                     // fires only on an auth transition, on `SignInViewModel.land()` and on the
                     // bootstrap submit — so an email change completed in the mail app never landed
-                    // on the profile, and a launch whose `/me` failed rendered a signed-in user as a
-                    // guest until relaunch. One attempt, coalesced by the session, so a scene-phase
+                    // on the profile, and a launch that routed on the offline record kept it until
+                    // relaunch. One attempt, coalesced by the session, so a scene-phase
                     // flicker costs at most one in-flight request.
                     //
                     // Unstructured on purpose: a `.task`-scoped caller that LEADS the coalescer
                     // decides the session's state for every other observer (`refresh`'s doc).
                     //
-                    // Stage 9 / P2b: `refreshIfSignedIn`, so a GUEST foreground sends nothing.
+                    // Stage 9 / P2b: `refreshIfSignedIn`, so a signed-out foreground sends nothing.
                     Task { await container.session.refreshIfSignedIn(maxAttempts: 1) }
                     // Task 24, riding this SAME arm rather than a second `onChange(of: scenePhase)`
                     // -- two observers of one value have no defined order, and the sync's guard
@@ -207,7 +207,7 @@ struct FitrahTubeApp: App {
     /// The foreground rule, whole, so the glue above is one `guard` -- the `isRemoteConfigRefreshDue`
     /// idiom, testable without a running scene.
     ///
-    /// `uid` is `AccountSession.syncableUid`, which is nil for a guest, for a `/me` still in flight
+    /// `uid` is `AccountSession.syncableUid`, which is nil when signed out, for a `/me` still in flight
     /// and for a terminal verdict being handled; the spacing half IS `isRemoteConfigRefreshDue`,
     /// because "the same >=15 min due-decision as the remote-config refresh" means the same
     /// decision, not a second copy of it. Only the timestamp differs.
@@ -333,9 +333,8 @@ struct FitrahTubeApp: App {
             router.push(.offline)
         case "profile":
             // Phase 4 Task 19: the Profile screen is reached by tapping the signed-in Me tab's
-            // kebab, which the rig cannot do, and it has no deep-link URL. No `signIn` arm beside
-            // it: that row is dropped (see `ScreenshotTests.phase4Screens`), and an arm no rig
-            // case reaches is a branch nothing proves.
+            // kebab, which the rig cannot do, and it has no deep-link URL. (There is no pushed sign-in
+            // route: sign-in is the `RootView` wall.)
             router.push(.profile)
         case "importFromYouTube":
             // Phase 4 Task 30: the import review screen is reached by tapping the signed-in Me

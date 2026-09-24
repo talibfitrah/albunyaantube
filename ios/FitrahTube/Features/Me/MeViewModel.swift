@@ -217,7 +217,7 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     func setFilter(_ chipId: String?) { rawSelection = chipId }
 
     /// The kebab's ONE live destination in this task. `AccountSession` re-scopes every per-user
-    /// store to the anon sentinel, which is what puts `MeTabRoot` back on the guest screen.
+    /// store to the anon sentinel, and `RootView` routes to the sign-in wall.
     func signOut() { session.signOut() }
 
     /// Pure, over the merged list.

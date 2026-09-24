@@ -38,10 +38,10 @@
     <string name="bootstrap_error_password_set_failed">تعذّر تعيين كلمة المرور — جرّب كلمة أخرى</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
-    <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>
+    <string name="splash_couldnt_connect">تعذّر الاتصال — يرجى تسجيل الدخول مرة أخرى.</string>
 
     <!-- Plan C T9: AgeIneligible (English placeholders — human translation pending) -->
     <string name="age_ineligible_title">Sorry — come back soon</string>
     <string name="age_ineligible_body">FitrahTube is for users 13 and older. Please come back when you\'re a bit older.</string>
-    <string name="age_ineligible_ok_button">OK</string>
+    <string name="age_ineligible_ok_button">حسنًا</string>
 </resources>

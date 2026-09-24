@@ -72,12 +72,10 @@ final class ScreenshotTests: XCTestCase {
         // `.accessibility3` on a phone, pushes the first switch out of the hierarchy — anchor on
         // Sign out, which is on screen in every column.
         Screen(key: "settings", arguments: ["-fitrah-route", "settings"], anchor: .buttonID("settings.signOut")),
-        // `about_version_format` is the literal "Version %1$@ (%2$@)" in en, ar and nl alike
-        // (untranslated by contract -- R7 fallback), so the word "Version" is a locale-independent
-        // anchor that, unlike the version number itself, survives a MARKETING_VERSION bump. It is
-        // a *button*, not a static text: `AboutView` puts `.accessibilityAddTraits(.isButton)` on
-        // that `Text` for the 7-tap developer gesture, and traits decide the XCUIElement type.
-        Screen(key: "about", arguments: ["-fitrah-route", "about"], anchor: .button("Version")),
+        // `about_version_format` is translated in ar and nl, so the anchor is the version row's
+        // identifier, not its text. It is a *button*: `AboutView` puts
+        // `.accessibilityAddTraits(.isButton)` on that `Text` for the 7-tap developer gesture.
+        Screen(key: "about", arguments: ["-fitrah-route", "about"], anchor: .buttonID("about.version")),
         // Phase 4 Task 13: the signed-in Me shell. `-fitrah-fake-auth active` selects the fixture
         // auth state at CONTAINER CONSTRUCTION (`AppContainer.sharedFake`) — `auth` is a
         // `private(set) lazy var`, so the `-fitrah-seed-*` shape, which runs in the scene's
@@ -2730,9 +2728,10 @@ final class ScreenshotTests: XCTestCase {
 
     /// The Phase 4 screens `Self.screens` cannot hold. The first two are ROOT destinations
     /// `SplashRouter` picks from the fixture `/me`'s status, so they take no `-fitrah-route` at
-    /// all; the last two are pushed routes. `-fitrah-fake-auth` is read at CONTAINER CONSTRUCTION
-    /// (`AppContainer.sharedFake`), which is why the status rides a launch argument rather than a
-    /// seed that runs in the scene's `.task`.
+    /// all; the last is a pushed route. (`settings-account` went: every fixture launch is signed
+    /// in now, so the shared `settings` row already photographs the Account section.)
+    /// `-fitrah-fake-auth` is read at CONTAINER CONSTRUCTION (`AppContainer.sharedFake`), which is
+    /// why the status rides a launch argument rather than a seed that runs in the scene's `.task`.
     ///
     /// `sign-in` is NOT here: with no `GoogleService-Info.plist` (git-ignored, USER-BLOCKED)
     /// `SignInCapabilities.current()` is all-false, so `SignInScreen` renders its F11 empty state
@@ -2749,14 +2748,6 @@ final class ScreenshotTests: XCTestCase {
         Screen(key: "account-blocked", arguments: ["-fitrah-fake-auth", "blocked"], anchor: .alert),
         Screen(key: "profile", arguments: ["-fitrah-fake-auth", "active", "-fitrah-route", "profile"],
                anchor: .buttonID("profile.save")),
-        // `SettingsView.accountSection`, which renders only for a signed-in user. Its OWN row
-        // rather than `-fitrah-fake-auth active` on the shared `settings` row: prepending the
-        // Account section pushes the first Playback toggle out of the materialised hierarchy at
-        // `.accessibility3` on a phone, and `testAccessibilityTextSizes`' `settings` capture —
-        // green today — went red on `.firstSwitch` (task-19-stage7-report.md, commit 3).
-        Screen(key: "settings-account",
-               arguments: ["-fitrah-fake-auth", "active", "-fitrah-route", "settings"],
-               anchor: .buttonID("settings.signOut")),
     ]
 
     /// Phase 4 Tasks 29-30. Its own table for `testAccountScreensPhase4`'s reason — and its own

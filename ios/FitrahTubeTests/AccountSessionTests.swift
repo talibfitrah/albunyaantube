@@ -437,7 +437,7 @@ struct AccountSessionTests {
     /// The account already on screen STAYS on screen while its own refresh runs. `fetch` used to
     /// write `.loading` unconditionally, and the foreground refresh (S5-C2.1) then drove every
     /// return to foreground through `.loaded -> .loading -> .loaded` — which the new third arm
-    /// (`MeTabRoot.arm`) rendered as "Something went wrong" with a Retry button, in the Me tab and
+    /// (the Me tab) rendered as "Something went wrong" with a Retry button, in the Me tab and
     /// in Settings' Account section, tearing `MeSignedInView` down and re-running its `.task` blocks
     /// each time. A `.failed` result still replaces the value (that is the row the arm is for) and a
     /// DIFFERENT uid still resets, because the identity `start()` just set is what is compared.
@@ -461,7 +461,7 @@ struct AccountSessionTests {
         await gate.waitUntilBlocked()
 
         #expect(session.state == loaded, "the account on screen was blanked to .loading by its own refresh")
-        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+        #expect(session.state.me != nil,
                 "the Me tab and Settings' Account section rendered an error card over a live account")
 
         await gate.release()
@@ -475,7 +475,7 @@ struct AccountSessionTests {
     /// AFTER the account it was asked for had gone was published anyway. The Firebase listener is
     /// the honest way to lose an identity mid-round — a revoked token, a sign-out on another device
     /// — and it cancels nothing, so the round runs to completion and writes `.loaded(A)` over
-    /// `.signedOut`. `MeTabRoot.arm` then rendered the signed-in Me screen for a guest.
+    /// `.signedOut`. the Me tab then rendered the signed-in Me screen for a guest.
     ///
     /// Parked at the injected sleep's rendezvous between attempt 1 and attempt 2, so the round is
     /// genuinely in flight with no clock — the transport has no park of its own.
@@ -501,8 +501,6 @@ struct AccountSessionTests {
 
         #expect(session.state == .signedOut,
                 "the /me answer for the account that had just signed out was published anyway")
-        #expect(MeTabRoot.arm(signedIn: false, state: session.state) == .guest,
-                "the signed-in Me screen rendered for a guest")
     }
 
     /// Shape two of the same defect, and the expensive one: sign out, then sign in as somebody else
@@ -541,21 +539,22 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 3, "the dropped account's round asked again after the switch")
     }
 
-    /// Sign-in wall P1-b: A is signed in with a failed `/me` (the wall), and signs in as B. `land()`
-    /// starts its round while the session still names A, `start()`'s `.signedIn(B)` arm JOINS it,
-    /// and the answer is dropped as A's-round-under-B — which left `.loading` standing with nobody
-    /// left to re-drive `/me`: the splash hold forever. The follower must ask for its own record.
+    /// Sign-in wall P1-b: A is on the wall still signed in (a refused sign-out — a failed `/me`
+    /// signs out itself now), and signs in as B. `land()` starts its round while the session still
+    /// names A, `start()`'s `.signedIn(B)` arm JOINS it, and the answer is dropped as
+    /// A's-round-under-B — which left `.loading` standing with nobody left to re-drive `/me`: the
+    /// splash hold forever. The follower must ask for its own record.
     @Test func aFollowerOfAnotherAccountsRoundFetchesItsOwnRecord() async throws {
         let auth = FakeAuthClient(state: .signedOut)
         let gate = Gate()
-        let transport = ScriptedTransport([.json(500, "{}"), .json(200, Self.meBJSON), .json(200, Self.meBJSON)],
+        let transport = ScriptedTransport([.json(200, Self.meJSON), .json(200, Self.meBJSON), .json(200, Self.meBJSON)],
                                           park: { index in if index == 2 { await gate.block() } })
         let session = makeSession(auth: auth, transport: transport)
-        let running = Task { await session.start() }
+        let running = try await signedIn(auth, session)
         defer { running.cancel() }
-        _ = try await auth.signIn(email: "a@b.test", password: "p")
-        for _ in 0..<500 where !{ if case .failed = session.state { true } else { false } }() { await Task.yield() }
-        #expect(session.user?.uid == "fake-uid")
+        auth.nextError = .unknown
+        session.signOut()
+        #expect(session.state.isFailed && session.user?.uid == "fake-uid", "the precondition: a refused sign-out")
 
         auth.user = Self.accountB
         let landing = Task { await session.refresh(maxAttempts: 1) }   // `land()`'s round, started for A
@@ -604,7 +603,7 @@ struct AccountSessionTests {
 
         #expect(session.state.me?.uid == "fake-uid",
                 "the account the sign-in had just landed was dropped by its own identity guard")
-        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+        #expect(session.state.me != nil,
                 "a just-signed-in account was parked at a spinner with no Retry")
         #expect(transport.sent.count == 1,
                 "start()'s .signedIn arm fetched a second time instead of joining the round")
@@ -638,8 +637,6 @@ struct AccountSessionTests {
 
         #expect(session.state == .signedOut,
                 "the /me answer on the wire when the account signed out was published anyway")
-        #expect(MeTabRoot.arm(signedIn: false, state: session.state) == .guest,
-                "the signed-in Me screen rendered for a guest")
     }
 
     /// NB2. A superseded round must not clear the slot its replacement is using. `dropSession()`
@@ -695,7 +692,7 @@ struct AccountSessionTests {
     /// so a request already on the wire answers 200 regardless. For a round that started with NO
     /// identity — `SignInViewModel.land()`'s shape, and the one NB1 deliberately re-opened —
     /// `startedFor == nil` made `publishable()` true, so account A's cancelled answer landed as
-    /// `.loaded(A)` under whoever is signed in now: `MeTabRoot.arm` reports `.signedIn`, Settings
+    /// `.loaded(A)` under whoever is signed in now: the Me tab reported the account, Settings
     /// says "Signed in as A", and a Profile save would `PUT` A's name under the current bearer.
     ///
     /// Cancel while PARKED inside `account.me()`, then release: the answer is delivered after the
@@ -758,7 +755,7 @@ struct AccountSessionTests {
 
         #expect(session.state.me?.uid == "uid-b",
                 "a cancelled nil-started round restored .signedOut over the account that signed in after it")
-        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn)
+        #expect(session.state.me != nil)
     }
 
     /// Cubic round 6 / P2. The auth stream's own `.signedOut` arm must free the coalescing slot,
@@ -766,9 +763,8 @@ struct AccountSessionTests {
     /// mint (`signOutIfTokenIsInvalid`), so `.signedOut` arrives through the LISTENER with account
     /// A's round still parked in the slot — and `start()`'s `.signedIn(B)` arm then reached
     /// `refresh()`, whose first statement joins whatever is in flight. B never asked for its own
-    /// record, A's answer was correctly dropped as stale, and `MeTabRoot.arm(signedIn: true,
-    /// state: .signedOut)` is `.unreachable`: the "Something went wrong" Retry card, in the Me tab
-    /// and in Settings' Account section, for an account that had just signed in.
+    /// record, A's answer was correctly dropped as stale, and the Me tab and Settings' Account
+    /// section showed the "Something went wrong" Retry card for an account that had just signed in.
     @Test func aListenerSignOutFreesTheSlotSoTheNextIdentityFetchesItsOwnRecord() async throws {
         let auth = FakeAuthClient(state: .signedOut)
         let gate = Gate()
@@ -795,7 +791,7 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 3,
                 "account B joined the previous identity's parked round instead of fetching its own record")
         #expect(session.state.me?.uid == "uid-b")
-        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn,
+        #expect(session.state.me != nil,
                 "a just-signed-in account landed on the Retry card")
 
         await gate.release()
@@ -825,13 +821,14 @@ struct AccountSessionTests {
         #expect(transport.sent.count == 2, "the foreground refresh did not reach the network")
         #expect(session.state == loaded,
                 "an offline foreground replaced the loaded account with an error banner")
-        #expect(MeTabRoot.arm(signedIn: true, state: session.state) == .signedIn)
+        #expect(session.state.me != nil)
     }
 
-    /// Patch round 2: `.network`'s rule, widened. A loaded account whose refresh fails for any
-    /// NON-terminal reason (5xx, bare 401, decode) keeps its record — Android routes once, and
-    /// `.failed` for a loaded account would throw a signed-in user out to the sign-in wall.
-    @Test(arguments: [HTTPResponse.json(500, "{}"), .json(401, "{}"), .json(200, "not json")])
+    /// Patch round 2: `.network`'s rule, widened. A loaded account whose refresh fails because the
+    /// server is unreachable, broken or busy (5xx, decode, 429, 408) keeps its record — Android routes once, and
+    /// `.failed` for a loaded account would throw a signed-in user out to the sign-in wall. A 401
+    /// or other 4xx is a refusal and does not (`OfflineLaunchTests`, the Android-review P0).
+    @Test(arguments: [HTTPResponse.json(500, "{}"), .json(200, "not json"), .json(429, "{}"), .json(408, "{}")])
     func aNonTerminalFailureOnALoadedAccountKeepsTheAccount(failure: HTTPResponse) async throws {
         let auth = FakeAuthClient(state: .signedOut)
         let transport = ScriptedTransport([.json(200, Self.meJSON), failure, failure])

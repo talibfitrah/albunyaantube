@@ -36,29 +36,51 @@ struct SignInViewModelTests {
 
     // MARK: - Patch round 3: a sign-in on top of a live account drops it first
 
-    /// The wall can be up while Firebase still holds A (a failed `/me`, a refused sign-out). Signing
-    /// in as B then swaps identity with no `.signedOut`: A's provider SDK session and every
-    /// per-account holder were never released. The sign-in drops A first.
+    /// The one wall that still holds a live A is a REFUSED sign-out. Signing in as B then swaps
+    /// identity with no `.signedOut`: A's provider SDK session and every per-account holder were
+    /// never released. The sign-in drops A first.
     @Test func aSignInOverALiveAccountDropsThatAccountFirst() async throws {
         let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
         let google = FakeOAuthProvider()
         let status = AccountStatusCenter()
         let session = AccountSession(
             auth: auth,
-            account: AccountClient(transport: ScriptedTransport([.json(500, "{}"), .json(200, Self.meJSON("active"))]),
+            account: AccountClient(transport: ScriptedTransport([.json(200, Self.meJSON("active")), .json(200, Self.meJSON("active"))]),
                                    baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: status, sleep: { _ in }, wipe: { _ in nil }, providers: [google])
         let running = Task { await session.start() }
         defer { running.cancel() }
-        for _ in 0..<500 where session.user == nil { await Task.yield() }
+        for _ in 0..<500 where session.state.me == nil { await Task.yield() }
+        auth.nextError = .unknown
+        session.signOut()
+        #expect(session.user != nil && status.pending == nil, "the precondition: a refused sign-out")
+        let signOutsBefore = google.signOutCount
         let model = SignInViewModel(auth: auth, session: session, capabilities: Self.allCapabilities)
         model.email = "other@fitrah.test"
         model.password = "hunter2"
 
         await model.submit()
 
-        #expect(google.signOutCount >= 1, "A's provider SDK session outlived the switch")
+        #expect(google.signOutCount > signOutsBefore, "A's provider SDK session outlived the switch")
         #expect(status.pending?.event == .signedOut, "per-account holders were never told A left")
+    }
+
+    /// Owner 2026-09-24: the wall always means signed out. A sign-in whose `/me` fails lands back
+    /// on the wall with the reason, and Firebase holds nobody behind it.
+    @Test func aSignInWhoseMeFailsEndsSignedOutWithTheReason() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, _, session) = make(auth: auth, responses: [.failing(URLError(.notConnectedToInternet))])
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        model.email = "student@fitrah.test"
+        model.password = "hunter2"
+
+        await model.submit()
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(await auth.currentUser() == nil, "Firebase still holds the account behind the wall")
+        #expect(session.user == nil)
+        #expect(session.state == .failed(code: nil, message: String(localized: "auth_error_network")))
     }
 
     // MARK: - Pre-network gates

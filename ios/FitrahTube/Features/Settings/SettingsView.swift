@@ -205,33 +205,11 @@ struct SettingsView: View {
     /// (`SettingsRowsTests.twelveRowsInSixSectionsNoAccountRowInTheStaticTable` is still true of it), because a
     /// static table cannot express a row that appears only for a signed-in user.
     ///
-    /// Stage 9 round 3 / (a): BOTH branches read the ONE `arm` answer computed here. The second
-    /// branch used to test `state.me != nil` on its own, so the app had two answers to "is this
-    /// user signed in" and Settings kept the whole Account section — "Signed in as …" and a Sign
-    /// Out button — for a guest holding a stale record. `MeTabRoot.arm` already asks the Firebase
-    /// identity first (Stage 9 round 2 / P2); this makes Settings ask it too instead of relying on
-    /// an invariant held by inspection in another file.
+    /// The shell mounts only with an account record (`RootView.outcome`, owner ruling 2026-09-24),
+    /// so the record is the whole question here.
     @ViewBuilder
     private var accountSection: some View {
-        let arm = MeTabRoot.arm(signedIn: container.session.user != nil,
-                                state: container.session.state)
-        if arm == .unreachable {
-            // Stage 5 / M4: a signed-in user whose `/me` has not landed keeps an Account section
-            // that says so and offers a retry, instead of the section silently disappearing and
-            // implying they are signed out.
-            Section(String(localized: "settings_account_header")) {
-                Text(String(localized: "auth_error_generic"))
-                    .font(TypeScale.subtitle)
-                    .foregroundStyle(Color.textSecondary)
-                    .accessibilityLabel(String(localized: "settings_account_header"))
-                    .accessibilityValue(String(localized: "auth_error_generic"))
-                Button(String(localized: "retry")) {
-                    Task { await container.session.refresh() }
-                }
-                .frame(minHeight: 44)
-                .accessibilityLabel(String(localized: "retry"))
-            }
-        } else if arm == .signedIn, let me = container.session.state.me {
+        if let me = container.session.state.me {
             Section(String(localized: "settings_account_header")) {
                 // Label = the role, value = who — the same split `CategoryPill` makes (gate B1-I7),
                 // so VoiceOver reads "Account, <email>" rather than one fused sentence.
@@ -244,7 +222,7 @@ struct SettingsView: View {
                     showSignOutConfirm = true
                 }
                 .frame(minHeight: 44)
-                // The screenshot rig's anchor for this section (`ScreenshotTests.phase4Screens`):
+                // The screenshot rig's anchor for this section (`ScreenshotTests.screens`' `settings` row):
                 // every label here is localized, and the one locale-independent string on screen
                 // (the email) rides an `accessibilityValue`, which no anchor can match.
                 .accessibilityIdentifier("settings.signOut")

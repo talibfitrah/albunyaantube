@@ -47,9 +47,6 @@ nonisolated enum Route: Hashable, Sendable {
     case about
     /// Phase 3 Task 6: the Saved (offline library) screen — the ONE Route case Phase 3 adds.
     case offline
-    /// Phase 4 Task 10: the sign-in screen, pushed from the guest Me tab's card. iOS never forces
-    /// it (D11 / RULING 31) — it is a destination, never a gate.
-    case signIn
     // R7-P3: `.emailVerification`, `.profileBootstrap` and `.ageIneligible` were removed — nothing
     // ever pushed them; all three screens are reached as root destinations or a full screen cover.
     /// Phase 4 Task 17: the Profile screen, pushed from the signed-in Me tab's kebab (RULING 28: a
@@ -71,23 +68,6 @@ nonisolated enum Route: Hashable, Sendable {
     /// (RULING 28: absent, never disabled). Nothing else pushes this case and there is no deep
     /// link to it.
     case importFromYouTube
-}
-
-extension Route {
-    /// Part B gate (Codex 11): the screens that exist only for a signed-in account. An ordinary
-    /// sign-out does not pop navigation stacks, and on an iPad a retained My Submissions stack on
-    /// the Me tab kept rendering the previous account's rows when its refresh failed offline.
-    /// `RootView` drops every tab whose path holds one of these the moment the session ends.
-    var requiresAccount: Bool {
-        // EXHAUSTIVE, no `default:` (Cubic round 5 P3): a future account-only case must be named
-        // here or it is a compile error — the same guarantee `MainShellView.destination(for:)`
-        // gives every case a screen, applied to what a sign-out must pop.
-        switch self {
-        case .profile, .mySubmissions, .suggestContent, .importFromYouTube: true
-        case .player, .shorts, .channel, .playlist, .search, .categories, .subcategories, .featured,
-             .favorites, .settings, .about, .offline, .signIn: false
-        }
-    }
 }
 
 extension Route {

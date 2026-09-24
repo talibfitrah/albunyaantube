@@ -48,23 +48,6 @@ struct SyncTriggerTests {
         }
     }
 
-    /// A `Gate` that can be entered only ONCE. The rendezvous holds a single blocker, so a retry
-    /// ladder that parks on it twice would strand the first continuation and hang the suite rather
-    /// than fail it.
-    final class OneShotGate: Sendable {
-        let gate = Gate()
-        private let used = Mutex(false)
-
-        func parkOnce() async {
-            let first = used.withLock { flag -> Bool in
-                if flag { return false }
-                flag = true
-                return true
-            }
-            if first { await gate.block() }
-        }
-    }
-
     /// Bounded `Task.yield()` loops, never a sleep — this suite's whole point is that no trigger
     /// needs a clock. 500 is `AccountSessionTests`' own bound.
     private func settle(until condition: @escaping () async -> Bool) async {

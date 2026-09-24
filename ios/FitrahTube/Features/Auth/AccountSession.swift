@@ -64,6 +64,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     case loaded(AccountMe)
     /// Callers write `session.state.me?.isModerator` — there is no `.loaded?` shorthand in Swift.
     var me: AccountMe? { if case .loaded(let me) = self { me } else { nil } }
+    var isFailed: Bool { if case .failed = self { true } else { false } }
 }
 
 /// The ONE holder of account state, and the only thing that re-scopes the local stores. Everything
@@ -93,6 +94,16 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// Phase 4 Task 24: the ONE consumer of "which account is current". nil in the suites with no
     /// sync to drive -- the honest default, like `providers` above.
     private let sync: (any SyncTriggering)?
+    /// The last `/me` record, for an offline launch (owner 2026-09-24). nil in the suites that
+    /// never launch offline, the honest default like `sync` above.
+    private let records: AccountRecordStore?
+    /// `UIApplication.isProtectedDataAvailable`, injected. Before the first unlock (a background
+    /// relaunch for the download session) Firebase cannot read its Keychain and reports
+    /// `.signedOut` for a session that survives, so that report must not delete the record.
+    private let protectedDataAvailable: @MainActor @Sendable () -> Bool
+    /// The account on screen is the offline record, or its last `/me` failed without a verdict:
+    /// the one case a reconnect re-asks `/me` for (`AppContainer.connectivityChanged`, as Android).
+    private(set) var needsRecheck = false
     /// The uid the manager is currently bound to. `refreshIfSignedIn` runs on every foreground, so
     /// binding on each `/me` would be a merge + pull + push per foreground and the foreground
     /// trigger's own >=15 min spacing would mean nothing. A bind belongs to the IDENTITY, not to
@@ -104,7 +115,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// `hasPasswordProvider`/`isEmailVerified` (spec §13), and neither is on the backend's account
     /// record. Set from the auth stream, so it is populated before `/me` has answered.
     private(set) var user: AuthUser?
-    /// The uid anything the user does RIGHT NOW belongs to, or nil for a guest: `user` first, else
+    /// The uid anything the user does RIGHT NOW belongs to, or nil when signed out: `user` first, else
     /// the loaded record. The second source is the `land()` window — `/me` has landed but `start()`
     /// has not observed the sign-in yet, so `user` is still nil (`refreshIfSignedIn`'s doc).
     /// `DeleteAccountViewModel.delete()` reads the same pair; `SaveOfflineSheet` stamps a
@@ -121,7 +132,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// blocked" — the wrong reason for a terminal state, on the one path where the reason is the
     /// whole point — with the Firebase delete never run. So the drop happens WITH the verdict, and
     /// this flag is what keeps the message on screen across it: `RootView` presents the screen over
-    /// whatever the outcome resolves to (the guest shell, by then), rather than routing to a
+    /// whatever the outcome resolves to (the sign-in wall, by then), rather than routing to a
     /// destination the very same drop tears down. Cleared by the screen's own OK.
     private(set) var isAgeIneligible = false
 
@@ -131,7 +142,9 @@ nonisolated enum AccountState: Sendable, Equatable {
          wipeRows: @escaping @MainActor @Sendable (String) async -> Error? = { _ in CancellationError() },
          marker: any DeletionMarking = InMemoryDeletionMarker(),
          providers: [any OAuthSignInProvider] = [],
-         sync: (any SyncTriggering)? = nil) {
+         sync: (any SyncTriggering)? = nil,
+         records: AccountRecordStore? = nil,
+         protectedDataAvailable: @escaping @MainActor @Sendable () -> Bool = { true }) {
         self.auth = auth
         self.account = account
         self.stores = stores
@@ -142,12 +155,14 @@ nonisolated enum AccountState: Sendable, Equatable {
         self.marker = marker
         self.providers = providers
         self.sync = sync
+        self.records = records
+        self.protectedDataAvailable = protectedDataAvailable
     }
 
     /// The uid ANY sync trigger may run for, or nil -- the one guard the foreground and
     /// connectivity sites both consult (Task 24).
     ///
-    /// Three nil arms, each for its own reason. A GUEST has no account to sync with. A `/me` still
+    /// Three nil arms, each for its own reason. A signed-out session has no account to sync with. A `/me` still
     /// in flight has no account uid yet, and the trigger is skipped outright rather than waited on:
     /// Android suspended on the state flow instead and accumulated one waiter per foreground
     /// (`AlBunyaanApplication.kt:167-185`), and the wait buys nothing here because the sign-in path
@@ -176,7 +191,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // (`FirebaseAuthClient`'s trace of `signOutIfTokenIsInvalid`), so `.signedOut`
                 // arrives HERE with the previous identity's round still in the slot — and
                 // `.signedIn(B)` below then joined it instead of asking for B's own record. B
-                // never fetched, A's answer was dropped as stale, and `MeTabRoot.arm` rendered
+                // never fetched, A's answer was dropped as stale, and the Me tab rendered
                 // `.unreachable` — the "Something went wrong" Retry card — for a signed-in B.
                 //
                 // Guarded on `user`, because this arm also delivers the stream's FIRST element,
@@ -188,10 +203,16 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // sign-out and the sync unbind included. This arm used to cancel the round only, so
                 // a Firebase-initiated sign-out left the Google SDK session alive for the next
                 // account and an armed push retry free to drain A's rows under B's bearer.
-                if user != nil { tearDown() }
+                let dropped = user != nil
+                if dropped { tearDown() }
+                // Nobody observed and no protected data: Firebase could not read its Keychain
+                // (a background relaunch before first unlock), which is not a sign-out.
+                if dropped || protectedDataAvailable() { records?.clear() }
                 user = nil
                 scope(to: "")
-                state = .signedOut
+                // A failed `/me` with no record already signed out (`fetch`) and left its reason
+                // for the wall's banner; this `.signedOut` is that drop's echo.
+                if dropped || !state.isFailed { state = .signedOut }
             case .signedIn(let signedIn):
                 user = signedIn
                 // Patch round 3: `.loading` in the SAME turn `user` is set, so `RootView` never
@@ -359,7 +380,7 @@ nonisolated enum AccountState: Sendable, Equatable {
 
     /// The foreground hook's guard (`FitrahTubeApp`'s `scenePhase` arm) and nothing else.
     ///
-    /// Stage 9 / P2b: a guest has no `/me` to refresh. `AccountClient.me()` has no token guard, so
+    /// Stage 9 / P2b: a signed-out session has no `/me` to refresh. `AccountClient.me()` has no token guard, so
     /// `BearerRetry` sent it UNSIGNED, took the 401, found `token(true)` nil and re-sent it — two
     /// `GET /api/account/me` on every return to the foreground for a signed-out user — and with
     /// `maxAttempts: 1` the 401 arm cannot `continue`, so the session ran
@@ -384,7 +405,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         let previousState = state
         // Stage 9 round 2 / P1: the identity this round was STARTED for. Every `state` write below
         // is guarded on it, because a `/me` answer outlives the account it was asked for: a
-        // sign-out mid-refresh was overwritten by the late `.loaded(A)` (and `MeTabRoot.arm` then
+        // sign-out mid-refresh was overwritten by the late `.loaded(A)` (and the Me tab then
         // rendered the signed-in Me screen for a guest), and a sign-out-then-sign-in-as-B inside
         // the same window left `user == B` with A's record on screen — Settings said "Signed in as
         // A" and a Profile save prefilled from A's record `PUT` A's name under B's bearer. A late
@@ -395,7 +416,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // observed yet — the whole reason it exists (`refreshIfSignedIn`'s doc above) — so
         // `startedFor` is nil there and the strict `user?.uid == startedFor` dropped the answer to
         // the app's primary sign-in path: `state` stayed at the `.loading` written below with
-        // nothing left to re-drive it (`MeTabRoot`'s `.loading` arm is a spinner with no Retry),
+        // nothing left to re-drive it (the Me tab's spinner had no Retry),
         // and `RootView` read `status == nil` and routed a PENDING_PROFILE account to the shell.
         // The request was signed with whatever bearer Firebase held, which is the identity that is
         // arriving — nil is "nobody yet", never "must still be nobody".
@@ -405,7 +426,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // run to completion), so `dropSession()`'s `cancel()` does NOT stop a request already on
         // the wire from answering 200. For a nil-started round — `land()`'s shape, which the line
         // above deliberately admits — the identity test alone then published account A's answer
-        // under whoever signed in next: `MeTabRoot.arm` reported `.signedIn`, Settings said "Signed
+        // under whoever signed in next: the Me tab reported `.signedIn`, Settings said "Signed
         // in as A", and a Profile save would `PUT` A's name under B's bearer.
         func publishable() -> Bool { !Task.isCancelled && matchesIdentity() }
         // …and it leaves `state` exactly as it found it, which is the other half. Stage 3 / M6's
@@ -437,7 +458,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // Stage 7 fix 2 / I1(a): the account ALREADY on screen stays on screen while its own
         // refresh runs. This write used to be unconditional, and the foreground refresh (Stage 5 /
         // C2.1) then drove every return to foreground through `.loaded -> .loading -> .loaded` —
-        // which `MeTabRoot.arm`'s third arm rendered as "Something went wrong" with a Retry, in the
+        // which the Me tab rendered as "Something went wrong" with a Retry, in the
         // Me tab and in Settings' Account section, tearing `MeSignedInView` down and re-running its
         // `.task` blocks each time. A `.failed` result still replaces the value below; a DIFFERENT
         // identity still clears it, because the uid `start()` has already set is what is compared —
@@ -447,7 +468,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         // CF-A-44, the `land()` window: a nil-started round is running for an account `start()` has
         // not observed, so `user` and `lastKnownUid` are both nil and `handle` refused that
         // account's own verdict. Firebase is the only live source of who this round is for. It only
-        // ever ADDS: a nil answer (a guest's Retry) must not forget the account that just left, and
+        // ever ADDS: a nil answer (a signed-out refresh) must not forget the account that just left, and
         // once `start()` has observed anybody (`user`, read AFTER the await) its write is the truth.
         // CF-A-51: the seed no longer writes the DURABLE record; `seeded` carries the identity to
         // the one writer below, for the round `start()` has not observed when `/me` lands.
@@ -461,6 +482,7 @@ nonisolated enum AccountState: Sendable, Equatable {
                 let me = try await account.me()
                 guard publishable() else { return }
                 state = .loaded(me)
+                needsRecheck = false
                 // THE ONE WRITER of the durable holder (CF-A-51): a `/me` that succeeded is the
                 // proof that this account holds the device. Written at sign-in, a blocked account,
                 // a failed `/me`, or one whose `/me` answered `.deletedAccount`/`.blocked` — the
@@ -474,7 +496,10 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // protects it. `user` is this round's identity (`publishable()` above); `seeded`
                 // is Firebase's answer for the nil-started `land()` round `start()` has not
                 // observed yet.
-                if let holder = user?.uid ?? seeded { marker.lastSignedInUid = holder }
+                if let holder = user?.uid ?? seeded {
+                    marker.lastSignedInUid = holder
+                    records?.save(me, uid: holder)
+                }
                 bindSyncIfNeeded(to: me.uid)
                 return
             } catch {
@@ -518,31 +543,47 @@ nonisolated enum AccountState: Sendable, Equatable {
                 // Stage 9 round 2 / P2: a cached account beats an offline banner. The foreground
                 // hook runs at `maxAttempts: 1`, so the retry arm above cannot fire (`1 < 1`) and
                 // ONE transient failure on a return to the app replaced the loaded account with
-                // "No internet connection" — a Retry card in the Me tab and in Settings' Account
-                // section, and the Me-tab route to Favorites/Saved gone exactly when the device is
-                // offline. With nothing loaded for this identity it still fails, as before.
+                // "No internet connection". `startedFor != nil` keeps a nil-started round (NB1's
+                // shape, where `matchesIdentity()` guarantees nothing) from adopting a record.
                 //
-                // R9-P3 #13: `state.me?.uid == startedFor` was a restatement — `publishable()`
-                // above has already established `user?.uid == startedFor`, and the `.loading` write
-                // below it clears `state.me` unless it already matched `user`. So "a record is
-                // loaded" IS "a record for this identity is loaded" by the time this case runs.
-                // `startedFor != nil` stays: it is what keeps a nil-started round (NB1's shape,
-                // where `matchesIdentity()` short-circuits and guarantees nothing) failing.
+                // Owner 2026-09-24: with nothing on screen (a launch), the record persisted by this
+                // account's last successful `/me` stands in, so an offline launch routes on the last
+                // known status.
                 //
-                // Sign-in wall patch round 2: EVERY non-terminal failure, not just `.network` — a
-                // 5xx, a bare 401 past its budget, an undecodable body. `RootView` routes on this
-                // record, and Android routes once: `.failed` over a loaded account threw a signed-in
-                // user out to the wall mid-video. Terminal verdicts are the `.blocked`/`.deleted`
-                // arms above (and the transport's 403 envelope); a REFUSED sign-out is
-                // `dropSession`'s own `.failed` write, which this does not touch.
-                case _ where startedFor != nil && state.me != nil: return
-                case .network: state = .failed(code: nil, message: String(localized: "auth_error_network"))
-                case .unknown(let status): state = .failed(code: status, message: String(localized: "auth_error_generic"))
-                default: state = .failed(code: nil, message: String(localized: "auth_error_generic"))
+                // Either record stands unless the server REFUSED this session (`keepsRecord`): a
+                // 401 on a SIGNED request. A user blocked or soft-deleted while offline has revoked
+                // refresh tokens, and once the ID token expires the backend answers a plain 401,
+                // never the 403 envelope — so it falls through to the drop below, which clears the
+                // persisted record too. An UNSIGNED 401 never gets here: `AuthorizedTransport`
+                // throws it as a transport failure (a mint that failed on the network), and a
+                // Firebase user that is actually invalid is signed out by the SDK inside the mint.
+                default:
+                    if let startedFor, Self.keepsRecord(after: error),
+                       let known = state.me ?? records?.load(uid: startedFor) {
+                        if state.me == nil { state = .loaded(known) }
+                        needsRecheck = true
+                        return
+                    }
+                    let failure: AccountState = switch error {
+                    case .network: .failed(code: nil, message: String(localized: "auth_error_network"))
+                    case .unknown(let status): .failed(code: status, message: String(localized: "auth_error_generic"))
+                    default: .failed(code: nil, message: String(localized: "auth_error_generic"))
+                    }
+                    // The wall always means signed out (owner 2026-09-24; Android `SplashFragment`
+                    // D12): a session Firebase still holds with no record to route on is dropped,
+                    // keeping the reason for the wall's banner.
+                    if user != nil || seeded != nil { dropSession(leaving: failure) } else { state = failure }
                 }
                 return
             }
         }
+    }
+
+    /// Only a 401 is a verdict on this session (the 403 lifecycle envelope has its own arms). A
+    /// bare 403 (a proxy or WAF), 404, 408, 429, other 4xx, 5xx, a decode failure or no network
+    /// all leave the last known record standing.
+    private static func keepsRecord(after error: AccountError) -> Bool {
+        if case .unknown(status: 401) = error { false } else { true }
     }
 
     /// Task 11: the identity `AuthClient.reload()` just answered. Firebase's auth-state listener
@@ -567,6 +608,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     func apply(_ updated: AccountMe) {
         guard state.me?.uid == updated.uid else { return }
         state = .loaded(updated)
+        if let uid = user?.uid { records?.save(updated, uid: uid) }
     }
 
     /// Sign-out ONLY: the local library is deliberately kept (`AccountRepositoryImpl.kt:44-49`).
@@ -581,11 +623,12 @@ nonisolated enum AccountState: Sendable, Equatable {
     }
 
     /// The drop itself, without the announcement. `false` when there was no session to drop.
+    /// `end` is the state it leaves: `.signedOut`, or the failure a dropped launch keeps for the wall.
     /// Split out so the deletion path can announce `.deleted` UNCONDITIONALLY: Firebase's own
     /// `delete()` fires the auth listener, which may have set `.signedOut` here first, and a
     /// terminal alert that depends on which of the two got there first is a coin toss.
     @discardableResult
-    private func dropSession() -> Bool {
+    private func dropSession(leaving end: AccountState = .signedOut) -> Bool {
         // ABOVE the early return, all of it (Stage 9 round 2 / P1; Stage 9 / P2a; Task 24): the
         // round in flight belongs to the identity being dropped whatever `state` says, the SDKs
         // must forget on every path that reaches `.signedOut` first, and a queued push retry must
@@ -593,6 +636,9 @@ nonisolated enum AccountState: Sendable, Equatable {
         // costs one extra no-op call and never a second spelling.
         tearDown()
         guard state != .signedOut else { return false }
+        // Before Firebase, so a REFUSED sign-out (the under-13 teardown's included) still leaves
+        // no PII behind; the live session only loses its offline fallback.
+        records?.clear()
         do {
             try auth.signOut()
         } catch {
@@ -607,7 +653,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
         user = nil
         scope(to: "")
-        state = .signedOut
+        state = end
         return true
     }
 
@@ -690,7 +736,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// coin toss.
     func terminateAgeIneligible() async {
         // BEFORE the awaits: the screen has to be up while the delete runs, or the drop below
-        // renders a bare guest shell for as long as Firebase takes to answer.
+        // renders the bare sign-in wall for as long as Firebase takes to answer.
         isAgeIneligible = true
         // Round 2 / item 5: captured BEFORE the awaits — the delete clears `user`. Round 3 / item 3:
         // `?? lastKnownUid`, because Firebase can force-sign the child out, and `start()` can drain

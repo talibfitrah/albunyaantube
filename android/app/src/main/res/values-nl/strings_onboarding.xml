@@ -38,7 +38,7 @@
     <string name="bootstrap_error_password_set_failed">Kon je wachtwoord niet instellen — probeer een ander wachtwoord</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
-    <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>
+    <string name="splash_couldnt_connect">Kon geen verbinding maken — log opnieuw in.</string>
 
     <!-- Plan C T9: AgeIneligible (English placeholders — human translation pending) -->
     <string name="age_ineligible_title">Sorry — come back soon</string>

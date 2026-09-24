@@ -30,11 +30,12 @@ struct SignInScreen: View {
                                             capabilities: container.capabilities)
             }
         }
-        // Signed in but `/me` failed routes back here (Android toasts `splash_couldnt_connect`
-        // for the same row); without this the form just reappears with no reason given. Follows
-        // the session, not `.task`, so a failure while this screen is already up still says so.
+        // A failed `/me` signs out and routes back here with its reason kept on the state
+        // (Android toasts `splash_couldnt_connect` for the same row), as does a refused sign-out;
+        // without this the form just reappears with no reason given. Follows the session, not
+        // `.task`, so a failure while this screen is already up still says so.
         .onChange(of: container.session.state, initial: true) { _, state in
-            guard container.session.user != nil, case .failed(_, let message) = state else { return }
+            guard case .failed(_, let message) = state else { return }
             banner = BannerMessage(text: message)
         }
         // Fix round 1 / I1: driven off `errorPresentation`, NOT `state.error`. Neither pre-network

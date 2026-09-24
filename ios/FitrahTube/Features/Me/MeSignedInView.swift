@@ -1,12 +1,11 @@
 import InnerTubeKit
 import SwiftUI
 
-/// The favorites block both Me screens render. Extracted from `MeGuestView.favoritesSection`
-/// rather than copied — the wave-2 W9 lesson (two ~60-line copies of one section).
+/// The Me screen's favorites block.
 ///
-/// `me_favorites` is byte-identical to `favorites_title` in all three locales, so the guest screen
-/// keeps exactly the copy it had; `SectionHeader`'s built-in `see_all` is likewise byte-identical
-/// to `me_see_all`, which is why no fourth spelling of either is authored here.
+/// `me_favorites` is byte-identical to `favorites_title` in all three locales; `SectionHeader`'s
+/// built-in `see_all` is likewise byte-identical to `me_see_all`, which is why no fourth spelling
+/// of either is authored here.
 struct MeFavoritesSection: View {
     let maxRows: Int
     let onSeeAll: () -> Void
@@ -89,9 +88,7 @@ struct MeSignedInView: View {
                         // Fix round 1 / M4: TWO readers of the one favorites store, deliberately.
                         // `model.favoriteTiles` decides the whole-screen empty state (it is the
                         // only place that has to know about chips as well), while the section
-                        // reads the store itself and applies the same cap through `maxRows` — the
-                        // component is shared with the guest screen, which has no `MeViewModel` to
-                        // take rows from. One store, one order, so the two can never disagree; the
+                        // reads the store itself and applies the same cap through `maxRows`. One store, one order, so the two can never disagree; the
                         // day the section needs to render something the view model computes, it
                         // takes the rows instead of the cap.
                         if !(model.chips.isEmpty && model.favoriteTiles.isEmpty) {

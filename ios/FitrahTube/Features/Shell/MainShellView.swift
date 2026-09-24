@@ -198,8 +198,6 @@ struct MainShellView: View {
             AboutView()
         case .offline:
             SavedScreen()
-        case .signIn:
-            SignInScreen()
         case .profile:
             ProfileScreen()
         case .mySubmissions:
@@ -211,15 +209,14 @@ struct MainShellView: View {
         }
     }
 
-    // Tab roots: task-12 replaced the Me placeholder with the guest Me tab (spec D11); Phase 4
-    // Task 13 puts `MeTabRoot` there instead — ruling C5's seam, which picks the guest or the
-    // signed-in screen from `AccountSession.state`.
+    // Tab roots. The shell mounts only with an account record (`RootView.outcome`, owner ruling
+    // 2026-09-24), so the Me tab is always the signed-in screen.
     @ViewBuilder
     private func rootView(for tab: Tab) -> some View {
         switch tab {
         case .home: HomeView()
         case .channels: ContentListView(type: .channels)
-        case .me: MeTabRoot()
+        case .me: MeSignedInView()
         case .playlists: ContentListView(type: .playlists)
         case .videos: ContentListView(type: .videos)
         }

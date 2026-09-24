@@ -63,6 +63,8 @@ nonisolated final class FakeAuthClient: AuthClient {
         /// nobody signed in at all.
         var expiredTokenRefusal: AuthErrorCode?
         var recordedRefusal: (uid: String, code: AuthErrorCode)?
+        /// Every mint fails as Firebase does offline: nil, nothing recorded, nobody signed out.
+        var mintFailsOnNetwork = false
     }
 
     /// `Mutex` rather than `@unchecked Sendable` + bare vars: `AuthClient` is `Sendable` (it refines
@@ -105,6 +107,12 @@ nonisolated final class FakeAuthClient: AuthClient {
         set { storage.withLock { $0.expiredTokenRefusal = newValue } }
     }
 
+    /// A token that needs a refresh on a network that cannot reach Google.
+    var mintFailsOnNetwork: Bool {
+        get { storage.withLock { $0.mintFailsOnNetwork } }
+        set { storage.withLock { $0.mintFailsOnNetwork = newValue } }
+    }
+
     /// The per-call failure leg: set it, and the next operation throws it and clears it.
     var nextError: AuthErrorCode? {
         get { storage.withLock { $0.nextError } }
@@ -134,6 +142,7 @@ nonisolated final class FakeAuthClient: AuthClient {
         // call cannot tell a verdict a concurrent mint just recorded from a stale one; the uid on
         // the record is what stops a later, session-less 401 reading it as its own.
         guard let user = signedInUser() else { return nil }
+        if storage.withLock({ $0.mintFailsOnNetwork }) { return nil }
         // R9-P2: the expired-cache leg, BEFORE the forced/unforced split — that is the point of it.
         // Firebase refreshes internally on an unforced mint once the cached token has expired, and
         // a terminal refusal there records the verdict and force-signs the user out inside the same

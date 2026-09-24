@@ -3,7 +3,7 @@ import Foundation
 import InnerTubeKit
 
 /// Client-side mirror of the backend's `UserStatus`; the wire form is `AccountMeResponse.status`.
-nonisolated enum AccountStatus: String, Sendable, CaseIterable {
+nonisolated enum AccountStatus: String, Sendable, CaseIterable, Codable {
     case active = "active", pendingProfile = "pending_profile", blocked = "blocked", deleted = "deleted"
     /// A `status` this build does not recognise, or none at all. Its raw value can never come off
     /// the wire, so `fromWire` is the only producer.
@@ -28,7 +28,7 @@ nonisolated enum AccountStatus: String, Sendable, CaseIterable {
 
 /// The caller's account, reduced to the fields the app renders and decides on. The backend also
 /// sends `profileCompletedAt`; nothing reads it, so nothing decodes it (ruling F1).
-nonisolated struct AccountMe: Sendable, Equatable {
+nonisolated struct AccountMe: Sendable, Equatable, Codable {
     var uid: String
     var email: String?
     var displayName: String?

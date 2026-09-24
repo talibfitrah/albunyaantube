@@ -135,6 +135,8 @@ struct AboutView: View {
                 .foregroundStyle(Color.textSecondary)
                 .onTapGesture { handleVersionTap() }
                 .accessibilityAddTraits(.isButton)
+                // The screenshot rig's locale-independent anchor (`ScreenshotTests.screens`).
+                .accessibilityIdentifier("about.version")
             Text(String(localized: "splash_tagline"))
                 .font(.subheadline)
                 .foregroundStyle(Color.textSecondary)

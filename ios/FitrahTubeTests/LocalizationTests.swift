@@ -40,13 +40,16 @@ struct LocalizationTests {
         }
     }
 
-    /// The specific key the Task 13 review caught: English-only on Android, so both locales must
-    /// now carry the English value rather than nothing.
-    @Test func englishOnlyKeyCarriesEnglishInEveryLocale() throws {
+    /// The specific key the Task 13 review caught (then English-only on Android, now translated
+    /// there too): both locales carry their OWN value — never the raw key, never the English
+    /// fallback — and the format still substitutes both arguments.
+    @Test func theVersionFormatIsTranslatedAndSubstitutesInEveryLocale() throws {
         for locale in ["ar", "nl"] {
             let format = try Self.lproj(locale).localizedString(forKey: "about_version_format", value: nil, table: nil)
-            #expect(format == "Version %1$@ (%2$@)")
-            #expect(String(format: format, arguments: ["1.0.0", "7"]) == "Version 1.0.0 (7)")
+            #expect(format != "about_version_format", "\(locale) renders the raw key")
+            #expect(format != "Version %1$@ (%2$@)", "\(locale) fell back to English")
+            let rendered = String(format: format, arguments: ["1.0.0", "7"])
+            #expect(rendered.contains("1.0.0") && rendered.contains("7"), "\(locale): \(rendered)")
         }
     }
 

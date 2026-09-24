@@ -37,9 +37,7 @@ nonisolated enum ReselectAction: Equatable {
     /// tab's own root view reacts (`.onChange(of:)` needs a value that actually changes, which a
     /// bare `Tab` wouldn't on a second consecutive reselect of a tab already at rest).
     // Consumed by every scrollable tab root: `HomeView`, `ContentListView`
-    // (channels/playlists/videos) and `MeGuestView` (gate B1-minor-1 -- the guest card sits in a
-    // `ScrollView` above up to five favourite rows, so it is not the static card this comment used
-    // to claim it was).
+    // (channels/playlists/videos) and `MeSignedInView`.
     var scrollToTopSignal: ScrollToTopSignal?
     /// Task 27 fix round / M7: bumped when a submission is created from a screen that is NOT My
     /// Submissions. `MySubmissionsScreen` re-reads on a change, so the row is there when the user
@@ -79,13 +77,6 @@ nonisolated enum ReselectAction: Equatable {
 
     func popToRoot(_ tab: Tab) {
         paths[tab] = []
-    }
-
-    /// Part B gate (Codex 11): every tab whose path holds an account-only screen goes back to its
-    /// root — the whole tab, not a splice, because everything ABOVE such a screen was reached from
-    /// it. Tabs with no account screen keep their stacks: a guest browsing a channel loses nothing.
-    func dropAccountRoutes() {
-        for (tab, path) in paths where path.contains(where: \.requiresAccount) { paths[tab] = [] }
     }
 
     func reselect(_ tab: Tab) -> ReselectAction {

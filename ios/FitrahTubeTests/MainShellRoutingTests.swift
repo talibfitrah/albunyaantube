@@ -28,12 +28,6 @@ struct MainShellRoutingTests {
         #expect(leaf(for: .offline) == "SavedScreen")
     }
 
-    /// Phase 4 Task 10: the ONE new `Route` case this task adds — it lands WITH its screen, which
-    /// is what this arm pins.
-    @Test func theSignInRouteRendersTheRealScreen() {
-        #expect(leaf(for: .signIn) == "SignInScreen")
-    }
-
     // The `.emailVerification` / `.profileBootstrap` / `.ageIneligible` rows went with their
     // `Route` cases (R7-P3 bloat): nothing pushed any of the three, and all three screens are
     // reached from `RootView` instead — the first two as `SplashDestination`s

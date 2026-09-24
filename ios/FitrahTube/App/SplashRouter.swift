@@ -30,8 +30,8 @@ nonisolated enum SplashRouter {
     ///   BLOCKED / DELETED                          -> signIn + terminal alert (which signs out)
     ///   password provider AND !emailVerified       -> emailVerification   (§13, ahead of status)
     ///   status == nil, `/me` in flight             -> awaitingAccount (a spinner)
-    ///   status == nil, nothing in flight           -> signIn (no sign-out; the foreground refresh
-    ///                                                 or a fresh sign-in recovers)
+    ///   status == nil, nothing in flight           -> signIn (a failed `/me` has already signed
+    ///                                                 out; a refused sign-out is the exception)
     ///   unknown wire value                         -> main (Stage 3 / I5; Android maps it to BLOCKED)
     ///   PENDING_PROFILE                            -> profileBootstrap
     ///   ACTIVE                                     -> main

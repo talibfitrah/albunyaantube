@@ -26,6 +26,8 @@ import SwiftData
     private let modelContainer: ModelContainer
     private let searchHistory: any SearchHistoryStore
     private let defaults: UserDefaults
+    /// The offline-launch record (`AccountRecordStore`): the account's PII, so no wipe leaves it.
+    private let records: AccountRecordStore?
     /// The ids of the `OfflineItem` rows a wipe must tear down: one account's for `wipeRows(of:)`
     /// (CF-A-50), or ALL of them (`nil`) for the device-wide `wipe()`. A parameter only so a test
     /// can make it THROW: `ModelContext.fetch` is not injectable and the in-memory container never
@@ -36,12 +38,14 @@ import SwiftData
 
     init(offline: any OfflineSaving, stores: [any UserScoped],
          modelContainer: ModelContainer, searchHistory: any SearchHistoryStore, defaults: UserDefaults,
+         records: AccountRecordStore?,
          offlineIds: ((String?) throws -> [String])? = nil) {
         self.offline = offline
         self.stores = stores
         self.modelContainer = modelContainer
         self.searchHistory = searchHistory
         self.defaults = defaults
+        self.records = records
         self.offlineIds = offlineIds ?? { uid in
             let all = FetchDescriptor<OfflineItem>()
             let mine = uid.map { uid in FetchDescriptor<OfflineItem>(predicate: #Predicate { $0.userId == uid }) }
@@ -141,6 +145,9 @@ import SwiftData
             // (`UserScoped`), and it is the correct end state anyway: this device now has no account.
             for store in stores { store.currentUserId = "" }
         }
+        // The departing account's PII, taken over or not. On a takeover it may be the newcomer's
+        // instead, which costs them only an offline record their next `/me` rewrites.
+        records?.clear()
 
         // 4. CF-G-6.
         searchHistory.clear()
@@ -209,6 +216,7 @@ import SwiftData
         // The one `UserDefaults` key that NAMES this account (step 4b's third prefix, for this uid
         // only — the sweep itself is device-wide). Independent of SwiftData, so it goes first.
         defaults.removeObject(forKey: EmailVerificationViewModel.lastSentKey(uid: uid))
+        records?.clear(uid: uid)
         // Task 41 review (MEDIUM): a fetch that throws is REPORTED, never swallowed — swallowed,
         // the ids read as none, the rows below went, nil was returned and the marker redeemed,
         // leaving this account's files on disk with nothing left to retry them. Nothing is

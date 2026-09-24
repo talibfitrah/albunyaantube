@@ -269,8 +269,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Version %1$@ (%2$@)"
+            "state": "translated",
+            "value": "الإصدار %1$@ (%2$@)"
           }
         },
         "en": {
@@ -281,8 +281,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Version %1$@ (%2$@)"
+            "state": "translated",
+            "value": "Versie %1$@ (%2$@)"
           }
         }
       }
@@ -445,8 +445,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "OK"
+            "state": "translated",
+            "value": "حسنًا"
           }
         },
         "en": {
@@ -600,8 +600,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Don't have an account? Create one"
+            "state": "translated",
+            "value": "ليس لديك حساب؟ أنشئ حسابًا"
           }
         },
         "en": {
@@ -612,8 +612,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Don't have an account? Create one"
+            "state": "translated",
+            "value": "Nog geen account? Maak er een aan"
           }
         }
       }
@@ -622,8 +622,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "or"
+            "state": "translated",
+            "value": "أو"
           }
         },
         "en": {
@@ -634,8 +634,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "or"
+            "state": "translated",
+            "value": "of"
           }
         }
       }
@@ -644,8 +644,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Email"
+            "state": "translated",
+            "value": "البريد الإلكتروني"
           }
         },
         "en": {
@@ -656,8 +656,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Email"
+            "state": "translated",
+            "value": "E-mail"
           }
         }
       }
@@ -688,8 +688,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "An account already exists with that email"
+            "state": "translated",
+            "value": "يوجد حساب بالفعل بهذا البريد الإلكتروني"
           }
         },
         "en": {
@@ -700,8 +700,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "An account already exists with that email"
+            "state": "translated",
+            "value": "Er bestaat al een account met dat e-mailadres"
           }
         }
       }
@@ -732,8 +732,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Google sign-in failed"
+            "state": "translated",
+            "value": "تعذّر تسجيل الدخول باستخدام Google"
           }
         },
         "en": {
@@ -744,8 +744,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Google sign-in failed"
+            "state": "translated",
+            "value": "Inloggen met Google is mislukt"
           }
         }
       }
@@ -776,8 +776,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "That email looks wrong"
+            "state": "translated",
+            "value": "يبدو أن البريد الإلكتروني غير صحيح"
           }
         },
         "en": {
@@ -788,8 +788,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "That email looks wrong"
+            "state": "translated",
+            "value": "Dat e-mailadres lijkt niet te kloppen"
           }
         }
       }
@@ -820,8 +820,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't send the reset email"
+            "state": "translated",
+            "value": "تعذّر إرسال رسالة إعادة التعيين"
           }
         },
         "en": {
@@ -832,8 +832,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't send the reset email"
+            "state": "translated",
+            "value": "Kon de herstel-e-mail niet versturen"
           }
         }
       }
@@ -842,8 +842,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many attempts — please wait and try again"
+            "state": "translated",
+            "value": "محاولات كثيرة جدًا — يرجى الانتظار ثم المحاولة مرة أخرى"
           }
         },
         "en": {
@@ -854,8 +854,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many attempts — please wait and try again"
+            "state": "translated",
+            "value": "Te veel pogingen — wacht even en probeer het opnieuw"
           }
         }
       }
@@ -864,8 +864,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "This account has been blocked. Contact support."
+            "state": "translated",
+            "value": "تم حظر هذا الحساب. تواصل مع الدعم."
           }
         },
         "en": {
@@ -876,8 +876,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "This account has been blocked. Contact support."
+            "state": "translated",
+            "value": "Dit account is geblokkeerd. Neem contact op met de ondersteuning."
           }
         }
       }
@@ -886,8 +886,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password must be at least 6 characters"
+            "state": "translated",
+            "value": "يجب أن تتكون كلمة المرور من 6 أحرف على الأقل"
           }
         },
         "en": {
@@ -898,8 +898,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password must be at least 6 characters"
+            "state": "translated",
+            "value": "Wachtwoord moet minstens 6 tekens bevatten"
           }
         }
       }
@@ -908,8 +908,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Email or password is incorrect"
+            "state": "translated",
+            "value": "البريد الإلكتروني أو كلمة المرور غير صحيحة"
           }
         },
         "en": {
@@ -920,8 +920,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Email or password is incorrect"
+            "state": "translated",
+            "value": "E-mail of wachtwoord is onjuist"
           }
         }
       }
@@ -930,8 +930,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Forgot password?"
+            "state": "translated",
+            "value": "هل نسيت كلمة المرور؟"
           }
         },
         "en": {
@@ -942,8 +942,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Forgot password?"
+            "state": "translated",
+            "value": "Wachtwoord vergeten?"
           }
         }
       }
@@ -952,8 +952,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue with Google"
+            "state": "translated",
+            "value": "المتابعة باستخدام Google"
           }
         },
         "en": {
@@ -964,8 +964,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Continue with Google"
+            "state": "translated",
+            "value": "Doorgaan met Google"
           }
         }
       }
@@ -974,8 +974,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Already have an account? Sign in"
+            "state": "translated",
+            "value": "لديك حساب بالفعل؟ سجّل الدخول"
           }
         },
         "en": {
@@ -986,8 +986,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Already have an account? Sign in"
+            "state": "translated",
+            "value": "Heb je al een account? Log in"
           }
         }
       }
@@ -996,8 +996,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password"
+            "state": "translated",
+            "value": "كلمة المرور"
           }
         },
         "en": {
@@ -1008,8 +1008,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password"
+            "state": "translated",
+            "value": "Wachtwoord"
           }
         }
       }
@@ -1018,8 +1018,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password reset email sent"
+            "state": "translated",
+            "value": "تم إرسال رسالة إعادة تعيين كلمة المرور"
           }
         },
         "en": {
@@ -1030,8 +1030,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Password reset email sent"
+            "state": "translated",
+            "value": "E-mail om je wachtwoord te herstellen is verstuurd"
           }
         }
       }
@@ -1040,8 +1040,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign in"
+            "state": "translated",
+            "value": "تسجيل الدخول"
           }
         },
         "en": {
@@ -1052,8 +1052,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign in"
+            "state": "translated",
+            "value": "Inloggen"
           }
         }
       }
@@ -1062,8 +1062,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign in"
+            "state": "translated",
+            "value": "تسجيل الدخول"
           }
         },
         "en": {
@@ -1074,8 +1074,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Sign in"
+            "state": "translated",
+            "value": "Inloggen"
           }
         }
       }
@@ -1084,8 +1084,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Create account"
+            "state": "translated",
+            "value": "إنشاء حساب"
           }
         },
         "en": {
@@ -1096,8 +1096,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Create account"
+            "state": "translated",
+            "value": "Account aanmaken"
           }
         }
       }
@@ -1106,8 +1106,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Create account"
+            "state": "translated",
+            "value": "إنشاء حساب"
           }
         },
         "en": {
@@ -1118,8 +1118,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Create account"
+            "state": "translated",
+            "value": "Account aanmaken"
           }
         }
       }
@@ -1744,8 +1744,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Category filter cleared"
+            "state": "translated",
+            "value": "تم مسح فلتر الفئة"
           }
         },
         "en": {
@@ -1756,8 +1756,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Category filter cleared"
+            "state": "translated",
+            "value": "Categoriefilter gewist"
           }
         }
       }
@@ -1766,8 +1766,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Failed to apply category filter"
+            "state": "translated",
+            "value": "تعذّر تطبيق فلتر الفئة"
           }
         },
         "en": {
@@ -1778,8 +1778,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Failed to apply category filter"
+            "state": "translated",
+            "value": "Kon het categoriefilter niet toepassen"
           }
         }
       }
@@ -2096,8 +2096,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Live stream thumbnail"
+            "state": "translated",
+            "value": "الصورة المصغّرة للبث المباشر"
           }
         },
         "en": {
@@ -2108,8 +2108,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Live stream thumbnail"
+            "state": "translated",
+            "value": "Miniatuur van livestream"
           }
         }
       }
@@ -2778,8 +2778,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Approved channels will appear here"
+            "state": "translated",
+            "value": "ستظهر القنوات المعتمدة هنا"
           }
         },
         "en": {
@@ -2790,8 +2790,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Approved channels will appear here"
+            "state": "translated",
+            "value": "Goedgekeurde kanalen verschijnen hier"
           }
         }
       }
@@ -2800,8 +2800,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No channels yet"
+            "state": "translated",
+            "value": "لا توجد قنوات بعد"
           }
         },
         "en": {
@@ -2812,8 +2812,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No channels yet"
+            "state": "translated",
+            "value": "Nog geen kanalen"
           }
         }
       }
@@ -2822,8 +2822,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Clear filter"
+            "state": "translated",
+            "value": "مسح الفلتر"
           }
         },
         "en": {
@@ -2834,8 +2834,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Clear filter"
+            "state": "translated",
+            "value": "Filter wissen"
           }
         }
       }
@@ -3152,8 +3152,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Done"
+            "state": "translated",
+            "value": "تم"
           }
         },
         "en": {
@@ -3164,8 +3164,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Done"
+            "state": "translated",
+            "value": "Klaar"
           }
         }
       }
@@ -3461,16 +3461,40 @@
         "ar": {
           "variations": {
             "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "بقيت %1$lld خطوات لتصبح مطوّرًا"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "بقيت %1$lld خطوة لتصبح مطوّرًا"
+                }
+              },
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
-                  "value": "You are %1$lld step away from being a developer"
+                  "state": "translated",
+                  "value": "بقيت خطوة واحدة لتصبح مطوّرًا"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
-                  "value": "You are %1$lld steps away from being a developer"
+                  "state": "translated",
+                  "value": "بقيت %1$lld خطوة لتصبح مطوّرًا"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "بقيت خطوتان لتصبح مطوّرًا"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "بقيت %1$lld خطوة لتصبح مطوّرًا"
                 }
               }
             }
@@ -3499,14 +3523,14 @@
             "plural": {
               "one": {
                 "stringUnit": {
-                  "state": "needs_review",
-                  "value": "You are %1$lld step away from being a developer"
+                  "state": "translated",
+                  "value": "Je bent nog %1$lld stap verwijderd van ontwikkelaar worden"
                 }
               },
               "other": {
                 "stringUnit": {
-                  "state": "needs_review",
-                  "value": "You are %1$lld steps away from being a developer"
+                  "state": "translated",
+                  "value": "Je bent nog %1$lld stappen verwijderd van ontwikkelaar worden"
                 }
               }
             }
@@ -3562,8 +3586,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Developer Settings"
+            "state": "translated",
+            "value": "إعدادات المطوّر"
           }
         },
         "en": {
@@ -3574,8 +3598,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Developer Settings"
+            "state": "translated",
+            "value": "Ontwikkelaarsinstellingen"
           }
         }
       }
@@ -7668,72 +7692,6 @@
         }
       }
     },
-    "me_guest_body": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "أنشئ حسابًا مجانيًا لمزامنة مفضلاتك عبر أجهزتك والاستفادة من ميزات إضافية."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Create a free account to sync your favorites across devices and unlock more features."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Maak een gratis account aan om je favorieten op al je apparaten te synchroniseren en meer functies te ontgrendelen."
-          }
-        }
-      }
-    },
-    "me_guest_sign_in": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تسجيل الدخول"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign In"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Aanmelden"
-          }
-        }
-      }
-    },
-    "me_guest_title": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "سجّل الدخول لمزامنة مفضلاتك"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Sign in to sync your favorites"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Meld je aan om je favorieten te synchroniseren"
-          }
-        }
-      }
-    },
     "me_kebab_import_youtube": {
       "localizations": {
         "ar": {
@@ -8706,8 +8664,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Navigation failed. Please try again."
+            "state": "translated",
+            "value": "تعذّر التنقل. يرجى المحاولة مرة أخرى."
           }
         },
         "en": {
@@ -8718,8 +8676,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Navigation failed. Please try again."
+            "state": "translated",
+            "value": "Navigeren is mislukt. Probeer het opnieuw."
           }
         }
       }
@@ -9322,8 +9280,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "OK"
+            "state": "translated",
+            "value": "حسنًا"
           }
         },
         "en": {
@@ -11104,8 +11062,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "This video is not available in your region."
+            "state": "translated",
+            "value": "هذا الفيديو غير متاح في منطقتك."
           }
         },
         "en": {
@@ -11116,8 +11074,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "This video is not available in your region."
+            "state": "translated",
+            "value": "Deze video is niet beschikbaar in jouw regio."
           }
         }
       }
@@ -11500,8 +11458,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many requests. Please wait a moment."
+            "state": "translated",
+            "value": "طلبات كثيرة جدًا. يرجى الانتظار قليلًا."
           }
         },
         "en": {
@@ -11512,8 +11470,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Too many requests. Please wait a moment."
+            "state": "translated",
+            "value": "Te veel verzoeken. Wacht even."
           }
         }
       }
@@ -11610,8 +11568,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Refreshing stream URLs…"
+            "state": "translated",
+            "value": "جارٍ تحديث روابط البث…"
           }
         },
         "en": {
@@ -11622,8 +11580,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Refreshing stream URLs…"
+            "state": "translated",
+            "value": "Stream-URL's vernieuwen…"
           }
         }
       }
@@ -11918,8 +11876,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Stream expired. Refreshing…"
+            "state": "translated",
+            "value": "انتهت صلاحية البث. جارٍ التحديث…"
           }
         },
         "en": {
@@ -11930,8 +11888,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Stream expired. Refreshing…"
+            "state": "translated",
+            "value": "Stream verlopen. Bezig met vernieuwen…"
           }
         }
       }
@@ -12660,8 +12618,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Approved playlists will appear here"
+            "state": "translated",
+            "value": "ستظهر قوائم التشغيل المعتمدة هنا"
           }
         },
         "en": {
@@ -12672,8 +12630,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Approved playlists will appear here"
+            "state": "translated",
+            "value": "Goedgekeurde afspeellijsten verschijnen hier"
           }
         }
       }
@@ -12682,8 +12640,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No playlists yet"
+            "state": "translated",
+            "value": "لا توجد قوائم تشغيل بعد"
           }
         },
         "en": {
@@ -12694,8 +12652,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "No playlists yet"
+            "state": "translated",
+            "value": "Nog geen afspeellijsten"
           }
         }
       }
@@ -13826,8 +13784,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Clear search"
+            "state": "translated",
+            "value": "مسح البحث"
           }
         },
         "en": {
@@ -13838,8 +13796,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Clear search"
+            "state": "translated",
+            "value": "Zoekopdracht wissen"
           }
         }
       }
@@ -14816,8 +14774,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Background play setting icon"
+            "state": "translated",
+            "value": "أيقونة إعداد التشغيل في الخلفية"
           }
         },
         "en": {
@@ -14828,8 +14786,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Background play setting icon"
+            "state": "translated",
+            "value": "Pictogram voor instelling Achtergrond afspelen"
           }
         }
       }
@@ -14838,8 +14796,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "WiFi only setting icon"
+            "state": "translated",
+            "value": "أيقونة إعداد واي فاي فقط"
           }
         },
         "en": {
@@ -14850,8 +14808,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "WiFi only setting icon"
+            "state": "translated",
+            "value": "Pictogram voor instelling Alleen WiFi"
           }
         }
       }
@@ -16356,8 +16314,8 @@
       "localizations": {
         "ar": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't connect — please sign in again."
+            "state": "translated",
+            "value": "تعذّر الاتصال — يرجى تسجيل الدخول مرة أخرى."
           }
         },
         "en": {
@@ -16368,8 +16326,8 @@
         },
         "nl": {
           "stringUnit": {
-            "state": "needs_review",
-            "value": "Couldn't connect — please sign in again."
+            "state": "translated",
+            "value": "Kon geen verbinding maken — log opnieuw in."
           }
         }
       }

@@ -194,7 +194,7 @@ nonisolated protocol AuthClient: AuthTokenProviding {
 /// The no-plist conformer, and the one `AppContainer` builds on this machine, on CI and in every
 /// fresh checkout: `state` yields `.signedOut` once and finishes, `currentUser()`/`idToken` are
 /// nil, every operation throws `.unknown`, `signOut()` is a no-op. No branches — the app comes up
-/// as a guest and nothing traps.
+/// on the sign-in wall and nothing traps.
 nonisolated struct UnavailableAuthClient: AuthClient {
     var state: AsyncStream<AuthState> { AsyncStream { $0.yield(.signedOut); $0.finish() } }
     func currentUser() async -> AuthUser? { nil }

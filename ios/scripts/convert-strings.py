@@ -148,15 +148,12 @@ SPECIFIER_OVERRIDES = {
 
 # iOS-only keys with no Android source. A value is either a plain string (identical across every
 # locale -- e.g. filter_label_parent_child's separator, which is locale-agnostic) or a
-# {locale: text} dict for real translated prose (task-12: the guest Me-tab sign-in card, which
-# has no Android equivalent -- spec D11).
+# {locale: text} dict for real translated prose.
 #
 # filter_label_parent_child (task-11 / RULINGS 25): "Parent › Sub" subcategory filter label, each
 # name wrapped in Unicode isolates (U+2068 FSI / U+2069 PDI) so a name's own bidi direction can't
 # corrupt the "›"-joined surrounding text.
-#
-# me_guest_* (task-12, spec D11 "guest Me tab shows local favorites + a sign-in card"): no Android
-# source since Android always forces sign-in and has no guest state for this screen.
+
 EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
     # share_app_promo: REFUSED above and re-authored here. Android's value claims "ad-free",
@@ -394,21 +391,6 @@ EXTRA_KEYS = {
         "en": "Your date of birth no longer meets our age requirement. You'll be signed out.",
         "ar": "تاريخ ميلادك لم يعد يستوفي شرط العمر. سيتم تسجيل خروجك.",
         "nl": "Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld.",
-    },
-    "me_guest_title": {
-        "en": "Sign in to sync your favorites",
-        "ar": "سجّل الدخول لمزامنة مفضلاتك",
-        "nl": "Meld je aan om je favorieten te synchroniseren",
-    },
-    "me_guest_body": {
-        "en": "Create a free account to sync your favorites across devices and unlock more features.",
-        "ar": "أنشئ حسابًا مجانيًا لمزامنة مفضلاتك عبر أجهزتك والاستفادة من ميزات إضافية.",
-        "nl": "Maak een gratis account aan om je favorieten op al je apparaten te synchroniseren en meer functies te ontgrendelen.",
-    },
-    "me_guest_sign_in": {
-        "en": "Sign In",
-        "ar": "تسجيل الدخول",
-        "nl": "Aanmelden",
     },
     # player_standard_quality (B1 task 7): the persistent rung-2 pill. iOS-only -- Android's rung-2
     # equivalent is a toast on the degradation path, not a standing badge, so there is no source
@@ -1299,12 +1281,13 @@ def verify(out):
     # false` above is what keeps the brand name out of the translation backlog.
     assert app_name["localizations"]["nl"]["stringUnit"] == {"state": "needs_review", "value": "FitrahTube"}
 
-    # R7 (amended): about_version_format is absent from ar/nl on Android -> both locales carry the
-    # English value under `needs_review`, so the runtime shows English instead of the raw key.
+    # SPECIFIER_OVERRIDES reaches the ar/nl translations too: %2$ is CFBundleVersion (a String) in
+    # every locale, never the %2$lld the generic rewrite would give Android's %2$d.
     avf = out["strings"]["about_version_format"]["localizations"]
     assert avf["en"]["stringUnit"]["value"] == "Version %1$@ (%2$@)", avf
     for loc in ("ar", "nl"):
-        assert avf[loc]["stringUnit"] == {"state": "needs_review", "value": "Version %1$@ (%2$@)"}, avf[loc]
+        unit = avf[loc]["stringUnit"]
+        assert unit["state"] == "translated" and "%1$@" in unit["value"] and "%2$@" in unit["value"], unit
 
     # R7 (amended), the two keys the Task 13 review proved broken on screen.
     for key in ("dev_settings_title", "settings_downloads"):
