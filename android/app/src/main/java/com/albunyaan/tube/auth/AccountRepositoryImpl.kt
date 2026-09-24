@@ -13,7 +13,6 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
-import com.squareup.moshi.JsonDataException
 import retrofit2.HttpException
 
 import java.io.IOException
@@ -296,7 +295,13 @@ class AccountRepositoryImpl(
                 return
             } catch (e: IOException) {
                 return
-            } catch (e: JsonDataException) {
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Anything else — malformed body, Retrofit's KotlinNullPointerException
+                // on an empty 200 — is non-terminal. This runs on appScope with no
+                // handler, so an escape would crash the process.
+                Log.w(TAG, "revalidate /me failed; keeping the restored account", e)
                 return
             }
             synchronized(lock) {

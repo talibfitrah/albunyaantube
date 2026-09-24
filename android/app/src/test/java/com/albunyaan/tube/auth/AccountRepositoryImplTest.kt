@@ -462,6 +462,28 @@ class AccountRepositoryImplTest {
         }
     }
 
+    @Test fun `revalidate with any other exception keeps the account and does not throw`() = runTest(dispatcher) {
+        // e.g. Retrofit's KotlinNullPointerException on a 200 with an empty body.
+        // Runs on appScope (no handler): an escape would crash the process.
+        val store = mock<LastKnownAccountStore>()
+        val repo = restoredRepo(store)
+        doAnswer { throw KotlinNullPointerException("Response from getMe was null") }.whenever(service).getMe()
+
+        repo.revalidateRestored()
+
+        assertEquals(restored, repo.accountState.value)
+    }
+
+    @Test fun `revalidate rethrows cancellation`() = runTest(dispatcher) {
+        val store = mock<LastKnownAccountStore>()
+        val repo = restoredRepo(store)
+        doAnswer { throw kotlinx.coroutines.CancellationException("scope gone") }.whenever(service).getMe()
+
+        val thrown = runCatching { repo.revalidateRestored() }.exceptionOrNull()
+
+        assertTrue(thrown is kotlinx.coroutines.CancellationException)
+    }
+
     @Test fun `revalidate with a malformed me keeps the account and does not throw`() = runTest(dispatcher) {
         val store = mock<LastKnownAccountStore>()
         val repo = restoredRepo(store)
