@@ -20,6 +20,7 @@ import androidx.navigation.navOptions
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountStatusEvent
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.download.DownloadNotificationPermission
@@ -104,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         observeAccountStatusEvents()
+        observeSignedOut()
 
         // Handle back press for nested navigation
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -154,6 +156,39 @@ class MainActivity : AppCompatActivity() {
                     if (event !is AccountStatusEvent.SignedOut) {
                         showAccountStatusDialog(event)
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Whatever signs the user out mid-session (revalidation 401, Firebase
+     * force sign-out, 403 envelope, Settings/Me), stop all playback and Cast,
+     * then route off content to sign-in with the back
+     * stack cleared — the same navigation Settings' sign-out uses. Collecting
+     * on STARTED also catches a sign-out that happened while backgrounded.
+     */
+    private fun observeSignedOut() {
+        // Stop playback at once on a sign-out, even while backgrounded: audio
+        // must not outlive the account. Navigation below waits for STARTED;
+        // this doesn't. Transition only — the player lives in this activity's
+        // PlayerFragment, so a sign-out while no activity existed left nothing
+        // local playing.
+        lifecycleScope.launch {
+            var previous: AuthState? = null
+            authRepository.authState.collect { state ->
+                if (SplashRouter.isSignOut(previous, state)) PlaybackService.stopForSignOut(this@MainActivity)
+                previous = state
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.authState.collect { state ->
+                    if (SplashRouter.leaveForSignIn(
+                            signedIn = state is AuthState.SignedIn,
+                            currentDestination = navController.currentDestination?.id,
+                        )
+                    ) navigateToSignIn()
                 }
             }
         }

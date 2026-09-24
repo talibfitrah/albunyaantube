@@ -2,6 +2,7 @@ package com.albunyaan.tube.data.account
 
 import android.content.Context
 import coil.ImageLoader
+import com.albunyaan.tube.auth.LastKnownAccountStore
 import com.albunyaan.tube.data.local.AppDatabase
 import dagger.hilt.android.qualifiers.ApplicationContext
 import kotlinx.coroutines.Dispatchers
@@ -24,6 +25,7 @@ class LocalAccountDataWiper @Inject constructor(
     @ApplicationContext private val context: Context,
     private val database: AppDatabase,
     private val imageLoader: ImageLoader,
+    private val lastKnown: LastKnownAccountStore,
 ) {
 
     suspend fun wipe() = withContext(Dispatchers.IO) {
@@ -59,6 +61,9 @@ class LocalAccountDataWiper @Inject constructor(
         // owner's artwork rendering from RAM for the rest of the process.
         imageLoader.diskCache?.clear()
         imageLoader.memoryCache?.clear()
+
+        // The last /me (email, DOB, phone) kept for offline launch.
+        lastKnown.clear()
 
         Unit
     }

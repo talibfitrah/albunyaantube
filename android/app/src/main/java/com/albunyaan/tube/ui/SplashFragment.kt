@@ -129,13 +129,19 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Plan D T26: on success, fire syncManager.bind(uid) in background so
             // the merge/pull/push cycle starts without blocking the route decision.
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
-                if (firebaseAuth.currentUser == null) null
+                val user = firebaseAuth.currentUser
+                if (user == null) null
                 else {
                     // Cubic R7 P1 — splash uses a 1-attempt budget so it
                     // doesn't stall on the full retry window. If this one
                     // attempt fails, SplashRouter routes per the null status
                     // and the downstream screen retries with the full budget.
-                    val loaded = accountRepository.fetchMe(maxAttempts = 1).getOrNull()
+                    // Offline launch: a non-terminal failure routes on the last
+                    // /me this device saw for this uid (SplashRouter.resolveAccount).
+                    val loaded = SplashRouter.resolveAccount(accountRepository, user.uid)
+                    // bind is safe offline for a restored account: a failed pull
+                    // returns before touching cursors and a failed push leaves rows
+                    // dirty on SyncManager's backoff, so it just resumes online.
                     if (loaded != null) {
                         // Fire bind in a separate coroutine — don't block routing.
                         launch { syncManager.bind(loaded.uid) }
@@ -301,7 +307,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // the warm-path AccountStatusInterceptor only fires during an active
         // session, leaving cold-start launches into a deleted account with
         // no UX feedback.
-        if (signedIn && (accountStatus == AccountStatus.DELETED || accountStatus == AccountStatus.BLOCKED)) {
+        val terminalEvent = SplashRouter.terminalEvent(signedIn, accountStatus)
+        if (terminalEvent != null) {
             // Cubic R-final7 P2 — fail loud if AuthRepository doesn't implement
             // AccountStatusEmitter. Pre-fix `authRepository as? Emitter`
             // returned null silently on Hilt/test setups missing the emitter
@@ -315,12 +322,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                     "AuthRepository does not implement AccountStatusEmitter; " +
                     "cold-start terminal-dialog event WILL NOT fire. Check the DI graph.")
             } else {
-                emitter.emit(
-                    if (accountStatus == AccountStatus.DELETED)
-                        com.albunyaan.tube.auth.AccountStatusEvent.Deleted
-                    else
-                        com.albunyaan.tube.auth.AccountStatusEvent.Blocked
-                )
+                emitter.emit(terminalEvent)
             }
         }
         val action = SplashRouter.decideSplashRoute(

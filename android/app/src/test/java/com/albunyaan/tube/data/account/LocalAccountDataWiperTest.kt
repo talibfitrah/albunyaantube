@@ -5,6 +5,9 @@ import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import coil.ImageLoader
 import coil.disk.DiskCache
+import com.albunyaan.tube.auth.AccountState
+import com.albunyaan.tube.auth.AccountStatus
+import com.albunyaan.tube.auth.LastKnownAccountStore
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.FavoriteVideo
 import kotlinx.coroutines.test.runTest
@@ -17,6 +20,7 @@ import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
+import org.robolectric.annotation.Config
 import java.io.File
 
 /**
@@ -25,6 +29,11 @@ import java.io.File
  * files and the per-install device id are the three stores that survive a
  * plain sign-out today.
  */
+// A plain Application, not the Hilt AlBunyaanApplication: that one builds the real
+// AccountRepository, whose authState collector sees the initial SignedOut on
+// Dispatchers.Default and clears this same prefs file at an unpredictable moment
+// — observed once clearing between write() and read() (sideloadRelease run).
+@Config(application = android.app.Application::class)
 @RunWith(RobolectricTestRunner::class)
 class LocalAccountDataWiperTest {
 
@@ -32,6 +41,7 @@ class LocalAccountDataWiperTest {
     private lateinit var db: AppDatabase
     private lateinit var imageLoader: ImageLoader
     private lateinit var wiper: LocalAccountDataWiper
+    private lateinit var lastKnown: LastKnownAccountStore
 
     @Before
     fun setUp() {
@@ -49,7 +59,8 @@ class LocalAccountDataWiperTest {
                     .build()
             }
             .build()
-        wiper = LocalAccountDataWiper(context, db, imageLoader)
+        lastKnown = LastKnownAccountStore(context)
+        wiper = LocalAccountDataWiper(context, db, imageLoader, lastKnown)
     }
 
     @After
@@ -125,5 +136,19 @@ class LocalAccountDataWiperTest {
         wiper.wipe()
 
         assertNull(prefs.getString("device_id", null))
+    }
+
+    @Test
+    fun `wipe deletes the last-known account record`() = runTest {
+        lastKnown.write(
+            AccountState.Loaded(
+                uid = "uid1", email = "a@b.com", displayName = "A", dateOfBirth = "2000-01-01",
+                phoneNumber = "+31612345678", status = AccountStatus.ACTIVE, role = "user",
+            )
+        )
+
+        wiper.wipe()
+
+        assertNull(lastKnown.read("uid1"))
     }
 }
