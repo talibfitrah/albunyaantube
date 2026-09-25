@@ -358,6 +358,32 @@
     </plurals>
     <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
     <string name="live_past_meta">%1$s • %2$s</string>
+    <plurals name="live_waiting_count">
+        <item quantity="one">%s waiting</item>
+        <item quantity="other">%s waiting</item>
+    </plurals>
+    <!-- YouTube's English stream/premiere prefixes, re-rendered (UploadAge.fromEnglish, iOS Format.englishStat).
+         The %s date stays YouTube's own text: its month/day order is not provable. -->
+    <string name="live_streamed_ago">Streamed %s</string>
+    <string name="live_premiered_ago">Premiered %s</string>
+    <string name="live_scheduled_for">Scheduled for %s</string>
+    <string name="live_premieres_on">Premieres %s</string>
+    <plurals name="live_premieres_in_minutes">
+        <item quantity="one">Premieres in %d minute</item>
+        <item quantity="other">Premieres in %d minutes</item>
+    </plurals>
+    <plurals name="live_premieres_in_hours">
+        <item quantity="one">Premieres in %d hour</item>
+        <item quantity="other">Premieres in %d hours</item>
+    </plurals>
+    <plurals name="live_premieres_in_days">
+        <item quantity="one">Premieres in %d day</item>
+        <item quantity="other">Premieres in %d days</item>
+    </plurals>
+    <plurals name="playlist_episode_count">
+        <item quantity="one">%d episode</item>
+        <item quantity="other">%d episodes</item>
+    </plurals>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video thumbnail</string>
@@ -380,8 +406,10 @@
     <!-- Screen Reader Announcements -->
     <string name="a11y_duration_format">Duration: %s</string>
     <string name="a11y_video_item">Video: %1$s, Duration: %2$s, %3$s, %4$s</string>
+    <string name="a11y_video_item_no_age">Video: %1$s, Duration: %2$s, %3$s</string>
     <string name="a11y_channel_item">Channel: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Playlist: %1$s, %2$d items</string>
+    <string name="a11y_playlist_item_text">Playlist: %1$s, %2$s</string>
     <string name="a11y_search_history">Recent search: %1$s</string>
     <string name="a11y_download_item">%1$s, %2$s, %3$d percent</string>
 

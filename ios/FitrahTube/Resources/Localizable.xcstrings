@@ -89,6 +89,28 @@
         }
       }
     },
+    "a11y_playlist_item_text": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "قائمة تشغيل: %1$@، %2$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Playlist: %1$@, %2$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Afspeellijst: %1$@, %2$@"
+          }
+        }
+      }
+    },
     "a11y_search_history": {
       "localizations": {
         "ar": {
@@ -7294,6 +7316,452 @@
         }
       }
     },
+    "live_premiered_ago": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "عُرض لأول مرة %1$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premiered %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Première was %1$@"
+          }
+        }
+      }
+    },
+    "live_premieres_in_days": {
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld أيام"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld يوماً"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد يوم"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld يوم"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد يومين"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld يوم"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld day"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld days"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld dag"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld dagen"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "live_premieres_in_hours": {
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld ساعات"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld ساعة"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد ساعة"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld ساعة"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد ساعتين"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld ساعة"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld hour"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld hours"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld uur"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld uur"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "live_premieres_in_minutes": {
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld دقائق"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld دقيقة"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد دقيقة"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld دقيقة"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد دقيقتين"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "العرض الأول بعد %1$lld دقيقة"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld minute"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Premieres in %1$lld minutes"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld minuut"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Première over %1$lld minuten"
+                }
+              }
+            }
+          }
+        }
+      }
+    },
+    "live_premieres_on": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "العرض الأول في %1$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Premieres %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Première op %1$@"
+          }
+        }
+      }
+    },
+    "live_scheduled_for": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "مجدول في %1$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Scheduled for %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gepland voor %1$@"
+          }
+        }
+      }
+    },
+    "live_streamed_ago": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "بُثّ %1$@"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Streamed %1$@"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Gestreamd %1$@"
+          }
+        }
+      }
+    },
+    "live_waiting_count": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@arg@"
+          },
+          "substitutions": {
+            "arg": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "few": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  },
+                  "many": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  },
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  },
+                  "two": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  },
+                  "zero": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ في الانتظار"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@arg@"
+          },
+          "substitutions": {
+            "arg": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ waiting"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ waiting"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "%#@arg@"
+          },
+          "substitutions": {
+            "arg": {
+              "argNum": 2,
+              "formatSpecifier": "lld",
+              "variations": {
+                "plural": {
+                  "one": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ wacht"
+                    }
+                  },
+                  "other": {
+                    "stringUnit": {
+                      "state": "translated",
+                      "value": "%1$@ wachten"
+                    }
+                  }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "live_watching_count": {
       "localizations": {
         "ar": {
@@ -12308,6 +12776,88 @@
           "stringUnit": {
             "state": "translated",
             "value": "Deze afspeellijst heeft nog geen video's"
+          }
+        }
+      }
+    },
+    "playlist_episode_count": {
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld حلقات"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld حلقة"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "حلقة واحدة"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld حلقة"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "حلقتان"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا حلقات"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld episode"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld episodes"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld aflevering"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld afleveringen"
+                }
+              }
+            }
           }
         }
       }

@@ -323,6 +323,52 @@
     </plurals>
     <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
     <string name="live_past_meta">%1$s • %2$s</string>
+    <plurals name="live_waiting_count">
+        <item quantity="zero">%s في الانتظار</item>
+        <item quantity="one">%s في الانتظار</item>
+        <item quantity="two">%s في الانتظار</item>
+        <item quantity="few">%s في الانتظار</item>
+        <item quantity="many">%s في الانتظار</item>
+        <item quantity="other">%s في الانتظار</item>
+    </plurals>
+    <!-- YouTube's English stream/premiere prefixes, re-rendered (UploadAge.fromEnglish, iOS Format.englishStat).
+         The %s date stays YouTube's own text: its month/day order is not provable. -->
+    <string name="live_streamed_ago">بُثّ %s</string>
+    <string name="live_premiered_ago">عُرض لأول مرة %s</string>
+    <string name="live_scheduled_for">مجدول في %s</string>
+    <string name="live_premieres_on">العرض الأول في %s</string>
+    <plurals name="live_premieres_in_minutes">
+        <item quantity="zero">العرض الأول بعد %d دقيقة</item>
+        <item quantity="one">العرض الأول بعد دقيقة</item>
+        <item quantity="two">العرض الأول بعد دقيقتين</item>
+        <item quantity="few">العرض الأول بعد %d دقائق</item>
+        <item quantity="many">العرض الأول بعد %d دقيقة</item>
+        <item quantity="other">العرض الأول بعد %d دقيقة</item>
+    </plurals>
+    <plurals name="live_premieres_in_hours">
+        <item quantity="zero">العرض الأول بعد %d ساعة</item>
+        <item quantity="one">العرض الأول بعد ساعة</item>
+        <item quantity="two">العرض الأول بعد ساعتين</item>
+        <item quantity="few">العرض الأول بعد %d ساعات</item>
+        <item quantity="many">العرض الأول بعد %d ساعة</item>
+        <item quantity="other">العرض الأول بعد %d ساعة</item>
+    </plurals>
+    <plurals name="live_premieres_in_days">
+        <item quantity="zero">العرض الأول بعد %d يوم</item>
+        <item quantity="one">العرض الأول بعد يوم</item>
+        <item quantity="two">العرض الأول بعد يومين</item>
+        <item quantity="few">العرض الأول بعد %d أيام</item>
+        <item quantity="many">العرض الأول بعد %d يوماً</item>
+        <item quantity="other">العرض الأول بعد %d يوم</item>
+    </plurals>
+    <plurals name="playlist_episode_count">
+        <item quantity="zero">لا حلقات</item>
+        <item quantity="one">حلقة واحدة</item>
+        <item quantity="two">حلقتان</item>
+        <item quantity="few">%d حلقات</item>
+        <item quantity="many">%d حلقة</item>
+        <item quantity="other">%d حلقة</item>
+    </plurals>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">صورة مصغرة للفيديو</string>
@@ -344,8 +390,10 @@
     <!-- Screen Reader Announcements -->
     <string name="a11y_duration_format">المدة: %s</string>
     <string name="a11y_video_item">فيديو: %1$s، المدة: %2$s، %3$s، %4$s</string>
+    <string name="a11y_video_item_no_age">فيديو: %1$s، المدة: %2$s، %3$s</string>
     <string name="a11y_channel_item">قناة: %1$s، %2$s</string>
     <string name="a11y_playlist_item">قائمة تشغيل: %1$s، %2$d عنصر</string>
+    <string name="a11y_playlist_item_text">قائمة تشغيل: %1$s، %2$s</string>
     <string name="a11y_search_history">بحث حديث: %1$s</string>
     <string name="a11y_download_item">%1$s، %2$s، %3$d بالمائة</string>
 

@@ -322,8 +322,7 @@ struct MediaCard: View {
         case .video:
             videoAccessibilityLabel(item, locale: locale)
         case .playlist:
-            item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) }
-            ?? item.itemCountText.map { "\(item.title), \($0)" } ?? item.title
+            Format.playlistAccessibilityLabel(item, locale: locale)
         case .channel:
             item.title
         }
@@ -581,8 +580,7 @@ struct PlaylistRow: View {
     }
 
     private var accessibilityLabel: String {
-        item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) }
-            ?? item.itemCountText.map { "\(item.title), \($0)" } ?? item.title
+        Format.playlistAccessibilityLabel(item, locale: locale)
     }
 }
 

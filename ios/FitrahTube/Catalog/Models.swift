@@ -24,7 +24,8 @@ nonisolated struct ContentItem: Identifiable, Hashable, Sendable {
     /// A browse row's age to the minute (YouTube's "2 hours ago"); the backend only has days.
     var uploadedMinutesAgo: Int? = nil
     /// YouTube's own text for a stat that did not parse into a number ("1.2K watching",
-    /// "Scheduled for …", "12 episodes"): shown as it was, never turned into an invented number.
+    /// "Scheduled for …", "12 episodes"; `ageText` always): localized by `Format.englishStat` when it
+    /// is a known pattern, else shown as it was, never turned into an invented number.
     var viewsText: String? = nil
     var ageText: String? = nil
     var itemCountText: String? = nil

@@ -313,6 +313,32 @@
     </plurals>
     <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
     <string name="live_past_meta">%1$s • %2$s</string>
+    <plurals name="live_waiting_count">
+        <item quantity="one">%s wacht</item>
+        <item quantity="other">%s wachten</item>
+    </plurals>
+    <!-- YouTube's English stream/premiere prefixes, re-rendered (UploadAge.fromEnglish, iOS Format.englishStat).
+         The %s date stays YouTube's own text: its month/day order is not provable. -->
+    <string name="live_streamed_ago">Gestreamd %s</string>
+    <string name="live_premiered_ago">Première was %s</string>
+    <string name="live_scheduled_for">Gepland voor %s</string>
+    <string name="live_premieres_on">Première op %s</string>
+    <plurals name="live_premieres_in_minutes">
+        <item quantity="one">Première over %d minuut</item>
+        <item quantity="other">Première over %d minuten</item>
+    </plurals>
+    <plurals name="live_premieres_in_hours">
+        <item quantity="one">Première over %d uur</item>
+        <item quantity="other">Première over %d uur</item>
+    </plurals>
+    <plurals name="live_premieres_in_days">
+        <item quantity="one">Première over %d dag</item>
+        <item quantity="other">Première over %d dagen</item>
+    </plurals>
+    <plurals name="playlist_episode_count">
+        <item quantity="one">%d aflevering</item>
+        <item quantity="other">%d afleveringen</item>
+    </plurals>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video miniatuur</string>
@@ -334,8 +360,10 @@
     <!-- Screen Reader Announcements -->
     <string name="a11y_duration_format">Duur: %s</string>
     <string name="a11y_video_item">Video: %1$s, Duur: %2$s, %3$s, %4$s</string>
+    <string name="a11y_video_item_no_age">Video: %1$s, Duur: %2$s, %3$s</string>
     <string name="a11y_channel_item">Kanaal: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Afspeellijst: %1$s, %2$d items</string>
+    <string name="a11y_playlist_item_text">Afspeellijst: %1$s, %2$s</string>
     <string name="a11y_search_history">Recente zoekopdracht: %1$s</string>
     <string name="a11y_download_item">%1$s, %2$s, %3$d procent</string>
 

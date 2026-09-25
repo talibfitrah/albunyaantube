@@ -37,11 +37,10 @@ class HomeFeaturedA11yTest {
         )
     }
 
-    @Test fun `a translation without the age placeholder keeps the full description`() {
-        // substring(0, -1) would crash the bind.
+    @Test fun `unknown age uses its own template, not a cut-down one`() {
         assertEquals(
-            "Video: Tafsir, Duration: 4:05, 1K views",
-            HomeFeaturedAdapter.cutAtMark("Video: Tafsir, Duration: 4:05, 1K views", "\u0000"),
+            res().getString(com.albunyaan.tube.R.string.a11y_video_item_no_age, "Tafsir", "4:05", "1K views"),
+            HomeFeaturedAdapter.videoDescription(res(), "Tafsir", "4:05", "1K views", null),
         )
     }
 

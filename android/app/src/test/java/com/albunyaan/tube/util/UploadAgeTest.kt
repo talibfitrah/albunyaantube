@@ -68,4 +68,37 @@ class UploadAgeTest {
         assertEquals(arRes.getQuantityString(com.albunyaan.tube.R.plurals.time_ago_hours, 2, 2), UploadAge.fromEnglish(arRes, "2 hours ago"))
         assertEquals("منذ ساعتين", UploadAge.fromEnglish(arRes, "2 hours ago"))
     }
+
+    // --- Live / upcoming / playlist stats: same rule as iOS Format.englishStat ---
+
+    @Test fun `Streamed and Premiered keep their prefix`() {
+        assertEquals("Streamed 3 days ago", UploadAge.fromEnglish(res, "Streamed 3 days ago"))
+        assertEquals("Premiered 2 hours ago", UploadAge.fromEnglish(res, "Premiered 2 hours ago"))
+    }
+
+    @Test
+    @Config(qualifiers = "nl")
+    fun `Dutch UI gets stream and premiere text in Dutch`() {
+        val nl = ApplicationProvider.getApplicationContext<android.app.Application>().resources
+        assertEquals("Gestreamd 3 dagen geleden", UploadAge.fromEnglish(nl, "Streamed 3 days ago"))
+        assertEquals("Première was 2 dagen geleden", UploadAge.fromEnglish(nl, "Premiered 2 days ago"))
+        assertEquals("Gepland voor 10/1/26", UploadAge.fromEnglish(nl, "Scheduled for 10/1/26"))
+        assertEquals("Première op 10/1/26, 8:00 PM", UploadAge.fromEnglish(nl, "Premieres 10/1/26, 8:00 PM"))
+        assertEquals("Première over 3 uur", UploadAge.fromEnglish(nl, "Premieres in 3 hours"))
+    }
+
+    @Test
+    @Config(qualifiers = "ar")
+    fun `Arabic UI gets Arabic stream and premiere text`() {
+        val ar = ApplicationProvider.getApplicationContext<android.app.Application>().resources
+        assertEquals("بُثّ منذ يومين", UploadAge.fromEnglish(ar, "Streamed 2 days ago"))
+        assertEquals("العرض الأول بعد ساعتين", UploadAge.fromEnglish(ar, "Premieres in 2 hours"))
+        assertEquals("مجدول في 10/1/26", UploadAge.fromEnglish(ar, "Scheduled for 10/1/26"))
+    }
+
+    @Test fun `stat text that does not parse stays YouTube's own`() {
+        assertEquals("Scheduled for tomorrow", UploadAge.fromEnglish(res, "Scheduled for tomorrow"))
+        assertEquals("Premieres in 2 weeks", UploadAge.fromEnglish(res, "Premieres in 2 weeks"))
+        assertEquals("Streamed live", UploadAge.fromEnglish(res, "Streamed live"))
+    }
 }

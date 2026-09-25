@@ -18,7 +18,7 @@ PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
 REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo",
           # Orphaned on iOS (Phase 2 gate, 2026-08-30): no Swift reader. `videoAccessibilityLabel` and
           # `CountFormat`-style formatting replaced them; drop rather than ship dead catalog entries.
-          "a11y_video_item", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format",
+          "a11y_video_item", "a11y_video_item_no_age", "a11y_playlist_video", "video_views_format", "playlist_metadata_duration_format",
           # Android self-updater island — impossible on iOS (App Store policy), Phase 2 gate 2026-08-31.
           "settings_check_for_updates", "settings_available_updates",
           # Owner ruling 2026-09-01 (Phase 3 Task 5): every user-facing surface says "Save for
@@ -122,7 +122,7 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
 # Emitted via the xcstrings `substitutions` form below, not the plain plural loop.
-SUBSTITUTION_PLURALS = {"video_views", "live_watching_count"}
+SUBSTITUTION_PLURALS = {"video_views", "live_watching_count", "live_waiting_count"}
 
 # §6 dead keys. filter_length_/filter_date_/filter_sort_/locale_settings_ are safe blanket
 # prefixes (verified via grep: no live key matches them). list_/error_ are NOT safe blanket

@@ -87,6 +87,55 @@ struct FormattingTests {
         #expect(Format.itemCount(of: ContentItem(tile: PlaylistTile(id: "p", title: "t")), locale: en) == nil)
     }
 
+    /// Android `UploadAge.fromEnglish` parity: YouTube's English live/upcoming/playlist stats render in
+    /// the app's language, prefixes ("Streamed", "Premiered") kept; the date stays YouTube's own text.
+    @Test func liveUpcomingAndPlaylistStatsRenderInTheAppLanguage() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar"), nl = Locale(identifier: "nl")
+        func views(_ text: String, _ locale: Locale) -> String? {
+            Format.views(of: ContentItem(video: VideoItem(id: "v", title: "t", viewCountText: text)), locale: locale)
+        }
+        func age(_ text: String, _ locale: Locale) -> String? {
+            Format.age(of: ContentItem(video: VideoItem(id: "v", title: "t", publishedText: text)), locale: locale)
+        }
+        func episodes(_ text: String, _ locale: Locale) -> String? {
+            Format.itemCount(of: ContentItem(tile: PlaylistTile(id: "p", title: "t", itemCountText: text)), locale: locale)
+        }
+        #expect(views("1.2K watching", nl) == "1,2K kijken")
+        #expect(views("12 waiting", nl) == "12 wachten")
+        #expect(views("Scheduled for 10/1/26", nl) == "Gepland voor 10/1/26")
+        #expect(episodes("12 episodes", nl) == "12 afleveringen")
+        #expect(age("Streamed 3 days ago", nl) == "Gestreamd 3 dagen geleden")
+        #expect(age("Premiered 2 days ago", nl) == "Première was 2 dagen geleden")
+        #expect(age("Scheduled for 10/1/26", nl) == "Gepland voor 10/1/26")
+        #expect(age("Premieres 10/1/26, 8:00 PM", nl) == "Première op 10/1/26, 8:00 PM")
+        #expect(age("Premieres in 3 hours", nl) == "Première over 3 uur")
+        // Foundation isolates each RTL argument (U+2068/U+2069), which keeps "10/1/26" left-to-right.
+        func plain(_ s: String?) -> String? { s?.filter { $0 != "\u{2068}" && $0 != "\u{2069}" } }
+        #expect(plain(age("Streamed 2 days ago", ar)) == "بُثّ منذ يومين")
+        #expect(episodes("2 episodes", ar) == "حلقتان")
+        #expect(age("Premieres in 2 hours", ar) == "العرض الأول بعد ساعتين")
+        #expect(plain(age("Scheduled for 10/1/26", ar)) == "مجدول في 10/1/26")
+        #expect(age("Streamed 3 days ago", en) == "Streamed 3 days ago")
+        #expect(age("Premiered 2 hours ago", en) == "Premiered 2 hours ago")
+        // Not a pattern we can read: YouTube's own text, nothing invented.
+        #expect(age("Scheduled for tomorrow", en) == "Scheduled for tomorrow")
+        #expect(age("Premieres in 2 weeks", en) == "Premieres in 2 weeks")
+        #expect(age("Streamed live", en) == "Streamed live")
+    }
+
+    /// VoiceOver: a playlist whose count did not parse still reads with the locale's own separator.
+    @Test func aPlaylistsAccessibilityLabelIsLocalizedEvenWithoutACount() {
+        let ar = Locale(identifier: "ar")
+        let raw = ContentItem(tile: PlaylistTile(id: "p", title: "t", itemCountText: "Mix"))
+        // Foundation wraps each RTL argument in bidi isolates (U+2068/U+2069); the words and separator are the point.
+        #expect(Format.playlistAccessibilityLabel(raw, locale: ar).filter { $0 != "\u{2068}" && $0 != "\u{2069}" }
+                == "قائمة تشغيل: t، Mix")
+        let counted = ContentItem(tile: PlaylistTile(id: "p", title: "t", itemCountText: "99 videos"))
+        #expect(Format.playlistAccessibilityLabel(counted, locale: ar)
+                == Format.localizedFormat("a11y_playlist_item", locale: ar, "t", Int64(99)))
+        #expect(Format.playlistAccessibilityLabel(ContentItem(tile: PlaylistTile(id: "p", title: "t")), locale: ar) == "t")
+    }
+
     @Test func durationUnderAMinute() {
         #expect(Format.duration(7) == "0:07")
     }

@@ -1,4 +1,5 @@
 import Foundation
+import InnerTubeKit
 
 /// Text formatting rules ported verbatim from the Android adapters (content-lists.md:462-491,
 /// strings-assets.md:147-182). `nonisolated` because the app target defaults to `MainActor`
@@ -65,21 +66,58 @@ nonisolated enum Format {
     /// An item's age line, or nil when its age is unknown (never "Today" for nothing): a browse
     /// row's minutes when it has them, else the backend's days.
     static func age(of item: ContentItem, locale: Locale) -> String? {
+        if let stat = englishStat(item.ageText, locale: locale) { return stat }
         if let minutes = item.uploadedMinutesAgo { return timeAgo(minutes: minutes, locale: locale) }
         return item.uploadedDaysAgo.map { timeAgo(days: $0, locale: locale) } ?? item.ageText
     }
 
-    /// "38K views" in the app's language, else YouTube's own unparsed text ("1.2K watching").
+    /// "38K views" in the app's language, else a live/upcoming stat ("1.2K watching"), else YouTube's own text.
     static func views(of item: ContentItem, locale: Locale) -> String? {
-        guard let views = item.viewCount else { return item.viewsText }
+        guard let views = item.viewCount else { return englishStat(item.viewsText, locale: locale) ?? item.viewsText }
         return localizedFormat("video_views", locale: locale, compactCount(views, locale: locale),
                                Int64(pluralQuantity(views)))
     }
 
-    /// "12 items" in the app's language, else the tile's own unparsed text ("12 episodes").
+    /// "12 items" in the app's language, else "12 episodes", else the tile's own unparsed text.
     static func itemCount(of item: ContentItem, locale: Locale) -> String? {
-        guard let count = item.itemCount else { return item.itemCountText }
+        guard let count = item.itemCount else { return englishStat(item.itemCountText, locale: locale) ?? item.itemCountText }
         return localizedFormat("playlist_item_count", locale: locale, Int64(count))
+    }
+
+    /// YouTube's English live/upcoming/playlist stat in the app's language, or nil when `text` is none
+    /// of them. The date of "Scheduled for 10/1/26" stays YouTube's text: M/D vs D/M is not provable
+    /// from it (NewPipe itself parses premiere dates as dd/MM). Same rule as Android `UploadAge.stat`.
+    static func englishStat(_ text: String?, locale: Locale) -> String? {
+        guard let text else { return nil }
+        for (unit, key) in [("watching", "live_watching_count"), ("waiting", "live_waiting_count")] {
+            if let n = EnglishCounts.count(text, unit: unit) {
+                return localizedFormat(key, locale: locale, compactCount(n, locale: locale), Int64(pluralQuantity(n)))
+            }
+        }
+        if let n = EnglishCounts.count(text, unit: "episode") { return localizedFormat("playlist_episode_count", locale: locale, n) }
+        if let m = text.wholeMatch(of: /(Streamed|Premiered) ([0-9]+ [a-z]+ ago)/) {
+            guard let minutes = EnglishCounts.minutesAgo(String(m.2)) else { return nil }
+            return localizedFormat(m.1 == "Streamed" ? "live_streamed_ago" : "live_premiered_ago", locale: locale,
+                                   timeAgo(minutes: minutes, locale: locale))
+        }
+        if let m = text.wholeMatch(of: /Premieres in ([0-9]+) (minute|hour|day)s?/), let n = Int64(m.1) {
+            let key = switch m.2 {
+            case "minute": "live_premieres_in_minutes"; case "hour": "live_premieres_in_hours"; default: "live_premieres_in_days"
+            }
+            return localizedFormat(key, locale: locale, n)
+        }
+        if let m = text.wholeMatch(of: /(Scheduled for|Premieres) ([0-9]{1,2}\/[0-9]{1,2}\/[0-9]{2,4}(?:, [0-9]{1,2}:[0-9]{2}(?: [AP]M)?)?)/) {
+            return localizedFormat(m.1 == "Premieres" ? "live_premieres_on" : "live_scheduled_for", locale: locale, String(m.2))
+        }
+        return nil
+    }
+
+    /// VoiceOver label for a playlist: "Playlist: t, 12 items", or with the tile's own count text when
+    /// it did not parse to videos -- joined by the locale's own separator, never a hard-coded ", ".
+    static func playlistAccessibilityLabel(_ item: ContentItem, locale: Locale) -> String {
+        if let count = item.itemCount { return localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64(count)) }
+        return itemCount(of: item, locale: locale).map { localizedFormat("a11y_playlist_item_text", locale: locale, item.title, $0) }
+            ?? item.title
     }
 
     /// N minutes / N hours below a day (what Android shows from NewPipe's "2 hours ago"), then the

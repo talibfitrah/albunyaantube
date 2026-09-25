@@ -50,7 +50,37 @@ object UploadAge {
         else -> format(res, minutes / 1440)
     }
 
-    /** The age in the app's locale; text with no parseable age is shown as-is, never invented. */
+    /** The age or stat in the app's locale; text that parses as neither is shown as-is, never invented. */
     fun fromEnglish(res: Resources, text: String?): String? =
-        formatMinutes(res, minutesAgo(text)) ?: text?.takeIf { it.isNotBlank() }
+        stat(res, text) ?: formatMinutes(res, minutesAgo(text)) ?: text?.takeIf { it.isNotBlank() }
+
+    private val PREFIXED_AGE = Regex("""(Streamed|Premiered) ([0-9]+ [a-z]+ ago)""")
+    private val PREMIERES_IN = Regex("""Premieres in ([0-9]+) (minute|hour|day)s?""")
+    private val DATED = Regex("""(Scheduled for|Premieres) ([0-9]{1,2}/[0-9]{1,2}/[0-9]{2,4}(?:, [0-9]{1,2}:[0-9]{2}(?: [AP]M)?)?)""")
+
+    /**
+     * YouTube's English stream/premiere age or date in the app's locale, or null when [text] is none of them.
+     * The date of "Scheduled for 10/1/26" stays YouTube's text: M/D vs D/M is not provable from it
+     * (NewPipe itself parses premiere dates as dd/MM). Same stream/premiere rules as iOS Format.englishStat;
+     * live and playlist counts reach Android as numbers from NewPipe, so they need no text branch.
+     */
+    fun stat(res: Resources, text: String?): String? {
+        text ?: return null
+        PREFIXED_AGE.matchEntire(text)?.let { m ->
+            val age = formatMinutes(res, minutesAgo(m.groupValues[2])) ?: return null
+            return res.getString(if (m.groupValues[1] == "Streamed") R.string.live_streamed_ago else R.string.live_premiered_ago, age)
+        }
+        PREMIERES_IN.matchEntire(text)?.let { m ->
+            val n = m.groupValues[1].toIntOrNull() ?: return null
+            val id = when (m.groupValues[2]) {
+                "minute" -> R.plurals.live_premieres_in_minutes; "hour" -> R.plurals.live_premieres_in_hours
+                else -> R.plurals.live_premieres_in_days
+            }
+            return res.getQuantityString(id, n, n)
+        }
+        DATED.matchEntire(text)?.let { m ->
+            return res.getString(if (m.groupValues[1] == "Premieres") R.string.live_premieres_on else R.string.live_scheduled_for, m.groupValues[2])
+        }
+        return null
+    }
 }

@@ -96,7 +96,8 @@ protocol PlaylistQueueSource: Sendable {
 extension ContentItem {
     /// The views and age are NUMBERS (browse is read in English and parsed, `EnglishCounts`), so
     /// every browse row renders through the one `Format` line Home uses, in the app's language and
-    /// digits. `category` stays nil -- the real channel name goes to `channelTitle`, never leaked
+    /// digits. `ageText` is always YouTube's text: "Streamed 3 days ago" parses to minutes but keeps its
+    /// prefix only through `Format.englishStat`. `category` stays nil -- the real channel name goes to `channelTitle`, never leaked
     /// through `category` (RULINGS #17).
     /// `channelTitle`: a channel's own tabs carry no byline, so the header's name stands in.
     init(video: VideoItem, channelTitle: String? = nil) {
@@ -105,7 +106,7 @@ extension ContentItem {
                   uploadedDaysAgo: video.uploadedDaysAgo, viewCount: video.viewCount, channelTitle: channelTitle ?? video.channelName,
                   subscribers: nil, videoCount: nil, itemCount: nil, uploadedMinutesAgo: video.uploadedMinutesAgo,
                   viewsText: video.viewCount == nil ? video.viewCountText : nil,
-                  ageText: video.uploadedMinutesAgo == nil ? video.publishedText : nil)
+                  ageText: video.publishedText)
     }
 
     /// A channel's Playlists-tab tile; `itemCountText` only when it did not parse ("12 episodes").
