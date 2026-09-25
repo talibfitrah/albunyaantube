@@ -42,7 +42,7 @@ fun ApiContentItemDto.toDomain(): DomainContentItem {
             title = this.title ?: "",
             category = this.category ?: "General",
             durationSeconds = this.durationSeconds ?: 0,
-            uploadedDaysAgo = this.uploadedDaysAgo ?: 0,
+            uploadedDaysAgo = this.uploadedDaysAgo,
             description = this.description ?: "",
             thumbnailUrl = this.thumbnailUrl,
             viewCount = this.viewCount,

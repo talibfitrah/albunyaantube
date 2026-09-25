@@ -6,7 +6,8 @@ sealed class ContentItem {
         val title: String,
         val category: String,
         val durationSeconds: Int,
-        val uploadedDaysAgo: Int,
+        /** Null when the upload date is unknown — render no age, never "Today". */
+        val uploadedDaysAgo: Int?,
         val description: String,
         val thumbnailUrl: String? = null,
         val viewCount: Long? = null,

@@ -1,6 +1,6 @@
 package com.albunyaan.tube.ui
 
-import android.content.Context
+import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -183,13 +183,9 @@ class SearchResultsAdapter(
                 )
             } ?: ""
 
-            val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
+            val timeAgo = UploadAge.format(res, video.uploadedDaysAgo)
 
-            binding.videoMeta.text = if (views.isNotEmpty()) {
-                "$views • $timeAgo"
-            } else {
-                timeAgo
-            }
+            binding.videoMeta.text = UploadAge.joinMeta(views, timeAgo)
 
             if (enableImages) {
                 binding.videoThumbnail.loadThumbnailUrl(video.thumbnailUrl)
@@ -224,25 +220,6 @@ class SearchResultsAdapter(
             }
         }
 
-        private fun formatTimeAgo(context: Context, daysAgo: Int): String {
-            val res = context.resources
-            return when {
-                daysAgo <= 0 -> context.getString(R.string.video_uploaded_today)
-                daysAgo < 7 -> res.getQuantityString(R.plurals.video_uploaded_days_ago, daysAgo, daysAgo)
-                daysAgo < 30 -> {
-                    val weeks = daysAgo / 7
-                    res.getQuantityString(R.plurals.time_ago_weeks, weeks, weeks)
-                }
-                daysAgo < 365 -> {
-                    val months = daysAgo / 30
-                    res.getQuantityString(R.plurals.time_ago_months, months, months)
-                }
-                else -> {
-                    val years = daysAgo / 365
-                    res.getQuantityString(R.plurals.time_ago_years, years, years)
-                }
-            }
-        }
     }
 
     companion object {

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.adapters
 
+import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -172,40 +173,25 @@ class HomeFeaturedAdapter(
             val formattedViews = video.viewCount?.let {
                 CountFormat.compact(it, appLocale)
             } ?: CountFormat.compact(0, appLocale)
-            val metaParts = mutableListOf<String>()
-            metaParts.add(context.getString(R.string.video_views_format, formattedViews))
-            metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))
-            if (video.category.isNotBlank()) {
-                metaParts.add(video.category)
-            }
-            binding.videoMeta.text = metaParts.joinToString(" • ")
+            binding.videoMeta.text = metaLine(
+                context.resources,
+                context.getString(R.string.video_views_format, formattedViews),
+                video.uploadedDaysAgo,
+                video.category,
+            )
 
             binding.videoDuration.text = formatDuration(video.durationSeconds)
 
             binding.videoThumbnail.loadThumbnail(video)
 
-            val uploadedAgo = formatUploadedAgo(video.uploadedDaysAgo)
+            val uploadedAgo = UploadAge.format(context.resources, video.uploadedDaysAgo)
             val viewsText = context.getString(R.string.video_views_format, formattedViews)
             val duration = formatDuration(video.durationSeconds)
-            binding.root.contentDescription = context.getString(
-                R.string.a11y_video_item,
-                video.title,
-                duration,
-                viewsText,
-                uploadedAgo
-            )
+            binding.root.contentDescription =
+                videoDescription(context.resources, video.title, duration, viewsText, uploadedAgo)
 
             binding.root.setOnClickListener {
                 onItemClick(video)
-            }
-        }
-
-        private fun formatUploadedAgo(days: Int): String {
-            val res = binding.root.context.resources
-            return if (days <= 0) {
-                res.getString(R.string.video_uploaded_today)
-            } else {
-                res.getQuantityString(R.plurals.video_uploaded_days_ago, days, days)
             }
         }
 
@@ -222,6 +208,42 @@ class HomeFeaturedAdapter(
     }
 
     companion object {
+        /**
+         * a11y_video_item, minus its last field when the age is unknown. No age-less
+         * string exists, so fill that field with a marker and cut at the separator
+         * before it — whatever the locale's separator is (", " / "، ").
+         */
+        internal fun videoDescription(
+            res: android.content.res.Resources,
+            title: String,
+            duration: String,
+            views: String,
+            age: String?,
+        ): String {
+            if (age != null) return res.getString(R.string.a11y_video_item, title, duration, views, age)
+            val full = res.getString(R.string.a11y_video_item, title, duration, views, AGE_MARK)
+            return cutAtMark(full, AGE_MARK)
+        }
+
+        private const val AGE_MARK = "\u0000"
+
+        /**
+         * [full] up to [mark], minus the separator before it. A translation whose
+         * template lacks the age placeholder has no mark: keep it whole.
+         */
+        internal fun cutAtMark(full: String, mark: String): String {
+            val at = full.indexOf(mark).takeIf { it >= 0 } ?: return full
+            return full.substring(0, at).trimEnd { it == ',' || it == '،' || it.isWhitespace() }
+        }
+
+        /** Views • age • category — the same age ladder as every other list. */
+        internal fun metaLine(
+            res: android.content.res.Resources,
+            views: String,
+            daysAgo: Int?,
+            category: String,
+        ): String = UploadAge.joinMeta(views, UploadAge.format(res, daysAgo), category.takeIf { it.isNotBlank() })
+
         private const val PAYLOAD_WIDTH = "payload_width"
         private const val VIEW_TYPE_CHANNEL = 0
         private const val VIEW_TYPE_PLAYLIST = 1

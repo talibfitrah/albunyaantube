@@ -233,10 +233,20 @@ class MeFeedRepositoryTest {
                 return ChannelFeedFetcher.FetchResult.Items(emptyList(), null, null)
             }
         }
+        // This test measures launch times in VIRTUAL time, but each fetch is
+        // preceded by a Room read (refreshStateDao.get). On Room's default real
+        // query thread that read races advanceUntilIdle: under CPU load fetch #0
+        // resumed after virtual time had already jumped to the later delays, so
+        // the gaps collapsed ("fetch #1 expected ≈250ms after start, was 0ms").
+        // Run the reads inline so they live in virtual time too.
+        val inlineDb = Room.inMemoryDatabaseBuilder(
+            ApplicationProvider.getApplicationContext(),
+            AppDatabase::class.java,
+        ).setQueryExecutor(Runnable::run).allowMainThreadQueries().build()
         val staggered = MeFeedRepository(
             subscriptions = subs,
-            cache = db.channelVideoCacheDao(),
-            refreshStateDao = db.channelFeedRefreshStateDao(),
+            cache = inlineDb.channelVideoCacheDao(),
+            refreshStateDao = inlineDb.channelFeedRefreshStateDao(),
             fetcher = recorder,
             ioDispatcher = StandardTestDispatcher(testScheduler),
             telemetry = MeRefreshTelemetry(),
@@ -245,6 +255,7 @@ class MeFeedRepositoryTest {
 
         staggered.refresh(force = true)
         advanceUntilIdle()
+        inlineDb.close()
 
         // After the fix, each successive launch is delayed by index * STAGGER_MS.
         // Sort to be deterministic across scheduler ordering.

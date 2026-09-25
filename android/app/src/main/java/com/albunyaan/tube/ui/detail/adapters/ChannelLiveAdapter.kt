@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.detail.adapters
 
+import com.albunyaan.tube.util.UploadAge
 import android.content.Context
 import android.view.LayoutInflater
 import android.view.ViewGroup
@@ -132,7 +133,8 @@ class ChannelLiveAdapter(
                             formattedViewCount
                         )
                     }
-                    val timeText = stream.publishedTime
+                    // "Streamed 3 days ago" is YouTube's English; localize the age when it has one.
+                    val timeText = UploadAge.fromEnglish(context.resources, stream.publishedTime)
 
                     when {
                         viewsText != null && !timeText.isNullOrBlank() ->
