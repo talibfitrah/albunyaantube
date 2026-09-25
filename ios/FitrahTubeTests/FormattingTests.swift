@@ -1,4 +1,5 @@
 import Foundation
+import InnerTubeKit
 import Testing
 @testable import FitrahTube
 
@@ -6,6 +7,85 @@ import Testing
 struct FormattingTests {
 
     // MARK: - duration (content-lists.md:466: Locale.US, h:mm:ss / m:ss, not zero-padded hours)
+
+    /// Android parity (`CountFormat.kt`: "ar: ١٫٢ ألف"): Arabic is Arabic-Indic whatever the region.
+    /// Plain `ar`/`ar_US`/`ar_NL` default to Latin digits in CLDR, so an Arabic user outside the
+    /// regions that default to `arab` got "217 ألف" beside Home's "٤٫٤ مليون" from another device.
+    @Test(arguments: ["ar", "ar_US", "ar_NL"])
+    func arabicNumbersAreArabicIndicInEveryRegion(_ id: String) {
+        let locale = Locale(identifier: id)
+        let rendered = [
+            Format.compactCount(217_000, locale: locale),
+            Format.compactCount(12, locale: locale),
+            Format.timeAgo(days: 13 * 365, locale: locale),
+            Format.localizedFormat("playlist_metadata_format", locale: locale, Int64(200)),
+            Format.number(7, locale: locale),
+            OfflineStorage.byteText(52_428_800, locale: locale),
+            SubmitContentModel.wait(7_200, locale: locale),
+        ]
+        for text in rendered {
+            #expect(!text.contains { $0.isASCII && $0.isNumber }, "\(id): \(text)")
+        }
+    }
+
+    @Test func otherLanguagesKeepTheirOwnDigits() {
+        #expect(Format.compactCount(217_000, locale: Locale(identifier: "nl_NL")) == "217K")
+        #expect(Format.number(7, locale: Locale(identifier: "en_US")) == "7")
+    }
+
+    /// Sub-day ages (Android shows NewPipe's "2 hours ago", `ChannelVideoAdapter.kt:60`): minutes,
+    /// then hours, then the day ladder, with Arabic's two/few/many plurals.
+    @Test func subDayAgesKeepTheirMinutesAndHours() {
+        let en = Locale(identifier: "en"), ar = Locale(identifier: "ar"), nl = Locale(identifier: "nl")
+        #expect(Format.timeAgo(minutes: 5, locale: en) == "5 minutes ago")
+        #expect(Format.timeAgo(minutes: 1, locale: en) == "1 minute ago")
+        #expect(Format.timeAgo(minutes: 120, locale: en) == "2 hours ago")
+        #expect(Format.timeAgo(minutes: 120, locale: ar) == "منذ ساعتين")
+        #expect(Format.timeAgo(minutes: 60, locale: ar) == "منذ ساعة")
+        #expect(Format.timeAgo(minutes: 5 * 60, locale: ar) == "منذ ٥ ساعات")
+        #expect(Format.timeAgo(minutes: 2, locale: ar) == "منذ دقيقتين")
+        #expect(Format.timeAgo(minutes: 180, locale: nl) == "3 uur geleden")
+        #expect(Format.timeAgo(minutes: 0, locale: en) == "1 minute ago")
+        #expect(Format.timeAgo(minutes: 3 * 1440, locale: en) == Format.timeAgo(days: 3, locale: en))
+    }
+
+    /// A browse row's minutes win; a backend row keeps its days; no age at all is no segment,
+    /// never "Today" (the backend sends null for an unknown upload date).
+    @Test func anItemsAgeUsesTheFinestItHasAndNothingWhenUnknown() {
+        func item(days: Int?, minutes: Int?) -> ContentItem {
+            ContentItem(id: "v", type: .video, title: "t", category: nil, description: nil, thumbnailURL: nil,
+                        durationSeconds: nil, uploadedDaysAgo: days, viewCount: nil, channelTitle: nil,
+                        subscribers: nil, videoCount: nil, itemCount: nil, uploadedMinutesAgo: minutes)
+        }
+        let en = Locale(identifier: "en")
+        #expect(Format.age(of: item(days: 0, minutes: 120), locale: en) == "2 hours ago")
+        #expect(Format.age(of: item(days: 0, minutes: nil), locale: en) == Format.timeAgo(days: 0, locale: en))
+        #expect(Format.age(of: item(days: nil, minutes: nil), locale: en) == nil)
+    }
+
+    /// Android's `UploadAge.fromEnglish` rule, per segment: the localized number when YouTube's
+    /// English text parses, else that text as it was. A number is never invented.
+    @Test func unparsedStatsFallBackToYouTubesTextNeverAnInventedNumber() {
+        let en = Locale(identifier: "en")
+        let live = ContentItem(video: VideoItem(id: "v", title: "t", viewCountText: "1.2K watching",
+                                                publishedText: "Scheduled for 10/1/26"))
+        #expect(live.viewCount == nil)
+        #expect(Format.views(of: live, locale: en) == "1.2K watching")
+        #expect(Format.age(of: live, locale: en) == "Scheduled for 10/1/26")
+        let parsed = ContentItem(video: VideoItem(id: "v", title: "t", viewCountText: "38K views", publishedText: "2 hours ago"))
+        #expect(Format.views(of: parsed, locale: Locale(identifier: "ar")) == Format.localizedFormat(
+            "video_views", locale: Locale(identifier: "ar"), Format.compactCount(38_000, locale: Locale(identifier: "ar")), Int64(1_000_000)))
+        #expect(Format.age(of: parsed, locale: en) == "2 hours ago")
+    }
+
+    @Test func aPlaylistTilesUnparsedCountFallsBackToItsText() {
+        let en = Locale(identifier: "en")
+        #expect(Format.itemCount(of: ContentItem(tile: PlaylistTile(id: "p", title: "t", itemCountText: "12 episodes")), locale: en)
+                == "12 episodes")
+        #expect(Format.itemCount(of: ContentItem(tile: PlaylistTile(id: "p", title: "t", itemCountText: "99 videos")), locale: en)
+                == Format.localizedFormat("playlist_item_count", locale: en, Int64(99)))
+        #expect(Format.itemCount(of: ContentItem(tile: PlaylistTile(id: "p", title: "t")), locale: en) == nil)
+    }
 
     @Test func durationUnderAMinute() {
         #expect(Format.duration(7) == "0:07")
@@ -51,15 +131,14 @@ struct FormattingTests {
         #expect(Format.compactCount(500, locale: Locale(identifier: "ar_EG")) == "\u{0665}\u{0660}\u{0660}")
     }
 
-    @Test func compactCountArabicMoroccoUsesWesternDigits() {
-        // Unlike ar_EG, CLDR's ar_MA numbering system is Western digits (`NumberFormat(locale)`
-        // behaviour Android relies on too -- ChannelAdapter.kt:60-69, CountFormat.kt:31-47 --
-        // per-locale, not "Arabic == Eastern digits"). Exact output captured via a standalone
-        // `swift` run of the same `.formatted()` call before asserting it here.
+    @Test func compactCountArabicMoroccoIsArabicIndicLikeAndroid() {
+        // Android never formats with a region: `LocaleManager.applyLocale` sets the bare language
+        // tag `SettingsPreferences.getSystemLocale()` resolves ("ar"), and ICU's plain `ar` is
+        // Arabic-Indic (`CountFormat.kt`: "ar: ١٫٢ ألف"). So an ar_MA device shows ١٫٢ there, and
+        // `Format.numberLocale` does the same here (this test used to pin CLDR's ar_MA Latin digits).
         let result = Format.compactCount(1200, locale: Locale(identifier: "ar_MA"))
-        #expect(result == "1,2\u{00A0}ألف")
-        #expect(result.contains("1"))
-        #expect(!result.contains("\u{0661}"))
+        #expect(result.contains("\u{0661}"))
+        #expect(!result.contains { $0.isASCII && $0.isNumber })
     }
 
     @Test func compactCountAtThousandBoundary() {

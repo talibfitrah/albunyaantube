@@ -179,23 +179,26 @@ actor OfflineManager: OfflineSaving {
 
     func save(videoId: String, quality: String, audioOnly: Bool, metadata: OfflineMetadata) async {
         let owner = metadata.userId
-        // Refused BEFORE the upsert's tear-down: `videoId` is unique across accounts, so the old
-        // copy may be the device holder's (patch round P3).
-        let (refused, old) = await MainActor.run { [refusesOwner, store] in
-            (refusesOwner(owner), store.item(videoId: videoId).flatMap(Row.init))
-        }
-        guard !refused else { return }
-        // The upsert trap (`OfflineStore.insert`): the old task and file go BEFORE the row is replaced.
-        if let old { await tearDown(old) }
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
                                createdAt: now(), userId: metadata.userId)
-        // CF-A-59: asked again IN the insert's job — the wipe's id snapshot runs on this executor,
-        // so a save whose owner started departing while it was suspended above never lands behind it.
-        await write { [refusesOwner] store in
-            guard !refusesOwner(owner) else { return }
-            try store.insert(item)
+        // CF-A-59 + Cubic P3: the refusal, the old-copy read and the upsert are ONE main-actor job.
+        // The wipe's id snapshot runs on this executor after the departure marker, so a save either
+        // is refused here or landed before the snapshot. And a refused save never touches the old
+        // copy (`videoId` is unique across accounts, so it may be the device holder's): tearing it
+        // down first and re-checking at the insert left a window where it went and the save did not.
+        let (saved, replaced) = await MainActor.run { [refusesOwner, store] () -> (Bool, Row?) in
+            guard !refusesOwner(owner) else { return (false, nil) }
+            let old = store.item(videoId: videoId).flatMap(Row.init)
+            do { try store.insert(item) } catch { return (false, nil) }   // rolled back: the old row stands
+            return (true, old)
         }
+        guard saved else { return }
+        // The upsert trap (`OfflineStore.insert`): the insert gave the row a fresh `id`, so the old
+        // task's events and files name a row that no longer exists (every handler re-reads by id,
+        // and a completion for a vanished row deletes its own file). Its task and files go here,
+        // before `schedule()` can start the new row; `tearDown`'s row delete finds nothing.
+        if let replaced { await tearDown(replaced) }
         await schedule()
     }
 

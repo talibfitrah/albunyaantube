@@ -38,7 +38,7 @@ enum OfflineStorage {
     }
 
     nonisolated static func byteText(_ bytes: Int64, locale: Locale) -> String {
-        bytes.formatted(.byteCount(style: .file).locale(locale))
+        bytes.formatted(.byteCount(style: .file).locale(Format.numberLocale(locale)))
     }
 
     /// Free space the save could actually use — `volumeAvailableCapacityForImportantUsage`

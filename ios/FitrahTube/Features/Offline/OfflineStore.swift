@@ -24,9 +24,9 @@ import SwiftData
     }
 
     /// Upserts on `videoId` (`#Unique`): a re-save at a different quality replaces the row —
-    /// EVERY attribute, including `id` (fresh UUID) and `localPath` (nil). Task 4 must cancel
-    /// any in-flight task and delete the old file for this videoId BEFORE calling insert, or
-    /// the old task completes against a ghost row and the old file leaks on disk.
+    /// EVERY attribute, including `id` (fresh UUID) and `localPath` (nil). The manager must then
+    /// cancel the old id's in-flight task and delete its files (`OfflineManager.save`, before it
+    /// schedules the new row), or the old file leaks on disk.
     func insert(_ item: OfflineItem) throws {
         context.insert(item)
         try saveOrRollback()

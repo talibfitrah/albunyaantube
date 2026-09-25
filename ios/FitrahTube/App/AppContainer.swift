@@ -630,7 +630,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// is injectable (`fake(browse:)`) so previews/UI tests drive the screens from fixtures; the
     /// live one shares InnerTubeKit's `BrowseClient`/`AtomFeedFetcher` and the same
     /// UserDefaults-backed `KeyValueStore` for its 1 h degraded latch.
-    private(set) lazy var index = IndexClient(baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    /// `gateTransport`: a real session live, a canned 503 in a fixture, which must write nothing
+    /// (`AppContainerTests.theFakeContainerPushesNoIndexBatches`).
+    private(set) lazy var index = IndexClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
     /// Plan C Task 3: the hand-written `POST /api/v1/reports` (same seam, awaited by `ReportSheet`).
     private(set) lazy var report: ReportClient = {
         #if DEBUG
@@ -729,7 +731,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // bundle identifier or a reserved domain -- a trap in a default-argument position, far
         // from any call site (gate A-M15). "fitrahtube.fake" is safe today; this keeps it latent.
         defaults: UserDefaults = UserDefaults(suiteName: "fitrahtube.fake") ?? .standard,
-        browse: any BrowseSource = FakeBrowseSource(),
+        // nil = the live `LiveBrowseSource` (the App Store screenshot run, `sharedFake`).
+        browse: (any BrowseSource)? = FakeBrowseSource(),
+        apiBaseURL: URL = AppConfig.apiBaseURL,
+        headers: PublicHeaders? = nil,
         // Task 4: the `injectedBrowse` idiom again. Passing it explicitly is what makes "a fixture
         // container builds no Firebase object" structural rather than incidental — `auth`'s lazy
         // initializer, the only caller of `FirebaseBootstrap.configureIfPossible()` outside the
@@ -778,7 +783,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // fetch under a fake container hits the network. A canned 503 is `.unreachable` by
         // construction: hidden Save button, keep-on-sweep, zero requests.
         AppContainer(catalog: catalog, userDefaults: defaults, modelContainer: makeModelContainer(inMemory: true),
-                     apiBaseURL: AppConfig.apiBaseURL, browse: browse,
+                     apiBaseURL: apiBaseURL, browse: browse,
+                     degradedHeader: headers.map { headers in { @Sendable id in try await headers.channel(id) } },
+                     playlistHeader: headers.map { headers in { @Sendable id in try await headers.playlist(id) } },
                      gateTransport: FixedStatusTransport(status: 503), auth: auth,
                      capabilities: capabilities, googleSignIn: googleSignIn, appleSignIn: appleSignIn,
                      accountStatusJSON: accountStatusJSON, sync: sync, isFixture: true)
@@ -842,10 +849,28 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // nothing post-construction (the `-fitrah-seed-*` shape, which writes through a store) can
         // swap it.
         let fakeAuth = FakeAuth.fromLaunchArguments()
-        return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments(),
-                    auth: FakeAuthClient(state: fakeAuth.state),
-                    accountStatusJSON: fakeAuth.accountJSON)
+        // App Store screenshots (Phase 6 Task 9): `-fitrah-api-base-url` on a fixture launch keeps
+        // the fake account (no credentials anywhere) but serves the LIVE catalog and browse, so
+        // every title, thumbnail and channel on screen is real approved content, not "Video p0-0".
+        guard let base = debugAPIBaseURL else {
+            return fake(defaults: defaults, browse: FakeBrowseSource.fromLaunchArguments(),
+                        auth: FakeAuthClient(state: fakeAuth.state),
+                        accountStatusJSON: fakeAuth.accountJSON)
+        }
+        let deviceId = DeviceId.persisted(in: defaults)
+        let api = FitrahAPIClient.make(baseURL: base, deviceId: deviceId)
+        return fake(catalog: LiveCatalogClient(client: api), defaults: defaults, browse: nil, apiBaseURL: base,
+                    headers: PublicHeaders(baseURL: base, deviceId: deviceId),
+                    auth: FakeAuthClient(state: fakeAuth.state), accountStatusJSON: fakeAuth.accountJSON)
     }()
+
+    /// `-fitrah-api-base-url <url>` (DEBUG): the live container's backend (Plan C Task 6's live rig;
+    /// Debug is `localhost:8080`), or the fixture container's live catalog (above).
+    static var debugAPIBaseURL: URL? {
+        let args = LaunchArguments.debug
+        guard let i = args.firstIndex(of: "-fitrah-api-base-url"), args.indices.contains(i + 1) else { return nil }
+        return AppConfig.validate(args[i + 1])
+    }
 
     /// `-fitrah-fake-auth <signedOut|active|pendingProfile|blocked|deleted>`: the screenshot rig's
     /// only way onto a signed-in screen. Absent -> signed out, i.e. every existing rig invocation

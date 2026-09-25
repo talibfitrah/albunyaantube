@@ -6,6 +6,18 @@ import Foundation
 nonisolated enum Format {
     private static let posix = Locale(identifier: "en_US_POSIX")
 
+    /// The ONE place a count's digits are chosen: Arabic is Arabic-Indic in every region, as on
+    /// Android (`CountFormat.kt`, "ar: ١٫٢ ألف"). CLDR gives plain `ar`/`ar_US`/`ar_NL` Latin digits,
+    /// so without this an Arabic user's digits depended on their region. Every count below uses it,
+    /// and so do the two outside this file (`OfflineStorage.byteText`, `SubmitContentModel.wait`).
+    /// Calendar dates (profile date of birth) keep the system date formatter's own digits.
+    static func numberLocale(_ locale: Locale) -> Locale {
+        guard locale.language.languageCode?.identifier == "ar" else { return locale }
+        var components = Locale.Components(locale: locale)
+        components.numberingSystem = "arab"
+        return Locale(components: components)
+    }
+
     /// `h:mm:ss` when there are hours, else `m:ss` -- always Western digits
     /// (VideoGridAdapter.kt:89-98: `Locale.US`, never zero-padded hours/minutes leading digit).
     /// Negative input (shouldn't happen, but a bad duration from the API is not a crash) clamps to 0.
@@ -25,6 +37,7 @@ nonisolated enum Format {
     /// digit, dropped when it's `.0` (matches ICU `CompactDecimalFormat` SHORT --
     /// util/CountFormat.kt:40-46). Digits follow `locale` (Eastern Arabic-Indic for `ar`, etc).
     static func compactCount(_ n: Int64, locale: Locale) -> String {
+        let locale = numberLocale(locale)
         // `abs(n)`, not `n`: -5000 rendered as "-5,000" rather than "-5K" (gate A-M16). Backend
         // counts are non-negative, so this is exactness, not a live bug.
         guard n.magnitude >= 1000 else {
@@ -35,6 +48,11 @@ nonisolated enum Format {
         )
     }
 
+    /// A plain integer in `locale`'s digits (the playlist row numeral).
+    static func number(_ n: Int64, locale: Locale) -> String {
+        n.formatted(.number.locale(numberLocale(locale)))
+    }
+
     /// Clamps the plural-selector quantity so any compacted magnitude (`compactCount` abbreviates
     /// starting at 1,000) resolves to the CLDR `other` category everywhere, matching Android's
     /// `compactPluralCount` verbatim (util/CountFormat.kt:58: `if (count >= 1_000L) 1_000_000L
@@ -42,6 +60,35 @@ nonisolated enum Format {
     /// abbreviated, not the raw count's one/two/few form.
     static func pluralQuantity(_ n: Int64) -> Int {
         n >= 1_000 ? 1_000_000 : Int(n)
+    }
+
+    /// An item's age line, or nil when its age is unknown (never "Today" for nothing): a browse
+    /// row's minutes when it has them, else the backend's days.
+    static func age(of item: ContentItem, locale: Locale) -> String? {
+        if let minutes = item.uploadedMinutesAgo { return timeAgo(minutes: minutes, locale: locale) }
+        return item.uploadedDaysAgo.map { timeAgo(days: $0, locale: locale) } ?? item.ageText
+    }
+
+    /// "38K views" in the app's language, else YouTube's own unparsed text ("1.2K watching").
+    static func views(of item: ContentItem, locale: Locale) -> String? {
+        guard let views = item.viewCount else { return item.viewsText }
+        return localizedFormat("video_views", locale: locale, compactCount(views, locale: locale),
+                               Int64(pluralQuantity(views)))
+    }
+
+    /// "12 items" in the app's language, else the tile's own unparsed text ("12 episodes").
+    static func itemCount(of item: ContentItem, locale: Locale) -> String? {
+        guard let count = item.itemCount else { return item.itemCountText }
+        return localizedFormat("playlist_item_count", locale: locale, Int64(count))
+    }
+
+    /// N minutes / N hours below a day (what Android shows from NewPipe's "2 hours ago"), then the
+    /// day ladder. A just-published row reads "1 minute ago", not "0 minutes ago".
+    static func timeAgo(minutes: Int, locale: Locale) -> String {
+        guard minutes < 1440 else { return timeAgo(days: minutes / 1440, locale: locale) }
+        let (key, quantity) = minutes < 60 ? ("time_ago_minutes", max(1, minutes)) : ("time_ago_hours", minutes / 60)
+        let format = localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
+        return String(format: format, locale: numberLocale(locale), arguments: [Int64(quantity)])
     }
 
     /// Today / N days / N weeks / N months / N years, one ladder everywhere (RULINGS.md #4).
@@ -68,7 +115,7 @@ nonisolated enum Format {
             quantity = days / 365
         }
         let format = bundle.localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: [Int64(quantity)])
+        return String(format: format, locale: numberLocale(locale), arguments: [Int64(quantity)])
     }
 
     /// `localizedNames[lang] ?? name`; `lang` falls back to `"en"` when `locale` has none.
@@ -122,6 +169,6 @@ nonisolated enum Format {
     /// A drift between copies would have silently broken substitution on one screen only.
     static func localizedFormat(_ key: String, locale: Locale, _ args: CVarArg...) -> String {
         let format = localizedBundle(for: locale).localizedString(forKey: key, value: nil, table: nil)
-        return String(format: format, locale: locale, arguments: args)
+        return String(format: format, locale: numberLocale(locale), arguments: args)
     }
 }

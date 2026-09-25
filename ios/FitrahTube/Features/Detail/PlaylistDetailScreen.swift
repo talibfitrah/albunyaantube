@@ -10,6 +10,7 @@ struct PlaylistDetailScreen: View {
     let title: String?
     let category: String?
     let count: Int?
+    var thumbnailURL: URL? = nil
 
     @Environment(\.container) private var container
     @Environment(\.router) private var router
@@ -55,6 +56,7 @@ struct PlaylistDetailScreen: View {
         .task {
             if viewModel == nil {
                 viewModel = PlaylistDetailViewModel(playlistId: id, title: title, category: category, count: count,
+                                                    thumbnailURL: thumbnailURL,
                                                     browse: container.browse, saved: container.savedPlaylists,
                                                     fetchHeader: container.playlistHeader)
             }
@@ -196,19 +198,18 @@ struct PlaylistDetailScreen: View {
 
     private func rowView(_ row: PlaylistDetailViewModel.Row, viewModel: PlaylistDetailViewModel) -> some View {
         let item = row.item
-        let contentItem = ContentItem(id: item.id, type: .video, title: item.title, category: nil, description: nil,
-                                      thumbnailURL: item.thumbnailURL, durationSeconds: item.durationSeconds,
-                                      uploadedDaysAgo: nil, viewCount: nil, channelTitle: item.channelName,
-                                      subscribers: nil, videoCount: nil, itemCount: nil)
+        let contentItem = ContentItem(video: item)
         let position = Int64(row.position)
         return HStack(spacing: 0) {
             // Bare numeral in the 32 pt column (`item_playlist_video.xml:14-25`); the spoken
             // "Position N" lives in the row's `a11y_playlist_video` label below.
-            Text(position.formatted(.number.locale(locale)))
+            Text(Format.number(position, locale: locale))
                 .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary)
                 .frame(width: 32).lineLimit(1).minimumScaleFactor(0.5)
                 .padding(.leading, Spacing.sm)
-            VideoRow(item: contentItem, subtitle: PlaylistDetailViewModel.rowSubtitle(item) ?? item.channelName ?? "") {
+            // A row with no stats shows its channel instead of an empty line.
+            VideoRow(item: contentItem, subtitle: Format.views(of: contentItem, locale: locale) == nil
+                     && Format.age(of: contentItem, locale: locale) == nil ? item.channelName ?? "" : nil) {
                 router.push(.player(viewModel.playerArgs(for: row)))
             }
         }

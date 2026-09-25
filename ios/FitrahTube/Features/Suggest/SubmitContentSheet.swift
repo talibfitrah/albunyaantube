@@ -86,10 +86,10 @@ extension SubmissionType {
     /// Whole hours, rounded UP and floored at one (`:120`: `(retryAfterSeconds + 3599) / 3600`) —
     /// telling someone to wait "0 hours" for a limit that is still in force is worse than rounding.
     /// Formatted as a MEASUREMENT so the unit is the reader's, not English's.
-    private static func wait(_ seconds: Int, locale: Locale) -> String {
+    nonisolated static func wait(_ seconds: Int, locale: Locale) -> String {
         let hours = max(1, (max(0, seconds) + 3599) / 3600)
         return Measurement(value: Double(hours), unit: UnitDuration.hours)
-            .formatted(.measurement(width: .abbreviated).locale(locale))
+            .formatted(.measurement(width: .abbreviated).locale(Format.numberLocale(locale)))
     }
 }
 

@@ -84,19 +84,19 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
 
     // MARK: - Derived
 
-    /// Reconciliation note 4: `subscriberText` is YouTube's own localized prose ("1.2M subscribers"),
-    /// rendered verbatim -- never through `channel_subscribers_format`, which would double the unit.
-    /// ponytail: `BrowseClient.parseHeader` detects the row by the English word "subscriber", so
-    /// under `hl=ar` this is nil and the line reads "–" on every channel (RULING 8's placeholder).
-    /// Upgrade path: a localized-count parser in InnerTubeKit, not `hl=en` for the header call.
-    func subscriberLine(for text: String?) -> String {
-        text ?? String(localized: "channel_subscribers_unknown")
+    /// The same line as Home's channel cards: a NUMBER (browse is read in English and parsed,
+    /// `EnglishCounts`) through `channel_subscribers_format` + `Format.compactCount`, so it is in the
+    /// app's language and digits. It used to be YouTube's own prose, found by the English word
+    /// "subscriber" -- which under `hl=ar`/`nl` was never there, so the line read "–".
+    func subscriberLine(for count: Int64?, locale: Locale) -> String {
+        guard let count else { return String(localized: "channel_subscribers_unknown") }
+        return Format.localizedFormat("channel_subscribers_format", locale: locale, Format.compactCount(count, locale: locale))
     }
 
     /// RULING 7: only rows that can hold data. `ChannelHeader` carries subscriber text alone --
     /// location / joined / total views / verified never arrive upstream.
-    var aboutRows: [AboutRow] {
-        [AboutRow(key: "subscribers", text: subscriberLine(for: header.subscriberText))]
+    func aboutRows(locale: Locale) -> [AboutRow] {
+        [AboutRow(key: "subscribers", text: subscriberLine(for: header.subscriberCount, locale: locale))]
     }
 
     /// The search-filtered view of a video tab (About has nothing to filter; Playlists is
@@ -262,7 +262,7 @@ nonisolated enum ChannelTabKind: CaseIterable, Sendable, Hashable {
     /// the avatar (B4's overlay), a live stream the report subtype (`ChannelLiveTabFragment.kt:62-69`).
     func playerArgs(for item: VideoItem, tab: ChannelTabKind) -> PlayerArgs {
         var args = PlayerArgs(videoId: item.id, title: item.title, channelName: header.name, thumbnailURL: item.thumbnailURL,
-                              durationSeconds: item.durationSeconds, channelId: channelId)
+                              durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: channelId)
         args.isLive = tab == .live
         if tab == .shorts { args.channelAvatarURL = header.avatarURL }
         return args

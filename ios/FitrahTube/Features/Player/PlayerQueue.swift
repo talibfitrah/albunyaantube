@@ -94,15 +94,26 @@ protocol PlaylistQueueSource: Sendable {
 }
 
 extension ContentItem {
-    /// Reconciliation note 5: `viewCount` stays nil because `VideoItem.viewCountText` is YouTube's
-    /// pre-formatted display text ("1.2M views"), which ruling 37's `Format` cannot consume; a real
-    /// count only ever arrives from the backend's `ContentItem`. `category` stays nil -- the real
-    /// channel name goes to `channelTitle`, never leaked through `category` (RULINGS #17).
-    init(video: VideoItem) {
+    /// The views and age are NUMBERS (browse is read in English and parsed, `EnglishCounts`), so
+    /// every browse row renders through the one `Format` line Home uses, in the app's language and
+    /// digits. `category` stays nil -- the real channel name goes to `channelTitle`, never leaked
+    /// through `category` (RULINGS #17).
+    /// `channelTitle`: a channel's own tabs carry no byline, so the header's name stands in.
+    init(video: VideoItem, channelTitle: String? = nil) {
         self.init(id: video.id, type: .video, title: video.title, category: nil, description: nil,
                   thumbnailURL: video.thumbnailURL, durationSeconds: video.durationSeconds,
-                  uploadedDaysAgo: nil, viewCount: nil, channelTitle: video.channelName,
-                  subscribers: nil, videoCount: nil, itemCount: nil)
+                  uploadedDaysAgo: video.uploadedDaysAgo, viewCount: video.viewCount, channelTitle: channelTitle ?? video.channelName,
+                  subscribers: nil, videoCount: nil, itemCount: nil, uploadedMinutesAgo: video.uploadedMinutesAgo,
+                  viewsText: video.viewCount == nil ? video.viewCountText : nil,
+                  ageText: video.uploadedMinutesAgo == nil ? video.publishedText : nil)
+    }
+
+    /// A channel's Playlists-tab tile; `itemCountText` only when it did not parse ("12 episodes").
+    init(tile: PlaylistTile) {
+        self.init(id: tile.id, type: .playlist, title: tile.title, category: nil, description: nil,
+                  thumbnailURL: tile.thumbnailURL, durationSeconds: nil, uploadedDaysAgo: nil, viewCount: nil,
+                  channelTitle: tile.channelName, subscribers: nil, videoCount: nil, itemCount: tile.itemCount,
+                  itemCountText: tile.itemCount == nil ? tile.itemCountText : nil)
     }
 }
 
@@ -115,6 +126,6 @@ struct LivePlaylistQueueSource: PlaylistQueueSource {
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {
         let page = try await client.playlistItems(playlistId, continuation: continuation)
-        return (page.items.map(ContentItem.init(video:)), page.nextContinuation)
+        return (page.items.map { ContentItem(video: $0) }, page.nextContinuation)
     }
 }

@@ -246,7 +246,10 @@ public actor BrowseClient {
         let visitorData = await sessionStore.visitorData(for: .web)
         let request = requestBuilder.build(
             browseId: browseId, params: params, continuation: continuation,
-            context: context, visitorData: visitorData, locale: locale)
+            // English, whatever the device language (Android parity, `EnglishCounts`): counts and
+            // ages are pre-rendered prose, and only English is read back into numbers. Titles and
+            // names are the uploader's own either way (probed live 2026-09-24).
+            context: context, visitorData: visitorData, locale: InnerTubeLocale(hl: "en", gl: locale.gl))
         let response = try await transport.send(request)
         // Cubic r3 #5 (defensive): an HTTP-level browse block. Unobserved live -- real
         // interstitials arrive as 200 + `alerts[]` (see `detectBotCheck`) -- but a raw 429/403
@@ -341,14 +344,11 @@ public actor BrowseClient {
 
         let headerVM = dig(json, "header", "pageHeaderRenderer", "content", "pageHeaderViewModel")
         let rows = (dig(headerVM, "metadata", "contentMetadataViewModel", "metadataRows") as? [[String: Any]]) ?? []
-        var subscriberText: String?
-        for row in rows {
-            guard let parts = row["metadataParts"] as? [[String: Any]] else { continue }
-            for part in parts {
-                guard let text = dig(part, "text", "content") as? String, text.lowercased().contains("subscriber") else { continue }
-                subscriberText = text
-            }
-        }
+        // Browse is always requested in English (`send`), so the subscriber part is the one that
+        // says "subscriber(s)". By the word, not by which part YouTube gives an `accessibilityLabel`.
+        let parts = rows.flatMap { ($0["metadataParts"] as? [[String: Any]]) ?? [] }
+        let subscriberText = parts.lazy.compactMap { dig($0, "text", "content") as? String }
+            .first { $0.hasSuffix(" subscriber") || $0.hasSuffix(" subscribers") }
 
         let avatarURL = largestImageURL(
             dig(headerVM, "image", "decoratedAvatarViewModel", "avatar", "avatarViewModel", "image", "sources") as? [[String: Any]])

@@ -154,11 +154,23 @@ struct ChannelDetailViewModelTests {
     }
 
     @Test func anUnknownSubscriberCountRendersTheDashNotAFormattedZero() {
-        // RULING 8 + reconciliation note 4: BrowseClient gives us a STRING, and its detection heuristic
-        // is English-only (BrowseClient.swift:253), so nil is the expected Arabic result.
+        // RULING 8: no count is the dash, never a formatted zero.
         let vm = makeVM()
-        #expect(vm.subscriberLine(for: nil) == String(localized: "channel_subscribers_unknown"))
-        #expect(vm.subscriberLine(for: "1.2M subscribers") == "1.2M subscribers")  // verbatim, NOT re-formatted
+        #expect(vm.subscriberLine(for: nil, locale: Locale(identifier: "en")) == String(localized: "channel_subscribers_unknown"))
+    }
+
+    /// The count is a NUMBER now (browse read in English, `EnglishCounts`) and goes through the same
+    /// `channel_subscribers_format` + `Format.compactCount` as Home's channel cards, so ar has a line
+    /// at all, and in the app's own digits.
+    @Test(arguments: ["en", "ar", "nl"])
+    func theSubscriberLineIsHomesFormatInEveryLocale(_ language: String) {
+        let locale = Locale(identifier: language)
+        let line = makeVM().subscriberLine(for: 217_000, locale: locale)
+        #expect(line == Format.localizedFormat("channel_subscribers_format", locale: locale,
+                                               Format.compactCount(217_000, locale: locale)))
+        #expect(line != String(localized: "channel_subscribers_unknown"))
+        // Per character: Foundation's `contains("217")` also matches "٢١٧".
+        #expect(line.contains { $0.isASCII && $0.isNumber } == (language != "ar"), "\(language): \(line)")
     }
 
     // MARK: - Degraded mode
@@ -246,6 +258,7 @@ struct ChannelDetailViewModelTests {
         #expect(args.channelId == "UCmMcOjsVehVlEOteyrhjI2Q")
         #expect(args.videoId == "video-0-1")
         #expect(args.title == "Video 1")
+        #expect(args.viewCount == 1_000, "the player said \"No views yet\" for a row that showed its views")
         #expect(args.playlistId == nil)
         #expect(args.reportContext.parentType == .channel)
         #expect(args.reportContext.parentId == "UCmMcOjsVehVlEOteyrhjI2Q")
@@ -289,7 +302,7 @@ struct ChannelDetailViewModelTests {
         #expect(vm.visiblePlaylists.emptyMessageKey == "search_no_results")
         #expect(vm.visible(.live).continuation == nil)
         #expect(await vm.loadMore(.live) == false)
-        #expect(vm.aboutRows.count == 1)   // About never filters
+        #expect(vm.aboutRows(locale: Locale(identifier: "en")).count == 1)   // About never filters
         vm.query = "playlist 1"
         #expect(vm.visiblePlaylists.items.map(\.id) == ["PL1"])
         vm.query = ""
@@ -321,8 +334,8 @@ struct ChannelDetailViewModelTests {
         // (NewPipeChannelDetailRepository.kt:740-746). `ChannelHeader` carries no verified flag either.
         let vm = makeVM()
         await vm.load()
-        #expect(vm.aboutRows.map(\.key) == ["subscribers"])
-        #expect(vm.aboutRows.map(\.text) == ["1.2M subscribers"])
+        #expect(vm.aboutRows(locale: Locale(identifier: "en")).map(\.key) == ["subscribers"])
+        #expect(vm.aboutRows(locale: Locale(identifier: "en")).map(\.text) == ["1.2M subscribers"])
     }
 
     // MARK: - Subscribe

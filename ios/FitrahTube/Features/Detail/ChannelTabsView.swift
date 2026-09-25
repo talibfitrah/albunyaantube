@@ -255,14 +255,9 @@ private struct ChannelVideoTab: View {
     }
 
     /// Degraded rows are missing fields, not zero fields: an Atom item has no duration and no
-    /// view count, so `VideoRow` renders neither chip nor "0 views" (`subtitle` carries what exists).
+    /// view count, so `VideoRow` renders neither chip nor "0 views" (`videoMeta` omits nil segments).
     private func row(_ item: VideoItem) -> some View {
-        let contentItem = ContentItem(id: item.id, type: .video, title: item.title, category: nil, description: nil,
-                                      thumbnailURL: item.thumbnailURL, durationSeconds: item.durationSeconds,
-                                      uploadedDaysAgo: nil, viewCount: nil, channelTitle: viewModel.header.name,
-                                      subscribers: nil, videoCount: nil, itemCount: nil)
-        let subtitle = PlaylistDetailViewModel.rowSubtitle(item) ?? ""
-        return VideoRow(item: contentItem, subtitle: subtitle) {
+        VideoRow(item: ContentItem(video: item, channelTitle: viewModel.header.name)) {
             router.push(.player(viewModel.playerArgs(for: item, tab: tab)))
         }
         // C T5 fix I2: the badge is parsed from the thumbnail overlay, so an UPCOMING premiere
@@ -310,12 +305,9 @@ private struct ChannelPlaylistsTab: View {
         } rows: { tiles, nearEnd in
             LazyVStack(spacing: 0) {
                 ForEach(Array(tiles.enumerated()), id: \.offset) { offset, tile in
-                    PlaylistRow(item: ContentItem(id: tile.id, type: .playlist, title: tile.title, category: nil, description: nil,
-                                                  thumbnailURL: tile.thumbnailURL, durationSeconds: nil, uploadedDaysAgo: nil,
-                                                  viewCount: nil, channelTitle: tile.channelName, subscribers: nil,
-                                                  videoCount: nil, itemCount: nil),
-                                subtitle: tile.itemCountText) {
-                        router.push(.playlist(id: tile.id, title: tile.title, category: nil, count: nil))
+                    PlaylistRow(item: ContentItem(tile: tile)) {
+                        router.push(.playlist(id: tile.id, title: tile.title, category: nil, count: tile.itemCount,
+                                              thumbnailURL: tile.thumbnailURL))
                     }
                     .accessibilityIdentifier("channel.playlists.row.\(tile.id)")
                     .onAppear { nearEnd(offset) }
@@ -330,13 +322,14 @@ private struct ChannelPlaylistsTab: View {
 private struct ChannelAboutTab: View {
     let viewModel: ChannelDetailViewModel
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
 
     var body: some View {
         ScrollView {
             VStack(alignment: .leading, spacing: Spacing.md(widthClass)) {
                 Text(String(localized: "channel_about_more_info")).font(TypeScale.subtitle).fontWeight(.bold)
                     .foregroundStyle(Color.textPrimary)
-                ForEach(viewModel.aboutRows, id: \.key) { row in
+                ForEach(viewModel.aboutRows(locale: locale), id: \.key) { row in
                     Text(row.text).font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary)
                         .accessibilityIdentifier("channel.about.\(row.key)")
                 }

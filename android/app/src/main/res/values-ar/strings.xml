@@ -386,6 +386,22 @@
         <item quantity="many">%s مشاهدة</item>
         <item quantity="other">%s مشاهدة</item>
     </plurals>
+    <plurals name="time_ago_minutes">
+        <item quantity="zero">منذ %d دقيقة</item>
+        <item quantity="one">منذ دقيقة</item>
+        <item quantity="two">منذ دقيقتين</item>
+        <item quantity="few">منذ %d دقائق</item>
+        <item quantity="many">منذ %d دقيقة</item>
+        <item quantity="other">منذ %d دقيقة</item>
+    </plurals>
+    <plurals name="time_ago_hours">
+        <item quantity="zero">منذ %d ساعة</item>
+        <item quantity="one">منذ ساعة</item>
+        <item quantity="two">منذ ساعتين</item>
+        <item quantity="few">منذ %d ساعات</item>
+        <item quantity="many">منذ %d ساعة</item>
+        <item quantity="other">منذ %d ساعة</item>
+    </plurals>
     <plurals name="time_ago_weeks">
         <item quantity="zero">اليوم</item>
         <item quantity="one">منذ أسبوع</item>

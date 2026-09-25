@@ -176,8 +176,8 @@ struct MainShellView: View {
         switch route {
         case .channel(let id, let name, let avatarURL):
             ChannelDetailScreen(id: id, name: name, avatarURL: avatarURL)
-        case .playlist(let id, let title, let category, let count):
-            PlaylistDetailScreen(id: id, title: title, category: category, count: count)
+        case .playlist(let id, let title, let category, let count, let thumbnailURL):
+            PlaylistDetailScreen(id: id, title: title, category: category, count: count, thumbnailURL: thumbnailURL)
         case .player(let args):
             PlayerScreen(args: args)
         case .shorts(let args):

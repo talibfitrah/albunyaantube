@@ -2748,26 +2748,37 @@ struct OfflineManagerTests {
                           : "another owner's save was refused")
     }
 
-    /// …and a save already PARKED before its insert when its owner starts departing — parked in the
-    /// upsert's tear-down (`engine.cancel`), the one deterministic handle on that window.
-    @Test func aSaveParkedBeforeItsInsertIsRefusedOnceItsOwnerIsDeparting() async throws {
+    /// Cubic P3: a save whose owner starts departing mid-save must never end with NEITHER copy — the
+    /// old one torn down by the upsert and the new one refused at the insert. The departure lands
+    /// while the old copy's cancel is parked (the one deterministic handle on that window); the
+    /// holder's copy must still be on disk, or the save must have landed before the departure did
+    /// (in which case the wipe's id snapshot, taken after the marker, covers it).
+    @Test func aSaveNeverTearsDownTheOldCopyAndThenRefusesItsOwnInsert() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
-        let old = makeOfflineItem(Self.lectureVideoId, title: "Lecture", status: .completed, userId: "uid-a")
-        try rig.store.insert(old)
-        rig.engine.cancelHeld = [old.id]
+        let holders = makeOfflineItem(Self.lectureVideoId, title: "Lecture", status: .completed, userId: "uid-b")
+        holders.localPath = "\(holders.id).m4a"
+        try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
+        let file = OfflineStorage.fileURL(relativePath: holders.localPath!, base: rig.base)
+        try Data("x".utf8).write(to: file)
+        try rig.store.insert(holders)
+        // Read NOW: the upsert rewrites this same model object in place, `id` included.
+        let holdersId = holders.id
+        rig.engine.cancelHeld = [holdersId]
         var metadata = Self.metadata
         metadata.userId = "uid-a"
         let saving = Task { [metadata] in
             await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
         }
-        await waitUntil { rig.engine.cancelEntered.contains(old.id) }
+        await waitUntil { rig.engine.cancelEntered.contains(holdersId) }
 
         rig.flags.refusedOwners = ["uid-a"]
         rig.engine.cancelHeld = []
         await saving.value
 
-        #expect(rig.persisted(videoId: Self.lectureVideoId) == nil, "the departed account's parked save inserted")
-        #expect(rig.engine.starts.isEmpty)
+        let landed = rig.persisted(videoId: Self.lectureVideoId)
+        let holdersIntact = rig.persisted(id: holdersId) != nil && FileManager.default.fileExists(atPath: file.path())
+        #expect(landed?.userId == "uid-a" || holdersIntact,
+                "the old copy was torn down and the save that did it was refused: the video is gone")
     }
 
     /// Patch round P3: a refused save must refuse BEFORE the upsert tears the old copy down.

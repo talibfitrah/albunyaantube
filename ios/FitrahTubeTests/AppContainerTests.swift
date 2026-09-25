@@ -91,6 +91,14 @@ struct AppContainerTests {
     /// could photograph it — and every `PlayerScreen` gate fetch under a fake container hit the
     /// network. The canned transport makes the "unreachable host" the old comment assumed true by
     /// construction instead of by hoping nothing is listening on 8080.
+    /// Same rule for the fire-and-forget index push: a fixture container opening a channel POSTed
+    /// its rows to whatever `apiBaseURL` was, and the App Store run points that at a backend holding
+    /// production credentials. A fixture writes nothing.
+    @Test func theFakeContainerPushesNoIndexBatches() {
+        #expect(AppContainer.fake().index.transport is FixedStatusTransport,
+                "a fake container's index push reached the network")
+    }
+
     @Test func theFakeContainerAnswersTheOfflineGateWithoutTheNetwork() async {
         let container = AppContainer.fake()
         #expect(container.gateTransport is FixedStatusTransport,

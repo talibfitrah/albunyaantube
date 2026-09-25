@@ -406,6 +406,14 @@
         <item quantity="one">%s view</item>
         <item quantity="other">%s views</item>
     </plurals>
+    <plurals name="time_ago_minutes">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="time_ago_hours">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
+    </plurals>
     <plurals name="time_ago_weeks">
         <item quantity="one">%d week ago</item>
         <item quantity="other">%d weeks ago</item>

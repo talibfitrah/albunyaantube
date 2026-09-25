@@ -20,7 +20,8 @@ struct IndexClient: Sendable {
     /// rejects above 60 outright -- 50 is the only batch size that is neither truncated nor 400'd.
     static let batchSize = 50
 
-    private let transport: HTTPTransport
+    /// Not private: `AppContainerTests` pins that a fixture container's is canned.
+    let transport: HTTPTransport
     private let baseURL: URL
     private let deviceId: DeviceId
 

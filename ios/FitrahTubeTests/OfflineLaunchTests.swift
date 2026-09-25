@@ -417,6 +417,23 @@ struct OfflineLaunchTests {
         #expect(session.consumeFailureNotice() == nil)
     }
 
+    /// Cubic P3: a refused sign-out (the verification screen's, say) leaves its notice, and a later
+    /// SUCCESSFUL sign-out must not carry it onto the wall as a stale banner.
+    @Test func aSuccessfulSignOutClearsAnEarlierFailureNotice() async {
+        let (session, auth, running) = await launch([.json(200, Self.meJSON)])
+        defer { running.cancel() }
+        #expect(session.state.me != nil, "the precondition: a loaded account")
+        auth.nextError = .unknown
+        session.signOut()
+        #expect(session.user != nil, "the precondition: the sign-out was refused")
+        #expect(session.failureNotice != nil, "the precondition: the refusal left a notice")
+
+        session.signOut()
+
+        #expect(session.state == .signedOut)
+        #expect(session.consumeFailureNotice() == nil, "the refused sign-out's notice outlived the real one")
+    }
+
     /// A reconnect with an account `/me` already confirmed sends nothing.
     @Test func aReconnectWithAConfirmedAccountSendsNoMe() async throws {
         let auth = FakeAuthClient(state: .signedOut)

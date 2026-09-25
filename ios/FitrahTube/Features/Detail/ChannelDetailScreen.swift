@@ -11,6 +11,7 @@ struct ChannelDetailScreen: View {
 
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
+    @Environment(\.locale) private var locale
     @Environment(\.dynamicTypeSize) private var dynamicTypeSize
     @Environment(\.verticalSizeClass) private var verticalSizeClass
 
@@ -120,7 +121,7 @@ struct ChannelDetailScreen: View {
         let subscribed = viewModel.isSubscribed
         return layout {
             VStack(alignment: .leading, spacing: Spacing.xxs) {
-                Text(viewModel.subscriberLine(for: viewModel.header.subscriberText))
+                Text(viewModel.subscriberLine(for: viewModel.header.subscriberCount, locale: locale))
                     .font(TypeScale.itemMeta).foregroundStyle(Color.brand)
                     .accessibilityIdentifier("channel.subscribers")
                 // Task 30 (fork F14). Without this the page says "Subscribed" for a channel that

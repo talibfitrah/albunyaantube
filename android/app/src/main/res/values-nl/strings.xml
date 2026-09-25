@@ -565,6 +565,14 @@
         <item quantity="one">%s weergave</item>
         <item quantity="other">%s weergaven</item>
     </plurals>
+    <plurals name="time_ago_minutes">
+        <item quantity="one">%d minuut geleden</item>
+        <item quantity="other">%d minuten geleden</item>
+    </plurals>
+    <plurals name="time_ago_hours">
+        <item quantity="one">%d uur geleden</item>
+        <item quantity="other">%d uur geleden</item>
+    </plurals>
     <plurals name="time_ago_weeks">
         <item quantity="one">%d week geleden</item>
         <item quantity="other">%d weken geleden</item>

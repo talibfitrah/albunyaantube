@@ -124,6 +124,10 @@ nonisolated enum AccountState: Sendable, Equatable {
             switch state {
             case .failed(_, let message) where state != oldValue: failureNotice = message
             case .loaded: failureNotice = nil
+            // A successful drop (Cubic P3): a notice left by an earlier refusal, the verification
+            // screen's refused sign-out say, is not why the wall is up now. Only on the change, so a
+            // failure reported after the drop (`reportFailure`) survives the listener's echo.
+            case .signedOut where oldValue != .signedOut: failureNotice = nil
             default: break
             }
         }
@@ -132,7 +136,7 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// The sign-in wall's banner (`SignInScreen`): why THIS attempt, drop or launch failed, handed
     /// over once. Read off `state` it was not one-shot — `.failed` outlives the drop that shows it,
     /// so a re-created wall (`initial: true`) raised an old failure again (Cubic follow-up). Set by
-    /// every change INTO `.failed`, and by `reportFailure(_:)`; a loaded account has none.
+    /// every change INTO `.failed`, and by `reportFailure(_:)`; a loaded account or a fresh sign-out has none.
     private(set) var failureNotice: String?
 
     /// CF-A-59: an account whose deletion has started, the offline manager's save refusal. On

@@ -37,7 +37,8 @@ nonisolated enum Route: Hashable, Sendable {
     case player(PlayerArgs)
     case shorts(PlayerArgs)
     case channel(id: String, name: String?, avatarURL: URL?)
-    case playlist(id: String, title: String?, category: String?, count: Int?)
+    /// `thumbnailURL`: a list tap's own thumbnail, the hero's image (a titled route never fetches a header).
+    case playlist(id: String, title: String?, category: String?, count: Int?, thumbnailURL: URL? = nil)
     case search
     case categories
     case subcategories(parentId: String, parentName: String)
@@ -82,7 +83,8 @@ extension Route {
         case .channel:
             self = .channel(id: item.id, name: item.title, avatarURL: item.thumbnailURL)
         case .playlist:
-            self = .playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount)
+            self = .playlist(id: item.id, title: item.title, category: item.category, count: item.itemCount,
+                             thumbnailURL: item.thumbnailURL)
         }
     }
 }

@@ -16,15 +16,7 @@ struct FitrahTubeApp: App {
     // or screenshot run into the next. `sharedFake` wipes the suite once, at creation.
     @State private var container = LaunchArguments.debug.contains("-fitrah-fake-container")
         ? AppContainer.sharedFake
-        : AppContainer.live(baseURL: debugAPIBaseURL ?? AppConfig.apiBaseURL)
-
-    /// Plan C Task 6 live rig: `-fitrah-api-base-url <url>` points the LIVE container at a backend
-    /// other than the xcconfig's (Debug is `localhost:8080`; the acceptance leg needs production).
-    private static var debugAPIBaseURL: URL? {
-        let args = LaunchArguments.debug
-        guard let i = args.firstIndex(of: "-fitrah-api-base-url"), args.indices.contains(i + 1) else { return nil }
-        return AppConfig.validate(args[i + 1])
-    }
+        : AppContainer.live(baseURL: AppContainer.debugAPIBaseURL ?? AppConfig.apiBaseURL)
 
     #else
     @State private var container = AppContainer.live()
@@ -84,6 +76,7 @@ struct FitrahTubeApp: App {
                     selectDebugTabIfRequested()
                     pushDebugRouteIfRequested()
                     showDebugBannerIfRequested()
+                    await signInFromFileIfRequested()
                     await awaitFakeAccountIfSignedIn()
                     seedDebugFavoritesIfRequested()
                     seedDebugSubscriptionsIfRequested()
@@ -344,6 +337,25 @@ struct FitrahTubeApp: App {
             router.push(.importFromYouTube)
         default:
             break
+        }
+        #endif
+    }
+
+    /// `-fitrah-live-signin-file <path>` (DEBUG): the live UI test's sign-in, through the same
+    /// `auth.signIn(email:password:)` the wall's form calls (`LiveSignInFile` says why not the form).
+    /// A refusal lands on the wall's own banner, as the error's words only.
+    private func signInFromFileIfRequested() async {
+        #if DEBUG
+        let args = LaunchArguments.debug
+        guard let i = args.firstIndex(of: "-fitrah-live-signin-file"), args.indices.contains(i + 1) else { return }
+        guard let credentials = LiveSignInFile.take(path: args[i + 1]) else {
+            container.session.reportFailure(String(localized: "auth_error_generic"))
+            return
+        }
+        do {
+            _ = try await container.auth.signIn(email: credentials.email, password: credentials.password)
+        } catch {
+            container.session.reportFailure(String(localized: String.LocalizationValue(SignInViewModel.presented(error).messageKey)))
         }
         #endif
     }

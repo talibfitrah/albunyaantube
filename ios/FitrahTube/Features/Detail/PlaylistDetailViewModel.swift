@@ -2,7 +2,7 @@ import Foundation
 import InnerTubeKit
 import Observation
 
-/// The playlist hero's three fields. Filled from `Route.playlist(id:title:category:count:)` on every
+/// The playlist hero's three fields. Filled from `Route.playlist(id:title:category:count:thumbnailURL:)` on every
 /// list tap (the metadata fast path); a deep link carries none, so `load()` falls back to the
 /// backend's `getPublicPlaylist` and to the first page's own item count (plan Task 4 reconciliation).
 nonisolated struct PlaylistHeader: Equatable, Sendable {
@@ -42,12 +42,12 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     private let fetchHeader: (@Sendable (String) async throws -> PlaylistHeader)?
     private var generation = 0
 
-    init(playlistId: String, title: String?, category: String?, count: Int?,
+    init(playlistId: String, title: String?, category: String?, count: Int?, thumbnailURL: URL? = nil,
          browse: any BrowseSource, saved: any SavedPlaylistsStore,
          fetchHeader: (@Sendable (String) async throws -> PlaylistHeader)?) {
         self.playlistId = playlistId
         self.category = category
-        self.header = PlaylistHeader(title: title, count: count)
+        self.header = PlaylistHeader(title: title, thumbnailURL: thumbnailURL, count: count)
         self.browse = browse
         self.saved = saved
         self.fetchHeader = fetchHeader
@@ -82,13 +82,6 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
     /// variant could never render truthfully. Nil until a count is known (deep link, first page pending).
     func metadataLine(locale: Locale) -> String? {
         header.count.map { Format.localizedFormat("playlist_metadata_format", locale: locale, Int64($0)) }
-    }
-
-    /// RULING 48 by way of reconciliation note 4: `viewCountText` is YouTube's own localized text and
-    /// already carries the unit, so it renders verbatim -- never through `video_views_format`.
-    nonisolated static func rowSubtitle(_ item: VideoItem) -> String? {
-        let parts = [item.viewCountText, item.publishedText].compactMap { $0 }
-        return parts.isEmpty ? nil : parts.joined(separator: " • ")
     }
 
     // MARK: - Loading
@@ -164,7 +157,8 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
 
     private func args(for item: VideoItem, startIndex: Int, shuffled: Bool, target: String?) -> PlayerArgs {
         var args = PlayerArgs(videoId: item.id, playlistId: playlistId, title: item.title, channelName: item.channelName,
-                              thumbnailURL: item.thumbnailURL, durationSeconds: item.durationSeconds, channelId: item.channelId)
+                              thumbnailURL: item.thumbnailURL, durationSeconds: item.durationSeconds,
+                              viewCount: item.viewCount, channelId: item.channelId)
         args.startIndex = startIndex
         args.shuffled = shuffled
         args.targetVideoId = target

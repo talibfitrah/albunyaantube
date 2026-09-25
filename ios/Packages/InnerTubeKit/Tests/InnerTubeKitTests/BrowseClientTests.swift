@@ -35,11 +35,12 @@ import Testing
         String(data: request.body ?? Data(), encoding: .utf8) ?? ""
     }
 
-    private func makeClient(_ transport: HTTPTransport) -> BrowseClient {
-        makeClientAndSession(transport).client
+    private func makeClient(_ transport: HTTPTransport, locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US")) -> BrowseClient {
+        makeClientAndSession(transport, locale: locale).client
     }
 
-    private func makeClientAndSession(_ transport: HTTPTransport) -> (client: BrowseClient, session: SessionStore) {
+    private func makeClientAndSession(_ transport: HTTPTransport,
+                                      locale: InnerTubeLocale = InnerTubeLocale(hl: "en", gl: "US")) -> (client: BrowseClient, session: SessionStore) {
         let configStore = RemoteConfigStore(
             transport: NoopTransport(), keyValueStore: InMemoryKeyValueStore(),
             url: URL(string: "https://example.com/config.json")!)
@@ -47,7 +48,7 @@ import Testing
             monotonicClock: ManualClock(), wallClock: ManualClock(), keyValueStore: InMemoryKeyValueStore())
         let client = BrowseClient(
             transport: transport, remoteConfigStore: configStore, sessionStore: session,
-            locale: InnerTubeLocale(hl: "en", gl: "US"))
+            locale: locale)
         return (client, session)
     }
 
@@ -215,6 +216,78 @@ import Testing
         #expect(header.subscriberText?.contains("subscriber") == true)
         #expect(header.avatarURL != nil)
         #expect(header.bannerURL != nil)
+    }
+
+    /// Browse is read in English (`BrowseClient.send`), so the subscriber part is the one that says
+    /// "subscribers". Picked by the word, not by which part carries an `accessibilityLabel`: that
+    /// label is YouTube's to move, and on the "3.1K videos" part it would read as subscribers.
+    @Test func channelHeaderPicksTheSubscriberPartByItsWord() async throws {
+        let recorded = String(decoding: try fixtureResponse("browse-channel-header").body, as: UTF8.self)
+        let labelled = #""text":{"content":"12.1M subscribers"},"accessibilityLabel":"12.1 million subscribers"}"#
+        let videos = #"{"text":{"content":"3.1K videos","#
+        #expect(recorded.contains(labelled) && recorded.contains(videos))
+        let moved = recorded
+            .replacingOccurrences(of: labelled, with: #""text":{"content":"12.1M subscribers"}}"#)
+            .replacingOccurrences(of: videos, with: #"{"accessibilityLabel":"3.1 thousand videos","text":{"content":"3.1K videos","#)
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: HTTPResponse(status: 200, headers: [:], body: Data(moved.utf8)))
+        ])
+
+        let header = try await makeClient(transport).channelHeader(Self.channelId)
+
+        #expect(header.subscriberText == "12.1M subscribers")
+    }
+
+    /// Android parity (`NewPipeExtractorClient.kt:68`, `Localization.fromLocale(Locale.US)`): browse is
+    /// read in English whatever the device language, because its counts and dates arrive as
+    /// pre-rendered prose that only English is parsed from; the app formats the numbers in its own
+    /// locale. `gl` stays the device's region.
+    @Test func browseIsRequestedInEnglishWhateverTheDeviceLanguage() async throws {
+        let transport = RecordingTransport([try fixtureResponse("browse-channel-header")])
+        _ = try await makeClient(transport, locale: InnerTubeLocale(hl: "ar", gl: "SA")).channelHeader(Self.channelId)
+
+        let body = try #require(transport.capturedBodies.first)
+        #expect(body.contains(#""hl":"en""#))
+        #expect(body.contains(#""gl":"SA""#))
+    }
+
+    @Test func englishCountsParseToNumbers() {
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "38K views").viewCount == 38_000)
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "1.2M views").viewCount == 1_200_000)
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "4.7B views").viewCount == 4_700_000_000)
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "12,345 views").viewCount == 12_345)
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "1 view").viewCount == 1)
+        #expect(VideoItem(id: "a", title: "t", viewCountText: "No views").viewCount == 0)
+        // Only a VIEW count is a view count: a live row's watchers, an upcoming row's waiters and a
+        // premiere's date sit in the same stats slot, and none of them is views.
+        for notViews in ["1.2K watching", "12 waiting", "Scheduled for 10/1/26", "Premieres 10/1/26, 8:00 PM", "3.1K videos"] {
+            #expect(VideoItem(id: "a", title: "t", viewCountText: notViews).viewCount == nil, "\(notViews)")
+        }
+        #expect(ChannelHeader(id: "c", name: "n", subscriberText: "3.1K videos").subscriberCount == nil)
+        #expect(PlaylistTile(id: "p", title: "t", itemCountText: "12 views").itemCount == nil)
+        #expect(VideoItem(id: "a", title: "t").viewCount == nil)
+        #expect(ChannelHeader(id: "c", name: "n", subscriberText: "217K subscribers").subscriberCount == 217_000)
+        #expect(PlaylistTile(id: "p", title: "t", itemCountText: "99 videos").itemCount == 99)
+        #expect(PlaylistTile(id: "p", title: "t", itemCountText: "1 video").itemCount == 1)
+    }
+
+    @Test func englishAgesParseToDays() {
+        func days(_ text: String) -> Int? { VideoItem(id: "a", title: "t", publishedText: text).uploadedDaysAgo }
+        func minutes(_ text: String) -> Int? { VideoItem(id: "a", title: "t", publishedText: text).uploadedMinutesAgo }
+        #expect(minutes("2 hours ago") == 120)
+        #expect(minutes("5 minutes ago") == 5)
+        #expect(minutes("30 seconds ago") == 0)
+        #expect(minutes("1 day ago") == 1440)
+        #expect(days("2 hours ago") == 0)
+        #expect(days("1 day ago") == 1)
+        #expect(days("Streamed 3 days ago") == 3)
+        #expect(days("2 weeks ago") == 14)
+        #expect(days("2 months ago") == 60)
+        #expect(days("13 years ago") == 13 * 365)
+        #expect(days("Scheduled for 10/1/26") == nil)
+        let now = Date()
+        #expect(VideoItem(id: "a", title: "t", publishedText: "frozen", publishedAt: now.addingTimeInterval(-3 * 86_400))
+                    .uploadedDaysAgo == 3)
     }
 
     // MARK: - f) channelTab(.live) parses via the channel `params` path (distinct from VLUU)

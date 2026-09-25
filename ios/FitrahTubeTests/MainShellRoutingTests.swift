@@ -19,6 +19,16 @@ struct MainShellRoutingTests {
         #expect(leaf(for: .playlist(id: "PL1", title: "T", category: nil, count: 3)) == "PlaylistDetailScreen")
     }
 
+    /// A list tap carries the playlist's thumbnail: the hero reads it, and with a title present the
+    /// screen never fetches a header that could supply it instead.
+    @Test func aPlaylistItemsRouteCarriesItsThumbnail() {
+        let thumbnail = URL(string: "https://i.ytimg.com/vi/abc/hqdefault.jpg")!
+        let item = ContentItem(id: "PL1", type: .playlist, title: "T", category: nil, description: nil,
+                               thumbnailURL: thumbnail, durationSeconds: nil, uploadedDaysAgo: nil, viewCount: nil,
+                               channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: 3)
+        #expect(Route(item: item) == .playlist(id: "PL1", title: "T", category: nil, count: 3, thumbnailURL: thumbnail))
+    }
+
     @Test func theChannelRouteRendersTheRealScreen() {
         #expect(leaf(for: .channel(id: "UC1", name: nil, avatarURL: nil)) == "ChannelDetailScreen")
     }

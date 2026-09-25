@@ -2423,12 +2423,61 @@ final class ScreenshotTests: XCTestCase {
         ((try? String(contentsOfFile: path, encoding: .utf8)) ?? "").split(separator: "\n").map(String.init).filter { $0.hasPrefix(prefix) }
     }
 
+    /// Signs the live container in (sign-in is mandatory at launch) and waits for the shell. The
+    /// credentials travel in a 0600 file the app deletes on read (`LiveSignInFile`), never through
+    /// the form: `typeText` records a TextField's text in the xcresult activity log (measured:
+    /// "Type 'probe-email@exampl...'"), and the pasteboard reaches the Mac's through Simulator's
+    /// pasteboard sync. The wall itself is covered by the fixture tests. A session Firebase already
+    /// holds needs no file. Returns the app, or nil after recording the wall's own error.
+    private func signInLive(_ screen: Screen, locale: LocaleCase, email: String, password: String) throws -> XCUIApplication? {
+        let file = FileManager.default.temporaryDirectory.appendingPathComponent("live-signin-\(UUID().uuidString).json")
+        let body = try JSONSerialization.data(withJSONObject: ["email": email, "password": password])
+        FileManager.default.createFile(atPath: file.path, contents: body, attributes: [.posixPermissions: 0o600])
+        defer { try? FileManager.default.removeItem(at: file) }   // whatever the app did with it
+        let app = launch(Screen(key: screen.key, arguments: ["-fitrah-live-signin-file", file.path] + screen.arguments,
+                                anchor: screen.anchor), locale: locale, extraArguments: [], fakeContainer: false)
+        // The wall's refusal is a 2.5 s banner, so it is polled for, not waited on after the fact.
+        // It carries the error's words only (the credentials are never on screen).
+        let shell = app.tabBars.firstMatch, banner = app.staticTexts["transientBanner.text"]
+        let deadline = Date().addingTimeInterval(60)
+        while Date() < deadline, !shell.exists {
+            if banner.exists, app.buttons["signIn.submit"].exists {
+                XCTFail("live sign-in failed at the wall: \(banner.label)")
+                return nil
+            }
+            Thread.sleep(forTimeInterval: 0.2)
+        }
+        XCTAssertFalse(FileManager.default.fileExists(atPath: file.path), "the app never consumed the credentials file")
+        guard shell.exists else {
+            XCTFail("live sign-in: the shell never appeared")
+            return nil
+        }
+        return app
+    }
+
     /// Step 5 items 1-8 + CF-C-2/3/13/15 against the real `LiveBrowseSource`, the real backend
     /// (`C_LIVE_API_BASE_URL`, default production) and a locally served remote config
     /// (`C_LIVE_CONFIG_URL`). Files exactly ONE real content report per run. Notes go to
     /// `c-task6-live-measurements.txt`; the app's DEBUG prints to `c-task6-live-app.log`.
+    ///
+    /// Signs in first (`signInLive`: a file the app deletes on read, never the form). Run from ios/
+    /// with the account in the environment. The build must be ad-hoc signed, or the simulator
+    /// keychain refuses Firebase's session (-34018):
+    ///
+    ///     TEST_RUNNER_C_LIVE=1 TEST_RUNNER_FITRAH_SHOTS_DIR=/tmp/c-live \
+    ///     TEST_RUNNER_FITRAH_LIVE_EMAIL="$FITRAH_LIVE_EMAIL" TEST_RUNNER_FITRAH_LIVE_PASSWORD="$FITRAH_LIVE_PASSWORD" \
+    ///     xcodebuild test -project FitrahTube.xcodeproj -scheme FitrahTube -testPlan FitrahTubeUITests \
+    ///       -only-testing:FitrahTubeUITests/ScreenshotTests/testDetailCTask6Live \
+    ///       -destination 'platform=iOS Simulator,name=iPhone 17' -derivedDataPath DerivedData-Signed \
+    ///       -clonedSourcePackagesDirPath DerivedData/SourcePackages -onlyUsePackageVersionsFromResolvedFile \
+    ///       CODE_SIGNING_ALLOWED=YES CODE_SIGN_IDENTITY=- CODE_SIGNING_REQUIRED=NO GENERATE_INFOPLIST_FILE=YES
     func testDetailCTask6Live() throws {
         try XCTSkipUnless(ProcessInfo.processInfo.environment["C_LIVE"] == "1", "live detail checks are opt-in: C_LIVE=1")
+        let environment = ProcessInfo.processInfo.environment
+        guard let email = environment["FITRAH_LIVE_EMAIL"], !email.isEmpty,
+              let password = environment["FITRAH_LIVE_PASSWORD"], !password.isEmpty else {
+            throw XCTSkip("the live run signs in through the real wall: set TEST_RUNNER_FITRAH_LIVE_EMAIL and TEST_RUNNER_FITRAH_LIVE_PASSWORD")
+        }
         let directory = try shotsDirectory()
         let notes = Notes(file: directory.appendingPathComponent("c-task6-live-measurements.txt"))
         let log = directory.appendingPathComponent("c-task6-live-app.log").path
@@ -2438,6 +2487,9 @@ final class ScreenshotTests: XCTestCase {
         func live(_ arguments: [String]) -> Screen {
             Screen(key: "c-live", arguments: ["-fitrah-api-base-url", base, "-fitrah-stdout", log] + arguments, anchor: .button("unused"))
         }
+        // Once, up front: Firebase keeps the session in the keychain, so every relaunch below
+        // starts signed in and its route lands on the shell rather than behind the wall.
+        guard try signInLive(live(["-fitrah-tab", "home"]), locale: en, email: email, password: password) != nil else { return }
         func channel(_ extra: [String] = []) -> XCUIApplication {
             launch(live(["-fitrah-route", "channel", Self.cLiveChannelId, "-"] + extra), locale: en, extraArguments: [], fakeContainer: false)
         }
@@ -2814,6 +2866,96 @@ final class ScreenshotTests: XCTestCase {
             for locale in Self.locales {
                 try capture(screen, locale: locale, extraArguments: [], suffix: "", into: directory)
             }
+        }
+    }
+
+    // MARK: - Phase 6 Task 9: App Store screenshots (opt-in, APPSTORE_SHOTS=1)
+
+    /// The App Store set: the fixture container with a fake signed-in account (no credentials),
+    /// serving the LIVE catalog (`-fitrah-api-base-url`, `AppContainer.sharedFake`), so every title
+    /// and thumbnail is real approved content. Lecture ids only. Writes
+    /// `<FITRAH_SHOTS_DIR>/<locale>/<device>/NN-screen.png`; set the status bar first:
+    ///
+    ///     xcrun simctl status_bar "iPhone 17 Pro Max" override --time 9:41 --batteryState charged \
+    ///       --batteryLevel 100 --cellularBars 4 --wifiBars 3
+    ///     TEST_RUNNER_APPSTORE_SHOTS=1 TEST_RUNNER_FITRAH_SHOTS_DIR="$PWD/../docs/app-store/screenshots" \
+    ///     xcodebuild test -project FitrahTube.xcodeproj -scheme FitrahTube -testPlan FitrahTubeUITests \
+    ///       -only-testing:FitrahTubeUITests/ScreenshotTests/testAppStoreScreenshots \
+    ///       -destination 'platform=iOS Simulator,name=iPhone 17 Pro Max' -derivedDataPath DerivedData
+    func testAppStoreScreenshots() throws {
+        try XCTSkipUnless(ProcessInfo.processInfo.environment["APPSTORE_SHOTS"] == "1", "App Store shots are opt-in: APPSTORE_SHOTS=1")
+        let root = try shotsDirectory()
+        let base = ProcessInfo.processInfo.environment["C_LIVE_API_BASE_URL"] ?? "https://app.fitrahtube.com/"
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad-13" : "iphone-6.9"
+        let channel = ["-fitrah-route", "channel", Self.storeChannelId, Self.storeChannelName]
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.storeLocales {
+            let directory = root.appendingPathComponent(locale.key).appendingPathComponent(device)
+            try FileManager.default.createDirectory(at: directory, withIntermediateDirectories: true)
+            func open(_ arguments: [String], auth: String = "active") -> XCUIApplication {
+                launch(Screen(key: "appstore", arguments: ["-fitrah-api-base-url", base, "-fitrah-fake-auth", auth] + arguments,
+                              anchor: .button("unused")), locale: locale, extraArguments: [])
+            }
+            func shoot(_ app: XCUIApplication, _ name: String, until ready: XCUIElement, dwell: TimeInterval = 3) throws {
+                XCTAssertTrue(ready.waitForExistence(timeout: 60), "\(locale.key) \(name): never loaded")
+                settleImages(dwell: dwell)
+                try write(named: name, into: directory)
+                XCTAssertFalse(app.staticTexts.matching(NSPredicate(format: "label CONTAINS[c] 'kids'")).firstMatch.exists,
+                               "\(locale.key) \(name): the word 'kids' is on screen (plan §9)")
+            }
+            var app = open([], auth: "signedOut")
+            try shoot(app, "01-sign-in", until: app.buttons["signIn.submit"])
+            app = open(["-fitrah-tab", "home"])
+            // A Featured channel whose name reads the same in every locale; the phone's tab bar is a
+            // rail on iPad.
+            try shoot(app, "02-home", until: app.buttons.matching(NSPredicate(format: "label CONTAINS 'Zakir Naik'")).firstMatch)
+            app = open(channel)
+            try shoot(app, "03-channel", until: firstWithPrefix(app, "channel.videos.row."))
+            // Opened the way a user does, from a list: the row's own thumbnail is the hero's.
+            app = open(["-fitrah-route", "search", "-fitrah-search-query", "التوحيد"])
+            let series = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.storePlaylistTitle)).firstMatch
+            XCTAssertTrue(series.waitForExistence(timeout: 60), "\(locale.key) 04-playlist: not in search")
+            series.tap()
+            try shoot(app, "04-playlist", until: any(app, "playlist.row.1"))
+            app = open(["-fitrah-route", "search", "-fitrah-search-query", "tafsir surah"])
+            let lecture = app.buttons.matching(NSPredicate(format: "label CONTAINS %@", Self.storeVideoTitle)).firstMatch
+            XCTAssertTrue(lecture.waitForExistence(timeout: 60), "\(locale.key) 05-search: never loaded")
+            if app.keyboards.firstMatch.exists { app.typeText("\n") }   // results, not the keyboard
+            try shoot(app, "05-search", until: lecture)
+            // The player from a tapped channel row: its title, channel and views ride the tap.
+            app = open(channel)
+            let upload = firstWithPrefix(app, "channel.videos.row.")
+            XCTAssertTrue(upload.waitForExistence(timeout: 60), "\(locale.key) 06-player: channel never loaded")
+            upload.tap()
+            // The stream's first frame lands well after the box; a black box is as "stable" as a frame.
+            try shoot(app, "06-player", until: app.otherElements["player.videoBox"], dwell: 12)
+        }
+    }
+
+    private static let storeLocales = [
+        LocaleCase(key: "en", theme: "light", arguments: ["-AppleLanguages", "(en)", "-AppleLocale", "en_US"]),
+        LocaleCase(key: "ar", theme: "light", arguments: ["-AppleLanguages", "(ar)", "-AppleLocale", "ar_SA"]),
+        LocaleCase(key: "nl", theme: "light", arguments: ["-AppleLanguages", "(nl)", "-AppleLocale", "nl_NL"]),
+    ]
+    /// A catalog lecture channel, a catalog lecture series (Kitab at-Tawhid explained,
+    /// PLiTKQO5a7ZXlMgT8KQEYSkpFt-OdZU32D, found by the "التوحيد" search) and a catalog lecture
+    /// (nhaGO__rxHQ) found by the "tafsir surah" search.
+    private static let storeChannelId = "UCkL2vNPCvXU1niLe7KhKFXg"
+    private static let storeChannelName = "الشيخ مصطفى العدوي"
+    private static let storeVideoTitle = "Tafsir Surah al-Maun"
+    private static let storePlaylistTitle = "شرح كتاب التوحيد"
+
+    /// Remote thumbnails land after the anchor, and a still-grey placeholder is as stable as a loaded
+    /// image: waits `dwell` first, then (bounded) until three reads 1.5 s apart match.
+    private func settleImages(dwell: TimeInterval) {
+        Thread.sleep(forTimeInterval: dwell)
+        let deadline = Date().addingTimeInterval(30)
+        var previous: Data?, matches = 0
+        while Date() < deadline, matches < 2 {
+            let current = XCUIScreen.main.screenshot().pngRepresentation
+            matches = current == previous ? matches + 1 : 0
+            previous = current
+            Thread.sleep(forTimeInterval: 1.5)
         }
     }
 

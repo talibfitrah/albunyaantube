@@ -10,12 +10,11 @@ import UIKit
 /// (content-lists.md §5.6; shell-home.md "Video meta string").
 private func videoMeta(_ item: ContentItem, locale: Locale, includeCategory: Bool) -> String {
     var parts: [String] = []
-    if let views = item.viewCount {
-        parts.append(Format.localizedFormat("video_views", locale: locale,
-                                            Format.compactCount(views, locale: locale), Int64(Format.pluralQuantity(views))))
+    if let views = Format.views(of: item, locale: locale) {
+        parts.append(views)
     }
-    if let days = item.uploadedDaysAgo {
-        parts.append(Format.timeAgo(days: days, locale: locale))
+    if let age = Format.age(of: item, locale: locale) {
+        parts.append(age)
     }
     if includeCategory, let category = item.category, !category.isEmpty {
         parts.append(category)
@@ -31,10 +30,8 @@ func videoAccessibilityLabel(_ item: ContentItem, locale: Locale, position: Int6
         position.map { Format.localizedFormat("playlist_video_position", locale: locale, $0) },
         item.title,
         item.durationSeconds.map { Format.localizedFormat("a11y_duration_format", locale: locale, Format.duration($0)) },
-        item.viewCount.map {
-            Format.localizedFormat("video_views", locale: locale, Format.compactCount($0, locale: locale), Int64(Format.pluralQuantity($0)))
-        },
-        item.uploadedDaysAgo.map { Format.timeAgo(days: $0, locale: locale) },
+        Format.views(of: item, locale: locale),
+        Format.age(of: item, locale: locale),
         item.channelTitle,
     ]
     return segments.compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: ", ")
@@ -325,7 +322,8 @@ struct MediaCard: View {
         case .video:
             videoAccessibilityLabel(item, locale: locale)
         case .playlist:
-            item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
+            item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) }
+            ?? item.itemCountText.map { "\(item.title), \($0)" } ?? item.title
         case .channel:
             item.title
         }
@@ -552,18 +550,9 @@ struct HomeChannelItem: View {
 /// `"\(count) items"`).
 struct PlaylistRow: View {
     let item: ContentItem
-    /// Same override `VideoRow` carries: a channel's Playlists tab has YouTube's own localized
-    /// "12 videos" text (`PlaylistTile.itemCountText`), rendered verbatim (reconciliation note 4).
-    let subtitle: String?
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
-
-    init(item: ContentItem, subtitle: String? = nil, onTap: @escaping () -> Void) {
-        self.item = item
-        self.subtitle = subtitle
-        self.onTap = onTap
-    }
 
     private var thumbSize: CGFloat { widthClass.pick(80, 100, 120) }
 
@@ -576,10 +565,8 @@ struct PlaylistRow: View {
                 VStack(alignment: .leading, spacing: Spacing.xs) {
                     Text(item.title).font(TypeScale.subtitle).fontWeight(.bold)
                         .foregroundStyle(Color.textPrimary).lineLimit(2)
-                    if let subtitle {
-                        Text(subtitle).font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
-                    } else if let count = item.itemCount {
-                        Text(Format.localizedFormat("playlist_item_count", locale: locale, Int64(count)))
+                    if let count = Format.itemCount(of: item, locale: locale) {
+                        Text(count)
                             .font(TypeScale.itemMeta).foregroundStyle(Color.textSecondary).lineLimit(1)
                     }
                 }
@@ -594,8 +581,8 @@ struct PlaylistRow: View {
     }
 
     private var accessibilityLabel: String {
-        if let subtitle { return "\(item.title), \(subtitle)" }
-        return item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) } ?? item.title
+        item.itemCount.map { Format.localizedFormat("a11y_playlist_item", locale: locale, item.title, Int64($0)) }
+            ?? item.itemCountText.map { "\(item.title), \($0)" } ?? item.title
     }
 }
 
@@ -887,6 +874,7 @@ struct TransientBanner: ViewModifier {
     private func bannerView(_ message: BannerMessage) -> some View {
         HStack(spacing: Spacing.sm) {
             Text(message.text).foregroundStyle(.white).lineLimit(2)
+                .accessibilityIdentifier("transientBanner.text")
             Spacer(minLength: 0)
             if let title = message.actionTitle, let action = message.action {
                 Button(title) { action(); self.message = nil }

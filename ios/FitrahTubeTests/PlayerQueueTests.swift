@@ -7,19 +7,21 @@ private func items(_ ids: [String]) -> [ContentItem] {
                                            durationSeconds: 120, thumbnailURL: nil)) }
 }
 
-@Test func videoItemMapsOntoContentItemWithoutInventingAViewCount() {
-    // Reconciliation note 5 + ruling 39: the real channel title lands in `channelTitle`,
-    // `category` stays nil (no `channelName <- category` leak), and `viewCount` stays nil
-    // because VideoItem only has PRE-FORMATTED display text, which `Format` cannot consume.
+@Test func videoItemMapsOntoContentItemWithItsNumbers() {
+    // Ruling 39: the real channel title lands in `channelTitle`, `category` stays nil (no
+    // `channelName <- category` leak). The views and age are NUMBERS (browse is read in English,
+    // `EnglishCounts`), so every browse row renders through the one `Format` line Home uses.
     let mapped = ContentItem(video: VideoItem(id: "xc7keR2piUM", title: "Lecture",
                                               channelName: "Sheikh", channelId: "UC1",
                                               durationSeconds: 610,
-                                              viewCountText: "1.2M views", thumbnailURL: nil))
+                                              viewCountText: "1.2M views", publishedText: "2 weeks ago", thumbnailURL: nil))
+    #expect(mapped.uploadedDaysAgo == 14)
+    #expect(mapped.uploadedMinutesAgo == 14 * 1440)
     #expect(mapped.id == "xc7keR2piUM")
     #expect(mapped.type == .video)
     #expect(mapped.channelTitle == "Sheikh")
     #expect(mapped.category == nil)
-    #expect(mapped.viewCount == nil)
+    #expect(mapped.viewCount == 1_200_000)
     #expect(mapped.durationSeconds == 610)
 }
 

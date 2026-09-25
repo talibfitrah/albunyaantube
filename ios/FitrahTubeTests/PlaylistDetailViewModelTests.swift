@@ -80,6 +80,13 @@ struct PlaylistDetailViewModelTests {
                                 browse: source, saved: saved, fetchHeader: fetchHeader)
     }
 
+    @Test func aListTapsThumbnailIsTheHerosImageBeforeAnythingLoads() {
+        let thumbnail = URL(string: "https://i.ytimg.com/vi/abc/hqdefault.jpg")!
+        let vm = PlaylistDetailViewModel(playlistId: "PL1", title: "Lectures", category: nil, count: 10,
+                                         thumbnailURL: thumbnail, browse: FakeSource(), saved: FakeSaved(), fetchHeader: nil)
+        #expect(vm.header.thumbnailURL == thumbnail)
+    }
+
     // MARK: - Deep-linked header count (Cubic #19)
 
     @Test func aDeepLinkDoesNotAdoptAPartialFirstPageAsTheHeaderCount() async {
@@ -341,14 +348,10 @@ struct PlaylistDetailViewModelTests {
         #expect(fast.header.title == "Known")
     }
 
-    @Test func viewCountsUseThePluralNotThePlainString() {
-        // RULING 48 -- PlaylistVideosAdapter.kt:71 uses video_views_format ("%s views"); a VideoItem
-        // carries YouTube's own localized text, which already contains the unit, so the row renders it
-        // verbatim (reconciliation note 4's rule) and never wraps it in a second "views".
-        let item = VideoItem(id: "a", title: "t", viewCountText: "1.2K views", publishedText: "2 years ago")
-        #expect(PlaylistDetailViewModel.rowSubtitle(item) == "1.2K views • 2 years ago")
-        #expect(PlaylistDetailViewModel.rowSubtitle(VideoItem(id: "a", title: "t")) == nil)
-        #expect(PlaylistDetailViewModel.rowSubtitle(item)?.contains("views views") == false)
+    @Test func aRowTapCarriesItsViewCountToThePlayer() async {
+        let vm = makeVM()
+        await vm.load()
+        #expect(vm.playerArgs(for: vm.rows[0]).viewCount == 1_200, "the player said \"No views yet\" for a row that showed its views")
     }
 
     // MARK: - Save
