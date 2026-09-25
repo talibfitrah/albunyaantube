@@ -1780,7 +1780,7 @@ public class PublicContentService {
         return top.stream()
                 .filter(s -> !blockedIds.contains(s.getStreamId()))
                 .limit(limit)
-                .map(this::streamToDto)
+                .map(s -> streamToDto(s, videoMap.get(s.getStreamId())))
                 .collect(java.util.stream.Collectors.toList());
     }
 
@@ -1792,13 +1792,14 @@ public class PublicContentService {
         return 1;
     }
 
-    private ContentItemDto streamToDto(SearchableStream s) {
+    private ContentItemDto streamToDto(SearchableStream s, Video video) {
         return ContentItemDto.video(
                 s.getStreamId(),
                 s.getTitle(),
                 null,
                 s.getDurationSeconds() != null ? s.getDurationSeconds().intValue() : 0,
-                0,
+                // stream index stores no upload date; use the Video document when there is one, else null (omitted)
+                video != null ? ContentItemMapper.uploadedDaysAgo(video.getUploadedAt()) : null,
                 null,
                 s.getThumbnailUrl(),
                 s.getViewCount(),

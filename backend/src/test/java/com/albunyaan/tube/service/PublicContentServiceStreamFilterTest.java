@@ -247,4 +247,56 @@ class PublicContentServiceStreamFilterTest {
                 "Streams with no Video document must not be filtered out");
         assertEquals("orphan-stream", results.get(0).getId());
     }
+
+    /** The stream index stores no upload date, so the API must not invent "0 days ago". */
+    @Test
+    void searchStreams_leavesUploadedDaysAgoNullWhenUnknown() throws Exception {
+        SearchableStream s1 = new SearchableStream();
+        s1.setStreamId("undated-stream");
+        s1.setTitle("Undated Video");
+        s1.setTitleNorm("undated video");
+        s1.setSearchTokens(List.of("undated"));
+
+        when(searchTokenizer.tokenize("undated", null)).thenReturn(List.of("undated"));
+        when(searchableStreamRepository.searchByToken(eq("undated"), anyInt()))
+                .thenReturn(new ArrayList<>(List.of(s1)));
+        lenient().when(videoRepository.findByYoutubeIds(argThat(c ->
+                c != null && c.contains("undated-stream"))))
+                .thenReturn(Collections.emptyMap());
+
+        List<ContentItemDto> results = service.search("undated", "VIDEOS", 10);
+
+        assertEquals(1, results.size());
+        assertNull(results.get(0).getUploadedDaysAgo(),
+                "Unknown upload date must be null, not a fabricated 0 (renders as 'Today')");
+    }
+
+    /** A stream hit with an approved Video document takes its real upload age from that document. */
+    @Test
+    void searchStreams_usesVideoDocumentUploadedAtWhenPresent() throws Exception {
+        SearchableStream s1 = new SearchableStream();
+        s1.setStreamId("dated-stream");
+        s1.setTitle("Dated Video");
+        s1.setTitleNorm("dated video");
+        s1.setSearchTokens(List.of("dated"));
+
+        Video video = new Video();
+        video.setYoutubeId("dated-stream");
+        video.setStatus("APPROVED");
+        video.setValidationStatus(ValidationStatus.VALID);
+        video.setUploadedAt(com.google.cloud.Timestamp.ofTimeSecondsAndNanos(
+                java.time.Instant.now().minus(java.time.Duration.ofDays(10)).getEpochSecond(), 0));
+
+        when(searchTokenizer.tokenize("dated", null)).thenReturn(List.of("dated"));
+        when(searchableStreamRepository.searchByToken(eq("dated"), anyInt()))
+                .thenReturn(new ArrayList<>(List.of(s1)));
+        when(videoRepository.findByYoutubeIds(argThat(c ->
+                c != null && c.contains("dated-stream"))))
+                .thenReturn(Map.of("dated-stream", video));
+
+        List<ContentItemDto> results = service.search("dated", "VIDEOS", 10);
+
+        assertEquals(1, results.size());
+        assertEquals(10, results.get(0).getUploadedDaysAgo());
+    }
 }

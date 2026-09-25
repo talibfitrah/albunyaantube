@@ -4,8 +4,9 @@ import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 
-import java.time.LocalDateTime;
-import java.time.ZoneId;
+import com.google.cloud.Timestamp;
+
+import java.time.Instant;
 import java.time.temporal.ChronoUnit;
 
 /**
@@ -58,11 +59,7 @@ public final class ContentItemMapper {
      */
     public static ContentItemDto fromVideo(Video video) {
         int durationSeconds = video.getDurationSeconds() != null ? video.getDurationSeconds() : 0;
-        LocalDateTime uploadedAt = video.getUploadedAt() != null
-                ? video.getUploadedAt().toDate().toInstant()
-                        .atZone(ZoneId.systemDefault()).toLocalDateTime()
-                : LocalDateTime.now();
-        int uploadedDaysAgo = (int) ChronoUnit.DAYS.between(uploadedAt, LocalDateTime.now());
+        Integer uploadedDaysAgo = uploadedDaysAgo(video.getUploadedAt());
 
         // Category name will be null — populated by client-side lookup to avoid a
         // Firestore query in stream operations.
@@ -78,5 +75,11 @@ public final class ContentItemMapper {
                 video.getChannelTitle(),
                 video.getKeywords()
         );
+    }
+
+    /** Whole days since {@code uploadedAt}, or {@code null} when unknown — never a made-up 0 ("Today"). */
+    public static Integer uploadedDaysAgo(Timestamp uploadedAt) {
+        return uploadedAt == null ? null
+                : (int) ChronoUnit.DAYS.between(uploadedAt.toDate().toInstant(), Instant.now());
     }
 }
