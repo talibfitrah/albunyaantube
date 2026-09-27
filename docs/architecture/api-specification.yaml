@@ -1722,6 +1722,127 @@ paths:
                   message:
                     type: string
 
+  /account/send-password-reset-email:
+    post:
+      summary: Send a password reset mail (signed out)
+      description: |
+        Anonymous. The answer never reveals whether the address has an account: 200 carries the same
+        body either way, and the reset link is minted and mailed off the request thread. Per address,
+        at most one mail a minute and ten a day; a request over either is silently dropped and still
+        answered 200. 20 requests per client IP (X-Real-IP; IPv6 by /64) per hour, then 429. 503 only
+        when the server's mailer is disabled; the apps then fall back to Firebase's own mailer.
+      operationId: sendPasswordResetEmail
+      tags: [Account]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '200':
+          description: Accepted; a reset link is mailed if the address has an account
+        '400':
+          description: Missing or malformed email
+        '429':
+          description: Too many requests from this client IP
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
+  /account/send-change-email-verification:
+    post:
+      summary: Mail a change-email confirmation link to the new address
+      description: |
+        Mints a verify-and-change-email link for the caller's own account and mails it to newEmail;
+        the account's email changes only when that link is opened. Requires a sign-in or
+        re-authentication in the last 5 minutes (the ID token's auth_time), else 401. Every attempt
+        that passes the cooldown check starts a new 60 s per-user cooldown, whatever it answers (200,
+        400, 409, 500 or 503), so a 409 cannot be repeated freely.
+      operationId: sendChangeEmailVerification
+      tags: [Account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newEmail]
+              properties:
+                newEmail:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '200':
+          description: Confirmation email sent to the new address
+        '400':
+          description: Malformed newEmail (INVALID_EMAIL when Firebase rejects it), or the account has no email address (NO_EMAIL)
+        '401':
+          description: Not authenticated, or the sign-in is older than 5 minutes (REQUIRES_RECENT_LOGIN)
+        '409':
+          description: The new address already belongs to an account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [EMAIL_IN_USE]
+                  message:
+                    type: string
+        '429':
+          description: A mail was requested less than 60 s ago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
   # ============================================================================
   # AUDIT LOGS (Admin Only)
   # ============================================================================

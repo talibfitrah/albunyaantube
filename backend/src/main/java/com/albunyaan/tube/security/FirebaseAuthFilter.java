@@ -224,7 +224,9 @@ public class FirebaseAuthFilter extends OncePerRequestFilter {
 
                 // Create Spring Security authentication with role as authority
                 SimpleGrantedAuthority authority = new SimpleGrantedAuthority("ROLE_" + role.toUpperCase(Locale.ROOT));
-                FirebaseUserDetails userDetails = new FirebaseUserDetails(uid, email, role, decodedToken.isEmailVerified());
+                Object authTime = decodedToken.getClaims().get("auth_time");
+                FirebaseUserDetails userDetails = new FirebaseUserDetails(uid, email, role, decodedToken.isEmailVerified(),
+                        authTime instanceof Number n ? n.longValue() : null);
 
                 UsernamePasswordAuthenticationToken authentication = new UsernamePasswordAuthenticationToken(
                         userDetails,

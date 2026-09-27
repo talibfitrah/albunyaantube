@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui.me.profile.edit
 
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.util.isEmailShape
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
+import java.io.IOException
 import javax.inject.Inject
 
 enum class EditEmailError {
@@ -23,6 +25,7 @@ enum class EditEmailError {
 @HiltViewModel
 class EditEmailViewModel @Inject constructor(
     private val firebaseAuth: FirebaseAuth,
+    private val accountService: AccountService,
 ) : ViewModel() {
 
     data class UiState(
@@ -60,6 +63,9 @@ class EditEmailViewModel @Inject constructor(
         viewModelScope.launch {
             try {
                 user.reauthenticate(EmailAuthProvider.getCredential(currentEmail, s.currentPassword)).await()
+                // Re-mint so the bearer carries the fresh auth_time: the backend refuses a sign-in
+                // older than 5 minutes (REQUIRES_RECENT_LOGIN) and the cached token predates this one.
+                user.getIdToken(true).await()
             } catch (e: FirebaseAuthInvalidCredentialsException) {
                 _ui.update { it.copy(saving = false, error = EditEmailError.WRONG_PASSWORD) }
                 return@launch
@@ -68,9 +74,27 @@ class EditEmailViewModel @Inject constructor(
                 return@launch
             }
             try {
-                user.verifyBeforeUpdateEmail(s.newEmail).await()
-                _ui.update { it.copy(saving = false) }
-                _nav.value = Nav.Done
+                // Backend first: Firebase's own mailer does not deliver for this project. Firebase
+                // only when the backend has no mailer (503) or was unreachable.
+                val resp = try {
+                    accountService.sendChangeEmailVerification(mapOf("newEmail" to s.newEmail))
+                } catch (e: IOException) {
+                    null
+                }
+                val error = when {
+                    resp == null || resp.code() == 503 -> {
+                        user.verifyBeforeUpdateEmail(s.newEmail).await()
+                        null
+                    }
+                    resp.isSuccessful -> null
+                    resp.code() == 409 -> EditEmailError.EMAIL_IN_USE
+                    // REQUIRES_RECENT_LOGIN: the password field is this sheet's re-auth prompt.
+                    resp.code() == 401 -> EditEmailError.WRONG_PASSWORD
+                    resp.code() == 400 -> EditEmailError.INVALID_EMAIL
+                    else -> EditEmailError.NETWORK
+                }
+                _ui.update { it.copy(saving = false, error = error) }
+                if (error == null) _nav.value = Nav.Done
             } catch (e: FirebaseAuthUserCollisionException) {
                 _ui.update { it.copy(saving = false, error = EditEmailError.EMAIL_IN_USE) }
             } catch (e: FirebaseAuthInvalidCredentialsException) {

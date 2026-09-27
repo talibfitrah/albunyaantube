@@ -31,7 +31,9 @@ struct SignInViewModelTests {
             auth: auth,
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
-        return (SignInViewModel(auth: auth, session: session, capabilities: capabilities), transport, session)
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        return (SignInViewModel(auth: auth, session: session, account: account, capabilities: capabilities),
+                transport, session)
     }
 
     // MARK: - Patch round 3: a sign-in on top of a live account drops it first
@@ -55,7 +57,10 @@ struct SignInViewModelTests {
         session.signOut()
         #expect(session.user != nil && status.pending == nil, "the precondition: a refused sign-out")
         let signOutsBefore = google.signOutCount
-        let model = SignInViewModel(auth: auth, session: session, capabilities: Self.allCapabilities)
+        let model = SignInViewModel(auth: auth, session: session,
+                                    account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base,
+                                                           deviceId: DeviceId(value: "dev-1")),
+                                    capabilities: Self.allCapabilities)
         model.email = "other@fitrah.test"
         model.password = "hunter2"
 
@@ -234,6 +239,50 @@ struct SignInViewModelTests {
         #expect(model.state.passwordResetSent)
         #expect(model.state.error == nil)
         #expect(model.state.isLoading == false)
+    }
+
+    /// Backend first: Firebase's own mailer does not deliver for this project. The unscripted
+    /// tests above run with an empty queue, i.e. an unreachable backend, which is the fallback leg.
+    @Test func aResetTheBackendMailedNeverReachesFirebase() async throws {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, transport, _) = make(auth: auth, responses: [.json(200, #"{"message":"ok"}"#)])
+        auth.nextError = .passwordResetFailed
+        model.email = "student@fitrah.test"
+
+        await model.forgotPassword()
+
+        #expect(model.state.passwordResetSent)
+        #expect(auth.nextError == .passwordResetFailed, "the reset also went through Firebase")
+        let request = try #require(transport.sent.first)
+        #expect(request.method == "POST")
+        #expect(request.url.path == "/api/account/send-password-reset-email")
+        let body = try #require(request.body)
+        #expect(try JSONDecoder().decode([String: String].self, from: body) == ["email": "student@fitrah.test"])
+    }
+
+    @Test func aBackendWithNoMailerFallsBackToFirebase() async {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, _, _) = make(auth: auth, responses: [.json(503, #"{"code":"MAIL_UNAVAILABLE"}"#)])
+        model.email = "student@fitrah.test"
+
+        await model.forgotPassword()
+
+        #expect(model.state.passwordResetSent)
+        #expect(model.state.error == nil)
+    }
+
+    /// 429 is the backend's own per-IP / per-email limit: routing around it through Firebase would
+    /// defeat it. Only 503 (no mailer) and an unreachable backend fall back.
+    @Test func aBackendRefusalIsNotRoutedAroundThroughFirebase() async {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, _, _) = make(auth: auth, responses: [.json(429, #"{"code":"RATE_LIMITED"}"#)])
+        auth.nextError = .unknown
+        model.email = "student@fitrah.test"
+
+        await model.forgotPassword()
+
+        #expect(model.state.error == .passwordResetFailed)
+        #expect(auth.nextError == .unknown, "a 429 was routed around through Firebase")
     }
 
     // MARK: - Capability filtering

@@ -100,6 +100,26 @@ class FirebaseAuthFilterRevokedTokenTest {
 
     // ── M1: the lifecycle verdict must survive the revocation failure ───────
 
+    /** Change-email's recent-login gate reads the token's auth_time off the principal. */
+    @Test
+    @DisplayName("a verified token's auth_time reaches the principal")
+    void authTimeClaimReachesThePrincipal() throws Exception {
+        FirebaseToken decoded = mock(FirebaseToken.class);
+        when(decoded.getUid()).thenReturn(UID);
+        when(decoded.getClaims()).thenReturn(java.util.Map.of("auth_time", 1_790_000_000L));
+        when(firebaseAuth.verifyIdToken(anyString(), eq(true))).thenReturn(decoded);
+        stubUser(UserStatus.ACTIVE);
+        FirebaseUserDetails[] seen = new FirebaseUserDetails[1];
+
+        MockHttpServletRequest request = new MockHttpServletRequest("GET", "/api/account/me");
+        request.addHeader("Authorization", "Bearer " + TOKEN);
+        filter.doFilter(request, new MockHttpServletResponse(), (req, res) -> seen[0] =
+                (FirebaseUserDetails) SecurityContextHolder.getContext().getAuthentication().getPrincipal());
+
+        assertNotNull(seen[0]);
+        assertEquals(1_790_000_000L, seen[0].getAuthTime());
+    }
+
     @Test
     @DisplayName("M1: revoked token + soft-deleted user -> 403 ACCOUNT_DELETED, not a bare 401")
     void revokedTokenForDeletedUser_getsAccountDeleted403() throws Exception {

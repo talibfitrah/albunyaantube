@@ -27,7 +27,7 @@ struct SignInScreen: View {
         .task {
             if viewModel == nil {
                 viewModel = SignInViewModel(auth: container.auth, session: container.session,
-                                            capabilities: container.capabilities)
+                                            account: container.account, capabilities: container.capabilities)
             }
         }
         // A failed `/me` signs out and routes back here with its reason kept on the state

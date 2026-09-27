@@ -161,6 +161,24 @@ nonisolated struct AccountClient: Sendable {
         guard response.status == 200 else { throw failure(response) }
     }
 
+    /// `POST /api/account/send-password-reset-email` — signed out. 200 whether or not the address
+    /// has an account (the backend never says); 503 is "no server mailer".
+    func sendPasswordResetEmail(email: String) async throws(AccountError) {
+        let response = try await send("POST", "api/account/send-password-reset-email",
+                                      body: try encode(["email": email]))
+        guard response.status == 200 else { throw failure(response) }
+    }
+
+    /// `POST /api/account/send-change-email-verification` — mails the NEW address a link that
+    /// changes this account's email once opened. 409 is "address in use", 503 "no server mailer".
+    func sendChangeEmailVerification(newEmail: String) async throws(AccountError) {
+        let response = try await send("POST", "api/account/send-change-email-verification",
+                                      body: try encode(["newEmail": newEmail]))
+        guard response.status == 200 else {
+            throw failure(response) { status, _ -> AccountError? in status == 409 ? .conflict : nil }
+        }
+    }
+
     /// `DELETE /api/account/me` (`AccountController.java:214`). 204 on both the first call and an
     /// idempotent retry; 409 is `LastAdminException`.
     func deleteAccount() async throws(AccountError) {

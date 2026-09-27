@@ -126,9 +126,26 @@ public class MailService {
                       + ". Replies to this address are not monitored.\n"));
     }
 
+    /**
+     * Sent to the NEW address; the account's email changes only when that link is opened.
+     *
+     * @return whether the message was actually handed to Graph (same contract as above).
+     */
+    public boolean sendEmailChangeVerification(String to, String changeLink) {
+        return sendViaGraph(to, "email_change",
+                buildMessage(to, "Confirm your new FitrahTube email",
+                        "Assalamu alaykum,\n\n"
+                      + "We received a request to change your FitrahTube account email to this address.\n"
+                      + "Click the link below to confirm:\n\n"
+                      + changeLink + "\n\n"
+                      + "If you didn't request this, ignore this email — nothing will change.\n\n"
+                      + "This is an automated message from " + fromDisplayName
+                      + ". Replies to this address are not monitored.\n"));
+    }
+
     private boolean sendViaGraph(String to, String type, Message msg) {
         if (!enabled) {
-            log.info("mail.disabled ({}) recipient={}", type, sanitiseRecipientForAudit(to));
+            log.info("mail.disabled ({}) recipient={}", type, maskEmail(to));
             return false;
         }
         try {
@@ -147,7 +164,7 @@ public class MailService {
 
     /** Package-private for unit test override. */
     void handleSendFailure(String to, Exception e, String type) {
-        log.error("{}.failed to={}", type, to, e);
+        log.error("{}.failed to={}", type, maskEmail(to), e);
         meters.counter("email.send.failure", "type", type).increment();
         // Cubic R5 P1: never pipe the raw `to` into an audit row — log-shippers
         // and CSV exporters get poisoned by CR/LF/control chars in unvalidated
@@ -182,6 +199,14 @@ public class MailService {
             return "<invalid>";
         }
         return stripped;
+    }
+
+    /** For logs: {@code f***@gmail.com} -- enough to correlate a report, not a harvestable address. */
+    public static String maskEmail(String email) {
+        if (email == null) return "<null>";
+        String clean = email.replaceAll("[\\p{Cntrl}]", "");
+        int at = clean.indexOf('@');
+        return at < 1 ? "***" : clean.charAt(0) + "***" + clean.substring(at);
     }
 
     Message buildMessage(String to, String subject, String textContent) {

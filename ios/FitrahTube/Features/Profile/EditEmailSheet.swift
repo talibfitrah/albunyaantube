@@ -19,8 +19,9 @@ nonisolated enum EditEmailError: Sendable, Equatable {
     }
 }
 
-/// `EditEmailViewModel.kt`. **`verifyBeforeUpdateEmail` is the only email path there is** — the
-/// address does not change until the user opens the link Firebase mails to the NEW address, and
+/// `EditEmailViewModel.kt`. **A verify-and-change link is the only email path there is** — the
+/// address does not change until the user opens the link mailed to the NEW address (by the backend,
+/// or by Firebase's `verifyBeforeUpdateEmail` when the backend cannot), and
 /// the current one keeps working until then. `AuthClient` deliberately carries no `updateEmail`,
 /// which would flip the address on an unverified mailbox and lock the account out of its own
 /// sign-in.
@@ -34,11 +35,15 @@ nonisolated enum EditEmailError: Sendable, Equatable {
     }
 
     private let auth: any AuthClient
+    private let account: AccountClient
     private(set) var state = UiState()
     /// The address the link went to, once sent. Non-nil is the success signal the sheet reports.
     private(set) var sentTo: String?
 
-    init(auth: any AuthClient) { self.auth = auth }
+    init(auth: any AuthClient, account: AccountClient) {
+        self.auth = auth
+        self.account = account
+    }
 
     var newEmail: String {
         get { state.newEmail }
@@ -75,13 +80,41 @@ nonisolated enum EditEmailError: Sendable, Equatable {
             state.error = Self.reauthFailure(error)
             return
         }
+        // Re-mint so the bearer carries the fresh auth_time: the backend refuses a sign-in older than
+        // 5 minutes (REQUIRES_RECENT_LOGIN), and the cached token predates this re-authentication.
+        guard await auth.idToken(forceRefresh: true) != nil else {
+            state.saving = false
+            state.error = .network
+            return
+        }
+        let failure: EditEmailError?
         do {
-            try await auth.verifyBeforeUpdateEmail(state.newEmail)
-            state.saving = false
-            sentTo = state.newEmail
+            try await account.sendChangeEmailVerification(newEmail: state.newEmail)
+            failure = nil
         } catch {
-            state.saving = false
-            state.error = Self.verifyFailure(error)
+            // Backend first: Firebase's own mailer does not deliver for this project. Firebase only
+            // when the backend has no mailer (503) or was unreachable.
+            switch error {
+            case .network, .unknown(status: 503): failure = await firebaseVerify(state.newEmail)
+            case .conflict: failure = .emailInUse
+            // REQUIRES_RECENT_LOGIN: the current-password field is this sheet's re-auth prompt.
+            case .unknown(status: 401): failure = .wrongPassword
+            case .validation: failure = .invalidEmail
+            // `AccountStatusCenter` owns the lifecycle routing; this sheet must not name it.
+            case .blocked, .deletedAccount: failure = .unknown
+            default: failure = .network
+            }
+        }
+        state.saving = false
+        if let failure { state.error = failure } else { sentTo = state.newEmail }
+    }
+
+    private func firebaseVerify(_ newEmail: String) async -> EditEmailError? {
+        do {
+            try await auth.verifyBeforeUpdateEmail(newEmail)
+            return nil
+        } catch {
+            return Self.verifyFailure(error)
         }
     }
 
@@ -152,6 +185,6 @@ struct EditEmailSheet: View {
                 }
             }
         }
-        .task { if model == nil { model = EditEmailViewModel(auth: container.auth) } }
+        .task { if model == nil { model = EditEmailViewModel(auth: container.auth, account: container.account) } }
     }
 }

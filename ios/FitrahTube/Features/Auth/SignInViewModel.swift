@@ -26,6 +26,7 @@ import Observation
 
     private let auth: any AuthClient
     private let session: AccountSession
+    private let account: AccountClient
 
     private(set) var state: UiState
 
@@ -76,8 +77,9 @@ import Observation
         }
     }
 
-    init(auth: any AuthClient, session: AccountSession, capabilities: SignInCapabilities) {
+    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities) {
         self.auth = auth
+        self.account = account
         self.session = session
         state = UiState(capabilities: capabilities)
     }
@@ -162,12 +164,28 @@ import Observation
         }
         beginLoading()
         do {
-            try await auth.sendPasswordReset(email: state.email)
+            try await sendPasswordReset(state.email)
             state.isLoading = false
             state.passwordResetSent = true
         } catch {
             finish(with: .passwordResetFailed)
         }
+    }
+
+    /// Backend first: Firebase's own mailer does not deliver for this project. Firebase only when
+    /// the backend has no mailer (503) or was unreachable; any other answer stands (429 is its
+    /// per-IP / per-email limit, which routing around through Firebase would defeat).
+    private func sendPasswordReset(_ email: String) async throws {
+        do {
+            try await account.sendPasswordResetEmail(email: email)
+            return
+        } catch {
+            switch error {
+            case .network, .unknown(status: 503): break
+            default: throw error
+            }
+        }
+        try await auth.sendPasswordReset(email: email)
     }
 
     // MARK: -

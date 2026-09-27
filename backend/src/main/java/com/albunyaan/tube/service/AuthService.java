@@ -15,6 +15,19 @@ import com.google.cloud.firestore.SetOptions;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.Transaction;
+import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpRequest;
+import com.google.api.client.http.HttpRequestFactory;
+import com.google.api.client.http.HttpResponseException;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.http.json.JsonHttpContent;
+import com.google.api.client.json.GenericJson;
+import com.google.api.client.json.gson.GsonFactory;
+import com.google.auth.http.HttpCredentialsAdapter;
+import com.google.firebase.ErrorCode;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.ImplFirebaseTrampolines;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
@@ -29,6 +42,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -1310,8 +1324,63 @@ public class AuthService {
         // only to discard it.
         if (!mailService.isEnabled()) return false;
         String link = firebaseAuth.generatePasswordResetLink(email);
-        logger.info("Password reset link generated for: {}", email);
+        logger.info("Password reset link generated for: {}", MailService.maskEmail(email));
         return mailService.sendPasswordResetEmail(email, link);
+    }
+
+    /**
+     * Public (signed-out) forgot-password, run on {@code passwordResetExecutor} (AccountController)
+     * so neither the answer nor its timing says whether the address has an account; an address with
+     * none is dropped here. A Graph refusal is logged + audited by {@link MailService}.
+     */
+    public void sendPasswordResetEmailQuietly(String email) {
+        try {
+            sendPasswordResetEmail(email);
+        } catch (FirebaseAuthException e) {
+            logger.info("Public password reset not sent: {}", e.getAuthErrorCode());
+        } catch (RuntimeException e) {
+            logger.error("Public password reset failed", e);
+        }
+    }
+
+    /**
+     * The Java Admin SDK has no {@code generateVerifyAndChangeEmailLink} (Node's has; absent in
+     * 9.10.0 and 9.11.0), so this is the request Node's sends: {@code accounts:sendOobCode} with
+     * {@code returnOobLink} -- the link comes back to us and Firebase mails nothing.
+     */
+    public String generateVerifyAndChangeEmailLink(String email, String newEmail)
+            throws IOException, FirebaseAuthException {
+        FirebaseApp app = FirebaseApp.getInstance();
+        return verifyAndChangeEmailLink(
+                new NetHttpTransport().createRequestFactory(
+                        new HttpCredentialsAdapter(ImplFirebaseTrampolines.getCredentials(app))),
+                ImplFirebaseTrampolines.getProjectId(app), email, newEmail);
+    }
+
+    static String verifyAndChangeEmailLink(HttpRequestFactory http, String projectId, String email, String newEmail)
+            throws IOException, FirebaseAuthException {
+        HttpRequest request = http.buildPostRequest(
+                new GenericUrl("https://identitytoolkit.googleapis.com/v1/projects/" + projectId + "/accounts:sendOobCode"),
+                new JsonHttpContent(GsonFactory.getDefaultInstance(), Map.of(
+                        "requestType", "VERIFY_AND_CHANGE_EMAIL", "email", email,
+                        "newEmail", newEmail, "returnOobLink", true)));
+        request.setParser(GsonFactory.getDefaultInstance().createJsonObjectParser());
+        try {
+            Object link = request.execute().parseAs(GenericJson.class).get("oobLink");
+            if (link == null) throw new IOException("sendOobCode answered without an oobLink");
+            return link.toString();
+        } catch (HttpResponseException e) {
+            String error = e.getContent() == null ? "" : e.getContent();
+            if (error.contains("EMAIL_EXISTS")) {
+                throw new FirebaseAuthException(ErrorCode.ALREADY_EXISTS, "EMAIL_EXISTS", e, null,
+                        AuthErrorCode.EMAIL_ALREADY_EXISTS);
+            }
+            // The caller's input (`@Email` accepts `a@b`; Identity Toolkit does not): a 400, not a 500.
+            if (error.contains("INVALID_EMAIL") || error.contains("INVALID_NEW_EMAIL")) {
+                throw new FirebaseAuthException(ErrorCode.INVALID_ARGUMENT, "INVALID_EMAIL", e, null, null);
+            }
+            throw e;
+        }
     }
 
     /**

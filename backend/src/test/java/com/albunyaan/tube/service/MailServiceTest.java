@@ -55,6 +55,26 @@ class MailServiceTest {
     }
 
     @Test
+    void disabledMail_emailChangeVerification_shortCircuits() {
+        MeterRegistry meters = new SimpleMeterRegistry();
+        AuditLogService auditLog = mock(AuditLogService.class);
+        MailService svc = createDisabledService(meters, auditLog);
+
+        assertFalse(svc.sendEmailChangeVerification("new@example.com", "https://change/link"),
+                "a disabled mailer reported the change-email mail as sent");
+        verifyNoInteractions(auditLog);
+    }
+
+    /** Logs name a recipient only masked: enough to correlate a report, not a harvestable address. */
+    @Test
+    void maskEmail_keepsTheFirstCharacterAndTheDomainOnly() {
+        assertEquals("f***@gmail.com", MailService.maskEmail("fitrahtvnl@gmail.com"));
+        assertEquals("***", MailService.maskEmail("no-at-sign"));
+        assertEquals("***", MailService.maskEmail("@nolocal.com"));
+        assertEquals("<null>", MailService.maskEmail(null));
+    }
+
+    @Test
     void buildMessage_setsSubjectBodyAndRecipient() {
         MeterRegistry meters = new SimpleMeterRegistry();
         AuditLogService auditLog = mock(AuditLogService.class);

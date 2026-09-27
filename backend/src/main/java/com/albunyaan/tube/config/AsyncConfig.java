@@ -174,6 +174,25 @@ public class AsyncConfig {
     }
 
     /**
+     * Public (signed-out) forgot-password sends. Its own pool, so a burst of anonymous resets cannot
+     * delay the role-downgrade revocations on authExecutor. Full = DROP with a WARN (no address):
+     * CallerRunsPolicy would run the send on the request thread, and the answer's timing would then
+     * say whether the account exists.
+     */
+    @Bean(name = "passwordResetExecutor")
+    public Executor passwordResetExecutor() {
+        ThreadPoolTaskExecutor executor = new ThreadPoolTaskExecutor();
+        executor.setCorePoolSize(1);
+        executor.setMaxPoolSize(2);
+        executor.setQueueCapacity(100);
+        executor.setThreadNamePrefix("reset-mail-");
+        executor.setRejectedExecutionHandler(
+                (task, pool) -> logger.warn("Password reset mail dropped: passwordResetExecutor is full"));
+        executor.initialize();
+        return executor;
+    }
+
+    /**
      * Custom rejection handler that logs when tasks are rejected and throws an exception.
      *
      * This ensures:

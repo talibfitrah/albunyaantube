@@ -20,6 +20,14 @@ interface AccountService {
     @POST("api/account/send-verification-email")
     suspend fun sendVerificationEmail(): retrofit2.Response<Unit>
 
+    /** Signed out; body `{"email": ...}`. 503 = no server mailer, so fall back to Firebase. */
+    @POST("api/account/send-password-reset-email")
+    suspend fun sendPasswordResetEmail(@Body body: Map<String, String>): retrofit2.Response<Unit>
+
+    /** Body `{"newEmail": ...}`; 409 = address in use, 503 = no server mailer. */
+    @POST("api/account/send-change-email-verification")
+    suspend fun sendChangeEmailVerification(@Body body: Map<String, String>): retrofit2.Response<Unit>
+
     /**
      * ANDROID-ACCT-DEL-01 — self-serve permanent deletion (Google Play policy
      * 13327111). Backend answers 204 on both the first call and an idempotent

@@ -31,6 +31,10 @@ import org.springframework.test.web.servlet.MockMvc;
 import java.time.LocalDate;
 import java.util.Optional;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNotEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
@@ -64,6 +68,9 @@ class AccountControllerTest {
 
     @MockBean
     com.albunyaan.tube.service.AuthService authService;
+
+    @MockBean(name = "passwordResetExecutor")
+    java.util.concurrent.Executor passwordResetExecutor;
 
     ObjectMapper objectMapper;
 
@@ -407,5 +414,233 @@ class AccountControllerTest {
                         .content().string(""));
 
         verify(authService, org.mockito.Mockito.times(2)).deleteAccountPermanently(TEST_UID);
+    }
+    // ── Forgot password: POST /api/account/send-password-reset-email (signed out) ──
+
+    private static final String RESET_SENT = "If an account exists for that email, a reset link is on its way";
+
+    private org.springframework.test.web.servlet.ResultActions postReset(String email, String realIp) throws Exception {
+        return mockMvc.perform(post("/api/account/send-password-reset-email")
+                .header("X-Real-IP", realIp)
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"email\":\"" + email + "\"}"));
+    }
+
+    /** The send is handed to passwordResetExecutor and never run on the request thread: neither the
+     *  answer nor its timing may depend on whether the address has an account. */
+    @Test
+    void sendPasswordResetEmailHandsTheSendOffTheRequestThread() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+
+        postReset("reset-a@test.com", "198.51.100.1")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(RESET_SENT));
+
+        org.mockito.ArgumentCaptor<Runnable> send = org.mockito.ArgumentCaptor.forClass(Runnable.class);
+        verify(passwordResetExecutor).execute(send.capture());
+        verify(authService, never()).sendPasswordResetEmailQuietly(any());
+        org.mockito.Mockito.verifyNoInteractions(firebaseAuth);
+        send.getValue().run();
+        verify(authService).sendPasswordResetEmailQuietly("reset-a@test.com");
+    }
+
+    @Test
+    void sendPasswordResetEmailAnswers503WhenMailIsDisabled() throws Exception {
+        when(mailService.isEnabled()).thenReturn(false);
+
+        postReset("reset-b@test.com", "198.51.100.2")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_UNAVAILABLE"));
+        verify(passwordResetExecutor, never()).execute(any());
+    }
+
+    /** A per-address limit must never answer differently (that would block the victim and leak):
+     *  a repeat inside the cooldown is dropped, and the caller cannot tell. */
+    @Test
+    void aRepeatResetForTheSameAddressIsDroppedButAnsweredIdentically() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+
+        postReset("reset-c@test.com", "198.51.100.10").andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(RESET_SENT));
+        postReset("RESET-C@test.com", "198.51.100.11").andExpect(status().isOk())
+                .andExpect(jsonPath("$.message").value(RESET_SENT));
+
+        verify(passwordResetExecutor, org.mockito.Mockito.times(1)).execute(any());
+    }
+
+    @Autowired
+    AccountController controller;
+
+    @Test
+    void resetMailPerAddressIsOneAMinuteAndTenADay() {
+        long t = 1_000_000_000L;
+        String email = "reset-window@test.com";
+        assertTrue(controller.resetMailAllowed(email, t));
+        assertFalse(controller.resetMailAllowed(email, t + 59_999), "inside the 60 s cooldown");
+        for (int i = 1; i < 10; i++) {
+            assertTrue(controller.resetMailAllowed(email, t + i * 60_000L), "send " + (i + 1));
+        }
+        assertFalse(controller.resetMailAllowed(email, t + 10 * 60_000L), "the 11th inside 24 h");
+        assertTrue(controller.resetMailAllowed(email, t + 86_400_000L), "the first send aged out");
+    }
+
+    /** X-Real-IP (set by nginx from Cloudflare's ranges), never CF-Connecting-IP (forgeable at the
+     *  public origin). The per-IP limit may answer 429: it says nothing about any address. */
+    @Test
+    void sendPasswordResetEmailLimitsEachIpToTwentyAnHourAndIgnoresCfConnectingIp() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+
+        for (int i = 0; i < 20; i++) {
+            mockMvc.perform(post("/api/account/send-password-reset-email")
+                            .header("X-Real-IP", "203.0.113.7")
+                            .header("CF-Connecting-IP", "192.0.2." + i)
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"email\":\"reset-d" + i + "@test.com\"}"))
+                    .andExpect(status().isOk());
+        }
+        postReset("reset-d-last@test.com", "203.0.113.7")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+        postReset("reset-d-last@test.com", "203.0.113.8").andExpect(status().isOk());
+    }
+
+    @Test
+    void theIpKeyGroupsIpv6By64AndIgnoresAnOverlongOrBogusHeader() {
+        assertEquals(AccountController.clientIpKey("2001:db8:1:2::a", "127.0.0.1"),
+                AccountController.clientIpKey("2001:db8:1:2:ffff:eeee:dddd:cccc", "127.0.0.1"));
+        assertNotEquals(AccountController.clientIpKey("2001:db8:1:2::a", "127.0.0.1"),
+                AccountController.clientIpKey("2001:db8:1:3::a", "127.0.0.1"));
+        assertNotEquals(AccountController.clientIpKey("198.51.100.1", "127.0.0.1"),
+                AccountController.clientIpKey("198.51.100.2", "127.0.0.1"));
+        String overlong = "1".repeat(46);
+        assertEquals(AccountController.clientIpKey(null, "192.0.2.1"),
+                AccountController.clientIpKey(overlong, "192.0.2.1"));
+        assertEquals(AccountController.clientIpKey(null, "192.0.2.1"),
+                AccountController.clientIpKey("evil.example", "192.0.2.1"));
+    }
+
+    @Test
+    void sendPasswordResetEmailRejectsAMalformedAddress() throws Exception {
+        postReset("not-an-email", "198.51.100.30").andExpect(status().isBadRequest());
+        verify(passwordResetExecutor, never()).execute(any());
+    }
+
+    // ── Change email: POST /api/account/send-change-email-verification ────────────
+
+    private org.springframework.test.web.servlet.ResultActions postChangeEmail(String uid, String newEmail)
+            throws Exception {
+        return postChangeEmail(uid, newEmail, System.currentTimeMillis() / 1000);
+    }
+
+    private org.springframework.test.web.servlet.ResultActions postChangeEmail(String uid, String newEmail, Long authTime)
+            throws Exception {
+        // The token's email (TEST_EMAIL) is deliberately NOT the account's current address below:
+        // the link must be minted for the uid's record, never for a possibly stale token claim.
+        SecurityContextHolder.getContext().setAuthentication(new UsernamePasswordAuthenticationToken(
+                new FirebaseUserDetails(uid, TEST_EMAIL, "user", true, authTime), null, java.util.List.of()));
+        return mockMvc.perform(post("/api/account/send-change-email-verification")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"newEmail\":\"" + newEmail + "\"}"));
+    }
+
+    private void currentEmailIs(String uid, String email) throws Exception {
+        com.google.firebase.auth.UserRecord record = org.mockito.Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        when(record.getEmail()).thenReturn(email);
+        when(firebaseAuth.getUser(uid)).thenReturn(record);
+    }
+
+    /** verifyBeforeUpdateEmail used to enforce Firebase's requires-recent-login; the backend must
+     *  too, or any live token (stolen, or a device left signed in) could move the email. */
+    @Test
+    void sendChangeEmailVerificationRequiresASignInFromTheLastFiveMinutes() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+
+        postChangeEmail("uid-change-stale", "new@test.com", System.currentTimeMillis() / 1000 - 301)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("REQUIRES_RECENT_LOGIN"));
+        postChangeEmail("uid-change-stale", "new@test.com", null)
+                .andExpect(status().isUnauthorized())
+                .andExpect(jsonPath("$.code").value("REQUIRES_RECENT_LOGIN"));
+        verify(authService, never()).generateVerifyAndChangeEmailLink(any(), any());
+        verify(mailService, never()).sendEmailChangeVerification(any(), any());
+    }
+
+    @Test
+    void sendChangeEmailVerificationMailsTheNewAddressALinkForTheCallersOwnAccount() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        currentEmailIs("uid-change-ok", "current@test.com");
+        when(authService.generateVerifyAndChangeEmailLink("current@test.com", "new@test.com"))
+                .thenReturn("https://change/link");
+        when(mailService.sendEmailChangeVerification("new@test.com", "https://change/link")).thenReturn(true);
+
+        postChangeEmail("uid-change-ok", "new@test.com").andExpect(status().isOk());
+
+        verify(mailService).sendEmailChangeVerification("new@test.com", "https://change/link");
+        // Per-uid cooldown, same 60 s rule as the verification mail.
+        postChangeEmail("uid-change-ok", "new@test.com")
+                .andExpect(status().isTooManyRequests())
+                .andExpect(jsonPath("$.code").value("RATE_LIMITED"));
+    }
+
+    @Test
+    void sendChangeEmailVerificationAnswers503WithoutALinkWhenMailIsDisabled() throws Exception {
+        when(mailService.isEnabled()).thenReturn(false);
+
+        postChangeEmail("uid-change-off", "new@test.com")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_UNAVAILABLE"));
+        verify(authService, never()).generateVerifyAndChangeEmailLink(any(), any());
+        postChangeEmail("uid-change-off", "new@test.com").andExpect(status().isTooManyRequests());
+    }
+
+    @Test
+    void sendChangeEmailVerificationAnswers503WhenTheMailerDidNotSend() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        currentEmailIs("uid-change-unsent", "current@test.com");
+        when(authService.generateVerifyAndChangeEmailLink("current@test.com", "new@test.com"))
+                .thenReturn("https://change/link");
+        when(mailService.sendEmailChangeVerification(any(), any())).thenReturn(false);
+
+        postChangeEmail("uid-change-unsent", "new@test.com")
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(jsonPath("$.code").value("MAIL_UNAVAILABLE"));
+    }
+
+    /** EMAIL_IN_USE keeps the apps' existing "already in use" copy. It is an account-existence
+     *  answer, so it costs the same 60 s cooldown as a send: no unlimited probing. */
+    @Test
+    void sendChangeEmailVerificationAnswers409AndStillCoolsDownWhenTheNewAddressIsTaken() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        currentEmailIs("uid-change-taken", "current@test.com");
+        when(authService.generateVerifyAndChangeEmailLink("current@test.com", "taken@test.com"))
+                .thenThrow(new com.google.firebase.auth.FirebaseAuthException(
+                        com.google.firebase.ErrorCode.ALREADY_EXISTS, "EMAIL_EXISTS", null, null,
+                        com.google.firebase.auth.AuthErrorCode.EMAIL_ALREADY_EXISTS));
+
+        postChangeEmail("uid-change-taken", "taken@test.com")
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("EMAIL_IN_USE"));
+        postChangeEmail("uid-change-taken", "other@test.com").andExpect(status().isTooManyRequests());
+    }
+
+    /** `@Email` accepts `a@b`; Identity Toolkit does not. Its INVALID_EMAIL is the caller's input,
+     *  so a 400, not a 500. */
+    @Test
+    void sendChangeEmailVerificationAnswers400WhenFirebaseRejectsTheAddress() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        currentEmailIs("uid-change-invalid", "current@test.com");
+        when(authService.generateVerifyAndChangeEmailLink("current@test.com", "a@b"))
+                .thenThrow(new com.google.firebase.auth.FirebaseAuthException(
+                        com.google.firebase.ErrorCode.INVALID_ARGUMENT, "INVALID_NEW_EMAIL", null, null, null));
+
+        postChangeEmail("uid-change-invalid", "a@b")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("INVALID_EMAIL"));
+    }
+
+    @Test
+    void sendChangeEmailVerificationRejectsAMalformedAddress() throws Exception {
+        postChangeEmail("uid-change-bad", "not-an-email").andExpect(status().isBadRequest());
+        verify(authService, never()).generateVerifyAndChangeEmailLink(any(), any());
     }
 }

@@ -1,6 +1,7 @@
 import FitrahAPI
 import Foundation
 import InnerTubeKit
+import Synchronization
 import Testing
 @testable import FitrahTube
 
@@ -356,12 +357,46 @@ struct ProfileViewModelTests {
 
     // MARK: - Edit email sheet
 
-    /// `verifyBeforeUpdateEmail` is the ONLY email path: the address does not move until the user
+    /// Empty `responses` is an unreachable backend (the queue runs dry -> `.network`).
+    private func editEmail(_ auth: FakeAuthClient, _ responses: [HTTPResponse] = [])
+        -> (model: EditEmailViewModel, transport: ScriptedTransport) {
+        let transport = ScriptedTransport(responses)
+        let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
+        return (EditEmailViewModel(auth: auth, account: account), transport)
+    }
+
+    /// A verify-and-change link is the ONLY email path: the address does not move until the user
     /// opens the link mailed to the NEW one, so the current address keeps signing them in until
-    /// then. An `updateEmail`-shaped call would flip it on an unverified mailbox.
-    @Test func changingTheEmailReauthenticatesThenVerifiesAndNeverCallsUpdateEmail() async {
+    /// then. An `updateEmail`-shaped call would flip it on an unverified mailbox. The backend mails
+    /// that link (Firebase's own mailer does not deliver for this project).
+    @Test func changingTheEmailReauthenticatesThenHasTheBackendMailTheLinkAndNeverCallsUpdateEmail() async throws {
         let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
-        let model = EditEmailViewModel(auth: auth)
+        // The backend refuses a sign-in older than 5 minutes (REQUIRES_RECENT_LOGIN), so the bearer
+        // must be RE-MINTED after the re-authentication: snapshot the mints when the request goes out.
+        let mintsAtSend = Mutex<[Bool]?>(nil)
+        let transport = ScriptedTransport([.json(200, #"{"message":"ok"}"#)],
+                                          park: { _ in mintsAtSend.withLock { $0 = auth.tokenRefreshes } })
+        let model = EditEmailViewModel(auth: auth, account: AccountClient(transport: transport, baseURL: Self.base,
+                                                                          deviceId: DeviceId(value: "dev-1")))
+        model.newEmail = "new@fitrah.test"
+        model.currentPassword = "hunter2000"
+
+        await model.submit()
+
+        #expect(mintsAtSend.withLock { $0 } == [true])
+        #expect(auth.operations == [.reauthenticate])
+        let request = try #require(transport.sent.first)
+        #expect(request.url.path == "/api/account/send-change-email-verification")
+        let body = try #require(request.body)
+        #expect(try JSONDecoder().decode([String: String].self, from: body) == ["newEmail": "new@fitrah.test"])
+        #expect(model.sentTo == "new@fitrah.test")
+        #expect(model.state.error == nil)
+    }
+
+    @Test(arguments: [[HTTPResponse.json(503, #"{"code":"MAIL_UNAVAILABLE"}"#)], []])
+    func aBackendWithNoMailerOrNoConnectionFallsBackToFirebasesVerify(_ responses: [HTTPResponse]) async {
+        let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
+        let (model, _) = editEmail(auth, responses)
         model.newEmail = "new@fitrah.test"
         model.currentPassword = "hunter2000"
 
@@ -369,12 +404,52 @@ struct ProfileViewModelTests {
 
         #expect(auth.operations == [.reauthenticate, .verifyBeforeUpdateEmail])
         #expect(model.sentTo == "new@fitrah.test")
-        #expect(model.state.error == nil)
+    }
+
+    /** REQUIRES_RECENT_LOGIN: this sheet's re-auth prompt is its current-password field. */
+    @Test func aStaleSignInRefusalPointsAtThePasswordFieldAndIsNotRoutedThroughFirebase() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
+        let (model, _) = editEmail(auth, [.json(401, #"{"code":"REQUIRES_RECENT_LOGIN"}"#)])
+        model.newEmail = "new@fitrah.test"
+        model.currentPassword = "hunter2000"
+
+        await model.submit()
+
+        #expect(model.state.error == .wrongPassword)
+        #expect(auth.operations == [.reauthenticate])
+        #expect(model.sentTo == nil)
+    }
+
+    @Test func aTokenThatCannotBeReMintedStopsBeforeTheBackend() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
+        auth.mintFailsOnNetwork = true
+        let (model, transport) = editEmail(auth, [.json(200, #"{"message":"ok"}"#)])
+        model.newEmail = "new@fitrah.test"
+        model.currentPassword = "hunter2000"
+
+        await model.submit()
+
+        #expect(model.state.error == .network)
+        #expect(transport.sent.isEmpty)
+        #expect(model.sentTo == nil)
+    }
+
+    @Test func anAddressInUseKeepsItsMessageAndIsNotRoutedThroughFirebase() async {
+        let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
+        let (model, _) = editEmail(auth, [.json(409, #"{"code":"EMAIL_IN_USE"}"#)])
+        model.newEmail = "taken@fitrah.test"
+        model.currentPassword = "hunter2000"
+
+        await model.submit()
+
+        #expect(model.state.error == .emailInUse)
+        #expect(auth.operations == [.reauthenticate])
+        #expect(model.sentTo == nil)
     }
 
     @Test func aMalformedAddressNeverReachesFirebase() async {
         let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
-        let model = EditEmailViewModel(auth: auth)
+        let model = editEmail(auth).model
         model.newEmail = "not-an-address"
         model.currentPassword = "hunter2000"
 
@@ -387,7 +462,7 @@ struct ProfileViewModelTests {
     @Test func aRejectedReauthenticationNamesTheWrongPasswordRatherThanFailingGenerically() async {
         let auth = FakeAuthClient(state: .signedIn(Self.passwordUser))
         auth.nextError = .invalidCredential
-        let model = EditEmailViewModel(auth: auth)
+        let model = editEmail(auth).model
         model.newEmail = "new@fitrah.test"
         model.currentPassword = "wrong"
 
@@ -395,6 +470,7 @@ struct ProfileViewModelTests {
 
         #expect(model.state.error == .wrongPassword)
         #expect(auth.operations == [.reauthenticate])   // never got as far as the verify
+        #expect(auth.tokenRefreshes.isEmpty, "a token was re-minted for a refused re-authentication")
         #expect(model.sentTo == nil)
     }
 

@@ -60,6 +60,9 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs (includes /api/v1/search)
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        // Forgot-password is used signed out. This one POST only; the controller
+                        // rate-limits it per IP and per email and never reveals account existence.
+                        .requestMatchers(HttpMethod.POST, "/api/account/send-password-reset-email").permitAll()
                         // ANDROID-MULTI-01 Issue 4: public OpenGraph "watch" landing pages
                         // served by WatchPageController; must be anonymously reachable so
                         // link unfurlers (WhatsApp/Telegram/Slack/Skype) can crawl og:image.

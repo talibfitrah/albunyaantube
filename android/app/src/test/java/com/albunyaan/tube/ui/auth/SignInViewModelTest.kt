@@ -23,7 +23,10 @@ import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.mockito.kotlin.never
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
@@ -36,6 +39,7 @@ class SignInViewModelTest {
 
     private val dispatcher = StandardTestDispatcher()
     private lateinit var repository: AuthRepository
+    private lateinit var accountService: com.albunyaan.tube.data.account.AccountService
     private lateinit var viewModel: SignInViewModel
 
     @Before
@@ -44,10 +48,19 @@ class SignInViewModelTest {
         repository = mock()
         whenever(repository.authState).thenReturn(MutableStateFlow(AuthState.SignedOut))
         whenever(repository.accountStatusEvents).thenReturn(MutableSharedFlow())
-        viewModel = SignInViewModel(repository)
+        // Default: the backend has no mailer (503), so the pre-existing forgot-password tests
+        // below exercise the Firebase fallback exactly as before.
+        accountService = mock {
+            onBlocking { sendPasswordResetEmail(org.mockito.kotlin.any()) } doReturn http(503)
+        }
+        viewModel = SignInViewModel(repository, accountService)
     }
 
     @After fun tearDown() { Dispatchers.resetMain() }
+
+    private fun http(code: Int): retrofit2.Response<Unit> =
+        if (code == 200) retrofit2.Response.success(Unit)
+        else retrofit2.Response.error(code, okhttp3.ResponseBody.Companion.run { "".toResponseBody() })
 
     @Test fun `initial state is sign-in mode with empty fields`() {
         val s = viewModel.ui.value
@@ -222,6 +235,44 @@ class SignInViewModelTest {
         advanceUntilIdle()
 
         assertEquals(AuthErrorCode.PASSWORD_RESET_FAILED, viewModel.ui.value.error)
+    }
+
+    @Test fun `forgotPassword is mailed by the backend without touching Firebase`() = runTest(dispatcher) {
+        accountService.stub { onBlocking { sendPasswordResetEmail(mapOf("email" to "a@b.com")) } doReturn http(200) }
+
+        viewModel.onEmailChanged("a@b.com")
+        viewModel.forgotPassword()
+        advanceUntilIdle()
+
+        assertTrue(viewModel.ui.value.passwordResetSent)
+        verify(repository, never()).sendPasswordResetEmail(org.mockito.kotlin.any())
+    }
+
+    @Test fun `forgotPassword falls back to Firebase when the backend is unreachable`() = runTest(dispatcher) {
+        accountService.stub {
+            onBlocking { sendPasswordResetEmail(org.mockito.kotlin.any()) } doAnswer { throw java.io.IOException("offline") }
+        }
+        whenever(repository.sendPasswordResetEmail("a@b.com")).thenReturn(Result.success(Unit))
+
+        viewModel.onEmailChanged("a@b.com")
+        viewModel.forgotPassword()
+        advanceUntilIdle()
+
+        verify(repository).sendPasswordResetEmail("a@b.com")
+        assertTrue(viewModel.ui.value.passwordResetSent)
+    }
+
+    /** 429 is the backend's own per-IP / per-email limit: routing around it through Firebase
+     *  would defeat it. Only 503 (no mailer) and a network failure fall back. */
+    @Test fun `forgotPassword does not route a backend refusal to Firebase`() = runTest(dispatcher) {
+        accountService.stub { onBlocking { sendPasswordResetEmail(org.mockito.kotlin.any()) } doReturn http(429) }
+
+        viewModel.onEmailChanged("a@b.com")
+        viewModel.forgotPassword()
+        advanceUntilIdle()
+
+        assertEquals(AuthErrorCode.PASSWORD_RESET_FAILED, viewModel.ui.value.error)
+        verify(repository, never()).sendPasswordResetEmail(org.mockito.kotlin.any())
     }
 
     /**

@@ -715,6 +715,88 @@ class AuthServiceTest {
         verify(firebaseAuth).generatePasswordResetLink("test@example.com");
     }
 
+    /** Public forgot-password: an address with no account is dropped silently, never thrown
+     *  back to the caller (whose answer must not depend on it). */
+    @Test
+    void sendPasswordResetEmailQuietly_dropsAnAddressWithNoAccount() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        when(firebaseAuth.generatePasswordResetLink("nobody@example.com")).thenThrow(
+                new FirebaseAuthException(com.google.firebase.ErrorCode.NOT_FOUND, "EMAIL_NOT_FOUND", null, null,
+                        com.google.firebase.auth.AuthErrorCode.EMAIL_NOT_FOUND));
+
+        assertDoesNotThrow(() -> authService.sendPasswordResetEmailQuietly("nobody@example.com"));
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetEmailQuietly_mailsAnAddressWithAnAccount() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenReturn("https://reset/link");
+
+        authService.sendPasswordResetEmailQuietly("test@example.com");
+
+        verify(mailService).sendPasswordResetEmail("test@example.com", "https://reset/link");
+    }
+
+    /** Same request firebase-admin-node's generateVerifyAndChangeEmailLink sends
+     *  (src/auth/auth-api-request.ts getEmailActionLink): the link comes back, Firebase mails nothing. */
+    @Test
+    void verifyAndChangeEmailLink_postsSendOobCodeWithReturnOobLinkAndReturnsTheLink() throws Exception {
+        String[] sent = new String[2];
+        com.google.api.client.testing.http.MockLowLevelHttpRequest request =
+                new com.google.api.client.testing.http.MockLowLevelHttpRequest().setResponse(
+                        new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setContentType("application/json")
+                                .setContent("{\"kind\":\"x\",\"oobLink\":\"https://change/link\"}"));
+        com.google.api.client.http.HttpRequestFactory http = new com.google.api.client.testing.http.MockHttpTransport() {
+            @Override
+            public com.google.api.client.http.LowLevelHttpRequest buildRequest(String method, String url) {
+                sent[0] = method;
+                sent[1] = url;
+                return request;
+            }
+        }.createRequestFactory();
+
+        String link = AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "new@example.com");
+
+        assertEquals("https://change/link", link);
+        assertEquals("POST", sent[0]);
+        assertEquals("https://identitytoolkit.googleapis.com/v1/projects/proj-1/accounts:sendOobCode", sent[1]);
+        assertEquals(Map.of("requestType", "VERIFY_AND_CHANGE_EMAIL", "email", "old@example.com",
+                        "newEmail", "new@example.com", "returnOobLink", true),
+                new com.fasterxml.jackson.databind.ObjectMapper().readValue(request.getContentAsString(), Map.class));
+    }
+
+    @Test
+    void verifyAndChangeEmailLink_mapsEmailExistsToEmailAlreadyExists() {
+        com.google.api.client.http.HttpRequestFactory http =
+                new com.google.api.client.testing.http.MockHttpTransport.Builder()
+                        .setLowLevelHttpResponse(new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setStatusCode(400)
+                                .setContentType("application/json")
+                                .setContent("{\"error\":{\"code\":400,\"message\":\"EMAIL_EXISTS\"}}"))
+                        .build().createRequestFactory();
+
+        FirebaseAuthException e = assertThrows(FirebaseAuthException.class, () ->
+                AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "taken@example.com"));
+        assertEquals(com.google.firebase.auth.AuthErrorCode.EMAIL_ALREADY_EXISTS, e.getAuthErrorCode());
+    }
+
+    @Test
+    void verifyAndChangeEmailLink_mapsInvalidEmailToInvalidArgument() {
+        com.google.api.client.http.HttpRequestFactory http =
+                new com.google.api.client.testing.http.MockHttpTransport.Builder()
+                        .setLowLevelHttpResponse(new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setStatusCode(400)
+                                .setContentType("application/json")
+                                .setContent("{\"error\":{\"code\":400,\"message\":\"INVALID_NEW_EMAIL\"}}"))
+                        .build().createRequestFactory();
+
+        FirebaseAuthException e = assertThrows(FirebaseAuthException.class, () ->
+                AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "a@b"));
+        assertEquals(com.google.firebase.ErrorCode.INVALID_ARGUMENT, e.getErrorCode());
+    }
+
     @Test
     void emailExists_shouldReturnTrue_whenEmailExists() throws Exception {
         // Arrange
