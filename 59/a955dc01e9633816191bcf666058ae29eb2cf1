@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/repository/UserRepository.java
+  s_974be43fdb0416::t_9251ca276dbc1e 137
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceUpdateProfileTest.java
+  s_974be43fdb0416::t_b8388ef0eb8c40 111-123
+  s_974be43fdb0416::t_8b4b16ff0e3795 90-110,124-147,175,188-189
+  s_974be43fdb0416::t_bd69364b0c2dbd 148-174,176-187
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_974be43fdb0416::t_747997ff024e88 65-66
+  s_974be43fdb0416::t_e8b75d050f64ea 55-64,67-75
+  s_974be43fdb0416::t_8b4b16ff0e3795 76
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_974be43fdb0416::t_8b4b16ff0e3795 271-282
+  s_974be43fdb0416::t_b8388ef0eb8c40 283-310
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_974be43fdb0416::t_747997ff024e88 394-402,406-408
+  s_974be43fdb0416::t_e8b75d050f64ea 393
+  s_974be43fdb0416::t_21d2e55c3486a4 409-410
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59a955dc01e9633816191bcf666058ae29eb2cf1",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
