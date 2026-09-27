@@ -1,0 +1,49 @@
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_9ef23a9d068e4b::t_371f8befc293bd 12-13,123-136,142-144,146-152,157,167-174,177-180,183-194,198-209,215-216,219,223-224,234-239,243,246-247,249-250,252-256,261-267,269-284,290-294,300-301,308-311,316-319,322,324-327
+  s_9ef23a9d068e4b::t_99e7d5aa238d4a 240-242,244-245,248,251,257-260
+  s_9ef23a9d068e4b::t_dae92c4006bb55 268
+  s_9ef23a9d068e4b::t_a8990cf9f794a0 285-289,295-299,302-304
+  s_9ef23a9d068e4b::t_0d77afbf42f99b 116-119,137-141,145,153-156,158-166,175-176,181-182,195-197,305-307,312-315,320-321,323,328-329
+  s_9ef23a9d068e4b::t_3ee1df43681a88 210-214,217-218,220-222,225-233
+  s_9ef23a9d068e4b::t_1effdf105fbd71 330
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_9ef23a9d068e4b::t_19f4c3d322f60e 299,303
+  s_9ef23a9d068e4b::t_e4bb96da335036 359
+  s_9ef23a9d068e4b::t_c74da1869a67c7 209-210,213-214
+  s_9ef23a9d068e4b::t_d0dfc86cc4c4e2 38
+  s_9ef23a9d068e4b::t_56db4bdc1f61d1 372-373
+  s_9ef23a9d068e4b::t_72ffe63fdcd123 168-170
+  s_9ef23a9d068e4b::t_a41f1c78211bde 447-449
+  s_9ef23a9d068e4b::t_54e7dec269102b 191,194
+  s_9ef23a9d068e4b::t_993fe0618bf9fe 366-369
+  s_9ef23a9d068e4b::t_fcb92fcded0398 315-316
+  s_9ef23a9d068e4b::t_c023c2bceaa35e 208,211-212,215-216,219-225,233,257,273-276,286-288,290-298,300-301,306-311,319-320
+  s_9ef23a9d068e4b::t_687709253be064 371,374-378,381-392
+  s_9ef23a9d068e4b::t_29f296db4f6753 114-119
+  s_9ef23a9d068e4b::t_20d55d9e561648 64-66
+  s_9ef23a9d068e4b::t_06cfce180bbe03 107-108,113,120-125
+  s_9ef23a9d068e4b::t_7a698c0460f9a9 175-177
+  s_9ef23a9d068e4b::t_b2627c8ec4d063 178-179,346-352,357-358,360-365,370,379-380,393-396,399-402,417-421,450,454,458-461,506,544-546,608
+  s_9ef23a9d068e4b::t_70d626d506ea1d 265-272,277-285,289
+  s_9ef23a9d068e4b::t_03e567f3acf94a 422-424
+  s_9ef23a9d068e4b::t_1ab8ae6a1449c1 68-69
+  s_9ef23a9d068e4b::t_60408a62b4aebd 84,136,196,441,467,479,568,604
+  s_9ef23a9d068e4b::t_3e730678669af1 314
+  s_9ef23a9d068e4b::t_03a8fd9d72a691 522
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "192d422fb07697918c35df37de6dc9e756aba663",
+  "prompts": {},
+  "sessions": {
+    "s_9ef23a9d068e4b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "efd8a828-f546-4467-9893-91ad8734dd10",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
