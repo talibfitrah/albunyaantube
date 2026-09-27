@@ -2,8 +2,11 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.AzureProperties;
 import com.albunyaan.tube.config.MailProperties;
+import com.azure.core.credential.TokenRequestContext;
 import com.azure.identity.ClientSecretCredential;
 import com.azure.identity.ClientSecretCredentialBuilder;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
 import com.microsoft.graph.models.BodyType;
 import com.microsoft.graph.models.EmailAddress;
 import com.microsoft.graph.models.ItemBody;
@@ -16,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.util.Base64;
 import java.util.LinkedList;
 
 /**
@@ -29,6 +33,9 @@ import java.util.LinkedList;
 public class MailService {
     private static final Logger log = LoggerFactory.getLogger(MailService.class);
 
+    private static final String GRAPH_SCOPE = "https://graph.microsoft.com/.default";
+
+    private final ClientSecretCredential credential; // null when disabled; the one sending uses
     private final GraphServiceClient graph; // null when disabled
     private final String fromAddress;
     private final String fromDisplayName;
@@ -55,14 +62,14 @@ public class MailService {
             requireConfigured("azure.client-id", azure.getClientId());
             requireConfigured("azure.client-secret", azure.getClientSecret());
             requireConfigured("mail.from-address", this.fromAddress);
-            ClientSecretCredential cred = new ClientSecretCredentialBuilder()
+            this.credential = new ClientSecretCredentialBuilder()
                     .tenantId(azure.getTenantId())
                     .clientId(azure.getClientId())
                     .clientSecret(azure.getClientSecret())
                     .build();
-            this.graph = new GraphServiceClient(cred,
-                    "https://graph.microsoft.com/.default");
+            this.graph = new GraphServiceClient(credential, GRAPH_SCOPE);
         } else {
+            this.credential = null;
             this.graph = null;
         }
     }
@@ -198,9 +205,51 @@ public class MailService {
     }
 
 
-    /** Plan F risk §11.3 — Graph users.byUserId(fromAddress).get() smoke call. */
-    public void verifyFromMailboxReachable() {
+    /**
+     * Plan F risk §11.3 startup probe, scoped to what a Mail.Send-only app can prove (least
+     * privilege: the app registration holds only Mail.Send, application):
+     * <ul>
+     *   <li>the same credential sending uses acquires a Graph token -- catches a wrong
+     *       secret, tenant or client id;</li>
+     *   <li>the token's {@code roles} claim contains {@code Mail.Send} -- catches missing
+     *       admin consent.</li>
+     * </ul>
+     * It does NOT prove the from-address mailbox exists: reading a user needs
+     * User.Read.All, which this app deliberately lacks (GET /users/{id} answers 403).
+     * A wrong from-address surfaces on the first send instead.
+     */
+    public void verifyMailSendGranted() {
         if (!enabled) return;
-        graph.users().byUserId(fromAddress).get();
+        String jwt = credential.getTokenSync(new TokenRequestContext().addScopes(GRAPH_SCOPE)).getToken();
+        Boolean granted = hasMailSendRole(jwt);
+        if (granted == null) {
+            // Graph tokens are documented as opaque (may change format or be encrypted); getting
+            // one already proves the credential, and sending does not depend on reading it.
+            log.warn("mail.startup-check.token-unreadable: Graph access token is not a readable JWT; "
+                    + "Mail.Send role not verified");
+        } else if (!granted) {
+            throw new IllegalStateException("Graph token has no Mail.Send application role; "
+                    + "grant admin consent for Mail.Send on the app registration");
+        }
+    }
+
+    /**
+     * Whether the access token's {@code roles} claim contains Mail.Send; {@code null} when the
+     * token is not a readable JWT (three segments, JSON-object payload). Package-private for test.
+     */
+    static Boolean hasMailSendRole(String jwt) {
+        JsonNode payload;
+        try {
+            String[] parts = jwt.split("\\.");
+            if (parts.length != 3) return null;
+            payload = new ObjectMapper().readTree(Base64.getUrlDecoder().decode(parts[1]));
+        } catch (Exception e) {
+            return null;
+        }
+        if (!payload.isObject()) return null;
+        for (JsonNode role : payload.path("roles")) {
+            if ("Mail.Send".equals(role.asText())) return true;
+        }
+        return false;
     }
 }

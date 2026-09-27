@@ -150,15 +150,29 @@ public class PublicContentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/videos/{videoId} - legacy document without offlineAllowed reads as null (client treats as false)")
+    @DisplayName("GET /api/v1/videos/{videoId} - never-toggled offlineAllowed is served as the effective true")
     void testGetVideoDetails_OfflineAllowedAbsentOnLegacyDoc() throws Exception {
-        // testVideo never had the field set — mirrors a Firestore document written before Phase 3.
+        // testVideo never had the field set — mirrors every production document (0 of 249 toggled).
+        // Owner ruling 2026-09-27: only an explicit admin false blocks saving, so the public API
+        // serves the effective value, never the raw null.
         when(contentService.getVideoDetails(anyString())).thenReturn(testVideo);
 
         mockMvc.perform(get("/api/v1/videos/{videoId}", "EnfgPg0Ey3I")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.offlineAllowed").value(org.hamcrest.Matchers.nullValue()));
+                .andExpect(jsonPath("$.offlineAllowed").value(true));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/videos/{videoId} - an explicit admin false stays false")
+    void testGetVideoDetails_OfflineAllowedExplicitFalseStaysFalse() throws Exception {
+        testVideo.setOfflineAllowed(false);
+        when(contentService.getVideoDetails(anyString())).thenReturn(testVideo);
+
+        mockMvc.perform(get("/api/v1/videos/{videoId}", "EnfgPg0Ey3I")
+                        .contentType(MediaType.APPLICATION_JSON))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.offlineAllowed").value(false));
     }
 
     @Test

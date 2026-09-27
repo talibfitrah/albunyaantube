@@ -369,7 +369,7 @@ public class ContentLibraryController {
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
                         v.getViewCount(), v.getDisplayOrder(), v.getKeywords());
-                item.offlineAllowed = v.getOfflineAllowed();
+                item.offlineAllowed = v.allowsOffline();
                 allContent.add(withVisibility(item, v.getVisibility(), v.getPersonalGrants()));
             }
         }
@@ -836,8 +836,8 @@ public class ContentLibraryController {
         public List<String> grantedTo = List.of();
 
         /**
-         * Videos only (null for channels/playlists): whether admins allow this video to be
-         * saved for offline playback. Null means never toggled — treated as false.
+         * Videos only (null for channels/playlists): the EFFECTIVE offline permission
+         * ({@link Video#allowsOffline()}) — true unless an admin explicitly blocked it.
          */
         public Boolean offlineAllowed;
 

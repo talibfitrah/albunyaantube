@@ -6,6 +6,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -105,5 +108,36 @@ class MailServiceTest {
                 eq("user"),
                 eq("user@example.com"),
                 anyString());
+    }
+
+    private static String b64(String s) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String jwt(String payloadJson) {
+        return b64("{\"alg\":\"RS256\"}") + "." + b64(payloadJson) + ".sig";
+    }
+
+    @Test
+    void hasMailSendRole_trueForMailSendOnlyToken() {
+        // The prod app registration holds only Mail.Send (least privilege).
+        assertEquals(Boolean.TRUE, MailService.hasMailSendRole(jwt("{\"roles\":[\"Mail.Send\"]}")));
+    }
+
+    @Test
+    void hasMailSendRole_falseForReadableTokenWithoutMailSend() {
+        // No admin consent: Entra still issues a token, just without the role -> startup fails.
+        assertEquals(Boolean.FALSE, MailService.hasMailSendRole(jwt("{}")));
+        assertEquals(Boolean.FALSE, MailService.hasMailSendRole(jwt("{\"roles\":[\"User.Read.All\"]}")));
+    }
+
+    @Test
+    void hasMailSendRole_nullWhenTokenIsNotAReadableJwt() {
+        // Graph access tokens are documented as opaque: a format change must not fail startup.
+        assertNull(MailService.hasMailSendRole("opaque-token"));
+        assertNull(MailService.hasMailSendRole(b64("{}") + "." + b64("42") + ".sig"));
+        // JWE: 5 segments; the 2nd is an encrypted key, which can happen to parse as a JSON scalar.
+        assertNull(MailService.hasMailSendRole(
+                String.join(".", b64("{\"enc\":\"A256GCM\"}"), b64("42"), "iv", "ct", "tag")));
     }
 }

@@ -3410,9 +3410,11 @@ components:
           type: boolean
           nullable: true
           description: >-
-            Whether admins allow this video to be saved for offline playback.
-            Null/absent on legacy documents; clients MUST treat null/absent as false
-            (the default — nothing is saveable until an admin toggles it on).
+            Whether this video may be saved for offline playback. Every approved video is
+            saveable unless an admin explicitly set this to false (owner ruling 2026-09-27).
+            GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may
+            carry the raw stored flag, where null means never toggled. Clients MUST treat
+            null/absent as true — only an explicit false blocks saving.
 
     VideoUpdateRequest:
       type: object
@@ -3450,7 +3452,9 @@ components:
         offlineAllowed:
           type: boolean
           nullable: true
-          description: Whether admins allow this video to be saved for offline playback.
+          description: >-
+            Set false to block saving this video for offline playback; true lifts the
+            block. Absent leaves the stored flag untouched. Never-toggled videos are saveable.
 
     ExcludedItems:
       type: object

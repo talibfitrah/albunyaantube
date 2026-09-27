@@ -1208,7 +1208,9 @@ function mapContentItem(item: any): ContentItem {
     keywords: item.keywords || [],
     visibility: item.visibility,
     grantedTo: item.grantedTo || [],
-    offlineAllowed: item.type === 'video' ? item.offlineAllowed === true : undefined
+    // Only an explicit admin false blocks saving (owner ruling 2026-09-27); the backend already
+    // serves the effective value, and a null/absent flag means the same thing.
+    offlineAllowed: item.type === 'video' ? item.offlineAllowed !== false : undefined
   };
 }
 

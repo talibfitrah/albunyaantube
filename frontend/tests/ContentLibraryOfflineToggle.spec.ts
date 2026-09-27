@@ -102,6 +102,21 @@ describe('ContentLibraryView — Save for offline toggle', () => {
     await waitFor(() => expect(setOfflineMock).toHaveBeenCalledWith('v1', false));
   });
 
+  // Owner ruling 2026-09-27: only an explicit admin false blocks saving. A never-toggled video
+  // (null or absent flag) is allowed — the same default the backend and iOS apply.
+  it.each([null, undefined])('a never-toggled video (flag %s) shows as allowed and toggles to blocked', async (flag) => {
+    stubLibrary([{ ...videoItem, offlineAllowed: flag }]);
+    renderView();
+
+    await waitFor(() => expect(screen.getByText('Tafsir Lecture 1')).toBeInTheDocument());
+
+    const toggle = screen.getByTitle('Save for offline: allowed');
+    expect(toggle).toHaveAttribute('aria-pressed', 'true');
+    await fireEvent.click(toggle);
+
+    await waitFor(() => expect(setOfflineMock).toHaveBeenCalledWith('v1', false));
+  });
+
   it('renders no offline toggle on a channel row', async () => {
     stubLibrary([channelItem]);
     renderView();
