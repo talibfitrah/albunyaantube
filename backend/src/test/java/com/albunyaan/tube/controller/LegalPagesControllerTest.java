@@ -9,6 +9,8 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -111,8 +113,219 @@ class LegalPagesControllerTest {
                 // The iOS app offers Sign in with Apple; the policy must name it, and its scope
                 // sentence must cover iOS, not Android alone.
                 .andExpect(content().string(containsString("Sign in with Apple")))
-                .andExpect(content().string(containsString("iOS")))
+                // Scope must name the Play build AND the other builds (iOS included).
+                .andExpect(content().string(containsString("the FitrahTube Android app on Google Play "
+                        + "(<code>com.albunyaan.tube.play</code>), other FitrahTube app builds, and the "
+                        + "service at <code>app.fitrahtube.com</code>")))
                 .andExpect(content().string(containsString(CONTACT)));
+    }
+
+    /** Served HTML with every whitespace run collapsed to one space, so phrases wrapped across text-block lines still match. */
+    private String page(String path) throws Exception {
+        return mockMvc.perform(get(path)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString().replaceAll("\\s+", " ");
+    }
+
+    private static void has(String body, String... phrases) {
+        for (String p : phrases) assertTrue(body.contains(p), "missing: " + p);
+    }
+
+    private static void lacks(String body, String... phrases) {
+        for (String p : phrases) assertFalse(body.contains(p), "still present: " + p);
+    }
+
+    private static final String CONTROLLER =
+            "FitrahTube is published by Stichting Tarbiyah Consultancy, Almere, the Netherlands "
+                    + "(the data controller).";
+
+    @Test
+    void privacyAndDeletePages_nameTheDataController() throws Exception {
+        for (String path : java.util.List.of("/delete-account", "/privacy")) {
+            has(page(path), CONTROLLER);
+        }
+    }
+
+    @Test
+    void termsPage_namesTheOperator() throws Exception {
+        String terms = page("/terms");
+        has(terms, "Stichting Tarbiyah Consultancy, Almere, the Netherlands, is the operator of FitrahTube.");
+        lacks(terms, "data controller");
+    }
+
+    @Test
+    void deleteAccountPage_namesThePlayPackage() throws Exception {
+        has(page("/delete-account"), "com.albunyaan.tube.play");
+    }
+
+    /**
+     * The app extracts and plays streams ON THE DEVICE, so the device talks to
+     * Google directly. The old "made by our server, not from your device" claim
+     * was false for every app build.
+     */
+    @Test
+    void privacyPage_saysTheDeviceConnectsToYouTubeDirectly() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "the app connects directly from your device to YouTube/Google servers",
+                "googlevideo.com",
+                "To play videos the app runs a Google-provided script in a web view on your device; "
+                        + "it collects device and browser signals and sends them to Google.",
+                "We do not fingerprint your device ourselves");
+        lacks(privacy, "not from your device", "no device fingerprinting", "BotGuard");
+    }
+
+    /**
+     * Unknown imported items go to moderators WITH the importer's name and email
+     * (ApprovalService submitter label), so "only to provide the import" was false.
+     */
+    @Test
+    void privacyPage_disclosesTheYouTubeImportAndLimitedUse() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "youtube.readonly",
+                "Limited Use",
+                "https://myaccount.google.com/permissions",
+                "https://www.youtube.com/t/terms",
+                "https://policies.google.com/privacy",
+                "sent to our moderators for catalogue review, together with your account's display name and email address",
+                "We use it only for the import and catalogue-review feature you start",
+                "we never use it for advertising",
+                "point only to an anonymous placeholder");
+        lacks(privacy, "only to provide the import you asked for");
+    }
+
+    @Test
+    void termsPage_requiresSignIn_andBindsUsersToTheYouTubeTerms() throws Exception {
+        String terms = page("/terms");
+        has(terms, "You must sign in to use FitrahTube.",
+                "you agree to be bound by the <a href=\"https://www.youtube.com/t/terms\">YouTube Terms of Service</a>");
+        lacks(terms, "do not need an account");
+    }
+
+    @Test
+    void privacyPage_treatsSignInAsMandatory() throws Exception {
+        lacks(page("/privacy"), "whether or not you are signed in", "If you sign in, the channels");
+    }
+
+    /**
+     * Search terms are logged by the Spring app (SearchOrchestrator, PublicContentService)
+     * into /opt/albunyaan/logs/app.log, which has no rotation (live check 2026-09-27) —
+     * not the nginx logs that rotate after 14 days.
+     */
+    @Test
+    void privacyPage_disclosesSuggestionsSearchesAndCast() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "suggest channels, playlists and videos for the catalogue, with an optional free-text note",
+                "can appear in our application logs, without your account identifier",
+                "<strong>Application logs</strong> &mdash; our backend's own log",
+                "It currently has no fixed deletion date.",
+                "When you cast, Google's Cast SDK sends session and usage data to Google",
+                "(The app does include Google's Cast SDK for casting; see section&nbsp;5.)");
+        lacks(privacy, "can appear in our server logs");
+    }
+
+    /** The Cloudflare / nginx-log facts in section 3 come from the live server config, not code. */
+    @Test
+    void privacyPage_section3_saysWhereItsAbsencesWereVerified() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy, "These are absences we have verified in our own code and server configuration,");
+        lacks(privacy, "verified in our own code, not merely");
+    }
+
+    @Test
+    void privacyPage_statesWhoSendsEmailAndWhatGoogleSignInShares() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                // In-app reset = Firebase client SDK; admin reset (UserController
+                // /{uid}/reset-password) = MailService → Microsoft Graph when mail is on.
+                "Password-reset emails you request from the app are sent by Google Firebase.",
+                "only when our own mail service is switched on",
+                "Email-verification messages, and password-reset messages sent when an administrator "
+                        + "resets your password, are then sent through Microsoft's mail service",
+                "Google shares your name, email address and profile photo address with Firebase Authentication",
+                "We do not copy your profile photo into our own database");
+        lacks(privacy, "When we send you a password-reset", "Password-reset emails are sent by Google Firebase.");
+    }
+
+    /** The admin-only user endpoints return the full User model, phone and date of birth included. */
+    @Test
+    void privacyPage_statesPhoneAndDateOfBirthUseTruthfully() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "Required when you set up your profile and stored with it.",
+                "Used to check that you are at least 13, and kept with your profile until you delete your account.",
+                "Our administrators can see it when they manage accounts.",
+                "It is shown back to you in the app and to our administrators when they manage accounts;");
+        lacks(privacy, "Used once, to check", "It is shown back to you in the app; we do not verify it");
+    }
+
+    @Test
+    void privacyPage_disclosesHostingAndServerLogs() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "virtual private server operated for us",
+                "<strong>Cloudflare.</strong> Our network and security provider",
+                "record Cloudflare's network address, not yours",
+                "deleted after 14 days");
+        lacks(privacy, "All of the data described in section&nbsp;2 is stored on Google's infrastructure");
+    }
+
+    @Test
+    void privacyPage_carriesTheGdprDisclosures() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "Article 6(1)(b)", "Article 6(1)(f)", "Article 6(1)(a)",
+                "https://autoriteitpersoonsgegevens.nl",
+                "EU-US Data Privacy Framework",
+                "You have the right to");
+        lacks(privacy, "Depending on where you live");
+    }
+
+    /**
+     * Staff actions keep the acting email outside audit_logs too — approval
+     * metadata (ApprovalController passes user.getEmail()), content_reports.resolvedBy
+     * and ValidationRun.triggeredByDisplayName — and purgeUserData touches none of them.
+     */
+    @Test
+    void deleteAccountPage_isHonestAboutWhatStillLinksTheAccount() throws Exception {
+        String del = page("/delete-account");
+        has(del,
+                "We keep these to investigate abuse and to prove that a deletion happened.",
+                "the security and audit logs described above still connect it to your email address, "
+                        + "and so do the records of moderation work described below",
+                "Records of moderation work (moderator and administrator accounts).",
+                "the approvals and rejections you made, the content reports you resolved and the "
+                        + "validation runs you started keep the email address you acted from",
+                "Content you submitted for review.",
+                "no fixed deletion date");
+        lacks(del, "cannot be linked back to you", "Google's own policy permits", "the only records that still connect");
+        has(page("/privacy"), "records of moderation work done by moderator and administrator accounts, "
+                + "which keep the email address that acted");
+    }
+
+    @Test
+    void licensesPage_describesNewPipeExtractorPlainly() throws Exception {
+        String lic = page("/licenses");
+        has(lic, "Used to read publicly available YouTube content.");
+        lacks(lic, "stream URLs");
+    }
+
+    /**
+     * Cloudflare Email Address Obfuscation (in front of app.fitrahtube.com)
+     * rewrites every bare address into a JavaScript-only decoder, leaving the
+     * deletion page with no readable address. EVERY occurrence of the contact
+     * address must sit inside Cloudflare's {@code <!--email_off-->…<!--email_on-->}
+     * markers.
+     */
+    @Test
+    void everyContactAddress_isShieldedFromCloudflareEmailObfuscation() throws Exception {
+        for (String path : java.util.List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+            String body = page(path);
+            assertTrue(body.contains("<!--email_off-->"), path + " has no shielded address");
+            String outside = body.replaceAll("(?s)<!--email_off-->.*?<!--email_on-->", "");
+            assertFalse(outside.contains(CONTACT), path + " has an unshielded contact address");
+        }
     }
 
     @Test
