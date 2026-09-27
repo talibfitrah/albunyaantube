@@ -50,12 +50,6 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # field are both one free-text "+" field, no country selector.
           "auth_microsoft_button", "auth_microsoft_unavailable_tv", "auth_error_microsoft",
           "bootstrap_phone_country_label", "bootstrap_error_invalid_phone_country", "edit_phone_country",
-          # Task 9 fix round 1 / M3: these four exist ONLY in Android's values/strings.xml -- no
-          # values-ar, no values-nl -- so the en->ar/nl fallback shipped the English sentence as the
-          # Arabic and Dutch value. Task 9 is what first RENDERS them (the blocked-account alert and
-          # both `AccountSession.refresh` banners), so an Arabic user got an English dialog. Refused
-          # here and re-authored under EXTRA_KEYS, en byte-identical to Android's.
-          "account_blocked_title", "account_blocked_body", "auth_error_network", "auth_error_generic",
           # Task 12, same class as Task 9 / M3 and the same remedy: these eleven live in
           # values-ar/strings_onboarding.xml and values-nl/strings_onboarding.xml with the ENGLISH
           # sentence as their value -- the file was copied, never translated -- so the converter's
@@ -67,10 +61,9 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # _error_invalid_phone/_invalid_password/_password_mismatch/_password_set_failed are
           # genuinely translated on Android and are ported unchanged, and age_ineligible_ok_button
           # is "OK" in all three locales exactly as the shipped `ok` key already is.
-          "bootstrap_title", "bootstrap_display_name_label", "bootstrap_display_name_hint",
-          "bootstrap_dob_label", "bootstrap_dob_hint", "bootstrap_submit_button",
-          "bootstrap_error_invalid_name", "bootstrap_error_invalid_dob", "bootstrap_error_save_failed",
-          "age_ineligible_title", "age_ineligible_body",
+          # 2026-09-27: Android now translates all eleven; only these three still differ from the
+          # iOS copy, so only they stay re-authored (the other eight port unchanged).
+          "bootstrap_error_invalid_name", "age_ineligible_title", "age_ineligible_body",
           # Task 13, the SAME class as Task 9 / M3 and Task 12 / D1, third occurrence: these ten
           # live only in `values/strings.xml` -- no values-ar, no values-nl entry at all -- so the
           # en->ar/nl fallback shipped the English sentence as the Arabic and Dutch value. Task 13
@@ -80,12 +73,10 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # re-authored under EXTRA_KEYS, en byte-identical to Android's. The rest of the Me keys
           # (me_favorites, me_see_all, me_empty_*, me_kebab_suggest_content,
           # me_kebab_import_youtube, my_submissions_title, ...) ARE translated on Android and are
-          # ported unchanged.
-          "me_kebab_profile", "me_kebab_sign_out",
-          "settings_account_header", "settings_account_signed_in_as",
-          "settings_account_signed_in_default", "settings_account_sign_out",
-          "settings_account_sign_out_confirm_title", "settings_account_sign_out_confirm_body",
-          "settings_account_sign_out_confirm_action", "settings_account_sign_out_cancel",
+          # ported unchanged. 2026-09-27: Android now translates all ten; these two still differ --
+          # the first in copy, the second in state (nl "Account" equals the English, which a
+          # ported key marks `needs_review`).
+          "settings_account_signed_in_as", "settings_account_header",
           # Task 17, the SAME class as Task 9 / M3, Task 12 / D1 and Task 13, fourth occurrence:
           # these twelve live only in `values/strings.xml` -- no values-ar, no values-nl entry at
           # all -- so the en->ar/nl fallback shipped the English sentence as the Arabic and Dutch
@@ -98,11 +89,9 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # profile_delete_account*, profile_error_rate_limited_short and every edit_email_*/
           # edit_password_*/edit_phone_* key) ARE translated on Android and are ported unchanged.
           # profile_password_dots is "••••••••••" in all three locales -- a mask, not prose, exactly
-          # like the shipped `ok` key -- and is likewise ported unchanged.
-          "profile_title", "profile_personal_info", "profile_display_name", "profile_date_of_birth",
-          "profile_dob_pick", "profile_save", "profile_save_success", "profile_email_locked",
-          "profile_error_network", "profile_error_rate_limited",
-          "profile_error_age_dialog_title", "profile_error_age_dialog_message",
+          # like the shipped `ok` key -- and is likewise ported unchanged. 2026-09-27: Android now
+          # translates all twelve; only this one still differs from the iOS copy.
+          "profile_error_rate_limited",
           # Task 27: the ONE Phase 4 key whose value says WHY rather than WHAT. Android's is
           # "Server error %1$s" and its ar/nl are faithful translations of that -- so the iOS
           # Suggest screen would have rendered "Server error 502" to the user, and (since a bearer
@@ -117,7 +106,11 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # from both renderers (`AuthErrorCode.messageKey` -> `SignInScreen`'s banner, and
           # `SuggestContentViewModel.failureState`). Refused here and re-authored under EXTRA_KEYS
           # in all three locales; the copy also moves from the credential's STATE to WHAT to do.
-          "auth_error_invalid_credential"}
+          "auth_error_invalid_credential",
+          # 2026-09-27: Android's copy is iOS's, except its ar writes the minimum as "٨" while the
+          # same form's error (`bootstrap_error_invalid_password`) writes "8" -- one form must not
+          # mix digit systems (`bootstrap_error_invalid_name`'s rule). Re-authored with a Latin 8.
+          "bootstrap_password_explainer"}
 
 # The two decoupled-quantity plurals (strings-assets.md §3b / RULINGS 37): the printed arg (%s)
 # and the plural-category selector are different values on Android (CountFormat.compactPluralCount).
@@ -202,39 +195,7 @@ EXTRA_KEYS = {
         "ar": "عرض أحدث المقاطع فقط",
         "nl": "Alleen recente uploads worden getoond",
     },
-    # Task 12: the eleven REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are
-    # authored here because Android has none. Copy rules hold -- no "Download", no "ad-free", and
-    # the two failure strings say WHAT went wrong, never why.
-    "bootstrap_title": {
-        "en": "Tell us about you",
-        "ar": "أخبرنا عن نفسك",
-        "nl": "Vertel ons over jezelf",
-    },
-    "bootstrap_display_name_label": {
-        "en": "What should we call you?",
-        "ar": "بماذا نناديك؟",
-        "nl": "Hoe mogen we je noemen?",
-    },
-    "bootstrap_display_name_hint": {
-        "en": "Display name",
-        "ar": "الاسم المعروض",
-        "nl": "Weergavenaam",
-    },
-    "bootstrap_dob_label": {
-        "en": "Date of birth",
-        "ar": "تاريخ الميلاد",
-        "nl": "Geboortedatum",
-    },
-    "bootstrap_dob_hint": {
-        "en": "Tap to select",
-        "ar": "اضغط للاختيار",
-        "nl": "Tik om te kiezen",
-    },
-    "bootstrap_submit_button": {
-        "en": "Continue",
-        "ar": "متابعة",
-        "nl": "Doorgaan",
-    },
+    # Task 12: the three of the eleven REFUSED above whose iOS copy still differs from Android's.
     # Latin digits in `ar`, matching its already-translated sibling bootstrap_error_invalid_password
     # ("8 أحرف على الأقل") -- one form's error messages must not mix digit systems.
     "bootstrap_error_invalid_name": {
@@ -242,15 +203,11 @@ EXTRA_KEYS = {
         "ar": "يرجى إدخال اسمك (من 1 إلى 40 حرفًا)",
         "nl": "Vul je naam in (1–40 tekens)",
     },
-    "bootstrap_error_invalid_dob": {
-        "en": "Please choose your date of birth",
-        "ar": "يرجى اختيار تاريخ ميلادك",
-        "nl": "Kies je geboortedatum",
-    },
-    "bootstrap_error_save_failed": {
-        "en": "Couldn’t save your profile — try again",
-        "ar": "تعذّر حفظ ملفك الشخصي — حاول مرة أخرى",
-        "nl": "Kon je profiel niet opslaan — probeer het opnieuw",
+    # Android's text in all three locales, with a Latin "8" in `ar` (REFUSE's note).
+    "bootstrap_password_explainer": {
+        "en": "Set a password to continue — at least 8 characters. You can then also sign in with your email address and this password.",
+        "ar": "عيّن كلمة مرور للمتابعة — 8 أحرف على الأقل. يمكنك بعد ذلك تسجيل الدخول أيضًا باستخدام بريدك الإلكتروني وكلمة المرور هذه.",
+        "nl": "Stel een wachtwoord in om verder te gaan — minstens 8 tekens. Daarna kun je ook inloggen met je e-mailadres en dit wachtwoord.",
     },
     "age_ineligible_title": {
         "en": "Sorry — come back soon",
@@ -264,24 +221,7 @@ EXTRA_KEYS = {
         "ar": "FitrahTube مخصص للمستخدمين من عمر 13 فأكثر. يرجى العودة عندما تكبر قليلًا.",
         "nl": "FitrahTube is voor gebruikers van 13 jaar en ouder. Kom terug wanneer je wat ouder bent.",
     },
-    # Task 13: the ten REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are authored
-    # here because Android has neither. Copy rules hold -- no "Download", no "ad-free", and the
-    # confirmation body says WHAT signing out costs, never why.
-    "me_kebab_profile": {
-        "en": "Profile",
-        "ar": "الملف الشخصي",
-        "nl": "Profiel",
-    },
-    # Stage 1 / B12: `me_kebab_sign_out`, `settings_account_sign_out` and
-    # `settings_account_sign_out_confirm_action` are byte-identical in all three locales. All three
-    # are ANDROID-PORTED, not authored here (`android/app/src/main/res/values/strings.xml:791`,
-    # `:709`, `:712`), so they stay: collapsing them would break the key-for-key parity this file
-    # exists to keep, and Android is where the split would have to be argued first.
-    "me_kebab_sign_out": {
-        "en": "Sign out",
-        "ar": "تسجيل الخروج",
-        "nl": "Afmelden",
-    },
+    # Task 13: the two of the ten REFUSED above that still differ from Android's.
     # "Account" is a real Dutch word and stays identical to the English -- unlike Arabic, which
     # never legitimately equals it. `MeViewModelTests` pins only the Arabic side for that reason.
     "settings_account_header": {
@@ -294,86 +234,7 @@ EXTRA_KEYS = {
         "ar": "مسجّل الدخول باسم %1$@",
         "nl": "Aangemeld als %1$@",
     },
-    "settings_account_signed_in_default": {
-        "en": "Signed in",
-        "ar": "مسجّل الدخول",
-        "nl": "Aangemeld",
-    },
-    "settings_account_sign_out": {
-        "en": "Sign out",
-        "ar": "تسجيل الخروج",
-        "nl": "Afmelden",
-    },
-    "settings_account_sign_out_confirm_title": {
-        "en": "Sign out?",
-        "ar": "تسجيل الخروج؟",
-        "nl": "Afmelden?",
-    },
-    "settings_account_sign_out_confirm_body": {
-        "en": "You'll need to sign in again to access admin features and personalised content.",
-        "ar": "ستحتاج إلى تسجيل الدخول مرة أخرى للوصول إلى ميزات الإشراف والمحتوى المخصّص.",
-        "nl": "Je moet je opnieuw aanmelden voor beheerfuncties en gepersonaliseerde inhoud.",
-    },
-    "settings_account_sign_out_confirm_action": {
-        "en": "Sign out",
-        "ar": "تسجيل الخروج",
-        "nl": "Afmelden",
-    },
-    "settings_account_sign_out_cancel": {
-        "en": "Cancel",
-        "ar": "إلغاء",
-        "nl": "Annuleren",
-    },
-    # Task 17: the twelve REFUSED above. `en` is Android's own value verbatim; `ar`/`nl` are
-    # authored here because Android has neither. Copy rules hold -- no "Download", no "ad-free",
-    # and both failure strings say WHAT went wrong, never why.
-    "profile_title": {
-        "en": "Profile",
-        "ar": "الملف الشخصي",
-        "nl": "Profiel",
-    },
-    "profile_personal_info": {
-        "en": "Personal info",
-        "ar": "المعلومات الشخصية",
-        "nl": "Persoonlijke gegevens",
-    },
-    # Byte-identical `ar`/`nl` to the already-translated bootstrap_display_name_hint and
-    # bootstrap_dob_label: the same field must not have two spellings across two screens.
-    "profile_display_name": {
-        "en": "Display name",
-        "ar": "الاسم المعروض",
-        "nl": "Weergavenaam",
-    },
-    "profile_date_of_birth": {
-        "en": "Date of birth",
-        "ar": "تاريخ الميلاد",
-        "nl": "Geboortedatum",
-    },
-    "profile_dob_pick": {
-        "en": "Pick a date",
-        "ar": "اختر تاريخًا",
-        "nl": "Kies een datum",
-    },
-    "profile_save": {
-        "en": "Save",
-        "ar": "حفظ",
-        "nl": "Opslaan",
-    },
-    "profile_save_success": {
-        "en": "Profile updated",
-        "ar": "تم تحديث الملف الشخصي",
-        "nl": "Profiel bijgewerkt",
-    },
-    "profile_email_locked": {
-        "en": "Linked to your sign-in",
-        "ar": "مرتبط بتسجيل دخولك",
-        "nl": "Gekoppeld aan je aanmelding",
-    },
-    "profile_error_network": {
-        "en": "Couldn't save. Check your connection.",
-        "ar": "تعذّر الحفظ. تحقق من اتصالك.",
-        "nl": "Kon niet opslaan. Controleer je verbinding.",
-    },
+    # Task 17: the one of the twelve REFUSED above whose iOS copy still differs from Android's.
     # `%1$lld` in every locale: EXTRA_KEYS bypass `rewrite_specifiers`, so the iOS spelling of
     # Android's `%1$d` is written out here. Arg parity across the three is what `check_arg_subset`
     # would have enforced on a ported key.
@@ -381,16 +242,6 @@ EXTRA_KEYS = {
         "en": "Too many updates. Try again in %1$lld min.",
         "ar": "عدد كبير من التحديثات. حاول مرة أخرى بعد %1$lld د.",
         "nl": "Te veel wijzigingen. Probeer het over %1$lld min. opnieuw.",
-    },
-    "profile_error_age_dialog_title": {
-        "en": "Account no longer eligible",
-        "ar": "الحساب لم يعد مؤهلًا",
-        "nl": "Account komt niet meer in aanmerking",
-    },
-    "profile_error_age_dialog_message": {
-        "en": "Your date of birth no longer meets our age requirement. You'll be signed out.",
-        "ar": "تاريخ ميلادك لم يعد يستوفي شرط العمر. سيتم تسجيل خروجك.",
-        "nl": "Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld.",
     },
     # player_standard_quality (B1 task 7): the persistent rung-2 pill. iOS-only -- Android's rung-2
     # equivalent is a toast on the degradation path, not a standing badge, so there is no source
@@ -768,30 +619,6 @@ EXTRA_KEYS = {
         "en": "This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video saved for offline on this device. This cannot be undone.",
         "ar": "سيؤدي هذا إلى حذف حسابك في فطرة تيوب نهائيًا. سيتم محو اسمك وبريدك الإلكتروني ورقم هاتفك وتاريخ ميلادك، إلى جانب اشتراكاتك وقوائم التشغيل المحفوظة والمفضلة وكل فيديو محفوظ دون اتصال على هذا الجهاز. لا يمكن التراجع عن هذا الإجراء.",
         "nl": "Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat offline is opgeslagen. Dit kan niet ongedaan worden gemaakt.",
-    },
-    # Task 9 fix round 1 / M3. REFUSED above (Android has en only) and re-authored here with real
-    # ar/nl. The `en` values are byte-identical to android/app/src/main/res/values/strings.xml, so
-    # only the two missing locales change. Refusal copy states WHAT, never WHY: "blocked by an
-    # administrator", not the reason for the block; the two banners name the condition and stop.
-    "account_blocked_title": {
-        "en": "Account blocked",
-        "ar": "تم حظر الحساب",
-        "nl": "Account geblokkeerd",
-    },
-    "account_blocked_body": {
-        "en": "Your account has been blocked by an administrator. Contact support for details.",
-        "ar": "تم حظر حسابك من قِبَل أحد المشرفين. تواصل مع الدعم لمعرفة التفاصيل.",
-        "nl": "Je account is geblokkeerd door een beheerder. Neem contact op met support voor meer informatie.",
-    },
-    "auth_error_network": {
-        "en": "No internet connection",
-        "ar": "لا يوجد اتصال بالإنترنت",
-        "nl": "Geen internetverbinding",
-    },
-    "auth_error_generic": {
-        "en": "Something went wrong",
-        "ar": "حدث خطأ ما",
-        "nl": "Er is iets misgegaan",
     },
     # Task 27: the REFUSED `suggest_error_server`, re-authored. Android's value is "Server error
     # %1$s" -- the one Phase 4 string that told the user WHY, in a number they can do nothing with.

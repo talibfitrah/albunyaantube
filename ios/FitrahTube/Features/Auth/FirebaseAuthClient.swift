@@ -138,7 +138,19 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     func signIn(with credential: FitrahTube.OAuthCredential) async throws(AuthErrorCode) -> AuthUser {
         let firebase = Self.firebaseCredential(credential)
-        return try await mapped { AuthUser(try await Auth.auth().signIn(with: firebase).user) }
+        return try await mapped {
+            let user = try await Auth.auth().signIn(with: firebase).user
+            // Guideline 4.0: Apple's name arrives once. Firebase normally stores it from the
+            // credential; if it did not, store it here so the bootstrap form can still seed from
+            // `displayName`. Best effort — a failed write never fails the sign-in.
+            if user.displayName?.isEmpty ?? true,
+               let name = credential.fullName.map({ PersonNameComponentsFormatter().string(from: $0) }), !name.isEmpty {
+                let change = user.createProfileChangeRequest()
+                change.displayName = name
+                try? await change.commitChanges()
+            }
+            return AuthUser(user)
+        }
     }
 
     func sendPasswordReset(email: String) async throws(AuthErrorCode) {
@@ -197,6 +209,17 @@ nonisolated final class FirebaseAuthClient: AuthClient {
             let user = try Self.requireUser()
             guard user.uid == uid else { throw AuthErrorCode.unknown }
             try await user.delete()
+        }
+    }
+
+    /// `Auth.revokeToken` goes through `_currentUser?.internalGetToken`, which never calls back when
+    /// nobody is signed in (12.19.1, `Auth.swift`) — the guard keeps that a no-op, not a hang.
+    func revokeAppleToken(authorizationCode: String) async {
+        guard Auth.auth().currentUser != nil else { return }
+        do {
+            try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
+        } catch {
+            print("FirebaseAuthClient: Apple token revocation failed: \((error as NSError).domain) \((error as NSError).code)")
         }
     }
 
@@ -269,8 +292,8 @@ nonisolated final class FirebaseAuthClient: AuthClient {
             return FirebaseAuth.GoogleAuthProvider.credential(withIDToken: credential.idToken,
                                                               accessToken: credential.accessTokenOrNonce ?? "")
         }
-        return OAuthProvider.credential(providerID: .apple, idToken: credential.idToken,
-                                        rawNonce: credential.accessTokenOrNonce ?? "")
+        return OAuthProvider.appleCredential(withIDToken: credential.idToken,
+                                             rawNonce: credential.accessTokenOrNonce, fullName: credential.fullName)
     }
 }
 
@@ -279,6 +302,6 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 private nonisolated extension AuthUser {
     init(_ user: User) {
         self.init(uid: user.uid, email: user.email, isEmailVerified: user.isEmailVerified,
-                  providerIDs: user.providerData.map(\.providerID))
+                  providerIDs: user.providerData.map(\.providerID), displayName: user.displayName)
     }
 }

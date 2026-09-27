@@ -28,9 +28,9 @@ settings:
     MARKETING_VERSION: "1.0.0"
     CURRENT_PROJECT_VERSION: "1"
     # Phase 6 Task 5: the numeric App Store ID (App Store Connect > App Information > Apple ID).
-    # Empty until the owner creates the app record; `UpdateRequiredView` hides its Update button
-    # while it is empty. Public and identical for Debug/Release, so it lives here, not in an xcconfig.
-    FITRAH_APP_STORE_ID: ""
+    # `UpdateRequiredView` hides its Update button while it is empty. Public and identical for
+    # Debug/Release, so it lives here, not in an xcconfig.
+    FITRAH_APP_STORE_ID: "6816678870"
     ENABLE_USER_SCRIPT_SANDBOXING: YES
     ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
 

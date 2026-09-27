@@ -136,6 +136,16 @@ struct SettingsRowsTests {
         }
     }
 
+    /// Guideline 5.1.1: the privacy policy and terms are readable BEFORE an account exists — the
+    /// sign-in wall's footer, the same two entries About renders, never a second copy of the URLs.
+    @Test func theSignInFooterLinksPrivacyAndTermsFromAboutsOwnList() {
+        #expect(AboutLinks.beforeSignIn.map(\.titleKey) == ["about_privacy_policy", "about_terms_of_service"])
+        #expect(AboutLinks.beforeSignIn.map(\.url.absoluteString) == [
+            "https://app.fitrahtube.com/privacy",
+            "https://app.fitrahtube.com/terms",
+        ])
+    }
+
     @Test func aboutVersionFormatsBothArgumentsAsStrings() {
         #expect(AboutVersionText.format(version: "1.0.0", build: "7") == "Version 1.0.0 (7)")
     }

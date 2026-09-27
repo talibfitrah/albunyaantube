@@ -48,12 +48,20 @@ struct UpdateGateTests {
     }
 
     /// Phase 6 Task 5: the screen's "Update" button exists only once the owner has put the numeric
-    /// App Store ID into `project.yml` -- the tracked default arrives as "" and must render no button.
+    /// App Store ID into `project.yml` -- an unset setting arrives as "" and must render no button.
     @Test func theUpdateButtonExistsOnlyForANumericAppStoreID() {
         #expect(AppStoreLink.url(appStoreID: "1234567890")?.absoluteString == "https://apps.apple.com/app/id1234567890")
-        #expect(AppStoreLink.url(appStoreID: "") == nil)          // the tracked default today
+        #expect(AppStoreLink.url(appStoreID: "") == nil)          // an unset build setting
         #expect(AppStoreLink.url(appStoreID: nil) == nil)
         #expect(AppStoreLink.url(appStoreID: "id123") == nil)
         #expect(AppStoreLink.url(appStoreID: "12 3") == nil)
+    }
+
+    /// The App Store Connect record exists (Apple ID 6816678870), so the build carries it and the
+    /// Update-required screen's button opens the listing instead of being hidden.
+    @Test func theBuildCarriesTheAppStoreRecordsID() {
+        let id = Bundle.main.object(forInfoDictionaryKey: "FITRAH_APP_STORE_ID") as? String
+        #expect(id == "6816678870")
+        #expect(AppStoreLink.url(appStoreID: id)?.absoluteString == "https://apps.apple.com/app/id6816678870")
     }
 }

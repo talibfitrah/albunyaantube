@@ -491,8 +491,8 @@ struct FitrahTubeApp: App {
 /// it sits over everything and swallows every touch until a refreshed config (or an updated
 /// build) clears `updateRequired`.
 ///
-/// Phase 6 Task 5: the "Update" button opens the App Store listing, and exists only once
-/// `FITRAH_APP_STORE_ID` (project.yml, empty until the owner creates the app record) is numeric.
+/// Phase 6 Task 5: the "Update" button opens the App Store listing, and exists only while
+/// `FITRAH_APP_STORE_ID` (project.yml) is numeric.
 struct UpdateRequiredView: View {
     @Environment(\.openURL) private var openURL
     private let storeURL = AppStoreLink.url(

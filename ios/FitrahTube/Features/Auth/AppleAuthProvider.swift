@@ -17,9 +17,10 @@ import UIKit
     /// runtime entitlement API to ask. Stage 8 / S9 dropped the `FITRAH_APPLE_SIGNIN` (Team ID)
     /// conjunct from `appleSignInIsConfigured`, so it is no longer half of this decision.
     var isAvailable: Bool { SignInCapabilities.current().apple }
-    /// Email only: the app never reads `credential.fullName` (only the identity token reaches
-    /// Firebase, `FirebaseAuthClient`), and the privacy policy promises exactly this scope.
-    nonisolated static let requestedScopes: [ASAuthorization.Scope] = [.email]
+    /// Name and email (guideline 4.0): Apple shares the name on the FIRST authorization only, and
+    /// it pre-fills the bootstrap form's name field (via Firebase's display name) instead of the
+    /// user typing it again. The privacy policy names both.
+    nonisolated static let requestedScopes: [ASAuthorization.Scope] = [.fullName, .email]
 
     /// ONE flow at a time. `pending` is a single continuation slot, so a second `presentSignIn()`
     /// while one is in flight used to overwrite it and orphan the first — never resumed,
@@ -76,7 +77,9 @@ import UIKit
                   let idToken = String(data: identityToken, encoding: .utf8) else {
                 throw OAuthSignInFailure.failed(.appleSignInFailed)
             }
-            return OAuthCredential(providerID: "apple.com", idToken: idToken, accessTokenOrNonce: rawNonce)
+            return OAuthCredential(providerID: "apple.com", idToken: idToken, accessTokenOrNonce: rawNonce,
+                                   fullName: credential.fullName,
+                                   authorizationCode: credential.authorizationCode.flatMap { String(data: $0, encoding: .utf8) })
         } catch let failure as OAuthSignInFailure {
             throw failure
         } catch {

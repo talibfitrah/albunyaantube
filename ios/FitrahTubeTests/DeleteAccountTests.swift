@@ -69,6 +69,7 @@ struct DeleteAccountTests {
     private func makeFixture(delete response: HTTPResponse,
                              user: AuthUser = FakeAuthClient.defaultUser,
                              google: FakeOAuthProvider = FakeOAuthProvider(),
+                             apple: FakeOAuthProvider = FakeOAuthProvider(isAvailable: false),
                              marker: any DeletionMarking = InMemoryDeletionMarker()) -> Fixture {
         let auth = FakeAuthClient(state: .signedOut, user: user)
         let transport = ScriptedTransport([.json(200, Self.meJSON), response])
@@ -82,7 +83,7 @@ struct DeleteAccountTests {
         wipes.auth = auth
         wipes.marker = marker
         let model = DeleteAccountViewModel(account: account, session: session, auth: auth,
-                                           google: google, apple: FakeOAuthProvider(isAvailable: false))
+                                           google: google, apple: apple)
         model.password = "hunter2"
         return Fixture(model: model, session: session, auth: auth, status: status,
                        transport: transport, wipes: wipes, google: google)
@@ -629,6 +630,169 @@ struct DeleteAccountTests {
                 "a credential for another account deleted this one")
         #expect(fixture.wipes.count == 0)
         #expect(fixture.session.user?.uid == "fake-uid", "the session was re-pointed at another account")
+    }
+
+    // MARK: - Guideline 5.1.1(v): an Apple account's deletion revokes its Apple token
+
+    private static let appleUser = AuthUser(uid: "fake-uid", email: "x1y2@privaterelay.appleid.com",
+                                            isEmailVerified: true, providerIDs: ["apple.com"])
+    private static func appleSheet() -> FakeOAuthProvider {
+        FakeOAuthProvider(credential: OAuthCredential(providerID: "apple.com", idToken: "apple-id-token",
+                                                      accessTokenOrNonce: "raw-nonce",
+                                                      authorizationCode: "apple-auth-code"))
+    }
+
+    /// The re-authentication sheet hands back a fresh authorization code, and that code — not any
+    /// other — is what revokes the grant, before Firebase deletes the user.
+    @Test func anAppleAccountsDeletionRevokesItsAppleToken() async throws {
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleUser, apple: Self.appleSheet())
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(fixture.auth.operations == [.reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"),
+                                            .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// An Apple account that ALSO holds a password (the bootstrap form used to attach one) still
+    /// proves itself through Apple: the password leg yields no authorization code, so it could
+    /// never revoke the grant.
+    @Test func anAppleAccountWithAPasswordStillRevokesThroughApple() async throws {
+        let user = AuthUser(uid: "fake-uid", email: "x1y2@privaterelay.appleid.com",
+                            isEmailVerified: true, providerIDs: ["apple.com", "password"])
+        let fixture = makeFixture(delete: .json(204, ""), user: user, apple: Self.appleSheet())
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        #expect(fixture.model.requiresPassword == false, "the confirmation asked for the password")
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(fixture.auth.operations == [.reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"),
+                                            .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    private static let applePasswordUser = AuthUser(uid: "fake-uid", email: "x1y2@privaterelay.appleid.com",
+                                                    isEmailVerified: true, providerIDs: ["apple.com", "password"])
+
+    /// Cubic P2: with Apple unavailable (a build without the capability) an account that also has
+    /// a password is not stuck — the confirmation asks for the password, and the deletion goes
+    /// ahead without a revocation (there is no code to revoke with).
+    @Test func anAppleAccountWithAPasswordUsesThePasswordWhenAppleIsUnavailable() async throws {
+        let apple = FakeOAuthProvider(isAvailable: false)
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        #expect(fixture.model.requiresPassword, "no password prompt, and no Apple sheet that can run")
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 0)
+        #expect(fixture.auth.operations == [.reauthenticate, .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// Cubic P2, the other trigger: Apple's sheet ran and was refused (another Apple ID on the
+    /// device answers `userMismatch`). The refusal stands, and the NEXT confirmation asks for the
+    /// password instead of offering the same failing sheet forever.
+    @Test func anAppleAccountWithAPasswordFallsBackToThePasswordAfterAppleIsRefused() async throws {
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: Self.appleSheet())
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .unknown   // Firebase's userMismatch
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+        #expect(fixture.model.requiresPassword, "the retry offered the same refused Apple sheet")
+
+        fixture.model.password = "hunter2"
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .reauthenticate, .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    private static let appleGoogleUser = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
+                                                  isEmailVerified: true, providerIDs: ["apple.com", "google.com"])
+
+    /// Cubic round 3: an account linked to Apple AND Google, no password. With Apple unavailable
+    /// its Google sheet is the proof, as it was before Apple went first; only the revocation is
+    /// skipped (there is no Apple code to revoke with).
+    @Test func anAppleAndGoogleAccountUsesGoogleWhenAppleIsUnavailable() async throws {
+        let apple = FakeOAuthProvider(isAvailable: false)
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleGoogleUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 0)
+        #expect(fixture.google.presentCount == 1, "Apple's absence left no way to prove the account")
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// ... and with Apple's sheet refused (another Apple ID on the device), the NEXT confirmation
+    /// takes Google's sheet instead of the same refused one.
+    @Test func anAppleAndGoogleAccountFallsBackToGoogleAfterAppleIsRefused() async throws {
+        let apple = Self.appleSheet()
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleGoogleUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .unknown   // Firebase's userMismatch
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 1)
+        #expect(fixture.google.presentCount == 1, "the retry offered the same refused Apple sheet")
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .reauthenticateCredential, .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// With Apple as its ONLY method, a refused sheet is a clear, retryable failure: nothing is
+    /// deleted, and the next confirmation offers Apple again (and revokes when it succeeds).
+    @Test func anAppleOnlyAccountRefusedByAppleFailsClearlyAndRetriesApple() async throws {
+        let apple = Self.appleSheet()
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = .unknown
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(DeleteAccountViewModel.messageKey(for: fixture.model.state) == "auth_error_generic")
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+        #expect(fixture.model.requiresPassword == false)
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"), .deleteUser])
+    }
+
+    /// BEFORE the server delete, because `DELETE /api/account/me` destroys the Firebase user
+    /// (`AuthService.destroyAuthRecord`) and Firebase's revoke call needs that user's ID token.
+    /// A refused DELETE is the observable proof of the order: the revocation already happened.
+    @Test func theAppleRevocationRunsBeforeTheServerDeleteIsSent() async throws {
+        let body = #"{"code":"LAST_ADMIN","message":"last active administrator"}"#
+        let fixture = makeFixture(delete: .json(409, body), user: Self.appleUser, apple: Self.appleSheet())
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+
+        #expect(fixture.model.state == .failedLastAdmin)
+        #expect(fixture.auth.operations == [.reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code")])
     }
 
     /// A dismissed provider sheet is a refusal like any other — nothing is deleted.
@@ -1800,6 +1964,7 @@ private nonisolated final class ParkedCurrentUserAuth: AuthClient {
     func reauthenticate(with credential: OAuthCredential) async throws(AuthErrorCode) { try await base.reauthenticate(with: credential) }
     func updatePassword(_ new: String) async throws(AuthErrorCode) { try await base.updatePassword(new) }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { try await base.verifyBeforeUpdateEmail(new) }
+    func revokeAppleToken(authorizationCode: String) async { await base.revokeAppleToken(authorizationCode: authorizationCode) }
     func deleteUser(expecting uid: String) async throws(AuthErrorCode) {
         try await base.deleteUser(expecting: uid)
         let armed = deleteGateArmed.withLock { armed in

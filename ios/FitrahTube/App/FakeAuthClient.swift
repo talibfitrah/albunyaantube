@@ -29,8 +29,10 @@ nonisolated final class FakeAuthClient: AuthClient {
     /// Stage 9 / P1 adds `reauthenticateCredential` — the federated proof is an ABSENCE assertion
     /// (`entryPoints` must never gain a `.credential`, i.e. the delete never signed anybody in)
     /// paired with a presence one, which is exactly this recorder's shape.
+    /// 5.1.1(v) adds `revokeAppleToken`, carrying the code so a test can pin WHICH one was redeemed.
     nonisolated enum Operation: Sendable, Equatable {
         case reauthenticate, reauthenticateCredential, updatePassword, verifyBeforeUpdateEmail, deleteUser
+        case revokeAppleToken(authorizationCode: String)
     }
 
     private struct Storage {
@@ -235,6 +237,13 @@ nonisolated final class FakeAuthClient: AuthClient {
         guard signedInUser()?.uid == uid else { throw AuthErrorCode.unknown }
         try record(.deleteUser)
         transition(to: .signedOut)
+    }
+
+    /// Firebase's `revokeToken` works through the CURRENT user's ID token, so with nobody signed in
+    /// it revokes nothing — recorded only when somebody is, like `deleteUser` above.
+    func revokeAppleToken(authorizationCode: String) async {
+        guard signedInUser() != nil else { return }
+        storage.withLock { $0.operations.append(.revokeAppleToken(authorizationCode: authorizationCode)) }
     }
 
     /// Stage 5 / C3.2: failure-injectable. A total, unconditional `signOut()` could never observe

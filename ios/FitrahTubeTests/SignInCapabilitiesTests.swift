@@ -208,9 +208,10 @@ import Testing
         await #expect(throws: OAuthSignInFailure.failed(.googleSignInFailed)) { try await unavailable.presentSignIn() }
     }
 
-    /// Phase 6 review: the app never reads `credential.fullName` (only the identity token reaches
-    /// Firebase), so it must not ask Apple for the name -- the privacy policy says email only.
-    @Test func appleSignInAsksOnlyForTheEmailScope() {
-        #expect(AppleAuthProvider.requestedScopes == [.email])
+    /// Guideline 4.0 (App Review, 2026-09-27): the bootstrap form asked an Apple user to type the
+    /// name Apple can share. The name is requested again and pre-fills that field
+    /// (`ProfileBootstrapViewModelTests`); the privacy policy already names it.
+    @Test func appleSignInAsksForTheNameAndTheEmail() {
+        #expect(AppleAuthProvider.requestedScopes == [.fullName, .email])
     }
 }

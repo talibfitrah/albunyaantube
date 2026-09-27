@@ -1,6 +1,30 @@
 {
   "sourceLanguage" : "en",
   "strings" : {
+    "CFBundleDisplayName" : {
+      "comment" : "The name under the home-screen icon; matches Android's launcher `app_name` per locale. The English value is the source string in ios/project.yml. Hand-authored, like every key in this catalog.",
+      "extractionState" : "manual",
+      "localizations" : {
+        "ar" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "فطرة تيوب"
+          }
+        },
+        "en" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FitrahTube"
+          }
+        },
+        "nl" : {
+          "stringUnit" : {
+            "state" : "translated",
+            "value" : "FitrahTube"
+          }
+        }
+      }
+    },
     "NSLocalNetworkUsageDescription" : {
       "comment" : "Shown by iOS on the first cast-button tap, when Cast discovery starts mDNS on the local network. The English value is the source string in ios/project.yml. Hand-authored: this catalog is for Info.plist keys and is NOT produced by scripts/convert-strings.py, which owns Localizable.xcstrings alone.",
       "extractionState" : "manual",

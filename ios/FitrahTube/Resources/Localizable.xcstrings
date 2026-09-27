@@ -1481,19 +1481,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "عيّن كلمة مرور لتتمكن لاحقًا من تسجيل الدخول إلى لوحة التحكم من المتصفح أيضًا."
+            "value": "عيّن كلمة مرور للمتابعة — 8 أحرف على الأقل. يمكنك بعد ذلك تسجيل الدخول أيضًا باستخدام بريدك الإلكتروني وكلمة المرور هذه."
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Set a password so you can also sign in to the dashboard from a browser later."
+            "value": "Set a password to continue — at least 8 characters. You can then also sign in with your email address and this password."
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stel een wachtwoord in zodat je later ook vanuit een browser kunt inloggen op het dashboard."
+            "value": "Stel een wachtwoord in om verder te gaan — minstens 8 tekens. Daarna kun je ook inloggen met je e-mailadres en dit wachtwoord."
           }
         }
       }
@@ -1547,19 +1547,19 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "رقم الجوال"
+            "value": "رقم الجوال (اختياري)"
           }
         },
         "en": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mobile number"
+            "value": "Mobile number (optional)"
           }
         },
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Mobiel nummer"
+            "value": "Mobiel nummer (optioneel)"
           }
         }
       }
@@ -7004,138 +7004,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Importeren uit YouTube"
-          }
-        }
-      }
-    },
-    "library_history": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "السجل"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "History"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geschiedenis"
-          }
-        }
-      }
-    },
-    "library_history_coming_soon": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "سجل المشاهدة (قريباً)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Watch history (coming soon)"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Kijkgeschiedenis (binnenkort)"
-          }
-        }
-      }
-    },
-    "library_history_count": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld فيديو"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld videos"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld video's"
-          }
-        }
-      }
-    },
-    "library_recently_watched": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "شوهد مؤخراً"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recently Watched"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recent bekeken"
-          }
-        }
-      }
-    },
-    "library_recently_watched_coming_soon": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "شوهد مؤخراً (قريباً)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recently Watched (coming soon)"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Recent bekeken (binnenkort)"
-          }
-        }
-      }
-    },
-    "library_recently_watched_count": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld فيديو"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld videos"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld video's"
           }
         }
       }

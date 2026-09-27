@@ -122,9 +122,11 @@ struct EditPhoneSheet: View {
                             .accessibilityHidden(true)
                         // The placeholder is the only country hint on this sheet (ruling C1), so it
                         // has to show the SHAPE: a dial code then the national number. Digits need
-                        // no translation, hence `verbatim`.
+                        // no translation, hence `verbatim`. `axis: .vertical`: the Arabic fix,
+                        // `ProfileBootstrapScreen.phoneField`'s reason.
                         TextField(String(localized: "edit_phone_number"), text: $bindable.number,
-                                  prompt: Text(verbatim: "31612345678"))
+                                  prompt: Text(verbatim: "31612345678"), axis: .vertical)
+                            .lineLimit(1)
                             .textContentType(.telephoneNumber)
                             .keyboardType(.phonePad)
                             .autocorrectionDisabled()
@@ -132,6 +134,8 @@ struct EditPhoneSheet: View {
                             .padding(Spacing.md(widthClass))
                             .accessibilityLabel(String(localized: "edit_phone_number"))
                     }
+                    // Left-to-right in every locale — `ProfileBootstrapScreen.phoneField`'s reason.
+                    .environment(\.layoutDirection, .leftToRight)
                     .frame(minHeight: 44)
                     .background(Color.homeCard, in: RoundedRectangle(cornerRadius: Radius.card))
                 }

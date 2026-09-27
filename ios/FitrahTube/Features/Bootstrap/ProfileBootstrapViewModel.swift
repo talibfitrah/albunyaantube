@@ -18,9 +18,13 @@ import Observation
         var phoneNumber = ""
         var password = ""
         var passwordConfirm = ""
+        /// Fields the user has changed. A seed (`load()`) or a write of the same value (a binding
+        /// echo) is not a touch (`shownError`).
+        var touched: Set<BootstrapField> = []
         /// True when the signed-in account has no password provider: attaching one during bootstrap
         /// is what lets the same email later reach the admin dashboard from a browser
-        /// (`ProfileBootstrapViewModel.kt:54-61`).
+        /// (`ProfileBootstrapViewModel.kt:54-61`). Never for an Apple account — Apple's HIG: "Don't
+        /// ask people to supply a password" to a Sign in with Apple user.
         var passwordRequired = false
         /// Set once `POST /profile` has returned 200. The backend 409s a second POST, so a retry
         /// after a failed password attach must re-run ONLY the password step.
@@ -58,39 +62,42 @@ import Observation
     /// with no message.
     var displayName: String {
         get { state.displayName }
-        set {
-            state.displayName = BootstrapValidator.clamped(name: newValue)
-            state.error = nil
-        }
+        set { edit(\.displayName, BootstrapValidator.clamped(name: newValue), .name) }
     }
 
     var dateOfBirth: Date? {
         get { state.dateOfBirth }
-        set { state.dateOfBirth = newValue; state.error = nil }
+        set { state.dateOfBirth = newValue; state.touched.insert(.dob); state.error = nil }
     }
 
     var phoneNumber: String {
         get { state.phoneNumber }
         // `BootstrapValidator.normalizedDigits` — the same rule `EditPhoneSheet` applies, spelled
         // once beside the pattern it feeds (Stage 1 / B3a).
-        set {
-            state.phoneNumber = BootstrapValidator.normalizedDigits(newValue)
-            state.error = nil
-        }
+        set { edit(\.phoneNumber, BootstrapValidator.normalizedDigits(newValue), .phone) }
     }
 
     var password: String {
         get { state.password }
-        set { state.password = newValue; state.error = nil }
+        set { edit(\.password, newValue, .password) }
     }
 
     var passwordConfirm: String {
         get { state.passwordConfirm }
-        set { state.passwordConfirm = newValue; state.error = nil }
+        set { edit(\.passwordConfirm, newValue, .confirm) }
     }
 
-    /// E.164 as the server sees it.
-    var e164: String { BootstrapValidator.e164(state.phoneNumber) }
+    /// One text write: a changed value touches its field (`shownError`).
+    private func edit(_ keyPath: WritableKeyPath<UiState, String>, _ value: String, _ field: BootstrapField) {
+        if state[keyPath: keyPath] != value { state.touched.insert(field) }
+        state[keyPath: keyPath] = value
+        state.error = nil
+    }
+
+    /// E.164 as the server sees it, or nil for an empty field: the phone is optional (owner ruling
+    /// 2026-09-27), and an absent number is left out of the request — never "" (the server's
+    /// `@Pattern` refuses it) and never the bare "+" the fixed prefix would assemble.
+    var e164: String? { state.phoneNumber.isEmpty ? nil : BootstrapValidator.e164(state.phoneNumber) }
 
     // MARK: - Validation (ONE validator, both consumers)
 
@@ -104,13 +111,34 @@ import Observation
     /// Drives the submit button's enabled state.
     var isFormValid: Bool { firstError() == nil }
 
+    /// What the screen says (Android's `shownError`): a failed submit's reason, else — once the
+    /// user has touched anything — what still keeps Continue disabled. Without the second half
+    /// every refusal was silent (owner report 2026-09-27): `state.error` is written only by
+    /// `submit()`, which a disabled button never reaches. The error sits ON its field only once
+    /// that field was touched, otherwise by Continue; a mismatch waits until the confirmation is as
+    /// long as the password.
+    var shownError: ShownError? {
+        if let error = state.error { return ShownError(error: error, onField: true) }
+        guard !state.touched.isEmpty, let error = firstError() else { return nil }
+        let touched = error.field.map(state.touched.contains) ?? false
+        if error == .passwordMismatch, touched, state.passwordConfirm.count < state.password.count { return nil }
+        return ShownError(error: error, onField: touched)
+    }
+
     // MARK: - Lifecycle
 
     /// The screen's `.task`. `currentUser()` is async on iOS, so the password requirement cannot be
     /// derived at construction the way Android's fragment does it.
+    ///
+    /// Guideline 4.0: the name a provider already shared (Apple's first authorization, Google's
+    /// profile) seeds an EMPTY field — Android's `seedDisplayName` — so it is never asked for twice,
+    /// and a name the user has since edited survives the next appearance.
     func load() async {
         guard let user = await auth.currentUser() else { return }
-        state.passwordRequired = !user.hasPasswordProvider
+        state.passwordRequired = !user.hasPasswordProvider && !user.hasAppleProvider
+        if state.displayName.isEmpty, let name = user.displayName {
+            state.displayName = BootstrapValidator.clamped(name: name)
+        }
     }
 
     /// Two-phase commit. Phase one is `POST /profile`, latched by `profileSaved`; phase two attaches
@@ -228,7 +256,27 @@ import Observation
     }
 }
 
+nonisolated enum BootstrapField: Sendable, Hashable { case name, dob, phone, password, confirm }
+
+/// `error` on its own field when `onField`, else in the line by Continue.
+nonisolated struct ShownError: Sendable, Equatable {
+    let error: BootstrapError
+    let onField: Bool
+}
+
 extension BootstrapError {
+    /// The field an error is about; nil for the two that are no field's fault.
+    var field: BootstrapField? {
+        switch self {
+        case .invalidName: .name
+        case .invalidDOB, .underAge: .dob
+        case .invalidPhone: .phone
+        case .invalidPassword: .password
+        case .passwordMismatch: .confirm
+        case .passwordSetFailed, .saveFailed: nil
+        }
+    }
+
     /// The inline message under the form. `passwordSetFailed`/`saveFailed` say WHAT, never why.
     var messageKey: String {
         switch self {

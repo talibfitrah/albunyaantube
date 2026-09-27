@@ -127,7 +127,7 @@ nonisolated struct AccountClient: Sendable {
 
     /// `POST /api/account/profile` (`AccountController.java:69`) — the bootstrap form.
     func completeProfile(displayName: String, dateOfBirth: String,
-                         phoneNumber: String) async throws(AccountError) -> AccountMe {
+                         phoneNumber: String?) async throws(AccountError) -> AccountMe {
         let body = try encode(CompleteProfileBody(displayName: displayName, dateOfBirth: dateOfBirth,
                                                   phoneNumber: phoneNumber))
         let response = try await send("POST", "api/account/profile", body: body)
@@ -190,7 +190,12 @@ nonisolated struct AccountClient: Sendable {
 
     // MARK: - Wire
 
-    private struct CompleteProfileBody: Encodable { let displayName, dateOfBirth, phoneNumber: String }
+    /// `phoneNumber` is optional (owner ruling 2026-09-27) and, like every optional here, OMITTED
+    /// when nil — the server reads an absent number as "none".
+    private struct CompleteProfileBody: Encodable {
+        let displayName, dateOfBirth: String
+        let phoneNumber: String?
+    }
     /// Optional properties are synthesised as `encodeIfPresent`, so a nil is absent from the JSON.
     private struct UpdateProfileBody: Encodable { let displayName, dateOfBirth, phoneNumber: String? }
 

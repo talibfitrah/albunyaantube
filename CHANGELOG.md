@@ -1,9 +1,19 @@
 # Changelog
 
-All notable changes to FitrahTube. Versions are tagged on the `develop` branch
-during the beta program.
+All notable changes to FitrahTube. Releases are tagged `vX.Y.Z`; 1.0.0 is the first
+stable release.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-27
+
+First stable release, published on Google Play (`com.albunyaan.tube.play`) and the App Store.
+
+- Accounts: password-reset and email-change emails are now sent by the server, so they arrive reliably.
+- Sign-up: the phone number is optional, and the form always says what is blocking Continue (on both platforms). iOS also accepts international numbers written with `00` (e.g. `0031…`).
+- iOS: Sign in with Apple fills in your name and never asks for a password; the Apple and Google buttons follow each company's branding rules; the sign-in screen links to the privacy policy and terms; the developer sheet exists in debug builds only; deleting an account that uses Sign in with Apple also revokes it (falling back to password or Google when Apple is unavailable); the Arabic home-screen name is فطرة تيوب; the Update button opens the App Store listing.
+- Android: removed the Recently Watched and History rows from Library, which only showed "coming soon"; the sign-up profile screen is translated into Arabic and Dutch.
+- Server: new public support page at `/support`; the privacy policy covers the optional phone, the name shared by Sign in with Apple, and which emails are sent through Microsoft 365.
 
 - Android: fixed crashes on Android 14 and older when search history filled up or when going back to a previous video, and on Android 8.x at launch. Kotlin's `removeLast()` on a `MutableList` compiled to the Java 21 `List#removeLast` (API 35) and the splash used `View#requireViewById` (API 28); replaced with `removeAt(lastIndex)` / `ViewCompat.requireViewById`, removed the lint-baseline entries that hid these `NewApi` errors, and added a unit test that fails on any `removeFirst/removeLast/getFirst/getLast()` call on a non-Deque in app sources.
 - Android: videos opened right after a cold start no longer stay black. Concurrent playback-token requests for the same video overwrote each other (only one resolved; the rest waited out a 10 s timeout), and the player's own resolve timeout was treated as a cancellation, so it neither retried nor showed an error. Requests are now keyed per call and a timed-out attempt retries, then shows Retry.

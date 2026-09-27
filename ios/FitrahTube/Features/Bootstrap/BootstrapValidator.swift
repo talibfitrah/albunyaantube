@@ -9,9 +9,10 @@ nonisolated enum BootstrapError: Sendable, Equatable {
     case passwordSetFailed, saveFailed
 }
 
-/// ONE validator, TWO consumers — the submit button's enabled state and `submit()`'s error dispatch
-/// — so they cannot drift (`ProfileBootstrapViewModel.kt:80-108`). Pure and `nonisolated`: the
-/// suite constructs it off the main actor and hands it every date it decides on.
+/// ONE validator behind the submit button's enabled state, the line that says why it is disabled,
+/// and `submit()`'s error dispatch — so they cannot drift (`ProfileBootstrapViewModel.kt:80-108`).
+/// Pure and `nonisolated`: the suite constructs it off the main actor and hands it every date it
+/// decides on.
 nonisolated enum BootstrapValidator {
     /// UTF-16 code units, matching `CompleteProfileRequest.java`'s `@Size(max = 40)` — see
     /// `firstError`. `clamped(name:)` is the field cap, counted in the SAME units, so the gate and
@@ -71,7 +72,16 @@ nonisolated enum BootstrapValidator {
     }
 
     /// E.164 as the server sees it: the fixed "+" both screens render, plus the normalised digits.
-    static func e164(_ digits: String) -> String { "+" + digits }
+    ///
+    /// A leading "00" is the international call prefix — how NL, the EU and the Gulf write a number
+    /// ("0031 6…", "00966 5…") — and it is exactly what the fixed "+" stands for: no country code
+    /// starts with 0, so "+00…" could never be a number. A SINGLE leading 0 is a national trunk
+    /// prefix, and there is no dial-code table to replace it with (ruling C1), so it stays and
+    /// fails the pattern where the form can say so. (Known ceiling: Australia's "0011" prefix would
+    /// read as "+11…"; nobody writes their own number that way.)
+    static func e164(_ digits: String) -> String {
+        "+" + (digits.hasPrefix("00") ? String(digits.dropFirst(2)) : digits)
+    }
 
     /// The date the pickers open on when the account has none: eighteen years ago rather than today,
     /// so the very first flick is not out of one that is guaranteed to be under age.
@@ -131,7 +141,7 @@ nonisolated enum BootstrapValidator {
     /// refresh tokens, disables the Firebase account and tombstones the Firestore doc. A mistyped
     /// year would destroy the account with no recovery. Failing locally keeps an honest mistake a
     /// correctable form error.
-    static func firstError(name: String, dob: Date?, phone: String, password: String,
+    static func firstError(name: String, dob: Date?, phone: String?, password: String,
                            passwordConfirm: String, passwordRequired: Bool,
                            today: Date, calendar: Calendar = .current) -> BootstrapError? {
         let trimmed = name.trimmingCharacters(in: .whitespacesAndNewlines)
@@ -148,9 +158,10 @@ nonisolated enum BootstrapValidator {
         // one to run first.
         guard let dob else { return .invalidDOB }
         if isUnderMinimumAge(dob: dob, today: today, calendar: calendar) { return .underAge }
-        // `wholeMatch`, not `firstMatch`: `$` alone can match ahead of a trailing newline, and a
-        // pasted number carrying one must fail here rather than at the server.
-        if phone.wholeMatch(of: phonePattern) == nil { return .invalidPhone }
+        // Optional (owner ruling 2026-09-27): nil is "no number", and only a GIVEN number is held to
+        // the pattern. `wholeMatch`, not `firstMatch`: `$` alone can match ahead of a trailing
+        // newline, and a pasted number carrying one must fail here rather than at the server.
+        if let phone, phone.wholeMatch(of: phonePattern) == nil { return .invalidPhone }
         if passwordRequired {
             if password.count < minPasswordLength { return .invalidPassword }
             if password != passwordConfirm { return .passwordMismatch }

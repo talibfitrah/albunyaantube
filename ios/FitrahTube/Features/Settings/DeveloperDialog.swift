@@ -1,3 +1,4 @@
+#if DEBUG
 import FitrahAPI
 import SwiftUI
 
@@ -8,7 +9,7 @@ import SwiftUI
 /// Android's NewPipe/DASH-specific internals with no `InnerTubeKit` equivalent yet -- phase 2.
 /// Row labels below have no Android string to port (this dialog's phase-1 *content* is new to
 /// iOS) and, like the 35 `dev_settings_*` keys that already exist, are deliberately left
-/// untranslated -- this is a debug-only screen.
+/// untranslated -- this is a debug-only screen, compiled into DEBUG builds only (guideline 2.3.1).
 struct DeveloperDialog: View {
     @Environment(\.dismiss) private var dismiss
     #if DEBUG
@@ -23,11 +24,9 @@ struct DeveloperDialog: View {
                     LabeledContent("API base URL", value: AppConfig.apiBaseURL.absoluteString)
                     LabeledContent("Device ID", value: DeviceId.persisted().value)
                 }
-                // The dialog itself still ships (version/build, the public API host, and a locally
-                // generated device id are all harmless -- see gate B1-I8), but the Components
-                // Gallery does not: it is a debug screenshot rig, and this was the one in-app path
-                // that reached it without a launch flag. Revisit the whole dialog's gating when
-                // the phase-2 playback kill switches land in it (cso-F3, deferred).
+                // The Components Gallery is a debug screenshot rig, and this was the one in-app
+                // path that reached it without a launch flag (gate B1-I8, cso-F3). The whole
+                // dialog is DEBUG-only now (guideline 2.3.1), so this inner gate is belt and braces.
                 #if DEBUG
                 Section {
                     Button("Components Gallery") { showGallery = true }
@@ -59,4 +58,5 @@ struct DeveloperDialog: View {
     DeveloperDialog()
         .environment(\.container, .sharedFake)
 }
+#endif
 #endif

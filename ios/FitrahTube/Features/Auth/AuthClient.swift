@@ -10,7 +10,11 @@ nonisolated struct AuthUser: Sendable, Equatable {
     var isEmailVerified: Bool
     /// Firebase provider ids: "password", "google.com", "apple.com".
     var providerIDs: [String]
+    /// Firebase's `User.displayName`: the name a provider shared (Google's profile, Apple's first
+    /// authorization). Seeds the bootstrap form's name field (`ProfileBootstrapViewModel.load()`).
+    var displayName: String? = nil
     var hasPasswordProvider: Bool { providerIDs.contains("password") }
+    var hasAppleProvider: Bool { providerIDs.contains("apple.com") }
 }
 
 /// 1:1 with Firebase's auth-state listener. Operation loading/error state NEVER lives here —
@@ -131,6 +135,10 @@ nonisolated struct OAuthCredential: Sendable {
     let providerID: String
     let idToken: String
     let accessTokenOrNonce: String?
+    /// Apple only, and only on the FIRST authorization: the name the user chose to share.
+    var fullName: PersonNameComponents? = nil
+    /// Apple only: the one-time code `AuthClient.revokeAppleToken` redeems (guideline 5.1.1(v)).
+    var authorizationCode: String? = nil
 }
 
 /// Refines `AuthTokenProviding` so ONE token source really is one type: `AppContainer.auth` is
@@ -167,6 +175,10 @@ nonisolated protocol AuthClient: AuthTokenProviding {
     /// account arriving in between lost its credential. A conformer compares and deletes with no
     /// suspension between them, and throws when it holds anybody else (or nobody).
     func deleteUser(expecting uid: String) async throws(AuthErrorCode)
+    /// Guideline 5.1.1(v): revokes this app's Sign in with Apple grant with a fresh authorization
+    /// code. Non-throwing on purpose — a failed revocation is logged and never blocks the deletion
+    /// it belongs to. Needs the Firebase user to still exist, so it runs BEFORE the server delete.
+    func revokeAppleToken(authorizationCode: String) async
     /// Stage 5 / C1.3: THROWS. `Auth.signOut()` assigns `_currentUser = nil` only when the Keychain
     /// write succeeded, so a swallowed failure left the app reporting signed-out while still minting
     /// bearers for the previous account — and the next launch restored it.
@@ -214,6 +226,7 @@ nonisolated struct UnavailableAuthClient: AuthClient {
     func updatePassword(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) { throw .unknown }
     func deleteUser(expecting uid: String) async throws(AuthErrorCode) { throw .unknown }
+    func revokeAppleToken(authorizationCode: String) async {}
     func signOut() throws(AuthErrorCode) {}
     func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? { nil }
 }

@@ -18,6 +18,9 @@ struct SignInScreen: View {
     /// symbol beside it (the asset is drawn at 66 pt, the size it reaches at the largest text setting).
     @ScaledMetric(relativeTo: .subheadline) private var googleLogoSize: CGFloat = 20
     @State private var banner: BannerMessage?
+    /// Each provider label's natural height. Both buttons take the TALLER one, so a title that wraps
+    /// at a large text size (Arabic "Sign in with Apple" at AX1) never leaves the pair unequal.
+    @State private var providerLabelHeights: [SignInProvider: CGFloat] = [:]
 
     var body: some View {
         ScrollView {
@@ -86,8 +89,32 @@ struct SignInScreen: View {
                             providerButton(provider, model: viewModel)
                         }
                     }
+                    legalFooter
                 }
                 .frame(maxWidth: .infinity)
+            }
+        }
+    }
+
+    /// Guideline 5.1.1: the privacy policy and terms, readable before an account exists — About's
+    /// own entries (`AboutLinks.beforeSignIn`), side by side when they fit, stacked when they don't.
+    private var legalFooter: some View {
+        ViewThatFits(in: .horizontal) {
+            HStack(spacing: Spacing.lg(widthClass)) { legalLinks }
+            VStack(spacing: 0) { legalLinks }
+        }
+        .frame(maxWidth: .infinity)
+    }
+
+    private var legalLinks: some View {
+        ForEach(AboutLinks.beforeSignIn) { link in
+            Link(destination: link.url) {
+                // Inside the label, so the 44 pt floor is the tappable area, not just the layout.
+                Text(String(localized: String.LocalizationValue(link.titleKey)))
+                    .font(TypeScale.caption)
+                    .foregroundStyle(Color.brand)
+                    .frame(minHeight: 44)
+                    .contentShape(Rectangle())
             }
         }
     }
@@ -186,15 +213,18 @@ struct SignInScreen: View {
         Rectangle().fill(Color.textSecondary.opacity(0.3)).frame(height: 1)
     }
 
+    /// Each provider in its brand's own published style (Apple HIG's black/white button, Google's
+    /// light/dark themes — `Tokens.swift`), on ONE shape and size so neither outranks the other.
     @ViewBuilder
     private func providerButton(_ provider: SignInProvider, model: SignInViewModel) -> some View {
         if let source = source(for: provider) {
+            let apple = provider == .apple
             Button {
                 Task { await model.signIn(with: source) }
             } label: {
                 // Google's spec puts 12 pt between its logo and the label.
-                HStack(spacing: provider == .google ? 12 : Spacing.sm) {
-                    if provider == .apple {
+                HStack(spacing: apple ? Spacing.sm : 12) {
+                    if apple {
                         Image(systemName: "apple.logo")
                             .accessibilityHidden(true)
                         Text(String(localized: "auth_apple_button"))
@@ -203,20 +233,28 @@ struct SignInScreen: View {
                         Image("google-g")
                             .resizable()
                             .frame(width: googleLogoSize, height: googleLogoSize)
-                            // A full-colour image ignores the disabled dimming the label gets; 38% is Google's disabled logo.
-                            .opacity(model.state.isLoading ? 0.38 : 1)
                             .accessibilityHidden(true)
                         Text(String(localized: "auth_google_button"))
                     }
                 }
-                .font(TypeScale.body(widthClass))
-                .foregroundStyle(Color.textPrimary)
-                .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
+                .onGeometryChange(for: CGFloat.self) { $0.size.height } action: { providerLabelHeights[provider] = $0 }
+                .font(TypeScale.body(widthClass).weight(.medium))
+                .foregroundStyle(apple ? Color.appleButtonText : Color.googleButtonText)
+                .padding(.horizontal, Spacing.md(widthClass))
+                .padding(.vertical, Spacing.sm)
+                .frame(maxWidth: .infinity, minHeight: max(Size.button(widthClass),
+                                                           (providerLabelHeights.values.max() ?? 0) + 2 * Spacing.sm))
+                .background(apple ? Color.appleButtonFill : Color.googleButtonFill, in: Capsule())
+                .overlay { if !apple { Capsule().strokeBorder(Color.googleButtonBorder, lineWidth: 1) } }
+                .contentShape(Capsule())
             }
-            .buttonStyle(.bordered)
+            .buttonStyle(.plain)
             // Every control is dead while a sign-in is in flight — which is what keeps
-            // `AppleAuthProvider`'s re-entrancy latch from ever being the user-visible path.
+            // `AppleAuthProvider`'s re-entrancy latch from ever being the user-visible path. A plain
+            // style draws no disabled state of its own, so the whole button (logo, fill and label
+            // alike) drops to Google's 38% disabled opacity.
             .disabled(model.state.isLoading)
+            .opacity(model.state.isLoading ? 0.38 : 1)
         }
     }
 

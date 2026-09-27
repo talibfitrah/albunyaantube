@@ -24,6 +24,9 @@ struct ProfileBootstrapViewModelTests {
                                                isEmailVerified: true, providerIDs: ["password"])
     private static let googleUser = AuthUser(uid: "fake-uid", email: "student@fitrah.test",
                                              isEmailVerified: true, providerIDs: ["google.com"])
+    private static let appleUser = AuthUser(uid: "fake-uid", email: "x1y2@privaterelay.appleid.com",
+                                            isEmailVerified: true, providerIDs: ["apple.com"],
+                                            displayName: "Aisha Rahman")
 
     private nonisolated static let calendar: Calendar = {
         var calendar = Calendar(identifier: .gregorian)
@@ -87,6 +90,21 @@ struct ProfileBootstrapViewModelTests {
         #expect(fixture.model.state.passwordRequired)
     }
 
+    /// Apple HIG, "Sign in with Apple": "Don't ask people to supply a password." An Apple sign-up
+    /// completes the form with no password at all; only a Google-only one still attaches one.
+    @Test func anAppleAccountIsNeverAskedForAPassword() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.appleUser)),
+                           responses: [.json(200, Self.meJSON), .json(200, Self.meJSON)])
+        await fixture.model.load()
+        #expect(fixture.model.state.passwordRequired == false, "an Apple sign-up was asked for a password")
+
+        fill(fixture.model, phone: "")
+        #expect(fixture.model.isFormValid, "Continue stayed disabled without a password")
+        await fixture.model.submit()
+        #expect(fixture.auth.operations.contains(.updatePassword) == false)
+        #expect(fixture.model.nav == .main)
+    }
+
     @Test func aPasswordAccountIsNotAskedForAPasswordAgain() async {
         let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
         await fixture.model.load()
@@ -97,7 +115,7 @@ struct ProfileBootstrapViewModelTests {
 
     @Test func theSubmitGateAndTheErrorDispatchShareOneValidator() async {
         let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
-        fill(fixture.model, phone: "0031612345678")   // the "+" is fixed, so a 00 prefix cannot match
+        fill(fixture.model, phone: "0612345678")   // national, no dial code: no table to add one (ruling C1)
         #expect(fixture.model.isFormValid == false)
 
         await fixture.model.submit()
@@ -129,6 +147,134 @@ struct ProfileBootstrapViewModelTests {
 
         fixture.model.phoneNumber = "31612345678"
         #expect(fixture.model.state.error == nil)
+    }
+
+    // MARK: - The owner's report (2026-09-27): a filled-in form whose Continue never enabled
+
+    /// Owner ruling 2026-09-27: the phone is OPTIONAL. Name + date of birth is a complete form for a
+    /// password account, and the request carries no `phoneNumber` at all — absent, never "" (the
+    /// server's `@Pattern` refuses it) and never the bare "+" the fixed prefix would assemble.
+    @Test func anEmptyPhoneEnablesSubmitAndIsNotSent() async throws {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
+                           responses: [.json(200, Self.meJSON), .json(200, Self.meJSON)])
+        fill(fixture.model, phone: "")
+        #expect(fixture.model.isFormValid, "Continue stayed disabled on a name and a date of birth")
+
+        await fixture.model.submit()
+        let post = try #require(profilePosts(fixture.transport).first)
+        let data = try #require(post.body)
+        let json = try #require(try JSONSerialization.jsonObject(with: data) as? [String: Any])
+        #expect(Set(json.keys) == ["displayName", "dateOfBirth"])
+        #expect(fixture.model.nav == .main)
+    }
+
+    /// How a Dutch or Arab user writes their own number into the field after the fixed "+". The
+    /// "00" international prefix (NL, the EU, the Gulf) used to arrive as "+0031…", which no E.164
+    /// number can be — a leading zero is never a country code — so it is the prefix, not a digit.
+    @Test(arguments: [
+        ("+31 6 12345678", "+31612345678"),
+        ("31612345678", "+31612345678"),
+        ("0031612345678", "+31612345678"),
+        ("0031 6 12345678", "+31612345678"),
+        ("00966 50 123 4567", "+966501234567"),
+        // ٠٠٩٦٦٥٠١٢٣٤٥٦٧ on an Arabic keypad — escaped so the source stays readable left to right.
+        ("\u{0660}\u{0660}\u{0669}\u{0666}\u{0666}\u{0665}\u{0660}\u{0661}\u{0662}\u{0663}\u{0664}\u{0665}\u{0666}\u{0667}",
+         "+966501234567"),
+    ])
+    func theWaysPeopleWriteTheirOwnNumberAreAccepted(typed: String, e164: String) {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
+        fill(fixture.model, phone: typed)
+        #expect(fixture.model.e164 == e164)
+        #expect(fixture.model.isFormValid, "\(typed) left Continue disabled")
+    }
+
+    /// The other half of the report: Continue stayed disabled and NOTHING on screen said why.
+    /// `state.error` is written only inside `submit()`, which a disabled button never reaches, so
+    /// every refusal the gate made was silent — a national "06…" number (no dial code to add, ruling
+    /// C1), a Google account's password left blank under an explainer that reads as optional, a
+    /// 7-character password, a mismatch, an under-13 date. Whatever keeps Continue disabled is on
+    /// screen, once the user has started.
+    @Test func aDisabledContinueAlwaysSaysWhy() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
+        await fixture.model.load()
+        #expect(fixture.model.state.passwordRequired, "precondition: the owner's fresh Google account")
+        #expect(fixture.model.shownError == nil, "an untouched form is not an error")
+
+        let spoilers: [(String, (ProfileBootstrapViewModel) -> Void, BootstrapError)] = [
+            ("a national number", { $0.phoneNumber = "06 12345678" }, .invalidPhone),
+            ("a blank password", { $0.password = ""; $0.passwordConfirm = "" }, .invalidPassword),
+            ("7 characters", { $0.password = "hunter2"; $0.passwordConfirm = "hunter2" }, .invalidPassword),
+            ("a mismatch", { $0.passwordConfirm = "hunter2hunter3" }, .passwordMismatch),
+            ("an under-13 date", { $0.dateOfBirth = Self.day(2020, 1, 1) }, .underAge),
+            ("no date yet", { $0.dateOfBirth = nil }, .invalidDOB),
+            ("a blank name", { $0.displayName = "   " }, .invalidName),
+        ]
+        for (label, spoil, reason) in spoilers {
+            fill(fixture.model, password: "hunter2hunter2")
+            #expect(fixture.model.isFormValid, "precondition for \(label)")
+            spoil(fixture.model)
+            #expect(fixture.model.isFormValid == false, "\(label)")
+            #expect(fixture.model.shownError?.error == reason, "\(label): Continue is disabled and nothing says why")
+        }
+    }
+
+    // MARK: - Guideline 4.0: a name the provider shared is never asked for again
+
+    /// Apple shares the name on the FIRST authorization only and Firebase keeps it as the
+    /// account's display name, so the form opens with it (Android's `seedDisplayName`) — still
+    /// editable. `load()` is the screen's `.task` and runs on every appearance, so it seeds an
+    /// EMPTY field only: a name the user already changed survives it.
+    @Test func theNameTheProviderSharedIsPrefilledAndNeverOverwritesAnEdit() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.appleUser)))
+
+        await fixture.model.load()
+        #expect(fixture.model.displayName == "Aisha Rahman", "the user was asked to type the name Apple shared")
+
+        fixture.model.displayName = "Aisha"
+        await fixture.model.load()
+        #expect(fixture.model.displayName == "Aisha", "re-appearing overwrote the user's own edit")
+    }
+
+    /// The seeded name is the PROVIDER's, not the user's: a form that opens pre-filled is still
+    /// untouched, so it shows no refusal until the user does something (`shownError`'s rule).
+    @Test func aPrefilledNameIsNotTheUserStartingTheForm() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.appleUser)))
+        await fixture.model.load()
+        #expect(fixture.model.shownError == nil, "an untouched, pre-filled form already shows an error")
+        fixture.model.displayName = "Aisha Rahman"   // a binding echo: the same value, not a touch
+        #expect(fixture.model.shownError == nil, "an unchanged write counted as the user starting")
+
+        fixture.model.displayName = ""
+        #expect(fixture.model.shownError == ShownError(error: .invalidName, onField: true),
+                "clearing the seeded name is a start")
+    }
+
+    /// Cubic P3, Android parity (`ProfileBootstrapViewModel.kt`, `shownError`): an error sits ON its
+    /// field only once the user touched that field; any other first blocker is said by Continue.
+    /// One letter of a name used to raise "choose your date of birth" as if the name were wrong,
+    /// and a Google user who picked a date got a password-length error before touching a password.
+    @Test func anUntouchedFieldsBlockerIsSaidByContinueNotOnTheField() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
+        await fixture.model.load()
+
+        fixture.model.displayName = "A"
+        #expect(fixture.model.shownError == ShownError(error: .invalidDOB, onField: false))
+        fixture.model.dateOfBirth = Self.dob
+        #expect(fixture.model.shownError == ShownError(error: .invalidPassword, onField: false))
+        fixture.model.password = "hunter2"
+        #expect(fixture.model.shownError == ShownError(error: .invalidPassword, onField: true))
+    }
+
+    /// A half-typed confirmation is not a mismatch: it is judged once it is as long as the password.
+    @Test func aMismatchWaitsUntilTheConfirmationIsAsLongAsThePassword() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
+        await fixture.model.load()
+        fill(fixture.model, password: "hunter2hunter2")
+
+        fixture.model.passwordConfirm = "hunter"
+        #expect(fixture.model.shownError == nil, "a half-typed confirmation was called a mismatch")
+        fixture.model.passwordConfirm = "hunter2hunter3"
+        #expect(fixture.model.shownError == ShownError(error: .passwordMismatch, onField: true))
     }
 
     // MARK: - The happy path

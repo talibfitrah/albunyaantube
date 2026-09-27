@@ -77,6 +77,16 @@ struct LocalizationTests {
         #expect(Set(values).count == 3, "ar/nl are still the English sentence")
     }
 
+    /// The name under the home-screen icon matches Android's launcher name (`app_name`): the brand
+    /// in en/nl, "فطرة تيوب" in Arabic — as the in-app `app_name` already reads.
+    @Test func theHomeScreenNameMatchesAndroidsLauncherName() throws {
+        let expected = ["en": "FitrahTube", "ar": "فطرة تيوب", "nl": "FitrahTube"]
+        for (locale, name) in expected {
+            let value = try Self.lproj(locale).localizedString(forKey: "CFBundleDisplayName", value: nil, table: "InfoPlist")
+            #expect(value == name, "\(locale): \(value)")
+        }
+    }
+
     private static func lproj(_ locale: String) throws -> Bundle {
         try #require(Bundle.main.path(forResource: locale, ofType: "lproj").flatMap(Bundle.init(path:)))
     }
@@ -270,6 +280,26 @@ struct LocalizationTests {
         // The exact re-authored Arabic verb, so a well-meaning revert to "حمّل" is a named failure.
         #expect(try Self.lproj("ar").localizedString(forKey: "share_app_promo", value: nil, table: nil)
                     .hasPrefix("احصل على"))
+    }
+
+    /// Owner report 2026-09-27: a new Google account MUST set a password on the bootstrap form (8+
+    /// characters, typed twice — `BootstrapValidator`), but the explainer read as an optional extra.
+    /// Every locale now says it is required, names the validator's minimum, and gives the one true
+    /// reason — email sign-in. Never the dashboard: it signs every non-admin straight back out.
+    @Test func thePasswordExplainerSaysItIsRequiredAndNamesTheMinimum() throws {
+        let key = "bootstrap_password_explainer"
+        let values = try ["en", "ar", "nl"].map { try Self.lproj($0).localizedString(forKey: key, value: nil, table: nil) }
+        #expect(values[0] == "Set a password to continue — at least 8 characters. "
+                + "You can then also sign in with your email address and this password.")
+        #expect(values[1].hasPrefix("عيّن كلمة مرور للمتابعة"), "ar: \(values[1])")
+        #expect(values[2].hasPrefix("Stel een wachtwoord in om verder te gaan"), "nl: \(values[2])")
+        #expect(values[1].contains("بريدك الإلكتروني"), "ar: \(values[1])")
+        #expect(values[2].contains("e-mailadres"), "nl: \(values[2])")
+        for value in values {
+            #expect(value.contains("\(BootstrapValidator.minPasswordLength)"), "no minimum in: \(value)")
+            #expect(!value.localizedCaseInsensitiveContains("dashboard") && !value.contains("لوحة التحكم"),
+                    "promises the dashboard: \(value)")
+        }
     }
 
     /// Task 27 fix round / I1. `auth_error_invalid_credential` is the key BOTH the sign-in banner

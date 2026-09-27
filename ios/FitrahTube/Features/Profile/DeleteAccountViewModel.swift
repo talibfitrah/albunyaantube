@@ -39,8 +39,28 @@ nonisolated enum DeleteAccountState: Equatable {
         self.apple = apple
     }
 
-    /// Whether the confirmation must collect a password, or run the provider's own sheet instead.
-    var requiresPassword: Bool { session.user?.hasPasswordProvider == true }
+    private enum ReauthMethod { case apple, password, google }
+
+    /// Set when Apple's re-authentication was refused (e.g. another Apple ID on the device).
+    private var appleRefused = false
+
+    /// How this attempt proves the account, from the methods it actually has. Apple first when
+    /// usable: its sheet is the only proof that yields the code the grant is revoked with (guideline
+    /// 5.1.1(v)). Then the password, then Google — the order they had before Apple went first. A
+    /// refused Apple sheet steps aside for the next method, and stays the retry when it is the only
+    /// one; either way the deletion only skips the revocation.
+    private var reauthMethod: ReauthMethod? {
+        guard let user = session.user else { return nil }
+        var methods: [ReauthMethod] = []
+        if user.hasAppleProvider, apple.isAvailable { methods.append(.apple) }
+        if user.hasPasswordProvider { methods.append(.password) }
+        if user.providerIDs.contains("google.com") { methods.append(.google) }
+        if appleRefused, methods.count > 1 { methods.removeAll { $0 == .apple } }
+        return methods.first
+    }
+
+    /// Whether the confirmation must collect a password, or run a provider's own sheet instead.
+    var requiresPassword: Bool { reauthMethod == .password }
 
     nonisolated static func messageKey(for state: DeleteAccountState) -> String? {
         switch state {
@@ -75,10 +95,11 @@ nonisolated enum DeleteAccountState: Equatable {
         state = .reauthenticating
         // Read BEFORE the await: which leg ran is what the refusal message depends on (I2), and
         // `session.user` is not this call's to assume unchanged across a provider sheet. Stage 7
-        // re-review 2 / m2: the SAME read drives the leg — one `requiresPassword` per attempt, so
+        // re-review 2 / m2: the SAME read drives the leg — one `reauthMethod` per attempt, so
         // the provider sheet's own suspension cannot run one leg and render the other's copy.
-        let passwordLeg = requiresPassword
-        let reauthenticated = await reauthenticate(password: passwordLeg)
+        let method = reauthMethod
+        let passwordLeg = method == .password
+        let reauthenticated = await reauthenticate(method)
         password = ""
         guard reauthenticated else {
             state = .failedReauth(password: passwordLeg)
@@ -130,8 +151,11 @@ nonisolated enum DeleteAccountState: Equatable {
     /// `BearerRetry`'s cross-account guard cannot see a swap that happened before the request
     /// started. A refused credential (Firebase's `userMismatch`) is a refusal like a dismissed
     /// sheet: nothing is deleted.
-    private func reauthenticate(password passwordLeg: Bool) async -> Bool {
-        if passwordLeg {
+    private func reauthenticate(_ method: ReauthMethod?) async -> Bool {
+        if method != .apple, session.user?.hasAppleProvider == true {
+            print("DeleteAccountViewModel: Apple re-authentication unavailable; deleting without revoking the Apple grant")
+        }
+        if method == .password {
             do {
                 try await auth.reauthenticate(password: password)
                 return true
@@ -144,23 +168,29 @@ nonisolated enum DeleteAccountState: Equatable {
         // matching the plist's client id — without that `GIDSignIn` raises an uncatchable
         // `NSInvalidArgumentException` and the app terminates on this tap. The sign-in screen has
         // refused that call since Task 10 (`SignInViewModel:125`); this leg had not.
-        guard let provider = federatedProvider, provider.isAvailable else { return false }
+        let provider: any OAuthSignInProvider
+        switch method {
+        case .apple: provider = apple
+        case .google: provider = google
+        case .password, nil: return false
+        }
+        guard provider.isAvailable else { return false }
         do {
             let credential = try await provider.presentSignIn()
             try await auth.reauthenticate(with: credential)
+            // Guideline 5.1.1(v): an Apple account's grant is revoked with the code THIS sheet just
+            // issued, and before the DELETE — the server destroys the Firebase user the revocation
+            // needs. It cannot fail outward, so it never blocks the deletion. Trade-off: a DELETE the
+            // server then refuses leaves the grant revoked on a live account; the next Apple
+            // sign-in simply asks for consent again and lands on the same account.
+            if let code = credential.authorizationCode { await auth.revokeAppleToken(authorizationCode: code) }
             return true
         } catch {
+            // A cancel is a refusal like any other: nothing is deleted, and the row goes back to
+            // saying what it is.
+            if method == .apple { appleRefused = true }
             return false
         }
-    }
-
-    /// The provider this account actually signed in with. A cancel is a refusal like any other —
-    /// the account is not deleted, and the row goes back to saying what it is.
-    private var federatedProvider: (any OAuthSignInProvider)? {
-        let ids = session.user?.providerIDs ?? []
-        if ids.contains("google.com") { return google }
-        if ids.contains("apple.com") { return apple }
-        return nil
     }
 
     private nonisolated static func state(for error: AccountError) -> DeleteAccountState {

@@ -8,9 +8,9 @@ import SwiftUI
 /// `RootView`'s `AgeIneligibleScreen` presentation now, because the 422 drops the session — which
 /// is precisely what stops rendering this screen.
 ///
-/// The phone field is ONE free-text field with a fixed leading "+" and the E.164 shape as its
-/// placeholder. No country picker (ruling C1/F5): Android's picker fed libphonenumber, which iOS does
-/// not carry, and the server's own regex is the whole rule.
+/// The phone field is ONE optional free-text field (owner ruling 2026-09-27) with a fixed leading "+"
+/// and the E.164 shape as its placeholder. No country picker (ruling C1/F5): Android's picker fed
+/// libphonenumber, which iOS does not carry, and the server's own regex is the whole rule.
 struct ProfileBootstrapScreen: View {
     @Environment(\.container) private var container
     @Environment(\.widthClass) private var widthClass
@@ -50,7 +50,9 @@ struct ProfileBootstrapScreen: View {
                 phoneField(viewModel)
                 if viewModel.state.passwordRequired { passwordFields(viewModel) }
 
-                if let error = viewModel.state.error {
+                // A field's own error sits under it (`fieldError`); everything else is said here.
+                if let shown = viewModel.shownError, !(shown.onField && shown.error.field != nil) {
+                    let error = shown.error
                     Text(String(localized: String.LocalizationValue(error.messageKey)))
                         .font(TypeScale.body(widthClass))
                         .foregroundStyle(Color.errorText)
@@ -81,6 +83,7 @@ struct ProfileBootstrapScreen: View {
                 .autocorrectionDisabled()
                 .fieldChrome(widthClass)
                 .accessibilityLabel(String(localized: "bootstrap_display_name_label"))
+            fieldError(model, .name)
         }
     }
 
@@ -121,6 +124,7 @@ struct ProfileBootstrapScreen: View {
                     .datePickerStyle(.graphical)
                     .labelsHidden()
             }
+            fieldError(model, .dob)
         }
     }
 
@@ -146,12 +150,17 @@ struct ProfileBootstrapScreen: View {
                     // Decoration, not content: VoiceOver reads the field's own label instead.
                     .accessibilityHidden(true)
                 // The placeholder is the ONLY country hint on this screen (ruling C1 — no country
-                // picker), so it has to show the SHAPE: a dial code then the national number.
-                // Without it a user types their national number after the fixed "+", gets a disabled
-                // button, and is never told a dial code is required. Digits need no translation,
-                // hence `verbatim`; `bootstrap_phone_hint` stays the field's label.
+                // picker), so it has to show the SHAPE: a dial code then the national number — a
+                // national "06…" is refused, and `shownError` says so under the form. Digits need no
+                // translation, hence `verbatim`; `bootstrap_phone_hint` stays the field's label.
+                //
+                // `axis: .vertical` is the Arabic fix: the single-line field editor laid a
+                // digits-only first entry out at x = -39695 (off-screen) under an Arabic UI, so the
+                // field held the number and showed nothing. The vertical-axis editor lays it out
+                // in place, and `lineLimit(1)` keeps it one line (re-verified in Arabic, AX1).
                 TextField(String(localized: "bootstrap_phone_hint"), text: $bindable.phoneNumber,
-                          prompt: Text(verbatim: "31612345678"))
+                          prompt: Text(verbatim: "31612345678"), axis: .vertical)
+                    .lineLimit(1)
                     .textContentType(.telephoneNumber)
                     .keyboardType(.phonePad)
                     .autocorrectionDisabled()
@@ -159,8 +168,12 @@ struct ProfileBootstrapScreen: View {
                     .padding(Spacing.md(widthClass))
                     .accessibilityLabel(String(localized: "bootstrap_phone_label"))
             }
+            // An E.164 number reads left to right in every locale: "+" then the digits. Inherited
+            // RTL put the fixed "+" after the number.
+            .environment(\.layoutDirection, .leftToRight)
             .frame(minHeight: 44)
             .background(Color.homeCard, in: RoundedRectangle(cornerRadius: Radius.card))
+            fieldError(model, .phone)
         }
     }
 
@@ -178,6 +191,7 @@ struct ProfileBootstrapScreen: View {
                 .textInputAutocapitalization(.never)
                 .fieldChrome(widthClass)
                 .accessibilityLabel(String(localized: "bootstrap_password_label"))
+            fieldError(model, .password)
         }
 
         labelled("bootstrap_password_confirm_label") {
@@ -186,6 +200,7 @@ struct ProfileBootstrapScreen: View {
                 .textInputAutocapitalization(.never)
                 .fieldChrome(widthClass)
                 .accessibilityLabel(String(localized: "bootstrap_password_confirm_label"))
+            fieldError(model, .confirm)
         }
     }
 
@@ -222,6 +237,14 @@ struct ProfileBootstrapScreen: View {
             .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
             .accessibilityLabel(title)
             .accessibilityIdentifier("bootstrap.signOut")
+    }
+
+    /// The shown error when it belongs ON this field — the user touched it (`shownError`).
+    @ViewBuilder
+    private func fieldError(_ model: ProfileBootstrapViewModel, _ field: BootstrapField) -> some View {
+        if let shown = model.shownError, shown.onField, shown.error.field == field {
+            InlineError(key: shown.error.messageKey)
+        }
     }
 
     /// Label above the control, leading-aligned — RTL comes out of the alignment, never a literal.

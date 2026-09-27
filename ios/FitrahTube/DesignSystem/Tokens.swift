@@ -76,6 +76,13 @@ extension Color {
     static let submissionApproved = Color(light: 0x43A047, dark: 0x43A047)
     static let submissionRejected = Color(light: 0xE53935, dark: 0xE53935)
     static let submissionChanges = Color(light: 0x1E88E5, dark: 0x1E88E5)
+    // Sign-in provider buttons, in their brands' published styles: Apple's HIG black/white button
+    // and Google's light/dark themes (developers.google.com/identity/branding-guidelines).
+    static let appleButtonFill = Color(light: 0x000000, dark: 0xFFFFFF)
+    static let appleButtonText = Color(light: 0xFFFFFF, dark: 0x000000)
+    static let googleButtonFill = Color(light: 0xFFFFFF, dark: 0x131314)
+    static let googleButtonBorder = Color(light: 0x747775, dark: 0x8E918F)
+    static let googleButtonText = Color(light: 0x1F1F1F, dark: 0xE3E3E3)
 }
 
 // MARK: - Width class (Android layout/ ↔ layout-sw600dp/ ↔ layout-sw720dp/)

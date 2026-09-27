@@ -5,6 +5,8 @@ import SwiftUI
 /// real time. `now` is injected per call (Android's `SystemClock.elapsedRealtime()`, a monotonic
 /// clock immune to wall-clock changes) rather than read internally -- the iOS equivalent is
 /// `ProcessInfo.processInfo.systemUptime`, supplied by the caller (`AboutView.handleVersionTap`).
+/// DEBUG-only with the gesture it drives (guideline 2.3.1).
+#if DEBUG
 nonisolated struct TapGate {
     enum Outcome: Equatable {
         case silent
@@ -39,6 +41,7 @@ nonisolated struct TapGate {
         return .silent
     }
 }
+#endif
 
 /// `about_version_format` = "Version %1$@ (%2$@)" (task-13 brief) -- pulled out so
 /// `SettingsRowsTests` can assert the exact substitution.
@@ -68,17 +71,24 @@ nonisolated enum AboutLinks {
         AboutLink(titleKey: "about_terms_of_service", url: URL(string: "https://app.fitrahtube.com/terms")!),
         AboutLink(titleKey: "about_open_source_licenses", url: URL(string: "https://app.fitrahtube.com/licenses")!),
     ]
+    /// Guideline 5.1.1: the two a user reads BEFORE an account exists (`SignInScreen`'s footer).
+    static var beforeSignIn: [AboutLink] { legal.filter { $0.titleKey != "about_open_source_licenses" } }
 }
 
 /// Android's `AboutFragment` (`favorites-settings-about.md:258-288`). Links open via `Link`,
 /// SwiftUI's native equivalent of Android's `ACTION_VIEW` external-browser intent.
+///
+/// Guideline 2.3.1: the 7-tap developer gesture and its sheet are compiled into DEBUG builds only
+/// — a Release build has no hidden screen to find.
 struct AboutView: View {
     @Environment(\.widthClass) private var widthClass
+    #if DEBUG
     @Environment(\.locale) private var locale
 
     @State private var tapGate = TapGate()
     @State private var stepsAwayMessage: BannerMessage?
     @State private var showDeveloperDialog = false
+    #endif
 
     var body: some View {
         Form {
@@ -103,18 +113,18 @@ struct AboutView: View {
         }
         .navigationTitle(String(localized: "about_title"))
         .navigationBarTitleDisplayMode(.inline)
+        #if DEBUG
         .transientBanner($stepsAwayMessage)
         .sheet(isPresented: $showDeveloperDialog) { DeveloperDialog() }
         .task {
-            #if DEBUG
             // Acceptance-screenshot hook (task-13): the Developer dialog otherwise only opens
             // after 7 real taps on the version text within 3s, which `simctl launch` can't
             // perform -- same technique as FavoritesView's `-fitrah-show-clear-all-confirm`.
             if LaunchArguments.debug.contains("-fitrah-show-developer-dialog") {
                 showDeveloperDialog = true
             }
-            #endif
         }
+        #endif
     }
 
     private var appInfoCard: some View {
@@ -133,8 +143,10 @@ struct AboutView: View {
             Text(versionText)
                 .font(.subheadline)
                 .foregroundStyle(Color.textSecondary)
+                #if DEBUG
                 .onTapGesture { handleVersionTap() }
                 .accessibilityAddTraits(.isButton)
+                #endif
                 // The screenshot rig's locale-independent anchor (`ScreenshotTests.screens`).
                 .accessibilityIdentifier("about.version")
             Text(String(localized: "splash_tagline"))
@@ -168,6 +180,7 @@ struct AboutView: View {
         return AboutVersionText.format(version: version, build: build)
     }
 
+    #if DEBUG
     private func handleVersionTap() {
         switch tapGate.tap(now: ProcessInfo.processInfo.systemUptime) {
         case .silent:
@@ -184,6 +197,7 @@ struct AboutView: View {
             showDeveloperDialog = true
         }
     }
+    #endif
 }
 
 #if DEBUG
