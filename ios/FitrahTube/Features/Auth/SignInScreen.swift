@@ -14,6 +14,9 @@ struct SignInScreen: View {
     @Environment(\.dismiss) private var dismiss
 
     @State private var viewModel: SignInViewModel?
+    /// Google's "G" is 20 pt at the default text size and grows with Dynamic Type like the Apple
+    /// symbol beside it (the asset is drawn at 66 pt, the size it reaches at the largest text setting).
+    @ScaledMetric(relativeTo: .subheadline) private var googleLogoSize: CGFloat = 20
     @State private var banner: BannerMessage?
 
     var body: some View {
@@ -189,12 +192,20 @@ struct SignInScreen: View {
             Button {
                 Task { await model.signIn(with: source) }
             } label: {
-                HStack(spacing: Spacing.sm) {
-                    Image(systemName: provider == .apple ? "apple.logo" : "g.circle")
-                        .accessibilityHidden(true)
+                // Google's spec puts 12 pt between its logo and the label.
+                HStack(spacing: provider == .google ? 12 : Spacing.sm) {
                     if provider == .apple {
+                        Image(systemName: "apple.logo")
+                            .accessibilityHidden(true)
                         Text(String(localized: "auth_apple_button"))
                     } else {
+                        // Google's branding rules require its own "G" (official asset), never a stand-in symbol.
+                        Image("google-g")
+                            .resizable()
+                            .frame(width: googleLogoSize, height: googleLogoSize)
+                            // A full-colour image ignores the disabled dimming the label gets; 38% is Google's disabled logo.
+                            .opacity(model.state.isLoading ? 0.38 : 1)
+                            .accessibilityHidden(true)
                         Text(String(localized: "auth_google_button"))
                     }
                 }
