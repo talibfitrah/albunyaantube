@@ -268,6 +268,46 @@ class AccountControllerTest {
                 .andExpect(jsonPath("$.displayName").value("Test User"));
     }
 
+    /** The row mirrors Firebase's email (verifyAndChangeEmail moves it with no callback to us). */
+    @Test
+    void getMeHasTheRowFollowTheTokensFirebaseEmail() throws Exception {
+        User stored = activeUser();
+        when(userRepository.getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any())).thenReturn(stored);
+
+        mockMvc.perform(get("/api/account/me")).andExpect(status().isOk());
+
+        verify(accountProfileService).followFirebaseEmail(eq(stored),
+                org.mockito.ArgumentMatchers.argThat(p -> TEST_UID.equals(p.getUid())));
+    }
+
+    /** The email sync is best-effort: /me is every app launch, and a failed mirror write (or audit)
+     *  must not turn it into a 500 outside the typed Lazy* envelopes. */
+    @Test
+    void getMeStillAnswers200WhenTheEmailSyncThrows() throws Exception {
+        when(userRepository.getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any())).thenReturn(activeUser());
+        org.mockito.Mockito.doThrow(new java.util.concurrent.ExecutionException(new RuntimeException("firestore down")))
+                .doThrow(new java.util.concurrent.TimeoutException("slow"))
+                .doThrow(new IllegalStateException("audit store down"))
+                .when(accountProfileService).followFirebaseEmail(any(), any());
+
+        for (int i = 0; i < 3; i++) {
+            mockMvc.perform(get("/api/account/me"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.uid").value(TEST_UID));
+        }
+    }
+
+    @Test
+    void getMeRestoresTheInterruptFlagWhenTheEmailSyncIsInterrupted() throws Exception {
+        when(userRepository.getOrCreate(eq(TEST_UID), org.mockito.ArgumentMatchers.any())).thenReturn(activeUser());
+        org.mockito.Mockito.doThrow(new InterruptedException())
+                .when(accountProfileService).followFirebaseEmail(any(), any());
+
+        mockMvc.perform(get("/api/account/me")).andExpect(status().isOk());
+
+        assertTrue(Thread.interrupted(), "the interrupt was swallowed"); // also clears it for later tests
+    }
+
     // ── Test 7: GET /me lazy-creates doc when missing ──────────────────────
 
     @Test

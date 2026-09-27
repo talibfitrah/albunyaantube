@@ -390,7 +390,22 @@ public class AccountController {
             Thread.currentThread().interrupt();
             throw new LazyCreateInterruptedException(uid, e);
         }
+        // Every app session starts here, so the row catches up with a changed Firebase email.
+        // Best-effort: a failed mirror write (or audit) must not fail the launch call; the next /me retries.
+        try {
+            accountProfileService.followFirebaseEmail(user, principal);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            logEmailSyncFailure(uid, user, principal, e);
+        } catch (Exception e) {
+            logEmailSyncFailure(uid, user, principal, e);
+        }
         return ResponseEntity.ok(AccountMeResponse.from(user));
+    }
+
+    private static void logEmailSyncFailure(String uid, User user, FirebaseUserDetails principal, Exception e) {
+        logger.warn("Email sync skipped uid={} stored={} token={}", uid,
+                MailService.maskEmail(user.getEmail()), MailService.maskEmail(principal.getEmail()), e);
     }
 
     /**

@@ -52,6 +52,28 @@ public class AccountProfileService {
         this.auditLogService = auditLogService;
     }
 
+    /**
+     * The account row only MIRRORS the email; Firebase owns it, and verifyAndChangeEmail moves it
+     * there with no callback to this backend. So an account read follows the token -- a VERIFIED
+     * claim only (the changed email is verified by the very link that moves it; an unverified claim
+     * is never trusted). Updates {@code user} in place; field-level write, so a concurrent profile
+     * edit is not clobbered; audited with masked addresses.
+     */
+    public void followFirebaseEmail(User user, com.albunyaan.tube.security.FirebaseUserDetails principal)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        String email = principal.getEmail();
+        // A tombstone is anonymised: never write an address back into it.
+        if (user.isDeleted() || !principal.isEmailVerified() || email == null || email.isBlank()
+                || email.equalsIgnoreCase(user.getEmail())) {
+            return;
+        }
+        String previous = user.getEmail();
+        userRepository.updateFields(user.getUid(), Map.of("email", email));
+        user.setEmail(email);
+        auditLogService.logProfileEdit(user.getUid(), Map.of("email",
+                Map.of("from", MailService.maskEmail(previous), "to", MailService.maskEmail(email))));
+    }
+
     public User completeProfile(String uid, String displayName, LocalDate dateOfBirth, String phoneNumber)
             throws ExecutionException, InterruptedException, TimeoutException {
         validateDisplayName(displayName);

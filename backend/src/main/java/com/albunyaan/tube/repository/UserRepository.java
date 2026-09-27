@@ -134,7 +134,7 @@ public class UserRepository {
      * fields like {@code role} / {@code status}.
      */
     private static final java.util.Set<String> ALLOWED_UPDATE_FIELDS =
-            java.util.Set.of("displayName", "dateOfBirth");
+            java.util.Set.of("displayName", "dateOfBirth", "phoneNumber", "email");
 
     @CacheEvict(value = "userStatus", key = "#uid")
     public void updateFields(String uid, java.util.Map<String, Object> fields)

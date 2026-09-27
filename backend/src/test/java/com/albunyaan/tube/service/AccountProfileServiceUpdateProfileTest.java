@@ -87,6 +87,106 @@ class AccountProfileServiceUpdateProfileTest {
         verify(auditLogService).logProfileEdit(eq("u1"), any());
     }
 
+    // ------------------------------------------------------------------
+    // The account row MIRRORS the Firebase email, which verifyAndChangeEmail moves with no
+    // callback to the backend. A verified token claim is Firebase's word; follow it.
+    // ------------------------------------------------------------------
+    private static com.albunyaan.tube.security.FirebaseUserDetails token(String email, boolean verified) {
+        return new com.albunyaan.tube.security.FirebaseUserDetails("u1", email, "user", verified);
+    }
+
+    @Test
+    void followFirebaseEmail_updatesAndAuditsAStaleStoredEmail() throws Exception {
+        User stored = baseUser("u1", "Name", null);
+        stored.setEmail("old@b.com");
+
+        svc.followFirebaseEmail(stored, token("new@b.com", true));
+
+        verify(userRepository).updateFields("u1", java.util.Map.of("email", "new@b.com"));
+        verify(auditLogService).logProfileEdit("u1",
+                java.util.Map.of("email", java.util.Map.of("from", "o***@b.com", "to", "n***@b.com")));
+        assertThat(stored.getEmail()).isEqualTo("new@b.com");
+    }
+
+    /** A tombstone is anonymised (email nulled); a mirror write must never put an address back. */
+    @Test
+    void followFirebaseEmail_neverWritesIntoADeletedRow() throws Exception {
+        User tombstone = baseUser("u1", null, null);
+        tombstone.setEmail(null);
+        tombstone.recordSoftDelete("u1", "self");
+
+        svc.followFirebaseEmail(tombstone, token("new@b.com", true));
+
+        verifyNoInteractions(userRepository, auditLogService);
+        assertThat(tombstone.getEmail()).isNull();
+    }
+
+    @Test
+    void followFirebaseEmail_ignoresAnUnverifiedClaim() throws Exception {
+        User stored = baseUser("u1", "Name", null);
+        stored.setEmail("old@b.com");
+
+        svc.followFirebaseEmail(stored, token("new@b.com", false));
+
+        verifyNoInteractions(userRepository, auditLogService);
+        assertThat(stored.getEmail()).isEqualTo("old@b.com");
+    }
+
+    @Test
+    void followFirebaseEmail_ignoresACaseOnlyDifferenceAndAMissingClaim() throws Exception {
+        User stored = baseUser("u1", "Name", null);
+        stored.setEmail("old@b.com");
+
+        svc.followFirebaseEmail(stored, token("OLD@b.com", true));
+        svc.followFirebaseEmail(stored, token(null, true));
+        svc.followFirebaseEmail(stored, token(" ", true));
+
+        verifyNoInteractions(userRepository, auditLogService);
+        assertThat(stored.getEmail()).isEqualTo("old@b.com");
+    }
+
+    /** The REAL repository over a stubbed Firestore: its field allowlist runs, which a mocked
+     *  UserRepository hid (prod 2026-09-27: PUT /profile with a new phone -> 400
+     *  "updateFields rejected disallowed field: phoneNumber"). */
+    private com.google.cloud.firestore.Firestore firestore;
+
+    private UserRepository realRepository() {
+        firestore = org.mockito.Mockito.mock(com.google.cloud.firestore.Firestore.class, RETURNS_DEEP_STUBS);
+        return new UserRepository(firestore, new com.albunyaan.tube.config.FirestoreTimeoutProperties());
+    }
+
+    @Test
+    void updateProfile_persistsAChangedPhoneNumberThroughTheRealAllowlist() throws Exception {
+        UserRepository repo = spy(realRepository());
+        doReturn(Optional.of(baseUser("u1", "Name", null))).when(repo).findByUid("u1");
+        AccountProfileService real = new AccountProfileService(repo, firebaseAuth, clock, auditLogService);
+
+        AccountMeResponse resp = real.updateProfile("u1", new UpdateProfileRequest(null, null, "+447700900124"));
+
+        assertThat(resp.getPhoneNumber()).isEqualTo("+447700900124");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> written = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(firestore.collection("users").document("u1")).update(written.capture());
+        assertThat(written.getValue()).containsEntry("phoneNumber", "+447700900124");
+    }
+
+    /** Every field an account writer sends must be on the allowlist: each UpdateProfileRequest
+     *  component (a new one is picked up here automatically) plus followFirebaseEmail's "email". */
+    @Test
+    void everyAccountWriterFieldIsOnTheUpdateFieldsAllowlist() {
+        UserRepository repo = realRepository();
+        java.util.List<String> fields = new java.util.ArrayList<>();
+        for (java.lang.reflect.RecordComponent c : UpdateProfileRequest.class.getRecordComponents()) {
+            fields.add(c.getName());
+        }
+        fields.add("email");
+
+        for (String field : fields) {
+            org.junit.jupiter.api.Assertions.assertDoesNotThrow(
+                    () -> repo.updateFields("u1", java.util.Map.of(field, "x")), field + " is not on the allowlist");
+        }
+    }
+
     // updateFields allowlist — sensitive field keys (role, status,
     // deletedAt) must throw before any Firestore call.
     @Test
