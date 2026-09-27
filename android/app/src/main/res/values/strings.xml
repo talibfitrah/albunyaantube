@@ -508,12 +508,6 @@
     <string name="library_saved">Saved</string>
     <string name="library_saved_count">%1$d videos</string>
     <string name="library_saved_coming_soon">Saved videos (coming soon)</string>
-    <string name="library_recently_watched">Recently Watched</string>
-    <string name="library_recently_watched_count">%1$d videos</string>
-    <string name="library_recently_watched_coming_soon">Recently Watched (coming soon)</string>
-    <string name="library_history">History</string>
-    <string name="library_history_count">%1$d videos</string>
-    <string name="library_history_coming_soon">Watch history (coming soon)</string>
 
     <!-- Favorites Screen -->
     <string name="favorites_title">Favorites</string>
@@ -863,7 +857,7 @@
 
     <!-- Profile bootstrap: phone -->
     <string name="bootstrap_phone_country_label">Country</string>
-    <string name="bootstrap_phone_label">Mobile number</string>
+    <string name="bootstrap_phone_label">Mobile number (optional)</string>
     <string name="bootstrap_phone_hint">Phone number</string>
     <string name="bootstrap_error_invalid_phone_country">Pick your country</string>
     <string name="bootstrap_error_invalid_phone">Enter a valid mobile number</string>

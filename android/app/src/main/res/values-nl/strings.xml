@@ -430,12 +430,6 @@
     <string name="library_saved">Opgeslagen</string>
     <string name="library_saved_count">%1$d video\'s</string>
     <string name="library_saved_coming_soon">Opgeslagen video\'s (binnenkort)</string>
-    <string name="library_recently_watched">Recent bekeken</string>
-    <string name="library_recently_watched_count">%1$d video\'s</string>
-    <string name="library_recently_watched_coming_soon">Recent bekeken (binnenkort)</string>
-    <string name="library_history">Geschiedenis</string>
-    <string name="library_history_count">%1$d video\'s</string>
-    <string name="library_history_coming_soon">Kijkgeschiedenis (binnenkort)</string>
 
     <!-- Settings Screen -->
     <string name="settings_title">Instellingen</string>
@@ -741,7 +735,7 @@
 
     <!-- Profile bootstrap: phone -->
     <string name="bootstrap_phone_country_label">Land</string>
-    <string name="bootstrap_phone_label">Mobiel nummer</string>
+    <string name="bootstrap_phone_label">Mobiel nummer (optioneel)</string>
     <string name="bootstrap_phone_hint">Telefoonnummer</string>
     <string name="bootstrap_error_invalid_phone_country">Kies je land</string>
     <string name="bootstrap_error_invalid_phone">Voer een geldig mobiel nummer in</string>
@@ -898,5 +892,37 @@
         <item quantity="other">Je bent nog %d stappen verwijderd van ontwikkelaar worden</item>
     </plurals>
 
+    <!-- Account screens: copied from the iOS catalog (ios/FitrahTube/Resources/Localizable.xcstrings) -->
+    <string name="auth_error_network">Geen internetverbinding</string>
+    <string name="auth_error_generic">Er is iets misgegaan</string>
+    <string name="account_blocked_title">Account geblokkeerd</string>
+    <string name="account_blocked_body">Je account is geblokkeerd door een beheerder. Neem contact op met support voor meer informatie.</string>
+    <string name="settings_account_header">Account</string>
+    <string name="settings_account_signed_in_as">Aangemeld als %1$s</string>
+    <string name="settings_account_signed_in_default">Aangemeld</string>
+    <string name="settings_account_sign_out">Afmelden</string>
+    <string name="settings_account_sign_out_confirm_title">Afmelden?</string>
+    <string name="settings_account_sign_out_confirm_body">Je moet je opnieuw aanmelden voor beheerfuncties en gepersonaliseerde inhoud.</string>
+    <string name="settings_account_sign_out_confirm_action">Afmelden</string>
+    <string name="settings_account_sign_out_cancel">Annuleren</string>
+    <string name="profile_title">Profiel</string>
+    <string name="profile_personal_info">Persoonlijke gegevens</string>
+    <string name="profile_display_name">Weergavenaam</string>
+    <string name="profile_date_of_birth">Geboortedatum</string>
+    <string name="profile_email_locked">Gekoppeld aan je aanmelding</string>
+    <string name="profile_save">Opslaan</string>
+    <string name="profile_save_success">Profiel bijgewerkt</string>
+    <string name="profile_error_network">Kon niet opslaan. Controleer je verbinding.</string>
+    <string name="profile_error_rate_limited">Te veel wijzigingen. Probeer het over %1$d min. opnieuw.</string>
+    <string name="profile_error_age_dialog_title">Account komt niet meer in aanmerking</string>
+    <string name="profile_error_age_dialog_message">Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld.</string>
+    <string name="profile_dob_pick">Kies een datum</string>
+    <string name="me_kebab_profile">Profiel</string>
+    <string name="me_kebab_sign_out">Afmelden</string>
+    <string name="ok">OK</string>
+    <string name="auth_microsoft_button">Doorgaan met Microsoft</string>
+    <string name="auth_microsoft_unavailable_tv">Inloggen met Microsoft is niet beschikbaar op tv. Gebruik Google of e-mail.</string>
+    <string name="auth_error_user_not_found">Geen account gevonden met dit e-mailadres</string>
+    <string name="auth_error_invalid_credential">Inloggegevens zijn ongeldig of verlopen</string>
+    <string name="auth_error_microsoft">Inloggen met Microsoft is mislukt</string>
 </resources>
-

@@ -19,29 +19,29 @@
     <string name="onboarding_page3_title">حمّل للمشاهدة بدون إنترنت</string>
     <string name="onboarding_page3_desc">احفظ محتواك المفضل للمشاهدة أو الاستماع بدون اتصال، في أي وقت وأي مكان.</string>
 
-    <!-- Plan C T8: ProfileBootstrap (English placeholders — human translation pending) -->
-    <string name="bootstrap_title">Tell us about you</string>
-    <string name="bootstrap_display_name_label">What should we call you?</string>
-    <string name="bootstrap_display_name_hint">Display name</string>
-    <string name="bootstrap_dob_label">Date of birth</string>
-    <string name="bootstrap_dob_hint">Tap to select</string>
-    <string name="bootstrap_submit_button">Continue</string>
-    <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
-    <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
+    <!-- Plan C T8: ProfileBootstrap -->
+    <string name="bootstrap_title">أخبرنا عن نفسك</string>
+    <string name="bootstrap_display_name_label">بماذا نناديك؟</string>
+    <string name="bootstrap_display_name_hint">الاسم المعروض</string>
+    <string name="bootstrap_dob_label">تاريخ الميلاد</string>
+    <string name="bootstrap_dob_hint">اضغط للاختيار</string>
+    <string name="bootstrap_submit_button">متابعة</string>
+    <string name="bootstrap_error_invalid_name">يرجى إدخال اسمك (1–40 حرفًا)</string>
+    <string name="bootstrap_error_invalid_dob">يرجى اختيار تاريخ ميلادك</string>
     <string name="bootstrap_error_under_age">يجب ألا يقل عمرك عن 13 عامًا لاستخدام FitrahTube. يرجى التحقق من السنة التي اخترتها.</string>
-    <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
-    <string name="bootstrap_password_explainer">عيّن كلمة مرور لتتمكن لاحقًا من تسجيل الدخول إلى لوحة التحكم من المتصفح أيضًا.</string>
+    <string name="bootstrap_error_save_failed">تعذّر حفظ ملفك الشخصي — حاول مرة أخرى</string>
+    <string name="bootstrap_password_explainer">عيّن كلمة مرور للمتابعة — ٨ أحرف على الأقل. يمكنك بعد ذلك تسجيل الدخول أيضًا باستخدام بريدك الإلكتروني وكلمة المرور هذه.</string>
     <string name="bootstrap_password_label">كلمة المرور</string>
     <string name="bootstrap_password_confirm_label">تأكيد كلمة المرور</string>
     <string name="bootstrap_error_invalid_password">يجب أن تتكون كلمة المرور من 8 أحرف على الأقل</string>
     <string name="bootstrap_error_password_mismatch">كلمتا المرور غير متطابقتين</string>
     <string name="bootstrap_error_password_set_failed">تعذّر تعيين كلمة المرور — جرّب كلمة أخرى</string>
 
-    <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
+    <!-- Plan C T12: D12 — splash error on failed /me fetch -->
     <string name="splash_couldnt_connect">تعذّر الاتصال — يرجى تسجيل الدخول مرة أخرى.</string>
 
-    <!-- Plan C T9: AgeIneligible (English placeholders — human translation pending) -->
-    <string name="age_ineligible_title">Sorry — come back soon</string>
-    <string name="age_ineligible_body">FitrahTube is for users 13 and older. Please come back when you\'re a bit older.</string>
+    <!-- Plan C T9: AgeIneligible -->
+    <string name="age_ineligible_title">عذرًا — عُد إلينا قريبًا</string>
+    <string name="age_ineligible_body">فطرة تيوب مخصص لمن تبلغ أعمارهم 13 عامًا فأكثر. يرجى العودة عندما تكبر قليلًا.</string>
     <string name="age_ineligible_ok_button">حسنًا</string>
 </resources>

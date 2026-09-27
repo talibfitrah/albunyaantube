@@ -116,8 +116,6 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         binding?.root?.let { view ->
             val favoritesItem = view.findViewById<View>(R.id.favoritesItem)
             val favoritesCount = view.findViewById<TextView>(R.id.favoritesCount)
-            val recentlyWatchedItem = view.findViewById<View>(R.id.recentlyWatchedItem)
-            val historyItem = view.findViewById<View>(R.id.historyItem)
 
             // Navigate to Favorites
             favoritesItem?.setOnClickListener {
@@ -133,14 +131,6 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
                         }
                     }
                 }
-            }
-
-            recentlyWatchedItem?.setOnClickListener {
-                Toast.makeText(requireContext(), R.string.library_recently_watched_coming_soon, Toast.LENGTH_SHORT).show()
-            }
-
-            historyItem?.setOnClickListener {
-                Toast.makeText(requireContext(), R.string.library_history_coming_soon, Toast.LENGTH_SHORT).show()
             }
         }
     }

@@ -147,7 +147,7 @@ class RefreshSubscriptionsWorkerSyncTest {
         override suspend fun completeProfile(
             displayName: String,
             dateOfBirth: LocalDate,
-            phoneNumber: String,
+            phoneNumber: String?,
         ): Result<AccountState.Loaded> = Result.failure(RuntimeException("stub"))
 
         override fun signOut() {}

@@ -40,7 +40,7 @@ interface AccountRepository {
     suspend fun completeProfile(
         displayName: String,
         dateOfBirth: LocalDate,
-        phoneNumber: String,
+        phoneNumber: String?,
     ): Result<AccountState.Loaded>
 
     /**

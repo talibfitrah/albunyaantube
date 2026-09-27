@@ -192,7 +192,7 @@ class AccountRepositoryImpl(
     override suspend fun completeProfile(
         displayName: String,
         dateOfBirth: LocalDate,
-        phoneNumber: String,
+        phoneNumber: String?,
     ): Result<AccountState.Loaded> {
         val request = CompleteProfileRequestDto(
             displayName = displayName,

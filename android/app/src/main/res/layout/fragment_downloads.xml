@@ -174,24 +174,6 @@
                     <!-- Favorites -->
                     <include layout="@layout/library_item_favorites"/>
 
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="@dimen/divider_thickness"
-                        android:background="?attr/colorOutlineVariant"
-                        android:layout_marginStart="@dimen/spacing_lg"/>
-
-                    <!-- Recently Watched -->
-                    <include layout="@layout/library_item_recently_watched"/>
-
-                    <View
-                        android:layout_width="match_parent"
-                        android:layout_height="@dimen/divider_thickness"
-                        android:background="?attr/colorOutlineVariant"
-                        android:layout_marginStart="@dimen/spacing_lg"/>
-
-                    <!-- History -->
-                    <include layout="@layout/library_item_history"/>
-
                 </LinearLayout>
             </com.google.android.material.card.MaterialCardView>
 

@@ -87,8 +87,8 @@ android {
         //    MediaStore#getVersion, Safer Intents, health/Bluetooth permissions,
         //    GPU syscall filtering: not used by this app.
         targetSdk = 36
-        versionCode = 61
-        versionName = "1.0.0-beta.47"
+        versionCode = 62
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true

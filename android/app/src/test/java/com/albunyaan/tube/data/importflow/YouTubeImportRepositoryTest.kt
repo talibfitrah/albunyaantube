@@ -439,7 +439,7 @@ class YouTubeImportRepositoryTest {
             )
         override suspend fun fetchMe(): Result<AccountState.Loaded> =
             Result.failure(RuntimeException("stub"))
-        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate, phoneNumber: String): Result<AccountState.Loaded> =
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate, phoneNumber: String?): Result<AccountState.Loaded> =
             Result.failure(RuntimeException("stub"))
         override fun signOut() {}
         override fun applyProfileUpdate(response: com.albunyaan.tube.data.account.AccountMeResponseDto) {}

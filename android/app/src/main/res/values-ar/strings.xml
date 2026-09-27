@@ -528,12 +528,6 @@
     <string name="library_saved">المحفوظات</string>
     <string name="library_saved_count">%1$d فيديو</string>
     <string name="library_saved_coming_soon">الفيديوهات المحفوظة (قريباً)</string>
-    <string name="library_recently_watched">شوهد مؤخراً</string>
-    <string name="library_recently_watched_count">%1$d فيديو</string>
-    <string name="library_recently_watched_coming_soon">شوهد مؤخراً (قريباً)</string>
-    <string name="library_history">السجل</string>
-    <string name="library_history_count">%1$d فيديو</string>
-    <string name="library_history_coming_soon">سجل المشاهدة (قريباً)</string>
 
     <!-- Settings Screen -->
     <string name="settings_title">الإعدادات</string>
@@ -803,7 +797,7 @@
 
     <!-- Profile bootstrap: phone -->
     <string name="bootstrap_phone_country_label">الدولة</string>
-    <string name="bootstrap_phone_label">رقم الجوال</string>
+    <string name="bootstrap_phone_label">رقم الجوال (اختياري)</string>
     <string name="bootstrap_phone_hint">رقم الهاتف</string>
     <string name="bootstrap_error_invalid_phone_country">اختر دولتك</string>
     <string name="bootstrap_error_invalid_phone">أدخل رقم جوال صحيح</string>
@@ -965,4 +959,36 @@
         <item quantity="other">بقيت %d خطوة لتصبح مطوّرًا</item>
     </plurals>
 
+    <!-- Account screens: copied from the iOS catalog (ios/FitrahTube/Resources/Localizable.xcstrings) -->
+    <string name="auth_error_network">لا يوجد اتصال بالإنترنت</string>
+    <string name="auth_error_generic">حدث خطأ ما</string>
+    <string name="account_blocked_title">تم حظر الحساب</string>
+    <string name="account_blocked_body">تم حظر حسابك من قِبَل أحد المشرفين. تواصل مع الدعم لمعرفة التفاصيل.</string>
+    <string name="settings_account_header">الحساب</string>
+    <string name="settings_account_signed_in_as">مسجّل الدخول باسم %1$s</string>
+    <string name="settings_account_signed_in_default">مسجّل الدخول</string>
+    <string name="settings_account_sign_out">تسجيل الخروج</string>
+    <string name="settings_account_sign_out_confirm_title">تسجيل الخروج؟</string>
+    <string name="settings_account_sign_out_confirm_body">ستحتاج إلى تسجيل الدخول مرة أخرى للوصول إلى ميزات الإشراف والمحتوى المخصّص.</string>
+    <string name="settings_account_sign_out_confirm_action">تسجيل الخروج</string>
+    <string name="settings_account_sign_out_cancel">إلغاء</string>
+    <string name="profile_title">الملف الشخصي</string>
+    <string name="profile_personal_info">المعلومات الشخصية</string>
+    <string name="profile_display_name">الاسم المعروض</string>
+    <string name="profile_date_of_birth">تاريخ الميلاد</string>
+    <string name="profile_email_locked">مرتبط بتسجيل دخولك</string>
+    <string name="profile_save">حفظ</string>
+    <string name="profile_save_success">تم تحديث الملف الشخصي</string>
+    <string name="profile_error_network">تعذّر الحفظ. تحقق من اتصالك.</string>
+    <string name="profile_error_rate_limited">عدد كبير من التحديثات. حاول مرة أخرى بعد %1$d د.</string>
+    <string name="profile_error_age_dialog_title">الحساب لم يعد مؤهلًا</string>
+    <string name="profile_error_age_dialog_message">تاريخ ميلادك لم يعد يستوفي شرط العمر. سيتم تسجيل خروجك.</string>
+    <string name="profile_dob_pick">اختر تاريخًا</string>
+    <string name="me_kebab_profile">الملف الشخصي</string>
+    <string name="me_kebab_sign_out">تسجيل الخروج</string>
+    <string name="auth_microsoft_button">المتابعة باستخدام Microsoft</string>
+    <string name="auth_microsoft_unavailable_tv">تسجيل الدخول عبر Microsoft غير متاح على التلفاز. استخدم Google أو البريد الإلكتروني بدلًا من ذلك.</string>
+    <string name="auth_error_user_not_found">لا يوجد حساب بهذا البريد الإلكتروني</string>
+    <string name="auth_error_invalid_credential">بيانات تسجيل الدخول غير صالحة أو منتهية الصلاحية</string>
+    <string name="auth_error_microsoft">فشل تسجيل الدخول عبر Microsoft</string>
 </resources>

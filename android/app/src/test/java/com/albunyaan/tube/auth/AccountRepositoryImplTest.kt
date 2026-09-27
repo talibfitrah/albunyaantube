@@ -98,6 +98,18 @@ class AccountRepositoryImplTest {
         verify(service).completeProfile(CompleteProfileRequestDto("Alice", "2000-01-01", "+31612345678"))
     }
 
+    @Test fun `completeProfile without phone sends no phoneNumber on the wire`() = runTest(dispatcher) {
+        whenever(service.completeProfile(any())).thenReturn(dto(status = "active"))
+
+        repository.completeProfile("Alice", LocalDate.of(2000, 1, 1), null)
+
+        val sent = CompleteProfileRequestDto("Alice", "2000-01-01", null)
+        verify(service).completeProfile(sent)
+        val json = com.albunyaan.tube.di.NetworkModule.provideMoshi()
+            .adapter(CompleteProfileRequestDto::class.java).toJson(sent)
+        assertEquals("""{"displayName":"Alice","dateOfBirth":"2000-01-01"}""", json)
+    }
+
     @Test fun `completeProfile maps 422 AGE_INELIGIBLE to AgeIneligibleError`() = runTest(dispatcher) {
         val errJson = """{"code":"AGE_INELIGIBLE","message":"too young"}"""
         val errBody = errJson.toResponseBody("application/json".toMediaTypeOrNull())

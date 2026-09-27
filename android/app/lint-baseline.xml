@@ -1466,28 +1466,6 @@
 
     <issue
         id="PluralsCandidate"
-        message="Formatting %d followed by words (&quot;videos&quot;): This should probably be a plural rather than a string"
-        errorLine1="    &lt;string name=&quot;library_recently_watched_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="401"
-            column="5"/>
-    </issue>
-
-    <issue
-        id="PluralsCandidate"
-        message="Formatting %d followed by words (&quot;videos&quot;): This should probably be a plural rather than a string"
-        errorLine1="    &lt;string name=&quot;library_history_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="404"
-            column="5"/>
-    </issue>
-
-    <issue
-        id="PluralsCandidate"
         message="Formatting %d followed by words (&quot;files&quot;): This should probably be a plural rather than a string"
         errorLine1="    &lt;string name=&quot;settings_files_cleared&quot;>Cleared %1$d files&lt;/string>"
         errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
@@ -3635,28 +3613,6 @@
         <location
             file="src/main/res/values/strings.xml"
             line="399"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.string.library_recently_watched_count` appears to be unused"
-        errorLine1="    &lt;string name=&quot;library_recently_watched_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="401"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.string.library_history_count` appears to be unused"
-        errorLine1="    &lt;string name=&quot;library_history_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="404"
             column="13"/>
     </issue>
 

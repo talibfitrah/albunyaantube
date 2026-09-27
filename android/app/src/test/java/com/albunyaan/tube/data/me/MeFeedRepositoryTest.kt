@@ -1332,7 +1332,7 @@ class MeFeedRepositoryTest {
         override val accountState: StateFlow<AccountState> =
             MutableStateFlow(AccountState.NotSignedIn)
         override suspend fun fetchMe() = Result.failure<AccountState.Loaded>(RuntimeException("stub"))
-        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate, phoneNumber: String) =
+        override suspend fun completeProfile(displayName: String, dateOfBirth: LocalDate, phoneNumber: String?) =
             Result.failure<AccountState.Loaded>(RuntimeException("stub"))
         override fun signOut() {}
         override fun applyProfileUpdate(response: com.albunyaan.tube.data.account.AccountMeResponseDto) {}

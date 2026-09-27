@@ -1,4 +1,9 @@
 {
+  "1.0.0": {
+    "en": "First stable release. Password-reset and email-change emails now arrive reliably.",
+    "ar": "أول إصدار مستقر. رسائل إعادة تعيين كلمة المرور وتغيير البريد الإلكتروني تصل الآن بشكل موثوق.",
+    "nl": "Eerste stabiele versie. E-mails voor wachtwoordherstel en e-mailwijziging komen nu betrouwbaar aan."
+  },
   "1.0.0-beta.47": {
     "en": "Fixes crashes on Android 14 and older when searching or going back to a previous video.",
     "ar": "إصلاح توقف التطبيق على أندرويد 14 والإصدارات الأقدم عند البحث أو الرجوع إلى المقطع السابق.",

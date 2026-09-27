@@ -17,6 +17,7 @@ import com.google.android.material.button.MaterialButton
 import com.google.android.material.datepicker.MaterialDatePicker
 import android.widget.ArrayAdapter
 import android.widget.AutoCompleteTextView
+import android.widget.TextView
 import com.albunyaan.tube.util.PhoneFormat
 import com.google.android.material.textfield.TextInputEditText
 import com.google.android.material.textfield.TextInputLayout
@@ -64,6 +65,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
     private lateinit var phoneLayout: TextInputLayout
     private lateinit var phoneField: TextInputEditText
     private lateinit var submitButton: MaterialButton
+    private lateinit var formHint: TextView
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -160,6 +162,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         phoneLayout        = v.findViewById(R.id.phoneLayout)
         phoneField         = v.findViewById(R.id.phoneField)
         submitButton = v.findViewById(R.id.submitButton)
+        formHint = v.findViewById(R.id.formHint)
     }
 
     private fun wireListeners() {
@@ -248,34 +251,45 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         passwordLayout.visibility = passwordVisibility
         passwordConfirmLayout.visibility = passwordVisibility
 
-        displayNameLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_NAME }
-            ?.let { getString(R.string.bootstrap_error_invalid_name) }
-        dobLayout.error = when (state.error) {
-            BootstrapError.INVALID_DOB -> getString(R.string.bootstrap_error_invalid_dob)
-            BootstrapError.UNDER_AGE -> getString(R.string.bootstrap_error_under_age)
-            else -> null
+        // Field errors only on a field the user touched; any other blocker goes in formHint
+        // by Continue. Set only on change so TalkBack doesn't re-announce every render.
+        val shown = viewModel.shownError(state)
+        val onField = shown?.takeIf { it.onField }?.error
+        fun msg(e: BootstrapError?): String? = e?.let { getString(errorText(it)) }
+        displayNameLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_NAME }))
+        // SAVE_FAILED stays on dobLayout: the problem isn't the user's input.
+        dobLayout.setErrorIfChanged(msg(onField.takeIf {
+            it == BootstrapError.INVALID_DOB || it == BootstrapError.UNDER_AGE || it == BootstrapError.SAVE_FAILED
+        }))
+        // PASSWORD_SET_FAILED: profile already saved; retry the password step (profileSaved
+        // guards against a duplicate completeProfile call).
+        passwordLayout.setErrorIfChanged(msg(onField.takeIf {
+            it == BootstrapError.INVALID_PASSWORD || it == BootstrapError.PASSWORD_SET_FAILED
+        }))
+        passwordConfirmLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.PASSWORD_MISMATCH }))
+        phoneCountryLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_PHONE_COUNTRY }))
+        phoneLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_PHONE }))
+        val hint = msg(shown?.takeIf { !it.onField }?.error)
+        if (formHint.text?.toString().orEmpty() != hint.orEmpty()) {
+            formHint.text = hint
+            formHint.visibility = if (hint == null) View.GONE else View.VISIBLE
         }
-        passwordLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PASSWORD }
-            ?.let { getString(R.string.bootstrap_error_invalid_password) }
-        passwordConfirmLayout.error = state.error?.takeIf { it == BootstrapError.PASSWORD_MISMATCH }
-            ?.let { getString(R.string.bootstrap_error_password_mismatch) }
-        phoneCountryLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PHONE_COUNTRY }
-            ?.let { getString(R.string.bootstrap_error_invalid_phone_country) }
-        phoneLayout.error = state.error?.takeIf { it == BootstrapError.INVALID_PHONE }
-            ?.let { getString(R.string.bootstrap_error_invalid_phone) }
-        // SAVE_FAILED: shown by dobLayout clearing both field errors so the user
-        // understands the problem isn't their input. A future pass can add a Snackbar.
-        if (state.error == BootstrapError.SAVE_FAILED) {
-            displayNameLayout.error = null
-            dobLayout.error = getString(R.string.bootstrap_error_save_failed)
-        }
-        if (state.error == BootstrapError.PASSWORD_SET_FAILED) {
-            // Profile is already saved backend-side. Password attach
-            // failed — surface on the password field so the user knows
-            // to retry that step. profileSaved guards against a duplicate
-            // completeProfile call on retry.
-            passwordLayout.error = getString(R.string.bootstrap_error_password_set_failed)
-        }
+    }
+
+    private fun TextInputLayout.setErrorIfChanged(message: String?) {
+        if (error?.toString() != message) error = message
+    }
+
+    private fun errorText(e: BootstrapError): Int = when (e) {
+        BootstrapError.INVALID_NAME -> R.string.bootstrap_error_invalid_name
+        BootstrapError.INVALID_DOB -> R.string.bootstrap_error_invalid_dob
+        BootstrapError.UNDER_AGE -> R.string.bootstrap_error_under_age
+        BootstrapError.INVALID_PHONE_COUNTRY -> R.string.bootstrap_error_invalid_phone_country
+        BootstrapError.INVALID_PHONE -> R.string.bootstrap_error_invalid_phone
+        BootstrapError.INVALID_PASSWORD -> R.string.bootstrap_error_invalid_password
+        BootstrapError.PASSWORD_MISMATCH -> R.string.bootstrap_error_password_mismatch
+        BootstrapError.PASSWORD_SET_FAILED -> R.string.bootstrap_error_password_set_failed
+        BootstrapError.SAVE_FAILED -> R.string.bootstrap_error_save_failed
     }
 
 
