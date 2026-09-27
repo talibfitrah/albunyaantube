@@ -1,0 +1,46 @@
+backend/src/main/java/com/albunyaan/tube/service/AccountProfileService.java
+  s_974be43fdb0416::t_9c6c4fc0920d55 81-83,97,109,217
+backend/src/test/java/com/albunyaan/tube/service/AccountProfileServiceTest.java
+  s_974be43fdb0416::t_b2ec92e2f81a1d 197,200,203,207-208,210-241
+  s_974be43fdb0416::t_aad4f8abcb2736 202
+  s_974be43fdb0416::t_94f04ca2d1a37e 183,185-196,198-199,201,204-206,209
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_974be43fdb0416::t_aad4f8abcb2736 72-76,98,102-105,247-251,253-260,263-274,282-283,287-288,351,377,400-406,415
+  s_974be43fdb0416::t_b2ec92e2f81a1d 385,399,410-414,416-419
+  s_974be43fdb0416::t_817e15e2d9bb84 384,386-398,407-409,420
+backend/src/main/java/com/albunyaan/tube/dto/CompleteProfileRequest.java
+  s_974be43fdb0416::t_9c6c4fc0920d55 21,30
+backend/src/test/java/com/albunyaan/tube/integration/AccountControllerIT.java
+  s_974be43fdb0416::t_bc7bd204193908 57-61,63,74-84,89-92,94,107-121
+  s_974be43fdb0416::t_98fd420b3c8e77 85-86
+  s_974be43fdb0416::t_fb483121997bd8 53-54,175-176
+backend/src/main/java/com/albunyaan/tube/controller/LegalPagesController.java
+  s_974be43fdb0416::t_67381db99d27cb 74-75,371-375,442-443,462,535,579-582,603,611-615,621-622
+  s_974be43fdb0416::t_033d84e4ccc94d 212-214,229-230,360,367-370,577-578,583-602,604-610,616-620,623-628
+  s_974be43fdb0416::t_b71465d4828b81 765-766
+  s_974be43fdb0416::t_7ce0e49bc7966e 629-630
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_974be43fdb0416::t_279d0a293dcdbb 86,88
+backend/src/test/java/com/albunyaan/tube/integration/SelfDeleteAccountIT.java
+  s_974be43fdb0416::t_aad4f8abcb2736 279-281,284,304
+  s_974be43fdb0416::t_9470d7899cc993 25,33
+  s_974be43fdb0416::t_a4b410fa228cae 31,287-289,291-292
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_974be43fdb0416::t_8e56dfbe9e0fe9 242-273
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "de9083f6f6c5494be709a9e18eff4fef4ca8ca49",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
