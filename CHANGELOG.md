@@ -5,6 +5,9 @@ during the beta program.
 
 ## [Unreleased]
 
+- Android: fixed crashes on Android 14 and older when search history filled up or when going back to a previous video, and on Android 8.x at launch. Kotlin's `removeLast()` on a `MutableList` compiled to the Java 21 `List#removeLast` (API 35) and the splash used `View#requireViewById` (API 28); replaced with `removeAt(lastIndex)` / `ViewCompat.requireViewById`, removed the lint-baseline entries that hid these `NewApi` errors, and added a unit test that fails on any `removeFirst/removeLast/getFirst/getLast()` call on a non-Deque in app sources.
+- Android: videos opened right after a cold start no longer stay black. Concurrent playback-token requests for the same video overwrote each other (only one resolved; the rest waited out a 10 s timeout), and the player's own resolve timeout was treated as a cancellation, so it neither retried nor showed an error. Requests are now keyed per call and a timed-out attempt retries, then shows Retry.
+- Android: Google Play build (`play` flavor, `com.albunyaan.tube.play`) prepared for store submission.
 - iOS: catalog UI — splash, onboarding, shell (bottom tabs on iPhone, Android-style navigation rail on iPad), Home, Channels/Playlists/Videos, Search, Categories, Featured, Favorites, Settings, About; en/ar/nl with RTL and Dynamic Type support (Phase 1 of the iOS app).
 - iOS: project scaffold (XcodeGen, iPhone + iPad), generated FitrahAPI client, DI container, design tokens (Phase 0 of the iOS app).
 

@@ -1,4 +1,14 @@
 {
+  "1.0.0-beta.47": {
+    "en": "Fixes crashes on Android 14 and older when searching or going back to a previous video.",
+    "ar": "إصلاح توقف التطبيق على أندرويد 14 والإصدارات الأقدم عند البحث أو الرجوع إلى المقطع السابق.",
+    "nl": "Verhelpt crashes op Android 14 en ouder bij zoeken of teruggaan naar een vorige video."
+  },
+  "1.0.0-beta.46": {
+    "en": "Videos now start reliably right after opening the app, and a stalled video shows Retry instead of a black screen.",
+    "ar": "تبدأ المقاطع الآن بثبات بعد فتح التطبيق مباشرة، وإذا تعثّر مقطع يظهر زر إعادة المحاولة بدل شاشة سوداء.",
+    "nl": "Video's starten nu direct na het openen van de app, en een vastgelopen video toont Opnieuw in plaats van zwart."
+  },
   "1.0.0-beta.45": {
     "en": "View and subscriber counts now show compact (1.2K, 3.4M), and updates install on their own on newer phones.",
     "ar": "أعداد المشاهدات والمشتركين تظهر الآن مختصرة (١٫٢ ألف، ٣٫٤ مليون)، والتحديثات تُثبَّت تلقائيًا على الهواتف الأحدث.",
