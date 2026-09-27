@@ -715,22 +715,43 @@ class AuthServiceTest {
         verify(firebaseAuth).generatePasswordResetLink("test@example.com");
     }
 
-    /** Public forgot-password: an address with no account is dropped silently, never thrown
-     *  back to the caller (whose answer must not depend on it). */
+    /** Public forgot-password. With the project's enableImprovedEmailPrivacy, Firebase mints a reset
+     *  link for ANY address (prod, 2026-09-27), so the account must be confirmed first -- or anyone
+     *  could have noreply@ mail arbitrary addresses. The lenient stub models that behaviour. */
     @Test
-    void sendPasswordResetEmailQuietly_dropsAnAddressWithNoAccount() throws Exception {
-        when(mailService.isEnabled()).thenReturn(true);
-        when(firebaseAuth.generatePasswordResetLink("nobody@example.com")).thenThrow(
-                new FirebaseAuthException(com.google.firebase.ErrorCode.NOT_FOUND, "EMAIL_NOT_FOUND", null, null,
-                        com.google.firebase.auth.AuthErrorCode.EMAIL_NOT_FOUND));
+    void sendPasswordResetEmailQuietly_mintsAndSendsNothingForAnAddressWithNoAccount() throws Exception {
+        lenient().when(mailService.isEnabled()).thenReturn(true);
+        lenient().when(firebaseAuth.generatePasswordResetLink("nobody@example.com")).thenReturn("https://reset/link");
+        when(firebaseAuth.getUserByEmail("nobody@example.com")).thenThrow(
+                new FirebaseAuthException(com.google.firebase.ErrorCode.NOT_FOUND, "USER_NOT_FOUND", null, null,
+                        com.google.firebase.auth.AuthErrorCode.USER_NOT_FOUND));
 
         assertDoesNotThrow(() -> authService.sendPasswordResetEmailQuietly("nobody@example.com"));
+
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
         verify(mailService, never()).sendPasswordResetEmail(any(), any());
     }
 
     @Test
-    void sendPasswordResetEmailQuietly_mailsAnAddressWithAnAccount() throws Exception {
+    void sendPasswordResetEmailQuietly_mintsAndSendsNothingForADisabledAccount() throws Exception {
+        lenient().when(mailService.isEnabled()).thenReturn(true);
+        lenient().when(firebaseAuth.generatePasswordResetLink("blocked@example.com")).thenReturn("https://reset/link");
+        UserRecord disabled = mock(UserRecord.class);
+        when(disabled.isDisabled()).thenReturn(true);
+        when(firebaseAuth.getUserByEmail("blocked@example.com")).thenReturn(disabled);
+
+        authService.sendPasswordResetEmailQuietly("blocked@example.com");
+
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetEmailQuietly_mailsAnActiveAccount() throws Exception {
         when(mailService.isEnabled()).thenReturn(true);
+        UserRecord active = mock(UserRecord.class);
+        when(active.isDisabled()).thenReturn(false);
+        when(firebaseAuth.getUserByEmail("test@example.com")).thenReturn(active);
         when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenReturn("https://reset/link");
 
         authService.sendPasswordResetEmailQuietly("test@example.com");

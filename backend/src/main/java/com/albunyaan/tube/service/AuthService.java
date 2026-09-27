@@ -1335,6 +1335,13 @@ public class AuthService {
      */
     public void sendPasswordResetEmailQuietly(String email) {
         try {
+            // The project runs enableImprovedEmailPrivacy, under which generatePasswordResetLink mints
+            // a link for ANY address (prod, 2026-09-27): confirm an enabled account first, or anyone
+            // could have noreply@ mail arbitrary addresses. An unknown one throws USER_NOT_FOUND below.
+            if (firebaseAuth.getUserByEmail(email).isDisabled()) {
+                logger.info("Public password reset not sent: account disabled");
+                return;
+            }
             sendPasswordResetEmail(email);
         } catch (FirebaseAuthException e) {
             logger.info("Public password reset not sent: {}", e.getAuthErrorCode());

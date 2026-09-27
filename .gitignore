@@ -213,3 +213,6 @@ __pycache__/
 
 # InnerTubeKit live-test raw captures (contain IP + real visitorData)
 *.raw.json
+
+# Playwright MCP page snapshots and console logs (can contain console/portal IDs)
+.playwright-mcp/
