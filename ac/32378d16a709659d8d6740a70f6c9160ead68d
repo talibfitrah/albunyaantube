@@ -1,0 +1,39 @@
+android/app/src/test/java/com/albunyaan/tube/data/extractor/potoken/PoTokenWebViewTest.kt
+  s_9ef23a9d068e4b::t_46d77701b24cbf 17,62-76
+  s_9ef23a9d068e4b::t_b4afb5e84ef152 79-92
+  s_9ef23a9d068e4b::t_33222f42254e5f 1-16,18-61,77-78,93-103
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/PoTokenWebView.kt
+  s_9ef23a9d068e4b::t_f9bac063e28d74 51-52,183-185,276
+  s_9ef23a9d068e4b::t_efddd1d61d93f9 47,263-267,274-275,277
+  s_9ef23a9d068e4b::t_94b0c47e6c99be 17,49,176-179,181,190,207
+  s_9ef23a9d068e4b::t_005ee45247e966 50
+android/app/src/main/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProvider.kt
+  s_9ef23a9d068e4b::t_8b8eddb8e7b152 33-37,228-240
+  s_9ef23a9d068e4b::t_9dec25c86a0ef7 78-80,83-85,138-142,175,179,181-183,185-189,192-200
+  s_9ef23a9d068e4b::t_ea4edcd2380e17 124-125,128-132
+  s_9ef23a9d068e4b::t_2035f9e39f6aa0 241
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelAvailabilityGateTest.kt
+  s_9ef23a9d068e4b::t_e0a088e1f73f21 169-187,200-201,210
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_9ef23a9d068e4b::t_94b0c47e6c99be 1497-1500
+  s_9ef23a9d068e4b::t_4b17e30779ef6c 1501
+android/app/src/test/java/com/albunyaan/tube/data/extractor/potoken/WebViewPoTokenProviderTest.kt
+  s_9ef23a9d068e4b::t_da4e11955a22cb 1-55,101
+  s_9ef23a9d068e4b::t_6f30762e7376a0 56-100
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ac32378d16a709659d8d6740a70f6c9160ead68d",
+  "prompts": {},
+  "sessions": {
+    "s_9ef23a9d068e4b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "efd8a828-f546-4467-9893-91ad8734dd10",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
