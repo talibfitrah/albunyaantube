@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/service/AuthServiceTest.java
+  s_974be43fdb0416::t_f22701a8ee153d 718-720,722-727,730-745,750,752-754
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_974be43fdb0416::t_b989e9e1a87653 1338-1344
+.gitignore
+  s_974be43fdb0416::t_7de4518dca953a 216-218
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "882fbc864580aadd6146152a2d99e5a88c78ad7d",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
