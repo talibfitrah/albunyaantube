@@ -362,6 +362,8 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertTrue(favoriteButton.waitForExistence(timeout: 10), "player-metadata: favorite button never appeared")
         let title = app.staticTexts["player.metadata.title"]
         XCTAssertTrue(title.waitForExistence(timeout: 10), "player-metadata: metadata title never appeared")
+        XCTAssertFalse(app.descendants(matching: .any)["player.debugRoute"].exists,
+                       "player-metadata: the DEBUG route probe is opt-in (-fitrah-route-probe), never a VoiceOver stop")
         try write(named: "player-metadata-toolbar", into: directory)
     }
 

@@ -19,6 +19,11 @@ nonisolated struct OfflineGateClient: Sendable {
     private let transport: HTTPTransport
     private let baseURL: URL
     private let deviceId: DeviceId
+    #if DEBUG
+    /// Real-device check only (`AppContainer.offlineAllowedVideoId`): this ONE video answers
+    /// `.allowed` without a request. Nothing else changes.
+    var offlineAllowedVideoId: String?
+    #endif
 
     init(transport: HTTPTransport = URLSessionTransport(), baseURL: URL, deviceId: DeviceId) {
         self.transport = transport
@@ -64,6 +69,9 @@ nonisolated struct OfflineGateClient: Sendable {
     }
 
     func answer(_ videoId: String) async -> GateAnswer {
+        #if DEBUG
+        if videoId == offlineAllowedVideoId { return .allowed }
+        #endif
         let request = HTTPRequest(method: "GET", url: baseURL.appending(path: "api/v1/videos/\(videoId)"),
                                   headers: ["X-Device-Id": deviceId.value], body: nil)
         guard let response = try? await transport.send(request) else { return .unreachable }

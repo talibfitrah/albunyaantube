@@ -62,9 +62,15 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
     /// Phase 3 Task 4: iOS hands over the background-session completion handler here; the
     /// offline engine calls it once its session has delivered its events (the second reason this
     /// app has a delegate).
+    ///
+    /// The SDK's exact `() -> Void`: an `@MainActor @Sendable` spelling compiles but is only a
+    /// near miss, so it is never exported to ObjC and UIKit never calls it
+    /// (`AppContainerTests.uiKitCanSeeTheBackgroundSessionHook`). UIKit calls this and the handler
+    /// on the main thread, which is where the `@MainActor` wrapper runs it.
     func application(_ application: UIApplication, handleEventsForBackgroundURLSession identifier: String,
-                     completionHandler: @escaping @MainActor @Sendable () -> Void) {
-        ProgressiveEngine.registerBackgroundCompletion(identifier: identifier, handler: completionHandler)
+                     completionHandler: @escaping () -> Void) {
+        nonisolated(unsafe) let completionHandler = completionHandler
+        ProgressiveEngine.registerBackgroundCompletion(identifier: identifier) { completionHandler() }
         // Cubic P1: on a background-events relaunch no scene renders, so RootView's `.task` — the
         // only other builder of the lazy `offlineManager` — never runs. Parking the handler alone
         // recreates nothing: the queued delegate events are only delivered to a session that

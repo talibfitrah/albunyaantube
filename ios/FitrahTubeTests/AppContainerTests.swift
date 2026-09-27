@@ -70,6 +70,28 @@ struct AppContainerTests {
         #expect(after > before, "the relaunch hook never scheduled a reattach")
     }
 
+    /// The same hook, reached the way iOS reaches it: through the app's REAL delegate object
+    /// (SwiftUI's adaptor, which Firebase's `GULAppDelegateSwizzler` proxies once Auth starts), by
+    /// ObjC selector. A near-miss signature (`@MainActor @Sendable` completion) compiled and passed
+    /// the direct call above but was never exported, so a background-events relaunch never
+    /// rebuilt the session (Release warning "nearly matches optional requirement").
+    @Test func theAppsRealDelegateForwardsTheBackgroundSessionHook() async throws {
+        let delegate = try #require(UIApplication.shared.delegate)
+        let previous = AppContainer.current
+        defer { AppContainer.current = previous }
+        let container = AppContainer.fake()
+        AppContainer.current = container
+        let before = await container.offlineManager.reattachCount
+        delegate.application?(UIApplication.shared,
+                              handleEventsForBackgroundURLSession: ProgressiveEngine.backgroundSessionIdentifier) {}
+        var after = before
+        for _ in 0..<2000 where after == before {
+            try? await Task.sleep(for: .milliseconds(1))
+            after = await container.offlineManager.reattachCount
+        }
+        #expect(after > before, "UIKit's delegate never reached AppDelegate's background-session hook")
+    }
+
     /// Phase 3 Task 8: `GCKCastContext` is created exactly once, on launch, from
     /// `didFinishLaunchingWithOptions` — through the same `AppContainer.current` seam the
     /// background-events hook above uses (a unit test cannot drive the live `UIApplication`
@@ -387,6 +409,30 @@ struct AppContainerTests {
                 "a fixture container must not open a background URLSession")
         #expect(container.offlineResolver is ParkedStreamResolver,
                 "a fixture container must not resolve over InnerTubeKit")
+    }
+
+    /// Real-device finding: FitrahAPI and InnerTubeKit are `.dynamic` package products the app
+    /// binary links through `@rpath`, so the app bundle must carry them. It did not — every device
+    /// launch died in dyld ("Library not loaded: @rpath/FitrahAPI.framework"); the simulator only
+    /// masked it because xcodebuild points DYLD_FRAMEWORK_PATH at the build products.
+    @Test(arguments: ["FitrahAPI", "InnerTubeKit"])
+    func theAppBundleEmbedsItsDynamicPackage(_ name: String) throws {
+        let frameworks = try #require(Bundle.main.privateFrameworksURL)
+        #expect(FileManager.default.fileExists(atPath: frameworks.appending(path: "\(name).framework/\(name)").path),
+                "\(name).framework is not embedded in \(Bundle.main.bundleURL.lastPathComponent)")
+    }
+
+    /// Real-device check 1 (`DeviceChecks.testBackgroundDownload`): `-fitrah-debug-offline-allowed
+    /// <videoId>` makes exactly ONE named lecture offline-allowed and hands the offline stack its
+    /// REAL resolver and engine; every other video still gets the fixture's canned no-answer.
+    /// Its rows live in memory, so its files go to the temporary directory, never the real library.
+    @Test func theDebugOfflineAllowedLectureIsSaveableOverTheRealStack() async {
+        let container = AppContainer.fake(offlineAllowedVideoId: "nhaGO__rxHQ")
+        #expect(await container.offlineGate.answer("nhaGO__rxHQ") == .allowed)
+        #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
+        #expect(container.offlineResolver is LiveStreamResolver)
+        #expect(container.offlineBase == URL.temporaryDirectory)
+        #expect(AppContainer.fake().offlineBase == URL.applicationSupportDirectory)
     }
 
     /// The behavioural half, and the one the screenshot rig actually depends on: the `.queued` seed

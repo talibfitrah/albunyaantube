@@ -853,3 +853,37 @@ enum PiPDismantlePolicy {
         return PiPTeardownActions(detachBackground: now, releasePlayer: now, deferUntilPiPStops: !now)
     }
 }
+
+#if DEBUG
+/// Real-device AirPlay check only (`DeviceChecks.testAirPlay`, mounted by `-fitrah-route-probe YES`):
+/// a 1 pt, clear, non-interactive element whose accessibility VALUE is computed when XCUITest asks,
+/// so it reports the LIVE route rather than whatever the last SwiftUI render saw. Nothing visible.
+struct AirPlayRouteProbe: UIViewRepresentable {
+    let model: PlayerViewModel
+
+    func makeUIView(context: Context) -> ProbeView { ProbeView(model: model) }
+    func updateUIView(_ view: ProbeView, context: Context) { view.model = model }
+
+    final class ProbeView: UIView {
+        weak var model: PlayerViewModel?
+
+        init(model: PlayerViewModel) {
+            self.model = model
+            super.init(frame: .zero)
+            isUserInteractionEnabled = false
+            isAccessibilityElement = true
+            accessibilityIdentifier = "player.debugRoute"
+        }
+
+        required init?(coder: NSCoder) { nil }
+
+        override var accessibilityValue: String? {
+            get {
+                let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
+                return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs=" + outputs.joined(separator: ",")
+            }
+            set {}
+        }
+    }
+}
+#endif

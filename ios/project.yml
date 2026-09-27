@@ -82,10 +82,17 @@ targets:
         excludes:
           - "Info.plist"
     dependencies:
+      # Both are `.dynamic` library products the binary links through `@rpath`: without Embed &
+      # Sign the bundle ships without them and every DEVICE launch dies in dyld (the simulator
+      # masks it via DYLD_FRAMEWORK_PATH). `AppContainerTests.theAppBundleEmbedsItsDynamicPackage`.
       - package: FitrahAPI
         product: FitrahAPI
+        embed: true
+        codeSign: true
       - package: InnerTubeKit
         product: InnerTubeKit
+        embed: true
+        codeSign: true
       # Phase 3 Task 8: the Google Cast iOS Sender SDK, vendored by `scripts/fetch-cast-sdk.sh`
       # (ios/Vendor/ is gitignored; test.sh's pre-stage heals a fresh checkout). The zip ships
       # exactly ONE xcframework -- no GoogleCastCore/protobuf members -- so this is the whole

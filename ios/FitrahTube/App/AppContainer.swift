@@ -84,6 +84,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// stubs, and `FitrahTubeApp` skips the remote-config fetch. DEBUG-only, with it the whole
     /// fixture surface: nothing outside `fake()` can set it, so Release has no fixture path at all.
     let isFixture: Bool
+    /// Real-device check 1 (`DeviceChecks`, launch argument `-fitrah-debug-offline-allowed <videoId>`,
+    /// read through the argument domain): the one lecture the gate treats as offline-allowed, and
+    /// the switch that gives a fixture the REAL offline engine and resolver (a background
+    /// `URLSession`, InnerTube resolves). nil everywhere else.
+    let offlineAllowedVideoId: String?
+    private var parksOfflineStack: Bool { isFixture && offlineAllowedVideoId == nil }
     #endif
 
     private(set) lazy var settings: any SettingsStore = UserDefaultsSettingsStore(defaults: userDefaults)
@@ -101,13 +107,24 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     private(set) lazy var offlineStore = OfflineStore(modelContainer: modelContainer)
     /// Task 7 follow-up: the ONE spelling of the offline files' base directory — the manager
     /// (`makeOfflineManager`) writes under it and `PlayerScreen`'s `OfflineResolver` reads from it.
-    let offlineBase = URL.applicationSupportDirectory
+    private(set) lazy var offlineBase: URL = {
+        #if DEBUG
+        // A fixture's rows are in memory: its real downloads must not outlive them in the library.
+        if isFixture, offlineAllowedVideoId != nil { return URL.temporaryDirectory }
+        #endif
+        return URL.applicationSupportDirectory
+    }()
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
     private(set) lazy var network = NetworkMonitor()
     /// Phase 3 Task 5: the per-video `offlineAllowed` gate — ONE client shared by the player's
     /// Save button (via `PlayerScreen`) and the manager's revalidation sweep.
-    private(set) lazy var offlineGate = OfflineGateClient(transport: gateTransport, baseURL: apiBaseURL,
-                                                          deviceId: .persisted(in: userDefaults))
+    private(set) lazy var offlineGate: OfflineGateClient = {
+        var gate = OfflineGateClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+        #if DEBUG
+        gate.offlineAllowedVideoId = offlineAllowedVideoId
+        #endif
+        return gate
+    }()
 
     /// Phase 3 Task 4: resolve → download → persist over `offlineStore`. One background session
     /// (`ProgressiveEngine.backgroundSessionIdentifier`); `.prefetch` lane on the ONE limiter/clock
@@ -126,7 +143,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// network.
     private(set) lazy var offlineEngine: any OfflineEngine = { () -> any OfflineEngine in
         #if DEBUG
-        if isFixture { return ParkedOfflineEngine() }
+        if parksOfflineStack { return ParkedOfflineEngine() }
         #endif
         let configuration = URLSessionConfiguration.background(withIdentifier: ProgressiveEngine.backgroundSessionIdentifier)
         configuration.sessionSendsLaunchEvents = true
@@ -134,7 +151,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     }()
     private(set) lazy var offlineResolver: any StreamResolving = { () -> any StreamResolving in
         #if DEBUG
-        if isFixture { return ParkedStreamResolver() }
+        if parksOfflineStack { return ParkedStreamResolver() }
         #endif
         return LiveStreamResolver(resolver: resolver)
     }()
@@ -670,7 +687,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
          appleSignIn: (any OAuthSignInProvider)? = nil,
          accountStatusJSON: String? = nil,
          sync: (any SyncTriggering)? = nil,
-         isFixture: Bool = false) {
+         isFixture: Bool = false,
+         offlineAllowedVideoId: String? = nil) {
         #if DEBUG
         self.injectedAccountStatusJSON = accountStatusJSON
         self.injectedAuth = auth
@@ -686,6 +704,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.injectedSync = sync
         #if DEBUG
         self.isFixture = isFixture
+        self.offlineAllowedVideoId = offlineAllowedVideoId ?? UserDefaults.standard.string(forKey: "fitrah-debug-offline-allowed")
         #endif
         self.degradedHeader = degradedHeader
         self.playlistHeader = playlistHeader
@@ -762,7 +781,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // background merge running `tagAnonRows` against the fixture container plus a bounded 503
         // ladder, i.e. background mutation racing that test's assertions. A fixture that genuinely
         // wants the real manager passes one.
-        sync: (any SyncTriggering)? = InertSync()
+        sync: (any SyncTriggering)? = InertSync(),
+        offlineAllowedVideoId: String? = nil
     ) -> AppContainer {
         // A private suite (not `.standard`) so previews/tests never read or write the app's real
         // defaults domain. Does NOT wipe the suite -- callers that write through the returned
@@ -788,7 +808,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                      playlistHeader: headers.map { headers in { @Sendable id in try await headers.playlist(id) } },
                      gateTransport: FixedStatusTransport(status: 503), auth: auth,
                      capabilities: capabilities, googleSignIn: googleSignIn, appleSignIn: appleSignIn,
-                     accountStatusJSON: accountStatusJSON, sync: sync, isFixture: true)
+                     accountStatusJSON: accountStatusJSON, sync: sync, isFixture: true,
+                     offlineAllowedVideoId: offlineAllowedVideoId)
     }
     #endif
 

@@ -291,6 +291,11 @@ struct PlayerScreen: View {
                     ZStack(alignment: .topTrailing) {
                         PlayerHostView(state: state, quality: model.selectedQuality,
                                        audioOnly: model.audioOnly, model: model, isFullscreen: fullscreen)
+                        #if DEBUG
+                        if UserDefaults.standard.bool(forKey: "fitrah-route-probe") {   // DeviceChecks only
+                            AirPlayRouteProbe(model: model).frame(width: 1, height: 1).allowsHitTesting(false)
+                        }
+                        #endif
                         // A mid-play rung-2 demotion empties `tracks` and
                         // hides the captions menu -- but the selection survives (session-only
                         // state, deliberately), so the overlay used to keep rendering cues with no
