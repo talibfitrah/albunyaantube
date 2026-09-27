@@ -1,0 +1,21 @@
+docs/superpowers/HANDOFF.md
+  s_18197a18aae8f1::t_c2a90c7ecb24f2 1-48
+docs/superpowers/plans/2026-08-23-ios-phase2a-innertubekit.md
+  s_18197a18aae8f1::t_649abf55158e5f 1-35
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0b6401f1cd4c10d1dd7b6b389fc828ffcc6c7d56",
+  "prompts": {},
+  "sessions": {
+    "s_18197a18aae8f1": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "e062bfe2-0b5b-4cbc-8495-03c447acfb1b",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
