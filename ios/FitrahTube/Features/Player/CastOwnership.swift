@@ -42,6 +42,9 @@ nonisolated struct CastLoadFailure: Sendable, Equatable {
     /// The load's own claim, or nil for a report whose claim was already cleared (a session that
     /// began while the load was in flight).
     var claim: CastClaim?
+    /// Where the TV had got to when a PLAYBACK failed (`receiverDidUpdate`); nil for a load that
+    /// never played, which resumes the phone where it paused.
+    var position: TimeInterval? = nil
     let id = UUID()
 }
 

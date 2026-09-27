@@ -110,6 +110,13 @@ struct OfflineManagerTests {
         private var _gateCalls: [String] = []
         var gateCalls: [String] { lock.withLock { _gateCalls } }
         func recordGateCall(_ videoId: String) { lock.withLock { _gateCalls.append(videoId) } }
+        /// Offline review P1: every (videoId, channelId) the gate was asked, as "videoId@channel"
+        /// ("-" for nil) — how a test proves each consult carried the ROW's channel.
+        private var _gateAsks: [String] = []
+        var gateAsks: [String] { lock.withLock { _gateAsks } }
+        func recordGateAsk(_ videoId: String, _ channelId: String?) {
+            lock.withLock { _gateAsks.append("\(videoId)@\(channelId ?? "-")") }
+        }
         /// True exactly once per videoId (review m-2: this used to key off the GLOBAL consult
         /// count, which reads the same only while a test holds a single id). The hold below is
         /// first-consult-*per-id*, which is what its doc always claimed.
@@ -180,7 +187,8 @@ struct OfflineManagerTests {
             },
             isOnCellular: { flags.cellular },
             baseDirectory: base,
-            gate: { videoId in
+            gate: { videoId, channelId in
+                flags.recordGateAsk(videoId, channelId)
                 // Review NI2: the answer is read BEFORE the hold, so a HELD consult keeps the
                 // answer that was live when it was asked. Reading it afterwards let a test
                 // retroactively change a parked attempt's verdict — which is how the I1 pin came
@@ -217,6 +225,39 @@ struct OfflineManagerTests {
             try? await Task.sleep(for: .milliseconds(1))
         }
         #expect(condition(), "condition never became true", sourceLocation: sourceLocation)
+    }
+
+    // MARK: - The channel playback asks about (offline review P1)
+
+    private static let channelId = "UCmMcOjsVehVlEOteyrhjI2Q"
+
+    /// The Save sheet stamps the PLAYER's channel — the one playback's own check asks about.
+    @Test func theSaveSheetsMetadataCarriesThePlayersChannel() {
+        let args = PlayerArgs(videoId: Self.lectureVideoId, title: "Lecture", channelId: Self.channelId)
+        #expect(OfflineMetadata(args: args, userId: "").channelId == Self.channelId)
+    }
+
+    /// Review P1: only the Save button asked about the channel, so a channel pulled after the save
+    /// left the copy in place and `begin` still downloaded unfinished rows on Resume/relaunch. The
+    /// save stamps the channel on the row, and `begin`, `retry` and `sweep` each ask the gate about
+    /// it; a row written before V7 (nil) keeps the video-only question.
+    @Test func everyGateConsultAsksAboutTheRowsChannel() async throws {
+        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        var metadata = Self.metadata
+        metadata.channelId = Self.channelId
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+        #expect(rig.persisted(id: id)?.channelId == Self.channelId, "the save stamps the channel on the row")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
+
+        await rig.manager.retry(id)                                           // retry, then begin again
+        try rig.store.insert(makeOfflineItem("vidPreV7", status: .paused))    // no channel recorded
+        await rig.manager.sweep()
+
+        let lecture = "\(Self.lectureVideoId)@\(Self.channelId)"
+        #expect(rig.flags.gateAsks.filter { $0.hasPrefix(Self.lectureVideoId) } == [lecture, lecture, lecture, lecture],
+                "begin, retry, begin and sweep all ask about the row's channel")
+        #expect(rig.flags.gateAsks.filter { $0.hasPrefix("vidPreV7") } == ["vidPreV7@-"])
     }
 
     // MARK: - Resolve path
@@ -3001,7 +3042,7 @@ struct OfflineManagerTests {
             // COMPLETES, and a save that completes without an affirmative gate answer is the
             // compliance violation, not the evidence. The refusal half is a fakes test
             // (`aStartWhoseGateIsUnreachableParksTheRowInsteadOfWalking`), so it runs in every gate.
-            gate: { _ in .allowed }, now: { Date() })
+            gate: { _, _ in .allowed }, now: { Date() })
 
         await manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: audioOnly, metadata: Self.metadata)
         let id = try #require(store.item(videoId: Self.lectureVideoId)?.id)

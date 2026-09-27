@@ -7,8 +7,9 @@ import InnerTubeKit
 protocol StreamResolving: Sendable {
     /// The ONE requirement, and it carries `requiresMuxed` (owner ruling 2026-09-01): `true` demands
     /// a single-file muxed stream (itag 18) — the resolver skips the HLS rung, and neither reads nor
-    /// writes the manifest cache nor touches the single-flight registry. Only `OfflineManager`
-    /// passes `true`; every player call site takes the five-argument convenience below.
+    /// writes the manifest cache nor touches the single-flight registry. `OfflineManager` and the
+    /// cast's own walk (`PlayerViewModel.castMedia`) pass `true`; every other player call site takes
+    /// the five-argument convenience below.
     ///
     /// R8-3: the direction used to be the other way round, with a defaulted six-argument overload
     /// forwarding to a five-argument requirement. A conformer that implemented only the short form
@@ -620,17 +621,34 @@ extension StreamState {
     /// `nil` = nothing castable (the embed rung, or a refusal with no usable stream behind it) --
     /// the caller surfaces that as the same "Couldn't play on {device}" a receiver's own refusal
     /// produces.
+    ///
+    /// Only the muxed itag-18 MP4 is castable (`CastMedia.make`: a receiver cannot play the rung-1
+    /// manifest). So a manifest on screen is never reused: the cast walks the muxed rung itself.
+    /// NOT forced -- a muxed walk bypasses the manifest cache anyway, and `RateLimitedResolver`
+    /// gates forced walks, so a forced one would hit the `.player` lane's 30 s interval right after
+    /// the phone's own resolve and refuse the very first cast.
+    /// ponytail: one ungated android POST per cast start of a manifest; give casts their own limiter
+    /// lane if that ever trips the bot check.
+    ///
+    /// `.cast` purpose: a bot check on this walk fails the cast only (the existing banner) and never
+    /// records InnerTubeKit's GLOBAL cooldown -- from the usual `.hls` the phone never tried the
+    /// android rung, so a trip here would lock out its WORKING rung-1 playback for 1-24 h. The
+    /// offline save's identical walk (`.prefetch`) still records it. Nothing is walked from the
+    /// embed rung, where the phone's own walk already saw the android rung fail. NOT skipped for
+    /// `state.isLive`: that flag reads `isLiveContent` for an ENDED
+    /// broadcast -- nhaGO__rxHQ resolves `.hls(isLive: true)`, yet its itag-18 walk played on a real
+    /// Chromecast (2026-09-27).
     func castMedia(now: Date = Date()) async -> CastMediaInfo? {
-        if let fresh = currentCastStream(now: now) { return CastMedia.make(resolved: fresh, args: args) }
+        if let media = currentCastStream(now: now).flatMap({ CastMedia.make(resolved: $0, args: args) }) { return media }
         // An advance reconciles BEFORE its own resolve lands, so at this point `state` still carries
-        // the outgoing video's stream. Joining the walk this player is already making is free;
-        // opening a second, FORCED one would race it onto the manual-retry lane and hand the 30 s
-        // minimum interval a reason to refuse the cast of a video that is resolving fine.
+        // the outgoing video's stream. Joining the walk this player is already making is free.
         await resolveTask?.value
-        if let fresh = currentCastStream(now: now) { return CastMedia.make(resolved: fresh, args: args) }
+        if let media = currentCastStream(now: now).flatMap({ CastMedia.make(resolved: $0, args: args) }) { return media }
+        if case .embed = state { return nil }
         do {
-            let resolved = try await resolver.resolve(args.videoId, purpose: .player, kind: .player,
-                                                      sourceChannelId: args.channelId, forceRefresh: true)
+            let resolved = try await resolver.resolve(args.videoId, purpose: .cast, kind: .player,
+                                                      sourceChannelId: args.channelId, forceRefresh: false,
+                                                      requiresMuxed: true)
             return CastMedia.make(resolved: resolved, args: args)
         } catch {
             // The user-visible collapse to one banner is deliberate (a cooldown and a receiver
@@ -639,11 +657,11 @@ extension StreamState {
             #if DEBUG
             print("PlayerViewModel: cast resolve failed for \(args.videoId): \(error)")
             #endif
-            // A refusal is not a dead stream: a limiter cooldown, a bot check or a transient
-            // failure all leave the URL the phone is playing right now perfectly castable, and
-            // near-expiry is a reason to prefer a fresher one, never a reason to cast nothing.
-            // With no stream of ours at all (the embed rung, a resolve that never landed) there is
-            // nothing to fall back to and the banner is the honest answer.
+            // A refusal is not a dead stream: a cooldown, a bot check or a transient failure all
+            // leave a PROGRESSIVE stream the phone is playing right now perfectly castable, and
+            // near-expiry is a reason to prefer a fresher one, never a reason to cast nothing. A
+            // manifest on screen is no fallback (`CastMedia.make` refuses it), and with no stream of
+            // ours at all there is nothing either: nil, and the banner is the honest answer.
             // ponytail: a refusal with no stream for THIS video yet still banners -- reachable when
             // a cast is refused for a video whose own resolve also failed. Closing it would mean
             // giving the cast its own limiter lane, which is a rate-limit decision, not this one.
@@ -821,6 +839,8 @@ extension StreamState {
             if let device = cast.lastLoadFailure?.device {
                 banner = BannerMessage(text: String(format: String(localized: "cast_error_format"), device))
             }
+            // A PLAYBACK failure carries where the TV got to; a load failure resumes in place.
+            let position = cast.lastLoadFailure?.position
             cast.lastLoadFailure = nil
             // `startCast` pauses the local player before the load, so without this the user taps
             // Cast, gets a toast, and their video has silently stopped on the phone too. A no-op
@@ -831,7 +851,7 @@ extension StreamState {
             // reachable off screen -- where it played audio under whatever tab the user is actually
             // on. Same consumed-once flag as its two siblings.
             droppedWhilePaused = pausedForCast && !resume
-            resumeAfterCast(at: nil, resume: resume)
+            resumeAfterCast(at: position, resume: resume)
             // Nothing of ours reached the receiver, so this screen owns nothing -- and holding a
             // spent claim would both block its own next cast and keep every other screen out.
             cast.finishClaim(videoId, owner: castOwner)
@@ -923,11 +943,9 @@ extension StreamState {
         // WHO hands back at all, and WHICH position, are `CastOwnership.decide` and
         // `CastController.receiverPosition(for:)`; this only performs it.
         //
-        // Never for a LIVE stream. `CastController.load` deliberately leaves `startTime` at
-        // the live edge for live media, so the receiver's sampled `approximateStreamPosition` is a
-        // number from its own timeline that means nothing on ours -- seeking to it lands the local
-        // player at an unrelated point or the DVR edge. Live resumes where live always resumes.
-        if let position, position > 0, position.isFinite, !state.isLive {
+        // The receiver only ever plays the muxed VOD MP4 (`CastMedia.make`), so its position is
+        // always on this video's own timeline.
+        if let position, position > 0, position.isFinite {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
             currentTime = position
         }

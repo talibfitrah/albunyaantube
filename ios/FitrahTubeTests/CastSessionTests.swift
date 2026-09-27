@@ -1,5 +1,6 @@
 import AVFoundation
 import Foundation
+import GoogleCast
 import Testing
 @testable import FitrahTube
 
@@ -675,24 +676,115 @@ struct CastSessionTests {
         #expect(cast.receiverPosition(for: "other-video", owner: Self.owner) == nil)
     }
 
+    // MARK: - The receiver's own verdict (GCKRemoteMediaClientListener)
+
+    private static let ourURL = URL(string: "https://127.0.0.1:9/ours.mp4")!
+    private static var ourClaim: CastClaim { CastClaim(videoId: claimed, owner: owner) }
+
+    private func update(_ state: GCKMediaPlayerState, _ reason: GCKMediaPlayerIdleReason = .none,
+                        url: URL? = ourURL, at position: TimeInterval = 0) -> CastController.ReceiverUpdate {
+        CastController.ReceiverUpdate(playerState: state, idleReason: reason, contentURL: url, position: position)
+    }
+
+    /// A receiver can ACCEPT a load it then cannot play: the request completes and only the media
+    /// status says IDLE/ERROR (the rung-1 manifest on a real Chromecast, silently). Same banner as a
+    /// rejected load, once per load.
+    @Test func aReceiverErrorAfterTheLoadCompletedRaisesTheCastBannerOnce() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        let request = GCKRequest()
+        cast.loadRequest = request
+        cast.recordLoad(Self.claimed, owner: Self.owner, contentURL: Self.ourURL)
+        cast.requestDidComplete(request)
+        cast.receiverDidUpdate(update(.idle, .finished))
+        #expect(cast.lastLoadFailure == nil, "a video that ended is not a failure")
+        cast.receiverDidUpdate(update(.idle, .error))
+        let failure = cast.lastLoadFailure
+        #expect(failure?.claim == Self.ourClaim)
+        #expect(failure?.position == nil, "it never played: resume the phone where it stopped")
+        #expect(cast.loadedClaim == nil)
+        cast.receiverDidUpdate(update(.idle, .error))
+        #expect(cast.lastLoadFailure == failure, "the receiver repeats its status; one load, one banner")
+    }
+
+    /// Cubic P1: while the load request is in flight, ITS callback owns the verdict. A status error
+    /// that lands first used to spend `loadedClaim`, so the callback then reported a claimless
+    /// failure that `decide` reads as not ours: phone paused, claim held, no banner.
+    @Test func aReceiverErrorWhileTheLoadIsInFlightLeavesTheVerdictToItsCallback() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        let request = GCKRequest()
+        cast.loadRequest = request
+        cast.recordLoad(Self.claimed, owner: Self.owner, contentURL: Self.ourURL)
+        cast.receiverDidUpdate(update(.idle, .error))
+        #expect(cast.lastLoadFailure == nil)
+        cast.request(request, didFailWithError: GCKError(code: .unknown))
+        #expect(cast.lastLoadFailure?.claim == Self.ourClaim)
+    }
+
+    /// Cubic P2: once the receiver has PLAYED our load, an error is a playback failure, not a load
+    /// failure -- the phone takes over from where the TV got to.
+    @Test func aReceiverErrorAfterPlayingHandsBackAtTheReceiversLastPosition() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        cast.recordLoad(Self.claimed, owner: Self.owner, contentURL: Self.ourURL)
+        cast.receiverDidUpdate(update(.playing, at: 42))
+        #expect(cast.receiverState == .playing)
+        cast.receiverDidUpdate(update(.idle, .error, at: 0))
+        #expect(cast.lastLoadFailure?.claim == Self.ourClaim)
+        #expect(cast.lastLoadFailure?.position == 42)
+    }
+
+    /// Cubic P2: another sender's media is not ours -- its error must not raise our banner, and its
+    /// playing state is not ours either.
+    @Test func anotherSendersMediaNeverSpeaksForOurLoad() {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        cast.recordLoad(Self.claimed, owner: Self.owner, contentURL: Self.ourURL)
+        let theirs = URL(string: "https://127.0.0.1:9/theirs.mp4")!
+        cast.receiverDidUpdate(update(.playing, url: theirs, at: 10))
+        #expect(cast.receiverState == .unknown)
+        cast.receiverDidUpdate(update(.idle, .error, url: theirs))
+        #expect(cast.lastLoadFailure == nil)
+        #expect(cast.loadedClaim == Self.ourClaim)
+    }
+
+    /// The SDK's status, mapped: what the controller matches on (the URL WE loaded, the position).
+    @Test func theReceiverStatusMapsItsContentURLAndPosition() {
+        let info = GCKMediaInformationBuilder(contentURL: Self.ourURL).build()
+        let mapped = CastController.receiverUpdate(GCKMediaStatus(sessionID: 7, mediaInformation: info))
+        #expect(mapped.contentURL == Self.ourURL)
+        #expect(CastController.receiverUpdate(nil) == update(.unknown, .none, url: nil, at: 0))
+    }
+
     // MARK: - R4-1: the cast resolve is not a second forced walk
 
     /// `castMedia()` forced a `.player`-lane resolve on every cast, and that lane's 30 s minimum
     /// interval turns any second attempt inside the window into `.cooldown` — a false "Couldn't
-    /// play on {TV}" for a URL the phone is playing right now. The receiver fetches from its own
-    /// IP either way, so a fresh resolve buys nothing there: cast what is already resolved, and
-    /// walk the network only when there is nothing usable or it is about to expire.
-    @Test func castReResolvesOnlyWhenTheCurrentStreamIsMissingOrNearExpiry() async {
-        for (expiresIn, expectedCalls) in [(3600.0, 1), (120.0, 2)] {
-            let resolver = RecordingResolver(.hls)
-            resolver.expiresIn = expiresIn
-            let vm = makeCastModel(resolver)
-            await vm.open()
-            #expect(resolver.calls.count == 1)
-            let media = await vm.castMedia()
-            #expect(media != nil)
-            #expect(resolver.calls.count == expectedCalls,
-                    "expiring in \(expiresIn)s: expected \(expectedCalls) resolve(s)")
+    /// play on {TV}" for a URL the phone is playing right now. A castable (progressive) stream on
+    /// screen is cast as is unless it is about to expire. A manifest on screen is never castable
+    /// (`CastMediaTests.anHLSManifestIsNeverCastable`), so the cast walks the muxed itag-18 rung —
+    /// NOT forced, so the limiter's `.player` interval cannot refuse it right after the phone's own
+    /// resolve (`RateLimitedResolver` gates forced and `.prefetch` walks only).
+    @Test(arguments: [(.progressive, 3600, 1), (.progressive, 120, 2), (.hls, 3600, 2)]
+          as [(RecordingResolver.Outcome, TimeInterval, Int)])
+    func castReResolvesOnlyWhenTheCurrentStreamIsMissingNearExpiryOrAManifest(
+        onScreen: RecordingResolver.Outcome, expiresIn: TimeInterval, expectedCalls: Int
+    ) async {
+        let resolver = RecordingResolver(onScreen)
+        resolver.expiresIn = expiresIn
+        let vm = makeCastModel(resolver)
+        await vm.open()
+        #expect(resolver.calls.count == 1)
+        let media = await vm.castMedia()
+        #expect(media != nil, "the receiver is only ever handed the muxed MP4 (a manifest makes nil)")
+        #expect(resolver.calls.count == expectedCalls)
+        if expectedCalls == 2 {
+            #expect(resolver.calls.last?.requiresMuxed == true)
+            #expect(resolver.calls.last?.forceRefresh == false)
+            // `.cast`: a bot check on the cast's walk fails the cast only and never arms the
+            // global cooldown over the phone's own playback (`Purpose.cast`).
+            #expect(resolver.calls.last?.purpose == .cast)
         }
     }
 
@@ -708,12 +800,12 @@ struct CastSessionTests {
     func aRefusedCastResolveFallsBackOnlyToAStreamThatOutlivesTheVideo(
         durationSeconds: Int?, expectMedia: Bool
     ) async {
-        let resolver = RecordingResolver(.hls)
+        let resolver = RecordingResolver(.progressive)
         resolver.expiresIn = 120
         let vm = makeCastModel(resolver, args: PlayerArgs(videoId: Self.claimed,
                                                           durationSeconds: durationSeconds))
         await vm.open()
-        resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
+        resolver.muxedOutcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
         let media = await vm.castMedia()
         #expect(resolver.calls.count == 2)
         #expect((media != nil) == expectMedia,
@@ -747,14 +839,14 @@ struct CastSessionTests {
     /// `cast_error_format` banner, and the spent claim dropped so this screen can cast again.
     @Test func aDoomedNearExpiryCastKeepsThePhonePlayingAndTakesTheBannerPath() async {
         let cast = CastController()
-        let resolver = RecordingResolver(.hls)
+        let resolver = RecordingResolver(.progressive)
         resolver.expiresIn = 120
         let vm = makeCastModel(resolver, cast: cast,
                                args: PlayerArgs(videoId: Self.claimed, durationSeconds: 600))
         vm.currentPlayer = AVPlayer()
         cast.sessionDidBegin(deviceName: "Living Room TV")
         await vm.open()
-        resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
+        resolver.muxedOutcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
 
         vm.reconcile(.videoStarted)
         await resolver.waitUntilCalled(count: 2)
@@ -773,6 +865,26 @@ struct CastSessionTests {
         #expect(cast.castingClaim?.videoId == nil)
     }
 
+    /// Cubic P2 end to end: a failure the receiver reports AFTER playing carries the TV's position,
+    /// and the hand-back seeks the phone there instead of back to where it paused.
+    @Test func aPlaybackFailureResumesThePhoneAtTheReceiversPosition() async {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.progressive), cast: cast,
+                               args: PlayerArgs(videoId: Self.claimed, durationSeconds: 600))
+        vm.currentPlayer = AVPlayer()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+        cast.lastLoadFailure = CastLoadFailure(device: "Living Room TV",
+                                               claim: CastClaim(videoId: Self.claimed, owner: vm.castOwner),
+                                               position: 42)
+        vm.reconcile(.loadFailed)
+        #expect(vm.currentTime == 42)
+        #expect(vm.pausedForCast == false)
+    }
+
     /// The other direction: a refusal with nothing castable behind it still surfaces. The embed
     /// rung has no stream URL at all (no YouTube hand-off, ever), so there is nothing to fall back
     /// to and the banner is the honest answer.
@@ -780,7 +892,20 @@ struct CastSessionTests {
         let resolver = RecordingResolver(.embed)
         let vm = makeCastModel(resolver)
         await vm.open()
-        resolver.outcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
+        #expect(await vm.castMedia() == nil)
+        // Cubic P1: the phone's walk only reaches `.embed` once the android rung has failed, and a
+        // cast walk that re-POSTs it and fails again records a GLOBAL bot-check cooldown (1-24 h,
+        // every playback). Nothing is walked from the embed rung.
+        #expect(resolver.calls.count == 1)
+    }
+
+    /// A manifest on screen and a refused muxed walk: nothing castable, so nil and the banner --
+    /// never the manifest, which the receiver cannot play.
+    @Test func aManifestOnScreenWithARefusedMuxedWalkCastsNothing() async {
+        let resolver = RecordingResolver(.hls)
+        let vm = makeCastModel(resolver)
+        await vm.open()
+        resolver.muxedOutcome = .failure(.cooldown(until: Date().addingTimeInterval(30)))
         #expect(await vm.castMedia() == nil)
     }
 
@@ -798,6 +923,8 @@ struct CastSessionTests {
                                queue: [String] = []) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(
             defaults: UserDefaults(suiteName: "CastSessionTests.\(UUID().uuidString)")!)
+        // The real muxed walk answers the itag-18 rung (or throws); most rigs here open on rung 1.
+        if resolver.muxedOutcome == nil { resolver.muxedOutcome = .progressive }
         return PlayerViewModel(resolver: resolver, settings: settings, args: args,
                                queueSource: queue.isEmpty
                                    ? nil : FakeQueueSource(pages: [(ids: queue, next: nil)]),
@@ -1215,10 +1342,10 @@ struct CastSessionTests {
         #expect(vm.pausedForCast, "and pause the phone it cast from")
     }
 
-    /// R7-18: `CastController.load` leaves `startTime` at the live edge for live media, so the
-    /// receiver's sampled `approximateStreamPosition` is a number off its own timeline. Seeking the
-    /// local live player to it lands at an unrelated point or the DVR edge.
-    @Test func aLiveHandBackResumesAtTheLiveEdgeAndNeverAtTheReceiversPosition() async {
+    /// R7-18's live-edge guard went with live casting: the receiver only ever plays the muxed VOD
+    /// MP4 (`CastMedia.make`), so its position is always this video's own timeline -- including for
+    /// a stream the phone flags live (InnerTubeKit reads `isLiveContent` for an ENDED broadcast).
+    @Test func aHandBackSeeksToTheReceiversPositionEvenWhenThePhoneFlagsTheStreamLive() async {
         let vm = makeCastModel(RecordingResolver(.liveHLS))
         await vm.open()
         vm.currentPlayer = phonePlayer(vm)
@@ -1226,7 +1353,7 @@ struct CastSessionTests {
 
         vm.pauseForCast()
         vm.resumeAfterCast(at: 512)
-        #expect(vm.currentTime == 0, "a receiver's absolute position means nothing on a live timeline")
+        #expect(vm.currentTime == 512)
         #expect(vm.pausedForCast == false, "the resume itself still happens")
     }
 

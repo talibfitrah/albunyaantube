@@ -23,9 +23,9 @@ import SwiftUI
 /// belongs to -- the whole (videoId, owner) pair, since two screens can be up on the same video and
 /// the video half alone names neither of them; every decision is gated on it.
 ///
-/// `NSObject` subclass because `GCKSessionManagerListener`, `GCKRequestDelegate` and
-/// `GCKUIMiniMediaControlsViewControllerDelegate` all refine `NSObjectProtocol`. Every one of
-/// those three delivers on the main thread empirically (and `PlayerHostView.Coordinator` already
+/// `NSObject` subclass because `GCKSessionManagerListener`, `GCKRequestDelegate`,
+/// `GCKRemoteMediaClientListener` and `GCKUIMiniMediaControlsViewControllerDelegate` all refine
+/// `NSObjectProtocol`. Every one of those four delivers on the main thread empirically (and `PlayerHostView.Coordinator` already
 /// makes the same bet for AVFoundation's) -- but the 4.8.6 headers do NOT document it for any of
 /// them, so the `assumeIsolated` hops below are a bet, not a quoted guarantee. They trap rather
 /// than race if it is ever wrong.
@@ -102,7 +102,9 @@ import SwiftUI
 
     /// Held only until its delegate callback lands -- `GCKRequest.delegate` is weak and the
     /// request is the only thing carrying the load's outcome.
-    private var loadRequest: GCKRequest?
+    /// Not private: `CastSessionTests` holds a `GCKRequest` here to drive the delegate callbacks
+    /// against the status listener in both orders.
+    var loadRequest: GCKRequest?
 
     /// The mini controller most recently handed to a representable. Identity only (an
     /// `ObjectIdentifier` is `Sendable`; the view controller is not, so it cannot cross the
@@ -290,10 +292,60 @@ import SwiftUI
         // `.onChange` has not run yet and needs both. `finishClaim(_:)` clears them.
     }
 
+    /// The receiver's own verdict, from `GCKRemoteMediaClientListener`. A receiver can ACCEPT a
+    /// load it then cannot play: the request completes and only the media status says IDLE/ERROR,
+    /// so without this the failure was silent. Once per load: a failure spends `loadedClaim`, and
+    /// the receiver's repeats of the same status find nothing of ours left to fail.
+    /// One `GCKMediaStatus`, as the plain values `receiverDidUpdate` decides on (`GCKMediaStatus`
+    /// is a non-`Sendable` ObjC object that cannot cross the listener's actor hop).
+    nonisolated struct ReceiverUpdate: Sendable, Equatable {
+        var playerState: GCKMediaPlayerState
+        var idleReason: GCKMediaPlayerIdleReason
+        var contentURL: URL?
+        var position: TimeInterval
+    }
+
+    nonisolated static func receiverUpdate(_ status: GCKMediaStatus?) -> ReceiverUpdate {
+        ReceiverUpdate(playerState: status?.playerState ?? .unknown, idleReason: status?.idleReason ?? .none,
+                       contentURL: status?.mediaInformation?.contentURL, position: status?.streamPosition ?? 0)
+    }
+
+    /// What the receiver last said about OUR load; `.unknown` until our media reports. Read by the
+    /// DEBUG route probe (the device check's proof that the TV really played).
+    private(set) var receiverState: GCKMediaPlayerState = .unknown
+    /// The URL our load handed the receiver: its status is ours only when it names this. nil for an
+    /// `.adopt`ed session (no load of ours), whose status is then never read.
+    private var loadedContentURL: URL?
+    /// Where the receiver last reported PLAYING our load; nil until it has played at all.
+    private var playedPosition: TimeInterval?
+
+    /// The receiver's own verdict, from `GCKRemoteMediaClientListener`. A receiver can ACCEPT a load
+    /// it then cannot play: the request completes and only the media status says IDLE/ERROR, so
+    /// without this the failure was silent.
+    ///
+    /// - Only OUR media counts: another sender's content on the receiver says nothing about ours.
+    /// - While our load request is in flight its own callback owns the verdict (`finishLoad`
+    ///   reports with `loadedClaim`, which spending it here first would turn into a claimless,
+    ///   silent failure).
+    /// - Before our load has played, an error is a LOAD failure (the phone resumes where it
+    ///   paused); after, a PLAYBACK failure carrying where the TV got to.
+    /// - Once per load: a failure spends `loadedClaim`, so the receiver's repeats find nothing.
+    func receiverDidUpdate(_ update: ReceiverUpdate) {
+        guard let loadedClaim, let loadedContentURL, update.contentURL == loadedContentURL else { return }
+        receiverState = update.playerState
+        switch update.playerState {
+        case .playing:
+            playedPosition = update.position
+        case .idle where update.idleReason == .error && loadRequest == nil:
+            reportLoadFailure(claim: loadedClaim, position: playedPosition)
+        default:
+            break
+        }
+    }
+
     // MARK: - Load
 
-    /// Session start/resume's load (spec §10): autoplay, at the local player's position. Live
-    /// streams keep the builder's default `startTime` (`kGCKInvalidTimeInterval` = live edge).
+    /// Session start/resume's load (spec §10): autoplay, at the local player's position.
     func load(_ media: CastMediaInfo, videoId: String, owner: UUID, at position: TimeInterval) {
         let claim = CastClaim(videoId: videoId, owner: owner)
         // `sharedInstance()` raises if no context was ever created, so every SDK read in this type
@@ -317,18 +369,21 @@ import SwiftUI
         let builder = GCKMediaLoadRequestDataBuilder()
         builder.mediaInformation = CastMedia.gckMediaInformation(from: media)
         builder.autoplay = true
-        if media.streamType == .buffered, position > 0 { builder.startTime = position }
+        if position > 0 { builder.startTime = position }
         let request = client.loadMedia(with: builder.build())
         request.delegate = self
         loadRequest = request
-        recordLoad(videoId, owner: owner)
+        recordLoad(videoId, owner: owner, contentURL: media.contentURL)
     }
 
     /// What `load()` records once the request is on the wire -- and the only way `CastSessionTests`
     /// can set it, since `load()` itself needs a `GCKCastContext` no test can create. Same seam
     /// shape as the session callbacks above.
-    func recordLoad(_ videoId: String, owner: UUID) {
+    func recordLoad(_ videoId: String, owner: UUID, contentURL: URL? = nil) {
         loadedClaim = CastClaim(videoId: videoId, owner: owner)
+        loadedContentURL = contentURL
+        receiverState = .unknown
+        playedPosition = nil
     }
 
     private func cancelLoadRequest() {
@@ -377,7 +432,7 @@ import SwiftUI
     /// rung, gets no media and lands here — clearing `loadedClaim` unconditionally would erase A's
     /// presence on the receiver, so A returning would re-resolve and reload it at the phone's stale
     /// `currentTime` and the hand-back would lose the receiver's position.
-    func reportLoadFailure(claim: CastClaim?) {
+    func reportLoadFailure(claim: CastClaim?, position: TimeInterval? = nil) {
         // Nothing of OURS ended up on the receiver -- so the position sampled at the next
         // disconnect belongs to whatever the receiver kept playing, and the screen whose load
         // failed must not reclaim on the strength of a load that never landed.
@@ -386,7 +441,7 @@ import SwiftUI
         // skips it for a nil name -- "Couldn't play on " is not worth saying); RELEASING the claim
         // and the pause is not, and a silent failure leaves the phone paused with the stamp held
         // for the rest of the session.
-        lastLoadFailure = CastLoadFailure(device: currentDeviceLabel(), claim: claim)
+        lastLoadFailure = CastLoadFailure(device: currentDeviceLabel(), claim: claim, position: position)
     }
 
     /// What to call the receiver in `cast_error_format`, or nil when no session is left to ask.
@@ -414,6 +469,7 @@ extension CastController: GCKSessionManagerListener {
         // Read BEFORE the actor hop: `GCKSession` is a non-`Sendable` ObjC object, so carrying it
         // into the closure is a sending violation. Only the `String?` crosses.
         let name = session.device.friendlyName
+        session.remoteMediaClient?.add(self)
         MainActor.assumeIsolated { sessionDidBegin(deviceName: name) }
     }
 
@@ -428,6 +484,7 @@ extension CastController: GCKSessionManagerListener {
     /// are. Flipping `isSessionActive` there would fire the hand-back on every Home press.
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didResumeSession session: GCKSession) {
         let name = session.device.friendlyName
+        session.remoteMediaClient?.add(self)
         MainActor.assumeIsolated { sessionDidResume(deviceName: name) }
     }
 
@@ -441,6 +498,15 @@ extension CastController: GCKSessionManagerListener {
     nonisolated func sessionManager(_ sessionManager: GCKSessionManager, didEnd session: GCKSession,
                                     withError error: (any Error)?) {
         MainActor.assumeIsolated { sessionDidEnd() }
+    }
+}
+
+// MARK: - Receiver media status
+
+extension CastController: GCKRemoteMediaClientListener {
+    nonisolated func remoteMediaClient(_ client: GCKRemoteMediaClient, didUpdate mediaStatus: GCKMediaStatus?) {
+        let update = Self.receiverUpdate(mediaStatus)
+        MainActor.assumeIsolated { receiverDidUpdate(update) }
     }
 }
 

@@ -49,6 +49,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         get { lock.withLock { _outcome } }
         set { lock.withLock { _outcome = newValue } }
     }
+    /// What a `requiresMuxed` walk answers, when set (the cast path's itag-18 walk); nil = `outcome`.
+    private var _muxedOutcome: Outcome?
+    var muxedOutcome: Outcome? {
+        get { lock.withLock { _muxedOutcome } }
+        set { lock.withLock { _muxedOutcome = newValue } }
+    }
     var expiresIn: TimeInterval {
         get { lock.withLock { _expiresIn } }
         set { lock.withLock { _expiresIn = newValue } }
@@ -99,6 +105,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
             if kind == .prefetch, _prefetchRefusals.contains(videoId) {
                 return .failure(.cooldown(until: Date().addingTimeInterval(30)))
             }
+            if requiresMuxed, let _muxedOutcome { return _muxedOutcome }
             return _outcomes[videoId] ?? _outcome
         }
         // ponytail: a 1 ms poll, same as `waitUntilCalled` above -- a continuation registry would

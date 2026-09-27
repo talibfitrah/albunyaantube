@@ -82,10 +82,18 @@ final class DeviceChecks: XCTestCase {
         XCTAssertTrue(cast.waitForExistence(timeout: 20), "no cast button: castAvailable is false")
         cast.tap()
         let device = app.staticTexts.matching(NSPredicate(format: "label CONTAINS %@", receiver)).firstMatch
-        XCTAssertTrue(waitAllowingLocalNetwork(for: device, timeout: 60), "\(receiver) never appeared in the picker\n\(app.debugDescription)")
+        XCTAssertTrue(waitAllowingLocalNetwork(for: device, in: app, reopen: cast, timeout: 60),
+                      "\(receiver) never appeared in the picker\n\(app.debugDescription)")
         device.tap()
         XCTAssertTrue(wait(cast, valueIs: receiver, timeout: 45), "never connected: cast value \(String(describing: cast.value))")
         print("DEVICECHECK CAST-CONNECTED receiver=\(receiver) at=\(Date())")
+        // The receiver's own word for OUR load (the DEBUG probe's `cast=`), not just a connection:
+        // it also proves the status listener is registered and matches our media.
+        let probe = app.descendants(matching: .any)["player.debugRoute"]
+        let playing = expectation(for: NSPredicate(format: "value CONTAINS 'cast=playing'"), evaluatedWith: probe)
+        XCTAssertEqual(XCTWaiter().wait(for: [playing], timeout: 45), .completed,
+                       "the receiver never reported PLAYING our load: \(probe.value ?? "nil")")
+        print("DEVICECHECK RECEIVER-PLAYING probe=\(probe.value ?? "nil") at=\(Date())")
         Thread.sleep(forTimeInterval: 45)
         cast.tap()
         let stop = app.buttons.matching(NSPredicate(format: "label ==[c] 'Stop Casting'")).firstMatch
@@ -224,16 +232,33 @@ final class DeviceChecks: XCTestCase {
         return button
     }
 
-    /// First cast-button tap starts discovery, which raises iOS's local-network prompt once.
-    private func waitAllowingLocalNetwork(for element: XCUIElement, timeout: TimeInterval) -> Bool {
+    /// First cast-button tap starts discovery, which asks for local-network access once: the Cast
+    /// SDK's own explainer (`LNAOKButton`) first, then iOS's alert. That flow closes the device
+    /// picker, so `reopen` is tapped once after the prompts to bring it back.
+    private func waitAllowingLocalNetwork(for element: XCUIElement, in app: XCUIApplication,
+                                          reopen: XCUIElement, timeout: TimeInterval) -> Bool {
         let deadline = Date().addingTimeInterval(timeout)
+        var prompted: Date?, reopened = false
         while Date() < deadline {
             if element.exists { return true }
+            let explainer = app.buttons["LNAOKButton"]
+            if explainer.exists {
+                print("DEVICECHECK Cast SDK local-network explainer -> OK")
+                explainer.tap()
+                prompted = Date()
+            }
             let alert = springboard.alerts.firstMatch
             if alert.exists {
                 let allow = alert.buttons.matching(NSPredicate(format: "label IN %@", ["Allow", "Sta toe", "Toestaan", "OK"])).firstMatch
                 print("DEVICECHECK springboard alert: \(alert.label) -> tapping \(allow.exists ? allow.label : "button 1")")
                 (allow.exists ? allow : alert.buttons.element(boundBy: 1)).tap()
+                prompted = Date()
+            }
+            // Only once the picker is gone: while it is up it covers the button.
+            if let prompted, !reopened, Date().timeIntervalSince(prompted) > 5, reopen.isHittable {
+                print("DEVICECHECK reopening the device picker after the permission prompts")
+                reopen.tap()
+                reopened = true
             }
             Thread.sleep(forTimeInterval: 1)
         }

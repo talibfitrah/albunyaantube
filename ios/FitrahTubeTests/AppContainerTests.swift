@@ -1,4 +1,5 @@
 import Foundation
+import InnerTubeKit
 import SwiftData
 import Testing
 import UIKit
@@ -125,7 +126,29 @@ struct AppContainerTests {
         let container = AppContainer.fake()
         #expect(container.gateTransport is FixedStatusTransport,
                 "a fake container must not run the real gate client against the API base URL")
-        #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
+        #expect(await container.offlineGate.answer("xc7keR2piUM", channelId: nil) == .unreachable)
+    }
+
+    /// Offline review P1: the manager's gate closure dropped the channel, so `begin`, `retry` and
+    /// the sweep never asked about it. Over a transport where the channel is pulled (410) and the
+    /// video only reaches the catalog through it (404), the closure must answer `.gone` for a
+    /// row that recorded the channel, and the video-only answer for one that did not.
+    @Test func theManagersGateClosureAsksAboutTheRowsChannel() async {
+        struct ChannelPulled: HTTPTransport {
+            func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+                let pulled = request.method == "HEAD"
+                let body = #"{"timestamp":"t","status":404,"error":"Not Found","message":"m","path":"p"}"#
+                return HTTPResponse(status: pulled ? 410 : 404, headers: ["Content-Type": "application/json"],
+                                    body: Data((pulled ? "" : body).utf8))
+            }
+        }
+        let container = AppContainer(catalog: FakeCatalogClient(),
+                                     userDefaults: UserDefaults(suiteName: "fitrahtube.offline-gate-closure") ?? .standard,
+                                     modelContainer: AppContainer.makeModelContainer(inMemory: true),
+                                     apiBaseURL: URL(string: "https://api.fitrah.test/")!,
+                                     gateTransport: ChannelPulled())
+        #expect(await container.offlineGateAnswer("xc7keR2piUM", "UCmMcOjsVehVlEOteyrhjI2Q") == .gone)
+        #expect(await container.offlineGateAnswer("xc7keR2piUM", nil) == .allowed)
     }
 
     /// R5-1 again, for the account stack: a fixture container must make ZERO account requests. The
@@ -428,8 +451,8 @@ struct AppContainerTests {
     /// Its rows live in memory, so its files go to the temporary directory, never the real library.
     @Test func theDebugOfflineAllowedLectureIsSaveableOverTheRealStack() async {
         let container = AppContainer.fake(offlineAllowedVideoId: "nhaGO__rxHQ")
-        #expect(await container.offlineGate.answer("nhaGO__rxHQ") == .allowed)
-        #expect(await container.offlineGate.answer("xc7keR2piUM") == .unreachable)
+        #expect(await container.offlineGate.answer("nhaGO__rxHQ", channelId: nil) == .allowed)
+        #expect(await container.offlineGate.answer("xc7keR2piUM", channelId: nil) == .unreachable)
         #expect(container.offlineResolver is LiveStreamResolver)
         #expect(container.offlineBase == URL.temporaryDirectory)
         #expect(AppContainer.fake().offlineBase == URL.applicationSupportDirectory)

@@ -62,9 +62,9 @@ public actor StreamResolver {
         self.minPostSpacing = minPostSpacing
     }
 
-    /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16). Reserved for
-    ///   caller-side rate-limiter lane coordination (`ExtractionRateLimiter`); it does NOT alter
-    ///   resolver behaviour today — kept in the signature to avoid a later break when it's wired.
+    /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16), for caller-side
+    ///   rate-limiter lane coordination (`ExtractionRateLimiter`). It alters resolver behaviour in
+    ///   ONE place: a `.cast` muxed walk never records the global bot-check cooldown (`Purpose.cast`).
     /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
     ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
     ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
@@ -83,9 +83,11 @@ public actor StreamResolver {
             // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
             //   `forceRefresh` through the registry would cancel the user's own playback resolve
             //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also
-            //   means two concurrent muxed walks of one id would both POST, but `OfflineManager`
-            //   is serial (one active save), so that pair cannot form.
-            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: true)
+            //   means two concurrent muxed walks of one id both POST: `OfflineManager` is serial
+            //   (one active save), but a save and a cast (`PlayerViewModel.castMedia`) can overlap
+            //   -- two android POSTs, accepted, since neither result is cached.
+            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: true,
+                                            recordsBotCheck: purpose != .cast)
         }
 
         if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {
@@ -143,7 +145,7 @@ public actor StreamResolver {
     }
 
     private func performResolve(
-        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, recordsBotCheck: Bool = true
     ) async throws -> Resolved {
         // Self-gate on the persisted, restart-surviving escalating cooldown (§6.3): if a prior
         // bot-check tripped it, suppress all API traffic until it elapses rather than hammering
@@ -170,7 +172,7 @@ public actor StreamResolver {
                     try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
                 }
             } catch let error as ExtractionError where error.terminal {
-                if sawBotCheck { await sessionStore.recordBotCheck() }
+                if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
                 throw error
             } catch is CancellationError {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
@@ -191,7 +193,7 @@ public actor StreamResolver {
                 continue
             }
         }
-        if sawBotCheck { await sessionStore.recordBotCheck() }
+        if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }
 

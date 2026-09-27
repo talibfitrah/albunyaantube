@@ -1,4 +1,5 @@
 import Foundation
+import GoogleCast
 import InnerTubeKit
 import Testing
 @testable import FitrahTube
@@ -23,17 +24,11 @@ struct CastMediaTests {
     private let hlsURL = URL(string: "https://manifest.example/hls.m3u8")!
     private let progressiveURL = URL(string: "https://progressive.example/itag18.mp4")!
 
-    /// The rung-1 manifest: two tests below assert different field groups of this one value.
-    private var hlsMedia: CastMediaInfo? {
-        CastMedia.make(resolved: resolved(.hls(url: hlsURL, isLive: false, audioOnlyURL: nil,
-                                               captionTracks: [])), args: args)
-    }
-
-    @Test func anHLSStreamCastsWithTheHLSManifestContentType() throws {
-        let media = try #require(hlsMedia)
-        #expect(media.contentURL == hlsURL)
-        #expect(media.contentType == "application/x-mpegurl")
-        #expect(media.streamType == .buffered)
+    /// The receiver cannot play the rung-1 manifest (the evidence is on `CastMedia.make`).
+    @Test(arguments: [false, true])
+    func anHLSManifestIsNeverCastable(isLive: Bool) {
+        #expect(CastMedia.make(resolved: resolved(.hls(url: hlsURL, isLive: isLive, audioOnlyURL: nil,
+                                                       captionTracks: [])), args: args) == nil)
     }
 
     /// Rung 2 is the single muxed itag-18 progressive; the receiver needs the MP4 type, not HLS.
@@ -41,15 +36,18 @@ struct CastMediaTests {
         let media = try #require(CastMedia.make(resolved: resolved(
             .progressive(url: progressiveURL, label: "360p")), args: args))
         #expect(media.contentURL == progressiveURL)
-        #expect(media.contentType == "video/mp4")
-        #expect(media.streamType == .buffered)
     }
 
-    /// Liveness is the only thing this adds; the content type is the HLS test's above.
-    @Test func aLiveHLSStreamCastsAsALiveStream() throws {
+    /// The one SDK translation: the receiver is only ever told "a buffered MP4" -- the type and
+    /// stream kind the Default Media Receiver was proven to play.
+    @Test func theGCKMediaInformationIsABufferedMP4WithTheArgsMetadata() throws {
         let media = try #require(CastMedia.make(resolved: resolved(
-            .hls(url: hlsURL, isLive: true, audioOnlyURL: nil, captionTracks: [])), args: args))
-        #expect(media.streamType == .live)
+            .progressive(url: progressiveURL, label: "360p")), args: args))
+        let info = CastMedia.gckMediaInformation(from: media)
+        #expect(info.contentURL == progressiveURL)
+        #expect(info.contentType == "video/mp4")
+        #expect(info.streamType == .buffered)
+        #expect(info.metadata?.string(forKey: kGCKMetadataKeyTitle) == "Tafsir of Surah Al-Kahf")
     }
 
     /// The no-hand-off directive's cast-shaped edge: rung 3 plays inside a `WKWebView` pointed at
@@ -72,7 +70,8 @@ struct CastMediaTests {
     }
 
     @Test func theMetadataFieldsAreCarriedFromTheArgs() throws {
-        let media = try #require(hlsMedia)
+        let media = try #require(CastMedia.make(resolved: resolved(
+            .progressive(url: progressiveURL, label: "360p")), args: args))
         #expect(media.title == "Tafsir of Surah Al-Kahf")
         #expect(media.channelName == "Fixture Channel")
         #expect(media.thumbnailURL == URL(string: "https://i.example/thumb.jpg"))

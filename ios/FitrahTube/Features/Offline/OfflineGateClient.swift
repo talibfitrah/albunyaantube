@@ -2,19 +2,24 @@ import FitrahAPI
 import Foundation
 import InnerTubeKit
 
-/// Phase 3 Task 5, reconciliation note 3: the per-video `offlineAllowed` gate, read at save time
-/// with ONE `GET /api/v1/videos/{id}` per player open. Hand-written over `HTTPTransport` (the
-/// `PublicHeaders` shape, `X-Device-Id` included) because the generated client cannot decode the
-/// raw Firestore `Video` model that endpoint returns (contradiction 5, Timestamp objects) — this
-/// decodes ONLY `{youtubeId, offlineAllowed}` and ignores everything else.
+/// Phase 3 Task 5, reconciliation note 3: the per-video `offlineAllowed` gate — ONE
+/// `GET /api/v1/videos/{id}`, plus playback's own `HEAD /api/v1/channels/{id}` when a channel is
+/// known, run together. Hand-written over `HTTPTransport` (the `PublicHeaders` shape, `X-Device-Id`
+/// included) because the generated client cannot decode the raw Firestore `Video` model that
+/// endpoint returns (contradiction 5, Timestamp objects) — this decodes ONLY
+/// `{youtubeId, offlineAllowed}` and ignores everything else.
 ///
-/// Mapping (save-time fail-closed; sweep-time semantics live in `OfflineSweep.decide`):
-/// a 200 that IS this video's Video model (JSON content type + a matching `youtubeId`) reads its
-/// flag — true → `.allowed`, false or ABSENT → `.notAllowed` (the ruling's default-false —
-/// channel-sourced videos were never admin-flagged); 410, and a 404 carrying the BACKEND'S OWN
-/// error envelope, → `.gone` (left the catalog); anything else — 5xx, other 4xx, a 404 from anyone
-/// but the backend, transport error, a 200 that is not this video's model → `.unreachable`,
-/// NEVER `.gone`: a mistaken `.gone` mass-deletes the library at sweep time.
+/// The ruling (2026-09-27): offline MIRRORS playback — whatever playback's check lets play
+/// (`BackendAvailabilityGate`: only a 410 refuses) may be saved, and an admin's explicit
+/// `offlineAllowed=false` is the one extra block. So a backend 404 → `.allowed` (playback plays it:
+/// a video in the catalog only through an approved channel or playlist, or no public registry row);
+/// admins block by rejecting or archiving, which answers 410 → `.gone`, for the video or its channel.
+/// A 200 that IS this video's Video model (JSON content type + a matching `youtubeId`) reads its
+/// flag: an explicit false → `.notAllowed`; true, null or absent → `.allowed` (the backend serves
+/// the same effective value, `Video.allowsOffline()`). Unlike playback this is fail-CLOSED at save
+/// time: 5xx, other 4xx, a 404 from anyone but the backend, a transport error, a 200 that is not
+/// this video's model, or a channel probe that fails → `.unreachable`, NEVER `.gone` — the sweep
+/// keeps on `.unreachable`, and a mistaken `.gone` mass-deletes the library.
 nonisolated struct OfflineGateClient: Sendable {
     private let transport: HTTPTransport
     private let baseURL: URL
@@ -49,12 +54,11 @@ nonisolated struct OfflineGateClient: Sendable {
         var error: String?
     }
 
-    /// Cubic R5-2: a 404 is a catalog removal ONLY when the backend itself said so. A reverse
-    /// proxy, a CDN edge, or a deploy briefly serving a default vhost answers 404 for
-    /// `/api/v1/videos/*` too — and `sweep()` turns `.gone` into `deleteAll`: every saved file and
-    /// row, irreversibly, on the next launch or foreground. `ResourceNotFoundException` always
-    /// comes back as JSON carrying its own `status`/`error`; an HTML error page, an empty body, or
-    /// somebody else's JSON does not, and reads as `.unreachable` (keep, and retry next sweep).
+    /// Cubic R5-2: a 404 is an answer ONLY when the backend itself said so. A reverse proxy, a CDN
+    /// edge, or a deploy briefly serving a default vhost answers 404 for `/api/v1/videos/*` too.
+    /// `ResourceNotFoundException` always comes back as JSON carrying its own `status`/`error`; an
+    /// HTML error page, an empty body, or somebody else's JSON does not, and reads as
+    /// `.unreachable` (keep, and retry next sweep).
     private static func isBackendNotFound(_ response: HTTPResponse) -> Bool {
         guard isJSON(response),
               let envelope = try? JSONDecoder().decode(ErrorEnvelope.self, from: response.body) else { return false }
@@ -68,27 +72,57 @@ nonisolated struct OfflineGateClient: Sendable {
         }
     }
 
-    func answer(_ videoId: String) async -> GateAnswer {
+    /// `channelId`: the channel playback's own check asks about for this video (`PlayerArgs.channelId`,
+    /// stamped on the row as `OfflineItem.channelId`), nil when playback asks only about the video.
+    /// No default on purpose (review P1): every caller has to say which channel it means.
+    func answer(_ videoId: String, channelId: String?) async -> GateAnswer {
         #if DEBUG
         if videoId == offlineAllowedVideoId { return .allowed }
         #endif
+        // Both legs at once (review P3). Either one's 410 refuses; an explicit false blocks; a
+        // channel nobody could vouch for is no answer at all.
+        async let channel = channelAnswer(channelId)
+        async let video = videoAnswer(videoId)
+        let (channelVerdict, videoVerdict) = await (channel, video)
+        if channelVerdict == .gone || videoVerdict == .gone { return .gone }
+        if videoVerdict == .notAllowed { return .notAllowed }
+        return channelVerdict == .unreachable ? .unreachable : videoVerdict
+    }
+
+    /// Playback's own channel probe (`BackendAvailabilityGate`: HEAD, only a 410 refuses) — but
+    /// fail-CLOSED (review P2). Playback plays through a probe that errors, stalls or 5xxs; a Save
+    /// must not, so anything but 2xx/404/410 is `.unreachable`: Save hidden, and the sweep keeps.
+    private func channelAnswer(_ channelId: String?) async -> GateAnswer {
+        guard let channelId else { return .allowed }
+        let request = HTTPRequest(method: "HEAD", url: baseURL.appending(path: "api/v1/channels/\(channelId)"),
+                                  headers: ["X-Device-Id": deviceId.value], body: nil)
+        guard let response = try? await transport.send(request) else { return .unreachable }
+        switch response.status {
+        case 410: return .gone
+        case 200..<300, 404: return .allowed
+        default: return .unreachable
+        }
+    }
+
+    private func videoAnswer(_ videoId: String) async -> GateAnswer {
         let request = HTTPRequest(method: "GET", url: baseURL.appending(path: "api/v1/videos/\(videoId)"),
                                   headers: ["X-Device-Id": deviceId.value], body: nil)
         guard let response = try? await transport.send(request) else { return .unreachable }
         switch response.status {
         case 200:
             // Security r1 P0-1: `VideoDTO` decodes ANY JSON object, so `{}`, an auth envelope, a WAF
-            // block page or a captive portal's 200 all read as "the flag is absent" → `.notAllowed`
-            // → `deleteGateRevoked` → the sweep erases the library. The 404 leg's discipline applies
+            // block page or a captive portal's 200 would all read as a verdict — `.allowed` on no
+            // answer at all, or, carrying another video's `false`, `.notAllowed` →
+            // `deleteGateRevoked` → the sweep erases the library. The 404 leg's discipline applies
             // here too: the backend's own content type AND an affirmative marker that this body is
-            // the Video model FOR THE VIDEO WE ASKED ABOUT. Only then does an absent/false flag mean
+            // the Video model FOR THE VIDEO WE ASKED ABOUT. Only then does an explicit false mean
             // "no" — anything else is no answer at all.
             guard Self.isJSON(response),
                   let dto = try? JSONDecoder().decode(VideoDTO.self, from: response.body),
                   dto.youtubeId == videoId else { return .unreachable }
-            return dto.offlineAllowed == true ? .allowed : .notAllowed
+            return dto.offlineAllowed == false ? .notAllowed : .allowed
         case 404:
-            return Self.isBackendNotFound(response) ? .gone : .unreachable
+            return Self.isBackendNotFound(response) ? .allowed : .unreachable
         case 410:
             // No envelope check: `ContentGoneException` is the only thing that answers Gone for a
             // video URL — an edge that knows nothing about the resource answers 404, not 410.

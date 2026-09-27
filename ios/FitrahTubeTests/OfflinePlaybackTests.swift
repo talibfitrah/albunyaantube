@@ -208,7 +208,7 @@ struct OfflinePlaybackTests {
         OfflineManager(store: rig.store, engine: engine, resolver: RecordingResolver(.hls),
                        limiterCheck: { _ in .allowed }, wifiOnly: { false }, isOnCellular: { false },
                        baseDirectory: rig.base,
-                       gate: { id in gate.asked.append(id); return gate.answer },
+                       gate: { id, _ in gate.asked.append(id); return gate.answer },
                        now: { now },
                        downloadsEnabled: downloadsEnabled)
     }
@@ -449,7 +449,7 @@ struct OfflinePlaybackTests {
             // refusal case is a FAKES test (`OfflineManagerTests`
             // `aStartWhoseGateIsUnreachableParksTheRowInsteadOfWalking`) so it runs in every gate,
             // not only under OFFLINE_LIVE.
-            gate: { _ in .allowed }, now: { Date() })
+            gate: { _, _ in .allowed }, now: { Date() })
 
         await manager.save(videoId: Self.lectureVideoId, quality: "audio",
                            audioOnly: true, metadata: OfflineMetadata(title: "Lecture", channelName: nil, thumbnailUrl: nil))

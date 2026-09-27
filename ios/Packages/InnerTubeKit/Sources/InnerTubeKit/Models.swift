@@ -100,4 +100,8 @@ public enum ExtractionError: Error, Sendable, Equatable {
 public enum Purpose: Sendable {
     case player
     case prefetch
+    /// A cast's own muxed walk (`requiresMuxed`). Scoped to the cast: a bot check there fails the
+    /// cast only and never records the global cooldown -- from the phone's usual `.hls` the android
+    /// rung is untried, and a trip would lock out the phone's WORKING rung-1 playback for 1-24 h.
+    case cast
 }

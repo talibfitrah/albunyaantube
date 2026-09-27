@@ -150,22 +150,40 @@ enum FavoritesSchemaV6: VersionedSchema {
     }
 }
 
+/// Offline review P1: `OfflineItem` gains `channelId` — the channel playback asks about, so the
+/// manager's begin/retry/sweep ask the gate the same question — RE-DECLARED at V7 and every other
+/// entity aliased forward. One optional property with a property-initializer default, so the stage
+/// stays lightweight — `SchemaV5MigrationTests.aV6StoreOnDiskMigratesToV7GivingOfflineItemsNoChannel`.
+enum FavoritesSchemaV7: VersionedSchema {
+    static let versionIdentifier = Schema.Version(7, 0, 0)
+    typealias FavoriteVideo = FavoritesSchemaV1.FavoriteVideo
+    typealias SavedPlaylist = FavoritesSchemaV5.SavedPlaylist
+    typealias SubscribedChannel = FavoritesSchemaV5.SubscribedChannel
+    typealias SyncState = FavoritesSchemaV5.SyncState
+    typealias AccountBinding = FavoritesSchemaV5.AccountBinding
+    static var models: [any PersistentModel.Type] {
+        [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self,
+         SyncState.self, AccountBinding.self]
+    }
+}
+
 /// The LIVE entities: the app, its stores and the sync codec all spell these unqualified, and they
-/// always name the newest version's shapes. Repoint them (and only them) when a V7 lands.
-typealias FavoriteVideo = FavoritesSchemaV6.FavoriteVideo
-typealias SavedPlaylist = FavoritesSchemaV6.SavedPlaylist
-typealias SubscribedChannel = FavoritesSchemaV6.SubscribedChannel
-typealias OfflineItem = FavoritesSchemaV6.OfflineItem
-typealias SyncState = FavoritesSchemaV6.SyncState
-typealias AccountBinding = FavoritesSchemaV6.AccountBinding
+/// always name the newest version's shapes. Repoint them (and only them) when a V8 lands.
+typealias FavoriteVideo = FavoritesSchemaV7.FavoriteVideo
+typealias SavedPlaylist = FavoritesSchemaV7.SavedPlaylist
+typealias SubscribedChannel = FavoritesSchemaV7.SubscribedChannel
+typealias OfflineItem = FavoritesSchemaV7.OfflineItem
+typealias SyncState = FavoritesSchemaV7.SyncState
+typealias AccountBinding = FavoritesSchemaV7.AccountBinding
 
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self, FavoritesSchemaV6.self] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self, FavoritesSchemaV6.self, FavoritesSchemaV7.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
          .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self),
          .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self),
          .lightweight(fromVersion: FavoritesSchemaV4.self, toVersion: FavoritesSchemaV5.self),
-         .lightweight(fromVersion: FavoritesSchemaV5.self, toVersion: FavoritesSchemaV6.self)]
+         .lightweight(fromVersion: FavoritesSchemaV5.self, toVersion: FavoritesSchemaV6.self),
+         .lightweight(fromVersion: FavoritesSchemaV6.self, toVersion: FavoritesSchemaV7.self)]
     }
 }

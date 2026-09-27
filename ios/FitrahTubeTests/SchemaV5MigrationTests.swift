@@ -324,6 +324,40 @@ struct SchemaV5MigrationTests {
                                                   "SyncState": ["entityType", "lastCursor", "lastDocId",
                                                                 "lastSyncAt", "userId"],
                                                   "AccountBinding": ["boundAt", "initialMergeDone", "userId"]])
+        // Offline review P1: ONE new column, `channelId` on `OfflineItem`; everything else aliased.
+        #expect(shape(FavoritesSchemaV7.self) == ["FavoriteVideo": favoriteVideo,
+                                                  "SavedPlaylist": savedPlaylistV5,
+                                                  "SubscribedChannel": subscribedChannelV5,
+                                                  "OfflineItem": (offlineItem + ["userId", "channelId"]).sorted(),
+                                                  "SyncState": ["entityType", "lastCursor", "lastDocId",
+                                                                "lastSyncAt", "userId"],
+                                                  "AccountBinding": ["boundAt", "initialMergeDone", "userId"]])
+    }
+
+    /// Offline review P1: a V6 store's `OfflineItem` rows -- written through the FROZEN V6 type,
+    /// which has no channel column -- survive the V6 -> V7 lightweight stage with their owner
+    /// intact and read back with NO channel: nothing recorded which channel playback asked about,
+    /// so a pre-V7 row keeps the video-only gate check. The on-disk stage is the proof.
+    @Test func aV6StoreOnDiskMigratesToV7GivingOfflineItemsNoChannel() throws {
+        let url = Self.temporaryStoreURL()
+        defer { Self.remove(url) }
+        let v6 = Schema(versionedSchema: FavoritesSchemaV6.self)
+        do {
+            let container = try ModelContainer(for: v6, configurations: ModelConfiguration(schema: v6, url: url))
+            let context = ModelContext(container)
+            context.insert(FavoritesSchemaV6.OfflineItem(videoId: "xc7keR2piUM", title: "Lecture", channelName: nil,
+                                                         thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                                                         userId: "uid-owner"))
+            try context.save()
+        }
+
+        let context = ModelContext(AppContainer.makeModelContainer(inMemory: false, storeURL: url))
+        let items = try context.fetch(FetchDescriptor<OfflineItem>())
+        #expect(items.count == 1, "the row was lost, or the recovery path rebuilt the store")
+        let item = try #require(items.first)
+        #expect(item.videoId == "xc7keR2piUM")
+        #expect(item.userId == "uid-owner")
+        #expect(item.channelId == nil)
     }
 
     /// CF-A-50 (Task 41): a V5 store's `OfflineItem` rows -- written through the FROZEN V5 type,

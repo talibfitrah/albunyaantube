@@ -855,20 +855,24 @@ enum PiPDismantlePolicy {
 }
 
 #if DEBUG
-/// Real-device AirPlay check only (`DeviceChecks.testAirPlay`, mounted by `-fitrah-route-probe YES`):
-/// a 1 pt, clear, non-interactive element whose accessibility VALUE is computed when XCUITest asks,
-/// so it reports the LIVE route rather than whatever the last SwiftUI render saw. Nothing visible.
+/// Real-device checks only (`DeviceChecks`, mounted by `-fitrah-route-probe YES`): a 1 pt, clear,
+/// non-interactive element whose accessibility VALUE is computed when XCUITest asks, so it reports
+/// the LIVE audio route and what the Cast receiver last said about OUR load, rather than whatever
+/// the last SwiftUI render saw. Nothing visible.
 struct AirPlayRouteProbe: UIViewRepresentable {
     let model: PlayerViewModel
+    let cast: CastController
 
-    func makeUIView(context: Context) -> ProbeView { ProbeView(model: model) }
-    func updateUIView(_ view: ProbeView, context: Context) { view.model = model }
+    func makeUIView(context: Context) -> ProbeView { ProbeView(model: model, cast: cast) }
+    func updateUIView(_ view: ProbeView, context: Context) { view.model = model; view.cast = cast }
 
     final class ProbeView: UIView {
         weak var model: PlayerViewModel?
+        weak var cast: CastController?
 
-        init(model: PlayerViewModel) {
+        init(model: PlayerViewModel, cast: CastController) {
             self.model = model
+            self.cast = cast
             super.init(frame: .zero)
             isUserInteractionEnabled = false
             isAccessibilityElement = true
@@ -880,7 +884,10 @@ struct AirPlayRouteProbe: UIViewRepresentable {
         override var accessibilityValue: String? {
             get {
                 let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
-                return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs=" + outputs.joined(separator: ",")
+                let states = ["unknown", "idle", "playing", "paused", "buffering", "loading"]
+                let receiver = cast.map { states[min($0.receiverState.rawValue, states.count - 1)] } ?? "none"
+                return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs="
+                    + outputs.joined(separator: ",") + ";cast=\(receiver)"
             }
             set {}
         }

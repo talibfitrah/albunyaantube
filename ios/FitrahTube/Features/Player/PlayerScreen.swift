@@ -204,7 +204,7 @@ struct PlayerScreen: View {
             guard !Task.isCancelled else { return }
             saveEnabled = enabled
             let answer = await Self.gateAnswer(enabled: enabled) {
-                await container.offlineGate.answer(model?.args.videoId ?? args.videoId)
+                await Self.offlineGateAnswer(container.offlineGate, for: model?.args ?? args)
             }
             guard !Task.isCancelled else { return }
             saveGate = answer
@@ -215,6 +215,12 @@ struct PlayerScreen: View {
         // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
         // transition, so entering `.embed` announces exactly once.
         .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+    }
+
+    /// The Save button's gate question: the channel playback's own check asks about, so Save never
+    /// offers what won't play (offline review P1). Static so `OfflineGateTests` pins the argument.
+    static func offlineGateAnswer(_ gate: OfflineGateClient, for args: PlayerArgs) async -> GateAnswer {
+        await gate.answer(args.videoId, channelId: args.channelId)
     }
 
     /// The per-video gate answer for the Save slot, or nil when there is no point asking. Static and
@@ -293,7 +299,8 @@ struct PlayerScreen: View {
                                        audioOnly: model.audioOnly, model: model, isFullscreen: fullscreen)
                         #if DEBUG
                         if UserDefaults.standard.bool(forKey: "fitrah-route-probe") {   // DeviceChecks only
-                            AirPlayRouteProbe(model: model).frame(width: 1, height: 1).allowsHitTesting(false)
+                            AirPlayRouteProbe(model: model, cast: container.castController)
+                                .frame(width: 1, height: 1).allowsHitTesting(false)
                         }
                         #endif
                         // A mid-play rung-2 demotion empties `tracks` and

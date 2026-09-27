@@ -767,6 +767,30 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
+    /// Combined review P2: from the common `.hls` state the phone never tried the android rung, so
+    /// a cast's muxed walk POSTs it first -- and a bot check there recorded the GLOBAL cooldown,
+    /// blocking the phone's working rung-1 playback for 1-24 h. A cast walk fails the CAST only;
+    /// the save walk keeps the one trip it has always recorded.
+    @Test(arguments: [(Purpose.cast, 0), (Purpose.prefetch, 1)])
+    func aBotCheckedMuxedWalkRecordsATripOnlyForASave(purpose: Purpose, trips: Int) async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck"),
+                                            try fixtureResponse("player-botcheck"),
+                                            try fixtureResponse("player-ok-hls")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .android)   // a genuine bot check, not a bootstrap
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: purpose, sourceChannelId: nil,
+                                           forceRefresh: false, requiresMuxed: true)
+        }
+        #expect(await session.loadCooldown().tripCount == trips)
+        guard purpose == .cast else { return }
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+        let playback = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = playback.stream else { Issue.record("a cast locked out playback: \(playback.stream)"); return }
+    }
+
     /// Review F2: under `requiresMuxed` the embed floor is unusable by construction (the caller
     /// maps `.embed` to terminal NOT_SAVEABLE), so "resolving" it dressed a bot-checked walk as a
     /// clean success — no trip recorded, no cooldown armed, N queued video saves burned N×2 POSTs

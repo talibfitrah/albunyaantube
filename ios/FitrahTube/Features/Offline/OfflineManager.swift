@@ -11,6 +11,17 @@ nonisolated struct OfflineMetadata: Sendable {
     /// stays device-wide. A save made as a guest stays guest-owned after a later sign-in — it is
     /// never paid by `wipeRows` for that account; only the device-wide `wipe()` removes it.
     var userId: String = ""
+    /// Offline review P1: the channel playback's own check asks about (`PlayerArgs.channelId`),
+    /// stamped on the row so `begin`/`retry`/`sweep` ask the gate the Save button's question.
+    var channelId: String? = nil
+}
+
+extension OfflineMetadata {
+    /// The Save sheet's metadata, straight from the player's args.
+    init(args: PlayerArgs, userId: String) {
+        self.init(title: args.title ?? args.videoId, channelName: args.channelName,
+                  thumbnailUrl: args.thumbnailURL?.absoluteString, userId: userId, channelId: args.channelId)
+    }
 }
 
 /// The save API Task 5 (Save button), Task 6 (Saved screen rows) and Task 7 (sweep cadence) call.
@@ -69,12 +80,13 @@ actor OfflineManager: OfflineSaving {
         let localPath: String?
         let completedAt: Date?
         let createdAt: Date
+        let channelId: String?
 
         init?(_ item: OfflineItem) {
             guard let status = OfflineStatus(rawValue: item.status) else { return nil }
             id = item.id; videoId = item.videoId; self.status = status; audioOnly = item.audioOnly
             resumeData = item.resumeData; localPath = item.localPath; completedAt = item.completedAt
-            createdAt = item.createdAt
+            createdAt = item.createdAt; channelId = item.channelId
         }
     }
 
@@ -84,7 +96,7 @@ actor OfflineManager: OfflineSaving {
     private let limiterCheck: @Sendable (String) async -> Decision
     private let wifiOnly: @MainActor @Sendable () -> Bool
     private let isOnCellular: @MainActor @Sendable () -> Bool
-    private let gate: @Sendable (String) async -> GateAnswer
+    private let gate: @Sendable (_ videoId: String, _ channelId: String?) async -> GateAnswer
     private let now: @Sendable () -> Date
     /// The remote kill-switch, and the second config consult beside `SaveAffordance` hiding the
     /// Save button (which alone leaves Saved-screen Retry/Resume unguarded).
@@ -155,7 +167,7 @@ actor OfflineManager: OfflineSaving {
          wifiOnly: @escaping @MainActor @Sendable () -> Bool,
          isOnCellular: @escaping @MainActor @Sendable () -> Bool,
          baseDirectory: URL,
-         gate: @escaping @Sendable (String) async -> GateAnswer,
+         gate: @escaping @Sendable (_ videoId: String, _ channelId: String?) async -> GateAnswer,
          now: @escaping @Sendable () -> Date,
          downloadsEnabled: @escaping @Sendable () async -> Bool = { true },
          refusesOwner: @escaping @MainActor @Sendable (String) -> Bool = { _ in false }) {
@@ -181,7 +193,7 @@ actor OfflineManager: OfflineSaving {
         let owner = metadata.userId
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
-                               createdAt: now(), userId: metadata.userId)
+                               createdAt: now(), userId: metadata.userId, channelId: metadata.channelId)
         // CF-A-59 + Cubic P3: the refusal, the old-copy read and the upsert are ONE main-actor job.
         // The wipe's id snapshot runs on this executor after the departure marker, so a save either
         // is refused here or landed before the snapshot. And a refused save never touches the old
@@ -320,7 +332,7 @@ actor OfflineManager: OfflineSaving {
         // `schedule()`, which may pick an older row entirely. A Retry that proceeds therefore
         // spends two gate GETs; caching the answer would be per-id state neither path has, and one
         // extra conditional GET per tap is the cheaper side of that trade.
-        switch await gate(row.videoId) {
+        switch await gate(row.videoId, row.channelId) {
         case .allowed: break
         case .notAllowed, .gone: await delete(row.id); return
         // A refused Retry leaves the reason on the row, so the button never reads as broken: the
@@ -412,17 +424,15 @@ actor OfflineManager: OfflineSaving {
                 action = .deleteExpired   // TTL first, before any network
             } else {
                 checked += 1
-                let answer = await gate(row.videoId)
+                let answer = await gate(row.videoId, row.channelId)
                 if case .unreachable = answer { unreachable += 1 }
                 action = OfflineSweep.decide(gate: answer)
             }
             switch action {
             case .keep: break
-            // Both gate DELETE verdicts share one bucket, so the belt below covers both.
-            // `.notAllowed` is the likelier drift of the two — `Video.offlineAllowed`
-            // is a boxed `Boolean` and `VideoUpdateRequest` carries it nullable, so one admin edit
-            // or migration can null it across every video at once, and an absent flag is the
-            // ruling's default-false.
+            // Both gate DELETE verdicts share one bucket, so the belt below covers both. A null
+            // `Video.offlineAllowed` reads as allowed (owner ruling 2026-09-27), so a migration
+            // nulling it keeps everything; one flipping it to false across the catalog is belted.
             case .deleteRemoved, .deleteGateRevoked: gateDeletes.append(row.id)
             // The TTL is a LOCAL decision — no network said anything — so it is never belted.
             case .deleteExpired: expired.append(row.id)
@@ -435,8 +445,8 @@ actor OfflineManager: OfflineSaving {
         // and a single admin revocation really is fork C's same-day remedy.
         //
         // `.unreachable` rows are discounted from the denominator, because a broken edge does not
-        // have to answer uniformly — 404 for some rows and a transport error for others would
-        // otherwise leave `gateDeletes.count < checked` and delete the 404 half. What is being
+        // have to answer uniformly — 410 for some rows and a transport error for others would
+        // otherwise leave `gateDeletes.count < checked` and delete the 410 half. What is being
         // asked is "did every row that got an ANSWER say delete", not "did every row".
         let answered = checked - unreachable
         if answered >= 2 && gateDeletes.count == answered { gateDeletes = [] }
@@ -711,12 +721,12 @@ actor OfflineManager: OfflineSaving {
         // here ends in `schedule()`, which picks the next queued row and re-enters this function —
         // so one drifted backend answer would cascade through every queued/paused/failed row in a
         // single pass, with none of the belt the sweep applies to the identical verdict 200 lines
-        // below. `Video.offlineAllowed` is a boxed `Boolean` that one migration can null across the
-        // whole catalog, which is precisely the drift that belt exists to refuse. Telling drift
+        // below. One migration can flip `Video.offlineAllowed` to false across the whole catalog,
+        // which is precisely the drift that belt exists to refuse. Telling drift
         // from a real revocation needs whole-library evidence, and only the sweep has it — so the
         // BELTED sweep owns every deletion, at its next launch/foreground run. `retry` keeps its
         // own single user-initiated delete: with `begin` unable to delete, nothing cascades.
-        switch await gate(row.videoId) {
+        switch await gate(row.videoId, row.channelId) {
         case .allowed: break
 
         // A PER-VIDEO verdict is not a wall: this row is refused, younger ones are not. Parking it

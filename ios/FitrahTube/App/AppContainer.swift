@@ -126,6 +126,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return gate
     }()
 
+    /// The manager's gate question — the row's video AND the channel playback asks about (offline
+    /// review P1). Named so `AppContainerTests` pins the channel really reaches the gate client.
+    var offlineGateAnswer: @Sendable (_ videoId: String, _ channelId: String?) async -> GateAnswer {
+        { [offlineGate] in await offlineGate.answer($0, channelId: $1) }
+    }
+
     /// Phase 3 Task 4: resolve → download → persist over `offlineStore`. One background session
     /// (`ProgressiveEngine.backgroundSessionIdentifier`); `.prefetch` lane on the ONE limiter/clock
     /// (reconciliation note 4); the cellular gate reads `settings`/`network` live (note 6); the
@@ -593,7 +599,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             wifiOnly: { [settings] in settings.wifiOnlyDownloads },
             isOnCellular: { [network] in network.isOnCellular },
             baseDirectory: base,
-            gate: { [offlineGate] in await offlineGate.answer($0) },
+            gate: offlineGateAnswer,
             now: { Date() },
             // The SAME config read `PlayerScreen`'s Save button consults (Task 6 review fold-in:
             // the manager refuses to START new work while the kill-switch is off).
@@ -823,7 +829,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
     /// corrupt file; production always takes the default location.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV6.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV7.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {

@@ -3,11 +3,11 @@ import Foundation
 /// A canned answer from the per-video `offlineAllowed` gate (Task 5's `OfflineGateClient`
 /// produces these from `GET /api/v1/videos/{id}`; the sweep and its tests consume them pure).
 nonisolated enum GateAnswer: Sendable {
-    /// 200 with `offlineAllowed == true`.
+    /// 200 without an explicit `offlineAllowed == false` (null/absent is allowed).
     case allowed
-    /// 200 with the flag absent or false — the admin revoked (or never granted) the gate.
+    /// 200 with an explicit false — an admin blocked this video.
     case notAllowed
-    /// 404/410 — the video left the catalog.
+    /// 410 (for the video, or for the channel playback asks about) — playback refuses it.
     case gone
     /// Transport error — no answer, not a "no".
     case unreachable
@@ -37,7 +37,8 @@ nonisolated enum OfflineSweep {
     static func decide(gate: GateAnswer) -> SweepAction {
         switch gate {
         case .gone:
-            // Catalog removal → the owner ruling's auto-delete.
+            // Playback refuses it (410) → the owner ruling's auto-delete. A 404 never lands here:
+            // playback plays it, so `OfflineGateClient` answers `.allowed` and the copy keeps.
             return .deleteRemoved
         case .notAllowed:
             // Fork C: an admin flipping `offlineAllowed` off is the same-day remedy path;
