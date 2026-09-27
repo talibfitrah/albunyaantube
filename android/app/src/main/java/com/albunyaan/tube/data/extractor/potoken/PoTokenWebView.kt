@@ -14,6 +14,7 @@ import android.webkit.WebViewClient
 import com.albunyaan.tube.BuildConfig
 import java.time.Instant
 import java.util.concurrent.ConcurrentHashMap
+import java.util.concurrent.atomic.AtomicLong
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -43,8 +44,12 @@ class PoTokenWebView private constructor(
     /** Completes once the BotGuard `integrityToken` is loaded into the JS context (or fails). */
     private val initialized = CompletableDeferred<Unit>()
 
-    /** identifier -> pending poToken request, resolved by the JS bridge callbacks. */
+    /** "identifier#n" (one key per request) -> pending poToken request, resolved by the JS bridge callbacks. */
     private val poTokenDeferreds = ConcurrentHashMap<String, CompletableDeferred<String>>()
+    private val requestCounter = AtomicLong()
+
+    @Volatile
+    private var closed = false
 
     private lateinit var expirationInstant: Instant
 
@@ -168,14 +173,21 @@ class PoTokenWebView private constructor(
 
     //region Obtaining poTokens
     override suspend fun generatePoToken(identifier: String): String {
+        // Keyed per request, not per identifier: concurrent mints for the same video (player
+        // resolve + metadata hydration + prefetch on cold start) must not overwrite each other's
+        // deferred, or all but one hang until GENERATE_TIMEOUT_MS.
+        val requestKey = "$identifier#${requestCounter.incrementAndGet()}"
         val deferred = CompletableDeferred<String>()
-        poTokenDeferreds[identifier] = deferred
+        poTokenDeferreds[requestKey] = deferred
         return try {
+            // Checked after registering: close() sets [closed] before failing pending requests, so a
+            // racing close() either fails this deferred or is seen here.
+            if (closed) throw PoTokenException("poToken generator closed")
             withContext(Dispatchers.Main.immediate) {
                 val u8Identifier = stringToU8(identifier)
                 webView.evaluateJavascript(
                     """try {
-                            identifier = "$identifier"
+                            identifier = "$requestKey"
                             u8Identifier = $u8Identifier
                             poTokenU8 = obtainPoToken(webPoSignalOutput, integrityToken, u8Identifier)
                             poTokenU8String = ""
@@ -192,7 +204,7 @@ class PoTokenWebView private constructor(
             }
             withTimeout(GENERATE_TIMEOUT_MS) { deferred.await() }
         } finally {
-            poTokenDeferreds.remove(identifier)
+            poTokenDeferreds.remove(requestKey)
         }
     }
 
@@ -248,13 +260,21 @@ class PoTokenWebView private constructor(
         if (!initialized.isCompleted) {
             initialized.completeExceptionally(error)
         }
-        poTokenDeferreds.keys.toList().forEach { id ->
-            poTokenDeferreds.remove(id)?.completeExceptionally(error)
-        }
+        failPendingRequests(error)
         close()
     }
 
+    private fun failPendingRequests(error: Throwable) {
+        poTokenDeferreds.keys.toList().forEach { id ->
+            poTokenDeferreds.remove(id)?.completeExceptionally(error)
+        }
+    }
+
     override fun close() {
+        // Callers still waiting on this generator (e.g. while another caller's retry recreates it)
+        // must fail now and retry, not hang until GENERATE_TIMEOUT_MS.
+        closed = true
+        failPendingRequests(PoTokenException("poToken generator closed"))
         runOnMainThread {
             runCatching {
                 webView.clearHistory()

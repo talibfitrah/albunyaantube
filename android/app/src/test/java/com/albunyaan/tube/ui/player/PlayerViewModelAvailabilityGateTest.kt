@@ -166,6 +166,25 @@ class PlayerViewModelAvailabilityGateTest {
         }
     }
 
+    @Test
+    fun `resolve that never returns ends in Error overlay, not a silent black Loading`() = runTest {
+        // Cold-start regression: the per-attempt withTimeout threw TimeoutCancellationException,
+        // which the catch rethrew as a plain cancellation — the resolve job died with no retry and
+        // no Error state, leaving the player black forever.
+        fakePlayerRepository.hang = true
+
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "vid_slow")
+        advanceUntilIdle()
+
+        assertEquals(
+            "Every attempt timing out must surface the retry/error overlay",
+            StreamState.Error(com.albunyaan.tube.R.string.player_stream_error),
+            vm.state.value.streamState,
+        )
+        assertEquals("Each timed-out attempt must be retried", 3, fakePlayerRepository.resolveCallCount)
+    }
+
     // ── Internal Fakes ────────────────────────────────────────────────────────
 
     private class FakePlayerRepository : PlayerRepository {
@@ -178,6 +197,8 @@ class PlayerViewModelAvailabilityGateTest {
          * UI-state-mapping logic without having to wire a full GlobalStreamResolver.
          */
         val archivedIds: MutableSet<String> = mutableSetOf()
+        /** Suspend forever, like a cold-start extraction that outlives the player's timeout. */
+        var hang = false
 
         override suspend fun resolveStreams(
             videoId: String,
@@ -186,6 +207,7 @@ class PlayerViewModelAvailabilityGateTest {
             sourceChannelId: String?,
         ): ResolvedStreams? {
             resolveCallCount++
+            if (hang) kotlinx.coroutines.awaitCancellation()
             if (videoId in archivedIds) {
                 throw ContentUnavailableException(videoId)
             }
