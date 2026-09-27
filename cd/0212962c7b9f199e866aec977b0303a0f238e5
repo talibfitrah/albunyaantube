@@ -1,0 +1,98 @@
+backend/src/main/java/com/albunyaan/tube/config/AsyncConfig.java
+  s_974be43fdb0416::t_1856d4f2dd9993 176-181,183-193
+  s_974be43fdb0416::t_a4c32133f6b8f2 182,194
+ios/FitrahTubeTests/ProfileViewModelTests.swift
+  s_974be43fdb0416::t_bbc3f667921a8e 4
+  s_974be43fdb0416::t_1a2853d5027bd0 374-380,386,390-391,407-434,473
+  s_974be43fdb0416::t_f67f47bb0a2310 360-368,370-372,387-389,396-406,435-449,452,465
+ios/FitrahTube/Features/Auth/SignInViewModel.swift
+  s_974be43fdb0416::t_78a8ee2f8fef04 29,80,82
+  s_974be43fdb0416::t_5eb6d3018a768f 167,175-188
+  s_974be43fdb0416::t_f230ac94eff2df 189-190
+android/app/src/test/java/com/albunyaan/tube/ui/auth/SignInViewModelTest.kt
+  s_974be43fdb0416::t_af7a61657baea4 26-27,29,42,51-56,61-62,64,240-276
+  s_974be43fdb0416::t_464101f5f25d67 63
+  s_974be43fdb0416::t_272f0292fd0460 277
+backend/src/test/java/com/albunyaan/tube/config/AsyncConfigTest.java
+  s_974be43fdb0416::t_301266afe0af42 1-40
+ios/FitrahTube/Features/Auth/AccountClient.swift
+  s_974be43fdb0416::t_5eb6d3018a768f 164-180
+  s_974be43fdb0416::t_78a8ee2f8fef04 181
+backend/src/test/java/com/albunyaan/tube/security/FirebaseAuthFilterRevokedTokenTest.java
+  s_974be43fdb0416::t_301266afe0af42 103-122
+backend/src/main/java/com/albunyaan/tube/security/FirebaseAuthFilter.java
+  s_974be43fdb0416::t_1856d4f2dd9993 227-229
+backend/src/main/java/com/albunyaan/tube/controller/AccountController.java
+  s_974be43fdb0416::t_a4c32133f6b8f2 251
+  s_974be43fdb0416::t_f2ea8a8abd7115 13-14,17,25,27-29,44,49,51,69,75-78,80-82,195,200-203,207-212,217-218,236-237,255-258,260-265,274-279,283-304,309-320
+  s_974be43fdb0416::t_ea3bbd9404ed06 15-16,32,39-43,48,68,70-72,79,83-86,92,98-99,105,196-199,204-206,213-216,219-235,238-250,252-254,259,266-273,280-282,305-308
+  s_974be43fdb0416::t_a868bc403120ba 321
+docs/status/DEPLOYMENT_GUIDE.md
+  s_974be43fdb0416::t_12e47ac18d0f95 173-194
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditEmailViewModel.kt
+  s_974be43fdb0416::t_976193b55b21b6 66-68,77-92
+  s_974be43fdb0416::t_a56679c1134f85 5,18,28,93-97
+ios/FitrahTube/Features/Auth/SignInScreen.swift
+  s_974be43fdb0416::t_78a8ee2f8fef04 30
+backend/src/test/java/com/albunyaan/tube/service/AuthServiceTest.java
+  s_974be43fdb0416::t_301266afe0af42 786-799
+  s_974be43fdb0416::t_80403a17e3ab93 718-744,746-750,759-762,765-785
+  s_974be43fdb0416::t_a2b3ab509753d9 745,751-758,763-764
+backend/src/main/java/com/albunyaan/tube/service/AuthService.java
+  s_974be43fdb0416::t_6412d8e99a8708 18-30,45,1331,1335-1372,1375-1376,1381-1384
+  s_974be43fdb0416::t_1856d4f2dd9993 1327,1332-1334,1373-1374,1377-1380
+  s_974be43fdb0416::t_fde415a497e2c6 1385
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerSecurityTest.java
+  s_974be43fdb0416::t_3168863a2d05b0 1-36,38-58
+  s_974be43fdb0416::t_ed2deaf5dbe2f8 37
+android/app/src/test/java/com/albunyaan/tube/ui/me/profile/edit/EditEmailViewModelTest.kt
+  s_974be43fdb0416::t_af7a61657baea4 26,36-39,41-43,45-52,56,69,78-89,94-101,103,125-134
+  s_974be43fdb0416::t_757aebe602bd27 35,104-124
+  s_974be43fdb0416::t_464101f5f25d67 44
+  s_974be43fdb0416::t_5a81213fc425b3 102
+backend/src/main/java/com/albunyaan/tube/security/FirebaseUserDetails.java
+  s_974be43fdb0416::t_1856d4f2dd9993 14-15,22-25,30-34
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_974be43fdb0416::t_f2ea8a8abd7115 63-65
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_974be43fdb0416::t_906e91b858db73 129-144
+  s_974be43fdb0416::t_a4c32133f6b8f2 211
+  s_974be43fdb0416::t_1856d4f2dd9993 148,167,204-210
+  s_974be43fdb0416::t_a3eae52a54b78e 145
+backend/src/test/java/com/albunyaan/tube/service/MailServiceTest.java
+  s_974be43fdb0416::t_301266afe0af42 57,68-76
+  s_974be43fdb0416::t_80403a17e3ab93 58-67
+ios/FitrahTube/Features/Profile/EditEmailSheet.swift
+  s_974be43fdb0416::t_c7d8514072c9cd 83-85,87-89,100-101
+  s_974be43fdb0416::t_5eb6d3018a768f 22-24,90-93,95-99,102-117
+  s_974be43fdb0416::t_78a8ee2f8fef04 38,43-46,188
+docs/architecture/api-specification.yaml
+  s_974be43fdb0416::t_fef69c19a37c2b 1730-1808
+  s_974be43fdb0416::t_442e58dacfb3c0 1700-1729,1809-1820
+backend/src/test/java/com/albunyaan/tube/controller/AccountControllerTest.java
+  s_974be43fdb0416::t_5071bf5dd59396 418,421,423,425-428,431,433-436,438,442,445-453,455-456,459,461,473,482,485-486,489,491-493,500,504,520-524,526-530,536-539,541-549,566-608,611,613-622,639-645
+  s_974be43fdb0416::t_ed2deaf5dbe2f8 34-37,72-74,419-420,422,424,429-430,432,437,439-441,443-444,454,457-458,460,462-472,474-481,483-484,487-488,490,494-499,501-503,505-519,525,531-535,540,550-565,609-610,612,623-638
+ios/FitrahTubeTests/SignInViewModelTests.swift
+  s_974be43fdb0416::t_f67f47bb0a2310 34-36,60-63,244-286
+  s_974be43fdb0416::t_67843c08f6d8fd 287
+android/app/src/main/java/com/albunyaan/tube/data/account/AccountService.kt
+  s_974be43fdb0416::t_66933d31314356 23-30
+android/app/src/main/java/com/albunyaan/tube/ui/auth/SignInViewModel.kt
+  s_974be43fdb0416::t_706e848ee414a6 8,18,37,175,182-203
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cd0212962c7b9f199e866aec977b0303a0f238e5",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
