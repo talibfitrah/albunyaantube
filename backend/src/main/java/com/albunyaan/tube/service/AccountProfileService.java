@@ -78,7 +78,9 @@ public class AccountProfileService {
             throws ExecutionException, InterruptedException, TimeoutException {
         validateDisplayName(displayName);
         validateDateOfBirth(dateOfBirth);
-        validatePhoneNumber(phoneNumber);
+        // Phone is optional (owner ruling 2026-09-27): blank means "none" and is stored as null.
+        String phone = (phoneNumber == null || phoneNumber.isBlank()) ? null : phoneNumber;
+        if (phone != null) validatePhoneNumber(phone);
 
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
@@ -92,7 +94,7 @@ public class AccountProfileService {
             // Now, if the retry's payload matches the persisted profile we
             // return the existing user as a 200; if it differs we still
             // refuse (the profile is locked once set).
-            if (profileMatches(user, displayName, dateOfBirth, phoneNumber)) {
+            if (profileMatches(user, displayName, dateOfBirth, phone)) {
                 return user;
             }
             throw new ProfileAlreadyCompletedException(uid);
@@ -104,7 +106,7 @@ public class AccountProfileService {
                 dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
         user.setDisplayName(displayName.trim());
         user.setDateOfBirth(dobTs);
-        user.setPhoneNumber(phoneNumber.trim());
+        user.setPhoneNumber(phone);
         user.setStatusEnum(UserStatus.ACTIVE);
         user.setProfileCompletedAt(Timestamp.now());
         user.touch();
@@ -212,7 +214,7 @@ public class AccountProfileService {
      */
     private static boolean profileMatches(User user, String displayName, LocalDate dateOfBirth, String phoneNumber) {
         if (user.getDisplayName() == null || !user.getDisplayName().equals(displayName.trim())) return false;
-        if (user.getPhoneNumber() == null || !user.getPhoneNumber().equals(phoneNumber.trim())) return false;
+        if (!Objects.equals(user.getPhoneNumber(), phoneNumber)) return false;
         Timestamp ts = user.getDateOfBirth();
         if (ts == null) return false;
         // Cubic R-final5 P2 — compare by date components, not raw epoch + nanos.

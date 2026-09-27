@@ -22,12 +22,15 @@ import java.util.List;
 import java.util.Map;
 
 import static org.hamcrest.Matchers.anyOf;
+import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.is;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.head;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.content;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 /**
@@ -273,12 +276,20 @@ class SelfDeleteAccountIT extends BaseIntegrationTest {
     // LegalPagesControllerTest runs with addFilters=false, so only this test —
     // which goes through the REAL Spring Security chain — proves permitAll.
 
+    private static final List<String> LEGAL_PAGES =
+            List.of("/delete-account", "/privacy", "/terms", "/licenses", "/support");
+
     @Test
     void publicLegalPages_areReachableAnonymously() throws Exception {
-        for (String path : List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+        for (String path : LEGAL_PAGES) {
             mvc.perform(get(path))
                     .andExpect(status().isOk());
+            // Link unfurlers probe HEAD first; SecurityConfig permits it alongside GET.
+            mvc.perform(head(path))
+                    .andExpect(status().isOk());
         }
+        mvc.perform(get("/support"))
+                .andExpect(content().string(containsString("info@albunyaan.tv")));
     }
 
     /**
@@ -290,7 +301,7 @@ class SelfDeleteAccountIT extends BaseIntegrationTest {
      */
     @Test
     void publicLegalPages_doNotPermitWritesAnonymously() throws Exception {
-        for (String path : List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+        for (String path : LEGAL_PAGES) {
             mvc.perform(post(path))
                     .andExpect(status().is(anyOf(is(401), is(403))));
         }

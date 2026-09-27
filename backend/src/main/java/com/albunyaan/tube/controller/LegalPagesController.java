@@ -71,8 +71,8 @@ public class LegalPagesController {
                 <div class="callout">
                   <h2>Option 1 &mdash; delete it in the app</h2>
                   <p>Open FitrahTube and go to:</p>
-                  <p class="path"><strong>Me &rarr; &#8942; &rarr; Profile &rarr; Delete account</strong></p>
-                  <p>&#8942; is the three-dot menu at the top of the <strong>Me</strong>
+                  <p class="path"><strong>Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile &rarr; Delete account</strong></p>
+                  <p>The menu button is at the top of the <strong>Me</strong>
                   tab. Confirm when prompted. Your account is deleted immediately and you
                   are signed out.</p>
                 </div>
@@ -209,8 +209,9 @@ public class LegalPagesController {
                       and kept with your profile until you delete your account. Our administrators
                       can see it when they manage accounts. Accounts that
                       report an age under 13 are refused and immediately deactivated.</li>
-                  <li><strong>Phone number.</strong> Required when you set up your profile and
-                      stored with it. It is shown back to you in the app and to our administrators
+                  <li><strong>Phone number (optional).</strong> You can leave it out when you set
+                      up your profile. If you give one, it is stored with your profile. It is shown
+                      back to you in the app and to our administrators
                       when they manage accounts; we do not verify it,
                       send it SMS messages, show it to moderators or use it for anything
                       else.</li>
@@ -225,7 +226,8 @@ public class LegalPagesController {
                       Google password or your Google contacts.</li>
                   <li>If you use Sign in with Apple, Firebase gives us a user identifier and
                       the email address you choose to share &mdash; either your own or Apple's
-                      private relay address. We do not ask for your name and do not receive
+                      private relay address. With your permission, Apple also shares your name,
+                      which becomes your display name; you can change it. We do not receive
                       your Apple ID password.</li>
                 </ul>
 
@@ -355,19 +357,22 @@ public class LegalPagesController {
                 <ul>
                   <li><strong>Google (Firebase Authentication and Cloud Firestore).</strong>
                       Our authentication and database provider. The data described in
-                      section&nbsp;2 is stored on Google's infrastructure on our behalf.
-                      Password-reset emails you request from the app are sent by Google Firebase.</li>
+                      section&nbsp;2 is stored on Google's infrastructure on our behalf.</li>
                   <li><strong>Our hosting provider.</strong> Our backend runs on a
                       virtual private server operated for us by a hosting provider. Requests to
                       our service, and the server logs described in section&nbsp;6, are processed
                       there.</li>
                   <li><strong>Microsoft (Microsoft Graph mail),
                       only when our own mail service is switched on.</strong> Email-verification
-                      messages, and password-reset messages sent when an administrator resets your
-                      password, are then sent through Microsoft's mail service, which receives
-                      your email address and that message; otherwise Google Firebase sends the
-                      email-verification messages.
-                      Nothing else is sent.</li>
+                      messages, password-reset messages (the ones you request from the sign-in
+                      screen and the ones sent when an administrator resets your password) and the
+                      confirmation message sent to your new address when you change your email
+                      are then sent through Microsoft's mail service, which receives your email
+                      address and that message; nothing else is sent. When our mail service is
+                      switched off, Google Firebase sends the messages you request instead. The app
+                      also turns to Google Firebase when it cannot reach our server to request a
+                      password reset or an email change, and when our server could not send an
+                      email-verification or email-change message.</li>
                   <li><strong>YouTube (Google) &mdash; your device connects directly.</strong>
                       To show and play videos,
                       the app connects directly from your device to YouTube/Google servers (<code>youtube.com</code>,
@@ -434,8 +439,8 @@ public class LegalPagesController {
                 without a waiting period:</p>
                 <ul>
                   <li><strong>In the app:</strong>
-                      Me &rarr; &#8942; &rarr; Profile &rarr; Delete account
-                      (&#8942; is the three-dot menu at the top of the Me tab).</li>
+                      Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile &rarr; Delete account
+                      (the menu button is at the top of the Me tab).</li>
                   <li><strong>On the web, without reinstalling the app:</strong>
                       <a href="/delete-account">%3$s/delete-account</a>.</li>
                   <li><strong>By email:</strong> <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->, from the
@@ -454,7 +459,7 @@ public class LegalPagesController {
                 <p>You have the right to access, correct,
                 export, restrict or object to our use of your data, and to withdraw consent.
                 You can view and correct your display name, date of birth, phone number and
-                email address in the app under Me &rarr; &#8942; &rarr; Profile. For anything
+                email address in the app under Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile. For anything
                 else, write to <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->.
                 You also have the right to complain to the Dutch Data Protection Authority, the
                 <a href="https://autoriteitpersoonsgegevens.nl">Autoriteit Persoonsgegevens</a>,
@@ -527,7 +532,7 @@ public class LegalPagesController {
 
                 <h2>4. Deleting your account</h2>
                 <p>You may delete your account at any time, permanently, from
-                Me &rarr; &#8942; &rarr; Profile &rarr; Delete account in the app, or from
+                Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile &rarr; Delete account in the app, or from
                 <a href="/delete-account">the account deletion page</a>. Deletion cannot be
                 undone. See the <a href="/privacy">Privacy Policy</a> for exactly what is
                 erased and what is retained.</p>
@@ -567,6 +572,60 @@ public class LegalPagesController {
                 <h2>11. Contact</h2>
                 <p><!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--></p>
                 """.formatted(CONTACT, LAST_UPDATED));
+    }
+
+    // ── /support ───────────────────────────────────────────────────────────
+    //
+    // Store listings' support URL. Labels match both apps' strings (player_action_report,
+    // report_content, report_submit, auth_forgot_password); only Google sign-ups set a password at
+    // profile setup (passwordRequired). Store-copy rules: never name the video platform; no ad,
+    // download or background-play claims (pinned by LegalPagesControllerTest).
+
+    @GetMapping(value = "/support", produces = MediaType.TEXT_HTML_VALUE)
+    @ResponseBody
+    public ResponseEntity<String> support() {
+        return html("FitrahTube Support", """
+                <h1>FitrahTube Support</h1>
+                <p class="lede">FitrahTube is a curated Islamic video library. Every channel,
+                playlist and video in it is reviewed by our team before it appears.</p>
+
+                <div class="callout">
+                  <h2>Contact us</h2>
+                  <p>For any question, problem or feedback, email us:</p>
+                  <p class="path"><!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on--></p>
+                  <p>Please tell us which device you use and, if something went wrong, what you
+                  were doing when it happened.</p>
+                </div>
+
+                <h2>Report a video</h2>
+                <p>If something in FitrahTube should not be there, open it and tap
+                <strong>Report</strong> &mdash; below the video on the player screen, or in the
+                menu (&#8942; or &hellip;) of a channel or playlist. Select the reasons that apply, add a note if
+                you like, and tap <strong>Submit Report</strong>. Our team reviews every report.</p>
+
+                <h2>Signing in</h2>
+                <ul>
+                  <li><strong>Forgot your password?</strong> On the sign-in screen, enter your email
+                      address and tap <strong>Forgot password?</strong>. We email you a link to set a
+                      new one. If it does not arrive within a few minutes, check your spam folder.</li>
+                  <li><strong>Signed up with Google?</strong> Sign in with the Google button, or with
+                      your email address and the password you chose when you set up your profile.</li>
+                  <li><strong>Signed up with Apple?</strong> Sign in with the Apple button on your
+                      iPhone or iPad. To use that account on an Android device, email us at
+                      <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->.</li>
+                  <li>Still stuck? Email <!--email_off--><a href="mailto:%1$s">%1$s</a><!--email_on-->
+                      from the address your account uses.</li>
+                </ul>
+
+                <h2>Deleting your account</h2>
+                <p>In the app, go to <strong>Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile &rarr; Delete account</strong>
+                (the menu button is at the top of the Me tab), or use
+                <a href="/delete-account">https://app.fitrahtube.com/delete-account</a> without
+                opening the app. Deletion is permanent.</p>
+
+                <p><a href="/privacy">Privacy Policy</a> &middot;
+                <a href="/terms">Terms of Service</a></p>
+                """.formatted(CONTACT));
     }
 
     // ── /licenses ──────────────────────────────────────────────────────────
@@ -703,7 +762,8 @@ public class LegalPagesController {
                 <footer>FitrahTube &middot; <a href="/delete-account">Delete account</a>
                 &middot; <a href="/privacy">Privacy</a>
                 &middot; <a href="/terms">Terms</a>
-                &middot; <a href="/licenses">Licences</a></footer>
+                &middot; <a href="/licenses">Licences</a>
+                &middot; <a href="/support">Support</a></footer>
                 </main></body></html>
                 """.formatted(title, body);
         return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(doc);

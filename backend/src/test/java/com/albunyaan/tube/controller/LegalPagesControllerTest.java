@@ -69,7 +69,11 @@ class LegalPagesControllerTest {
      * reported the deletion feature missing.
      */
     private static final String IN_APP_PATH =
-            "Me &rarr; &#8942; &rarr; Profile &rarr; Delete account";
+            "Me &rarr; menu (&#8942; or &hellip;) &rarr; Profile &rarr; Delete account";
+
+    /** Every public page; a new page joins the shared checks by being added here. */
+    private static final java.util.List<String> ALL_PAGES =
+            java.util.List.of("/delete-account", "/privacy", "/terms", "/licenses", "/support");
 
     @Test
     void deleteAccountPage_isHtml_namesTheApp_andGivesTheContactAddress() throws Exception {
@@ -91,11 +95,14 @@ class LegalPagesControllerTest {
      */
     @Test
     void everyPageNamingTheInAppRoute_namesTheRouteThatExists() throws Exception {
-        for (String path : java.util.List.of("/delete-account", "/privacy", "/terms")) {
+        for (String path : java.util.List.of("/delete-account", "/privacy", "/terms", "/support")) {
             mockMvc.perform(get(path))
                     .andExpect(status().isOk())
                     .andExpect(content().string(containsString(IN_APP_PATH)))
-                    .andExpect(content().string(not(containsString("Settings &rarr; Account"))));
+                    .andExpect(content().string(not(containsString("Settings &rarr; Account"))))
+                    // iOS shows a horizontal "…", Android a vertical "⋮": name neither alone.
+                    .andExpect(content().string(not(containsString("three-dot"))))
+                    .andExpect(content().string(not(containsString("Me &rarr; &#8942; &rarr;"))));
         }
     }
 
@@ -237,15 +244,34 @@ class LegalPagesControllerTest {
     void privacyPage_statesWhoSendsEmailAndWhatGoogleSignInShares() throws Exception {
         String privacy = page("/privacy");
         has(privacy,
-                // In-app reset = Firebase client SDK; admin reset (UserController
-                // /{uid}/reset-password) = MailService → Microsoft Graph when mail is on.
-                "Password-reset emails you request from the app are sent by Google Firebase.",
+                // AccountController sends all three through MailService (Microsoft Graph) when mail
+                // is on. Both apps' fallback to Firebase: any mail on a 503 (mail off, or Graph
+                // refused a verification/change-email send); reset and change-email also when the
+                // backend is unreachable. A reset is mailed after the 200, so a Graph failure there
+                // sends nothing (SignInViewModel.sendPasswordReset, EmailVerificationViewModel).
                 "only when our own mail service is switched on",
-                "Email-verification messages, and password-reset messages sent when an administrator "
-                        + "resets your password, are then sent through Microsoft's mail service",
+                "Email-verification messages, password-reset messages (the ones you request from the "
+                        + "sign-in screen and the ones sent when an administrator resets your password) "
+                        + "and the confirmation message sent to your new address when you change your "
+                        + "email are then sent through Microsoft's mail service",
+                "When our mail service is switched off, Google Firebase sends the messages you request "
+                        + "instead. The app also turns to Google Firebase when it cannot reach our server to "
+                        + "request a password reset or an email change, and when our server could not send "
+                        + "an email-verification or email-change message.",
                 "Google shares your name, email address and profile photo address with Firebase Authentication",
                 "We do not copy your profile photo into our own database");
-        lacks(privacy, "When we send you a password-reset", "Password-reset emails are sent by Google Firebase.");
+        lacks(privacy, "When we send you a password-reset", "Password-reset emails are sent by Google Firebase.",
+                "cannot be reached, Google Firebase sends",
+                "Password-reset emails you request from the app are sent by Google Firebase.");
+    }
+
+    /** The iOS app now requests the name scope; the policy must say where the name ends up. */
+    @Test
+    void privacyPage_saysAppleSharesTheNameWithPermission() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy, "With your permission, Apple also shares your name, which becomes your display name; "
+                + "you can change it.");
+        lacks(privacy, "We do not ask for your name");
     }
 
     /** The admin-only user endpoints return the full User model, phone and date of birth included. */
@@ -253,11 +279,13 @@ class LegalPagesControllerTest {
     void privacyPage_statesPhoneAndDateOfBirthUseTruthfully() throws Exception {
         String privacy = page("/privacy");
         has(privacy,
-                "Required when you set up your profile and stored with it.",
+                "<strong>Phone number (optional).</strong> You can leave it out when you set up your profile.",
+                "If you give one, it is stored with your profile.",
                 "Used to check that you are at least 13, and kept with your profile until you delete your account.",
                 "Our administrators can see it when they manage accounts.",
                 "It is shown back to you in the app and to our administrators when they manage accounts;");
-        lacks(privacy, "Used once, to check", "It is shown back to you in the app; we do not verify it");
+        lacks(privacy, "Used once, to check", "It is shown back to you in the app; we do not verify it",
+                "Required when you set up your profile");
     }
 
     @Test
@@ -320,7 +348,7 @@ class LegalPagesControllerTest {
      */
     @Test
     void everyContactAddress_isShieldedFromCloudflareEmailObfuscation() throws Exception {
-        for (String path : java.util.List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+        for (String path : ALL_PAGES) {
             String body = page(path);
             assertTrue(body.contains("<!--email_off-->"), path + " has no shielded address");
             String outside = body.replaceAll("(?s)<!--email_off-->.*?<!--email_on-->", "");
@@ -346,10 +374,47 @@ class LegalPagesControllerTest {
      */
     @Test
     void noPage_leaksAnInternalTodoIntoTheServedHtml() throws Exception {
-        for (String path : java.util.List.of("/delete-account", "/privacy", "/terms", "/licenses")) {
+        for (String path : ALL_PAGES) {
             mockMvc.perform(get(path))
                     .andExpect(status().isOk())
                     .andExpect(content().string(not(containsString("TODO"))));
+        }
+    }
+
+    /** Store listings need a support URL: what the app is, how to reach us, and self-help. */
+    @Test
+    void supportPage_isHtml_andGivesContactReportSignInAndDeletionHelp() throws Exception {
+        mockMvc.perform(get("/support"))
+                .andExpect(status().isOk())
+                .andExpect(content().contentTypeCompatibleWith("text/html"))
+                .andExpect(content().string(containsString(CONTACT)));
+        String support = page("/support");
+        has(support,
+                "<h1>FitrahTube Support</h1>",
+                "FitrahTube is a curated Islamic video library. Every channel, playlist and video in it "
+                        + "is reviewed by our team before it appears.",
+                "tap <strong>Report</strong>",
+                "<strong>Forgot password?</strong>",
+                "https://app.fitrahtube.com/delete-account",
+                "<a href=\"/privacy\">", "<a href=\"/terms\">",
+                // A Google sign-up sets a password at profile setup on both apps; an Apple sign-up
+                // (iOS only) does not, and resetting one into it is unproven, so Android goes via us.
+                "Sign in with the Google button, or with your email address and the password you "
+                        + "chose when you set up your profile.",
+                "Sign in with the Apple button on your iPhone or iPad. To use that account on an "
+                        + "Android device, email us at");
+        lacks(support, "no separate FitrahTube password", "you also chose a password", "Google or Apple?");
+        // Store-copy rules: never name the video platform, no ad/download/background claims.
+        lacks(support.toLowerCase(java.util.Locale.ROOT),
+                "youtube", "ad-free", "no ads", "download", "background play");
+    }
+
+    /** The shared footer lists every sibling page, so it must list /support too. */
+    @Test
+    void everyPageFooter_linksToSupport() throws Exception {
+        for (String path : ALL_PAGES) {
+            String footer = page(path).replaceAll("(?s).*<footer>", "");
+            has(footer, "<a href=\"/support\">Support</a>", "<a href=\"/licenses\">Licences</a>");
         }
     }
 

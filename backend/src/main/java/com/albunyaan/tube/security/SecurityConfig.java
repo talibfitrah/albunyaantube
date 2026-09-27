@@ -83,9 +83,9 @@ public class SecurityConfig {
                         // reached MVC and came back 500, not 405 (pinned by
                         // SelfDeleteAccountIT#publicLegalPages_doNotPermitWritesAnonymously).
                         .requestMatchers(HttpMethod.GET,
-                                "/delete-account", "/privacy", "/terms", "/licenses").permitAll()
+                                "/delete-account", "/privacy", "/terms", "/licenses", "/support").permitAll()
                         .requestMatchers(HttpMethod.HEAD,
-                                "/delete-account", "/privacy", "/terms", "/licenses").permitAll()
+                                "/delete-account", "/privacy", "/terms", "/licenses", "/support").permitAll()
                         // WellKnownController: iOS Universal Links (AASA) + Android App
                         // Links (assetlinks.json) verification files. GET only, exact
                         // paths enumerated -- never a broad "/.well-known/**" permitAll,

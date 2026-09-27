@@ -239,6 +239,38 @@ class AccountControllerTest {
                 .andExpect(status().isBadRequest());
     }
 
+    // ── Phone is optional (owner ruling 2026-09-27) ─────────────────────────
+
+    /** No phone, or a blank one, reaches the service as null -- never a 400. */
+    @Test
+    void postProfileWithoutPhoneNumberSucceeds() throws Exception {
+        when(accountProfileService.completeProfile(eq(TEST_UID), eq("Test User"), any(LocalDate.class), eq(null)))
+                .thenReturn(activeUser());
+
+        for (String body : java.util.List.of(
+                "{\"displayName\":\"Test User\",\"dateOfBirth\":\"2000-01-01\"}",
+                "{\"displayName\":\"Test User\",\"dateOfBirth\":\"2000-01-01\",\"phoneNumber\":null}",
+                "{\"displayName\":\"Test User\",\"dateOfBirth\":\"2000-01-01\",\"phoneNumber\":\"  \"}")) {
+            mockMvc.perform(post("/api/account/profile")
+                            .contentType(MediaType.APPLICATION_JSON)
+                            .content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.uid").value(TEST_UID));
+        }
+        verify(accountProfileService, org.mockito.Mockito.times(3))
+                .completeProfile(eq(TEST_UID), eq("Test User"), eq(LocalDate.of(2000, 1, 1)), eq(null));
+    }
+
+    /** Optional is not unvalidated: a phone that IS given must still be E.164. */
+    @Test
+    void postProfileMalformedPhoneNumberStillReturns400() throws Exception {
+        mockMvc.perform(post("/api/account/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"displayName\":\"Test User\",\"dateOfBirth\":\"2000-01-01\",\"phoneNumber\":\"0612345678\"}"))
+                .andExpect(status().isBadRequest());
+        verify(accountProfileService, never()).completeProfile(any(), any(), any(), any());
+    }
+
     // ── Test 5: malformed dateOfBirth → 400 (Jackson deserialization) ───────
 
     @Test
