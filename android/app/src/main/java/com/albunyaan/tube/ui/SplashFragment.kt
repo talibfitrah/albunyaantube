@@ -10,6 +10,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
 import androidx.core.view.isInvisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -109,10 +110,10 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         super.onViewCreated(view, savedInstanceState)
         settingsPreferences = SettingsPreferences(requireContext())
 
-        val appName = view.requireViewById<TextView>(R.id.appName)
-        val tagline = view.requireViewById<TextView>(R.id.tagline)
-        val loadingSpinner = view.requireViewById<ProgressBar>(R.id.loadingSpinner)
-        val splashIcon = view.requireViewById<ImageView>(R.id.splashIcon)
+        val appName = ViewCompat.requireViewById<TextView>(view, R.id.appName)
+        val tagline = ViewCompat.requireViewById<TextView>(view, R.id.tagline)
+        val loadingSpinner = ViewCompat.requireViewById<ProgressBar>(view, R.id.loadingSpinner)
+        val splashIcon = ViewCompat.requireViewById<ImageView>(view, R.id.splashIcon)
 
         // Get slide distance from design token (already in pixels)
         val slideDistance = resources.getDimension(R.dimen.splash_slide_distance)

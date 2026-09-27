@@ -401,7 +401,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        val previous = previousItems.removeLast()
+        val previous = previousItems.removeAt(previousItems.lastIndex)
         queue.add(0, current)
         currentItem = previous
         applyQueueState()

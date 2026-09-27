@@ -239,7 +239,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
         // Trim to max size
         while (searchHistory.size > MAX_HISTORY_SIZE) {
-            searchHistory.removeLast()
+            searchHistory.removeAt(searchHistory.lastIndex)
         }
 
         // Save to SharedPreferences
