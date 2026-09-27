@@ -1,0 +1,52 @@
+frontend/tests/ContentLibraryOfflineToggle.spec.ts
+  s_974be43fdb0416::t_502fe69f96bcdf 105-119
+backend/src/test/java/com/albunyaan/tube/service/MailServiceTest.java
+  s_974be43fdb0416::t_b2615c73bb5599 138
+  s_974be43fdb0416::t_0240de47587885 9-11,112,119-121,125-127
+  s_974be43fdb0416::t_b501a0b1a1d242 113-118,122-124,128-137,139-142
+backend/src/main/java/com/albunyaan/tube/controller/PublicContentController.java
+  s_974be43fdb0416::t_2ce166ce6f9308 158-162
+  s_974be43fdb0416::t_82d16002272e99 8
+backend/src/main/java/com/albunyaan/tube/service/MailServiceStartupCheck.java
+  s_974be43fdb0416::t_c185118aa1d7c8 20,24-25,44-45,68,95
+  s_974be43fdb0416::t_57eb6f32b35bb5 21-23
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_974be43fdb0416::t_2ce166ce6f9308 372,839-840
+backend/src/main/java/com/albunyaan/tube/service/MailService.java
+  s_974be43fdb0416::t_1d7529564249f3 5,22,208-220,223,242,246,248,252
+  s_974be43fdb0416::t_57eb6f32b35bb5 224-230,236-239,243-245,247
+  s_974be43fdb0416::t_b501a0b1a1d242 38,65,70,72,231-235,240-241,250-251,253
+  s_974be43fdb0416::t_c185118aa1d7c8 221
+  s_974be43fdb0416::t_b2615c73bb5599 249
+  s_974be43fdb0416::t_6af2705ca75d03 8-9
+  s_974be43fdb0416::t_bb57049bc48a61 36-37
+backend/src/main/java/com/albunyaan/tube/model/Video.java
+  s_974be43fdb0416::t_2ce166ce6f9308 139-140,440-442,445-447
+  s_974be43fdb0416::t_8d65bcf087a032 141-144
+  s_974be43fdb0416::t_e4655dfc719f1d 443-444
+  s_974be43fdb0416::t_a4d9a2bc51d264 448
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryOfflineAllowedTest.java
+  s_974be43fdb0416::t_a58113974718e5 1-71
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_974be43fdb0416::t_00848a179ae4b8 153,155-157,163-175
+docs/architecture/api-specification.yaml
+  s_974be43fdb0416::t_ace8a8e678d089 3413-3417,3455-3457
+frontend/src/views/ContentLibraryView.vue
+  s_974be43fdb0416::t_6c20319cc3d2f0 1211-1213
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e62448ae8ae0cb43aee42a85e4a54d7255cdf105",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
