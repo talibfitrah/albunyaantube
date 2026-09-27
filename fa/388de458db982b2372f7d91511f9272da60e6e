@@ -1,0 +1,88 @@
+android/app/src/main/res/values-ar/strings_onboarding.xml
+  s_974be43fdb0416::t_460b81a667bad3 33
+  s_974be43fdb0416::t_f539086e855ae0 22-30,32,40,43-45
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModel.kt
+  s_974be43fdb0416::t_c1f955b142ac31 34-38,77-78,127-128,130-150,166,170,178,182,186
+  s_974be43fdb0416::t_bc570d8778e51c 107-112,209-211
+  s_974be43fdb0416::t_b6333a36ea511d 123-126,129
+android/app/src/main/res/values/strings_onboarding.xml
+  s_974be43fdb0416::t_460b81a667bad3 33
+android/app/src/main/res/layout-sw720dp/fragment_profile_bootstrap.xml
+  s_974be43fdb0416::t_92be270774ef7c 193-207,215
+android/app/src/main/res/values-nl/strings.xml
+  s_974be43fdb0416::t_bc570d8778e51c 738
+  s_974be43fdb0416::t_83fb67c9be263b 923-927
+  s_974be43fdb0416::t_6d6aeffdeb7464 895-922
+android/app/src/main/res/layout/fragment_profile_bootstrap.xml
+  s_974be43fdb0416::t_92be270774ef7c 190-204,212
+android/app/src/test/java/com/albunyaan/tube/data/local/FavoritesRepositoryImplTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 319
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModelTest.kt
+  s_974be43fdb0416::t_afc95cd29ed1f5 260-261,264-273,278,281-282,284,293,301-305,308,314-318,320
+  s_974be43fdb0416::t_c0141ac8cf9559 262-263,274-277,279-280,283,285-292,294-300,306-307,309-313,319
+  s_974be43fdb0416::t_e3bd6c78de8241 228-235,238-241,244-246
+  s_974be43fdb0416::t_dc2c8e806f983b 259,321
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeViewModelSnapshotRoleTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 114
+android/app/src/test/java/com/albunyaan/tube/data/me/MeFeedRepositoryTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 1335
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeViewModelTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 596
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepository.kt
+  s_974be43fdb0416::t_1b163fa78420ea 43
+android/app/src/test/java/com/albunyaan/tube/ui/me/MeKebabImportTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 151
+android/app/src/main/res/values/strings.xml
+  s_974be43fdb0416::t_bc570d8778e51c 860
+android/app/src/test/java/com/albunyaan/tube/data/me/MeFeedApprovalFilterTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 319
+android/app/src/test/java/com/albunyaan/tube/data/subscriptions/SubscriptionRepositoryTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 97
+android/app/src/test/java/com/albunyaan/tube/data/me/work/RefreshSubscriptionsWorkerSyncTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 150
+android/app/src/main/res/values-ar/strings.xml
+  s_974be43fdb0416::t_83fb67c9be263b 989-993
+  s_974be43fdb0416::t_bc570d8778e51c 800
+  s_974be43fdb0416::t_6d6aeffdeb7464 962-988
+releases-meta.json
+  s_974be43fdb0416::t_19af29204b1d99 2-6
+android/app/src/main/java/com/albunyaan/tube/data/account/CompleteProfileRequestDto.kt
+  s_974be43fdb0416::t_1b163fa78420ea 10-11
+android/app/src/main/res/layout-sw600dp/fragment_profile_bootstrap.xml
+  s_974be43fdb0416::t_92be270774ef7c 186-200,208
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_974be43fdb0416::t_8d3fe6fb635985 20
+  s_974be43fdb0416::t_702f3b3cb252af 68,165,254-275,279-293
+  s_974be43fdb0416::t_2599754a30639a 294
+android/app/src/test/java/com/albunyaan/tube/data/me/work/RefreshSchedulerTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 279
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_974be43fdb0416::t_1b163fa78420ea 195
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_974be43fdb0416::t_e3bd6c78de8241 101-112
+android/app/src/test/java/com/albunyaan/tube/data/importflow/YouTubeImportRepositoryTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 442
+android/app/src/test/java/com/albunyaan/tube/data/subscriptions/SubscriptionLimitGuardTest.kt
+  s_974be43fdb0416::t_1b163fa78420ea 117
+android/app/src/main/res/values-nl/strings_onboarding.xml
+  s_974be43fdb0416::t_460b81a667bad3 33
+  s_974be43fdb0416::t_f539086e855ae0 22-30,32,40,43-45
+android/app/build.gradle.kts
+  s_974be43fdb0416::t_19af29204b1d99 90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fa388de458db982b2372f7d91511f9272da60e6e",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
