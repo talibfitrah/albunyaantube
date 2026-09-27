@@ -34,6 +34,12 @@ preflight() {
     echo "$ent" | grep -q 'com.apple.developer.applesignin' || fail "Sign in with Apple entitlement missing from the signature"
     echo "$ent" | grep -q 'applinks:app.fitrahtube.com' || fail "Associated Domains entitlement missing from the signature"
     [ -f "$APP/PrivacyInfo.xcprivacy" ] || fail "privacy manifest missing"
+    # Apple parses privacy manifests as strict XML (ITMS-91056); plutil accepts e.g. "--" inside a
+    # comment, xmllint does not. Check every manifest the app ships, SDK bundles included.
+    local manifest
+    while IFS= read -r manifest; do
+        xmllint --noout "$manifest" 2>/dev/null || fail "privacy manifest is not well-formed XML: ${manifest#"$APP"/}"
+    done < <(find "$APP" -name PrivacyInfo.xcprivacy)
     echo "archive.sh: preflight OK"
 }
 
