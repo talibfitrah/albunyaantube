@@ -224,9 +224,12 @@
     <string name="update_check_up_to_date">FitrahTube is up to date.</string>
     <string name="update_check_failed">Couldn\'t check for updates. Please try again.</string>
     <string name="update_downloading">Downloading update…</string>
+    <string name="update_preparing">Preparing to install…</string>
     <string name="update_download_failed">Download failed. Please try again.</string>
     <string name="update_signature_mismatch">Downloaded update did not match the installed app\'s signature and was refused. Please re-download from the trusted source.</string>
     <string name="update_install_failed">Update install failed: %1$s</string>
+    <string name="update_install_success">FitrahTube updated.</string>
+    <string name="update_installed_restart">Update installed — restart FitrahTube to apply it.</string>
     <string name="update_previous_attempt_failed">Last update attempt didn\'t complete. Tap Install again or try ADB sideload if it keeps failing.</string>
     <string name="update_previous_attempt_failed_with_reason">Last update attempt didn\'t complete (%1$s). Tap Install again or try ADB sideload if it keeps failing.</string>
     <string name="update_permission_title">Permission needed</string>
@@ -279,7 +282,7 @@
     <string name="share_watch_in_app">Watch in FitrahTube:</string>
     <string name="share_channel_in_app">Open this channel in FitrahTube:</string>
     <string name="share_playlist_in_app">Open this playlist in FitrahTube:</string>
-    <string name="share_app_promo">Get FitrahTube for ad-free Islamic content!</string>
+    <string name="share_app_promo">Get FitrahTube for curated Islamic content!</string>
     <string name="share_video_chooser">Share video</string>
     <string name="share_channel_chooser">Share channel</string>
     <string name="share_playlist_chooser">Share playlist</string>
@@ -355,6 +358,32 @@
     </plurals>
     <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
     <string name="live_past_meta">%1$s • %2$s</string>
+    <plurals name="live_waiting_count">
+        <item quantity="one">%s waiting</item>
+        <item quantity="other">%s waiting</item>
+    </plurals>
+    <!-- YouTube's English stream/premiere prefixes, re-rendered (UploadAge.fromEnglish, iOS Format.englishStat).
+         The %s date stays YouTube's own text: its month/day order is not provable. -->
+    <string name="live_streamed_ago">Streamed %s</string>
+    <string name="live_premiered_ago">Premiered %s</string>
+    <string name="live_scheduled_for">Scheduled for %s</string>
+    <string name="live_premieres_on">Premieres %s</string>
+    <plurals name="live_premieres_in_minutes">
+        <item quantity="one">Premieres in %d minute</item>
+        <item quantity="other">Premieres in %d minutes</item>
+    </plurals>
+    <plurals name="live_premieres_in_hours">
+        <item quantity="one">Premieres in %d hour</item>
+        <item quantity="other">Premieres in %d hours</item>
+    </plurals>
+    <plurals name="live_premieres_in_days">
+        <item quantity="one">Premieres in %d day</item>
+        <item quantity="other">Premieres in %d days</item>
+    </plurals>
+    <plurals name="playlist_episode_count">
+        <item quantity="one">%d episode</item>
+        <item quantity="other">%d episodes</item>
+    </plurals>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video thumbnail</string>
@@ -377,8 +406,10 @@
     <!-- Screen Reader Announcements -->
     <string name="a11y_duration_format">Duration: %s</string>
     <string name="a11y_video_item">Video: %1$s, Duration: %2$s, %3$s, %4$s</string>
+    <string name="a11y_video_item_no_age">Video: %1$s, Duration: %2$s, %3$s</string>
     <string name="a11y_channel_item">Channel: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Playlist: %1$s, %2$d items</string>
+    <string name="a11y_playlist_item_text">Playlist: %1$s, %2$s</string>
     <string name="a11y_search_history">Recent search: %1$s</string>
     <string name="a11y_download_item">%1$s, %2$s, %3$d percent</string>
 
@@ -402,6 +433,14 @@
     <plurals name="video_views">
         <item quantity="one">%s view</item>
         <item quantity="other">%s views</item>
+    </plurals>
+    <plurals name="time_ago_minutes">
+        <item quantity="one">%d minute ago</item>
+        <item quantity="other">%d minutes ago</item>
+    </plurals>
+    <plurals name="time_ago_hours">
+        <item quantity="one">%d hour ago</item>
+        <item quantity="other">%d hours ago</item>
     </plurals>
     <plurals name="time_ago_weeks">
         <item quantity="one">%d week ago</item>
@@ -469,12 +508,6 @@
     <string name="library_saved">Saved</string>
     <string name="library_saved_count">%1$d videos</string>
     <string name="library_saved_coming_soon">Saved videos (coming soon)</string>
-    <string name="library_recently_watched">Recently Watched</string>
-    <string name="library_recently_watched_count">%1$d videos</string>
-    <string name="library_recently_watched_coming_soon">Recently Watched (coming soon)</string>
-    <string name="library_history">History</string>
-    <string name="library_history_count">%1$d videos</string>
-    <string name="library_history_coming_soon">Watch history (coming soon)</string>
 
     <!-- Favorites Screen -->
     <string name="favorites_title">Favorites</string>
@@ -510,9 +543,6 @@
     <string name="settings_quality_high_desc">High (1080p) - Best quality</string>
     <string name="settings_quality_changed">Download quality set to %1$s</string>
     <string name="settings_quality_change_failed">Failed to change download quality. Please try again.</string>
-    <string name="settings_content">Content</string>
-    <string name="settings_safe_mode">Safe Mode</string>
-    <string name="settings_safe_mode_desc">Show only family-friendly content</string>
     <string name="settings_appearance">Appearance</string>
     <string name="settings_language">Language</string>
     <string name="settings_language_desc">Choose your preferred language</string>
@@ -561,7 +591,6 @@
     <string name="settings_support_center_desc">Get help and send feedback</string>
     <string name="settings_icon_wifi">WiFi only setting icon</string>
     <string name="settings_icon_background_play">Background play setting icon</string>
-    <string name="settings_icon_safe_mode">Safe mode setting icon</string>
     <string name="cancel">Cancel</string>
 
     <!-- Search Screen -->
@@ -624,7 +653,7 @@
     <string name="report_reason_flirting">Flirting / Innuendo</string>
     <string name="report_reason_romance">Romance / Love Content</string>
     <string name="report_reason_awrah">Awrah Exposure</string>
-    <string name="report_reason_shirk">Shirk / Polytheism</string>
+    <string name="report_reason_shirk">Shirk</string>
     <string name="report_reason_bidah">Bid\'ah / Innovation</string>
     <string name="report_reason_violence">Violence / Gore</string>
     <string name="report_reason_misinformation">Misinformation</string>
@@ -759,6 +788,16 @@
     <string name="profile_error_age_dialog_message">Your date of birth no longer meets our age requirement. You\'ll be signed out.</string>
     <string name="profile_dob_pick">Pick a date</string>
 
+    <!-- ANDROID-ACCT-DEL-01: in-app account deletion (Google Play policy 13327111) -->
+    <string name="profile_delete_account">Delete account</string>
+    <string name="profile_delete_account_deleting">Deleting account…</string>
+    <string name="profile_delete_account_dialog_title">Delete your account?</string>
+    <string name="profile_delete_account_dialog_message">This permanently deletes your FitrahTube account. Your name, email, phone number and date of birth are erased, along with your subscriptions, saved playlists, favourites and every video downloaded on this device. This cannot be undone.</string>
+    <string name="profile_delete_account_confirm">Delete account</string>
+    <string name="profile_delete_account_error_last_admin">You\'re the last active administrator. Give another account admin access before deleting this one.</string>
+    <string name="profile_delete_account_error_network">Couldn\'t delete your account. Check your connection and try again.</string>
+    <string name="profile_delete_account_error_unknown">Couldn\'t delete your account. Please try again later.</string>
+
     <!-- Me screen kebab menu -->
     <string name="me_kebab_profile">Profile</string>
     <string name="me_kebab_suggest_content">Suggest content</string>
@@ -818,7 +857,7 @@
 
     <!-- Profile bootstrap: phone -->
     <string name="bootstrap_phone_country_label">Country</string>
-    <string name="bootstrap_phone_label">Mobile number</string>
+    <string name="bootstrap_phone_label">Mobile number (optional)</string>
     <string name="bootstrap_phone_hint">Phone number</string>
     <string name="bootstrap_error_invalid_phone_country">Pick your country</string>
     <string name="bootstrap_error_invalid_phone">Enter a valid mobile number</string>

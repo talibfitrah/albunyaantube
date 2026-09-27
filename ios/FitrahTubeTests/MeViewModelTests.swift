@@ -1,0 +1,286 @@
+import FitrahAPI
+import Foundation
+import InnerTubeKit
+import SwiftData
+import Testing
+@testable import FitrahTube
+
+/// Task 13, the signed-in Me shell (ruling C5). Everything here is LOCAL: the chip rail is the two
+/// per-user stores merged, the favorites row is the favorites store capped, and the kebab is a pure
+/// role decision. No feed (Tasks 14-16), no History (F10), no Content/Pending tabs (F14).
+@Suite(.perTest)
+@MainActor
+struct MeViewModelTests {
+
+    private static let base = URL(string: "https://api.fitrah.test/")!
+
+    private func makeStores() -> (favorites: SwiftDataFavoritesStore,
+                                  subscriptions: SwiftDataSubscriptionsStore,
+                                  savedPlaylists: SwiftDataSavedPlaylistsStore) {
+        // One container for all three: `AppContainer` shares one too, and `SavedPlaylist`'s and
+        // `SubscribedChannel`'s `#Unique` macros need their own schema entries either way.
+        let container = AppContainer.makeModelContainer(inMemory: true)
+        return (SwiftDataFavoritesStore(modelContainer: container),
+                SwiftDataSubscriptionsStore(modelContainer: container),
+                SwiftDataSavedPlaylistsStore(modelContainer: container))
+    }
+
+    /// A session parked on whatever `/me` answers. `role` nil -> the session stays `.signedOut`,
+    /// which is this app's "no account" (the container always holds a session, so a *nil* session
+    /// is not expressible — `state.me == nil` is the same fact).
+    private func makeSession(role: String?, status: String = "active") async throws -> AccountSession {
+        let auth = FakeAuthClient(state: .signedOut)
+        let body = #"{"uid":"u1","email":"a@b.test","status":"\#(status)","role":"\#(role ?? "user")"}"#
+        let transport = ScriptedTransport([.json(200, body)])
+        let session = AccountSession(
+            auth: auth,
+            account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "d1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
+        guard role != nil else { return session }
+        let running = Task { await session.start() }
+        _ = try await auth.signIn(email: "a@b.test", password: "p")
+        for _ in 0..<500 where session.state.me == nil { await Task.yield() }
+        running.cancel()
+        return session
+    }
+
+    /// `canImportFromYouTube` defaults to FALSE — the honest answer for an email/password or Apple
+    /// account, which is what every existing case here builds. The Import row's own arms pass true.
+    private func makeModel(session: AccountSession,
+                           stores: (favorites: SwiftDataFavoritesStore,
+                                    subscriptions: SwiftDataSubscriptionsStore,
+                                    savedPlaylists: SwiftDataSavedPlaylistsStore),
+                           canImportFromYouTube: Bool = false,
+                           settings: (any SettingsStore)? = nil) -> MeViewModel {
+        MeViewModel(session: session, favorites: stores.favorites,
+                    subscriptions: stores.subscriptions, savedPlaylists: stores.savedPlaylists,
+                    settings: settings ?? UserDefaultsSettingsStore(
+                        defaults: UserDefaults(suiteName: "MeViewModelTests.\(UUID().uuidString)")!),
+                    canImportFromYouTube: { canImportFromYouTube })
+    }
+
+    private func favorite(_ id: String) -> ContentItem {
+        ContentItem(id: id, type: .video, title: "Video \(id)", category: nil, description: nil,
+                    thumbnailURL: nil, durationSeconds: 120, uploadedDaysAgo: nil, viewCount: nil,
+                    channelTitle: "Channel", subscribers: nil, videoCount: nil, itemCount: nil)
+    }
+
+    // MARK: - Chips
+
+    /// Merged, never segregated (`MeViewModel.kt:406-411`): a playlist saved AFTER a channel sorts
+    /// first. The two add times are set explicitly so the assertion is about the sort, not about
+    /// how fast two `Date()`s follow each other.
+    @Test func chipsMergeBothStoresSortedByAddTimeDescending() async throws {
+        let stores = makeStores()
+        try stores.subscriptions.toggle(id: "UCchannel", name: "Channel One",
+                                        avatarURL: URL(string: "https://example.com/a.jpg"))
+        try stores.savedPlaylists.toggle(id: "PLplaylist", title: "Playlist One",
+                                         thumbnailURL: URL(string: "https://example.com/p.jpg"), itemCount: 4)
+        stores.subscriptions.items[0].followedAt = Date(timeIntervalSince1970: 1_000)
+        stores.savedPlaylists.items[0].addedAt = Date(timeIntervalSince1970: 2_000)
+
+        let model = makeModel(session: try await makeSession(role: "user"), stores: stores)
+
+        #expect(model.chips.map(\.id) == ["PLplaylist", "UCchannel"])
+        #expect(model.chips.map(\.kind) == [.playlist, .channel])
+        #expect(model.chips.map(\.title) == ["Playlist One", "Channel One"])
+        #expect(model.chips.map(\.avatarURL) == [URL(string: "https://example.com/p.jpg"),
+                                                  URL(string: "https://example.com/a.jpg")])
+    }
+
+    // MARK: - Chip filtering (pure)
+
+    @Test func chipSelectionIsAPureFunctionOverTheMergedList() {
+        let chips = [MeChipItem(id: "a", title: "A", avatarURL: nil, addedAt: .distantPast, kind: .channel)]
+        #expect(MeViewModel.selection("a", in: chips) == "a")
+        #expect(MeViewModel.selection(nil, in: chips) == nil)
+        #expect(MeViewModel.selection("gone", in: chips) == nil)
+        #expect(MeViewModel.selection("a", in: []) == nil)
+    }
+
+    /// Fix round 1 / I4 RULING: only CHANNEL chips filter the FEED. The rail merges both kinds and
+    /// the Atom feed is per channel, so routing a playlist chip into `MeFeedRepository.setFilter`
+    /// emptied the whole feed section with no message — a dead end two taps from the Me tab. The
+    /// chip still SELECTS (it highlights, and Task 30 is where its items get a home); the feed
+    /// stays unfiltered.
+    @Test func onlyChannelChipsFilterTheFeed() {
+        let chips = [
+            MeChipItem(id: "UCchannel", title: "C", avatarURL: nil, addedAt: .distantPast, kind: .channel),
+            MeChipItem(id: "PLplaylist", title: "P", avatarURL: nil, addedAt: .distantPast, kind: .playlist),
+        ]
+        #expect(MeViewModel.feedFilter(for: "UCchannel", in: chips) == "UCchannel")
+        #expect(MeViewModel.feedFilter(for: "PLplaylist", in: chips) == nil)
+        // Tap-again-to-clear, and a chip that is no longer in the rail.
+        #expect(MeViewModel.feedFilter(for: nil, in: chips) == nil)
+        #expect(MeViewModel.feedFilter(for: "UCchannel", in: []) == nil)
+    }
+
+    /// The staleness this exists for: a chip unsubscribed on the channel screen must not leave the
+    /// Me tab filtering by a row that no longer exists.
+    @Test func aSelectionWhoseChipDisappearedResolvesToNil() async throws {
+        let stores = makeStores()
+        try stores.subscriptions.toggle(id: "UCchannel", name: "Channel One", avatarURL: nil)
+        let model = makeModel(session: try await makeSession(role: "user"), stores: stores)
+
+        model.setFilter("UCchannel")
+        #expect(model.selectedChipId == "UCchannel")
+
+        try stores.subscriptions.toggle(id: "UCchannel", name: nil, avatarURL: nil) // unsubscribe
+        #expect(model.selectedChipId == nil)
+    }
+
+    // MARK: - Favorites row
+
+    @Test func favoriteTilesCapAtTwentyOfTwentyFive() async throws {
+        let stores = makeStores()
+        for index in 1...25 { try stores.favorites.toggle(favorite("v\(index)")) }
+        let model = makeModel(session: try await makeSession(role: "user"), stores: stores)
+
+        #expect(stores.favorites.items.count == 25)
+        #expect(MeViewModel.maxFavoriteTiles == 20)
+        #expect(model.favoriteTiles.count == 20)
+    }
+
+    @Test func favoriteTilesAreEmptyWithNoFavorites() async throws {
+        let model = makeModel(session: try await makeSession(role: "user"), stores: makeStores())
+        #expect(model.favoriteTiles.isEmpty)
+    }
+
+    // MARK: - Role gate
+
+    /// `MeFragment.kt:270-271` compares `ignoreCase = true`, and the backend can send "ADMIN".
+    @Test func showsModeratorItemsIsTrueForAdminInAnyCase() async throws {
+        for role in ["admin", "ADMIN", "Admin"] {
+            let model = makeModel(session: try await makeSession(role: role), stores: makeStores())
+            #expect(model.showsModeratorItems, "role \(role)")
+        }
+    }
+
+    @Test func showsModeratorItemsIsTrueForModeratorInAnyCase() async throws {
+        for role in ["moderator", "MODERATOR", "Moderator"] {
+            let model = makeModel(session: try await makeSession(role: role), stores: makeStores())
+            #expect(model.showsModeratorItems, "role \(role)")
+        }
+    }
+
+    @Test func showsModeratorItemsIsFalseForAPlainUserOrABlankRole() async throws {
+        for role in ["user", ""] {
+            let model = makeModel(session: try await makeSession(role: role), stores: makeStores())
+            #expect(!model.showsModeratorItems, "role \(role)")
+        }
+    }
+
+    @Test func showsModeratorItemsIsFalseWithNoLoadedAccount() async throws {
+        let model = makeModel(session: try await makeSession(role: nil), stores: makeStores())
+        #expect(model.showsModeratorItems == false)
+    }
+
+    // MARK: - Kebab
+
+    @Test func aPlainUsersKebabHasExactlyThreeItems() {
+        #expect(MeKebabItem.items(isModerator: false) == [.profile, .importYouTube, .signOut])
+    }
+
+    @Test func aModeratorsKebabHasAllFiveItems() {
+        #expect(MeKebabItem.items(isModerator: true)
+            == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
+    }
+
+    /// F10 / RULING 28: the ABSENCE is the requirement. A `.history` or `.recentlyWatched` case
+    /// added here — even hidden — is a dead affordance waiting to be rendered.
+    @Test func thereIsNoHistoryOrRecentlyWatchedKebabItem() {
+        #expect(MeKebabItem.allCases.count == 5)
+    }
+
+    @Test func everyKebabTitleKeyResolvesInEnglishArabicAndDutch() throws {
+        let keys = MeKebabItem.allCases.map(\.titleKey) + [
+            "me_favorites", "me_empty_title", "me_empty_subtitle", "me_empty_cta",
+            "offline_saved_title", "settings_account_header", "settings_account_signed_in_as",
+            "settings_account_signed_in_default", "settings_account_sign_out",
+            "settings_account_sign_out_confirm_title", "settings_account_sign_out_confirm_body",
+            "settings_account_sign_out_confirm_action", "settings_account_sign_out_cancel",
+        ]
+        let bundles = try ["en", "ar", "nl"].map { locale in
+            (locale, try #require(Bundle.main.path(forResource: locale, ofType: "lproj")
+                .flatMap(Bundle.init(path:))))
+        }
+        for (locale, bundle) in bundles {
+            for key in keys {
+                let value = bundle.localizedString(forKey: key, value: nil, table: nil)
+                #expect(value != key, "\(key) unresolved in \(locale)")
+            }
+        }
+        // Task 12's rule applied to this task's keys: ten of them are en-only on Android
+        // (`values/strings.xml`, no `values-ar`/`values-nl` sibling), so the converter's per-locale
+        // read shipped the ENGLISH sentence as the Arabic value and Task 13 is what first RENDERS
+        // them. Arabic is never the English sentence — Dutch legitimately can be ("Account"), so
+        // only Arabic is pinned here.
+        let english = bundles[0].1, arabic = bundles[1].1
+        for key in keys {
+            #expect(arabic.localizedString(forKey: key, value: nil, table: nil)
+                != english.localizedString(forKey: key, value: nil, table: nil),
+                    "\(key) carries the English value in Arabic")
+        }
+    }
+
+    /// Cubic round 5 P1: the SDK's keychain session is device-wide, so the affordance needs BOTH
+    /// the account's own `google.com` provider and the session — an email/password or Apple
+    /// account must never be offered the previous Google user's library.
+    @Test func importIsOfferedOnlyToAGoogleAccountWithAnSdkSession() {
+        #expect(MeViewModel.canImport(providerIDs: ["google.com"], sdkSessionAvailable: true))
+        #expect(MeViewModel.canImport(providerIDs: ["password", "google.com"], sdkSessionAvailable: true))
+        #expect(MeViewModel.canImport(providerIDs: ["password"], sdkSessionAvailable: true) == false,
+                "an email/password account offered a stranger's Google session")
+        #expect(MeViewModel.canImport(providerIDs: ["apple.com"], sdkSessionAvailable: true) == false)
+        #expect(MeViewModel.canImport(providerIDs: ["google.com"], sdkSessionAvailable: false) == false)
+        #expect(MeViewModel.canImport(providerIDs: nil, sdkSessionAvailable: true) == false)
+    }
+
+    /// RULING 28 as arithmetic: every kebab case has a destination (the exhaustive switches in
+    /// `MeSignedInView.kebab` and `MainShellView.destination(for:)` are the proof, at compile
+    /// time), so the ONLY thing keeping a row off a kebab is a gate.
+    ///
+    /// Ruling C4 as arithmetic too: BOTH moderator rows move together, so a moderator's kebab gains
+    /// exactly two rows over a plain user's, and neither list renders a greyed promise.
+    @Test func everyKebabRowHasADestinationSinceTaskTwentyNine() async throws {
+        let plain = makeModel(session: try await makeSession(role: "user"), stores: makeStores())
+        #expect(plain.enabledKebabItems == [.profile, .signOut])
+        let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores())
+        #expect(moderator.enabledKebabItems == [.profile, .mySubmissions, .suggestContent, .signOut])
+        #expect(MeKebabItem.items(isModerator: true)
+            == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
+    }
+
+    /// Task 29's gate, and the reason `landed` alone stopped being the whole answer: Import needs a
+    /// signed-in GOOGLE user to extend a scope onto, so an Apple or email/password account has
+    /// nothing to authorize. RULING 28 — the row is ABSENT for those accounts, never greyed, which
+    /// is exactly the difference between these two lists.
+    @Test func theImportRowAppearsOnlyForAnAccountWithAGoogleGrant() async throws {
+        let google = makeModel(session: try await makeSession(role: "user"), stores: makeStores(),
+                               canImportFromYouTube: true)
+        #expect(google.enabledKebabItems == [.profile, .importYouTube, .signOut])
+        let apple = makeModel(session: try await makeSession(role: "user"), stores: makeStores(),
+                              canImportFromYouTube: false)
+        #expect(apple.enabledKebabItems == [.profile, .signOut])
+        // A moderator with a Google grant gets all five; the C4 pair is unaffected either way.
+        let moderator = makeModel(session: try await makeSession(role: "admin"), stores: makeStores(),
+                                  canImportFromYouTube: true)
+        #expect(moderator.enabledKebabItems
+            == [.profile, .mySubmissions, .suggestContent, .importYouTube, .signOut])
+        // Never `.disabled` — the absent row is absent, so the two lists differ in LENGTH.
+        #expect(apple.enabledKebabItems.count + 1 == google.enabledKebabItems.count)
+    }
+
+    /// The kebab's ONE live destination, end to end: sign out drops the session (and `RootView`
+    /// then routes to the sign-in wall).
+    @Test func signingOutDropsTheSession() async throws {
+        let session = try await makeSession(role: "user")
+        let model = makeModel(session: session, stores: makeStores())
+        #expect(session.state.me != nil)
+
+        model.signOut()
+
+        #expect(session.state == .signedOut)
+        #expect(session.user == nil)
+    }
+}

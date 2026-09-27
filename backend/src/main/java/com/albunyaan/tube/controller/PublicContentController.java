@@ -5,6 +5,7 @@ import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.HomeCategoryDto;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -154,7 +155,11 @@ public class PublicContentController {
      */
     @GetMapping("/videos/{videoId}")
     public ResponseEntity<?> getVideoDetails(@PathVariable String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return ResponseEntity.ok(contentService.getVideoDetails(videoId));
+        Video video = contentService.getVideoDetails(videoId);
+        // Serve the EFFECTIVE offline permission, never the raw never-toggled null. A fresh
+        // read that this endpoint never saves back, so the stored flag stays untouched.
+        video.setOfflineAllowed(video.allowsOffline());
+        return ResponseEntity.ok(video);
     }
 
     /**

@@ -51,6 +51,19 @@ public class User {
     private Timestamp recoveredAt;
     private String recoveredBy;
 
+    /**
+     * Self-delete sweep progress. Written only by
+     * {@link com.albunyaan.tube.service.AuthService#deleteAccountPermanently}:
+     * false when the tombstone commits, true once the library / download-event /
+     * personalGrants sweep has finished. Any later call re-runs the sweep while
+     * this is not true, so a purge that died mid-flight stops being permanent.
+     *
+     * <p>Nullable on purpose: tombstones written before this field existed read
+     * back as null and are swept once more (the sweep is idempotent by uid),
+     * which stamps them true.
+     */
+    private Boolean purgeCompleted;
+
     // Profile completion (Plan C will populate; Plan A only stores)
     private Timestamp profileCompletedAt;
 
@@ -283,6 +296,9 @@ public class User {
     public String getRecoveredBy() { return recoveredBy; }
     public void setRecoveredBy(String s) { this.recoveredBy = s; }
 
+    public Boolean getPurgeCompleted() { return purgeCompleted; }
+    public void setPurgeCompleted(Boolean b) { this.purgeCompleted = b; }
+
     public Timestamp getProfileCompletedAt() { return profileCompletedAt; }
     public void setProfileCompletedAt(Timestamp t) { this.profileCompletedAt = t; }
 
@@ -324,6 +340,7 @@ public class User {
         c.deleteReason = this.deleteReason;
         c.recoveredAt = this.recoveredAt;
         c.recoveredBy = this.recoveredBy;
+        c.purgeCompleted = this.purgeCompleted;
         c.profileCompletedAt = this.profileCompletedAt;
         c.dateOfBirth = this.dateOfBirth;
         c.phoneNumber = this.phoneNumber;

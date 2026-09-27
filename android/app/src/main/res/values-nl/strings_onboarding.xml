@@ -19,28 +19,29 @@
     <string name="onboarding_page3_title">Download voor offline</string>
     <string name="onboarding_page3_desc">Sla je favoriete content op om offline te bekijken of beluisteren, altijd en overal.</string>
 
-    <!-- Plan C T8: ProfileBootstrap (English placeholders — human translation pending) -->
-    <string name="bootstrap_title">Tell us about you</string>
-    <string name="bootstrap_display_name_label">What should we call you?</string>
-    <string name="bootstrap_display_name_hint">Display name</string>
-    <string name="bootstrap_dob_label">Date of birth</string>
-    <string name="bootstrap_dob_hint">Tap to select</string>
-    <string name="bootstrap_submit_button">Continue</string>
-    <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
-    <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
-    <string name="bootstrap_error_save_failed">Couldn\'t save your profile — try again</string>
-    <string name="bootstrap_password_explainer">Stel een wachtwoord in zodat je later ook vanuit een browser kunt inloggen op het dashboard.</string>
+    <!-- Plan C T8: ProfileBootstrap -->
+    <string name="bootstrap_title">Vertel ons over jezelf</string>
+    <string name="bootstrap_display_name_label">Hoe mogen we je noemen?</string>
+    <string name="bootstrap_display_name_hint">Weergavenaam</string>
+    <string name="bootstrap_dob_label">Geboortedatum</string>
+    <string name="bootstrap_dob_hint">Tik om te kiezen</string>
+    <string name="bootstrap_submit_button">Doorgaan</string>
+    <string name="bootstrap_error_invalid_name">Vul je naam in (1–40 tekens)</string>
+    <string name="bootstrap_error_invalid_dob">Kies je geboortedatum</string>
+    <string name="bootstrap_error_under_age">Je moet minstens 13 jaar zijn om FitrahTube te gebruiken. Controleer het jaar dat je hebt gekozen.</string>
+    <string name="bootstrap_error_save_failed">Kon je profiel niet opslaan — probeer het opnieuw</string>
+    <string name="bootstrap_password_explainer">Stel een wachtwoord in om verder te gaan — minstens 8 tekens. Daarna kun je ook inloggen met je e-mailadres en dit wachtwoord.</string>
     <string name="bootstrap_password_label">Wachtwoord</string>
     <string name="bootstrap_password_confirm_label">Bevestig wachtwoord</string>
     <string name="bootstrap_error_invalid_password">Wachtwoord moet minstens 8 tekens bevatten</string>
     <string name="bootstrap_error_password_mismatch">Wachtwoorden komen niet overeen</string>
     <string name="bootstrap_error_password_set_failed">Kon je wachtwoord niet instellen — probeer een ander wachtwoord</string>
 
-    <!-- Plan C T12: D12 — splash error on failed /me fetch (English placeholder — human translation pending) -->
-    <string name="splash_couldnt_connect">Couldn\'t connect — please sign in again.</string>
+    <!-- Plan C T12: D12 — splash error on failed /me fetch -->
+    <string name="splash_couldnt_connect">Kon geen verbinding maken — log opnieuw in.</string>
 
-    <!-- Plan C T9: AgeIneligible (English placeholders — human translation pending) -->
-    <string name="age_ineligible_title">Sorry — come back soon</string>
-    <string name="age_ineligible_body">FitrahTube is for users 13 and older. Please come back when you\'re a bit older.</string>
+    <!-- Plan C T9: AgeIneligible -->
+    <string name="age_ineligible_title">Sorry — kom snel terug</string>
+    <string name="age_ineligible_body">FitrahTube is voor gebruikers van 13 jaar en ouder. Kom gerust terug als je wat ouder bent.</string>
     <string name="age_ineligible_ok_button">OK</string>
 </resources>

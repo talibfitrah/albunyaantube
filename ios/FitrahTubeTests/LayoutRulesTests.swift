@@ -1,0 +1,97 @@
+import SwiftUI
+import Testing
+@testable import FitrahTube
+
+@Suite(.perTest)
+struct LayoutRulesTests {
+    @Test func listColumnsByWidthClass() {
+        // RULINGS.md #14: spec §7's "2/3/4" is corrected to "1/3/4" (single-column rows on phone).
+        #expect(GridRules.listColumns(.compact) == 1)
+        #expect(GridRules.listColumns(.regular) == 3)
+        #expect(GridRules.listColumns(.large) == 4)
+    }
+
+    @Test func videoColumnsClampsLowerBoundAtTwo() {
+        // floor(359/180) = 1 -> clamped up to the min(2, ...) floor.
+        #expect(GridRules.videoColumns(width: 359) == 2)
+        // floor(360/180) = 2 exactly -- already at the floor, not clamped.
+        #expect(GridRules.videoColumns(width: 360) == 2)
+    }
+
+    @Test func videoColumnsClampsUpperBoundAtEight() {
+        // floor(1440/180) = 8 exactly -- already at the ceiling, not clamped.
+        #expect(GridRules.videoColumns(width: 1440) == 8)
+        // floor(1441/180) = 8 (truncation) -- stays at the ceiling one point past the boundary.
+        #expect(GridRules.videoColumns(width: 1441) == 8)
+    }
+
+    @Test func videoColumnsMidRangeFloorsWidthDividedBy180() {
+        #expect(GridRules.videoColumns(width: 720) == 4)
+        #expect(GridRules.videoColumns(width: 899) == 4)
+        #expect(GridRules.videoColumns(width: 900) == 5)
+    }
+
+    /// Spec §14: "single column at `.accessibility1+`" -- every grid, every width class.
+    @Test func accessibilityTextSizesCollapseEveryGridToOneColumn() {
+        let largeTabletList: Int = GridRules.listColumns(.large)
+        let wideVideoGrid: Int = GridRules.videoColumns(width: 1376)
+        #expect(GridRules.columns(largeTabletList, dynamicTypeSize: DynamicTypeSize.accessibility1) == 1)
+        #expect(GridRules.columns(wideVideoGrid, dynamicTypeSize: DynamicTypeSize.accessibility3) == 1)
+        #expect(GridRules.columns(3, dynamicTypeSize: DynamicTypeSize.accessibility5) == 1)
+    }
+
+    @Test func nonAccessibilityTextSizesKeepTheWidthClassColumnCount() {
+        #expect(GridRules.columns(4, dynamicTypeSize: DynamicTypeSize.large) == 4)
+        // xxxLarge is the largest *non*-accessibility size -- still the full column count.
+        #expect(GridRules.columns(4, dynamicTypeSize: DynamicTypeSize.xxxLarge) == 4)
+    }
+
+    @Test func carouselVisibleByTypeAndWidthClass() {
+        #expect(GridRules.carouselVisible(.video, .compact) == 2)
+        #expect(GridRules.carouselVisible(.video, .regular) == 3)
+        #expect(GridRules.carouselVisible(.video, .large) == 5)
+
+        #expect(GridRules.carouselVisible(.channel, .compact) == 2)
+        #expect(GridRules.carouselVisible(.channel, .regular) == 4)
+        #expect(GridRules.carouselVisible(.channel, .large) == 6)
+
+        #expect(GridRules.carouselVisible(.playlist, .compact) == 2)
+        #expect(GridRules.carouselVisible(.playlist, .regular) == 3)
+        #expect(GridRules.carouselVisible(.playlist, .large) == 5)
+    }
+
+    @Test func carouselCardWidthAppliesThe098Factor() {
+        // Phone bucket, 2 visible video cards: margin 16, gap 12 (shell-home.md card-widths table).
+        let width = GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: 2)
+        let expected: CGFloat = ((390 - 2 * 16 - 1 * 12) / 2) * 0.98
+        #expect(abs(width - expected) < 0.001)
+        #expect(abs(width - 169.54) < 0.001)
+    }
+
+    @Test func carouselCardWidthLargeBucketFiveVisible() {
+        // sw720 bucket: margin 32, gap 20, 5 visible.
+        let width = GridRules.carouselCardWidth(container: 1200, margin: 32, gap: 20, visible: 5)
+        let expected: CGFloat = ((1200 - 2 * 32 - 4 * 20) / 5) * 0.98
+        #expect(abs(width - expected) < 0.001)
+    }
+
+    @Test func carouselCardWidthReturnsZeroForNonPositiveVisible() {
+        #expect(GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: 0) == 0)
+        #expect(GridRules.carouselCardWidth(container: 390, margin: 16, gap: 12, visible: -1) == 0)
+    }
+
+    /// Gate A-M5: a zero-size container (first layout pass, or mid-transition) made this negative
+    /// -- (0 − 32 − 24)/3 × 0.98 = −18.3 -- and SwiftUI treats a negative frame dimension as
+    /// undefined.
+    @Test func carouselCardWidthNeverGoesNegative() {
+        #expect(GridRules.carouselCardWidth(container: 0, margin: 16, gap: 12, visible: 3) == 0)
+    }
+
+    /// Gate B2-6: `cardGap` was the only pure function in `GridRules` with no test, in an
+    /// otherwise exhaustive file. `home_card_spacing`, 12/16/20 pt by bucket.
+    @Test func cardGapPicksByWidthClass() {
+        #expect(GridRules.cardGap(.compact) == 12)
+        #expect(GridRules.cardGap(.regular) == 16)
+        #expect(GridRules.cardGap(.large) == 20)
+    }
+}

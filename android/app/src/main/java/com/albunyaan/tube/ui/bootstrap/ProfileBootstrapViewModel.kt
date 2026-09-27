@@ -22,6 +22,7 @@ import javax.inject.Inject
 enum class BootstrapError {
     INVALID_NAME,
     INVALID_DOB,
+    UNDER_AGE,
     INVALID_PHONE_COUNTRY,
     INVALID_PHONE,
     INVALID_PASSWORD,
@@ -29,6 +30,11 @@ enum class BootstrapError {
     PASSWORD_SET_FAILED,
     SAVE_FAILED,
 }
+
+enum class BootstrapField { NAME, DOB, PHONE, PASSWORD, CONFIRM }
+
+/** What the screen shows: [error] on its own field when [onField], else in the line above Continue. */
+data class ShownError(val error: BootstrapError, val onField: Boolean)
 
 sealed interface BootstrapNav {
     data object Idle : BootstrapNav
@@ -68,6 +74,8 @@ class ProfileBootstrapViewModel @Inject constructor(
         val profileSaved: Boolean = false,
         val isLoading: Boolean = false,
         val error: BootstrapError? = null,
+        /** Fields the user has changed; seeds and setText echoes don't count. */
+        val touched: Set<BootstrapField> = emptySet(),
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -89,9 +97,19 @@ class ProfileBootstrapViewModel @Inject constructor(
         val name = s.displayName.trim()
         if (name.isBlank() || name.length > 40) return BootstrapError.INVALID_NAME
         if (s.dateOfBirth == null)              return BootstrapError.INVALID_DOB
-        if (s.phoneCountry.isNullOrBlank())     return BootstrapError.INVALID_PHONE_COUNTRY
-        PhoneFormat.formatE164(appContext, s.phoneCountry, s.phoneNumber)
-            ?: return BootstrapError.INVALID_PHONE
+        // Catch under-13 here, before submitting. The server's rejection is deliberately
+        // permanent -- it revokes tokens, disables the Firebase account and tombstones it
+        // (AccountProfileService.rejectUnderAge) so the age gate cannot be retried around.
+        // That is correct for a real under-13 user, but it means a mistyped or mis-tapped
+        // year destroys the account with no recovery. Failing locally keeps an honest
+        // mistake a correctable form error.
+        if (isUnderMinimumAge(s.dateOfBirth)) return BootstrapError.UNDER_AGE
+        // Phone is optional (owner ruling); a typed number is validated as before.
+        if (s.phoneNumber.isNotBlank()) {
+            if (s.phoneCountry.isNullOrBlank()) return BootstrapError.INVALID_PHONE_COUNTRY
+            PhoneFormat.formatE164(appContext, s.phoneCountry, s.phoneNumber)
+                ?: return BootstrapError.INVALID_PHONE
+        }
         if (s.passwordRequired) {
             if (s.password.length < MIN_PASSWORD_LENGTH) return BootstrapError.INVALID_PASSWORD
             if (s.password != s.passwordConfirm)         return BootstrapError.PASSWORD_MISMATCH
@@ -101,6 +119,34 @@ class ProfileBootstrapViewModel @Inject constructor(
 
     /** Drives submit button enable state. True iff the form passes [firstValidationError]. */
     val isFormValid: Boolean get() = firstValidationError() == null
+
+    /**
+     * The error the screen shows: a submit/server error, else — once the user has started
+     * filling the form — the first thing keeping Continue disabled. A disabled button can't
+     * be tapped to reveal submit errors, so without this the user gets no reason at all.
+     * It goes on its field only once the user has touched that field; otherwise it is shown
+     * by Continue. A mismatch waits until the confirmation is as long as the password.
+     */
+    fun shownError(s: UiState = _ui.value): ShownError? {
+        s.error?.let { return ShownError(it, onField = true) }
+        if (s.touched.isEmpty()) return null
+        val e = firstValidationError(s) ?: return null
+        val field = fieldOf(e)
+        if (field == BootstrapField.CONFIRM && field in s.touched &&
+            s.passwordConfirm.length < s.password.length) return null  // still typing
+        return ShownError(e, onField = field in s.touched)
+    }
+
+    private fun fieldOf(e: BootstrapError): BootstrapField? = when (e) {
+        BootstrapError.INVALID_NAME -> BootstrapField.NAME
+        BootstrapError.INVALID_DOB, BootstrapError.UNDER_AGE -> BootstrapField.DOB
+        BootstrapError.INVALID_PHONE_COUNTRY, BootstrapError.INVALID_PHONE -> BootstrapField.PHONE
+        BootstrapError.INVALID_PASSWORD -> BootstrapField.PASSWORD
+        BootstrapError.PASSWORD_MISMATCH -> BootstrapField.CONFIRM
+        BootstrapError.PASSWORD_SET_FAILED, BootstrapError.SAVE_FAILED -> null
+    }
+
+    private fun Set<BootstrapField>.plusIf(changed: Boolean, f: BootstrapField) = if (changed) this + f else this
 
     fun seedDisplayName(initial: String) {
         if (_ui.value.displayName.isEmpty()) _ui.update { it.copy(displayName = initial) }
@@ -117,11 +163,11 @@ class ProfileBootstrapViewModel @Inject constructor(
     }
 
     fun onDisplayNameChanged(v: String) {
-        _ui.update { it.copy(displayName = v, error = null) }
+        _ui.update { it.copy(displayName = v, error = null, touched = it.touched.plusIf(v != it.displayName, BootstrapField.NAME)) }
     }
 
     fun onDobChanged(d: LocalDate) {
-        _ui.update { it.copy(dateOfBirth = d, error = null) }
+        _ui.update { it.copy(dateOfBirth = d, error = null, touched = it.touched + BootstrapField.DOB) }
     }
 
     fun onPhoneCountryChanged(region: String) {
@@ -129,15 +175,15 @@ class ProfileBootstrapViewModel @Inject constructor(
     }
 
     fun onPhoneNumberChanged(v: String) {
-        _ui.update { it.copy(phoneNumber = v, error = null) }
+        _ui.update { it.copy(phoneNumber = v, error = null, touched = it.touched.plusIf(v != it.phoneNumber, BootstrapField.PHONE)) }
     }
 
     fun onPasswordChanged(v: String) {
-        _ui.update { it.copy(password = v, error = null) }
+        _ui.update { it.copy(password = v, error = null, touched = it.touched.plusIf(v != it.password, BootstrapField.PASSWORD)) }
     }
 
     fun onPasswordConfirmChanged(v: String) {
-        _ui.update { it.copy(passwordConfirm = v, error = null) }
+        _ui.update { it.copy(passwordConfirm = v, error = null, touched = it.touched.plusIf(v != it.passwordConfirm, BootstrapField.CONFIRM)) }
     }
 
     fun setLoading(loading: Boolean) {
@@ -160,7 +206,9 @@ class ProfileBootstrapViewModel @Inject constructor(
         }
         val name = s.displayName.trim()
         val dob = s.dateOfBirth!!  // firstValidationError() guarantees non-null
-        val phoneE164 = PhoneFormat.formatE164(appContext, s.phoneCountry!!, s.phoneNumber)!!
+        // null = no phone given; firstValidationError() guarantees a typed one formats.
+        val phoneE164 = if (s.phoneNumber.isBlank()) null
+            else PhoneFormat.formatE164(appContext, s.phoneCountry!!, s.phoneNumber)!!
         _ui.update { it.copy(isLoading = true, error = null) }
         viewModelScope.launch {
             // Skip completeProfile if a prior submit already saved it and
@@ -210,5 +258,15 @@ class ProfileBootstrapViewModel @Inject constructor(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 8
+
+        /** Mirrors AccountProfileService.MIN_AGE on the backend. */
+        const val MIN_AGE_YEARS = 13
+
+        /**
+         * True when [dob] is younger than [MIN_AGE_YEARS] as of [today]. Pure and
+         * parameterised on today so it is testable without touching the clock.
+         */
+        fun isUnderMinimumAge(dob: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
+            dob.isAfter(today.minusYears(MIN_AGE_YEARS.toLong()))
     }
 }

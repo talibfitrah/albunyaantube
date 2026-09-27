@@ -41,6 +41,7 @@ import com.google.android.material.snackbar.Snackbar
 import com.google.android.material.tabs.TabLayoutMediator
 import dagger.hilt.android.AndroidEntryPoint
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import dagger.hilt.android.lifecycle.withCreationCallback
 import javax.inject.Inject
 import kotlinx.coroutines.Dispatchers
@@ -49,7 +50,6 @@ import kotlinx.coroutines.flow.launchIn
 import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
-import java.text.NumberFormat
 import com.albunyaan.tube.util.showIcons
 
 /**
@@ -388,7 +388,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
             // Subscriber count - use app's per-app locale for number formatting
             if (header.subscriberCount != null && header.subscriberCount > 0) {
                 val appLocale = LocaleManager.getCurrentLocale(requireContext())
-                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(header.subscriberCount)
+                val formattedCount = CountFormat.compact(header.subscriberCount, appLocale)
                 subscriberCountText.text = getString(R.string.channel_subscribers_format, formattedCount)
                 subscriberCountText.isVisible = true
             } else {

@@ -1,13 +1,17 @@
 package com.albunyaan.tube.auth
 
+import android.util.Log
 import com.albunyaan.tube.data.account.AccountMeResponseDto
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.CompleteProfileRequestDto
+import com.albunyaan.tube.data.account.LocalAccountDataWiper
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.flow.updateAndGet
 import kotlinx.coroutines.launch
 import retrofit2.HttpException
 
@@ -33,10 +37,54 @@ class AccountRepositoryImpl(
      */
     authStatusEvents: kotlinx.coroutines.flow.SharedFlow<AccountStatusEvent>? = null,
     observerScope: kotlinx.coroutines.CoroutineScope? = null,
+    /**
+     * Erases everything this install holds for the signed-in user. Non-null
+     * when wired through Hilt; null for the lightweight test-default
+     * constructor, same shape as [authStatusEvents] above.
+     *
+     * Runs on [AccountStatusEvent.Deleted] ONLY. Deletion is the one terminal
+     * event that is irreversible server-side, so it is the only one where
+     * keeping local data is wrong: a block is reversible and an ordinary
+     * sign-out deliberately keeps the library for the same person signing back
+     * in.
+     */
+    private val wiper: LocalAccountDataWiper? = null,
+    /**
+     * The last successful /me, persisted so an offline cold start routes on it
+     * (see [restoreLastKnown]). Null for the lightweight test-default constructor.
+     */
+    private val lastKnown: LastKnownAccountStore? = null,
+    /**
+     * Firebase session. Gates [lastKnown] writes on the signed-in uid, clears
+     * the record on any Firebase sign-out (including one Firebase starts itself,
+     * e.g. a disabled user), and lets a terminal revalidation sign out for real.
+     * Null for the lightweight test-default constructor.
+     */
+    private val auth: AuthRepository? = null,
+    /**
+     * `firebaseAuth.currentUser?.uid`, read live. The only synchronous truth:
+     * AccountStatusInterceptor's firebaseAuth.signOut() clears currentUser at
+     * once, while [auth]'s authState waits for a listener posted to the main
+     * looper. Gates both reading and writing [lastKnown]. Null (lightweight
+     * test constructor) = no gate.
+     */
+    private val currentFirebaseUid: (() -> String?)? = null,
 ) : AccountRepository {
 
     private val _state = MutableStateFlow<AccountState>(AccountState.NotSignedIn)
     override val accountState: StateFlow<AccountState> = _state.asStateFlow()
+
+    /** True while the Loaded state came from [lastKnown], not from the server. */
+    @Volatile private var restoredOffline = false
+
+    /** One /me revalidation in flight at most, however many triggers fire. */
+    private val revalidating = java.util.concurrent.atomic.AtomicBoolean(false)
+
+    /**
+     * Guards state-publish + record-write against signOut's state-reset +
+     * record-clear, so a clear can never be followed by a stale write.
+     */
+    private val lock = Any()
 
     init {
         // AUTH-INTERCEPT-DECOUPLE-01 — when wired through Hilt the
@@ -54,7 +102,21 @@ class AccountRepositoryImpl(
                     // compile error here instead of silently no-opping.
                     val unused: Unit = when (event) {
                         AccountStatusEvent.Blocked -> signOut()
-                        AccountStatusEvent.Deleted -> signOut()
+                        // The account is gone server-side and cannot come back,
+                        // so this device must not keep the library, downloads
+                        // or device id for the next person to sign in here.
+                        // DeleteAccountViewModel wipes on its own success path,
+                        // but it deliberately does NOT wipe when the request
+                        // fails — and a failed request can still mean a deleted
+                        // account (the tombstone commits before the purge). The
+                        // retry then 403s ACCOUNT_DELETED and lands here. Same
+                        // route an admin-side deletion takes, which nothing
+                        // wiped for before. Double-wiping is harmless: every
+                        // step is idempotent.
+                        AccountStatusEvent.Deleted -> {
+                            signOut()
+                            wipeLocalData()
+                        }
                         // Clear local state on user-initiated sign-out so any
                         // concurrent coroutine racing the back-stack teardown
                         // sees NotSignedIn rather than the old user's Loaded
@@ -63,6 +125,16 @@ class AccountRepositoryImpl(
                         AccountStatusEvent.SignedOut -> signOut()
                     }
                 }
+            }
+        }
+    }
+
+    init {
+        // Any Firebase sign-out — ours, or one Firebase starts itself when the
+        // user is disabled — must not leave the last /me (PII) on disk.
+        if (auth != null && observerScope != null) {
+            observerScope.launch {
+                auth.authState.collect { if (it is AuthState.SignedOut) signOut() }
             }
         }
     }
@@ -87,7 +159,7 @@ class AccountRepositoryImpl(
             try {
                 val dto = service.getMe()
                 val loaded = dto.toLoaded()
-                _state.value = loaded
+                confirm(loaded)
                 return Result.success(loaded)
             } catch (e: IOException) {
                 lastError = e
@@ -120,7 +192,7 @@ class AccountRepositoryImpl(
     override suspend fun completeProfile(
         displayName: String,
         dateOfBirth: LocalDate,
-        phoneNumber: String,
+        phoneNumber: String?,
     ): Result<AccountState.Loaded> {
         val request = CompleteProfileRequestDto(
             displayName = displayName,
@@ -130,7 +202,7 @@ class AccountRepositoryImpl(
         return try {
             val dto = service.completeProfile(request)
             val loaded = dto.toLoaded()
-            _state.value = loaded
+            confirm(loaded)
             Result.success(loaded)
         } catch (e: HttpException) {
             if (e.code() == 422 && bodyHasCode(e, "AGE_INELIGIBLE")) {
@@ -144,7 +216,108 @@ class AccountRepositoryImpl(
     }
 
     override fun signOut() {
-        _state.value = AccountState.NotSignedIn
+        synchronized(lock) {
+            restoredOffline = false
+            _state.value = AccountState.NotSignedIn
+            lastKnown?.clear()
+        }
+    }
+
+    /** A server-confirmed account: publish it and persist it for offline launch. */
+    private fun confirm(loaded: AccountState.Loaded) {
+        synchronized(lock) {
+            restoredOffline = false
+            _state.value = loaded
+            persist(loaded)
+        }
+    }
+
+    /**
+     * Caller holds [lock]. Writes only while Firebase is signed in as that uid,
+     * so a /me that lands after sign-out cannot bring the record back.
+     */
+    private fun persist(loaded: AccountState.Loaded) {
+        if (firebaseSignedInAs(loaded.uid)) lastKnown?.write(loaded)
+    }
+
+    private fun firebaseSignedInAs(uid: String): Boolean =
+        currentFirebaseUid == null || currentFirebaseUid.invoke() == uid
+
+    /**
+     * Best-effort local erase. Nothing may escape: an exception here would end
+     * the `collect {}` in [init] and leave every later terminal event unhandled
+     * for the rest of the process. CancellationException is rethrown rather
+     * than swallowed — same trap `update/CallExtensions.kt:44-50`
+     * (`runCatchingCoroutine`) documents; that helper lives in the sideload
+     * source set, so it is not reachable from here.
+     */
+    private suspend fun wipeLocalData() {
+        val target = wiper ?: return
+        try {
+            target.wipe()
+        } catch (e: CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            Log.w(TAG, "local wipe after account deletion failed", e)
+        }
+    }
+
+    override fun restoreLastKnown(uid: String): AccountState.Loaded? = synchronized(lock) {
+        // A 403 lifecycle envelope signs Firebase out synchronously before the
+        // failed /me reaches here — never resurrect that account from disk.
+        if (!firebaseSignedInAs(uid)) return null
+        lastKnown?.read(uid)?.also {
+            restoredOffline = true
+            _state.value = it
+        }
+    }
+
+    /**
+     * One /me for a session restored offline; no-op otherwise, and at most one
+     * in flight. Triggered on reconnect and on foreground.
+     *
+     * The server's verdict wins: a signed 401 signs out and deletes the record,
+     * the same line [com.albunyaan.tube.ui.SplashRouter.accountForRoute] draws at
+     * launch ([isTerminalAccountFailure]). An account blocked or deleted while
+     * offline is signed out by the Firebase SDK when its token mint fails, or by
+     * the 403 envelope. Anything else, or a malformed body, keeps the account.
+     */
+    override suspend fun revalidateRestored() {
+        if (!restoredOffline || !revalidating.compareAndSet(false, true)) return
+        try {
+            val loaded = try {
+                service.getMe().toLoaded()
+            } catch (e: HttpException) {
+                if (e.isTerminalAccountFailure()) {
+                    signOut()
+                    auth?.signOut()
+                }
+                return
+            } catch (e: IOException) {
+                return
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // Anything else — malformed body, Retrofit's KotlinNullPointerException
+                // on an empty 200 — is non-terminal. This runs on appScope with no
+                // handler, so an escape would crash the process.
+                Log.w(TAG, "revalidate /me failed; keeping the restored account", e)
+                return
+            }
+            synchronized(lock) {
+                // Only replace the account we restored — a sign-out that landed
+                // while the request was in flight must not be undone.
+                val result = _state.updateAndGet { current ->
+                    if (current is AccountState.Loaded && current.uid == loaded.uid) loaded else current
+                }
+                if (result === loaded) {
+                    restoredOffline = false
+                    persist(loaded)
+                }
+            }
+        } finally {
+            revalidating.set(false)
+        }
     }
 
     override fun applyProfileUpdate(response: AccountMeResponseDto) {
@@ -152,16 +325,19 @@ class AccountRepositoryImpl(
         // from an off-main observerScope can't be clobbered by a
         // post-read overwrite. Not-Loaded states (NotSignedIn / Loading /
         // Failed / etc.) pass through unchanged.
-        _state.update { current ->
-            if (current is AccountState.Loaded) {
-                current.copy(
-                    displayName = response.displayName ?: current.displayName,
-                    dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
-                    phoneNumber = response.phoneNumber ?: current.phoneNumber,
-                )
-            } else {
-                current
+        synchronized(lock) {
+            val updated = _state.updateAndGet { current ->
+                if (current is AccountState.Loaded) {
+                    current.copy(
+                        displayName = response.displayName ?: current.displayName,
+                        dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
+                        phoneNumber = response.phoneNumber ?: current.phoneNumber,
+                    )
+                } else {
+                    current
+                }
             }
+            (updated as? AccountState.Loaded)?.let(::persist)
         }
     }
 
@@ -206,6 +382,7 @@ class AccountRepositoryImpl(
     }
 
     companion object {
+        private const val TAG = "AccountRepository"
         private const val MAX_ATTEMPTS = 3
         private const val MAX_ERROR_BODY_BYTES = 4_096L
     }

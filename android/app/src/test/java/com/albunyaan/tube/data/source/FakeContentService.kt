@@ -107,9 +107,9 @@ class FakeContentService : ContentService {
         }
         val publishedMatch = when (publishedDate) {
             PublishedDate.ANY -> true
-            PublishedDate.LAST_24_HOURS -> video.uploadedDaysAgo <= 1
-            PublishedDate.LAST_7_DAYS -> video.uploadedDaysAgo <= 7
-            PublishedDate.LAST_30_DAYS -> video.uploadedDaysAgo <= 30
+            PublishedDate.LAST_24_HOURS -> (video.uploadedDaysAgo ?: Int.MAX_VALUE) <= 1
+            PublishedDate.LAST_7_DAYS -> (video.uploadedDaysAgo ?: Int.MAX_VALUE) <= 7
+            PublishedDate.LAST_30_DAYS -> (video.uploadedDaysAgo ?: Int.MAX_VALUE) <= 30
         }
         return categoryMatch && lengthMatch && publishedMatch
     }
@@ -118,7 +118,7 @@ class FakeContentService : ContentService {
         SortOption.DEFAULT -> this
         SortOption.NEWEST -> sortedBy {
             when (it) {
-                is ContentItem.Video -> it.uploadedDaysAgo
+                is ContentItem.Video -> it.uploadedDaysAgo ?: Int.MAX_VALUE
                 else -> 0
             }
         }
@@ -126,7 +126,7 @@ class FakeContentService : ContentService {
             when (it) {
                 is ContentItem.Channel -> it.subscribers
                 is ContentItem.Playlist -> it.itemCount
-                is ContentItem.Video -> 100 - it.uploadedDaysAgo
+                is ContentItem.Video -> 100 - (it.uploadedDaysAgo ?: 100)
             }
         }
     }

@@ -135,6 +135,16 @@ public class Video {
      */
     private List<String> keywordsLower;
 
+    /**
+     * iOS Phase 3 (offline gate): the RAW stored admin flag. Null on legacy documents and on
+     * any video never toggled; only an explicit false blocks saving — read it through
+     * {@link #allowsOffline()}, never directly. Deliberately NOT initialized: null stays
+     * distinct from an explicit true in Firestore, so changing the default in
+     * {@code allowsOffline()} moves every never-toggled video. A video an admin has toggled
+     * keeps its explicit value; no endpoint sets it back to null.
+     */
+    private Boolean offlineAllowed;
+
     public Video() {
         this.categoryIds = new ArrayList<>();
         this.status = "PENDING";
@@ -418,6 +428,23 @@ public class Video {
 
     public void setKeywordsLower(List<String> keywordsLower) {
         this.keywordsLower = keywordsLower;
+    }
+
+    public Boolean getOfflineAllowed() {
+        return offlineAllowed;
+    }
+
+    public void setOfflineAllowed(Boolean offlineAllowed) {
+        this.offlineAllowed = offlineAllowed;
+    }
+
+    /**
+     * THE offline rule (owner ruling 2026-09-27): every approved video is saveable unless an
+     * admin explicitly set offlineAllowed=false; null means allowed. The public video endpoint and
+     * the Content Library serve this. Not a get/is accessor, so neither Firestore nor Jackson maps it.
+     */
+    public boolean allowsOffline() {
+        return !Boolean.FALSE.equals(offlineAllowed);
     }
 }
 

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.adapters
 
+import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -11,8 +12,8 @@ import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
-import java.text.NumberFormat
 import java.util.Locale
 
 /**
@@ -120,11 +121,8 @@ class HomeFeaturedAdapter(
         }
 
         private fun formatSubscriberCount(count: Int): String {
-            val formatted = when {
-                count >= 1_000_000 -> String.format(Locale.US, "%.1fM", count / 1_000_000.0)
-                count >= 1_000 -> String.format(Locale.US, "%.1fK", count / 1_000.0)
-                else -> count.toString()
-            }
+            val locale = LocaleManager.getCurrentLocale(binding.root.context)
+            val formatted = CountFormat.compact(count.toLong(), locale)
             return binding.root.context.getString(R.string.channel_subscribers_format, formatted)
         }
     }
@@ -172,44 +170,28 @@ class HomeFeaturedAdapter(
             binding.videoTitle.text = video.title
 
             val appLocale = LocaleManager.getCurrentLocale(context)
-            val numberFormat = NumberFormat.getNumberInstance(appLocale)
             val formattedViews = video.viewCount?.let {
-                numberFormat.format(it)
-            } ?: numberFormat.format(0)
-            val metaParts = mutableListOf<String>()
-            metaParts.add(context.getString(R.string.video_views_format, formattedViews))
-            metaParts.add(formatUploadedAgo(video.uploadedDaysAgo))
-            if (video.category.isNotBlank()) {
-                metaParts.add(video.category)
-            }
-            binding.videoMeta.text = metaParts.joinToString(" • ")
+                CountFormat.compact(it, appLocale)
+            } ?: CountFormat.compact(0, appLocale)
+            binding.videoMeta.text = metaLine(
+                context.resources,
+                context.getString(R.string.video_views_format, formattedViews),
+                video.uploadedDaysAgo,
+                video.category,
+            )
 
             binding.videoDuration.text = formatDuration(video.durationSeconds)
 
             binding.videoThumbnail.loadThumbnail(video)
 
-            val uploadedAgo = formatUploadedAgo(video.uploadedDaysAgo)
+            val uploadedAgo = UploadAge.format(context.resources, video.uploadedDaysAgo)
             val viewsText = context.getString(R.string.video_views_format, formattedViews)
             val duration = formatDuration(video.durationSeconds)
-            binding.root.contentDescription = context.getString(
-                R.string.a11y_video_item,
-                video.title,
-                duration,
-                viewsText,
-                uploadedAgo
-            )
+            binding.root.contentDescription =
+                videoDescription(context.resources, video.title, duration, viewsText, uploadedAgo)
 
             binding.root.setOnClickListener {
                 onItemClick(video)
-            }
-        }
-
-        private fun formatUploadedAgo(days: Int): String {
-            val res = binding.root.context.resources
-            return if (days <= 0) {
-                res.getString(R.string.video_uploaded_today)
-            } else {
-                res.getQuantityString(R.plurals.video_uploaded_days_ago, days, days)
             }
         }
 
@@ -226,6 +208,24 @@ class HomeFeaturedAdapter(
     }
 
     companion object {
+        /** a11y_video_item, or its age-less sibling when the age is unknown (no empty trailing field). */
+        internal fun videoDescription(
+            res: android.content.res.Resources,
+            title: String,
+            duration: String,
+            views: String,
+            age: String?,
+        ): String = if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
+            else res.getString(R.string.a11y_video_item_no_age, title, duration, views)
+
+        /** Views • age • category — the same age ladder as every other list. */
+        internal fun metaLine(
+            res: android.content.res.Resources,
+            views: String,
+            daysAgo: Int?,
+            category: String,
+        ): String = UploadAge.joinMeta(views, UploadAge.format(res, daysAgo), category.takeIf { it.isNotBlank() })
+
         private const val PAYLOAD_WIDTH = "payload_width"
         private const val VIEW_TYPE_CHANNEL = 0
         private const val VIEW_TYPE_PLAYLIST = 1

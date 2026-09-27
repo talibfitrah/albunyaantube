@@ -50,10 +50,17 @@ class AccountControllerIT extends BaseIntegrationTest {
         assertEquals(UserStatus.ACTIVE, reloaded.getStatusEnum());
         assertNotNull(reloaded.getDateOfBirth());
         assertNotNull(reloaded.getProfileCompletedAt());
+        // Phone is optional: the request above sends none, so none is stored.
+        assertNull(reloaded.getPhoneNumber());
     }
 
+    /**
+     * Cubic R5 P1 #11: under-13 SOFT-deletes (a hard delete let a fresh sign-in lazy-create a new
+     * PENDING_PROFILE row and retry with another date). Revoke and disable come first, then the
+     * tombstone (AccountProfileService.rejectUnderAge).
+     */
     @Test
-    void completeProfileUnder13DeletesDocAndRevokesTokens() throws Exception {
+    void completeProfileUnder13SoftDeletesDocAndRevokesTokens() throws Exception {
         String uid = seedPendingProfileUser("kid@test");
         stubAuthAs(uid, "user");
 
@@ -64,15 +71,27 @@ class AccountControllerIT extends BaseIntegrationTest {
             .andExpect(status().isUnprocessableEntity())
             .andExpect(jsonPath("$.code").value("AGE_INELIGIBLE"));
 
-        // Doc was deleted (durable assertion)
-        assertTrue(userRepository.findByUid(uid).isEmpty(),
-                "user doc must be deleted on AGE_INELIGIBLE");
-        // Verify revokeRefreshTokens was called BEFORE the delete (order matters per spec D4)
-        Mockito.verify(firebaseAuth).revokeRefreshTokens(uid);
+        // The doc stays as a tombstone (durable assertion, read back from the emulator).
+        User tombstone = userRepository.findByUid(uid).orElseThrow(
+                () -> new AssertionError("an under-13 rejection must keep the tombstone, not hard-delete"));
+        assertTrue(tombstone.isDeleted(), "status must be deleted");
+        assertEquals("age-ineligible", tombstone.getDeleteReason());
+        assertEquals(uid, tombstone.getDeletedBy(), "the system acts as the user's own uid");
+        assertNotNull(tombstone.getDeletedAt());
+        assertNull(tombstone.getProfileCompletedAt(), "the rejected profile must not be completed");
+        // Tokens revoked and the Auth account disabled, both before the tombstone write.
+        var order = Mockito.inOrder(firebaseAuth);
+        order.verify(firebaseAuth).revokeRefreshTokens(uid);
+        // UpdateRequest's getters are package-private; the disable itself is unit-tested in the service.
+        order.verify(firebaseAuth).updateUser(Mockito.any(com.google.firebase.auth.UserRecord.UpdateRequest.class));
     }
 
+    /**
+     * Cubic R5 P1 #9: an IDENTICAL retry (the first response lost in flight) is idempotent → 200;
+     * a retry with DIFFERENT data is refused → 409, since the profile is locked once set.
+     */
     @Test
-    void completeProfileSecondAttemptReturns409() throws Exception {
+    void completeProfileSecondAttemptIsIdempotentButDifferentDataReturns409() throws Exception {
         String uid = seedPendingProfileUser("bob@test");
         stubAuthAs(uid, "user");
         String body = "{\"displayName\":\"Bob\",\"dateOfBirth\":\"2000-01-01\"}";
@@ -85,8 +104,21 @@ class AccountControllerIT extends BaseIntegrationTest {
         mvc.perform(post("/api/account/profile")
                 .header("Authorization", "Bearer fake-token")
                 .contentType(MediaType.APPLICATION_JSON).content(body))
-            .andExpect(status().isConflict())
-            .andExpect(jsonPath("$.code").value("PROFILE_ALREADY_COMPLETED"));
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.displayName").value("Bob"));
+
+        for (String different : java.util.List.of(
+                "{\"displayName\":\"Robert\",\"dateOfBirth\":\"2000-01-01\"}",
+                "{\"displayName\":\"Bob\",\"dateOfBirth\":\"2000-01-01\",\"phoneNumber\":\"+31612345678\"}")) {
+            mvc.perform(post("/api/account/profile")
+                    .header("Authorization", "Bearer fake-token")
+                    .contentType(MediaType.APPLICATION_JSON).content(different))
+                .andExpect(status().isConflict())
+                .andExpect(jsonPath("$.code").value("PROFILE_ALREADY_COMPLETED"));
+        }
+        User reloaded = userRepository.findByUid(uid).orElseThrow();
+        assertEquals("Bob", reloaded.getDisplayName());
+        assertNull(reloaded.getPhoneNumber());
     }
 
     @Test
@@ -140,6 +172,8 @@ class AccountControllerIT extends BaseIntegrationTest {
         FirebaseToken token = Mockito.mock(FirebaseToken.class);
         Mockito.when(token.getUid()).thenReturn(uid);
         Mockito.when(token.getEmail()).thenReturn(uid + "@test");
+        // POST /profile refuses an unverified email (403 EMAIL_NOT_VERIFIED) before the service runs.
+        Mockito.when(token.isEmailVerified()).thenReturn(true);
         Map<String, Object> claims = new HashMap<>();
         claims.put("role", role);
         Mockito.when(token.getClaims()).thenReturn(claims);

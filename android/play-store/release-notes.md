@@ -35,7 +35,6 @@ Welcome to **FitrahTube** - your trusted platform for Islamic educational conten
 - Download quality preferences
 - Audio-only default mode
 - Background playback toggle
-- Safe mode for family-friendly content
 - About screen with app info
 
 **Accessibility:**

@@ -1,0 +1,24 @@
+{
+  "configurations" : [
+    {
+      "id" : "1E1C2E6C-6B0C-4F3E-9A61-0E1A1E7C4B10",
+      "name" : "Screenshots",
+      "options" : {
+
+      }
+    }
+  ],
+  "defaultOptions" : {
+    "testTimeoutsEnabled" : false
+  },
+  "testTargets" : [
+    {
+      "target" : {
+        "containerPath" : "container:FitrahTube.xcodeproj",
+        "identifier" : "838C395E6A434DAC7B478E75",
+        "name" : "FitrahTubeUITests"
+      }
+    }
+  ],
+  "version" : 1
+}

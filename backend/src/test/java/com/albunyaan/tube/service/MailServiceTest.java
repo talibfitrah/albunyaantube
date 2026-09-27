@@ -6,6 +6,9 @@ import io.micrometer.core.instrument.MeterRegistry;
 import io.micrometer.core.instrument.simple.SimpleMeterRegistry;
 import org.junit.jupiter.api.Test;
 
+import java.nio.charset.StandardCharsets;
+import java.util.Base64;
+
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.Mockito.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -26,8 +29,12 @@ class MailServiceTest {
         AuditLogService auditLog = mock(AuditLogService.class);
         MailService svc = createDisabledService(meters, auditLog);
 
-        svc.sendPasswordResetEmail("user@example.com", "https://reset/link");
+        boolean sent = svc.sendPasswordResetEmail("user@example.com", "https://reset/link");
 
+        // CF-A-57: the admin reset endpoint must be able to tell "handed to Graph" from
+        // "silently skipped" — a void here let it answer 200 with mail off.
+        assertFalse(sent, "a disabled mailer reported the reset mail as sent");
+        assertFalse(svc.isEnabled());
         verifyNoInteractions(auditLog);
         assertEquals(0.0, meters.counter("email.send.success", "type", "password_reset").count());
         assertEquals(0.0, meters.counter("email.send.failure", "type", "password_reset").count());
@@ -39,10 +46,32 @@ class MailServiceTest {
         AuditLogService auditLog = mock(AuditLogService.class);
         MailService svc = createDisabledService(meters, auditLog);
 
-        svc.sendEmailVerification("user@example.com", "https://verify/link");
+        boolean sent = svc.sendEmailVerification("user@example.com", "https://verify/link");
 
+        // The caller must be able to tell "handed to Graph" from "silently skipped".
+        assertFalse(sent, "a disabled mailer reported the verification mail as sent");
         verifyNoInteractions(auditLog);
         assertEquals(0.0, meters.counter("email.send.success", "type", "email_verification").count());
+    }
+
+    @Test
+    void disabledMail_emailChangeVerification_shortCircuits() {
+        MeterRegistry meters = new SimpleMeterRegistry();
+        AuditLogService auditLog = mock(AuditLogService.class);
+        MailService svc = createDisabledService(meters, auditLog);
+
+        assertFalse(svc.sendEmailChangeVerification("new@example.com", "https://change/link"),
+                "a disabled mailer reported the change-email mail as sent");
+        verifyNoInteractions(auditLog);
+    }
+
+    /** Logs name a recipient only masked: enough to correlate a report, not a harvestable address. */
+    @Test
+    void maskEmail_keepsTheFirstCharacterAndTheDomainOnly() {
+        assertEquals("f***@gmail.com", MailService.maskEmail("fitrahtvnl@gmail.com"));
+        assertEquals("***", MailService.maskEmail("no-at-sign"));
+        assertEquals("***", MailService.maskEmail("@nolocal.com"));
+        assertEquals("<null>", MailService.maskEmail(null));
     }
 
     @Test
@@ -99,5 +128,36 @@ class MailServiceTest {
                 eq("user"),
                 eq("user@example.com"),
                 anyString());
+    }
+
+    private static String b64(String s) {
+        return Base64.getUrlEncoder().withoutPadding().encodeToString(s.getBytes(StandardCharsets.UTF_8));
+    }
+
+    private static String jwt(String payloadJson) {
+        return b64("{\"alg\":\"RS256\"}") + "." + b64(payloadJson) + ".sig";
+    }
+
+    @Test
+    void hasMailSendRole_trueForMailSendOnlyToken() {
+        // The prod app registration holds only Mail.Send (least privilege).
+        assertEquals(Boolean.TRUE, MailService.hasMailSendRole(jwt("{\"roles\":[\"Mail.Send\"]}")));
+    }
+
+    @Test
+    void hasMailSendRole_falseForReadableTokenWithoutMailSend() {
+        // No admin consent: Entra still issues a token, just without the role -> startup fails.
+        assertEquals(Boolean.FALSE, MailService.hasMailSendRole(jwt("{}")));
+        assertEquals(Boolean.FALSE, MailService.hasMailSendRole(jwt("{\"roles\":[\"User.Read.All\"]}")));
+    }
+
+    @Test
+    void hasMailSendRole_nullWhenTokenIsNotAReadableJwt() {
+        // Graph access tokens are documented as opaque: a format change must not fail startup.
+        assertNull(MailService.hasMailSendRole("opaque-token"));
+        assertNull(MailService.hasMailSendRole(b64("{}") + "." + b64("42") + ".sig"));
+        // JWE: 5 segments; the 2nd is an encrypted key, which can happen to parse as a JSON scalar.
+        assertNull(MailService.hasMailSendRole(
+                String.join(".", b64("{\"enc\":\"A256GCM\"}"), b64("42"), "iv", "ct", "tag")));
     }
 }

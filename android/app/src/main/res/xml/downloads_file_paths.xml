@@ -3,11 +3,12 @@
     <files-path
         name="downloads"
         path="downloads/" />
-    <!-- ANDROID-MULTI-01 Issue 3: expose cacheDir/updates so the system package
-         installer can read the downloaded APK via FileProvider. -->
-    <cache-path
-        name="updates"
-        path="updates/" />
+    <!-- ANDROID-PLAY-04: the `updates` cache-path was removed. It existed only to
+         hand an APK to the package installer via FileProvider; ApkInstaller now
+         streams the APK straight into a PackageInstaller session (see
+         src/sideload/.../ApkInstaller.kt), and no FileProvider.getUriForFile call
+         anywhere targets cacheDir/updates. The two remaining call sites
+         (DownloadsFragment, PlayerFragment) open downloaded media only. -->
     <cache-path
         name="share_cache"
         path="share_cache/" />

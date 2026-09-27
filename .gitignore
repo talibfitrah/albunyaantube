@@ -190,3 +190,29 @@ synthetic_dash_data.json
 
 # graphify knowledge graph (generated, 67MB — rebuild with `graphify update .`)
 /graphify-out/
+
+# Python bytecode from scripts/
+__pycache__/
+*.pyc
+
+# iOS (XcodeGen-generated project, build products, user state)
+/ios/FitrahTube.xcodeproj/
+/ios/FitrahTube/Info.plist
+/ios/Vendor/
+/ios/**/xcuserdata/
+/ios/**/*.xcuserstate
+/ios/DerivedData/
+/ios/DerivedData-Signed/
+/ios/DerivedData-Release/
+/ios/.build/
+/ios/Packages/*/.build*/
+/ios/Packages/*/.swiftpm/
+**/GoogleService-Info.plist
+/ios/Packages/*/Sources/*/openapi.yaml
+/ios/Config/Local.xcconfig
+
+# InnerTubeKit live-test raw captures (contain IP + real visitorData)
+*.raw.json
+
+# Playwright MCP page snapshots and console logs (can contain console/portal IDs)
+.playwright-mcp/

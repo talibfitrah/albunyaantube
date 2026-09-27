@@ -276,60 +276,10 @@
             column="12"/>
     </issue>
 
-    <issue
-        id="NewApi"
-        message="Call requires API level 35 (current min is 26): `java.util.List#removeLast` (Prior to API level 35, this call would resolve to a Kotlin stdlib extension function. You can use `remove(`*index*`)` instead.)"
-        errorLine1="        val previous = previousItems.removeLast()"
-        errorLine2="                                     ~~~~~~~~~~">
-        <location
-            file="src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt"
-            line="234"
-            column="38"/>
-    </issue>
 
-    <issue
-        id="NewApi"
-        message="Call requires API level 35 (current min is 26): `java.util.List#removeLast` (Prior to API level 35, this call would resolve to a Kotlin stdlib extension function. You can use `remove(`*index*`)` instead.)"
-        errorLine1="            searchHistory.removeLast()"
-        errorLine2="                          ~~~~~~~~~~">
-        <location
-            file="src/main/java/com/albunyaan/tube/ui/SearchFragment.kt"
-            line="224"
-            column="27"/>
-    </issue>
 
-    <issue
-        id="NewApi"
-        message="Call requires API level 28 (current min is 26): `android.view.View#requireViewById`"
-        errorLine1="        val appName = view.requireViewById&lt;TextView>(R.id.appName)"
-        errorLine2="                           ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/albunyaan/tube/ui/SplashFragment.kt"
-            line="52"
-            column="28"/>
-    </issue>
 
-    <issue
-        id="NewApi"
-        message="Call requires API level 28 (current min is 26): `android.view.View#requireViewById`"
-        errorLine1="        val tagline = view.requireViewById&lt;TextView>(R.id.tagline)"
-        errorLine2="                           ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/albunyaan/tube/ui/SplashFragment.kt"
-            line="53"
-            column="28"/>
-    </issue>
 
-    <issue
-        id="NewApi"
-        message="Call requires API level 28 (current min is 26): `android.view.View#requireViewById`"
-        errorLine1="        val loadingSpinner = view.requireViewById&lt;ProgressBar>(R.id.loadingSpinner)"
-        errorLine2="                                  ~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/java/com/albunyaan/tube/ui/SplashFragment.kt"
-            line="54"
-            column="35"/>
-    </issue>
 
     <issue
         id="OldTargetApi"
@@ -1511,28 +1461,6 @@
         <location
             file="src/main/res/values/strings.xml"
             line="398"
-            column="5"/>
-    </issue>
-
-    <issue
-        id="PluralsCandidate"
-        message="Formatting %d followed by words (&quot;videos&quot;): This should probably be a plural rather than a string"
-        errorLine1="    &lt;string name=&quot;library_recently_watched_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="401"
-            column="5"/>
-    </issue>
-
-    <issue
-        id="PluralsCandidate"
-        message="Formatting %d followed by words (&quot;videos&quot;): This should probably be a plural rather than a string"
-        errorLine1="    &lt;string name=&quot;library_history_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="    ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="404"
             column="5"/>
     </issue>
 
@@ -3685,28 +3613,6 @@
         <location
             file="src/main/res/values/strings.xml"
             line="399"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.string.library_recently_watched_count` appears to be unused"
-        errorLine1="    &lt;string name=&quot;library_recently_watched_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="401"
-            column="13"/>
-    </issue>
-
-    <issue
-        id="UnusedResources"
-        message="The resource `R.string.library_history_count` appears to be unused"
-        errorLine1="    &lt;string name=&quot;library_history_count&quot;>%1$d videos&lt;/string>"
-        errorLine2="            ~~~~~~~~~~~~~~~~~~~~~~~~~~~~">
-        <location
-            file="src/main/res/values/strings.xml"
-            line="404"
             column="13"/>
     </issue>
 

@@ -14,11 +14,11 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelHeader
 import com.albunyaan.tube.databinding.FragmentChannelAboutTabBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
-import java.text.NumberFormat
 import java.time.ZoneId
 import java.time.format.DateTimeFormatter
 import java.time.format.FormatStyle
@@ -195,7 +195,7 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
 
     private fun formatNumber(number: Long): String {
         val appLocale = LocaleManager.getCurrentLocale(requireContext())
-        return NumberFormat.getNumberInstance(appLocale).format(number)
+        return CountFormat.compact(number, appLocale)
     }
 
     private fun openUrl(url: String) {

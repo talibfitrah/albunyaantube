@@ -15,6 +15,7 @@
     "test": "timeout 300s vitest run",
     "pretest": "npm run generate:api",
     "test:e2e": "npm run build && playwright test",
+    "test:e2e:scroll": "playwright test --config=playwright.scroll.config.ts",
     "generate:api": "openapi-typescript ../docs/architecture/api-specification.yaml -o src/generated/api/schema.ts"
   },
   "dependencies": {

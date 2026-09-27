@@ -10,7 +10,7 @@
     <!--
         TV/large-tablet variant (≥720dp).
         Content column is 720dp, centred horizontally.
-        D-pad focus order: displayNameInput → dobRow → saveButton.
+        D-pad focus order: displayNameInput → dobRow → deleteAccountRow → saveButton.
     -->
     <com.google.android.material.appbar.MaterialToolbar
         android:id="@+id/toolbar"
@@ -253,7 +253,38 @@
                             android:layout_width="wrap_content"
                             android:layout_height="wrap_content"
                             android:text="@string/profile_edit"
-                            android:nextFocusDown="@id/saveButton" />
+                            android:nextFocusDown="@id/deleteAccountRow" />
+
+                    </LinearLayout>
+
+                    <View
+                        android:layout_width="match_parent"
+                        android:layout_height="@dimen/divider_thickness"
+                        android:background="@color/background_gray"
+                        android:layout_marginStart="@dimen/spacing_lg" />
+
+                    <!-- ANDROID-ACCT-DEL-01: in-app account deletion (Play policy 13327111) -->
+                    <LinearLayout
+                        android:id="@+id/deleteAccountRow"
+                        android:layout_width="match_parent"
+                        android:layout_height="wrap_content"
+                        android:orientation="horizontal"
+                        android:gravity="center_vertical"
+                        android:clickable="true"
+                        android:focusable="true"
+                        android:background="?attr/selectableItemBackground"
+                        android:padding="@dimen/spacing_lg"
+                        android:nextFocusDown="@id/saveButton">
+
+                        <TextView
+                            android:id="@+id/deleteAccountLabel"
+                            android:layout_width="0dp"
+                            android:layout_weight="1"
+                            android:layout_height="wrap_content"
+                            android:text="@string/profile_delete_account"
+                            android:textAlignment="viewStart"
+                            android:textAppearance="?attr/textAppearanceBodyMedium"
+                            android:textColor="?attr/colorError" />
 
                     </LinearLayout>
 

@@ -9,6 +9,7 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -41,7 +42,7 @@ class ChannelAdapter(
             binding.channelName.text = channel.name
 
             val appLocale = LocaleManager.getCurrentLocale(context)
-            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            val formattedSubs = CountFormat.compact(channel.subscribers.toLong(), appLocale)
             binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs

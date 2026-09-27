@@ -160,7 +160,6 @@ Option B (with history):
   - Playback (Audio-only mode, Background play)
   - Downloads (Quality: Low/Medium/High, WiFi-only, Storage location)
   - Display (Language: English/Arabic/Dutch)
-  - Content (Safe mode)
   - Support (About)
 - Storage quota display (X MB of 500 MB used)
 

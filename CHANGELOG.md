@@ -1,9 +1,66 @@
 # Changelog
 
-All notable changes to FitrahTube. Versions are tagged on the `develop` branch
-during the beta program.
+All notable changes to FitrahTube. Releases are tagged `vX.Y.Z`; 1.0.0 is the first
+stable release.
 
 ## [Unreleased]
+
+## [1.0.0] - 2026-09-27
+
+First stable release, published on Google Play (`com.albunyaan.tube.play`) and the App Store.
+
+- Accounts: password-reset and email-change emails are now sent by the server, so they arrive reliably.
+- Sign-up: the phone number is optional, and the form always says what is blocking Continue (on both platforms). iOS also accepts international numbers written with `00` (e.g. `0031…`).
+- iOS: Sign in with Apple fills in your name and never asks for a password; the Apple and Google buttons follow each company's branding rules; the sign-in screen links to the privacy policy and terms; the developer sheet exists in debug builds only; deleting an account that uses Sign in with Apple also revokes it (falling back to password or Google when Apple is unavailable); the Arabic home-screen name is فطرة تيوب; the Update button opens the App Store listing.
+- Android: removed the Recently Watched and History rows from Library, which only showed "coming soon"; the sign-up profile screen is translated into Arabic and Dutch.
+- Server: new public support page at `/support`; the privacy policy covers the optional phone, the name shared by Sign in with Apple, and which emails are sent through Microsoft 365.
+
+- Android: fixed crashes on Android 14 and older when search history filled up or when going back to a previous video, and on Android 8.x at launch. Kotlin's `removeLast()` on a `MutableList` compiled to the Java 21 `List#removeLast` (API 35) and the splash used `View#requireViewById` (API 28); replaced with `removeAt(lastIndex)` / `ViewCompat.requireViewById`, removed the lint-baseline entries that hid these `NewApi` errors, and added a unit test that fails on any `removeFirst/removeLast/getFirst/getLast()` call on a non-Deque in app sources.
+- Android: videos opened right after a cold start no longer stay black. Concurrent playback-token requests for the same video overwrote each other (only one resolved; the rest waited out a 10 s timeout), and the player's own resolve timeout was treated as a cancellation, so it neither retried nor showed an error. Requests are now keyed per call and a timed-out attempt retries, then shows Retry.
+- Android: Google Play build (`play` flavor, `com.albunyaan.tube.play`) prepared for store submission.
+- iOS: catalog UI — splash, onboarding, shell (bottom tabs on iPhone, Android-style navigation rail on iPad), Home, Channels/Playlists/Videos, Search, Categories, Featured, Favorites, Settings, About; en/ar/nl with RTL and Dynamic Type support (Phase 1 of the iOS app).
+- iOS: project scaffold (XcodeGen, iPhone + iPad), generated FitrahAPI client, DI container, design tokens (Phase 0 of the iOS app).
+
+## [1.0.0-beta.45] - 2026-08-22
+
+### Android
+
+- **View and subscriber counts are now abbreviated everywhere outside the player.** Counts over
+  a thousand show compactly — "1.2K", "12.7M", "3.4B" in English, and each locale's own common
+  form in Arabic ("١٫٢ ألف", "٣٫٤ مليون", "١٫٢ مليار") and Dutch ("3,4 mln") — instead of the
+  full "12,700,000 subscribers". Applied to channel cards, the channel header and About tab,
+  search results, video / playlist / live rows, and the featured row. The player keeps its own
+  formatting. Backed by a locale-aware `CountFormat` helper (platform `CompactDecimalFormat`)
+  with unit tests.
+- **In-app updates that downloaded but never installed now install on their own (Android 12+).**
+  The updater already downloaded the APK correctly; the install was being stopped at the system
+  installer / Google Play Protect step — reproduced on a real Honor (Android 9), where the same
+  APK installs fine via `adb`, confirming the APK, signature, and download were never the
+  problem. On Android 12 and newer the updater now requests a silent self-update
+  (`PackageInstaller.setRequireUserAction` + `UPDATE_PACKAGES_WITHOUT_USER_ACTION`), which the
+  platform grants for an app updating itself — so from the next update onward it installs
+  without the system confirmation prompt (Play Protect still verifies in the background). This
+  first update still shows the prompt because the running (older) code lacks the flag. On
+  Android 11 and older the confirmation is an OS limitation and always appears; the download
+  step now shows "Preparing to install…" so the bar no longer looks frozen at 100% while the
+  installer opens, and a successful update now confirms with a toast instead of silently
+  vanishing.
+
+## [1.0.0-beta.44] - 2026-08-20
+
+### Android
+
+- **Opening a video while holding the phone sideways left the navigation bar on top of it.**
+  The player only ever decided to go fullscreen when the screen *rotated*, so entering it when
+  the phone was already in landscape left the bottom navigation and status bar covering the
+  video. It now works out the right state when the player opens, not just when you turn the
+  phone. Phones only — tablets keep their navigation rail and full layout.
+- **Leaving fullscreen snapped straight back into it.** Exiting forced the screen to portrait,
+  and that forced turn cleared the very flag meant to remember you had left — so a phone resting
+  in landscape rotated back and re-entered fullscreen immediately. On such a phone the exit
+  button did nothing you could see. Reproduced on a real device and fixed; the dismissal now
+  survives the forced turn and is cleared once, so a later deliberate rotation still gives you
+  fullscreen.
 
 ## [1.0.0-beta.43] - 2026-08-19
 

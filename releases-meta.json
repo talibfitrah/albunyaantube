@@ -1,4 +1,29 @@
 {
+  "1.0.0": {
+    "en": "First stable release. Password-reset and email-change emails now arrive reliably.",
+    "ar": "أول إصدار مستقر. رسائل إعادة تعيين كلمة المرور وتغيير البريد الإلكتروني تصل الآن بشكل موثوق.",
+    "nl": "Eerste stabiele versie. E-mails voor wachtwoordherstel en e-mailwijziging komen nu betrouwbaar aan."
+  },
+  "1.0.0-beta.47": {
+    "en": "Fixes crashes on Android 14 and older when searching or going back to a previous video.",
+    "ar": "إصلاح توقف التطبيق على أندرويد 14 والإصدارات الأقدم عند البحث أو الرجوع إلى المقطع السابق.",
+    "nl": "Verhelpt crashes op Android 14 en ouder bij zoeken of teruggaan naar een vorige video."
+  },
+  "1.0.0-beta.46": {
+    "en": "Videos now start reliably right after opening the app, and a stalled video shows Retry instead of a black screen.",
+    "ar": "تبدأ المقاطع الآن بثبات بعد فتح التطبيق مباشرة، وإذا تعثّر مقطع يظهر زر إعادة المحاولة بدل شاشة سوداء.",
+    "nl": "Video's starten nu direct na het openen van de app, en een vastgelopen video toont Opnieuw in plaats van zwart."
+  },
+  "1.0.0-beta.45": {
+    "en": "View and subscriber counts now show compact (1.2K, 3.4M), and updates install on their own on newer phones.",
+    "ar": "أعداد المشاهدات والمشتركين تظهر الآن مختصرة (١٫٢ ألف، ٣٫٤ مليون)، والتحديثات تُثبَّت تلقائيًا على الهواتف الأحدث.",
+    "nl": "Weergaven en abonnees worden nu compact getoond (1,2K, 3,4 mln), en updates installeren vanzelf op nieuwere telefoons."
+  },
+  "1.0.0-beta.44": {
+    "en": "Videos now open fullscreen when your phone is already sideways, and leaving fullscreen no longer snaps back.",
+    "ar": "تُفتح المقاطع الآن بملء الشاشة عندما يكون هاتفك أفقيًا، ولم يعد الخروج من ملء الشاشة يرتد تلقائيًا.",
+    "nl": "Video's openen nu schermvullend als je telefoon al horizontaal is, en fullscreen verlaten springt niet meer terug."
+  },
   "1.0.0-beta.43": {
     "en": "Fixes updates that downloaded but never installed. Plus the approvals and Me-screen improvements.",
     "ar": "إصلاح التحديثات التي كانت تُنزَّل ولا تُثبَّت. مع تحسينات المراجعة وشاشة “أنا”.",
@@ -65,9 +90,9 @@
     "nl": "Edge-to-edge verfijning: de lege witte strook onder de onderste navigatiebalk is verwijderd."
   },
   "1.0.0-beta.28": {
-    "en": "More videos that still wouldn't play now play ad-free; the quality menu shows only working options; steadier playback.",
-    "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن بدون إعلانات؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
-    "nl": "Meer video's die niet speelden spelen nu advertentievrij; het kwaliteitsmenu toont alleen werkende opties; stabieler afspelen."
+    "en": "More videos that still wouldn't play now play; the quality menu shows only working options; steadier playback.",
+    "ar": "مزيد من الفيديوهات التي لم تعمل أصبحت تعمل الآن؛ قائمة الجودة تعرض الخيارات العاملة فقط؛ تشغيل أكثر ثباتًا.",
+    "nl": "Meer video's die niet speelden spelen nu; het kwaliteitsmenu toont alleen werkende opties; stabieler afspelen."
   },
   "1.0.0-beta.27": {
     "en": "Fixes videos stuck on \"Resolving…\" that never played — now uses a YouTube stream source that isn't blocked. Works on older Android too.",

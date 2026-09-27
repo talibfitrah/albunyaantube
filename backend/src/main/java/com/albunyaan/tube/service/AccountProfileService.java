@@ -52,11 +52,35 @@ public class AccountProfileService {
         this.auditLogService = auditLogService;
     }
 
+    /**
+     * The account row only MIRRORS the email; Firebase owns it, and verifyAndChangeEmail moves it
+     * there with no callback to this backend. So an account read follows the token -- a VERIFIED
+     * claim only (the changed email is verified by the very link that moves it; an unverified claim
+     * is never trusted). Updates {@code user} in place; field-level write, so a concurrent profile
+     * edit is not clobbered; audited with masked addresses.
+     */
+    public void followFirebaseEmail(User user, com.albunyaan.tube.security.FirebaseUserDetails principal)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        String email = principal.getEmail();
+        // A tombstone is anonymised: never write an address back into it.
+        if (user.isDeleted() || !principal.isEmailVerified() || email == null || email.isBlank()
+                || email.equalsIgnoreCase(user.getEmail())) {
+            return;
+        }
+        String previous = user.getEmail();
+        userRepository.updateFields(user.getUid(), Map.of("email", email));
+        user.setEmail(email);
+        auditLogService.logProfileEdit(user.getUid(), Map.of("email",
+                Map.of("from", MailService.maskEmail(previous), "to", MailService.maskEmail(email))));
+    }
+
     public User completeProfile(String uid, String displayName, LocalDate dateOfBirth, String phoneNumber)
             throws ExecutionException, InterruptedException, TimeoutException {
         validateDisplayName(displayName);
         validateDateOfBirth(dateOfBirth);
-        validatePhoneNumber(phoneNumber);
+        // Phone is optional (owner ruling 2026-09-27): blank means "none" and is stored as null.
+        String phone = (phoneNumber == null || phoneNumber.isBlank()) ? null : phoneNumber;
+        if (phone != null) validatePhoneNumber(phone);
 
         User user = userRepository.findByUid(uid)
                 .orElseThrow(() -> new UserNotFoundException(uid));
@@ -70,7 +94,7 @@ public class AccountProfileService {
             // Now, if the retry's payload matches the persisted profile we
             // return the existing user as a 200; if it differs we still
             // refuse (the profile is locked once set).
-            if (profileMatches(user, displayName, dateOfBirth, phoneNumber)) {
+            if (profileMatches(user, displayName, dateOfBirth, phone)) {
                 return user;
             }
             throw new ProfileAlreadyCompletedException(uid);
@@ -82,7 +106,7 @@ public class AccountProfileService {
                 dateOfBirth.atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0);
         user.setDisplayName(displayName.trim());
         user.setDateOfBirth(dobTs);
-        user.setPhoneNumber(phoneNumber.trim());
+        user.setPhoneNumber(phone);
         user.setStatusEnum(UserStatus.ACTIVE);
         user.setProfileCompletedAt(Timestamp.now());
         user.touch();
@@ -190,7 +214,7 @@ public class AccountProfileService {
      */
     private static boolean profileMatches(User user, String displayName, LocalDate dateOfBirth, String phoneNumber) {
         if (user.getDisplayName() == null || !user.getDisplayName().equals(displayName.trim())) return false;
-        if (user.getPhoneNumber() == null || !user.getPhoneNumber().equals(phoneNumber.trim())) return false;
+        if (!Objects.equals(user.getPhoneNumber(), phoneNumber)) return false;
         Timestamp ts = user.getDateOfBirth();
         if (ts == null) return false;
         // Cubic R-final5 P2 — compare by date components, not raw epoch + nanos.

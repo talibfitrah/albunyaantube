@@ -204,9 +204,12 @@
     <string name="update_check_up_to_date">U gebruikt de nieuwste versie.</string>
     <string name="update_check_failed">Kan niet controleren op updates.</string>
     <string name="update_downloading">Update downloaden…</string>
+    <string name="update_preparing">Installatie voorbereiden…</string>
     <string name="update_download_failed">Update-download mislukt.</string>
     <string name="update_signature_mismatch">De gedownloade update komt niet overeen met de handtekening van de geïnstalleerde app en is geweigerd. Download opnieuw vanaf een vertrouwde bron.</string>
     <string name="update_install_failed">Installatie van update mislukt: %1$s</string>
+    <string name="update_install_success">FitrahTube bijgewerkt.</string>
+    <string name="update_installed_restart">Update geïnstalleerd — herstart FitrahTube om toe te passen.</string>
     <string name="update_previous_attempt_failed">De vorige update-poging is niet voltooid. Tik nogmaals op Installeren of probeer ADB-sideload als het blijft falen.</string>
     <string name="update_previous_attempt_failed_with_reason">De vorige update-poging is niet voltooid (%1$s). Tik nogmaals op Installeren of probeer ADB-sideload als het blijft falen.</string>
     <string name="update_permission_title">Installatie vanuit deze app toestaan</string>
@@ -310,6 +313,32 @@
     </plurals>
     <!-- Meta line for past/recorded streams: "100K views • Streamed 2 weeks ago" -->
     <string name="live_past_meta">%1$s • %2$s</string>
+    <plurals name="live_waiting_count">
+        <item quantity="one">%s wacht</item>
+        <item quantity="other">%s wachten</item>
+    </plurals>
+    <!-- YouTube's English stream/premiere prefixes, re-rendered (UploadAge.fromEnglish, iOS Format.englishStat).
+         The %s date stays YouTube's own text: its month/day order is not provable. -->
+    <string name="live_streamed_ago">Gestreamd %s</string>
+    <string name="live_premiered_ago">Première was %s</string>
+    <string name="live_scheduled_for">Gepland voor %s</string>
+    <string name="live_premieres_on">Première op %s</string>
+    <plurals name="live_premieres_in_minutes">
+        <item quantity="one">Première over %d minuut</item>
+        <item quantity="other">Première over %d minuten</item>
+    </plurals>
+    <plurals name="live_premieres_in_hours">
+        <item quantity="one">Première over %d uur</item>
+        <item quantity="other">Première over %d uur</item>
+    </plurals>
+    <plurals name="live_premieres_in_days">
+        <item quantity="one">Première over %d dag</item>
+        <item quantity="other">Première over %d dagen</item>
+    </plurals>
+    <plurals name="playlist_episode_count">
+        <item quantity="one">%d aflevering</item>
+        <item quantity="other">%d afleveringen</item>
+    </plurals>
 
     <!-- Additional Accessibility Descriptions -->
     <string name="cd_video_thumbnail">Video miniatuur</string>
@@ -331,8 +360,10 @@
     <!-- Screen Reader Announcements -->
     <string name="a11y_duration_format">Duur: %s</string>
     <string name="a11y_video_item">Video: %1$s, Duur: %2$s, %3$s, %4$s</string>
+    <string name="a11y_video_item_no_age">Video: %1$s, Duur: %2$s, %3$s</string>
     <string name="a11y_channel_item">Kanaal: %1$s, %2$s</string>
     <string name="a11y_playlist_item">Afspeellijst: %1$s, %2$d items</string>
+    <string name="a11y_playlist_item_text">Afspeellijst: %1$s, %2$s</string>
     <string name="a11y_search_history">Recente zoekopdracht: %1$s</string>
     <string name="a11y_download_item">%1$s, %2$s, %3$d procent</string>
 
@@ -399,12 +430,6 @@
     <string name="library_saved">Opgeslagen</string>
     <string name="library_saved_count">%1$d video\'s</string>
     <string name="library_saved_coming_soon">Opgeslagen video\'s (binnenkort)</string>
-    <string name="library_recently_watched">Recent bekeken</string>
-    <string name="library_recently_watched_count">%1$d video\'s</string>
-    <string name="library_recently_watched_coming_soon">Recent bekeken (binnenkort)</string>
-    <string name="library_history">Geschiedenis</string>
-    <string name="library_history_count">%1$d video\'s</string>
-    <string name="library_history_coming_soon">Kijkgeschiedenis (binnenkort)</string>
 
     <!-- Settings Screen -->
     <string name="settings_title">Instellingen</string>
@@ -428,9 +453,6 @@
     <string name="settings_quality_high_desc">Hoog (1080p) - Beste kwaliteit</string>
     <string name="settings_quality_changed">Downloadkwaliteit ingesteld op %1$s</string>
     <string name="settings_quality_change_failed">Downloadkwaliteit wijzigen mislukt. Probeer het opnieuw.</string>
-    <string name="settings_content">Inhoud</string>
-    <string name="settings_safe_mode">Veilige modus</string>
-    <string name="settings_safe_mode_desc">Toon alleen gezinsvriendelijke inhoud</string>
     <string name="settings_appearance">Uiterlijk</string>
     <string name="settings_language">Taal</string>
     <string name="settings_language_desc">Kies uw voorkeurstaal</string>
@@ -476,7 +498,6 @@
     <string name="about_open_source_licenses">Open source-licenties</string>
     <string name="settings_support_center">Helpcentrum</string>
     <string name="settings_support_center_desc">Krijg hulp en stuur feedback</string>
-    <string name="settings_icon_safe_mode">Icoon veilige modus instelling</string>
     <string name="cancel">Annuleren</string>
 
     <!-- Pagination -->
@@ -520,13 +541,32 @@
     <string name="player_action_audio">Audio</string>
     <string name="player_action_report">Melden</string>
     <string name="report_content">Inhoud melden</string>
+    <string name="report_title">Inhoud melden</string>
+    <string name="report_subtitle">Selecteer alle redenen die van toepassing zijn</string>
+    <string name="report_reason_music">Muziek / Instrumenten</string>
+    <string name="report_reason_nudity">Naaktheid / Onzedelijkheid</string>
+    <string name="report_reason_bad_language">Grof taalgebruik</string>
+    <string name="report_reason_flirting">Flirten / Toespelingen</string>
+    <string name="report_reason_romance">Romantiek / Liefde</string>
+    <string name="report_reason_awrah">Onbedekte awrah</string>
+    <string name="report_reason_shirk">Shirk</string>
+    <string name="report_reason_bidah">Bid\'ah / Innovatie</string>
+    <string name="report_reason_violence">Geweld / Bloederige beelden</string>
+    <string name="report_reason_misinformation">Onjuiste informatie</string>
+    <string name="report_reason_other">Anders</string>
+    <string name="report_other_hint">Geef een toelichting…</string>
+    <string name="report_submit">Melding versturen</string>
+    <string name="report_success">Bedankt — je melding is verstuurd</string>
+    <string name="report_rate_limited">Je hebt onlangs te veel meldingen verstuurd. Probeer het later opnieuw.</string>
+    <string name="report_error">Melding versturen mislukt. Probeer het opnieuw.</string>
+    <string name="report_select_reason">Selecteer minstens één reden</string>
     <string name="player_favorite_toggle_error">Favorieten bijwerken mislukt. Probeer het opnieuw.</string>
 
     <!-- Share -->
     <string name="share_watch_in_app">Bekijk in FitrahTube:</string>
     <string name="share_channel_in_app">Open dit kanaal in FitrahTube:</string>
     <string name="share_playlist_in_app">Open deze afspeellijst in FitrahTube:</string>
-    <string name="share_app_promo">Download FitrahTube voor advertentievrije islamitische content!</string>
+    <string name="share_app_promo">Ontdek FitrahTube voor geselecteerde islamitische content!</string>
     <string name="share_video_chooser">Video delen</string>
     <string name="share_channel_chooser">Kanaal delen</string>
     <string name="share_playlist_chooser">Afspeellijst delen</string>
@@ -546,6 +586,14 @@
     <plurals name="video_views">
         <item quantity="one">%s weergave</item>
         <item quantity="other">%s weergaven</item>
+    </plurals>
+    <plurals name="time_ago_minutes">
+        <item quantity="one">%d minuut geleden</item>
+        <item quantity="other">%d minuten geleden</item>
+    </plurals>
+    <plurals name="time_ago_hours">
+        <item quantity="one">%d uur geleden</item>
+        <item quantity="other">%d uur geleden</item>
     </plurals>
     <plurals name="time_ago_weeks">
         <item quantity="one">%d week geleden</item>
@@ -687,7 +735,7 @@
 
     <!-- Profile bootstrap: phone -->
     <string name="bootstrap_phone_country_label">Land</string>
-    <string name="bootstrap_phone_label">Mobiel nummer</string>
+    <string name="bootstrap_phone_label">Mobiel nummer (optioneel)</string>
     <string name="bootstrap_phone_hint">Telefoonnummer</string>
     <string name="bootstrap_error_invalid_phone_country">Kies je land</string>
     <string name="bootstrap_error_invalid_phone">Voer een geldig mobiel nummer in</string>
@@ -705,6 +753,21 @@
     <string name="profile_add">Toevoegen</string>
     <string name="profile_password">Wachtwoord</string>
     <string name="profile_password_dots">••••••••••</string>
+
+    <!-- ANDROID-ACCT-DEL-01: in-app account deletion (Google Play policy 13327111) -->
+    <string name="profile_delete_account">Account verwijderen</string>
+    <string name="profile_delete_account_deleting">Account verwijderen…</string>
+    <string name="profile_delete_account_dialog_title">Je account verwijderen?</string>
+    <string name="profile_delete_account_dialog_message">Hiermee wordt je FitrahTube-account definitief verwijderd. Je naam, e-mailadres, telefoonnummer en geboortedatum worden gewist, samen met je abonnementen, opgeslagen afspeellijsten, favorieten en elke video die op dit apparaat is gedownload. Dit kan niet ongedaan worden gemaakt.</string>
+    <string name="profile_delete_account_confirm">Account verwijderen</string>
+    <string name="profile_delete_account_error_last_admin">Je bent de laatste actieve beheerder. Geef een ander account beheerdersrechten voordat je dit account verwijdert.</string>
+    <string name="profile_delete_account_error_network">Je account kon niet worden verwijderd. Controleer je verbinding en probeer het opnieuw.</string>
+    <string name="profile_delete_account_error_unknown">Je account kon niet worden verwijderd. Probeer het later opnieuw.</string>
+
+    <!-- Terminal account-status dialog (MainActivity). Previously English-only:
+         the deletion flow above makes this a primary user-facing screen. -->
+    <string name="account_deleted_title">Account verwijderd</string>
+    <string name="account_deleted_body">Je account is verwijderd. Maak een nieuw account aan om FitrahTube weer te gebruiken.</string>
 
     <!-- Edit email bottom sheet (Plan G T21) -->
     <string name="edit_email_title">E-mail wijzigen</string>
@@ -784,6 +847,82 @@
     <string name="me_awaiting_pending_label">In afwachting van beoordeling</string>
     <string name="me_tab_content">Inhoud</string>
     <string name="me_tab_pending">In afwachting (%1$d)</string>
+    <!-- ar/nl translations for keys that shipped English-only (iOS sign-in gate) -->
+    <string name="about_version_format">Versie %1$s (%2$d)</string>
+    <string name="auth_sign_in_title">Inloggen</string>
+    <string name="auth_sign_up_title">Account aanmaken</string>
+    <string name="auth_email_hint">E-mail</string>
+    <string name="auth_password_hint">Wachtwoord</string>
+    <string name="auth_sign_in_button">Inloggen</string>
+    <string name="auth_sign_up_button">Account aanmaken</string>
+    <string name="auth_forgot_password">Wachtwoord vergeten?</string>
+    <string name="auth_create_account_link">Nog geen account? Maak er een aan</string>
+    <string name="auth_have_account_link">Heb je al een account? Log in</string>
+    <string name="auth_divider_or">of</string>
+    <string name="auth_google_button">Doorgaan met Google</string>
+    <string name="auth_password_reset_sent">E-mail om je wachtwoord te herstellen is verstuurd</string>
+    <string name="auth_error_invalid_email">Dat e-mailadres lijkt niet te kloppen</string>
+    <string name="auth_error_wrong_password">E-mail of wachtwoord is onjuist</string>
+    <string name="auth_error_user_disabled">Dit account is geblokkeerd. Neem contact op met de ondersteuning.</string>
+    <string name="auth_error_email_in_use">Er bestaat al een account met dat e-mailadres</string>
+    <string name="auth_error_weak_password">Wachtwoord moet minstens 6 tekens bevatten</string>
+    <string name="auth_error_too_many_requests">Te veel pogingen — wacht even en probeer het opnieuw</string>
+    <string name="auth_error_google">Inloggen met Google is mislukt</string>
+    <string name="auth_error_password_reset_failed">Kon de herstel-e-mail niet versturen</string>
+    <string name="channels_empty_title">Nog geen kanalen</string>
+    <string name="channels_empty_subtitle">Goedgekeurde kanalen verschijnen hier</string>
+    <string name="playlists_empty_title">Nog geen afspeellijsten</string>
+    <string name="playlists_empty_subtitle">Goedgekeurde afspeellijsten verschijnen hier</string>
+    <string name="clear_filter">Filter wissen</string>
+    <string name="search_clear">Zoekopdracht wissen</string>
+    <string name="dev_settings_title">Ontwikkelaarsinstellingen</string>
+    <string name="dev_settings_done">Klaar</string>
+    <string name="category_filter_cleared">Categoriefilter gewist</string>
+    <string name="category_filter_error">Kon het categoriefilter niet toepassen</string>
+    <string name="navigation_error">Navigeren is mislukt. Probeer het opnieuw.</string>
+    <string name="player_geo_restricted">Deze video is niet beschikbaar in jouw regio.</string>
+    <string name="player_stream_expired">Stream verlopen. Bezig met vernieuwen…</string>
+    <string name="player_rate_limited">Te veel verzoeken. Wacht even.</string>
+    <string name="player_refreshing_stream">Stream-URL\'s vernieuwen…</string>
+    <string name="cd_live_stream_thumbnail">Miniatuur van livestream</string>
+    <string name="settings_icon_wifi">Pictogram voor instelling Alleen WiFi</string>
+    <string name="settings_icon_background_play">Pictogram voor instelling Achtergrond afspelen</string>
+    <plurals name="dev_settings_steps_away">
+        <item quantity="one">Je bent nog %d stap verwijderd van ontwikkelaar worden</item>
+        <item quantity="other">Je bent nog %d stappen verwijderd van ontwikkelaar worden</item>
+    </plurals>
 
+    <!-- Account screens: copied from the iOS catalog (ios/FitrahTube/Resources/Localizable.xcstrings) -->
+    <string name="auth_error_network">Geen internetverbinding</string>
+    <string name="auth_error_generic">Er is iets misgegaan</string>
+    <string name="account_blocked_title">Account geblokkeerd</string>
+    <string name="account_blocked_body">Je account is geblokkeerd door een beheerder. Neem contact op met support voor meer informatie.</string>
+    <string name="settings_account_header">Account</string>
+    <string name="settings_account_signed_in_as">Aangemeld als %1$s</string>
+    <string name="settings_account_signed_in_default">Aangemeld</string>
+    <string name="settings_account_sign_out">Afmelden</string>
+    <string name="settings_account_sign_out_confirm_title">Afmelden?</string>
+    <string name="settings_account_sign_out_confirm_body">Je moet je opnieuw aanmelden voor beheerfuncties en gepersonaliseerde inhoud.</string>
+    <string name="settings_account_sign_out_confirm_action">Afmelden</string>
+    <string name="settings_account_sign_out_cancel">Annuleren</string>
+    <string name="profile_title">Profiel</string>
+    <string name="profile_personal_info">Persoonlijke gegevens</string>
+    <string name="profile_display_name">Weergavenaam</string>
+    <string name="profile_date_of_birth">Geboortedatum</string>
+    <string name="profile_email_locked">Gekoppeld aan je aanmelding</string>
+    <string name="profile_save">Opslaan</string>
+    <string name="profile_save_success">Profiel bijgewerkt</string>
+    <string name="profile_error_network">Kon niet opslaan. Controleer je verbinding.</string>
+    <string name="profile_error_rate_limited">Te veel wijzigingen. Probeer het over %1$d min. opnieuw.</string>
+    <string name="profile_error_age_dialog_title">Account komt niet meer in aanmerking</string>
+    <string name="profile_error_age_dialog_message">Je geboortedatum voldoet niet meer aan onze leeftijdseis. Je wordt afgemeld.</string>
+    <string name="profile_dob_pick">Kies een datum</string>
+    <string name="me_kebab_profile">Profiel</string>
+    <string name="me_kebab_sign_out">Afmelden</string>
+    <string name="ok">OK</string>
+    <string name="auth_microsoft_button">Doorgaan met Microsoft</string>
+    <string name="auth_microsoft_unavailable_tv">Inloggen met Microsoft is niet beschikbaar op tv. Gebruik Google of e-mail.</string>
+    <string name="auth_error_user_not_found">Geen account gevonden met dit e-mailadres</string>
+    <string name="auth_error_invalid_credential">Inloggegevens zijn ongeldig of verlopen</string>
+    <string name="auth_error_microsoft">Inloggen met Microsoft is mislukt</string>
 </resources>
-

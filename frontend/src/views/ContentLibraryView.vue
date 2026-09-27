@@ -36,25 +36,6 @@
           <span>{{ t('contentLibrary.filters.title') }}</span>
           <span v-if="activeFilterCount > 0" class="filter-badge">{{ activeFilterCount }}</span>
         </button>
-
-        <button
-          v-if="selectedItems.length > 0"
-          type="button"
-          class="btn-secondary"
-          @click="clearSelection"
-        >
-          <span class="mobile-hidden">{{ t('contentLibrary.clearSelection') }}</span>
-          <span class="desktop-hidden">{{ t('contentLibrary.clear') }}</span>
-          ({{ selectedItems.length }})
-        </button>
-        <button
-          v-if="selectedItems.length > 0"
-          type="button"
-          class="btn-bulk"
-          @click="openBulkActionsMenu"
-        >
-          {{ t('contentLibrary.bulkActions') }}
-        </button>
       </div>
     </div>
 
@@ -141,6 +122,19 @@
 
       <!-- Main Content Area -->
       <main class="content-main">
+        <!-- Sticky: the actions have to be reachable from wherever in the list the admin selected,
+             without a scroll to the top that loses their place. -->
+        <div v-if="selectedItems.length > 0" class="bulk-bar">
+          <button type="button" class="btn-secondary" @click="clearSelection">
+            <span class="mobile-hidden">{{ t('contentLibrary.clearSelection') }}</span>
+            <span class="desktop-hidden">{{ t('contentLibrary.clear') }}</span>
+            ({{ selectedItems.length }})
+          </button>
+          <button type="button" class="btn-bulk" @click="openBulkActionsMenu">
+            {{ t('contentLibrary.bulkActions') }}
+          </button>
+        </div>
+
         <div class="content-toolbar">
           <div class="search-box">
             <input
@@ -276,6 +270,18 @@
                 <span class="action-label">{{ t('contentLibrary.keywords') }}</span>
               </button>
               <button
+                v-if="item.type === 'video'"
+                type="button"
+                class="card-action-btn offline-btn"
+                :class="{ 'offline-on': item.offlineAllowed }"
+                :aria-pressed="item.offlineAllowed ? 'true' : 'false'"
+                :title="item.offlineAllowed ? t('contentLibrary.offlineAllowedOn') : t('contentLibrary.offlineAllowedOff')"
+                @click="toggleOfflineAllowed(item)"
+              >
+                <span class="action-icon">⬇</span>
+                <span class="action-label">{{ t('contentLibrary.offlineLabel') }}</span>
+              </button>
+              <button
                 type="button"
                 class="card-action-btn delete"
                 @click="confirmDelete(item)"
@@ -371,6 +377,15 @@
                   <button type="button" class="action-btn" @click="openDetailsModal(item)" :title="t('contentLibrary.view')">👁</button>
                   <button type="button" class="action-btn" @click="openCategoryModal(item)" :title="t('contentLibrary.categories')">🏷</button>
                   <button type="button" class="action-btn keywords-btn" @click="openKeywordsModal(item)" :title="t('contentLibrary.keywords')">🔑</button>
+                  <button
+                    v-if="item.type === 'video'"
+                    type="button"
+                    class="action-btn offline-btn"
+                    :class="{ 'offline-on': item.offlineAllowed }"
+                    :aria-pressed="item.offlineAllowed ? 'true' : 'false'"
+                    :title="item.offlineAllowed ? t('contentLibrary.offlineAllowedOn') : t('contentLibrary.offlineAllowedOff')"
+                    @click="toggleOfflineAllowed(item)"
+                  >⬇</button>
                   <button type="button" class="action-btn delete" @click="confirmDelete(item)" :title="t('contentLibrary.delete')">🗑</button>
                 </td>
               </tr>
@@ -498,7 +513,6 @@
       :channel-id="selectedItemForModal.id"
       :channel-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
       @close="channelModalOpen = false"
-      @updated="handleModalUpdated"
     />
 
     <PlaylistDetailModal
@@ -507,7 +521,6 @@
       :playlist-id="selectedItemForModal.id"
       :playlist-youtube-id="selectedItemForModal.youtubeId || selectedItemForModal.id"
       @close="playlistModalOpen = false"
-      @updated="handleModalUpdated"
     />
 
     <VideoPreviewModal
@@ -522,6 +535,8 @@
     <CategoryAssignmentModal
       v-if="categoryModalOpen"
       :is-open="categoryModalOpen"
+      :current-category-ids="categoryModalCurrentIds"
+      :allow-empty="true"
       :multi-select="true"
       @close="closeCategoryModal"
       @assign="handleCategoriesAssigned"
@@ -574,6 +589,7 @@ import VideoPreviewModal from '@/components/VideoPreviewModal.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
 import type { ReorderItem } from '@/services/contentLibrary';
+import type { BulkActionItem } from '@/types/api';
 
 const { t, locale } = useI18n();
 
@@ -592,6 +608,8 @@ interface ContentItem {
   visibility?: string;
   /** Names of the people a PERSONAL approval covers. Empty for a public item. */
   grantedTo: string[];
+  /** Videos only: "Save for offline" gate (iOS Phase 3). Absent/null from the server means false. */
+  offlineAllowed?: boolean;
 }
 
 interface Category {
@@ -687,6 +705,11 @@ const videoModalOpen = ref(false);
 const selectedItemForModal = ref<ContentItem | null>(null);
 const categoryModalOpen = ref(false);
 const itemsForCategoryAssignment = ref<ContentItem[]>([]);
+// Assigning REPLACES an item's categoryIds server-side, so the modal has to
+// open showing what each item already has, or saving silently drops them.
+const categoryModalCurrentIds = computed(() =>
+  itemsForCategoryAssignment.value.map(item => item.categoryIds)
+);
 
 // Keywords Modal State
 const keywordsModalOpen = ref(false);
@@ -880,9 +903,11 @@ async function bulkChangeStatus(status: string) {
       return { type: item!.type, id: item!.id };
     });
 
+    let errors: string[];
     if (status === 'approved') {
       const result = await contentLibraryService.bulkApprove(items);
       alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsApproved')}`);
+      errors = result.errors;
       if (result.errors.length > 0) {
         console.error('Bulk approve errors:', result.errors);
       }
@@ -892,13 +917,29 @@ async function bulkChangeStatus(status: string) {
       // from every device holding it, that would have taken it off people's phones.
       const result = await contentLibraryService.bulkMarkPending(items);
       alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.itemsMarkedPending')}`);
+      errors = result.errors;
       if (result.errors.length > 0) {
         console.error('Bulk mark-pending errors:', result.errors);
       }
     }
 
     clearSelection();
-    await loadContent();
+    // A partial write cannot say which items took the new status, so only then ask the server.
+    if (errors.length > 0) {
+      await loadContent();
+    } else {
+      // Approving publishes, so the server writes visibility beside status and then reports no
+      // grantees for a public row. Mirror both, or the badge goes on naming the people a grant
+      // was restricted to after that grant went public.
+      const newStatus = status === 'approved' ? 'approved' : 'pending';
+      updateLoadedItems(items, item => {
+        item.status = newStatus;
+        if (newStatus === 'approved') {
+          item.visibility = 'PUBLIC';
+          item.grantedTo = [];
+        }
+      });
+    }
   } catch (err: any) {
     alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
   } finally {
@@ -936,7 +977,14 @@ async function bulkDelete() {
     }
 
     clearSelection();
-    await loadContent();
+    // A partial failure cannot say which items committed: the server does track failedKeys, but
+    // marks it @JsonIgnore, so the client sees a count and messages only. That is the one case
+    // here still needing the server's word on the list.
+    if (result.errors.length > 0) {
+      await loadContent();
+    } else {
+      updateLoadedItems(items); // no patch = these rows are gone
+    }
     // Delete is a hard Firestore delete, so it is the one bulk action that moves the registry
     // counts. Approve/reject don't — the totals span all statuses.
     loadRegistryTotals();
@@ -960,11 +1008,6 @@ function openDetailsModal(item: ContentItem) {
   }
 }
 
-function handleModalUpdated() {
-  // Refresh content after exclusions are modified
-  loadContent();
-}
-
 function openCategoryModal(item: ContentItem) {
   itemsForCategoryAssignment.value = [item];
   categoryModalOpen.value = true;
@@ -980,7 +1023,7 @@ async function confirmDelete(item: ContentItem) {
 
     if (result.successCount > 0) {
       alert(t('contentLibrary.deleteSuccess'));
-      await loadContent();
+      updateLoadedItems([{ type: item.type, id: item.id }]); // no patch = this row is gone
       loadRegistryTotals();
     } else if (result.errors.length > 0) {
       alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
@@ -990,24 +1033,60 @@ async function confirmDelete(item: ContentItem) {
   }
 }
 
-async function handleCategoriesAssigned(categoryIds: string[]) {
+async function handleCategoriesAssigned(categoryIds: string[], unchangedIds: string[] = []) {
   try {
-    const items = itemsForCategoryAssignment.value.map(item => ({
-      type: item.type,
-      id: item.id
-    }));
+    // The endpoint applies one category list to every item it is given, but an
+    // indeterminate category must be kept only on the items that already had
+    // it. So resolve each item's own final list and group the items that end up
+    // sharing one — a single item, or a uniform bulk tick, still sends one call.
+    const byCategories = new Map<string, { items: BulkActionItem[]; categoryIds: string[] }>();
+    for (const item of itemsForCategoryAssignment.value) {
+      const kept = unchangedIds.filter(id => item.categoryIds.includes(id));
+      const finalIds = Array.from(new Set([...categoryIds, ...kept]));
+      const key = [...finalIds].sort().join('|');
+      const group = byCategories.get(key) ?? { items: [], categoryIds: finalIds };
+      group.items.push({ type: item.type, id: item.id });
+      byCategories.set(key, group);
+    }
 
-    const result = await contentLibraryService.bulkAssignCategories(items, categoryIds);
+    // One group at a time, and a failed group must not abandon the ones that
+    // already committed — otherwise the admin sees an error over a list still
+    // showing pre-assignment categories.
+    let successCount = 0;
+    const errors: string[] = [];
+    for (const group of byCategories.values()) {
+      try {
+        const groupResult = await contentLibraryService.bulkAssignCategories(group.items, group.categoryIds);
+        successCount += groupResult.successCount;
+        errors.push(...groupResult.errors);
+        if (groupResult.errors.length === 0) {
+          updateLoadedItems(group.items, item => { item.categoryIds = [...group.categoryIds]; });
+        }
+      } catch (err: any) {
+        errors.push(err?.message || String(err));
+      }
+    }
+    const result = { successCount, errors };
 
     if (result.successCount > 0) {
-      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.categoriesAssigned')}`);
+      // Items with different existing categories are sent as separate requests,
+      // so some can fail while others commit — say so instead of reporting a
+      // clean success over a partial write.
+      const partialFailure = result.errors.length > 0
+        ? `\n${t('contentLibrary.errorBulkAction')}: ${result.errors[0]}`
+        : '';
+      alert(`${t('contentLibrary.success')} - ${result.successCount} ${t('contentLibrary.categoriesAssigned')}${partialFailure}`);
 
       if (result.errors.length > 0) {
         console.error('Category assignment errors:', result.errors);
       }
 
       clearSelection();
-      await loadContent();
+      // Committed groups already moved in the list above; a failed one leaves it unclear which
+      // items took the change, so only then ask the server.
+      if (result.errors.length > 0) {
+        await loadContent();
+      }
     } else if (result.errors.length > 0) {
       alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
     }
@@ -1071,6 +1150,21 @@ async function saveKeywords() {
   }
 }
 
+/**
+ * Flip a video's "Save for offline" gate (iOS Phase 3). Sends the partial
+ * {offlineAllowed} body; the backend merge leaves every other field untouched.
+ */
+async function toggleOfflineAllowed(item: ContentItem) {
+  const next = !item.offlineAllowed;
+  try {
+    await contentLibraryService.setVideoOfflineAllowed(item.id, next);
+    item.offlineAllowed = next;
+  } catch (err: any) {
+    console.error('Failed to update offline setting:', err);
+    alert(t('contentLibrary.errorSavingOffline') + ': ' + (err.message || ''));
+  }
+}
+
 // Data Loading
 // Max items for custom sort mode to enable reordering.
 // Must not exceed backend's page size cap (100) since ContentLibraryController caps at Math.min(size, 100).
@@ -1079,7 +1173,10 @@ const CUSTOM_SORT_MAX_ITEMS = 100;
 const PAGE_SIZE = 25;
 
 // Infinite scroll state
-const currentPage = ref(0);
+// Pages the derived one has to step over. Deriving from the loaded count assumes the loaded rows
+// are the server's leading rows; content added ahead of them breaks that, and the derived page
+// then lands on rows already held. Without this the button would ask for that same page forever.
+let pageDrift = 0;
 const isLoadingMore = ref(false);
 const hasMoreContent = ref(false);
 const loadMoreError = ref<string | null>(null);
@@ -1092,6 +1189,10 @@ const paginationDisabled = computed(() =>
 
 // Request versioning to prevent stale responses from overlapping requests
 let requestVersion = 0;
+// Bumped by updateLoadedItems. Separate from requestVersion because the two mean different things
+// to a response in flight: a newer listing supersedes an older one, whereas a local write only
+// means the older one was read too early — the admin still wants what they asked for.
+let mutationVersion = 0;
 
 function mapContentItem(item: any): ContentItem {
   return {
@@ -1106,7 +1207,10 @@ function mapContentItem(item: any): ContentItem {
     displayOrder: item.displayOrder ?? undefined,
     keywords: item.keywords || [],
     visibility: item.visibility,
-    grantedTo: item.grantedTo || []
+    grantedTo: item.grantedTo || [],
+    // Only an explicit admin false blocks saving (owner ruling 2026-09-27); the backend already
+    // serves the effective value, and a null/absent flag means the same thing.
+    offlineAllowed: item.type === 'video' ? item.offlineAllowed !== false : undefined
   };
 }
 
@@ -1123,6 +1227,58 @@ function statusLabel(item: ContentItem): string {
       : t('contentLibrary.approvedForSomePeople');
   }
   return t(`contentLibrary.statuses.${item.status}`);
+}
+
+/**
+ * Whether a row the admin just edited still belongs in the list. Only status and categories can
+ * change without a refetch, so nothing else is re-checked — and filters.dateAdded is not checked
+ * because buildContentParams never sends it, so the server does not filter on it either.
+ */
+function stillMatchesFilters(item: ContentItem): boolean {
+  if (filters.value.status !== 'all' && item.status !== filters.value.status) return false;
+  if (filters.value.category && !item.categoryIds.includes(filters.value.category)) return false;
+  return true;
+}
+
+/**
+ * Apply a mutation to the rows already loaded, rather than refetching them.
+ *
+ * loadContent() restarts at page 0 and replaces the array, so it discards every page the admin
+ * scrolled to load — the list collapses to one page and the browser drops them back at the top,
+ * losing their place in a list they were working through item by item. Omitting `patch` means
+ * the items were deleted; otherwise rows the filter no longer matches go, and the rest stay put.
+ *
+ * It does refetch when the in-place update cannot serve the admin: when the rows it removed
+ * leave them no way to ask for what is still out there. See the refill below.
+ */
+function updateLoadedItems(items: BulkActionItem[], patch?: (item: ContentItem) => void) {
+  // A listing request already in flight may have been read before this write, so letting it land
+  // as-is could put the change straight back.
+  mutationVersion++;
+
+  const keys = new Set(items.map(i => `${i.type}:${i.id}`));
+  const before = content.value.length;
+  content.value = content.value.filter(item => {
+    if (!keys.has(`${item.type}:${item.id}`)) return true;
+    if (!patch) return false;
+    patch(item);
+    return stillMatchesFilters(item);
+  });
+  totalItemsFromServer.value = Math.max(0, totalItemsFromServer.value - (before - content.value.length));
+
+  // Two ways a removal can leave rows the admin has no way to ask for: an emptied list, since the
+  // Load More button sits inside the list's non-empty branch; and the client-side sorts, which
+  // have no such button at all and hold one fixed page of a longer list. Refill for those, and
+  // only those — keeping the window otherwise is the whole point of patching it in place.
+  const removedRows = before > content.value.length;
+  const refillable = paginationDisabled.value || content.value.length === 0;
+  // Not while one is already running: a grouped assignment calls this once per group, and each
+  // would ask for the whole list again. The request in flight is retired by the later groups'
+  // writes and re-issued once from the settled state, so it covers them.
+  if (removedRows && refillable && !isLoading.value
+      && content.value.length < totalItemsFromServer.value) {
+    loadContent();
+  }
 }
 
 function buildContentParams(page: number): Record<string, any> {
@@ -1157,11 +1313,12 @@ function buildContentParams(page: number): Record<string, any> {
 
 async function loadContent() {
   const myVersion = ++requestVersion;
+  const myMutation = mutationVersion;
   isLoading.value = true;
   error.value = null;
   loadMoreError.value = null;
-  currentPage.value = 0;
   hasMoreContent.value = false;
+  pageDrift = 0;
   clearThumbnailState();
 
   try {
@@ -1171,6 +1328,14 @@ async function loadContent() {
 
     // Discard stale response if filters/search changed while request was in flight
     if (myVersion !== requestVersion) return;
+
+    // A local write landed after this request went out, so applying the response could undo it.
+    // The admin still asked for this listing, so ask again from the current state rather than
+    // strand them on the one they came from. The new request owns the loading flag from here.
+    if (myMutation !== mutationVersion) {
+      loadContent();
+      return;
+    }
 
     content.value = response.data.content.map(mapContentItem);
 
@@ -1203,6 +1368,8 @@ async function loadContent() {
     console.error('Failed to load content:', err);
     error.value = err.response?.data?.message || err.message || t('contentLibrary.error');
   } finally {
+    // Only the newest listing owns the flag; a superseded one must leave it set. Nothing but
+    // loadContent() moves requestVersion, so the newest always reaches this and clears it.
     if (myVersion === requestVersion) {
       isLoading.value = false;
     }
@@ -1213,9 +1380,13 @@ async function loadMoreContent() {
   if (isLoadingMore.value || !hasMoreContent.value || paginationDisabled.value) return;
 
   const myVersion = requestVersion; // Capture current version (don't increment — loadContent owns that)
+  const loadedBefore = content.value.length;
   isLoadingMore.value = true;
   loadMoreError.value = null;
-  const nextPage = currentPage.value + 1;
+  // Derived from what is loaded rather than counted: deleting a row shifts every later row up
+  // by one in the server's offset paging, so the next counted page would step over that many.
+  // Re-requesting the overlap costs one page round-trip to gain the rows past it, and skips none.
+  const nextPage = Math.floor(content.value.length / PAGE_SIZE) + pageDrift;
 
   try {
     const params = buildContentParams(nextPage);
@@ -1224,21 +1395,37 @@ async function loadMoreContent() {
     // Discard stale response if a new loadContent() was triggered while this was in flight
     if (myVersion !== requestVersion) return;
 
-    const newItems = response.data.content.map(mapContentItem);
+    // Rows left the list while this page was in flight, so the offsets it was computed for have
+    // moved: the row on its boundary now falls between what is held and what it carries, where
+    // nothing would ask for it again. Drop it whole — the next request is derived from where the
+    // list then stands, and covers that row. A write that removed nothing leaves offsets alone,
+    // so the page is still good.
+    if (content.value.length !== loadedBefore) return;
+
+    const loaded = new Set(content.value.map(item => `${item.type}:${item.id}`));
+    const newItems = response.data.content
+      .map(mapContentItem)
+      .filter((item: ContentItem) => !loaded.has(`${item.type}:${item.id}`));
 
     content.value.push(...newItems);
-    currentPage.value = nextPage;
 
     totalItemsFromServer.value = response.data.totalItems ?? totalItemsFromServer.value;
     hasMoreContent.value = content.value.length < totalItemsFromServer.value;
+
+    // Every row that page carried was already held, so the page after it is the next one that can
+    // add anything — stepping over it skips nothing and keeps the loaded window.
+    if (newItems.length === 0 && hasMoreContent.value) {
+      pageDrift += 1;
+    }
   } catch (err: any) {
     if (myVersion !== requestVersion) return;
     console.error('Failed to load more content:', err);
     loadMoreError.value = err.response?.data?.message || err.message || t('contentLibrary.error');
   } finally {
-    if (myVersion === requestVersion) {
-      isLoadingMore.value = false;
-    }
+    // Unconditional, unlike loadContent(): only one page can be in flight at a time, so there is
+    // no newer request to hand the flag to — and a page superseded by a refetch that kept it set
+    // would hide the button behind a spinner that never clears.
+    isLoadingMore.value = false;
   }
 }
 
@@ -1614,7 +1801,7 @@ onUnmounted(() => {
   padding: 1.5rem;
   height: fit-content;
   position: sticky;
-  top: 2rem;
+  top: calc(var(--sticky-top, 0px) + 2rem);
   display: flex;
   flex-direction: column;
   gap: 1.5rem;
@@ -1692,6 +1879,20 @@ onUnmounted(() => {
   flex-direction: column;
   gap: 1.5rem;
   min-height: 400px;
+}
+
+.bulk-bar {
+  position: sticky;
+  top: var(--sticky-top, 0px);
+  z-index: 20;
+  display: flex;
+  flex-wrap: wrap;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.75rem 1rem;
+  background: var(--color-surface);
+  border: 1px solid var(--color-border);
+  border-radius: 0.75rem;
 }
 
 .content-toolbar {
@@ -2118,7 +2319,7 @@ onUnmounted(() => {
   background: var(--color-surface-alt);
 }
 
-:root[data-theme="dark"] .action-btn:not(.keywords-btn) {
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):not(.offline-btn) {
   filter: brightness(0) invert(1);
   opacity: 0.8;
 }
@@ -2127,10 +2328,29 @@ onUnmounted(() => {
   opacity: 1;
 }
 
-:root[data-theme="dark"] .action-btn:not(.keywords-btn):hover {
+:root[data-theme="dark"] .action-btn:not(.keywords-btn):not(.offline-btn):hover {
   filter: brightness(0) invert(1);
   opacity: 1;
   background: var(--color-surface-alt);
+}
+
+/* Save-for-offline toggle: dimmed when off, green when on (both themes, both layouts). */
+.action-btn.offline-btn,
+.card-action-btn.offline-btn .action-icon {
+  opacity: 0.45;
+}
+
+.action-btn.offline-btn.offline-on,
+.card-action-btn.offline-btn.offline-on .action-icon {
+  opacity: 1;
+}
+
+.action-btn.offline-btn.offline-on {
+  background: #dcfce7;
+}
+
+:root[data-theme="dark"] .action-btn.offline-btn.offline-on {
+  background: #14532d;
 }
 
 :root[data-theme="dark"] .action-btn.keywords-btn:hover {

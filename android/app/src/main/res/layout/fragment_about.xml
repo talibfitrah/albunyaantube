@@ -138,6 +138,7 @@
                     </LinearLayout>
 
                     <View
+                        android:id="@+id/websiteDivider"
                         android:layout_width="match_parent"
                         android:layout_height="@dimen/divider_thickness"
                         android:background="?attr/colorSurfaceVariant"

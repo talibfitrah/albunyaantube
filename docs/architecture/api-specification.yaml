@@ -55,6 +55,8 @@ tags:
     description: YouTube Data API integration
   - name: Users
     description: Admin and moderator user management
+  - name: Account
+    description: The signed-in user's own account (both apps)
   - name: Audit
     description: Audit log viewing
   - name: Dashboard
@@ -196,6 +198,11 @@ paths:
             minimum: 1
             maximum: 20
             default: 10
+        - name: category
+          in: query
+          description: Category id to scope the feed to (blank/omitted normalises to no filter)
+          schema:
+            type: string
       responses:
         '200':
           description: Paginated home feed
@@ -1301,7 +1308,7 @@ paths:
               schema:
                 $ref: '#/components/schemas/Video'
     put:
-      summary: Update video in registry
+      summary: Update video in registry (merge semantics — absent fields untouched)
       operationId: registryUpdateVideo
       tags: [Registry]
       parameters:
@@ -1315,7 +1322,7 @@ paths:
         content:
           application/json:
             schema:
-              $ref: '#/components/schemas/Video'
+              $ref: '#/components/schemas/VideoUpdateRequest'
       responses:
         '200':
           description: Video updated
@@ -1642,7 +1649,199 @@ paths:
             type: string
       responses:
         '200':
-          description: Reset email sent
+          description: Reset email sent (a message was handed to the mail provider)
+        '401':
+          description: Not authenticated
+        '403':
+          description: Requires ADMIN role
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
+  # ============================================================================
+  # ACCOUNT (Authenticated user - the apps' own account)
+  # ============================================================================
+
+  /account/send-verification-email:
+    post:
+      summary: Send the signed-in user's email verification mail
+      description: |
+        Sends a Firebase email-verification link from the server's mailer. A 503 means nothing was
+        sent; the apps then fall back to Firebase's own mailer. The per-user cooldown is recorded on
+        every attempt, 200 or 503, so the next tap waits 60 s either way.
+      operationId: sendVerificationEmail
+      tags: [Account]
+      responses:
+        '200':
+          description: Verification email sent, or the address is already verified
+        '400':
+          description: The account has no email address
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [NO_EMAIL]
+                  message:
+                    type: string
+        '401':
+          description: Not authenticated
+        '429':
+          description: A mail was requested less than 60 s ago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
+  /account/send-password-reset-email:
+    post:
+      summary: Send a password reset mail (signed out)
+      description: |
+        Anonymous. The answer never reveals whether the address has an account: 200 carries the same
+        body either way, and the reset link is minted and mailed off the request thread. Per address,
+        at most one mail a minute and ten a day; a request over either is silently dropped and still
+        answered 200. 20 requests per client IP (X-Real-IP; IPv6 by /64) per hour, then 429. 503 only
+        when the server's mailer is disabled; the apps then fall back to Firebase's own mailer.
+      operationId: sendPasswordResetEmail
+      tags: [Account]
+      security: []
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [email]
+              properties:
+                email:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '200':
+          description: Accepted; a reset link is mailed if the address has an account
+        '400':
+          description: Missing or malformed email
+        '429':
+          description: Too many requests from this client IP
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
+
+  /account/send-change-email-verification:
+    post:
+      summary: Mail a change-email confirmation link to the new address
+      description: |
+        Mints a verify-and-change-email link for the caller's own account and mails it to newEmail;
+        the account's email changes only when that link is opened. Requires a sign-in or
+        re-authentication in the last 5 minutes (the ID token's auth_time), else 401. Every attempt
+        that passes the cooldown check starts a new 60 s per-user cooldown, whatever it answers (200,
+        400, 409, 500 or 503), so a 409 cannot be repeated freely.
+      operationId: sendChangeEmailVerification
+      tags: [Account]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [newEmail]
+              properties:
+                newEmail:
+                  type: string
+                  format: email
+                  maxLength: 254
+      responses:
+        '200':
+          description: Confirmation email sent to the new address
+        '400':
+          description: Malformed newEmail (INVALID_EMAIL when Firebase rejects it), or the account has no email address (NO_EMAIL)
+        '401':
+          description: Not authenticated, or the sign-in is older than 5 minutes (REQUIRES_RECENT_LOGIN)
+        '409':
+          description: The new address already belongs to an account
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [EMAIL_IN_USE]
+                  message:
+                    type: string
+        '429':
+          description: A mail was requested less than 60 s ago
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [RATE_LIMITED]
+                  message:
+                    type: string
+        '503':
+          description: Mail unavailable - the mailer is disabled or the provider refused; nothing was sent
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [MAIL_UNAVAILABLE]
+                  message:
+                    type: string
 
   # ============================================================================
   # AUDIT LOGS (Admin Only)
@@ -2937,6 +3136,7 @@ components:
 
     HomeCategoryDto:
       type: object
+      required: [id]
       properties:
         id:
           type: string
@@ -3080,6 +3280,20 @@ components:
           type: string
           nullable: true
           description: Parent category ID (null for top-level categories)
+        displayOrder:
+          type: integer
+          nullable: true
+          description: Sort order within parent category. Null until explicitly set.
+        localizedNames:
+          type: object
+          nullable: true
+          additionalProperties:
+            type: string
+          description: Localized category names (en, ar, nl)
+        icon:
+          type: string
+          nullable: true
+          description: Emoji or icon identifier
 
     Channel:
       type: object
@@ -3313,6 +3527,55 @@ components:
           $ref: '#/components/schemas/VideoType'
           nullable: true
           description: STANDARD for regular videos, LIVE for live streams. Null on legacy docs treated as STANDARD.
+        offlineAllowed:
+          type: boolean
+          nullable: true
+          description: >-
+            Whether this video may be saved for offline playback. Every approved video is
+            saveable unless an admin explicitly set this to false (owner ruling 2026-09-27).
+            GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may
+            carry the raw stored flag, where null means never toggled. Clients MUST treat
+            null/absent as true — only an explicit false blocks saving.
+
+    VideoUpdateRequest:
+      type: object
+      description: >-
+        Partial update for a registry video. Merge semantics: fields absent from the
+        body are left untouched, so a body carrying only offlineAllowed changes only
+        that flag. Not the Video entity — the entity's defaults (status PENDING,
+        empty categoryIds) would make partial bodies destructive.
+      properties:
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        categoryIds:
+          type: array
+          nullable: true
+          items:
+            type: string
+        status:
+          type: string
+          nullable: true
+          enum: [APPROVED, PENDING, REJECTED, REQUEST_CHANGES]
+        thumbnailUrl:
+          type: string
+          nullable: true
+        durationSeconds:
+          type: integer
+          nullable: true
+        viewCount:
+          type: integer
+          format: int64
+          nullable: true
+        offlineAllowed:
+          type: boolean
+          nullable: true
+          description: >-
+            Set false to block saving this video for offline playback; true lifts the
+            block. Absent leaves the stored flag untouched. Never-toggled videos are saveable.
 
     ExcludedItems:
       type: object
@@ -3933,9 +4196,8 @@ components:
         createdBy:
           nullable: true
           description: Reserved for future use. Currently always null (per-exclusion creator tracking is not implemented).
-          oneOf:
+          allOf:
             - $ref: '#/components/schemas/AdminUserSummary'
-            - type: 'null'
 
     AdminUserSummary:
       type: object

@@ -108,13 +108,8 @@ sudo chown albunyaan:albunyaan /opt/albunyaan/firebase-service-account.json
 
 ### 1.6 Build and install the backend
 
-```bash
-sudo -u albunyaan bash -c '
-  cd /opt/albunyaan/repo/backend
-  ./gradlew clean build -x test
-  cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
-'
-```
+The jar is built on your laptop and copied to the VPS as `/opt/albunyaan/backend.jar`.
+Follow "Updating the Application → Update backend" below, steps 1–3, with one difference on a first install: there is no jar to back up yet, so in step 3 run only the `install` line (`/opt/albunyaan` must already exist and be writable by the service user; the `restart` waits for 1.7). Then continue with 1.7.
 
 ### 1.7 Install the backend systemd service
 
@@ -174,6 +169,28 @@ sudo -u albunyaan bash -c '
 ```
 
 ### 1.9 Configure Nginx on the VPS
+
+First, make nginx see the real visitor IP behind Cloudflare. The password-reset endpoint rate-limits by `X-Real-IP`, and without this every request looks like it comes from a Cloudflare edge address. Only Cloudflare's published ranges are trusted, so a client that reaches the origin directly cannot forge its IP. Refresh the ranges from https://www.cloudflare.com/ips-v4 and https://www.cloudflare.com/ips-v6 when Cloudflare changes them.
+
+```bash
+sudo tee /etc/nginx/conf.d/cloudflare-realip.conf >/dev/null <<'EOF'
+set_real_ip_from 173.245.48.0/20;  set_real_ip_from 103.21.244.0/22;
+set_real_ip_from 103.22.200.0/22;  set_real_ip_from 103.31.4.0/22;
+set_real_ip_from 141.101.64.0/18;  set_real_ip_from 108.162.192.0/18;
+set_real_ip_from 190.93.240.0/20;  set_real_ip_from 188.114.96.0/20;
+set_real_ip_from 197.234.240.0/22; set_real_ip_from 198.41.128.0/17;
+set_real_ip_from 162.158.0.0/15;   set_real_ip_from 104.16.0.0/13;
+set_real_ip_from 104.24.0.0/14;    set_real_ip_from 172.64.0.0/13;
+set_real_ip_from 131.0.72.0/22;
+set_real_ip_from 2400:cb00::/32;   set_real_ip_from 2606:4700::/32;
+set_real_ip_from 2803:f800::/32;   set_real_ip_from 2405:b500::/32;
+set_real_ip_from 2405:8100::/32;   set_real_ip_from 2a06:98c0::/29;
+set_real_ip_from 2c0f:f248::/32;
+real_ip_header CF-Connecting-IP;
+EOF
+```
+
+Every `location` that proxies to the backend must also send `proxy_set_header X-Real-IP $remote_addr;` (the server block below already does).
 
 ```bash
 sudo nano /etc/nginx/sites-available/fitrahtube
@@ -329,14 +346,9 @@ From your laptop browser, visit `https://yourdomain.com`. You should see the Fit
 
 ## Updating the Application
 
-SSH all the way to the VPS:
-
-```bash
-ssh youruser@host-machine-ip
-ssh albunyaan@VPS-INTERNAL-IP
-```
-
 ### Update frontend only
+
+The admin dashboard is hosted separately from the API server; this section applies to the host that serves `/var/www/fitrahtube`.
 
 ```bash
 cd /opt/albunyaan/repo
@@ -347,31 +359,52 @@ cp -r dist/* /var/www/fitrahtube/
 
 No restart needed.
 
-### Update backend only
+### Update backend
+
+There is no git checkout on the API server. The jar is built locally and copied over. For steps 3–5, SSH all the way to the VPS:
 
 ```bash
-cd /opt/albunyaan/repo
-git pull
-cd backend && ./gradlew clean build -x test
-cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
+ssh youruser@host-machine-ip
+ssh albunyaan@VPS-INTERNAL-IP
+```
+
+**1. Build locally** (the jar name carries the `version` from `backend/build.gradle.kts`):
+
+```bash
+cd backend && ./gradlew clean bootJar -x test
+ls build/libs/albunyaan-tube-backend-<version>.jar
+```
+
+**2. Copy to the VPS user's home** (from your laptop, jumping through the host machine):
+
+```bash
+scp -J youruser@host-machine-ip backend/build/libs/albunyaan-tube-backend-<version>.jar albunyaan@VPS-INTERNAL-IP:~/backend.jar.new
+```
+
+If the API server is reachable directly, drop `-J youruser@host-machine-ip`.
+
+**3. On the server — back up, install, restart:**
+
+```bash
+sudo cp /opt/albunyaan/backend.jar /opt/albunyaan/backend.jar.bak.$(date +%Y%m%d%H%M%S)
+sudo install -o root -g root -m 644 ~/backend.jar.new /opt/albunyaan/backend.jar
 sudo systemctl restart albunyaan-backend
 ```
 
-### Update both
+**4. Verify** — `/actuator/health` answers 403 even from localhost, so probe a public endpoint instead. Expect `200` within about 60 s:
 
 ```bash
-cd /opt/albunyaan/repo
-git pull
-
-# Backend
-cd backend && ./gradlew clean build -x test
-cp build/libs/tube-0.0.1-SNAPSHOT.jar /opt/albunyaan/backend.jar
-sudo systemctl restart albunyaan-backend
-
-# Frontend
-cd ../frontend && npm ci && npm run build
-cp -r dist/* /var/www/fitrahtube/
+curl -s -o /dev/null -w '%{http_code}' http://localhost:8080/api/v1/categories
 ```
+
+**5. Roll back** if it does not come up:
+
+```bash
+sudo cp /opt/albunyaan/backend.jar.bak.<timestamp> /opt/albunyaan/backend.jar
+sudo systemctl restart albunyaan-backend
+```
+
+**Configuration note:** the unit file in `backend/scripts/systemd/albunyaan-backend.service` (installed at §1.7) reads `EnvironmentFile=/opt/albunyaan/.env` and passes no config-location flag. The production unit as installed today, however, runs `... -jar /opt/albunyaan/backend.jar --server.port=8080 --spring.config.location=file:/opt/albunyaan/application-prod.yml` with `EnvironmentFile=/opt/albunyaan/.env`. If your unit passes `--spring.config.location`, that file REPLACES the classpath `application.yml` — it is not merged — so any new property the code needs must either have a Java-side default (`@Value("${...:default}")`) or be added to `/opt/albunyaan/application-prod.yml` before the restart. Check which applies with `systemctl cat albunyaan-backend`.
 
 ---
 

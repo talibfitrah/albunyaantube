@@ -42,10 +42,11 @@ public class AuditLogController {
             @RequestParam(required = false) String cursor,
             @RequestParam(required = false, defaultValue = "50") int limit,
             @RequestParam(required = false) String actorId,
+            @RequestParam(required = false) String actorEmail,
             @RequestParam(required = false) String action
     ) {
         try {
-            return ResponseEntity.ok(auditLogService.findPaginated(actorId, action, limit, cursor));
+            return ResponseEntity.ok(auditLogService.findPaginated(actorId, actorEmail, action, limit, cursor));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
@@ -65,7 +66,7 @@ public class AuditLogController {
             @RequestParam(required = false, defaultValue = "50") int limit
     ) {
         try {
-            return ResponseEntity.ok(auditLogService.findPaginated(actorUid, null, limit, cursor));
+            return ResponseEntity.ok(auditLogService.findPaginated(actorUid, null, null, limit, cursor));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {
@@ -98,7 +99,7 @@ public class AuditLogController {
             @RequestParam(required = false, defaultValue = "50") int limit
     ) {
         try {
-            return ResponseEntity.ok(auditLogService.findPaginated(null, action, limit, cursor));
+            return ResponseEntity.ok(auditLogService.findPaginated(null, null, action, limit, cursor));
         } catch (IllegalArgumentException e) {
             return ResponseEntity.badRequest().build();
         } catch (Exception e) {

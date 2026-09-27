@@ -17,10 +17,12 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 
 /**
- * Plan F (ADMIN-USER-01) risk §11.3 — when mail is enabled, prove the configured
- * from-address mailbox is reachable via Graph at startup. Hard-fail if not, so the
- * operator catches the misconfiguration immediately (rather than discovering it
- * the first time an admin clicks "Reset password").
+ * Plan F (ADMIN-USER-01) risk §11.3 — when mail is enabled, prove at startup that the
+ * app can send: its credential gets a Graph token, and a readable token must carry the
+ * Mail.Send role (see {@link MailService#verifyMailSendGranted()}; the mailbox itself
+ * can't be read with Mail.Send alone). Hard-fail if not, so the operator catches the
+ * misconfiguration immediately (rather than discovering it the first time an admin
+ * clicks "Reset password").
  */
 @Component
 public class MailServiceStartupCheck implements ApplicationRunner {
@@ -39,8 +41,8 @@ public class MailServiceStartupCheck implements ApplicationRunner {
     }
 
     /**
-     * Bound the Graph reachability probe so a hung DNS lookup or a degraded Graph
-     * endpoint can't pin application startup forever. The Graph SDK does not
+     * Bound the probe so a hung DNS lookup or a degraded token endpoint can't pin
+     * application startup forever. The SDK does not
      * expose a client-side per-call timeout we can set declaratively, so we run
      * the probe on a dedicated single-thread executor and time it out at the JVM
      * level. The executor is shut down (with shutdownNow + interrupt) after the
@@ -63,7 +65,7 @@ public class MailServiceStartupCheck implements ApplicationRunner {
             return t;
         });
         try {
-            Future<?> future = executor.submit(mailService::verifyFromMailboxReachable);
+            Future<?> future = executor.submit(mailService::verifyMailSendGranted);
             future.get(STARTUP_CHECK_TIMEOUT_SECONDS, TimeUnit.SECONDS);
             log.info("mail.startup-check.ok from={}", mail.getFromAddress());
         } catch (TimeoutException e) {
@@ -90,7 +92,7 @@ public class MailServiceStartupCheck implements ApplicationRunner {
                         "Mail startup check interrupted for " + mail.getFromAddress(), e);
             }
         } finally {
-            // shutdownNow interrupts the worker; if the Graph SDK respects
+            // shutdownNow interrupts the worker; if the SDK respects
             // interrupts the blocked call returns immediately. If it doesn't
             // (uninterruptible socket read), the daemon thread dies with the
             // JVM and doesn't pin the rest of startup.

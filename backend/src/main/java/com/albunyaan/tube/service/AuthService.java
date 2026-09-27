@@ -15,6 +15,19 @@ import com.google.cloud.firestore.SetOptions;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.QuerySnapshot;
 import com.google.cloud.firestore.Transaction;
+import com.google.api.client.http.GenericUrl;
+import com.google.api.client.http.HttpRequest;
+import com.google.api.client.http.HttpRequestFactory;
+import com.google.api.client.http.HttpResponseException;
+import com.google.api.client.http.javanet.NetHttpTransport;
+import com.google.api.client.http.json.JsonHttpContent;
+import com.google.api.client.json.GenericJson;
+import com.google.api.client.json.gson.GsonFactory;
+import com.google.auth.http.HttpCredentialsAdapter;
+import com.google.firebase.ErrorCode;
+import com.google.firebase.FirebaseApp;
+import com.google.firebase.ImplFirebaseTrampolines;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.UserRecord;
@@ -29,6 +42,7 @@ import org.springframework.scheduling.annotation.Async;
 import org.springframework.stereotype.Service;
 
 import jakarta.annotation.PostConstruct;
+import java.io.IOException;
 import java.util.HashMap;
 import java.util.Map;
 import java.util.concurrent.ExecutionException;
@@ -773,6 +787,303 @@ public class AuthService {
     }
 
     /**
+     * Reason recorded on the tombstone and the {@code USER_SELF_DELETED} audit
+     * row so operators can tell a user-initiated erasure apart from an admin
+     * soft-delete ({@link #softDeleteUser}) or the COPPA rejection path
+     * ({@code AccountProfileService.rejectUnderAge}, reason "age-ineligible").
+     */
+    static final String SELF_DELETE_REASON = "user-requested";
+
+    /**
+     * Page size for the post-tombstone purge. Matches
+     * {@link com.albunyaan.tube.repository.SyncRepository#SYNC_PAGE_SIZE} —
+     * also the Firestore per-batch write ceiling (500).
+     */
+    private static final int PURGE_PAGE_SIZE =
+            com.albunyaan.tube.repository.SyncRepository.SYNC_PAGE_SIZE;
+
+    /** Registry collections that can carry a uid inside {@code personalGrants[]}. */
+    private static final java.util.List<String> GRANTED_COLLECTIONS =
+            java.util.List.of("channels", "playlists", "videos");
+
+    /**
+     * Self-serve, permanent account deletion (Google Play policy 13327111).
+     *
+     * <p>This is NOT {@link #softDeleteUser}. Soft-delete is an admin action that
+     * leaves every field intact and is reversible via {@link #recoverUser}. This
+     * is the user erasing themselves: irreversible, no grace period.
+     *
+     * <p>What survives, deliberately:
+     * <ul>
+     *   <li>An <em>anonymised tombstone</em> at {@code users/{uid}} — uid, role,
+     *       status, deletedAt, deleteReason only. Hard-deleting the doc would
+     *       leave every {@code submittedBy} reference on public content dangling
+     *       in the admin UI.</li>
+     *   <li>{@code audit_logs} rows, including {@code actorDisplayName}. Google
+     *       explicitly permits retention for security and audit purposes; this
+     *       retention is disclosed on the public {@code /privacy} page.</li>
+     *   <li>{@code submittedBy} uids on public content. Once the Firebase Auth
+     *       record is gone and the user doc is scrubbed, the uid is a
+     *       destroyed-key pseudonym.</li>
+     * </ul>
+     *
+     * <p>Ordering is chosen so a partial failure leaves recoverable state:
+     * <ol>
+     *   <li>Already-DELETED → no second tombstone and no second audit row. The
+     *       sweep, however, RESUMES when this is a {@code user-requested}
+     *       tombstone whose {@code purgeCompleted} flag is not true: without
+     *       that, a sweep that died after the tombstone committed left the user
+     *       locked out with their library intact and nothing to retry it. An
+     *       admin soft-delete is still short-circuited — it is reversible via
+     *       {@link #recoverUser}, so a direct service-level retry must not
+     *       destroy its library. Note the HTTP route into this branch is
+     *       narrow: {@code FirebaseAuthFilter} does an <em>uncached</em> status
+     *       read on {@code /api/account/*} and 403s any deleted user before the
+     *       controller runs.</li>
+     *   <li>Last-active-admin guard inside the tx → {@link LastAdminException}
+     *       (409). Mirrors the count check in {@link #softDeleteUser}; unlike
+     *       that path there is no blanket self-action ban, because a non-last
+     *       admin is entitled to delete their own account.</li>
+     *   <li>Tombstone + audit row commit atomically in one transaction.</li>
+     *   <li>Cache evicted, so no cached ACTIVE entry can let a sync write
+     *       re-create library rows mid-purge.</li>
+     *   <li>Refresh tokens revoked, then the Firebase Auth record hard-deleted —
+     *       no new ID token can be minted against this uid.</li>
+     *   <li>Library, download events and personal grants swept. Idempotent by
+     *       uid; a failure here logs ERROR + an orphan audit row and rethrows,
+     *       following the convention in {@code AccountProfileService}.</li>
+     * </ol>
+     *
+     * <p>Because deletion happens server-side through the Admin SDK, Firebase's
+     * client-side "recent login" re-authentication requirement does not apply.
+     *
+     * @throws UserNotFoundException if {@code uid} has no Firestore document
+     * @throws LastAdminException    if the caller is the last active admin
+     */
+    public void deleteAccountPermanently(String uid) throws Exception {
+        SelfDelete outcome = runLifecycleTx(tx -> {
+            DocumentReference userRef = firestore.collection("users").document(uid);
+            DocumentSnapshot snap = tx.get(userRef).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (!snap.exists()) {
+                throw new UserNotFoundException(uid);
+            }
+            User target = snap.toObject(User.class);
+
+            // (a) Already a tombstone. Resume the sweep only for a self-delete
+            // whose purge never finished; an admin soft-delete is recoverable
+            // and its library must survive (see javadoc).
+            //
+            // ponytail: "any later call finishes the job" is the whole recovery
+            // mechanism — there is no reaper. Upgrade path is the scheduled scan
+            // named on purgeUserData below, which this flag is what makes
+            // queryable (deleteReason == user-requested && purgeCompleted != true).
+            if (target.isDeleted()) {
+                boolean sweepOwed = SELF_DELETE_REASON.equals(target.getDeleteReason())
+                        && !Boolean.TRUE.equals(target.getPurgeCompleted());
+                return sweepOwed ? SelfDelete.RESUME_SWEEP : SelfDelete.ALREADY_DONE;
+            }
+
+            // (b) Last-active-admin guard. All reads must precede all writes,
+            // hence sentinel-read → admin-count read → sentinel-write.
+            if (target.isAdmin()) {
+                lockAdminSentinelRead(tx);
+                QuerySnapshot admins = tx.get(firestore.collection("users")
+                        .whereEqualTo("role", "admin")
+                        .whereEqualTo("status", "active"))
+                        .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                if (admins.size() <= 1) {
+                    throw new LastAdminException(
+                            "Cannot delete the last active admin account. "
+                                    + "Promote another admin first.");
+                }
+                lockAdminSentinelWrite(tx, "self-delete");
+            }
+
+            // (c) Anonymise every personal field, then stamp the tombstone.
+            // Direct identifiers first…
+            target.setEmail(null);
+            target.setDisplayName(null);
+            target.setDateOfBirth(null);
+            target.setPhoneNumber(null);
+            // …then the behavioural metadata. A timestamp hanging off an
+            // identifier still describes the human ("when they last opened the
+            // app", "when they signed up", "which admin created them"), so
+            // leaving these behind would make the tombstone anonymised in name
+            // only. What survives is exactly uid, role, status, deletedAt,
+            // deletedBy (self) and deleteReason, plus the createdAt/updatedAt
+            // record-keeping stamps every lifecycle write maintains.
+            target.setLastLoginAt(null);
+            target.setProfileCompletedAt(null);
+            target.setCreatedBy(null);
+            // Recovery stamps from a prior softDelete→recover cycle ("when/by
+            // whom this human was reinstated") are the same class of metadata.
+            target.setRecoveredAt(null);
+            target.setRecoveredBy(null);
+            // Block stamps too: post-F8 recover clears them, but pre-F8 docs
+            // can still carry "which admin blocked them and why" (blockReason
+            // holds moderators' internal notes) on an active user.
+            target.setBlockedAt(null);
+            target.setBlockedBy(null);
+            target.setBlockReason(null);
+            target.recordSoftDelete(uid, SELF_DELETE_REASON);
+            // The sweep below has not run yet. Recording that on the tombstone
+            // is what lets a later call tell "finished" from "died halfway".
+            target.setPurgeCompleted(false);
+
+            tx.set(userRef, target, SetOptions.merge());
+            auditLogRepository.saveInTransaction(tx,
+                    auditLogService.buildSelfDelete(uid, SELF_DELETE_REASON));
+            return SelfDelete.TOMBSTONED;
+        });
+
+        // (d) Always evict, transition or not — cheap and defensive.
+        evictUserStatus(uid);
+
+        if (outcome == SelfDelete.ALREADY_DONE) {
+            logger.info("Self-delete no-op: uid={} was already deleted", uid);
+            return;
+        }
+        if (outcome == SelfDelete.RESUME_SWEEP) {
+            logger.warn("SELF_DELETE: resuming an unfinished purge for uid={}", uid);
+        }
+
+        try {
+            // (e) Revoke before delete: if deleteUser fails, the surviving Auth
+            // record at least cannot mint fresh ID tokens.
+            destroyAuthRecord(uid);
+            // (f)
+            purgeUserData(uid);
+            // (g) Only now is the account genuinely gone. Until this lands, any
+            // later call re-enters at (a) and finishes the sweep.
+            firestore.collection("users").document(uid)
+                    .update("purgeCompleted", true)
+                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            logger.error("SELF_DELETE: purge failed for uid={} AFTER the tombstone committed — "
+                    + "the Firebase Auth record and/or library rows may survive. "
+                    + "Manual cleanup required.", uid, e);
+            try {
+                auditLogService.logSystem(
+                        "USER_SELF_DELETE_PURGE_FAILED",
+                        "user", uid,
+                        "purge-failed: " + e.getClass().getSimpleName());
+            } catch (RuntimeException auditEx) {
+                logger.error("SELF_DELETE: orphan audit emission also failed uid={}", uid, auditEx);
+            }
+            throw e;
+        }
+
+        logger.info("Permanently deleted account uid={} (self-serve)", uid);
+    }
+
+    /** Outcome of the self-delete transaction — see {@link #deleteAccountPermanently}. */
+    private enum SelfDelete {
+        /** Fresh tombstone written; sweep owed. */
+        TOMBSTONED,
+        /** Tombstone already present but its sweep never finished. */
+        RESUME_SWEEP,
+        /** Nothing left to do — completed self-delete, or a recoverable soft-delete. */
+        ALREADY_DONE
+    }
+
+    /**
+     * Revoke tokens and hard-delete the Firebase Auth record, treating a record
+     * that is already gone as success.
+     *
+     * <p>A resumed sweep normally meets a uid whose Auth record the FAILED
+     * attempt already destroyed — that is the exact shape of the bug this
+     * resume path exists for (Auth deleted, Firestore sweep threw). Without
+     * this, the retry would die here and never reach the purge it exists to
+     * finish.
+     */
+    private void destroyAuthRecord(String uid) throws FirebaseAuthException {
+        try {
+            firebaseAuth.revokeRefreshTokens(uid);
+            firebaseAuth.deleteUser(uid);
+        } catch (FirebaseAuthException e) {
+            if (e.getAuthErrorCode() != com.google.firebase.auth.AuthErrorCode.USER_NOT_FOUND) {
+                throw e;
+            }
+            logger.info("SELF_DELETE: Auth record for uid={} was already destroyed; sweeping on", uid);
+        }
+    }
+
+    /**
+     * Hard-delete everything keyed to {@code uid} outside the tombstone.
+     *
+     * <p>ponytail: inline sequential sweep — three subcollection scans, one
+     * {@code download_events} scan and three {@code personalGrants} scans, each
+     * paged at {@link #PURGE_PAGE_SIZE} and committed in 500-write batches, all
+     * on the caller's request thread. Ceiling: a user with tens of thousands of
+     * library rows or grants costs one round-trip pair per page, so the HTTP
+     * request stretches linearly with library size. Upgrade path: enqueue the
+     * sweep off the committed tombstone (an {@code @Async} task or a scheduled
+     * reaper that scans for {@code deleteReason="user-requested"} tombstones
+     * whose purge has not completed) — the tombstone already makes the account
+     * unusable the instant the transaction commits, so the sweep does not have
+     * to be synchronous to satisfy the policy.
+     *
+     * <p>Every step is idempotent by uid, so a re-run after a partial failure is
+     * safe.
+     */
+    private void purgeUserData(String uid) throws Exception {
+        DocumentReference userRef = firestore.collection("users").document(uid);
+        for (String coll : java.util.List.of(
+                com.albunyaan.tube.repository.SyncRepository.SUBS_COLL,
+                com.albunyaan.tube.repository.SyncRepository.PLAYLISTS_COLL,
+                com.albunyaan.tube.repository.SyncRepository.FAVORITES_COLL)) {
+            deleteMatchingPaged(userRef.collection(coll));
+        }
+
+        // Write-only analytics rows (DownloadService.trackDownload*) — no reader
+        // anywhere in the backend, so nothing breaks by removing them.
+        deleteMatchingPaged(firestore.collection("download_events").whereEqualTo("userId", uid));
+
+        for (String coll : GRANTED_COLLECTIONS) {
+            removeGrantPaged(coll, uid);
+        }
+    }
+
+    /** Delete every document matching {@code query}, one {@link #PURGE_PAGE_SIZE} page at a time. */
+    private void deleteMatchingPaged(com.google.cloud.firestore.Query query) throws Exception {
+        while (true) {
+            java.util.List<com.google.cloud.firestore.QueryDocumentSnapshot> docs =
+                    query.limit(PURGE_PAGE_SIZE).get()
+                            .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                            .getDocuments();
+            if (docs.isEmpty()) return;
+            com.google.cloud.firestore.WriteBatch batch = firestore.batch();
+            for (var doc : docs) batch.delete(doc.getReference());
+            batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (docs.size() < PURGE_PAGE_SIZE) return;
+        }
+    }
+
+    /**
+     * Strip {@code uid} from {@code personalGrants[]} on every doc in
+     * {@code collection} that still names it. Each committed page shrinks the
+     * result set, so re-running the same query converges without a cursor.
+     */
+    private void removeGrantPaged(String collection, String uid) throws Exception {
+        while (true) {
+            java.util.List<com.google.cloud.firestore.QueryDocumentSnapshot> docs =
+                    firestore.collection(collection)
+                            .whereArrayContains("personalGrants", uid)
+                            .limit(PURGE_PAGE_SIZE).get()
+                            .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
+                            .getDocuments();
+            if (docs.isEmpty()) return;
+            com.google.cloud.firestore.WriteBatch batch = firestore.batch();
+            for (var doc : docs) {
+                batch.update(doc.getReference(), "personalGrants", FieldValue.arrayRemove(uid));
+            }
+            batch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+            if (docs.size() < PURGE_PAGE_SIZE) return;
+        }
+    }
+
+    /**
      * Plan F (ADMIN-USER-01, F6) — stand-alone refresh-token revocation.
      * Extracted from the inline calls in {@link #blockUser} / {@link #softDeleteUser}
      * so admins can force-logout a user without changing their account state.
@@ -1004,12 +1315,79 @@ public class AuthService {
     }
 
     /**
-     * Send password reset email
+     * Send password reset email.
+     *
+     * @return whether the mail was handed to the mailer (false: mail disabled or Graph refused)
      */
-    public void sendPasswordResetEmail(String email) throws FirebaseAuthException {
+    public boolean sendPasswordResetEmail(String email) throws FirebaseAuthException {
+        // CF-A-57: with mail off nothing carries the link -- do not mint a live reset token
+        // only to discard it.
+        if (!mailService.isEnabled()) return false;
         String link = firebaseAuth.generatePasswordResetLink(email);
-        logger.info("Password reset link generated for: {}", email);
-        mailService.sendPasswordResetEmail(email, link);
+        logger.info("Password reset link generated for: {}", MailService.maskEmail(email));
+        return mailService.sendPasswordResetEmail(email, link);
+    }
+
+    /**
+     * Public (signed-out) forgot-password, run on {@code passwordResetExecutor} (AccountController)
+     * so neither the answer nor its timing says whether the address has an account; an address with
+     * none is dropped here. A Graph refusal is logged + audited by {@link MailService}.
+     */
+    public void sendPasswordResetEmailQuietly(String email) {
+        try {
+            // The project runs enableImprovedEmailPrivacy, under which generatePasswordResetLink mints
+            // a link for ANY address (prod, 2026-09-27): confirm an enabled account first, or anyone
+            // could have noreply@ mail arbitrary addresses. An unknown one throws USER_NOT_FOUND below.
+            if (firebaseAuth.getUserByEmail(email).isDisabled()) {
+                logger.info("Public password reset not sent: account disabled");
+                return;
+            }
+            sendPasswordResetEmail(email);
+        } catch (FirebaseAuthException e) {
+            logger.info("Public password reset not sent: {}", e.getAuthErrorCode());
+        } catch (RuntimeException e) {
+            logger.error("Public password reset failed", e);
+        }
+    }
+
+    /**
+     * The Java Admin SDK has no {@code generateVerifyAndChangeEmailLink} (Node's has; absent in
+     * 9.10.0 and 9.11.0), so this is the request Node's sends: {@code accounts:sendOobCode} with
+     * {@code returnOobLink} -- the link comes back to us and Firebase mails nothing.
+     */
+    public String generateVerifyAndChangeEmailLink(String email, String newEmail)
+            throws IOException, FirebaseAuthException {
+        FirebaseApp app = FirebaseApp.getInstance();
+        return verifyAndChangeEmailLink(
+                new NetHttpTransport().createRequestFactory(
+                        new HttpCredentialsAdapter(ImplFirebaseTrampolines.getCredentials(app))),
+                ImplFirebaseTrampolines.getProjectId(app), email, newEmail);
+    }
+
+    static String verifyAndChangeEmailLink(HttpRequestFactory http, String projectId, String email, String newEmail)
+            throws IOException, FirebaseAuthException {
+        HttpRequest request = http.buildPostRequest(
+                new GenericUrl("https://identitytoolkit.googleapis.com/v1/projects/" + projectId + "/accounts:sendOobCode"),
+                new JsonHttpContent(GsonFactory.getDefaultInstance(), Map.of(
+                        "requestType", "VERIFY_AND_CHANGE_EMAIL", "email", email,
+                        "newEmail", newEmail, "returnOobLink", true)));
+        request.setParser(GsonFactory.getDefaultInstance().createJsonObjectParser());
+        try {
+            Object link = request.execute().parseAs(GenericJson.class).get("oobLink");
+            if (link == null) throw new IOException("sendOobCode answered without an oobLink");
+            return link.toString();
+        } catch (HttpResponseException e) {
+            String error = e.getContent() == null ? "" : e.getContent();
+            if (error.contains("EMAIL_EXISTS")) {
+                throw new FirebaseAuthException(ErrorCode.ALREADY_EXISTS, "EMAIL_EXISTS", e, null,
+                        AuthErrorCode.EMAIL_ALREADY_EXISTS);
+            }
+            // The caller's input (`@Email` accepts `a@b`; Identity Toolkit does not): a 400, not a 500.
+            if (error.contains("INVALID_EMAIL") || error.contains("INVALID_NEW_EMAIL")) {
+                throw new FirebaseAuthException(ErrorCode.INVALID_ARGUMENT, "INVALID_EMAIL", e, null, null);
+            }
+            throw e;
+        }
     }
 
     /**

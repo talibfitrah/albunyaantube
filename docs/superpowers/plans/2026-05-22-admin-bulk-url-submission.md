@@ -207,32 +207,32 @@ class YouTubeUrlParserTest {
 
     @Test
     void watchUrl_resolvesToVideo() {
-        var r = parser.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/watch?v=xc7keR2piUM");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
         assertFalse(r.isShort());
         assertNull(r.errorCode());
     }
 
     @Test
     void youtuBeShort_resolvesToVideo() {
-        var r = parser.parse("https://youtu.be/dQw4w9WgXcQ");
+        var r = parser.parse("https://youtu.be/xc7keR2piUM");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
     }
 
     @Test
     void shortsUrl_isUnsupported() {
-        var r = parser.parse("https://www.youtube.com/shorts/dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/shorts/xc7keR2piUM");
         assertNull(r.type());
         assertEquals(PreviewErrorCode.UNSUPPORTED_SHORTS, r.errorCode());
     }
 
     @Test
     void liveUrl_resolvesToVideo() {
-        var r = parser.parse("https://www.youtube.com/live/dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/live/xc7keR2piUM");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
     }
 
     @Test
@@ -273,14 +273,14 @@ class YouTubeUrlParserTest {
 
     @Test
     void mobilePrefix_isStripped() {
-        var r = parser.parse("https://m.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://m.youtube.com/watch?v=xc7keR2piUM");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
     }
 
     @Test
     void musicSubdomain_isUnsupported() {
-        var r = parser.parse("https://music.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://music.youtube.com/watch?v=xc7keR2piUM");
         assertEquals(PreviewErrorCode.UNSUPPORTED_TYPE, r.errorCode());
     }
 
@@ -292,23 +292,23 @@ class YouTubeUrlParserTest {
 
     @Test
     void nonYoutubeHost_isRejected() {
-        var r = parser.parse("https://example.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://example.com/watch?v=xc7keR2piUM");
         assertEquals(PreviewErrorCode.NOT_YOUTUBE_URL, r.errorCode());
     }
 
     @Test
     void whitespaceAndBom_areTrimmed() {
-        var r = parser.parse("  ﻿https://www.youtube.com/watch?v=dQw4w9WgXcQ  ");
+        var r = parser.parse("  ﻿https://www.youtube.com/watch?v=xc7keR2piUM  ");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
     }
 
     @Test
     void zeroWidthChars_inUrl_areSanitized() {
         // U+200B zero-width space injected after host
-        var r = parser.parse("https://www.youtube.com​/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com​/watch?v=xc7keR2piUM");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("xc7keR2piUM", r.youtubeId());
     }
 
     @Test
@@ -1500,12 +1500,12 @@ class BulkSubmissionServicePreviewTest {
         var batch = mock(RegistryDuplicateChecker.Batch.class);
         when(dedupe.newBatch()).thenReturn(batch);
         when(batch.findExisting(any(), any())).thenReturn(Optional.empty());
-        when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq("dQw4w9WgXcQ"), any()))
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq("xc7keR2piUM"), any()))
                 .thenReturn(PreviewFetchResult.ok(
-                        new PreviewMetadata("dQw4w9WgXcQ", "Rick Astley", "thumb.jpg", "Rick", "UC1", null, null, 213L, 1000L),
+                        new PreviewMetadata("xc7keR2piUM", "Rick Astley", "thumb.jpg", "Rick", "UC1", null, null, 213L, 1000L),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=xc7keR2piUM"), List.of("cat-1"));
         var resp = svc.preview(req);
 
         assertEquals(1, resp.rows().size());
@@ -1531,10 +1531,10 @@ class BulkSubmissionServicePreviewTest {
     void duplicatePending_marksDuplicate() {
         var batch = mock(RegistryDuplicateChecker.Batch.class);
         when(dedupe.newBatch()).thenReturn(batch);
-        when(batch.findExisting(eq(YouTubeContentType.VIDEO), eq("dQw4w9WgXcQ")))
+        when(batch.findExisting(eq(YouTubeContentType.VIDEO), eq("xc7keR2piUM")))
                 .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("existing-doc", "PENDING")));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=xc7keR2piUM"), List.of("cat-1"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE, resp.rows().get(0).status());
@@ -1551,10 +1551,10 @@ class BulkSubmissionServicePreviewTest {
         // Even for REJECTED dupes we still fetch metadata so the admin can see what they're re-submitting
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenReturn(PreviewFetchResult.ok(
-                        new PreviewMetadata("dQw4w9WgXcQ", "Some Vid", "thumb.jpg", null, null, null, null, null, null),
+                        new PreviewMetadata("xc7keR2piUM", "Some Vid", "thumb.jpg", null, null, null, null, null, null),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=xc7keR2piUM"), List.of("cat-1"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE_REJECTED, resp.rows().get(0).status());
@@ -1570,7 +1570,7 @@ class BulkSubmissionServicePreviewTest {
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenReturn(PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"), List.of("cat-1"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=xc7keR2piUM"), List.of("cat-1"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.ERROR, resp.rows().get(0).status());
@@ -3200,7 +3200,7 @@ Create `frontend/public/samples/sample-bulk-urls.csv` with literal content:
 URL
 https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw
 https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj
-https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://www.youtube.com/watch?v=xc7keR2piUM
 https://www.youtube.com/live/jfKfPfyJRdk
 ```
 
@@ -3213,7 +3213,7 @@ Create `frontend/public/samples/sample-bulk-urls.json`:
   "urls": [
     "https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw",
     "https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj",
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://www.youtube.com/watch?v=xc7keR2piUM",
     "https://www.youtube.com/live/jfKfPfyJRdk"
   ]
 }
@@ -3231,7 +3231,7 @@ const rows = [
   ['URL'],
   ['https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw'],
   ['https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj'],
-  ['https://www.youtube.com/watch?v=dQw4w9WgXcQ'],
+  ['https://www.youtube.com/watch?v=xc7keR2piUM'],
   ['https://www.youtube.com/live/jfKfPfyJRdk'],
 ]
 const ws = xlsx.utils.aoa_to_sheet(rows)

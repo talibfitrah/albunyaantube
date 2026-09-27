@@ -1,0 +1,16 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D",
+    "maxAgeSeconds": 0,
+    "cacheInstruction": {
+      "monitoringKey": 1001
+    },
+    "responseId": "IhMIi62biN-3lgMVAZl8Bh2buTj4"
+  },
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "Sign in to confirm you’re not a bot"
+  },
+  "trackingParams": "CAAQu2kiEwiLrZuI37eWAxUBmXwGHZu5OPjKAQTXNsm-",
+  "adBreakHeartbeatParams": "Q0FBJTNE"
+}

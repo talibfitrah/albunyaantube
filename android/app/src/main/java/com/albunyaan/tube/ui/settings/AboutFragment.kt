@@ -30,6 +30,9 @@ class AboutFragment : Fragment() {
     companion object {
         private const val KEY_TAP_COUNT = "developer_tap_count"
         private const val KEY_LAST_TAP_TIME = "developer_last_tap_time"
+
+        /** Fallback when `share.base.url` is blanked for local development. */
+        private const val DEFAULT_WEB_BASE = "https://app.fitrahtube.com"
     }
 
     @Inject
@@ -83,9 +86,19 @@ class AboutFragment : Fragment() {
         val versionText = view.findViewById<MaterialTextView>(R.id.versionText)
         versionText?.text = getString(R.string.about_version_format, BuildConfig.VERSION_NAME, BuildConfig.VERSION_CODE)
 
-        // Hidden developer options: 7 taps on version text (like Android's developer options)
-        versionText?.setOnClickListener {
-            handleDeveloperOptionsTap()
+        // Hidden developer options: 7 taps on version text (like Android's developer options).
+        //
+        // ANDROID-PLAY-03: debug builds only. The dialog exposes which YouTube
+        // client the app impersonates plus trip/reset controls for the extraction
+        // cooldown — user-reachable rate-limit and impersonation switches are a
+        // liability in Play review, and an ordinary user who taps around can break
+        // their own playback with them. Leaving the listener unregistered in
+        // release is what makes the dialog unreachable; the dialog itself still
+        // compiles in every flavor.
+        if (BuildConfig.DEBUG) {
+            versionText?.setOnClickListener {
+                handleDeveloperOptionsTap()
+            }
         }
     }
 
@@ -139,25 +152,45 @@ class AboutFragment : Fragment() {
         dialog.show(childFragmentManager, DeveloperSettingsDialog.TAG)
     }
 
+    /**
+     * ANDROID-ABOUT-URL-01: every link on this screen used to point at
+     * `albunyaan.tube`, which has no DNS record at all — five dead links, one
+     * of them the privacy policy, which is an automatic Play rejection.
+     *
+     * The legal pages are served by the backend (`LegalPagesController`) at the
+     * same host the app already builds share links from, so the host is derived
+     * from [BuildConfig.SHARE_BASE_URL] rather than hardcoded a second time.
+     * `share.base.url` can be blanked in local.properties to force the in-app
+     * deep-link fallback, hence the empty guard.
+     */
     private fun setupLinks(view: View) {
-        view.findViewById<View>(R.id.websiteItem)?.setOnClickListener {
-            openUrl("https://albunyaan.tube")
-        }
+        val webBase = BuildConfig.SHARE_BASE_URL.trimEnd('/').ifEmpty { DEFAULT_WEB_BASE }
+
+        // OWNER DECISION: there is no public website to link to. fitrahtube.com
+        // resolves but 404s, and app.fitrahtube.com serves the API only — its
+        // root 403s. Hidden rather than pointed at a 404, because Play
+        // reviewers do click these. To re-enable once a site exists, delete
+        // these two visibility lines and add back a listener that opens
+        // https://fitrahtube.com.
+        view.findViewById<View>(R.id.websiteItem)?.visibility = View.GONE
+        view.findViewById<View>(R.id.websiteDivider)?.visibility = View.GONE
 
         view.findViewById<View>(R.id.privacyItem)?.setOnClickListener {
-            openUrl("https://albunyaan.tube/privacy")
+            openUrl("$webBase/privacy")
         }
 
         view.findViewById<View>(R.id.termsItem)?.setOnClickListener {
-            openUrl("https://albunyaan.tube/terms")
+            openUrl("$webBase/terms")
         }
 
         view.findViewById<View>(R.id.licensesItem)?.setOnClickListener {
-            openUrl("https://albunyaan.tube/licenses")
+            openUrl("$webBase/licenses")
         }
 
+        // The old `albunyaan/albunyaan-tube` slug 404s; this repo is public
+        // under the org the git remote actually points at.
         view.findViewById<View>(R.id.githubItem)?.setOnClickListener {
-            openUrl("https://github.com/albunyaan/albunyaan-tube")
+            openUrl("https://github.com/talibfitrah/albunyaantube")
         }
     }
 

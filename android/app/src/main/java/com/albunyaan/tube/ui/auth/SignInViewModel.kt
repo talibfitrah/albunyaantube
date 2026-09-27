@@ -5,6 +5,7 @@ import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AuthErrorCode
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.auth.toAuthErrorCode
+import com.albunyaan.tube.data.account.AccountService
 import com.google.firebase.auth.AuthCredential
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.Job
@@ -14,6 +15,7 @@ import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import com.albunyaan.tube.util.isEmailShape
+import java.io.IOException
 import javax.inject.Inject
 
 /**
@@ -32,6 +34,7 @@ import javax.inject.Inject
 @HiltViewModel
 class SignInViewModel @Inject constructor(
     private val authRepository: AuthRepository,
+    private val accountService: AccountService,
 ) : ViewModel() {
 
     enum class Mode { SIGN_IN, SIGN_UP }
@@ -169,11 +172,33 @@ class SignInViewModel @Inject constructor(
         }
         _ui.update { it.copy(isLoading = true, error = null, passwordResetSent = false) }
         viewModelScope.launch {
-            val result = authRepository.sendPasswordResetEmail(email)
+            val result = sendPasswordReset(email)
             _ui.update {
                 if (result.isSuccess) it.copy(isLoading = false, passwordResetSent = true, error = null)
                 else it.copy(isLoading = false, error = AuthErrorCode.PASSWORD_RESET_FAILED)
             }
+        }
+    }
+
+    /**
+     * Backend first: Firebase's own mailer does not deliver for this project. Firebase only when
+     * the backend has no mailer (503) or was unreachable; any other answer (429 is its per-IP /
+     * per-email limit) stands, so it is not routed around.
+     */
+    private suspend fun sendPasswordReset(email: String): Result<Unit> {
+        val resp = try {
+            accountService.sendPasswordResetEmail(mapOf("email" to email))
+        } catch (e: IOException) {
+            null
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            return Result.failure(e)
+        }
+        return when {
+            resp == null || resp.code() == 503 -> authRepository.sendPasswordResetEmail(email)
+            resp.isSuccessful -> Result.success(Unit)
+            else -> Result.failure(IllegalStateException("password reset HTTP ${resp.code()}"))
         }
     }
 }

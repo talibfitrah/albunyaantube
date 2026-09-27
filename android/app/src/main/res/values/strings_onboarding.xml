@@ -28,8 +28,9 @@
     <string name="bootstrap_submit_button">Continue</string>
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
+    <string name="bootstrap_error_under_age">You need to be at least 13 to use FitrahTube. Please check the year you selected.</string>
     <string name="bootstrap_error_save_failed">Couldn\’t save your profile — try again</string>
-    <string name="bootstrap_password_explainer">Set a password so you can also sign in to the dashboard from a browser later.</string>
+    <string name="bootstrap_password_explainer">Set a password to continue — at least 8 characters. You can then also sign in with your email address and this password.</string>
     <string name="bootstrap_password_label">Password</string>
     <string name="bootstrap_password_confirm_label">Confirm password</string>
     <string name="bootstrap_error_invalid_password">Password must be at least 8 characters</string>

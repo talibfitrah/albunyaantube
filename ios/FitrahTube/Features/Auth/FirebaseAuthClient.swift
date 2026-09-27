@@ -1,0 +1,307 @@
+import FirebaseAuth
+import FitrahAPI
+import Foundation
+import Synchronization
+
+/// The ONE `AuthClient` conformer that imports FirebaseAuth (plan Global Constraints: Firebase
+/// names live in five app files and nowhere else — never in a ViewModel, never in a test-visible
+/// interface). Everything above this file sees `AuthUser`/`AuthErrorCode` and nothing else.
+///
+/// **Configure-first invariant.** `Auth.auth()` traps on an unconfigured `FirebaseApp`, so the
+/// `init?` below is the single gate: it returns nil unless `FirebaseBootstrap.configureIfPossible()`
+/// returned true, and the container falls back to `UnavailableAuthClient`. Every member is therefore
+/// behind ONE guard rather than thirteen — an instance cannot exist on an unconfigured app.
+///
+/// **Build it from the main actor only** (`AppContainer.auth`, a `@MainActor` lazy var — hence the
+/// `@MainActor init?`): `FirebaseBootstrap`'s `nonisolated` members touch
+/// `GIDSignIn.sharedInstance`, which is main-thread-affine. The async operations below are
+/// `nonisolated` and go straight to Firebase's own thread-safe `Auth`/`User` async API.
+nonisolated final class FirebaseAuthClient: AuthClient {
+
+    /// One element per auth-state transition, current state first — Firebase's listener, verbatim.
+    /// The listener is never removed: this object is `AppContainer.auth` and lives for the process.
+    ///
+    /// ONE Firebase listener, N subscribers: each `state` access is a fresh stream replaying the
+    /// current state (`AuthClient.swift`'s contract). Registering a listener per subscriber instead
+    /// would either leak one per access or need the non-`Sendable` handle carried into an
+    /// `onTermination` closure; the broadcaster costs neither.
+    var state: AsyncStream<AuthState> { broadcaster.stream }
+
+    private let broadcaster: AuthStateBroadcaster
+
+    /// Stage 9 round 3 / R3-P1: why the LAST mint was refused, recorded where the refusal actually
+    /// happened. Read (and cleared) by `refreshRefusal()`.
+    ///
+    /// Stage 9 round 4 / R4-P2 + NB-A: its life is bounded by "until the next mint". Only a FORCED
+    /// mint writes it, and every successful mint — plus the no-user guard — clears it, so a code
+    /// nobody consumed cannot outlive the session it belongs to. It used to be written by unforced
+    /// mints and cleared by nothing but a read: an unconsumed terminal code (a discarded
+    /// `EmailVerificationViewModel.checkNow()` mint, or a `token(false)` refusal whose `token(true)`
+    /// succeeded) then survived a sign-out, and the next 401 taken while `currentUser` is nil
+    /// returned at the guard WITHOUT recording, so `refreshRefusal()` handed the dead account's
+    /// code to a session that had none — `.deleted`, `handleDeletion()`, and the ruling-C13 wipe
+    /// running against the GUEST library.
+    ///
+    /// Cubic round 6 / P2b: it carries the UID it belongs to. The box is process-global and this
+    /// client is `nonisolated`, so two requests taking 401s at once both force a mint: request 1
+    /// records its verdict (and Firebase force-signs the user out inside that same throw), request
+    /// 2's mint then reaches the no-user guard — which, clearing unconditionally, ERASED request
+    /// 1's live verdict before it could be read, and nothing posted `.deleted`. Tagging the record
+    /// is what buys NB-A and this at once: the guard clears nothing, and `refreshRefusal(signedFor:)`
+    /// answers only the account the asking request was actually signed for.
+    private let lastRefusal = Mutex<(uid: String, code: AuthErrorCode)?>(nil)
+
+    @MainActor init?() {
+        guard FirebaseBootstrap.configureIfPossible() else { return nil }
+        let broadcaster = AuthStateBroadcaster(
+            current: Auth.auth().currentUser.map { .signedIn(AuthUser($0)) } ?? .signedOut)
+        self.broadcaster = broadcaster
+        _ = Auth.auth().addStateDidChangeListener { _, user in
+            broadcaster.send(user.map { .signedIn(AuthUser($0)) } ?? .signedOut)
+        }
+    }
+
+    func currentUser() async -> AuthUser? { Auth.auth().currentUser.map(AuthUser.init) }
+
+    /// The uid is read from the SAME `User` the token came from, so `BearerRetry`'s cross-account
+    /// guard compares two identities that were each atomic with their bearer.
+    ///
+    /// Stage 9 round 3 / R3-P1: the refusal is RECORDED here rather than discarded by a `try?`.
+    /// Firebase signs the user out before it rethrows — `User.internalGetTokenAsync`'s catch calls
+    /// `signOutIfTokenIsInvalid`, which for `userNotFound`, `userDisabled`, `invalidUserToken` and
+    /// `userTokenExpired` runs `auth?.signOutByForce(withUserID:)` →
+    /// `updateCurrentUser(nil, byForce: true, …)`, i.e. `currentUser` is already nil by the time
+    /// anything can ask a second time — as long as the refused user is still the current one.
+    /// `signOutByForce` guards on `_currentUser?.uid == userID` (Task 32, Codex 5), so a refusal
+    /// for an account that has since been REPLACED signs nobody out. That is the SDK protecting the
+    /// new account, and it is the reason the verdict below is trusted by its own uid tag and never
+    /// by whoever `currentUser` happens to be. Both codes `terminalEvent(for:)` maps are in that set, so
+    /// re-deriving the verdict after the fact answered nil for exactly the two cases that matter
+    /// and the ruling-C13 device wipe had no working trigger on the bare-401 path.
+    ///
+    /// **Cited by SYMBOL, not by line — and re-verify it on every Firebase major (CF-A-35).** This
+    /// is the one invariant in this file no local test can reach: it is a claim about the SDK's
+    /// internals, so the only proof is reading them. Task 32 re-read all four at 12.19.1 against
+    /// 11.15.0 and found every body BYTE-IDENTICAL — but all three line numbers this comment used
+    /// to carry had shifted with the files around them (`User.swift` 1778 → 1877 lines,
+    /// `Auth.swift` 2430 → 2411), which is exactly why the numbers are gone and the symbols stay.
+    /// Last verified: **12.19.1**.
+    func idToken(forceRefresh: Bool) async -> BearerToken? {
+        // No clear here (Cubic round 6 / P2b): with nobody signed in this call cannot tell a
+        // verdict a CONCURRENT mint just recorded from a stale one, and erasing it is what dropped
+        // the wipe. The uid on the record is what bounds its life instead.
+        guard let user = Auth.auth().currentUser else { return nil }
+        // Read ONCE, and outside every `withLock` below (Task 32, security review I1). Firebase
+        // 12.12.0 turned `User.uid` from a stored property into `propertyAccessQueue.sync { _uid }`
+        // — a BLOCKING wait on a serial queue this object does not own. `Mutex` is `os_unfair_lock`
+        // underneath and blocking inside `withLock` is exactly what its contract forbids: it holds
+        // the one process-global lock that guards the ruling-C13 verdict while parked on Firebase's
+        // queue, so every concurrent 401's `refreshRefusal(signedFor:)` queues behind a wait this
+        // file does not control. No deadlock is reachable today — nothing takes that queue and then
+        // this mutex — but the lock order is now ours→theirs, and one SDK release that fires a
+        // callback under `propertyAccessQueue` would close the cycle on the wipe path.
+        let uid = user.uid
+        do {
+            let token = try await user.getIDToken(forcingRefresh: forceRefresh)
+            // This account's own successful mint is the expiry of this account's own refusal, and
+            // only of that one.
+            lastRefusal.withLock { if $0?.uid == uid { $0 = nil } }
+            return BearerToken(value: token, identity: uid)
+        } catch {
+            // Stage 9 round 9 / R9-P2: recorded on ANY refused mint, forced or not. There used to
+            // be a `guard forceRefresh else { return nil }` here, and it read the caller's PUBLIC
+            // flag rather than what Firebase actually did: once the cached token has EXPIRED,
+            // `getIDToken(forcingRefresh: false)` refreshes internally anyway (the note above,
+            // `User.internalGetTokenAsync`), and for a deleted account that refresh throws
+            // `userNotFound` and force-signs the user out inside this same call. The verdict was
+            // therefore dropped exactly when it was the only one there would ever be — the forced
+            // retry that follows returns at the `currentUser` guard above with nobody signed in, so
+            // nothing recorded, nothing posted `.deleted`, and the ruling-C13 wipe never ran at all
+            // for the commonest shape of the case it exists for. The record is uid-scoped and this
+            // account's own next successful mint clears it, so recording from an unforced call
+            // cannot outlive what it describes.
+            let error = error as NSError
+            let code: AuthErrorCode = error.domain == AuthErrors.domain
+                ? AuthErrorCode(firebaseCode: error.code) : .unknown
+            lastRefusal.withLock { $0 = (uid, code) }
+            return nil
+        }
+    }
+
+    func signIn(email: String, password: String) async throws(AuthErrorCode) -> AuthUser {
+        try await mapped { AuthUser(try await Auth.auth().signIn(withEmail: email, password: password).user) }
+    }
+
+    func signUp(email: String, password: String) async throws(AuthErrorCode) -> AuthUser {
+        try await mapped { AuthUser(try await Auth.auth().createUser(withEmail: email, password: password).user) }
+    }
+
+    func signIn(with credential: FitrahTube.OAuthCredential) async throws(AuthErrorCode) -> AuthUser {
+        let firebase = Self.firebaseCredential(credential)
+        return try await mapped {
+            let user = try await Auth.auth().signIn(with: firebase).user
+            // Guideline 4.0: Apple's name arrives once. Firebase normally stores it from the
+            // credential; if it did not, store it here so the bootstrap form can still seed from
+            // `displayName`. Best effort — a failed write never fails the sign-in.
+            if user.displayName?.isEmpty ?? true,
+               let name = credential.fullName.map({ PersonNameComponentsFormatter().string(from: $0) }), !name.isEmpty {
+                let change = user.createProfileChangeRequest()
+                change.displayName = name
+                try? await change.commitChanges()
+            }
+            return AuthUser(user)
+        }
+    }
+
+    func sendPasswordReset(email: String) async throws(AuthErrorCode) {
+        try await mapped { try await Auth.auth().sendPasswordReset(withEmail: email) }
+    }
+
+    func sendVerificationEmail() async throws(AuthErrorCode) {
+        try await mapped { try await Self.requireUser().sendEmailVerification() }
+    }
+
+    func reload() async throws(AuthErrorCode) -> AuthUser {
+        try await mapped {
+            let user = try Self.requireUser()
+            try await user.reload()
+            return AuthUser(user)
+        }
+    }
+
+    func reauthenticate(password: String) async throws(AuthErrorCode) {
+        try await mapped {
+            let user = try Self.requireUser()
+            // An account with no email cannot be re-authenticated by password at all — that is the
+            // Google/Apple-only case, which reauthenticates through its provider (Task 5), not here.
+            guard let email = user.email else { throw AuthErrorCode.unknown }
+            _ = try await user.reauthenticate(with: EmailAuthProvider.credential(withEmail: email, password: password))
+        }
+    }
+
+    /// Stage 9 / P1: `User.reauthenticate(with:)`, NOT `Auth.signIn(with:)` — the same primitive
+    /// the password leg above uses, on the same `currentUser`. Firebase raises `userMismatch`
+    /// (17024) when the sheet returned a credential for a DIFFERENT account, which is not in
+    /// `AuthErrorCode(firebaseCode:)`'s table and therefore lands on `.unknown`; `.unknown`'s
+    /// `messageKey` IS `auth_error_generic`, the provider-refusal copy the delete confirmation
+    /// renders, so a new case would be a second code carrying the identical string and no reader.
+    /// With no current user this throws `.unknown` too, through `requireUser()` — the same answer
+    /// `reauthenticate(password:)` gives for it.
+    func reauthenticate(with credential: FitrahTube.OAuthCredential) async throws(AuthErrorCode) {
+        let firebase = Self.firebaseCredential(credential)
+        try await mapped { _ = try await Self.requireUser().reauthenticate(with: firebase) }
+    }
+
+    func updatePassword(_ new: String) async throws(AuthErrorCode) {
+        try await mapped { try await Self.requireUser().updatePassword(to: new) }
+    }
+
+    func verifyBeforeUpdateEmail(_ new: String) async throws(AuthErrorCode) {
+        try await mapped { try await Self.requireUser().sendEmailVerification(beforeUpdatingEmail: new) }
+    }
+
+    /// The read, the comparison and the call to `delete()` run with no suspension between them
+    /// (`User` is non-`Sendable`, so it is re-read here rather than handed in); `User.delete()`
+    /// acts on its OWN instance (12.19.1, `User.swift:948-974`), so an account arriving after this
+    /// read is not the one deleted.
+    func deleteUser(expecting uid: String) async throws(AuthErrorCode) {
+        try await mapped {
+            let user = try Self.requireUser()
+            guard user.uid == uid else { throw AuthErrorCode.unknown }
+            try await user.delete()
+        }
+    }
+
+    /// `Auth.revokeToken` goes through `_currentUser?.internalGetToken`, which never calls back when
+    /// nobody is signed in (12.19.1, `Auth.swift`) — the guard keeps that a no-op, not a hang.
+    func revokeAppleToken(authorizationCode: String) async {
+        guard Auth.auth().currentUser != nil else { return }
+        do {
+            try await Auth.auth().revokeToken(withAuthorizationCode: authorizationCode)
+        } catch {
+            print("FirebaseAuthClient: Apple token revocation failed: \((error as NSError).domain) \((error as NSError).code)")
+        }
+    }
+
+    /// Local only — the listener above turns it into `.signedOut`. Stage 5 / C1.3: the keychain
+    /// failure it throws on is NOT ignorable. `Auth.signOut()` calls `updateCurrentUser(nil,
+    /// byForce: false, savingToDisk: true)`, which assigns `_currentUser = nil` only when that write
+    /// succeeded — so a swallowed throw leaves a live session minting bearers under a UI that says
+    /// signed out. `AccountSession.dropSession()` is what refuses to publish `.signedOut` over it.
+    func signOut() throws(AuthErrorCode) {
+        do {
+            try Auth.auth().signOut()
+        } catch {
+            let error = error as NSError
+            throw error.domain == AuthErrors.domain ? AuthErrorCode(firebaseCode: error.code) : .unknown
+        }
+    }
+
+    /// Reports what the mint above recorded, and clears it. Nil for BOTH "no session" and "it
+    /// worked", because neither is a terminal verdict.
+    ///
+    /// Stage 9 round 3 / R3-P1: no second forced mint. This used to re-ask
+    /// `Auth.auth().currentUser` for another forced token, which (a) was dead code for the only two
+    /// codes that decide anything, because Firebase had already nilled `currentUser`, and (b) cost
+    /// a second network round trip for one 401 — round 1's accepted P3, retired here.
+    func refreshRefusal(signedFor uid: String?) async -> AuthErrorCode? {
+        // Cubic round 6 / P2b + round 4 / NB-A: a verdict is reported ONLY to a request that
+        // carried this account's bearer. A 401 taken by an unsigned request (nil) has no account
+        // to read one for — which is the sequence that handed a dead account's `.userNotFound` to
+        // a guest and wiped the guest library.
+        guard let uid else { return nil }
+        return lastRefusal.withLock { refusal in
+            guard refusal?.uid == uid else { return nil }
+            let recorded = refusal?.code
+            refusal = nil
+            return recorded
+        }
+    }
+
+    // MARK: - Firebase → app
+
+    /// The one place an SDK error becomes an app code. The DOMAIN check is what keeps the Int
+    /// table honest: a URL-loading or keychain `NSError` carrying, say, code 17008 is `.unknown`,
+    /// not "invalid email". `requireUser()`'s own `.unknown` lands in the same arm (its bridged
+    /// domain is not Firebase's), which is the answer it wants anyway.
+    ///
+    /// The SDK's non-`Sendable` `User` is fetched INSIDE `body` by every caller: a `User` hoisted
+    /// out and captured is a region-isolation error under `SWIFT_STRICT_CONCURRENCY: complete`.
+    private func mapped<T>(_ body: () async throws -> T) async throws(AuthErrorCode) -> T {
+        do {
+            return try await body()
+        } catch {
+            let error = error as NSError
+            guard error.domain == AuthErrors.domain else { throw AuthErrorCode.unknown }
+            throw AuthErrorCode(firebaseCode: error.code)
+        }
+    }
+
+    private static func requireUser() throws(AuthErrorCode) -> User {
+        guard let user = Auth.auth().currentUser else { throw AuthErrorCode.unknown }
+        return user
+    }
+
+    /// Spec §3: exactly two federated providers reach this app. Google hands back an access token,
+    /// Apple a raw nonce — which is why `OAuthCredential` carries one field for both.
+    private static func firebaseCredential(_ credential: FitrahTube.OAuthCredential) -> AuthCredential {
+        // MODULE-QUALIFIED (Task 5): the app now has its own `GoogleAuthProvider` — the
+        // `OAuthSignInProvider` conformer — which shadows the SDK's inside this module. Same
+        // defence this file already applies to `FitrahTube.OAuthCredential`, in the other direction.
+        if credential.providerID == FirebaseAuth.GoogleAuthProvider.id {
+            return FirebaseAuth.GoogleAuthProvider.credential(withIDToken: credential.idToken,
+                                                              accessToken: credential.accessTokenOrNonce ?? "")
+        }
+        return OAuthProvider.appleCredential(withIDToken: credential.idToken,
+                                             rawNonce: credential.accessTokenOrNonce, fullName: credential.fullName)
+    }
+}
+
+/// `nonisolated` explicitly: the app target defaults new declarations to `@MainActor`
+/// (`project.yml:87`), and every caller above is a `nonisolated` async operation.
+private nonisolated extension AuthUser {
+    init(_ user: User) {
+        self.init(uid: user.uid, email: user.email, isEmailVerified: user.isEmailVerified,
+                  providerIDs: user.providerData.map(\.providerID), displayName: user.displayName)
+    }
+}

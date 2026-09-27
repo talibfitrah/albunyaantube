@@ -976,13 +976,14 @@ public class RegistryController {
     }
 
     /**
-     * Update video in registry
+     * Update video in registry. Merge semantics: fields absent from the body are left
+     * untouched, so partial bodies (e.g. the admin offlineAllowed toggle) are safe.
      */
     @PutMapping("/videos/{id}")
     @PreAuthorize("hasRole('ADMIN')")
     public ResponseEntity<Video> updateVideo(
             @PathVariable String id,
-            @RequestBody Video video,
+            @RequestBody com.albunyaan.tube.dto.VideoUpdateRequest video,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         Video existing = videoRepository.findById(id).orElse(null);
@@ -1000,15 +1001,37 @@ public class RegistryController {
             video.setStatus(upperStatus);
         }
 
-        // Update fields
-        existing.setTitle(video.getTitle());
-        existing.setDescription(video.getDescription());
-        existing.setCategoryIds(video.getCategoryIds());
-        existing.setStatus(video.getStatus());
-        existing.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
-                .sanitizeThumbnailUrl(video.getThumbnailUrl()));
-        existing.setDurationSeconds(video.getDurationSeconds());
-        existing.setViewCount(video.getViewCount());
+        // Merge, don't replace: every copy is null-guarded so a partial body updates only
+        // the fields it carries. The previous unconditional copies over the Video entity
+        // meant a body like {"offlineAllowed": true} nulled title/description/thumbnail/
+        // duration/viewCount, cleared categories, and un-approved the video via the entity
+        // constructor's default PENDING status — hence VideoUpdateRequest (all-null defaults).
+        // The admin offlineAllowed toggle (iOS Phase 3) sends exactly such partial bodies.
+        if (video.getTitle() != null) {
+            existing.setTitle(video.getTitle());
+        }
+        if (video.getDescription() != null) {
+            existing.setDescription(video.getDescription());
+        }
+        if (video.getCategoryIds() != null) {
+            existing.setCategoryIds(video.getCategoryIds());
+        }
+        if (video.getStatus() != null) {
+            existing.setStatus(video.getStatus());
+        }
+        if (video.getThumbnailUrl() != null) {
+            existing.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
+                    .sanitizeThumbnailUrl(video.getThumbnailUrl()));
+        }
+        if (video.getDurationSeconds() != null) {
+            existing.setDurationSeconds(video.getDurationSeconds());
+        }
+        if (video.getViewCount() != null) {
+            existing.setViewCount(video.getViewCount());
+        }
+        if (video.getOfflineAllowed() != null) {
+            existing.setOfflineAllowed(video.getOfflineAllowed());
+        }
 
         Video updated = videoRepository.save(existing);
         publicContentCacheService.evictPublicContentCaches();

@@ -3,7 +3,10 @@ package com.albunyaan.tube.auth.di
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountRepositoryImpl
 import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.auth.LastKnownAccountStore
 import com.albunyaan.tube.data.account.AccountService
+import com.albunyaan.tube.data.account.LocalAccountDataWiper
+import com.google.firebase.auth.FirebaseAuth
 import dagger.Module
 import dagger.Provides
 import dagger.hilt.InstallIn
@@ -32,12 +35,22 @@ object AccountModule {
     fun provideAccountRepository(
         service: AccountService,
         authRepository: AuthRepository,
+        // AccountStatusEvent.Deleted must erase this device's copy of the
+        // account. LocalAccountDataWiper depends only on Context + AppDatabase
+        // + ImageLoader, so it adds no edge back into this graph.
+        wiper: LocalAccountDataWiper,
+        lastKnown: LastKnownAccountStore,
+        firebaseAuth: FirebaseAuth,
     ): AccountRepository {
         val scope = CoroutineScope(SupervisorJob() + Dispatchers.Default)
         return AccountRepositoryImpl(
             service = service,
             authStatusEvents = authRepository.accountStatusEvents,
             observerScope = scope,
+            wiper = wiper,
+            lastKnown = lastKnown,
+            auth = authRepository,
+            currentFirebaseUid = { firebaseAuth.currentUser?.uid },
         )
     }
 }

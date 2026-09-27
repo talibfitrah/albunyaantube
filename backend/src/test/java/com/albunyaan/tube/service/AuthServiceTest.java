@@ -579,6 +579,72 @@ class AuthServiceTest {
         verify(mockCache).evict("u-role");
     }
 
+    // ── Self-delete tombstone must not leak recovery metadata ────────────────
+    // A user who was admin-soft-deleted, then recovered, then self-deletes
+    // carries recoveredAt/recoveredBy from recordRecover. The anonymise block
+    // promises "exactly uid, role, status, deletedAt, deletedBy, deleteReason"
+    // survive — recovery stamps are behavioural metadata and must be nulled too.
+
+    @Test
+    @SuppressWarnings("unchecked")
+    void deleteAccountPermanently_clearsRecoveryMetadataOnTombstone() throws Exception {
+        // Arrange: a recovered user (recordRecover stamps recoveredAt/recoveredBy).
+        User recovered = new User("rec-uid", "rec@t.com", "Rec", "user");
+        recovered.setStatus("deleted");
+        recovered.recordRecover("admin-uid");
+        assertNotNull(recovered.getRecoveredAt(), "precondition: recovery stamped");
+        // Legacy pre-F8 block stamps on an otherwise-active doc: set directly,
+        // after recordRecover (which clears them post-F8).
+        recovered.setBlockedAt(com.google.cloud.Timestamp.now());
+        recovered.setBlockedBy("mod-uid");
+        recovered.setBlockReason("internal moderator note");
+
+        com.google.cloud.firestore.CollectionReference usersColl =
+                mock(com.google.cloud.firestore.CollectionReference.class);
+        com.google.cloud.firestore.DocumentReference userRef =
+                mock(com.google.cloud.firestore.DocumentReference.class);
+        when(firestore.collection("users")).thenReturn(usersColl);
+        when(usersColl.document("rec-uid")).thenReturn(userRef);
+
+        com.google.cloud.firestore.DocumentSnapshot snap =
+                mock(com.google.cloud.firestore.DocumentSnapshot.class);
+        when(snap.exists()).thenReturn(true);
+        when(snap.toObject(User.class)).thenReturn(recovered);
+        ApiFuture<com.google.cloud.firestore.DocumentSnapshot> snapFuture = mock(ApiFuture.class);
+        when(snapFuture.get(anyLong(), any())).thenReturn(snap);
+
+        com.google.cloud.firestore.Transaction tx = mock(com.google.cloud.firestore.Transaction.class);
+        when(tx.get(userRef)).thenReturn(snapFuture);
+
+        // Run the tx lambda synchronously against the mocked Transaction.
+        doAnswer(inv -> {
+            com.google.cloud.firestore.Transaction.Function<Object> fn = inv.getArgument(0);
+            Object result = fn.updateCallback(tx);
+            ApiFuture<Object> f = mock(ApiFuture.class);
+            when(f.get(anyLong(), any())).thenReturn(result);
+            return f;
+        }).when(firestore).runTransaction(any());
+        when(timeoutProperties.getWrite()).thenReturn(10L);
+
+        // Abort right after the tombstone commits — the post-tx purge sweep is
+        // not under test and would need a mocked Firestore query surface.
+        FirebaseAuthException fbEx = mock(FirebaseAuthException.class);
+        doThrow(fbEx).when(firebaseAuth).revokeRefreshTokens("rec-uid");
+
+        assertThrows(FirebaseAuthException.class,
+                () -> authService.deleteAccountPermanently("rec-uid"));
+
+        // Assert: tombstone written, and recovery metadata is gone from it.
+        verify(tx).set(eq(userRef), same(recovered), any(com.google.cloud.firestore.SetOptions.class));
+        assertEquals("deleted", recovered.getStatus());
+        assertNull(recovered.getEmail(), "email must be erased from the tombstone");
+        assertNull(recovered.getRecoveredAt(), "recoveredAt must be erased from the tombstone");
+        assertNull(recovered.getRecoveredBy(), "recoveredBy must be erased from the tombstone");
+        assertNull(recovered.getBlockedAt(), "blockedAt must be erased from the tombstone");
+        assertNull(recovered.getBlockedBy(), "blockedBy must be erased from the tombstone");
+        assertNull(recovered.getBlockReason(), "blockReason must be erased from the tombstone");
+    }
+
     @Test
     void recordLogin_shouldUpdateLastLoginTimestamp() throws Exception {
         // Arrange
@@ -611,19 +677,34 @@ class AuthServiceTest {
     void sendPasswordResetEmail_shouldGenerateResetLink() throws Exception {
         // Arrange
         String resetLink = "https://firebase.app/reset?token=abc123";
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenReturn(resetLink);
+        when(mailService.sendPasswordResetEmail("test@example.com", resetLink)).thenReturn(true);
 
         // Act
-        authService.sendPasswordResetEmail("test@example.com");
+        boolean sent = authService.sendPasswordResetEmail("test@example.com");
 
         // Assert
+        assertTrue(sent);
         verify(firebaseAuth).generatePasswordResetLink("test@example.com");
+    }
+
+    /** CF-A-57: with mail off nothing can carry the link, so no live reset token is minted
+     *  and thrown away. */
+    @Test
+    void sendPasswordResetEmail_neverMintsALink_whenMailIsDisabled() throws Exception {
+        when(mailService.isEnabled()).thenReturn(false);
+
+        assertFalse(authService.sendPasswordResetEmail("test@example.com"));
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
     }
 
     @Test
     void sendPasswordResetEmail_shouldThrowException_whenFirebaseAuthFails() throws Exception {
         // Arrange
         FirebaseAuthException mockException = mock(FirebaseAuthException.class);
+        when(mailService.isEnabled()).thenReturn(true);
         when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenThrow(mockException);
 
         // Act & Assert
@@ -632,6 +713,109 @@ class AuthServiceTest {
         );
 
         verify(firebaseAuth).generatePasswordResetLink("test@example.com");
+    }
+
+    /** Public forgot-password. With the project's enableImprovedEmailPrivacy, Firebase mints a reset
+     *  link for ANY address (prod, 2026-09-27), so the account must be confirmed first -- or anyone
+     *  could have noreply@ mail arbitrary addresses. The lenient stub models that behaviour. */
+    @Test
+    void sendPasswordResetEmailQuietly_mintsAndSendsNothingForAnAddressWithNoAccount() throws Exception {
+        lenient().when(mailService.isEnabled()).thenReturn(true);
+        lenient().when(firebaseAuth.generatePasswordResetLink("nobody@example.com")).thenReturn("https://reset/link");
+        when(firebaseAuth.getUserByEmail("nobody@example.com")).thenThrow(
+                new FirebaseAuthException(com.google.firebase.ErrorCode.NOT_FOUND, "USER_NOT_FOUND", null, null,
+                        com.google.firebase.auth.AuthErrorCode.USER_NOT_FOUND));
+
+        assertDoesNotThrow(() -> authService.sendPasswordResetEmailQuietly("nobody@example.com"));
+
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetEmailQuietly_mintsAndSendsNothingForADisabledAccount() throws Exception {
+        lenient().when(mailService.isEnabled()).thenReturn(true);
+        lenient().when(firebaseAuth.generatePasswordResetLink("blocked@example.com")).thenReturn("https://reset/link");
+        UserRecord disabled = mock(UserRecord.class);
+        when(disabled.isDisabled()).thenReturn(true);
+        when(firebaseAuth.getUserByEmail("blocked@example.com")).thenReturn(disabled);
+
+        authService.sendPasswordResetEmailQuietly("blocked@example.com");
+
+        verify(firebaseAuth, never()).generatePasswordResetLink(any());
+        verify(mailService, never()).sendPasswordResetEmail(any(), any());
+    }
+
+    @Test
+    void sendPasswordResetEmailQuietly_mailsAnActiveAccount() throws Exception {
+        when(mailService.isEnabled()).thenReturn(true);
+        UserRecord active = mock(UserRecord.class);
+        when(active.isDisabled()).thenReturn(false);
+        when(firebaseAuth.getUserByEmail("test@example.com")).thenReturn(active);
+        when(firebaseAuth.generatePasswordResetLink("test@example.com")).thenReturn("https://reset/link");
+
+        authService.sendPasswordResetEmailQuietly("test@example.com");
+
+        verify(mailService).sendPasswordResetEmail("test@example.com", "https://reset/link");
+    }
+
+    /** Same request firebase-admin-node's generateVerifyAndChangeEmailLink sends
+     *  (src/auth/auth-api-request.ts getEmailActionLink): the link comes back, Firebase mails nothing. */
+    @Test
+    void verifyAndChangeEmailLink_postsSendOobCodeWithReturnOobLinkAndReturnsTheLink() throws Exception {
+        String[] sent = new String[2];
+        com.google.api.client.testing.http.MockLowLevelHttpRequest request =
+                new com.google.api.client.testing.http.MockLowLevelHttpRequest().setResponse(
+                        new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setContentType("application/json")
+                                .setContent("{\"kind\":\"x\",\"oobLink\":\"https://change/link\"}"));
+        com.google.api.client.http.HttpRequestFactory http = new com.google.api.client.testing.http.MockHttpTransport() {
+            @Override
+            public com.google.api.client.http.LowLevelHttpRequest buildRequest(String method, String url) {
+                sent[0] = method;
+                sent[1] = url;
+                return request;
+            }
+        }.createRequestFactory();
+
+        String link = AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "new@example.com");
+
+        assertEquals("https://change/link", link);
+        assertEquals("POST", sent[0]);
+        assertEquals("https://identitytoolkit.googleapis.com/v1/projects/proj-1/accounts:sendOobCode", sent[1]);
+        assertEquals(Map.of("requestType", "VERIFY_AND_CHANGE_EMAIL", "email", "old@example.com",
+                        "newEmail", "new@example.com", "returnOobLink", true),
+                new com.fasterxml.jackson.databind.ObjectMapper().readValue(request.getContentAsString(), Map.class));
+    }
+
+    @Test
+    void verifyAndChangeEmailLink_mapsEmailExistsToEmailAlreadyExists() {
+        com.google.api.client.http.HttpRequestFactory http =
+                new com.google.api.client.testing.http.MockHttpTransport.Builder()
+                        .setLowLevelHttpResponse(new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setStatusCode(400)
+                                .setContentType("application/json")
+                                .setContent("{\"error\":{\"code\":400,\"message\":\"EMAIL_EXISTS\"}}"))
+                        .build().createRequestFactory();
+
+        FirebaseAuthException e = assertThrows(FirebaseAuthException.class, () ->
+                AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "taken@example.com"));
+        assertEquals(com.google.firebase.auth.AuthErrorCode.EMAIL_ALREADY_EXISTS, e.getAuthErrorCode());
+    }
+
+    @Test
+    void verifyAndChangeEmailLink_mapsInvalidEmailToInvalidArgument() {
+        com.google.api.client.http.HttpRequestFactory http =
+                new com.google.api.client.testing.http.MockHttpTransport.Builder()
+                        .setLowLevelHttpResponse(new com.google.api.client.testing.http.MockLowLevelHttpResponse()
+                                .setStatusCode(400)
+                                .setContentType("application/json")
+                                .setContent("{\"error\":{\"code\":400,\"message\":\"INVALID_NEW_EMAIL\"}}"))
+                        .build().createRequestFactory();
+
+        FirebaseAuthException e = assertThrows(FirebaseAuthException.class, () ->
+                AuthService.verifyAndChangeEmailLink(http, "proj-1", "old@example.com", "a@b"));
+        assertEquals(com.google.firebase.ErrorCode.INVALID_ARGUMENT, e.getErrorCode());
     }
 
     @Test

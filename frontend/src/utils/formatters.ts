@@ -23,6 +23,26 @@ export function formatDateTime(value: string, locale: string): string {
 }
 
 /**
+ * Parse a timestamp as the backend actually sends it. Spring serialises
+ * `com.google.cloud.Timestamp` as `{seconds, nanos}` rather than the ISO string
+ * the OpenAPI spec declares, so both shapes reach the UI. Returns null for
+ * anything that is not a real date — callers must not hand an Invalid Date to
+ * `toISOString()`, which throws rather than degrading.
+ */
+export function parseBackendTimestamp(raw: unknown): Date | null {
+  let date: Date;
+  if (typeof raw === 'string') {
+    date = new Date(raw);
+  } else if (raw && typeof raw === 'object' && typeof (raw as { seconds?: unknown }).seconds === 'number') {
+    const { seconds, nanos } = raw as { seconds: number; nanos?: number };
+    date = new Date(seconds * 1000 + Math.floor((nanos ?? 0) / 1_000_000));
+  } else {
+    return null;
+  }
+  return Number.isNaN(date.getTime()) ? null : date;
+}
+
+/**
  * Strip signed query params from YouTube thumbnail URLs.
  * Signed URLs (sqp=, rs=) expire and cause load failures.
  * Unsigned i.ytimg.com URLs are stable and always resolve.

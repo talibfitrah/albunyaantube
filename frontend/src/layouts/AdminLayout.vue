@@ -304,6 +304,8 @@ onUnmounted(() => {
   display: grid;
   min-height: 100vh;
   position: relative;
+  /* Where a sticky element in a view has to stop: clear of the fixed mobile header below 1024px. */
+  --sticky-top: 0px;
 }
 
 /* Mobile Header (< 1024px) */
@@ -664,8 +666,9 @@ main {
   padding: 2rem;
   flex: 1;
   background: var(--color-bg);
-  overflow-y: auto;
-  overflow-x: hidden;
+  /* clip, not hidden: hidden makes this a scroll container, and since nothing constrains its
+     height it never scrolls — which silently disabled `position: sticky` in every view. */
+  overflow-x: clip;
 }
 
 /* Desktop Layout (>= 1024px) */
@@ -707,6 +710,7 @@ main {
   .layout {
     grid-template-columns: 1fr;
     padding-top: 56px;
+    --sticky-top: 56px;
   }
 
   .mobile-header {

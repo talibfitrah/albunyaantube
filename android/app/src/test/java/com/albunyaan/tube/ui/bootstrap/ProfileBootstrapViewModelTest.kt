@@ -103,7 +103,12 @@ class ProfileBootstrapViewModelTest {
             .thenReturn(Result.failure(AgeIneligibleError()))
 
         viewModel.onDisplayNameChanged("Kid")
-        viewModel.onDobChanged(LocalDate.of(2020, 1, 1))
+        // Deliberately an adult date. This test is about handling the server's 422
+        // AGE_INELIGIBLE response, which the mock above supplies -- the server stays the
+        // authority on age. An under-13 date here would now be stopped by the client's
+        // own validation (see MinimumAgeTest) and the request would never be sent, so the
+        // test would silently stop exercising the path it is named for.
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         viewModel.onPhoneCountryChanged("NL")
         viewModel.onPhoneNumberChanged("612345678")
         viewModel.submit()
@@ -220,13 +225,25 @@ class ProfileBootstrapViewModelTest {
         assertEquals(BootstrapError.INVALID_PHONE_COUNTRY, viewModel.ui.value.error)
     }
 
-    @Test fun `submit with blank phone number surfaces INVALID_PHONE`() = runTest(dispatcher) {
+    /** Owner ruling: the phone is optional. Empty phone → valid, and no phone is sent. */
+    @Test fun `empty phone is optional - form valid and request has no phone`() = runTest(dispatcher) {
+        whenever(repository.completeProfile(any(), any(), anyOrNull()))
+            .thenReturn(Result.success(AccountState.Loaded(
+                uid = "uid-1", email = "a@b.com", displayName = "Alice",
+                dateOfBirth = null, phoneNumber = null,
+                status = AccountStatus.ACTIVE, role = "user")))
+
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
-        viewModel.onPhoneCountryChanged("NL")
+        assertTrue("no country, no phone", viewModel.isFormValid)
+        viewModel.onPhoneCountryChanged("NL")  // the Fragment seeds this from the device locale
+        viewModel.onPhoneNumberChanged("  ")
+        assertTrue("seeded country, blank phone", viewModel.isFormValid)
         viewModel.submit()
         advanceUntilIdle()
-        assertEquals(BootstrapError.INVALID_PHONE, viewModel.ui.value.error)
+
+        verify(repository).completeProfile("Alice", LocalDate.of(2000, 1, 1), null)
+        assertEquals(BootstrapNav.NavigateToMain, viewModel.nav.value)
     }
 
     @Test fun `submit with too-short national number surfaces INVALID_PHONE`() = runTest(dispatcher) {
@@ -238,4 +255,86 @@ class ProfileBootstrapViewModelTest {
         advanceUntilIdle()
         assertEquals(BootstrapError.INVALID_PHONE, viewModel.ui.value.error)
     }
+
+    /**
+     * Continue is disabled while the form is invalid, so errors that only appear after a
+     * submit are never seen. Once the user has started filling the form, the first thing
+     * blocking Continue is shown: on its field if the user has touched that field, otherwise
+     * in the line above Continue. A pristine form shows nothing.
+     */
+    @Test fun `shownError is null on a pristine form, even with a seeded name`() {
+        viewModel.seedDisplayName("Alice")
+        viewModel.onDisplayNameChanged("Alice")   // the Fragment's setText echo
+        viewModel.onPhoneCountryChanged("NL")     // locale seed
+        viewModel.setPasswordRequirement(true)
+        assertFalse(viewModel.isFormValid)
+        assertNull(viewModel.shownError())
+    }
+
+    @Test fun `typing a name puts the date-of-birth reason by Continue, not on the untouched date field`() {
+        viewModel.onDisplayNameChanged("A")
+        assertEquals(ShownError(BootstrapError.INVALID_DOB, onField = false), viewModel.shownError())
+    }
+
+    @Test fun `a Google user who picks a date sees the password rule by Continue, not on the password field`() {
+        viewModel.seedDisplayName("Alice")
+        viewModel.setPasswordRequirement(true)
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = false), viewModel.shownError())
+
+        viewModel.onPasswordChanged("short")
+        assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = true), viewModel.shownError())
+    }
+
+    @Test fun `password mismatch waits until the confirmation is as long as the password`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        // Confirmation not started: the reason goes by Continue so the button isn't silently off.
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = false), viewModel.shownError())
+
+        viewModel.onPasswordConfirmChanged("valid")          // still typing
+        assertNull(viewModel.shownError())
+        viewModel.onPasswordConfirmChanged("validpass2")     // same length, different
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = true), viewModel.shownError())
+        viewModel.onPasswordConfirmChanged("validpass1")
+        assertNull(viewModel.shownError())
+        assertTrue(viewModel.isFormValid)
+    }
+
+    @Test fun `a typed but invalid phone is shown on the phone field`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("12345")
+        assertEquals(ShownError(BootstrapError.INVALID_PHONE, onField = true), viewModel.shownError())
+        viewModel.onPhoneNumberChanged("")
+        assertNull(viewModel.shownError())
+    }
+
+    @Test fun `shownError prefers a submit or server error`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.surfaceError(BootstrapError.SAVE_FAILED)
+        assertEquals(ShownError(BootstrapError.SAVE_FAILED, onField = true), viewModel.shownError())
+    }
+
+    /**
+     * The server's under-13 rejection is permanent: it revokes tokens, disables the
+     * Firebase account and tombstones it, with no recovery. So a mistyped year must never
+     * reach it. This pins that the request is not even sent.
+     */
+    @Test fun `submit with an under-age dob surfaces UNDER_AGE and never calls the server`() =
+        runTest(dispatcher) {
+            viewModel.onDisplayNameChanged("Alice")
+            viewModel.onDobChanged(LocalDate.now().minusYears(12))
+            viewModel.onPhoneCountryChanged("NL")
+            viewModel.onPhoneNumberChanged("612345678")
+            viewModel.submit()
+            advanceUntilIdle()
+
+            assertEquals(BootstrapError.UNDER_AGE, viewModel.ui.value.error)
+            assertEquals(BootstrapNav.Idle, viewModel.nav.value)
+            verify(repository, never()).completeProfile(any(), any(), any())
+        }
 }

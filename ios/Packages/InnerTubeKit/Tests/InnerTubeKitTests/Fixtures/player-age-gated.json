@@ -1,0 +1,42 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D",
+    "maxAgeSeconds": 0,
+    "cacheInstruction": {
+      "monitoringKey": 1001
+    },
+    "responseId": "IhMImdbeiN-3lgMVBi0GAB0TzwVW"
+  },
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "Sign in to confirm your age",
+    "desktopLegacyAgeGateReason": 1
+  },
+  "videoDetails": {
+    "videoId": "rwcfPqbAx-0",
+    "title": "Russian   Daft Punk",
+    "lengthSeconds": "10",
+    "channelId": "UCcQHIVL83g5BEQe2IJFb-6w",
+    "isOwnerViewing": false,
+    "shortDescription": "",
+    "isCrawlable": true,
+    "thumbnail": {
+      "thumbnails": [
+        {
+          "url": "https://i.ytimg.com/vi/rwcfPqbAx-0/mqdefault.jpg",
+          "width": 320,
+          "height": 180
+        }
+      ]
+    },
+    "allowRatings": true,
+    "viewCount": "239671",
+    "author": "DAN TV",
+    "isPrivate": false,
+    "isUnpluggedCorpus": false,
+    "isLiveContent": false,
+    "isTvfilmVideo": false
+  },
+  "trackingParams": "CAAQu2kiEwiZ1t6I37eWAxUGLQYAHRPPBVbKAQTXNsm-",
+  "adBreakHeartbeatParams": "Q0FBJTNE"
+}

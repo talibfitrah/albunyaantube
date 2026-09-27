@@ -401,7 +401,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        val previous = previousItems.removeLast()
+        val previous = previousItems.removeAt(previousItems.lastIndex)
         queue.add(0, current)
         currentItem = previous
         applyQueueState()
@@ -1494,7 +1494,11 @@ class PlayerViewModel @Inject constructor(
                 updateState { it.copy(streamState = StreamState.ContentUnavailable) }
                 return
             } catch (t: Throwable) {
-                if (t is kotlinx.coroutines.CancellationException) throw t
+                // Our own withTimeout above throws TimeoutCancellationException, a CancellationException
+                // subclass: it is a failed attempt to retry / surface, not a cancellation of this job.
+                if (t is kotlinx.coroutines.CancellationException &&
+                    t !is kotlinx.coroutines.TimeoutCancellationException
+                ) throw t
                 val errorMessage = when (t) {
                     is kotlinx.coroutines.TimeoutCancellationException -> "Timed out after ${EXTRACTOR_TIMEOUT_MS/1000}s"
                     else -> t.message

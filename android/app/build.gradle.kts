@@ -28,6 +28,35 @@ if (localPropertiesFile.exists()) {
     localProperties.load(FileInputStream(localPropertiesFile))
 }
 
+// Public production host. The release build type below uses this for both API_BASE_URL
+// and SHARE_BASE_URL — the latter is the origin the About screen opens for the privacy,
+// terms and licences pages.
+val PROD_API_BASE_URL = "https://app.fitrahtube.com/"
+
+// Refuse to produce a release artifact against the placeholder Firebase config.
+//
+// google-services.json is gitignored, so git cannot warn about it, and the repo ships a
+// .ci-stub for local builds whose project_id is "fitrahtube-ci-stub". A release built on
+// top of it points Firebase Auth at a project that does not exist: sign-in fails, and
+// because the app gates all content behind sign-in, a reviewer would see an empty app and
+// reject it as broken. That is silent — the build succeeds and the APK looks normal.
+gradle.taskGraph.whenReady {
+    val buildingRelease = allTasks.any {
+        it.name.contains("Release") &&
+            (it.name.startsWith("assemble") || it.name.startsWith("bundle"))
+    }
+    if (!buildingRelease) return@whenReady
+    val gsj = file("google-services.json")
+    if (gsj.exists() && gsj.readText().contains("ci-stub")) {
+        throw GradleException(
+            "\ngoogle-services.json is the CI placeholder (project_id contains 'ci-stub').\n" +
+                "A release built with it cannot sign anyone in.\n" +
+                "Download the real file from the Firebase console — it must contain an\n" +
+                "Android client for BOTH com.albunyaan.tube and com.albunyaan.tube.play.\n"
+        )
+    }
+}
+
 kotlin {
     compilerOptions {
         jvmTarget.set(org.jetbrains.kotlin.gradle.dsl.JvmTarget.JVM_17)
@@ -41,9 +70,25 @@ android {
     defaultConfig {
         applicationId = "com.albunyaan.tube"
         minSdk = 26
-        targetSdk = 35
-        versionCode = 57
-        versionName = "1.0.0-beta.43"
+        // API 36 (Android 16) — mandatory for new Play submissions from 2026-08-31.
+        // Behavior changes audited at the bump (ANDROID-SDK36-01):
+        //  - Edge-to-edge opt-out removed: no-op here. The app never set
+        //    windowOptOutEdgeToEdgeEnforcement, and enforcement already applied at
+        //    targetSdk 35 on Android 15, so nothing changes.
+        //  - Predictive back on by default: no-op here. Every back handler already
+        //    goes through OnBackPressedCallback / onBackPressedDispatcher; there is
+        //    no onBackPressed() override and no KEYCODE_BACK handling. See the note
+        //    in src/main/AndroidManifest.xml.
+        //  - Orientation/resizability/aspect-ratio ignored on sw>=600dp: real. The
+        //    player's fullscreen enter/exit both waited on an onConfigurationChanged
+        //    that no longer arrives on tablets. Handled via
+        //    player/OrientationPolicy.kt at the two toggleFullscreen() call sites.
+        //  - elegantTextHeight ignored, ScheduledExecutorService fixed-rate change,
+        //    MediaStore#getVersion, Safer Intents, health/Bluetooth permissions,
+        //    GPU syscall filtering: not used by this app.
+        targetSdk = 36
+        versionCode = 62
+        versionName = "1.0.0"
 
         testInstrumentationRunner = "com.albunyaan.tube.HiltTestRunner"
         vectorDrawables.useSupportLibrary = true
@@ -52,7 +97,10 @@ android {
 
         // API Base URL configuration
         // Configure via local.properties: api.base.url=http://YOUR_IP:8080/
-        // Default: Emulator localhost (10.0.2.2)
+        // Default here is the emulator loopback, which is correct for debug only —
+        // the release build type overrides it with PROD_API_BASE_URL below. Shipping
+        // 10.0.2.2 to a real device resolves to nothing and the app renders empty,
+        // which reads to a reviewer as broken functionality.
         val apiBaseUrl = localProperties.getProperty("api.base.url", "http://10.0.2.2:8080/")
         buildConfigField("String", "API_BASE_URL", "\"$apiBaseUrl\"")
         buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
@@ -123,6 +171,42 @@ android {
         buildConfigField("boolean", "ENABLE_TTL_WATCHER", "$enableTtlWatcher")
     }
 
+    // Distribution split (ANDROID-FLAVOR-01). Google Play's Device and Network Abuse
+    // policy forbids an app that downloads and installs an APK on its own, and Play
+    // scans the MERGED MANIFEST — so a runtime `InstallSource.isPlayStore()` gate is
+    // not sufficient. The permissions and the installer classes must be absent from
+    // the Play artifact at COMPILE TIME. Gating this behind a runtime/remote flag
+    // would additionally violate the Deceptive Behavior (review-evasion) policy.
+    //
+    //  - sideload: every current behaviour, self-updater included. Default flavor.
+    //  - play:     identical MINUS the self-updater. Extraction, downloads and
+    //              background playback are unchanged.
+    //
+    // See app/src/sideload/AndroidManifest.xml (permissions + InstallStatusActivity),
+    // app/src/sideload/java/.../update (the updater itself) and
+    // app/src/play/java/.../update/NoUpdateGateway.kt (the inert seam).
+    flavorDimensions += "distribution"
+    productFlavors {
+        create("sideload") {
+            dimension = "distribution"
+            // Keeps `com.albunyaan.tube` — the applicationId every existing
+            // sideload install already has, so the in-app updater keeps upgrading
+            // them in place instead of installing a second copy.
+            isDefault = true
+        }
+        create("play") {
+            dimension = "distribution"
+            // Distinct package so a tester can hold both builds at once. Requires a
+            // matching client entry in google-services.json (see the .ci-stub).
+            applicationIdSuffix = ".play"
+            // No versionNameSuffix on purpose: VERSION_NAME is user-visible in
+            // About and is the key into releases-meta.json. The two artifacts
+            // already land in separate build/outputs/apk/<flavor>/ directories,
+            // so there is nothing to disambiguate at the cost of a wrong version
+            // string on screen.
+        }
+    }
+
     signingConfigs {
         // Re-enable v1 (JAR) signing alongside v2/v3. With minSdk 26, AGP disables
         // v1 by default (v2 covers API 24+), producing v2-only APKs. But the in-app
@@ -173,13 +257,71 @@ android {
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
             )
-            // Use production signing if keystore exists, otherwise debug
-            signingConfig = if (keystorePropertiesFile.exists()) {
-                signingConfigs.getByName("release")
-            } else {
-                signingConfigs.getByName("debug")
+            // Production signing when the keystore is present. When it is NOT present we
+            // deliberately leave the release UNSIGNED rather than falling back to the debug
+            // key. The old fallback silently produced a debug-signed release: uploading one
+            // to Play permanently registers `CN=Android Debug` as the app's upload key, and
+            // a debug keystore is auto-generated and never backed up — losing it means no
+            // further updates without Google's key-reset process. An unsigned artifact fails
+            // loudly at upload instead, which is recoverable.
+            // Pass -PallowDebugSignedRelease to opt back in for local smoke-testing only.
+            signingConfig = when {
+                keystorePropertiesFile.exists() -> signingConfigs.getByName("release")
+                project.hasProperty("allowDebugSignedRelease") -> {
+                    // WARN here too, not only on the unsigned branch. `hasProperty` is also
+                    // satisfied by a line in gradle.properties or an ORG_GRADLE_PROJECT_ env
+                    // var, so someone who sets it once for a smoke test would otherwise get
+                    // debug-signed releases forever in total silence — reintroducing exactly
+                    // the failure this guard exists to prevent.
+                    logger.warn(
+                        "\n*** release is DEBUG-SIGNED via -PallowDebugSignedRelease. ***\n" +
+                            "    Local install testing only. NEVER upload this to Google Play:\n" +
+                            "    it would register the debug key as the app's upload key.\n"
+                    )
+                    signingConfigs.getByName("debug")
+                }
+                else -> null
+            }
+            if (signingConfig == null) {
+                // Deferred to the task graph so this fires only when a release is actually
+                // being built. Warning at configuration time printed on every assembleDebug
+                // and test run for anyone without a keystore — i.e. every contributor —
+                // which trains people to ignore precisely the message that matters.
+                gradle.taskGraph.whenReady {
+                    val buildingRelease = allTasks.any {
+                        it.name.contains("Release") &&
+                            (it.name.startsWith("assemble") || it.name.startsWith("bundle"))
+                    }
+                    if (buildingRelease) {
+                        logger.warn(
+                            "\n*** release build is UNSIGNED: keystore.properties not found. ***\n" +
+                                "    Create android/keystore.properties before building for Play.\n" +
+                                "    For a local install-only build: -PallowDebugSignedRelease\n"
+                        )
+                    }
+                }
             }
             buildConfigField("boolean", "ENABLE_THUMBNAIL_IMAGES", "true")
+
+            // Release must never inherit defaultConfig's emulator loopback. Verified
+            // 2026-08-25: the previous release bundle shipped "10.0.2.2" in its dex, so
+            // every install would have reached no backend at all.
+            //
+            // Deliberately does NOT read local.properties. Developers are told to set
+            // api.base.url there for day-to-day work, so honouring it here would make the
+            // common workstation state one where a release silently ships a dev or LAN
+            // host — the same bug in a new costume. An explicit -P flag is required to
+            // point a release at anything other than production.
+            val prodApiBaseUrl = (project.findProperty("releaseApiBaseUrl") as String?)
+                ?: PROD_API_BASE_URL
+            buildConfigField("String", "API_BASE_URL", "\"$prodApiBaseUrl\"")
+
+            // Same reasoning for the share/web host: it is what the About screen opens for
+            // the privacy, terms and licences pages, so a dev override leaking into a
+            // release would ship a dead privacy link — an automatic Play rejection.
+            val prodShareBaseUrl = (project.findProperty("releaseShareBaseUrl") as String?)
+                ?: PROD_API_BASE_URL.trimEnd('/')
+            buildConfigField("String", "SHARE_BASE_URL", "\"$prodShareBaseUrl\"")
         }
 
         create("benchmark") {
@@ -256,7 +398,12 @@ android {
     // either follow the naming or be added here.
     testOptions {
         unitTests.all {
-            if (it.name == "testReleaseUnitTest") {
+            // ANDROID-FLAVOR-01: matched by suffix, not equality. Adding product
+            // flavors renamed this task to testSideloadReleaseUnitTest /
+            // testPlayReleaseUnitTest, so the old `== "testReleaseUnitTest"` check
+            // silently stopped matching and the migration tests would have started
+            // failing with FileNotFoundException on the release variants.
+            if (it.name.endsWith("ReleaseUnitTest")) {
                 it.exclude("**/AppDatabaseMigration*Test*")
                 it.exclude("**/ImportMigrationTest*")
             }

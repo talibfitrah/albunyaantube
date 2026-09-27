@@ -1,0 +1,15 @@
+generate:
+  - types
+  - client
+accessModifier: public
+namingStrategy: idiomatic
+filter:
+  paths:
+    - /v1/content
+    - /v1/categories
+    - /v1/home
+    - /v1/channels/{channelId}
+    - /v1/playlists/{playlistId}
+    - /v1/videos/{videoId}
+    - /v1/search
+    - /v1/reports

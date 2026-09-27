@@ -180,12 +180,65 @@ class AccountProfileServiceTest {
         verify(userRepository, never()).deleteByUid(any());
     }
 
+    /** Phone is optional (owner ruling 2026-09-27): missing or blank is stored as null. */
     @Test
-    void completeProfileRejectsBlankPhoneNumber() {
-        // Validation fires before any repository call — no stub needed.
-        ProfileValidationException ex = assertThrows(ProfileValidationException.class,
-            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), ""));
-        assertEquals("phoneNumber", ex.getField());
+    void completeProfileWithoutPhoneNumberStoresNull() throws Exception {
+        for (String phone : new String[] {null, "", "   "}) {
+            User existing = new User("uid-1", "a@b.com", null, "user");
+            existing.setStatusEnum(UserStatus.PENDING_PROFILE);
+            when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+            when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+
+            User result = service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), phone);
+
+            assertNull(result.getPhoneNumber(), "phone <" + phone + "> was not stored as null");
+            assertEquals(UserStatus.ACTIVE, result.getStatusEnum());
+        }
+    }
+
+    /** A lost-response retry of a phone-less sign-up is the same intent: 200, not a 409 lock-out. */
+    @Test
+    void completeProfileRetryWithoutPhoneNumberIsIdempotent() throws Exception {
+        User existing = completedAlice(null);
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        assertSame(existing, service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), null));
+        assertSame(existing, service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), " "));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    /** The profile is locked once set: a retry that ADDS a phone is a different intent → 409. */
+    @Test
+    void completeProfileRetryAddingAPhoneNumberIsRejected() throws Exception {
+        User existing = completedAlice(null);
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        assertThrows(ProfileAlreadyCompletedException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), "+31612345678"));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    /** …and so is a retry that DROPS the stored phone. */
+    @Test
+    void completeProfileRetryDroppingThePhoneNumberIsRejected() throws Exception {
+        User existing = completedAlice("+31612345678");
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        assertThrows(ProfileAlreadyCompletedException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), null));
+        assertThrows(ProfileAlreadyCompletedException.class,
+            () -> service.completeProfile("uid-1", "Alice", LocalDate.of(2000, 1, 1), " "));
+        verify(userRepository, never()).save(any(User.class));
+    }
+
+    private static User completedAlice(String phone) {
+        User u = new User("uid-1", "a@b.com", "Alice", "user");
+        u.setStatusEnum(UserStatus.ACTIVE);
+        u.setDateOfBirth(Timestamp.ofTimeSecondsAndNanos(
+            LocalDate.of(2000, 1, 1).atStartOfDay(ZoneOffset.UTC).toEpochSecond(), 0));
+        u.setPhoneNumber(phone);
+        u.setProfileCompletedAt(Timestamp.now());
+        return u;
     }
 
     @Test

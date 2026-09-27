@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.detail.adapters
 
+import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -9,8 +10,8 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
-import java.text.NumberFormat
 import java.util.Locale
 
 /**
@@ -50,20 +51,17 @@ class ChannelVideoAdapter(
             // Format metadata (views + time) using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
             val views = video.viewCount?.let { viewCount ->
-                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                val formattedCount = CountFormat.compact(viewCount, appLocale)
                 context.resources.getQuantityString(
                     R.plurals.video_views,
-                    ChannelVideoAdapter.safeQuantityForPlural(viewCount),
+                    ChannelVideoAdapter.safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                     formattedCount
                 )
             } ?: ""
-            val timeAgo = video.publishedTime ?: ""
+            // YouTube's English text, re-rendered in the app's locale when it holds an age.
+            val timeAgo = UploadAge.fromEnglish(context.resources, video.publishedTime)
 
-            binding.videoMeta.text = if (views.isNotEmpty() && timeAgo.isNotEmpty()) {
-                "$views • $timeAgo"
-            } else {
-                views.ifEmpty { timeAgo }
-            }
+            binding.videoMeta.text = UploadAge.joinMeta(views, timeAgo)
 
             // Load thumbnail with automatic fallback
             binding.videoThumbnail.loadYouTubeThumbnail(

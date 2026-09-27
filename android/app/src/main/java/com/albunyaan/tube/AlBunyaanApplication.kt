@@ -3,7 +3,7 @@ package com.albunyaan.tube
 import android.app.Application
 import android.content.Context
 import android.net.ConnectivityManager
-import android.net.Network
+import com.albunyaan.tube.util.ReconnectCallback
 import android.util.Log
 import androidx.hilt.work.HiltWorkerFactory
 import androidx.lifecycle.DefaultLifecycleObserver
@@ -164,6 +164,10 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
      * only fire sync if the resolved state is `Loaded`.
      */
     override fun onResume(owner: LifecycleOwner) {
+        // Also re-check an offline-restored account on foreground: the reconnect
+        // callback never fires for a restore that happened on a network that was
+        // already up (captive portal, timeout, 5xx). No-op otherwise.
+        appScope.launch { accountRepository.revalidateRestored() }
         appScope.launch {
             // Cubic R7 P1 — bound the suspend.
             //
@@ -205,11 +209,12 @@ class AlBunyaanApplication : Application(), Configuration.Provider, DefaultLifec
 
     private fun registerConnectivityCallback() {
         val cm = getSystemService(ConnectivityManager::class.java)
-        val cb = object : ConnectivityManager.NetworkCallback() {
-            override fun onAvailable(network: Network) {
-                val uid = accountRepository.currentUid()
-                if (uid.isNotEmpty()) syncManager.pushDirtyAsync(uid)
-            }
+        val cb = ReconnectCallback {
+            val uid = accountRepository.currentUid()
+            if (uid.isNotEmpty()) syncManager.pushDirtyAsync(uid)
+            // Offline launch routed on the last-known /me; confirm it now so
+            // a server-side block or deletion takes effect. No-op otherwise.
+            appScope.launch { accountRepository.revalidateRestored() }
         }
         try {
             cm.registerDefaultNetworkCallback(cb)

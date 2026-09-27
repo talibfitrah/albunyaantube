@@ -1,0 +1,269 @@
+import Foundation
+import Observation
+
+/// Drives `SignInScreen` (`SignInViewModel.kt`). Everything Firebase-shaped stays behind
+/// `AuthClient`/`OAuthSignInProvider`, so this type names no SDK at all.
+@MainActor @Observable final class SignInViewModel {
+
+    nonisolated enum Mode: Sendable, Equatable { case signIn, signUp }
+
+    nonisolated struct UiState: Equatable {
+        var mode: Mode = .signIn
+        var email = ""
+        var password = ""
+        var isLoading = false
+        /// Operation error, NOT auth state (`AuthState.kt:11-12`): it lives on the screen, never on
+        /// the client.
+        var error: AuthErrorCode?
+        var passwordResetSent = false
+        var capabilities: SignInCapabilities
+    }
+
+    /// `SignInViewModel.kt:115`. Firebase's own minimum, so this gate can never reject a password
+    /// Firebase would have accepted — it only stops the attempts Firebase would immediately reject,
+    /// which is what keeps them off the IP throttle.
+    static let minPasswordLength = 6
+
+    private let auth: any AuthClient
+    private let session: AccountSession
+    private let account: AccountClient
+
+    private(set) var state: UiState
+
+    /// Set ONCE, by a successful sign-in, and read only for its truth: `SignInScreen`'s single
+    /// consumer is `.onChange(of: viewModel?.landed)`, which dismisses; `RootView` then renders
+    /// where spec §13 lands the account from its OWN recomputed outcome (a computed property over
+    /// `container.session`).
+    ///
+    /// Stage 1 / B7: a `Bool`, not a whole `SplashOutcome`. It carried a destination nothing routed
+    /// on and a `signOut`/`alert` pair nothing read — a value shaped by its tests, and a trap for
+    /// the next reader, who would reasonably assume the destination it carried is what moves the
+    /// user. `SplashRouterTests` already pins Task 8's table exhaustively; `SignInViewModelTests`
+    /// re-derives the row it needs through `SplashRouter.outcome` directly.
+    private(set) var landed = false
+
+    /// Fix round 1 / I1: the banner cannot be driven off `state.error`. Neither pre-network gate
+    /// clears it first, so a second tap on the same malformed address assigns `.invalidEmail` over
+    /// `.invalidEmail` — no change, no banner, a button that does nothing. This carries a distinct
+    /// value for EVERY failed attempt, identical repeats included.
+    private(set) var errorPresentation: ErrorPresentation?
+
+    nonisolated struct ErrorPresentation: Equatable, Sendable {
+        let code: AuthErrorCode
+        /// Monotonic; the only thing that distinguishes two identical failures.
+        let attempt: Int
+    }
+
+    /// The capability-filtered button list, in render order. `SignInCapabilities.visibleProviders`
+    /// is the ONE table (Task 5) — this is the screen's view of it, never a second copy.
+    var visibleProviders: [SignInProvider] { SignInCapabilities.visibleProviders(state.capabilities) }
+
+    /// Both fields clear the last error as they are edited (`onEmailChanged`/`onPasswordChanged`):
+    /// a banner about the previous attempt has nothing to say about the text now on screen.
+    var email: String {
+        get { state.email }
+        set {
+            state.email = newValue
+            state.error = nil
+            state.passwordResetSent = false
+        }
+    }
+
+    var password: String {
+        get { state.password }
+        set {
+            state.password = newValue
+            state.error = nil
+        }
+    }
+
+    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities) {
+        self.auth = auth
+        self.account = account
+        self.session = session
+        state = UiState(capabilities: capabilities)
+    }
+
+    func toggleMode() {
+        state.mode = state.mode == .signIn ? .signUp : .signIn
+        state.error = nil
+        state.passwordResetSent = false
+    }
+
+    /// Email/password, in whichever mode the toggle is in. The two pre-network gates run BEFORE any
+    /// loading state is raised, so a refused attempt never flickers the spinner.
+    func submit() async {
+        guard !state.isLoading else { return }   // de-dupe rapid double-taps
+        guard EmailShape.isValid(state.email) else {
+            fail(.invalidEmail)
+            return
+        }
+        guard state.password.count >= Self.minPasswordLength else {
+            fail(.weakPassword)
+            return
+        }
+        beginLoading()
+        dropLiveAccount()
+        do {
+            let user: AuthUser
+            if state.mode == .signIn {
+                user = try await auth.signIn(email: state.email, password: state.password)
+            } else {
+                user = try await auth.signUp(email: state.email, password: state.password)
+            }
+            await land(user)
+        } catch {
+            finish(with: error)
+        }
+    }
+
+    /// Google/Apple. The `isLoading` guard is what keeps `AppleAuthProvider`'s re-entrancy latch off
+    /// the user-visible path: the second tap is refused HERE, silently, so the latch's throw is a
+    /// backstop nobody sees.
+    func signIn(with provider: any OAuthSignInProvider) async {
+        guard !state.isLoading else { return }
+        // Ruling F11: an unavailable provider is never asked. `visibleProviders` already keeps its
+        // button off the screen — this is the second defence, for a provider that lost its
+        // prerequisite between render and tap.
+        guard provider.isAvailable else { return }
+        beginLoading()
+        dropLiveAccount()
+
+        let credential: OAuthCredential
+        do {
+            credential = try await provider.presentSignIn()
+        } catch {
+            state.isLoading = false
+            // A cancel is the user's own choice: back to idle, NO banner. Only a real failure
+            // carries a code to render.
+            if case .failed(let code) = error { fail(code) }
+            return
+        }
+
+        do {
+            await land(try await auth.signIn(with: credential))
+        } catch {
+            // Part B gate, Cubic round 5 P1: the provider SDK signed its user in a moment ago and
+            // Firebase then refused the credential. Left alone, that SDK session outlives the
+            // failed sign-in — and `GoogleYouTubeAuthorizer.isAvailable` reads the SDK's keychain,
+            // so the NEXT account on this device (email/password, Apple) would be offered Import
+            // and import a stranger's YouTube library. Forget it on the way out.
+            provider.signOutProvider()
+            finish(with: error)
+        }
+    }
+
+    /// Blank or malformed goes nowhere near the network (`SignInViewModel.kt:160-167`), and every
+    /// failure is ONE code: the user can do nothing different about a network error than about a
+    /// rejected address.
+    func forgotPassword() async {
+        guard !state.isLoading else { return }
+        guard EmailShape.isValid(state.email) else {
+            fail(.invalidEmail)
+            return
+        }
+        beginLoading()
+        do {
+            try await sendPasswordReset(state.email)
+            state.isLoading = false
+            state.passwordResetSent = true
+        } catch {
+            finish(with: .passwordResetFailed)
+        }
+    }
+
+    /// Backend first: Firebase's own mailer does not deliver for this project. Firebase only when
+    /// the backend has no mailer (503) or was unreachable; any other answer stands (429 is its
+    /// per-IP / per-email limit, which routing around through Firebase would defeat).
+    private func sendPasswordReset(_ email: String) async throws {
+        do {
+            try await account.sendPasswordResetEmail(email: email)
+            return
+        } catch {
+            switch error {
+            case .network, .unknown(status: 503): break
+            default: throw error
+            }
+        }
+        try await auth.sendPasswordReset(email: email)
+    }
+
+    // MARK: -
+
+    /// The safety net for the one wall that still holds a live account: a REFUSED sign-out (a
+    /// failed `/me` now signs out itself, `AccountSession.fetch`). A sign-in on top of it swaps
+    /// identity with no `.signedOut`, so that account's provider SDK session and every per-account
+    /// holder were never released. Drop it HERE rather than in `start()`'s uid-change arm: by then
+    /// the provider SDKs already hold the NEW account (`GIDSignIn` is one shared session), and
+    /// `tearDown()` would sign B out of them. Before the provider sheet, "the previous account" is
+    /// unambiguous.
+    private func dropLiveAccount() {
+        if session.user != nil { session.signOut() }
+    }
+
+    private func beginLoading() {
+        state.isLoading = true
+        state.error = nil
+        state.passwordResetSent = false
+    }
+
+    private func finish(with error: AuthErrorCode) {
+        state.isLoading = false
+        fail(Self.presented(error))
+    }
+
+    /// Stage 4 / I2: on the SIGN-IN leg, `.userNotFound` renders `.wrongPassword`'s copy.
+    ///
+    /// "No account found with that email" next to "Email or password is incorrect" turns this
+    /// screen into a membership oracle: an attacker with an email list learns which addresses hold
+    /// FitrahTube accounts, and "is this address registered with an Islamic-content app" is not a
+    /// neutral fact for this audience. The password-reset path already gets this right and says so
+    /// (every failure is ONE code); this is the same rule on the leg that was inconsistent.
+    ///
+    /// The CODE is untouched — `.userNotFound` still arrives distinctly and can still be branched
+    /// on. Only what this screen renders collapses. Stage 8 / S6: what it does NOT do is keep a
+    /// distinct MESSAGE alive for the re-auth legs, which was the claim here: `EditPasswordSheet`
+    /// and `EditEmailSheet` map everything but `.wrongPassword`/`.invalidCredential` to `.network`,
+    /// and the delete confirmation renders its own two keys — none of them reads `messageKey` at
+    /// all. So `.userNotFound.messageKey` is `auth_error_wrong_password` and the distinct key is
+    /// retired.
+    /// Task 27 re-review nit, the second row: with Firebase's email-enumeration protection ON — the
+    /// default for projects created since 2023 — a mistyped password no longer returns 17009. It
+    /// returns `ERROR_INVALID_CREDENTIAL` (17004), which `AuthErrorCode` folds into
+    /// `.invalidCredential`, whose copy is "Sign in again to continue" — an instruction with no
+    /// meaning on the SIGN-IN screen, where there is no session to sign in again to. Both re-auth
+    /// sheets already collapse the same pair (`EditEmailSheet.swift:92`,
+    /// `EditPasswordSheet.swift:98`); this is that ruling on the leg that was still inconsistent.
+    ///
+    /// Suggest's 401 arm is NOT this table and keeps the re-authored key: there the user really
+    /// does hold a session the backend refused twice, so "sign in again" is the actual remedy.
+    nonisolated static func presented(_ error: AuthErrorCode) -> AuthErrorCode {
+        switch error {
+        case .userNotFound, .invalidCredential: .wrongPassword
+        default: error
+        }
+    }
+
+    /// The ONE place a failure is recorded — every arm above routes through it, which is what makes
+    /// "a repeat is still an event" a property of the view model rather than of each call site.
+    private func fail(_ code: AuthErrorCode) {
+        state.error = code
+        errorPresentation = ErrorPresentation(code: code, attempt: (errorPresentation?.attempt ?? 0) + 1)
+    }
+
+    /// Spec §13's post-sign-in rule, asked of Task 8's matrix rather than re-derived here.
+    ///
+    /// The account STATUS is fetched explicitly rather than read off whatever `AccountSession` holds
+    /// at this instant: `start()`'s own refresh is driven by the auth stream and has not necessarily
+    /// landed when `signIn` returns, and reading a still-`nil` status would route a pending-profile
+    /// account to the shell. `maxAttempts: 1` — the splash's budget; a network failure signs out
+    /// and the matrix routes back to the sign-in root (`SignInScreen` says why).
+    ///
+    /// `onboardingCompleted: true` is a fact, not an assumption: this screen is only reachable
+    /// behind the onboarding gate.
+    private func land(_ user: AuthUser) async {
+        await session.refresh(maxAttempts: 1)
+        state.isLoading = false
+        landed = true
+    }
+}

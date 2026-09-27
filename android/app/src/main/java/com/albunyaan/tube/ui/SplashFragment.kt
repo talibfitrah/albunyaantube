@@ -10,6 +10,7 @@ import android.view.animation.DecelerateInterpolator
 import android.widget.ImageView
 import android.widget.ProgressBar
 import android.widget.TextView
+import androidx.core.view.ViewCompat
 import androidx.core.view.isInvisible
 import androidx.fragment.app.Fragment
 import androidx.lifecycle.lifecycleScope
@@ -22,7 +23,7 @@ import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.albunyaan.tube.update.UpdateInfo
-import com.albunyaan.tube.update.UpdatePromptFlow
+import com.albunyaan.tube.update.UpdateGateway
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Deferred
@@ -72,7 +73,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
     /** Plan D T26: bind is fired in background once uid is confirmed. */
     @Inject lateinit var syncManager: SyncManager
 
-    @Inject lateinit var updatePromptFlow: UpdatePromptFlow
+    @Inject lateinit var updateGateway: UpdateGateway
 
     /** Track running animators for cleanup on fragment destruction */
     private val runningAnimators = mutableListOf<Animator>()
@@ -86,8 +87,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         /**
          * Total unconditional delay this fragment runs BEFORE it awaits the update
          * probe. The probe is launched at t=0 and read only after all of it, so any
-         * probe budget up to this value is free — see
-         * [UpdatePromptFlow.CHECK_TIMEOUT_MS], which a unit test pins against this.
+         * probe budget up to this value is free — see `UpdatePromptFlow.CHECK_TIMEOUT_MS`
+         * (sideload source set), which UpdatePromptFlowTest pins against this constant.
          *
          * If you add or remove a `delay()` on the path to `updateInfoDeferred.await()`,
          * update this too, or the update probe's budget silently stops matching the
@@ -109,10 +110,10 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         super.onViewCreated(view, savedInstanceState)
         settingsPreferences = SettingsPreferences(requireContext())
 
-        val appName = view.requireViewById<TextView>(R.id.appName)
-        val tagline = view.requireViewById<TextView>(R.id.tagline)
-        val loadingSpinner = view.requireViewById<ProgressBar>(R.id.loadingSpinner)
-        val splashIcon = view.requireViewById<ImageView>(R.id.splashIcon)
+        val appName = ViewCompat.requireViewById<TextView>(view, R.id.appName)
+        val tagline = ViewCompat.requireViewById<TextView>(view, R.id.tagline)
+        val loadingSpinner = ViewCompat.requireViewById<ProgressBar>(view, R.id.loadingSpinner)
+        val splashIcon = ViewCompat.requireViewById<ImageView>(view, R.id.splashIcon)
 
         // Get slide distance from design token (already in pixels)
         val slideDistance = resources.getDimension(R.dimen.splash_slide_distance)
@@ -129,13 +130,19 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // Plan D T26: on success, fire syncManager.bind(uid) in background so
             // the merge/pull/push cycle starts without blocking the route decision.
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
-                if (firebaseAuth.currentUser == null) null
+                val user = firebaseAuth.currentUser
+                if (user == null) null
                 else {
                     // Cubic R7 P1 — splash uses a 1-attempt budget so it
                     // doesn't stall on the full retry window. If this one
                     // attempt fails, SplashRouter routes per the null status
                     // and the downstream screen retries with the full budget.
-                    val loaded = accountRepository.fetchMe(maxAttempts = 1).getOrNull()
+                    // Offline launch: a non-terminal failure routes on the last
+                    // /me this device saw for this uid (SplashRouter.resolveAccount).
+                    val loaded = SplashRouter.resolveAccount(accountRepository, user.uid)
+                    // bind is safe offline for a restored account: a failed pull
+                    // returns before touching cursors and a failed push leaves rows
+                    // dirty on SyncManager's backoff, so it just resumes online.
                     if (loaded != null) {
                         // Fire bind in a separate coroutine — don't block routing.
                         launch { syncManager.bind(loaded.uid) }
@@ -145,12 +152,16 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             }
 
             // GitHub update probe — runs in parallel with the splash animation, bounded by
-            // [UpdatePromptFlow.checkForUpdate]'s own timeout so a slow network can't stall
+            // ANDROID-FLAVOR-01: on the `play` flavor the injected UpdateGateway is
+            // NoUpdateGateway, so this returns null immediately and the splash routes as
+            // if there were no update. The parallel `async` is kept either way so the
+            // sideload cold start does not grow by the probe's duration.
+            // [UpdateGateway.checkForUpdate]'s own timeout so a slow network can't stall
             // cold start. Null result means "no update / failed / timed out" — splash continues
             // routing unchanged. Non-null result triggers the gating dialog before routing
             // so the user sees the prompt *before* the sign-in screen.
             val updateInfoDeferred: Deferred<UpdateInfo?> = async {
-                updatePromptFlow.checkForUpdate()
+                updateGateway.checkForUpdate()
             }
 
             // Check if this is a deep link launch - if so, skip splash entirely.
@@ -257,7 +268,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // An earlier draft showed it as a toast 50-100ms before the dialog —
         // the dialog focus swallowed the toast (Stage 1 review P1). Now the
         // warning lives above the dialog body so the user can't miss it.
-        updatePromptFlow.showUpdateDialogAndAwait(host, host, info)
+        updateGateway.showUpdateDialogAndAwait(host, host, info)
     }
 
     /** Routing logic in [SplashRouter] so it's unit-testable in isolation. */
@@ -297,7 +308,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // the warm-path AccountStatusInterceptor only fires during an active
         // session, leaving cold-start launches into a deleted account with
         // no UX feedback.
-        if (signedIn && (accountStatus == AccountStatus.DELETED || accountStatus == AccountStatus.BLOCKED)) {
+        val terminalEvent = SplashRouter.terminalEvent(signedIn, accountStatus)
+        if (terminalEvent != null) {
             // Cubic R-final7 P2 — fail loud if AuthRepository doesn't implement
             // AccountStatusEmitter. Pre-fix `authRepository as? Emitter`
             // returned null silently on Hilt/test setups missing the emitter
@@ -311,12 +323,7 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
                     "AuthRepository does not implement AccountStatusEmitter; " +
                     "cold-start terminal-dialog event WILL NOT fire. Check the DI graph.")
             } else {
-                emitter.emit(
-                    if (accountStatus == AccountStatus.DELETED)
-                        com.albunyaan.tube.auth.AccountStatusEvent.Deleted
-                    else
-                        com.albunyaan.tube.auth.AccountStatusEvent.Blocked
-                )
+                emitter.emit(terminalEvent)
             }
         }
         val action = SplashRouter.decideSplashRoute(

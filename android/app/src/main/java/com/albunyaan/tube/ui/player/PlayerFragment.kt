@@ -40,6 +40,7 @@ import androidx.media3.exoplayer.source.ProgressiveMediaSource
 import androidx.media3.exoplayer.trackselection.DefaultTrackSelector
 import com.albunyaan.tube.data.extractor.QualityConstraintMode
 import com.albunyaan.tube.player.AspectPolicy
+import com.albunyaan.tube.player.OrientationPolicy
 import com.albunyaan.tube.player.QualityTrackSelector
 import androidx.media3.ui.AspectRatioFrameLayout
 import androidx.media3.ui.PlayerView
@@ -77,6 +78,7 @@ import com.albunyaan.tube.player.StreamRequestTelemetry
 import com.albunyaan.tube.player.applyCaptionStyle
 import com.albunyaan.tube.player.normalizeSubtitleCue
 import com.albunyaan.tube.data.report.ReportTargetType
+import com.albunyaan.tube.ui.MainActivity
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
@@ -565,6 +567,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             val targetHeight = result.getInt(DownloadQualityDialog.RESULT_TARGET_HEIGHT)
                 .takeIf { it != DownloadQualityDialog.NO_HEIGHT }
             val isAudioOnly = result.getBoolean(DownloadQualityDialog.RESULT_IS_AUDIO_ONLY)
+            // ANDROID-PLAY-02: ask for POST_NOTIFICATIONS here, at the first real
+            // download, not at app launch. Denial does not block the download.
+            (activity as? MainActivity)?.requestNotificationPermissionForDownload()
             val started = viewModel.downloadCurrent(targetHeight, isAudioOnly)
             if (started) {
                 Toast.makeText(requireContext(), R.string.download_started, Toast.LENGTH_SHORT).show()
@@ -635,6 +640,25 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         setupPlayer(binding)
         collectViewState(binding)
         collectUiEvents()
+
+        // Opening the player while the device is already in landscape delivers no
+        // configuration change, so the auto-fullscreen in onConfigurationChanged() never
+        // runs and the bottom nav stays visible over the video. Derive the initial state
+        // from the current orientation instead. Phones only — tablets rest in landscape,
+        // so this would fullscreen every open and hide the sw600dp layout's description and
+        // up-next list. Skipped in multi-window/PiP, where a wide pane reports LANDSCAPE
+        // without a landscape viewing posture; when the user already dismissed fullscreen by
+        // button (this runs again on back-navigation to a retained fragment); and for known
+        // portrait (9:16) sources, which the rotation path keeps out of landscape fullscreen.
+        if (!requireContext().isTablet() &&
+            resources.configuration.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE &&
+            !requireActivity().isInMultiWindowMode &&
+            !userDismissedFullscreen &&
+            !lastVideoIsPortrait
+        ) {
+            isFullscreen = true
+            updateFullscreenUi()
+        }
     }
 
     override fun onStart() {
@@ -676,8 +700,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: isLandscape=$isLandscape, isFullscreen=$isFullscreen, orientationChanged=$orientationChanged, userDismissedFullscreen=$userDismissedFullscreen")
 
         // Clear the dismiss flag when user rotates back to portrait — next landscape rotation
-        // should auto-enter fullscreen again.
-        if (!isLandscape) {
+        // should auto-enter fullscreen again. Skip the portrait arrival that our own exit
+        // forced (weLockedOrientation still set): clearing it there let the unlock 500ms
+        // later rotate straight back on a device physically resting in landscape, and
+        // re-enter fullscreen — the exact loop this flag exists to prevent.
+        if (!isLandscape && !weLockedOrientation) {
             userDismissedFullscreen = false
         }
 
@@ -697,7 +724,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             } else if (isLandscape && userDismissedFullscreen) {
                 // Don't auto-enter fullscreen if user explicitly exited via button while in landscape.
                 // This prevents the "exit → orientation unlock → re-enter" loop.
-                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: skipping auto-fullscreen (user dismissed)")
+                // Consume the dismissal here rather than on the portrait arrival: the exit forces
+                // portrait itself, so clearing it there re-armed the loop, and on a device resting
+                // in portrait no further config change would ever arrive to clear it. Suppressing
+                // exactly one landscape auto-enter keeps the flag from persisting indefinitely.
+                // ponytail: costs one swallowed rotate-to-landscape after a button-exit on a
+                // portrait-resting phone. Root fix is for toggleFullscreen()'s exit to release the
+                // orientation lock instead of forcing SCREEN_ORIENTATION_PORTRAIT, which removes
+                // the bounce and this flag entirely — needs the full device matrix first.
+                userDismissedFullscreen = false
+                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: skipping auto-fullscreen (user dismissed, flag consumed)")
             } else {
                 isFullscreen = isLandscape
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onConfigurationChanged: calling updateFullscreenUi (orientation changed)")
@@ -3356,6 +3392,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         val currentConfig = resources.configuration
         val isCurrentlyLandscape = currentConfig.orientation == android.content.res.Configuration.ORIENTATION_LANDSCAPE
+        // Android 16 (targetSdk 36) ignores setRequestedOrientation on sw>=600dp windows,
+        // so on a tablet the requests below are no-ops and NO onConfigurationChanged will
+        // arrive. Both branches park state waiting for that callback, so they have to
+        // settle inline instead. See OrientationPolicy.
+        val orientationRequestHonored = OrientationPolicy.honorsRequestedOrientation(currentConfig)
 
         if (isFullscreen) {
             // Entering fullscreen via button — clear dismiss flag so auto-fullscreen works
@@ -3379,7 +3420,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // will never fire to clear the lock-pending flags. Clear them now so a
             // later non-orientation config change (font scale, locale, theme) can't
             // accidentally take the reached-target branch with stale state.
-            if (targetIsLandscape == isCurrentlyLandscape) {
+            // Same reasoning when the platform ignores the request outright (Android 16,
+            // sw>=600dp): no rotation is coming, so the flags would otherwise stay set
+            // for the whole fullscreen session.
+            if (targetIsLandscape == isCurrentlyLandscape || !orientationRequestHonored) {
                 weLockedOrientation = false
                 targetOrientationIsLandscape = null
             }
@@ -3414,8 +3458,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // Entering fullscreen — apply immediately (landscape will arrive and re-apply)
             updateFullscreenUi()
             showFullscreenZoomHintOnce()
-        } else if (!isCurrentlyLandscape) {
-            // Already in portrait — apply exit immediately (no rotation coming)
+        } else if (!isCurrentlyLandscape || !orientationRequestHonored) {
+            // Already in portrait — apply exit immediately (no rotation coming).
+            // Also the Android 16 / sw>=600dp case: the SCREEN_ORIENTATION_PORTRAIT
+            // request above was ignored, so the window stays landscape and no
+            // onConfigurationChanged will arrive to run the deferred exit. Deferring
+            // here left the user in fullscreen chrome (system bars + bottom nav hidden)
+            // until the safety runnable fired ORIENTATION_UNLOCK_FALLBACK_MS + 500 =
+            // 3.5s later. Landscape measurements are correct in this case precisely
+            // because the window is not going to rotate.
             updateFullscreenUi()
         } else {
             // Exiting fullscreen while in landscape — rotation to portrait is pending.

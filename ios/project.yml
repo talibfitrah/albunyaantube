@@ -1,0 +1,239 @@
+name: FitrahTube
+options:
+  bundleIdPrefix: com.albunyaan
+  deploymentTarget:
+    iOS: "18.0"
+  xcodeVersion: "26.3"
+  developmentLanguage: en
+  createIntermediateGroups: true
+  generateEmptyDirectories: true
+
+configFiles:
+  Debug: Config/Debug.xcconfig
+  Release: Config/Release.xcconfig
+
+settings:
+  base:
+    SWIFT_VERSION: "6.0"
+    SWIFT_STRICT_CONCURRENCY: complete
+    SWIFT_APPROACHABLE_CONCURRENCY: YES
+    TARGETED_DEVICE_FAMILY: "1,2"
+    SUPPORTED_PLATFORMS: "iphoneos iphonesimulator"
+    SUPPORTS_MACCATALYST: NO
+    SUPPORTS_MAC_DESIGNED_FOR_IPHONE_IPAD: NO
+    SUPPORTS_XR_DESIGNED_FOR_IPHONE_IPAD: NO
+    CODE_SIGN_STYLE: Automatic
+    "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
+    DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)
+    MARKETING_VERSION: "1.0.0"
+    CURRENT_PROJECT_VERSION: "1"
+    # Phase 6 Task 5: the numeric App Store ID (App Store Connect > App Information > Apple ID).
+    # `UpdateRequiredView` hides its Update button while it is empty. Public and identical for
+    # Debug/Release, so it lives here, not in an xcconfig.
+    FITRAH_APP_STORE_ID: "6816678870"
+    ENABLE_USER_SCRIPT_SANDBOXING: YES
+    ASSETCATALOG_COMPILER_GENERATE_SWIFT_ASSET_SYMBOL_EXTENSIONS: YES
+
+packages:
+  FitrahAPI:
+    path: Packages/FitrahAPI
+  InnerTubeKit:
+    path: Packages/InnerTubeKit
+  # Phase 4 Task 1, resolved 2026-09-02 from floors `from: "11.0.0"` / `from: "8.0.0"`, then pinned
+  # to what actually came back. `exactVersion` pins only these two TOP-LEVEL requirements.
+  #
+  # Firebase moved 11.15.0 -> 12.19.1 at Task 32 (CF-A-21). 12.19.0 is the last PLANNED 12.x
+  # minor; .1 is a patch that re-cut the zip artifact naming and changed no SDK code. Its floors bind
+  # this project: 12.0.0 wants iOS 15 (we are on 18), 12.12.0 wants Xcode 26.2 + Swift 6.2.3, and
+  # from 12.15.0 the manifest is swift-tools 6.1, so the package will not RESOLVE on an Xcode older
+  # than 16.3. GoogleSignIn stays at 8.0.0 deliberately: its own floors (GoogleUtilities from
+  # 8.0.0, gtm-session-fetcher from 3.3.0) sit inside Firebase 12.19.1's ranges, so the two
+  # co-resolve untouched. 13.0.0+ is SPM/binary only -- CocoaPods is being retired, which costs
+  # this project nothing.
+  #
+  # THE PINNED TRANSITIVE GRAPH LIVES IN ios/Packages/FitrahAPI/Package.resolved, which is TRACKED
+  # (Stage 3 / I6). /ios/FitrahTube.xcodeproj/ and /ios/DerivedData/ are gitignored, and with
+  # -derivedDataPath Xcode writes no Package.resolved into the workspace -- it mirrors the app's
+  # whole resolution (26 pins after Task 32: FirebaseAuth's GoogleUtilities, GTMSessionFetcher,
+  # AppCheck, Promises, ... as well as this package's own four) into the ROOT LOCAL PACKAGE's file,
+  # which is that one. So that file, not this one, is what makes a fresh checkout resolve an
+  # authentication dependency to the same revisions.
+  #
+  # The two writers used to ping-pong: `xcodebuild test` writes the 26-pin app graph, then
+  # test.sh's `(cd Packages/FitrahAPI && swift test)` re-resolved against FitrahAPI's OWN manifest
+  # and rewrote the same file down to 10 pins, stripping every Firebase revision. The package
+  # stages now pass --disable-automatic-resolution, so the app graph is the only thing that writes
+  # it. Re-resolve by hand (`xcodebuild -resolvePackageDependencies -scheme FitrahTube
+  # -derivedDataPath DerivedData`, ~128 s) before gating after any change here -- a cold resolve
+  # does not fit inside test.sh's 300 s watchdog -- and commit the resulting Package.resolved.
+  Firebase:
+    url: https://github.com/firebase/firebase-ios-sdk
+    exactVersion: "12.19.1"
+  GoogleSignIn:
+    url: https://github.com/google/GoogleSignIn-iOS
+    exactVersion: "8.0.0"
+
+targets:
+  FitrahTube:
+    type: application
+    platform: iOS
+    sources:
+      - path: FitrahTube
+        excludes:
+          - "Info.plist"
+    dependencies:
+      # Both are `.dynamic` library products the binary links through `@rpath`: without Embed &
+      # Sign the bundle ships without them and every DEVICE launch dies in dyld (the simulator
+      # masks it via DYLD_FRAMEWORK_PATH). `AppContainerTests.theAppBundleEmbedsItsDynamicPackage`.
+      - package: FitrahAPI
+        product: FitrahAPI
+        embed: true
+        codeSign: true
+      - package: InnerTubeKit
+        product: InnerTubeKit
+        embed: true
+        codeSign: true
+      # Phase 3 Task 8: the Google Cast iOS Sender SDK, vendored by `scripts/fetch-cast-sdk.sh`
+      # (ios/Vendor/ is gitignored; test.sh's pre-stage heals a fresh checkout). The zip ships
+      # exactly ONE xcframework -- no GoogleCastCore/protobuf members -- so this is the whole
+      # dependency. Dynamic framework => Embed & Sign; `-ObjC -lc++` are static-build flags and
+      # are deliberately NOT set.
+      - framework: Vendor/GoogleCast.xcframework
+        embed: true
+        codeSign: true
+      # Phase 4 Task 1. FirebaseAuth ONLY -- never FirebaseFirestore, which drags abseil/gRPC/
+      # BoringSSL into the graph and multiplies both resolve and link time. FitrahTubeTests
+      # deliberately depends on neither: no test-visible interface may name a Firebase type.
+      - package: Firebase
+        product: FirebaseAuth
+      - package: GoogleSignIn
+        product: GoogleSignIn
+    settings:
+      base:
+        PRODUCT_BUNDLE_IDENTIFIER: com.albunyaan.tube
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+        ASSETCATALOG_COMPILER_APPICON_NAME: AppIcon
+        # Phase 4 Task 2: Sign in with Apple. Unscoped on purpose -- with
+        # `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO` above there is no CodeSign step on
+        # either simulator build, so nothing consumes this until a device build is signed.
+        CODE_SIGN_ENTITLEMENTS: FitrahTube/FitrahTube.entitlements
+    info:
+      path: FitrahTube/Info.plist
+      properties:
+        CFBundleDisplayName: FitrahTube
+        CFBundleName: FitrahTube
+        # gate A-I3: without these two, XcodeGen's own defaults win (CFBundleShortVersionString
+        # "1.0") and About/App Store Connect report a literal that no version bump ever changes.
+        CFBundleShortVersionString: $(MARKETING_VERSION)
+        CFBundleVersion: $(CURRENT_PROJECT_VERSION)
+        CFBundleDevelopmentRegion: en
+        CFBundleLocalizations: [en, ar, nl]
+        UILaunchScreen: {}
+        # CF-B1-1: without this the audio session is torn down at suspension and background audio
+        # is impossible regardless of what `BackgroundPlaybackController` asks for.
+        UIBackgroundModes:
+          - audio
+        UISupportedInterfaceOrientations:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        UISupportedInterfaceOrientations~ipad:
+          - UIInterfaceOrientationPortrait
+          - UIInterfaceOrientationPortraitUpsideDown
+          - UIInterfaceOrientationLandscapeLeft
+          - UIInterfaceOrientationLandscapeRight
+        ITSAppUsesNonExemptEncryption: false
+        # Phase 3 Task 8 (spec §10 Chromecast): Cast discovery is mDNS/Bonjour on the local
+        # network. `_CC1AD845._googlecast._tcp` is the default media receiver's own service type
+        # (`CastOptionsProvider.kt:36-42`). Without both entries discovery finds nothing and the
+        # usage string is what iOS shows on the first cast-button tap (discovery -- and so the
+        # prompt -- starts there, not at launch: `startDiscoveryAfterFirstTapOnCastButton` stays
+        # at the SDK default).
+        NSBonjourServices:
+          - _googlecast._tcp
+          - _CC1AD845._googlecast._tcp
+        # The SOURCE string only. `FitrahTube/Resources/InfoPlist.xcstrings` carries en/ar/nl and
+        # compiles to a per-locale `InfoPlist.strings`, which is what iOS actually shows -- this
+        # value is the en fallback and the string the catalog is keyed off.
+        NSLocalNetworkUsageDescription: FitrahTube finds Chromecast and other TV devices on your local network so you can play videos on your TV.
+        CFBundleURLTypes:
+          - CFBundleURLName: com.albunyaan.tube
+            CFBundleURLSchemes: [albunyaantube]
+          # Phase 4 Task 2: Google Sign-In's OAuth callback comes back on the reversed client id,
+          # which lives in the (USER-BLOCKED, git-ignored) GoogleService-Info.plist -- so the
+          # scheme is a build setting, supplied by Config/Local.xcconfig the day the plist lands.
+          # Task 5: the tracked default is a PLACEHOLDER scheme, not an empty string -- this list
+          # cannot be omitted conditionally, and an empty CFBundleURLSchemes entry shipped in every
+          # build. Nothing can arrive on the placeholder; Google sign-in is unreachable without the
+          # plist anyway (`FirebaseBootstrap.googleClientID` is nil).
+          - CFBundleURLName: com.googleusercontent.apps
+            CFBundleURLSchemes: [$(GID_REVERSED_CLIENT_ID)]
+        API_BASE_URL: $(API_BASE_URL)
+        # Phase 4 Task 2: the build-time Sign in with Apple capability flag Task 5 reads. It is a
+        # build setting and not a runtime check because there is NO API to read your own
+        # entitlements, and an unsigned simulator build carries none at all -- so "is Apple sign-in
+        # available" can only be answered by what the build was configured with. Empty
+        # FITRAH_TEAM_ID (no signing identity) => no Apple button.
+        FITRAH_APPLE_SIGNIN: $(FITRAH_TEAM_ID)
+        # Stage 5 / M6: the SECOND half. FITRAH_APPLE_SIGNIN only says a Team ID signed the build;
+        # this says the App ID actually has the capability registered. Empty in both tracked
+        # xcconfigs, set once in the untracked Local.xcconfig. SignInCapabilities requires both.
+        FITRAH_APPLE_SIGNIN_REGISTERED: $(FITRAH_APPLE_SIGNIN_REGISTERED)
+        FITRAH_APP_STORE_ID: $(FITRAH_APP_STORE_ID)
+
+  FitrahTubeTests:
+    type: bundle.unit-test
+    platform: iOS
+    sources:
+      - path: FitrahTubeTests
+      - path: Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
+      - path: Packages/FitrahAPI/Tests/FitrahAPITests/TestLimits.swift
+    dependencies:
+      - target: FitrahTube
+      - package: FitrahAPI
+        product: FitrahAPI
+      - package: InnerTubeKit
+        product: InnerTubeKit
+      # `@testable import FitrahTube` exposes `CastController`'s internals, whose interface names
+      # GoogleCast types -- so the test module needs the module on its search path too. NOT
+      # embedded: the app host already carries the one copy this bundle loads into.
+      - framework: Vendor/GoogleCast.xcframework
+        embed: false
+    settings:
+      base:
+        SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor
+
+  # task-14 capture/assertion rig. Deliberately NOT in FitrahTube.xctestplan (and so never run by
+  # ios/scripts/test.sh's 300s gate) -- it drives ~90 app launches. Run it via
+  # ios/scripts/screenshots.sh, which selects FitrahTubeUITests.xctestplan.
+  FitrahTubeUITests:
+    type: bundle.ui-testing
+    platform: iOS
+    sources:
+      - path: FitrahTubeUITests
+    dependencies:
+      - target: FitrahTube
+    settings:
+      base:
+        # No SWIFT_DEFAULT_ACTOR_ISOLATION: MainActor here (unlike the app/unit-test targets):
+        # XCTestCase's designated initializers are nonisolated, so a MainActor-by-default subclass
+        # fails to compile ("different actor isolation from nonisolated overridden declaration").
+        TEST_TARGET_NAME: FitrahTube
+
+schemes:
+  FitrahTube:
+    build:
+      targets:
+        FitrahTube: all
+        FitrahTubeTests: [test]
+    run:
+      config: Debug
+    test:
+      config: Debug
+      targets:
+        - FitrahTubeTests
+        - FitrahTubeUITests
+      testPlans:
+        - path: FitrahTube.xctestplan
+          defaultPlan: true
+        - path: FitrahTubeUITests.xctestplan

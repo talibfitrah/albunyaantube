@@ -77,11 +77,21 @@ jobs:
           expected_project_id = "albunyaan-tube"
           expected_package = "com.albunyaan.tube"
           expected_app_id = "1:502702093037:android:a4bed108e492f0724852e4"
+          # The play flavor sets applicationIdSuffix ".play" (app/build.gradle.kts
+          # productFlavors), so the google-services plugin demands its own client
+          # entry. Checked HERE, with a readable message, because the build below
+          # compiles BOTH flavors — otherwise a secret missing this client fails
+          # opaquely inside processPlayDebugGoogleServices.
+          expected_play_package = expected_package + ".play"
 
           cfg = json.loads(Path("app/google-services.json").read_text())
           matching = [
               c for c in cfg.get("client", [])
               if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == expected_package
+          ]
+          play_matching = [
+              c for c in cfg.get("client", [])
+              if c.get("client_info", {}).get("android_client_info", {}).get("package_name") == expected_play_package
           ]
           api_keys = [k.get("current_key", "") for c in matching for k in c.get("api_key", [])]
           web_oauth = [
@@ -107,23 +117,46 @@ jobs:
               sys.exit("GOOGLE_SERVICES_JSON is missing the web OAuth client required for Google sign-in")
           if not android_oauth:
               sys.exit("GOOGLE_SERVICES_JSON is missing the Android OAuth client required for Google sign-in")
+          if not play_matching:
+              sys.exit(
+                  "GOOGLE_SERVICES_JSON is missing the %s Android client. "
+                  "Add that app in the Firebase console and refresh the secret — "
+                  "the play flavor cannot build without it." % expected_play_package
+              )
+          play_api_keys = [k.get("current_key", "") for c in play_matching for k in c.get("api_key", [])]
+          if not play_api_keys or any(not k.strip() or "__REPLACE" in k for k in play_api_keys):
+              sys.exit("GOOGLE_SERVICES_JSON is missing a real Android API key for " + expected_play_package)
           PY
           echo "ANDROID_FIREBASE_CONFIG=real" >> "$GITHUB_ENV"
 
-      - name: Build debug APK (canonical)
-        run: ./gradlew assembleDebug
+      # BOTH flavors, named explicitly. `assembleDebug` already fans out to
+      # both, but spelling them out documents the decision: `play` is the
+      # artifact that goes to the Play Console and its source set carries a
+      # Hilt module of its own (src/play/.../NoUpdateGateway.kt), so a
+      # sideload-only CI would never compile the binding that the shipping
+      # store build depends on — a failure that would first surface at release
+      # time. The extra cost is one variant's compile; most of the work
+      # (dependencies, KSP on shared sources) is shared.
+      - name: Build debug APKs (both flavors)
+        run: ./gradlew assembleSideloadDebug assemblePlayDebug
 
-      # Scoped to debug variant: schemas live in the debug source set only (see
-      # comment in app/build.gradle.kts:201) — running `./gradlew test`
+      # Scoped to the debug variants: schemas live in the debug source set only
+      # (see comment in app/build.gradle.kts:201) — running `./gradlew test`
       # fans out to release+benchmark variants where MigrationTestHelper
       # cannot find the schema JSON files, causing AppDatabaseMigration*Test
       # to fail with FileNotFoundException. The author's design intent was
       # debug-variant-only Room migration testing; this matches it.
-      - name: Run unit tests (with 300s timeout)
-        run: timeout 300 ./gradlew testDebugUnitTest
+      #
+      # `testDebugUnitTest` no longer exists — the distribution flavor dimension
+      # renamed it per flavor (verified with `./gradlew tasks --all`).
+      # 600s, not 300s: the budget now covers two variants, not one.
+      - name: Run unit tests (with 600s timeout)
+        run: timeout 600 ./gradlew testSideloadDebugUnitTest testPlayDebugUnitTest
 
+      # `./gradlew lint` only runs the DEFAULT variant (sideload — isDefault=true),
+      # so the play variant would ship unlinted. Name both.
       - name: Run lint checks
-        run: ./gradlew lint
+        run: ./gradlew lintSideloadDebug lintPlayDebug
 
       - name: Upload build reports
         if: failure()
@@ -137,13 +170,24 @@ jobs:
       - name: Validate APK artifact
         if: ${{ github.event_name == 'push' && github.ref == 'refs/heads/main' && env.ANDROID_FIREBASE_CONFIG == 'real' }}
         run: |
-          mapfile -t apks < <(find app/build/outputs/apk/debug -maxdepth 1 -type f -name '*.apk' | sort)
+          # Scoped to the sideload output directory. Two things changed with the
+          # flavor split: the APK moved from apk/debug/ to apk/<flavor>/debug/,
+          # and BOTH flavors are now built. They share an outputFileName
+          # ("fitrahtube-<versionName>.apk", app/build.gradle.kts:316), so they
+          # are only distinguishable by directory — a glob across both would
+          # upload whichever one `sort` happened to put first.
+          #
+          # Sideload is the one uploaded: it keeps applicationId
+          # com.albunyaan.tube, which is what the in-app updater upgrades in
+          # place. The play artifact reaches users through the Play Console, not
+          # through this job's artifact.
+          mapfile -t apks < <(find app/build/outputs/apk/sideload/debug -maxdepth 1 -type f -name '*.apk' | sort)
           if [ "${#apks[@]}" -ne 1 ]; then
-            printf 'Expected exactly one debug APK, found %s:\n' "${#apks[@]}" >&2
+            printf 'Expected exactly one sideload debug APK, found %s:\n' "${#apks[@]}" >&2
             printf '%s\n' "${apks[@]}" >&2
             exit 1
           fi
-          values_file="app/build/generated/res/processDebugGoogleServices/values/values.xml"
+          values_file="app/build/generated/res/processSideloadDebugGoogleServices/values/values.xml"
           if [ ! -f "$values_file" ]; then
             echo "Generated Firebase debug resources are missing" >&2
             exit 1
@@ -165,7 +209,7 @@ jobs:
 
           values = {
               item.attrib.get("name"): (item.text or "").strip()
-              for item in ET.parse("app/build/generated/res/processDebugGoogleServices/values/values.xml").getroot()
+              for item in ET.parse("app/build/generated/res/processSideloadDebugGoogleServices/values/values.xml").getroot()
           }
           if not values.get("default_web_client_id", "").endswith(".apps.googleusercontent.com"):
               sys.exit("google-services plugin did not emit a valid default_web_client_id")
@@ -185,7 +229,11 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: lint-report
-          path: android/app/build/reports/lint-results-debug.html
+          # Variant-named since the flavor split: lint-results-debug.html no
+          # longer exists, so this step silently uploaded nothing.
+          path: |
+            android/app/build/reports/lint-results-sideloadDebug.html
+            android/app/build/reports/lint-results-playDebug.html
           retention-days: 7
 
   test-report:

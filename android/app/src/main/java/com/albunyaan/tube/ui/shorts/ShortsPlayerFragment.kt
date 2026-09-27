@@ -41,6 +41,7 @@ import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.share.ShareLinks
 import com.albunyaan.tube.share.ShareMetadataPublisher
 import com.albunyaan.tube.ui.player.DownloadQualityDialog
+import com.albunyaan.tube.ui.MainActivity
 import com.albunyaan.tube.ui.report.ContentReportBottomSheet
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.Flow
@@ -396,6 +397,8 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 targetHeight = targetHeight,
                 thumbnailUrl = item.thumbnailUrl
             )
+            // ANDROID-PLAY-02: see MainActivity.requestNotificationPermissionForDownload.
+            (activity as? MainActivity)?.requestNotificationPermissionForDownload()
             downloadRepository.enqueue(request)
             Toast.makeText(requireContext(), R.string.download_started, Toast.LENGTH_SHORT).show()
         }

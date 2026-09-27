@@ -140,6 +140,7 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        running = this
         Log.i(TAG, "PlaybackService created (Android ${Build.VERSION.SDK_INT})")
 
         // Reset foreground tracking for this service instance
@@ -278,8 +279,7 @@ class PlaybackService : MediaSessionService() {
                 // User swiped away the paused notification
                 // Stop service since there's no playback and no way to resume
                 if (BuildConfig.DEBUG) Log.d(TAG, "ACTION_DISMISS received - notification swiped away, stopping service")
-                mediaSession?.player?.stop()
-                stopSelf()
+                stopPlayback()
                 return START_NOT_STICKY
             }
         }
@@ -670,7 +670,13 @@ class PlaybackService : MediaSessionService() {
         mediaSession = null
     }
 
+    private fun stopPlayback() {
+        mediaSession?.player?.stop()
+        stopSelf()
+    }
+
     override fun onDestroy() {
+        running = null
         if (BuildConfig.DEBUG) Log.d(TAG, "PlaybackService destroyed (isForegroundStarted=$isForegroundStarted)")
         // Unregister lifecycle observer to prevent leaks
         ProcessLifecycleOwner.get().lifecycle.removeObserver(appLifecycleObserver)
@@ -963,6 +969,28 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /** The live instance, for [stopForSignOut]. Set in onCreate, cleared in onDestroy. */
+        @android.annotation.SuppressLint("StaticFieldLeak")
+        @Volatile
+        private var running: PlaybackService? = null
+
+        /**
+         * The sign-in wall: nothing keeps playing once the user is signed out
+         * (matches iOS stopping every player, PiP and Cast). Stops local
+         * playback the same way the notification dismiss does — which drops
+         * the media notification and ends the service once PlayerFragment
+         * unbinds — and ends any Cast session. Main thread.
+         */
+        fun stopForSignOut(context: android.content.Context) {
+            running?.stopPlayback()
+            try {
+                com.google.android.gms.cast.framework.CastContext.getSharedInstance(context)
+                    .sessionManager.endCurrentSession(true)
+            } catch (e: Exception) {
+                // Cast unavailable (no Play services) — nothing to end.
+            }
+        }
+
         private const val TAG = "PlaybackService"
         private const val CHANNEL_ID = "playback"
         /** Notification ID for foreground service - must be unique and non-zero */

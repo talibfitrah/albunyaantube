@@ -89,4 +89,45 @@ class SplashRouterTest {
             ),
         )
     }
+
+    // --- Mid-session sign-out: no content without an account ---
+
+    @Test fun `signed out while on content leaves for sign-in`() {
+        assertEquals(true, SplashRouter.leaveForSignIn(signedIn = false, currentDestination = R.id.mainShellFragment))
+    }
+
+    @Test fun `signed in on content stays`() {
+        assertEquals(false, SplashRouter.leaveForSignIn(signedIn = true, currentDestination = R.id.mainShellFragment))
+    }
+
+    @Test fun `signed out on a pre-auth screen stays put`() {
+        // ageIneligibleFragment must stay visible after its own sign-out; splash,
+        // onboarding and sign-in are where a signed-out user belongs.
+        for (dest in listOf(
+            R.id.splashFragment, R.id.onboardingFragment, R.id.signInFragment,
+            R.id.ageIneligibleFragment, null,
+        )) {
+            assertEquals("dest=$dest", false, SplashRouter.leaveForSignIn(signedIn = false, currentDestination = dest))
+        }
+    }
+
+    // --- Stop playback only on an actual sign-out, not on every signed-out launch ---
+
+    private val signedIn = com.albunyaan.tube.auth.AuthState.SignedIn(org.mockito.kotlin.mock(), "uid")
+    private val signedOut = com.albunyaan.tube.auth.AuthState.SignedOut
+
+    @Test fun `signed-in to signed-out is a sign-out`() {
+        assertEquals(true, SplashRouter.isSignOut(previous = signedIn, current = signedOut))
+    }
+
+    @Test fun `the first value a fresh activity sees is never a sign-out`() {
+        // Signed-out cold start or rotation: no CastContext init, no service poke.
+        assertEquals(false, SplashRouter.isSignOut(previous = null, current = signedOut))
+    }
+
+    @Test fun `staying signed out or signing in is not a sign-out`() {
+        assertEquals(false, SplashRouter.isSignOut(previous = signedOut, current = signedOut))
+        assertEquals(false, SplashRouter.isSignOut(previous = signedOut, current = signedIn))
+        assertEquals(false, SplashRouter.isSignOut(previous = signedIn, current = signedIn))
+    }
 }

@@ -1,6 +1,6 @@
 package com.albunyaan.tube.ui.adapters
 
-import android.content.Context
+import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
@@ -12,6 +12,7 @@ import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
+import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.albunyaan.tube.util.ThumbnailUrlHelper
@@ -74,7 +75,7 @@ class FeaturedListAdapter(
             binding.channelName.text = channel.name
 
             val appLocale = LocaleManager.getCurrentLocale(context)
-            val formattedSubs = NumberFormat.getNumberInstance(appLocale).format(channel.subscribers)
+            val formattedSubs = CountFormat.compact(channel.subscribers.toLong(), appLocale)
             binding.subscriberCount.text = context.getString(
                 R.string.channel_subscribers_format,
                 formattedSubs
@@ -168,20 +169,16 @@ class FeaturedListAdapter(
             // Format metadata using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
             val views = video.viewCount?.let { viewCount ->
-                val formattedCount = NumberFormat.getNumberInstance(appLocale).format(viewCount)
+                val formattedCount = CountFormat.compact(viewCount, appLocale)
                 res.getQuantityString(
                     R.plurals.video_views,
-                    safeQuantityForPlural(viewCount),
+                    safeQuantityForPlural(CountFormat.compactPluralCount(viewCount)),
                     formattedCount
                 )
             } ?: ""
-            val timeAgo = formatTimeAgo(context, video.uploadedDaysAgo)
+            val timeAgo = UploadAge.format(res, video.uploadedDaysAgo)
 
-            binding.videoMeta.text = if (views.isNotEmpty()) {
-                "$views • $timeAgo"
-            } else {
-                timeAgo
-            }
+            binding.videoMeta.text = UploadAge.joinMeta(views, timeAgo)
 
             binding.videoThumbnail.loadYouTubeThumbnail(video.thumbnailUrl, video.id)
 
@@ -212,25 +209,6 @@ class FeaturedListAdapter(
             }
         }
 
-        private fun formatTimeAgo(context: Context, daysAgo: Int): String {
-            val res = context.resources
-            return when {
-                daysAgo <= 0 -> context.getString(R.string.video_uploaded_today)
-                daysAgo < 7 -> res.getQuantityString(R.plurals.video_uploaded_days_ago, daysAgo, daysAgo)
-                daysAgo < 30 -> {
-                    val weeks = daysAgo / 7
-                    res.getQuantityString(R.plurals.time_ago_weeks, weeks, weeks)
-                }
-                daysAgo < 365 -> {
-                    val months = daysAgo / 30
-                    res.getQuantityString(R.plurals.time_ago_months, months, months)
-                }
-                else -> {
-                    val years = daysAgo / 365
-                    res.getQuantityString(R.plurals.time_ago_years, years, years)
-                }
-            }
-        }
 
         private fun safeQuantityForPlural(count: Long): Int {
             return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()

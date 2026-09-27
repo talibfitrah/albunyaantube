@@ -415,7 +415,7 @@ No new metrics infra. Existing log shipping is sufficient for the initial releas
 ### CSV (`.csv`)
 ```
 URL
-https://www.youtube.com/watch?v=dQw4w9WgXcQ
+https://www.youtube.com/watch?v=xc7keR2piUM
 https://www.youtube.com/playlist?list=PLAYLISTID
 https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx
 https://www.youtube.com/live/LIVESTREAMID
@@ -432,7 +432,7 @@ Same as CSV but in a spreadsheet. First sheet only. Header cell A1 must be `URL`
 ```json
 {
   "urls": [
-    "https://www.youtube.com/watch?v=dQw4w9WgXcQ",
+    "https://www.youtube.com/watch?v=xc7keR2piUM",
     "https://www.youtube.com/playlist?list=PLAYLISTID",
     "https://www.youtube.com/channel/UCxxxxxxxxxxxxxxxxxxxxxx",
     "https://www.youtube.com/live/LIVESTREAMID"

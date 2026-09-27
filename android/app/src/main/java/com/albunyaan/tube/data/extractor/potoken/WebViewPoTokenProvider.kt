@@ -30,7 +30,11 @@ import org.schabi.newpipe.extractor.services.youtube.YoutubeParsingHelper
  * the suspend [PoTokenGenerator] with [runBlocking]. This must never be invoked on the main thread
  * (it would deadlock); extraction always runs on Dispatchers.IO via GlobalStreamResolver.
  */
-class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
+class WebViewPoTokenProvider(
+    private val context: Context,
+    private val generatorFactory: PoTokenGenerator.Factory = PoTokenWebView,
+    private val fetchVisitorData: () -> String = ::fetchWebClientVisitorData,
+) : PoTokenProvider {
 
     private val webViewSupported: Boolean by lazy { supportsWebView() }
 
@@ -71,9 +75,14 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
         // immediately (see PoTokenWebView.onRenderProcessGone) instead of stalling for the full
         // timeout, so these retries are cheap. Without this, one failure yielded a null token and
         // the tokenless stream URL 403-looped forever ("Resolving stream…" / حل البث).
+        // The generator the last attempt minted on. A retry recreates it only if it is still the
+        // current one — another caller that failed on it may already have rebuilt it.
+        var failedGenerator: PoTokenGenerator? = null
         repeat(MAX_GENERATION_ATTEMPTS) { attempt ->
             try {
-                return obtainPoToken(videoId = videoId, forceRecreate = attempt > 0)
+                val warm = ensureWarmGenerator(stale = failedGenerator)
+                failedGenerator = warm.first
+                return obtainPoToken(videoId, warm)
             } catch (e: BadWebViewException) {
                 Log.e(TAG, "WebView is broken; disabling poToken for this session", e)
                 webViewBadImpl = true
@@ -112,23 +121,25 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
                 }
             }
         }
-        // Give up: drop the (likely dead) generator so the next playback attempt starts clean.
+        // Give up: drop the (likely dead) generator so the next playback attempt starts clean —
+        // unless another caller already replaced it with a healthy one others are minting on.
         // A null token surfaces as the pre-fix behavior (tokenless URLs); never crash extraction.
         synchronized(lock) {
-            runCatching { poTokenGenerator?.close() }
-            poTokenGenerator = null
-            poTokenStreamingPot = null
+            if (poTokenGenerator === failedGenerator) {
+                runCatching { poTokenGenerator?.close() }
+                poTokenGenerator = null
+                poTokenStreamingPot = null
+            }
         }
         Log.e(TAG, "Gave up obtaining poToken for $videoId after $MAX_GENERATION_ATTEMPTS attempts", lastError)
         return null
     }
 
-    /**
-     * @param forceRecreate recreate [poTokenGenerator] from scratch, used when the previous
-     * generator threw while minting a token (e.g. the WebView content was lost in the background).
-     */
-    private fun obtainPoToken(videoId: String, forceRecreate: Boolean): PoTokenResult {
-        val (generator, visitorData, streamingPot) = ensureWarmGenerator(forceRecreate)
+    private fun obtainPoToken(
+        videoId: String,
+        warm: Triple<PoTokenGenerator, String, String>,
+    ): PoTokenResult {
+        val (generator, visitorData, streamingPot) = warm
 
         // Not under [lock]: the generator can mint multiple player tokens in parallel. The only
         // ordering requirement (streaming token generated first) is satisfied in ensureWarmGenerator.
@@ -161,38 +172,32 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
 
     /**
      * Ensure the BotGuard generator exists and has minted its (video-independent) streaming token,
-     * recreating it when missing / expired / [forceRecreate]. Returns
+     * recreating it when missing / expired / still the [stale] one a mint just failed on. Returns
      * (generator, visitorData, streamingPoToken). The slow WebView init + BotGuard challenge runs
      * under [lock].
      */
-    private fun ensureWarmGenerator(forceRecreate: Boolean): Triple<PoTokenGenerator, String, String> {
+    private fun ensureWarmGenerator(stale: PoTokenGenerator?): Triple<PoTokenGenerator, String, String> {
         synchronized(lock) {
-            val shouldRecreate =
-                poTokenGenerator == null || forceRecreate || poTokenGenerator!!.isExpired()
+            val current = poTokenGenerator
+            if (current == null || current === stale || current.isExpired()) {
+                val visitorData = fetchVisitorData()
 
-            if (shouldRecreate) {
-                val innertubeClientRequestInfo = InnertubeClientRequestInfo.ofWebClient()
-                innertubeClientRequestInfo.clientInfo.clientVersion =
-                    YoutubeParsingHelper.getClientVersion()
-
-                poTokenVisitorData = YoutubeParsingHelper.getVisitorDataFromInnertube(
-                    innertubeClientRequestInfo,
-                    NewPipe.getPreferredLocalization(),
-                    NewPipe.getPreferredContentCountry(),
-                    YoutubeParsingHelper.getYouTubeHeaders(),
-                    YoutubeParsingHelper.YOUTUBEI_V1_URL,
-                    null,
-                    false,
-                )
-
-                // tear down the previous generator (no-op if null)
-                poTokenGenerator?.let { old -> runCatching { old.close() } }
-
-                poTokenGenerator = runBlocking { PoTokenWebView.newPoTokenGenerator(context) }
+                // Tear down the previous generator; publish the new one only once fully warm, so a
+                // failed rebuild never leaves a closed or half-initialized generator in place.
+                current?.let { old -> runCatching { old.close() } }
+                poTokenGenerator = null
+                val fresh = runBlocking { generatorFactory.newPoTokenGenerator(context) }
 
                 // The streaming poToken must be generated exactly once, before any player tokens.
-                poTokenStreamingPot =
-                    runBlocking { poTokenGenerator!!.generatePoToken(poTokenVisitorData!!) }
+                val streamingPot = try {
+                    runBlocking { fresh.generatePoToken(visitorData) }
+                } catch (t: Throwable) {
+                    runCatching { fresh.close() }
+                    throw t
+                }
+                poTokenVisitorData = visitorData
+                poTokenStreamingPot = streamingPot
+                poTokenGenerator = fresh
             }
 
             return Triple(poTokenGenerator!!, poTokenVisitorData!!, poTokenStreamingPot!!)
@@ -219,4 +224,18 @@ class WebViewPoTokenProvider(private val context: Context) : PoTokenProvider {
         private const val MAX_GENERATION_ATTEMPTS = 3
         private const val RETRY_BACKOFF_MS = 300L
     }
+}
+
+private fun fetchWebClientVisitorData(): String {
+    val innertubeClientRequestInfo = InnertubeClientRequestInfo.ofWebClient()
+    innertubeClientRequestInfo.clientInfo.clientVersion = YoutubeParsingHelper.getClientVersion()
+    return YoutubeParsingHelper.getVisitorDataFromInnertube(
+        innertubeClientRequestInfo,
+        NewPipe.getPreferredLocalization(),
+        NewPipe.getPreferredContentCountry(),
+        YoutubeParsingHelper.getYouTubeHeaders(),
+        YoutubeParsingHelper.YOUTUBEI_V1_URL,
+        null,
+        false,
+    )
 }

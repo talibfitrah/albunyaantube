@@ -32,6 +32,14 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
 
     private val vm: ProfileViewModel by viewModels()
 
+    /**
+     * ANDROID-ACCT-DEL-01 — kept separate from [ProfileViewModel] rather than
+     * folded into it: deletion has its own state machine, and widening
+     * ProfileViewModel's constructor would churn every existing call site in
+     * its test for no gain.
+     */
+    private val deleteVm: DeleteAccountViewModel by viewModels()
+
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         _binding = FragmentProfileBinding.bind(view)
 
@@ -70,11 +78,54 @@ class ProfileFragment : Fragment(R.layout.fragment_profile) {
             )
         }
 
+        binding.deleteAccountRow.setOnClickListener { confirmDeleteAccount() }
+
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 vm.uiState.collect { render(it) }
             }
         }
+
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
+                deleteVm.state.collect { renderDelete(it) }
+            }
+        }
+    }
+
+    /**
+     * Google Play requires the destructive action to state plainly what is
+     * erased before it happens. On confirm the request is irreversible — the
+     * backend deletes rather than deactivates.
+     */
+    private fun confirmDeleteAccount() {
+        MaterialAlertDialogBuilder(requireContext())
+            .setTitle(R.string.profile_delete_account_dialog_title)
+            .setMessage(R.string.profile_delete_account_dialog_message)
+            .setNegativeButton(R.string.cancel, null)
+            .setPositiveButton(R.string.profile_delete_account_confirm) { _, _ ->
+                deleteVm.delete()
+            }
+            .show()
+    }
+
+    private fun renderDelete(state: DeleteAccountState) {
+        val deleting = state == DeleteAccountState.Deleting
+        binding.deleteAccountRow.isEnabled = !deleting
+        binding.deleteAccountLabel.setText(
+            if (deleting) R.string.profile_delete_account_deleting
+            else R.string.profile_delete_account
+        )
+        // Success is not handled here: the VM emits AccountStatusEvent.Deleted
+        // and MainActivity's terminal dialog takes the screen from there.
+        val errorRes = when (state) {
+            DeleteAccountState.FailedLastAdmin -> R.string.profile_delete_account_error_last_admin
+            DeleteAccountState.FailedNetwork -> R.string.profile_delete_account_error_network
+            DeleteAccountState.FailedUnknown -> R.string.profile_delete_account_error_unknown
+            DeleteAccountState.Idle, DeleteAccountState.Deleting -> return
+        }
+        Snackbar.make(binding.root, errorRes, Snackbar.LENGTH_LONG).show()
+        deleteVm.errorShown()
     }
 
     private fun render(state: ProfileUiState) {

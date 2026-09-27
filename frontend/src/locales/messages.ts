@@ -1,5 +1,9 @@
 export const messages = {
   en: {
+    // Backend typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>.
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.'
+    },
     auth: {
       title: 'FitrahTube Admin',
       subtitle: 'Sign in with your administrator account to continue.',
@@ -504,7 +508,11 @@ export const messages = {
       keywordsPlaceholder: 'Enter keywords separated by commas...',
       keywordsHelp: 'Keywords improve search accuracy. Separate multiple keywords with commas.',
       keywordsSaved: 'Keywords saved successfully',
-      errorSavingKeywords: 'Failed to save keywords'
+      errorSavingKeywords: 'Failed to save keywords',
+      offlineLabel: 'Save for offline',
+      offlineAllowedOn: 'Save for offline: allowed',
+      offlineAllowedOff: 'Save for offline: not allowed',
+      errorSavingOffline: 'Failed to update the Save for offline setting'
     },
     common: {
       loading: 'Loading...',
@@ -1610,6 +1618,9 @@ export const messages = {
     }
   },
   ar: {
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الإلكتروني — البريد غير مُعدّ على الخادم.'
+    },
     auth: {
       title: 'إدارة فطرة تيوب',
       subtitle: 'سجّل الدخول باستخدام حساب المشرف للمتابعة.',
@@ -2110,7 +2121,11 @@ export const messages = {
       keywordsPlaceholder: 'أدخل الكلمات المفتاحية مفصولة بفواصل...',
       keywordsHelp: 'الكلمات المفتاحية تحسن دقة البحث. افصل بين الكلمات المتعددة بفواصل.',
       keywordsSaved: 'تم حفظ الكلمات المفتاحية بنجاح',
-      errorSavingKeywords: 'فشل في حفظ الكلمات المفتاحية'
+      errorSavingKeywords: 'فشل في حفظ الكلمات المفتاحية',
+      offlineLabel: 'الحفظ للمشاهدة دون اتصال',
+      offlineAllowedOn: 'الحفظ دون اتصال: مسموح',
+      offlineAllowedOff: 'الحفظ دون اتصال: غير مسموح',
+      errorSavingOffline: 'تعذر تحديث إعداد الحفظ دون اتصال'
     },
     common: {
       loading: 'جارٍ التحميل...',
@@ -2999,6 +3014,9 @@ export const messages = {
     }
   },
   nl: {
+    apiErrors: {
+      MAIL_UNAVAILABLE: 'De e-mail kon niet worden verzonden — e-mail is niet ingesteld op de server.'
+    },
     auth: {
       title: 'FitrahTube Beheer',
       subtitle: 'Meld je aan met je beheerdersaccount om door te gaan.',
@@ -3497,7 +3515,11 @@ export const messages = {
       keywordsPlaceholder: 'Voer trefwoorden in, gescheiden door komma\'s...',
       keywordsHelp: 'Trefwoorden verbeteren de zoeknauwkeurigheid. Scheid meerdere trefwoorden met komma\'s.',
       keywordsSaved: 'Trefwoorden succesvol opgeslagen',
-      errorSavingKeywords: 'Trefwoorden opslaan mislukt'
+      errorSavingKeywords: 'Trefwoorden opslaan mislukt',
+      offlineLabel: 'Offline opslaan',
+      offlineAllowedOn: 'Offline opslaan: toegestaan',
+      offlineAllowedOff: 'Offline opslaan: niet toegestaan',
+      errorSavingOffline: 'Offline-instelling bijwerken mislukt'
     },
     common: {
       loading: 'Laden...',

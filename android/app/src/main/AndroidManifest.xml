@@ -9,19 +9,40 @@
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_MEDIA_PLAYBACK" />
     <uses-permission android:name="android.permission.FOREGROUND_SERVICE_DATA_SYNC" />
     <uses-permission android:name="android.permission.WAKE_LOCK" />
-    <uses-permission android:name="android.permission.WRITE_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
-    <uses-permission android:name="android.permission.READ_EXTERNAL_STORAGE"
-        android:maxSdkVersion="32" />
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
-    <!-- ANDROID-MULTI-01 Issue 3: required to hand off downloaded APKs to the package
-         installer. On Android 8+ the user must separately grant "install unknown apps"
-         via Settings; the app flow walks them through this on first use. -->
-    <uses-permission android:name="android.permission.REQUEST_INSTALL_PACKAGES" />
+    <!-- ANDROID-PLAY-01: WRITE_EXTERNAL_STORAGE and READ_EXTERNAL_STORAGE (both
+         maxSdkVersion="32") were declared but never used. Downloads land in
+         app-private internal storage (download/DownloadStorage.kt -> context.filesDir),
+         which needs no storage permission on any API level, and the app calls no
+         permission API and no Environment.getExternal*/getExternalFilesDir at all.
+         Google's Photo and Video Permissions policy treats an unjustified
+         media/storage permission as removable-app territory. Do not add them back
+         without a real external-storage code path. -->
+    <!-- ANDROID-PLAY-02: POST_NOTIFICATIONS above is requested at runtime from
+         MainActivity.requestNotificationPermissionForDownload(), contextually at
+         the first download rather than at app launch. -->
 
+    <!-- ANDROID-FLAVOR-01: REQUEST_INSTALL_PACKAGES and UPDATE_PACKAGES_WITHOUT_USER_ACTION
+         live in app/src/sideload/AndroidManifest.xml, NOT here. Google Play's Device and
+         Network Abuse policy forbids self-installing APKs and Play scans the merged
+         manifest, so these must be structurally absent from the `play` flavor rather than
+         gated at runtime. Do not move them back into src/main. -->
+
+    <!-- ANDROID-BACKUP-01: Auto Backup is OFF and must stay off. With allowBackup="true"
+         and no dataExtractionRules/fullBackupContent, Android copies the whole of filesDir
+         to the user's Google Drive — that is downloaded video files
+         (download/DownloadStorage.kt -> context.filesDir), the Room database, and the
+         per-install device UUID. Three consequences: account deletion cannot erase the
+         cloud copy; the privacy policy's "a random identifier for each installation"
+         becomes false the moment a restore carries that UUID to a new install; and
+         YouTube-derived media gets uploaded into Google's infrastructure under this
+         package name. Do not flip this back — ManifestBackupTest asserts it. If some
+         future preference genuinely needs to survive a device swap, add
+         android:dataExtractionRules with an explicit include-list for that one file,
+         never a blanket allowBackup="true". -->
     <application
         android:name=".AlBunyaanApplication"
-        android:allowBackup="true"
+        android:allowBackup="false"
         android:largeHeap="true"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
@@ -32,6 +53,23 @@
         <profileable
             android:shell="${profileable}"
             tools:targetApi="29" />
+
+        <!-- ANDROID-SDK36-01: android:enableOnBackInvokedCallback is deliberately
+             ABSENT, which means it defaults to true at targetSdk 36. Do not add it
+             set to "false" — that would opt the app out of Android 16's predictive
+             back and is not needed: every back handler in the app already routes
+             through androidx OnBackPressedCallback on onBackPressedDispatcher
+             (MainActivity, AgeIneligibleFragment, ProfileBootstrapFragment,
+             EmailVerificationFragment). There is no onBackPressed() override and
+             no KEYCODE_BACK handling anywhere, so the migration Android 16 asks
+             for was already complete before the targetSdk bump.
+
+             Also deliberately absent: PROPERTY_COMPAT_ALLOW_RESTRICTED_RESIZABILITY.
+             The app declares no android:screenOrientation, resizableActivity,
+             minAspectRatio or maxAspectRatio, and already ships adaptive
+             layout-sw600dp/ and layout-sw720dp/ variants, so it has nothing to opt
+             out of. The opt-out is temporary in any case — it stops working at
+             targetSdk 37. -->
         <activity
             android:name="com.albunyaan.tube.ui.MainActivity"
             android:supportsPictureInPicture="true"
@@ -142,21 +180,9 @@
                 android:resource="@xml/downloads_file_paths" />
         </provider>
 
-        <!--
-          Transparent trampoline Activity for PackageInstaller status callbacks.
-          The PendingIntent created in ApkInstaller.launchInstaller delivers here.
-          Uses an Activity (not BroadcastReceiver) so the OS launches it directly
-          via PendingIntent — Huawei/Honor BAL restrictions block startActivity
-          from a BroadcastReceiver context. excludeFromRecents keeps it out of
-          the task switcher; taskAffinity="" prevents it from joining the main
-          task stack.
-        -->
-        <activity
-            android:name=".update.InstallStatusActivity"
-            android:theme="@android:style/Theme.Translucent.NoTitleBar"
-            android:exported="false"
-            android:excludeFromRecents="true"
-            android:taskAffinity="" />
+        <!-- ANDROID-FLAVOR-01: InstallStatusActivity is declared in
+             app/src/sideload/AndroidManifest.xml — the class itself only exists in the
+             sideload source set. See the uses-permission note at the top of this file. -->
 
         <!-- Google Cast SDK configuration -->
         <meta-data

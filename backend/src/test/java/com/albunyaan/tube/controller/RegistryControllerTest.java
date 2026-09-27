@@ -577,6 +577,113 @@ class RegistryControllerTest {
         assertEquals("admin-uid", video.getApprovedBy());
     }
 
+    // ===== updateVideo MERGE SEMANTICS (iOS Phase 3, offlineAllowed gate) =====
+
+    /** A fully-populated APPROVED video as it sits in the registry. */
+    private com.albunyaan.tube.model.Video existingRegistryVideo() {
+        com.albunyaan.tube.model.Video existing = new com.albunyaan.tube.model.Video("xc7keR2piUM");
+        existing.setId("video-123");
+        existing.setTitle("Tafsir Lecture 1");
+        existing.setDescription("Full lecture");
+        existing.setCategoryIds(new java.util.ArrayList<>(List.of("cat-1", "cat-2")));
+        existing.setStatus("APPROVED");
+        existing.setThumbnailUrl("https://i.ytimg.com/vi/xc7keR2piUM/hqdefault.jpg");
+        existing.setDurationSeconds(3600);
+        existing.setViewCount(1000L);
+        return existing;
+    }
+
+    @Test
+    void updateVideo_offlineAllowedTrue_persists() throws Exception {
+        com.albunyaan.tube.model.Video existing = existingRegistryVideo();
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(existing));
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+        body.setOfflineAllowed(true);
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response =
+                registryController.updateVideo("video-123", body, adminUser);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals(Boolean.TRUE, existing.getOfflineAllowed());
+        verify(videoRepository).save(existing);
+    }
+
+    @Test
+    void updateVideo_offlineAllowedAbsent_leavesItUnchanged() throws Exception {
+        com.albunyaan.tube.model.Video existing = existingRegistryVideo();
+        existing.setOfflineAllowed(true);
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(existing));
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+        body.setTitle("Renamed lecture");
+
+        registryController.updateVideo("video-123", body, adminUser);
+
+        assertEquals(Boolean.TRUE, existing.getOfflineAllowed());
+        assertEquals("Renamed lecture", existing.getTitle());
+    }
+
+    /**
+     * The null-guard pin: a partial body {"offlineAllowed": true} must NOT wipe
+     * title/description/categoryIds/status/thumbnail/duration/viewCount. Fails against
+     * the pre-merge unconditional copy block, which nulled every field a partial body
+     * omitted — including un-approving the video via a null status.
+     */
+    @Test
+    void updateVideo_partialBody_wipesNothing() throws Exception {
+        com.albunyaan.tube.model.Video existing = existingRegistryVideo();
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(existing));
+        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+        body.setOfflineAllowed(true);
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response =
+                registryController.updateVideo("video-123", body, adminUser);
+
+        assertEquals(HttpStatus.OK, response.getStatusCode());
+        assertEquals("Tafsir Lecture 1", existing.getTitle());
+        assertEquals("Full lecture", existing.getDescription());
+        assertEquals(List.of("cat-1", "cat-2"), existing.getCategoryIds());
+        assertEquals("APPROVED", existing.getStatus());
+        assertEquals("https://i.ytimg.com/vi/xc7keR2piUM/hqdefault.jpg", existing.getThumbnailUrl());
+        assertEquals(Integer.valueOf(3600), existing.getDurationSeconds());
+        assertEquals(Long.valueOf(1000L), existing.getViewCount());
+        assertEquals(Boolean.TRUE, existing.getOfflineAllowed());
+    }
+
+    @Test
+    void updateVideo_invalidStatus_stillRejected() throws Exception {
+        com.albunyaan.tube.model.Video existing = existingRegistryVideo();
+        when(videoRepository.findById("video-123")).thenReturn(Optional.of(existing));
+
+        com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+        body.setStatus("BOGUS");
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response =
+                registryController.updateVideo("video-123", body, adminUser);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verify(videoRepository, never()).save(any());
+    }
+
+    @Test
+    void updateVideo_notFound_returns404() throws Exception {
+        when(videoRepository.findById("nope")).thenReturn(Optional.empty());
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response =
+                registryController.updateVideo("nope", new com.albunyaan.tube.dto.VideoUpdateRequest(), adminUser);
+
+        assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
+        verify(videoRepository, never()).save(any());
+    }
+
     @Test
     void deleteVideo_shouldDeleteVideo_whenExists() throws Exception {
         // Arrange

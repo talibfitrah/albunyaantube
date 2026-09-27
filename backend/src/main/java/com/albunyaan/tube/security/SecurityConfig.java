@@ -60,11 +60,40 @@ public class SecurityConfig {
                         .requestMatchers("/api/public/**").permitAll()
                         .requestMatchers("/api/v1/**").permitAll() // Public mobile app APIs (includes /api/v1/search)
                         .requestMatchers(HttpMethod.POST, "/api/auth/login").permitAll()
+                        // Forgot-password is used signed out. This one POST only; the controller
+                        // rate-limits it per IP and per email and never reveals account existence.
+                        .requestMatchers(HttpMethod.POST, "/api/account/send-password-reset-email").permitAll()
                         // ANDROID-MULTI-01 Issue 4: public OpenGraph "watch" landing pages
                         // served by WatchPageController; must be anonymously reachable so
                         // link unfurlers (WhatsApp/Telegram/Slack/Skype) can crawl og:image.
                         // Permit both GET and HEAD — Slack, Facebook and others probe HEAD
                         // first to sniff Content-Type before committing to a full fetch.
+                        // Public legal pages served by LegalPagesController.
+                        // /delete-account is mandated by Google Play policy
+                        // 13327111: a user who has already uninstalled the app
+                        // must be able to reach it, so it cannot require a
+                        // token. /privacy, /terms and /licenses are linked from
+                        // the app's About screen and a dead privacy URL is an
+                        // automatic Play rejection.
+                        //
+                        // GET+HEAD only, same shape as /watch/** below. The
+                        // previous blanket permitAll handed EVERY verb to the
+                        // dispatcher, making these four the only anonymous
+                        // non-GET surface in the chain — an anonymous POST
+                        // reached MVC and came back 500, not 405 (pinned by
+                        // SelfDeleteAccountIT#publicLegalPages_doNotPermitWritesAnonymously).
+                        .requestMatchers(HttpMethod.GET,
+                                "/delete-account", "/privacy", "/terms", "/licenses", "/support").permitAll()
+                        .requestMatchers(HttpMethod.HEAD,
+                                "/delete-account", "/privacy", "/terms", "/licenses", "/support").permitAll()
+                        // WellKnownController: iOS Universal Links (AASA) + Android App
+                        // Links (assetlinks.json) verification files. GET only, exact
+                        // paths enumerated -- never a broad "/.well-known/**" permitAll,
+                        // so an unrelated /.well-known/* path stays denied like before.
+                        .requestMatchers(HttpMethod.GET,
+                                "/.well-known/apple-app-site-association",
+                                "/apple-app-site-association",
+                                "/.well-known/assetlinks.json").permitAll()
                         .requestMatchers(HttpMethod.GET, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()

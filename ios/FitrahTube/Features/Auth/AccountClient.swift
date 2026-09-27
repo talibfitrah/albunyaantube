@@ -1,0 +1,275 @@
+import FitrahAPI
+import Foundation
+import InnerTubeKit
+
+/// Client-side mirror of the backend's `UserStatus`; the wire form is `AccountMeResponse.status`.
+nonisolated enum AccountStatus: String, Sendable, CaseIterable, Codable {
+    case active = "active", pendingProfile = "pending_profile", blocked = "blocked", deleted = "deleted"
+    /// A `status` this build does not recognise, or none at all. Its raw value can never come off
+    /// the wire, so `fromWire` is the only producer.
+    case unknown = ""
+
+    /// Stage 3 / I5: unknown is NOT `.blocked`. On Android `.blocked` merely drops to guest; here
+    /// `SplashRouter` answers it with a terminal `.blocked` alert — which `RootView.act` routes
+    /// through `session.handle`, i.e. a sign-out plus a NON-DISMISSIBLE "your account has been
+    /// blocked" dialog (`RootView.swift`) — so one additive backend `UserStatus` value — or one
+    /// serialisation regression on an optional field — would sign out every installed client and
+    /// tell each user something untrue. `.unknown` takes the `status == nil` row instead: stay
+    /// signed in, render the shell, keep asking.
+    ///
+    /// The Android comment this used to cite (`AccountStatus.kt:14-27`) justifies `.blocked` only
+    /// against `.pendingProfile`, which would trap the user in a bootstrap form the backend 409s on
+    /// re-entry. `.unknown` avoids that trap too — it is not `.pendingProfile` either.
+    static func fromWire(_ raw: String?) -> AccountStatus {
+        guard let raw, let known = AccountStatus(rawValue: raw.lowercased()) else { return .unknown }
+        return known
+    }
+}
+
+/// The caller's account, reduced to the fields the app renders and decides on. The backend also
+/// sends `profileCompletedAt`; nothing reads it, so nothing decodes it (ruling F1).
+nonisolated struct AccountMe: Sendable, Equatable, Codable {
+    var uid: String
+    var email: String?
+    var displayName: String?
+    /// ISO `yyyy-MM-dd` — the wire shape, kept as text. Parsing it into a `Date` here would invent
+    /// a time zone the backend never had (`AccountMeResponse.java` builds it at `ZoneOffset.UTC`).
+    var dateOfBirth: String?
+    var phoneNumber: String?
+    var status: AccountStatus
+    /// Lowercased (`AccountRepositoryImpl.kt:223`); absent reads as "user".
+    var role: String
+    /// Case-INSENSITIVE (`MeFragment.kt:270-271`, `ignoreCase = true`). `decode` already lowercases
+    /// what the wire sent, but an `AccountMe` built anywhere else (a test, a future local
+    /// construction) is not covered by that, and the role gate deciding on capitalisation is the
+    /// kind of defect that only shows up as a moderator with a three-item kebab.
+    var isModerator: Bool { role.lowercased() == "moderator" || role.lowercased() == "admin" }
+}
+
+nonisolated enum AccountError: Error, Equatable {
+    case ageIneligible                          // 422 + {"code":"AGE_INELIGIBLE"}
+    case profileAlreadyCompleted                // 409 on POST /profile
+    case rateLimited(retryAfterSeconds: Int)    // 429; body retryAfterSeconds -> Retry-After -> 60
+    case validation(field: String?, message: String)   // 400/422 "<field>: <reason>"
+    case emailNotVerified                       // 403 {"code":"EMAIL_NOT_VERIFIED"} on POST /profile
+    case blocked, deletedAccount                // the 403 account-lifecycle envelope
+    case lastAdmin                              // 409 on DELETE /me
+    /// A 409 whose meaning belongs to the ENDPOINT, not to this table (Task 25): on the submitter's
+    /// registry PATCH/DELETE it is "already reviewed" (`RegistryController.java:416,457`), on the
+    /// registry POST it is "already in the registry" (`:251`). `.profileAlreadyCompleted` and
+    /// `.lastAdmin` are the two 409s that DO have one meaning each and keep their own cases.
+    case conflict
+    case network, unknown(status: Int)
+}
+
+/// The ONE `"code": "X"` matcher, shared with `AuthorizedTransport`'s 403 envelope check.
+/// `AccountRepositoryImpl.kt:226-259`: the pre-fix shape (`contains("\"code\"")` AND
+/// `contains("\"X\"")`) also matched `validationField: "AGE_INELIGIBLE_input"` and misrouted the
+/// user, so this pins the exact key/value pair. The byte cap belongs to the CALLER — 1 KiB for the
+/// transport's envelope peek, 4 KiB for an error body — because the two have different budgets.
+nonisolated enum ApiErrorEnvelope {
+    /// `MAX_ERROR_BODY_BYTES` (`AccountRepositoryImpl.kt:259`): a misbehaving server returning a
+    /// multi-MB error body must not be read whole. One constant; `retryAfterSeconds` below is the
+    /// other peek that reads it, and it is what the Part B clients call.
+    static let maxErrorBodyBytes = 4096
+
+    /// The 429 shape, spelled ONCE (R9-P3 #17's rule applied to the second client that needs it):
+    /// body `retryAfterSeconds`, then the `Retry-After` header, then 60. Peeks the body itself so a
+    /// caller that has no other reason to read it does not have to.
+    static func retryAfterSeconds(_ response: HTTPResponse) -> Int {
+        struct Body: Decodable { let retryAfterSeconds: Int? }
+        let peek = response.body.prefix(maxErrorBodyBytes)
+        if let seconds = (try? JSONDecoder().decode(Body.self, from: peek))?.retryAfterSeconds { return seconds }
+        if let header = response.header("Retry-After"), let seconds = Int(header) { return seconds }
+        return 60
+    }
+
+    static func hasCode(_ code: String, in body: Data) -> Bool {
+        guard let regex = try? Regex("\"code\"\\s*:\\s*\"\(code)\"") else { return false }
+        return String(decoding: body, as: UTF8.self).contains(regex)
+    }
+
+    /// The two account-lifecycle codes this backend answers a 403 with, spelled ONCE (R9-P3 #17).
+    /// `AccountClient.failure` reads them as an `AccountError` and `AuthorizedTransport` as an
+    /// `AccountStatusEvent`; each used to carry its own copy of the pair, so a third code (or a
+    /// rename) would have had to be found twice. `.signedOut` is never produced here — it is not a
+    /// server verdict.
+    static func lifecycle(in body: Data) -> AccountStatusEvent? {
+        if hasCode("ACCOUNT_BLOCKED", in: body) { .blocked }
+        else if hasCode("ACCOUNT_DELETED", in: body) { .deleted }
+        else { nil }
+    }
+}
+
+/// Hand-written `/api/account/*` over the shared `HTTPTransport` (ruling F1: explicit status
+/// semantics, decoding only the fields it reads). Same shape as `ReportClient`/`IndexClient`; the
+/// transport it is given is `AuthorizedTransport`, which is what puts the Bearer on every request.
+nonisolated struct AccountClient: Sendable {
+    private let transport: any HTTPTransport
+    private let baseURL: URL
+    private let deviceId: DeviceId
+
+    init(transport: any HTTPTransport, baseURL: URL, deviceId: DeviceId) {
+        self.transport = transport
+        self.baseURL = baseURL
+        self.deviceId = deviceId
+    }
+
+    // MARK: - Operations
+
+    /// `GET /api/account/me` (`AccountController.java:136`). 200 is the only success — the backend
+    /// lazily creates the row, so there is no 404 leg for a first-time caller.
+    func me() async throws(AccountError) -> AccountMe {
+        let response = try await send("GET", "api/account/me")
+        guard response.status == 200 else { throw failure(response) }
+        return try decode(response)
+    }
+
+    /// `POST /api/account/profile` (`AccountController.java:69`) — the bootstrap form.
+    func completeProfile(displayName: String, dateOfBirth: String,
+                         phoneNumber: String?) async throws(AccountError) -> AccountMe {
+        let body = try encode(CompleteProfileBody(displayName: displayName, dateOfBirth: dateOfBirth,
+                                                  phoneNumber: phoneNumber))
+        let response = try await send("POST", "api/account/profile", body: body)
+        guard response.status == 200 else {
+            throw failure(response) { status, peek -> AccountError? in
+                switch status {
+                case 403 where ApiErrorEnvelope.hasCode("EMAIL_NOT_VERIFIED", in: peek): .emailNotVerified
+                case 409: .profileAlreadyCompleted
+                default: nil
+                }
+            }
+        }
+        return try decode(response)
+    }
+
+    /// `PUT /api/account/profile` (`AccountController.java:92`) — partial update; a nil field is
+    /// OMITTED, never sent as JSON null, so "no change" cannot be read as "clear this".
+    func updateProfile(displayName: String?, dateOfBirth: String?,
+                       phoneNumber: String?) async throws(AccountError) -> AccountMe {
+        let body = try encode(UpdateProfileBody(displayName: displayName, dateOfBirth: dateOfBirth,
+                                                phoneNumber: phoneNumber))
+        let response = try await send("PUT", "api/account/profile", body: body)
+        guard response.status == 200 else { throw failure(response) }
+        return try decode(response)
+    }
+
+    /// `POST /api/account/send-verification-email` (`AccountController.java:106`). 200 covers both
+    /// "sent" and "already verified" — neither is an error to the caller.
+    func sendVerificationEmail() async throws(AccountError) {
+        let response = try await send("POST", "api/account/send-verification-email")
+        guard response.status == 200 else { throw failure(response) }
+    }
+
+    /// `POST /api/account/send-password-reset-email` — signed out. 200 whether or not the address
+    /// has an account (the backend never says); 503 is "no server mailer".
+    func sendPasswordResetEmail(email: String) async throws(AccountError) {
+        let response = try await send("POST", "api/account/send-password-reset-email",
+                                      body: try encode(["email": email]))
+        guard response.status == 200 else { throw failure(response) }
+    }
+
+    /// `POST /api/account/send-change-email-verification` — mails the NEW address a link that
+    /// changes this account's email once opened. 409 is "address in use", 503 "no server mailer".
+    func sendChangeEmailVerification(newEmail: String) async throws(AccountError) {
+        let response = try await send("POST", "api/account/send-change-email-verification",
+                                      body: try encode(["newEmail": newEmail]))
+        guard response.status == 200 else {
+            throw failure(response) { status, _ -> AccountError? in status == 409 ? .conflict : nil }
+        }
+    }
+
+    /// `DELETE /api/account/me` (`AccountController.java:214`). 204 on both the first call and an
+    /// idempotent retry; 409 is `LastAdminException`.
+    func deleteAccount() async throws(AccountError) {
+        let response = try await send("DELETE", "api/account/me")
+        guard response.status == 204 else {
+            throw failure(response) { status, _ -> AccountError? in status == 409 ? .lastAdmin : nil }
+        }
+    }
+
+    // MARK: - Wire
+
+    /// `phoneNumber` is optional (owner ruling 2026-09-27) and, like every optional here, OMITTED
+    /// when nil — the server reads an absent number as "none".
+    private struct CompleteProfileBody: Encodable {
+        let displayName, dateOfBirth: String
+        let phoneNumber: String?
+    }
+    /// Optional properties are synthesised as `encodeIfPresent`, so a nil is absent from the JSON.
+    private struct UpdateProfileBody: Encodable { let displayName, dateOfBirth, phoneNumber: String? }
+
+    private struct MeBody: Decodable {
+        let uid: String
+        let email, displayName, dateOfBirth, phoneNumber, status, role: String?
+    }
+
+    private static let knownValidationFields = ["displayName", "dateOfBirth", "phoneNumber"]
+
+    private func send(_ method: String, _ path: String, body: Data? = nil) async throws(AccountError) -> HTTPResponse {
+        var headers = ["X-Device-Id": deviceId.value]
+        if body != nil { headers["Content-Type"] = "application/json" }
+        do {
+            return try await transport.send(HTTPRequest(method: method, url: baseURL.appending(path: path),
+                                                        headers: headers, body: body))
+        } catch {
+            // Everything the transport can throw is "the request did not happen" to this caller,
+            // cancellation included: `throws(AccountError)` has no third outcome, and a cancelled
+            // screen is gone before it renders anything.
+            throw AccountError.network
+        }
+    }
+
+    private func encode(_ body: some Encodable) throws(AccountError) -> Data {
+        guard let data = try? JSONEncoder().encode(body) else { throw AccountError.unknown(status: 0) }
+        return data
+    }
+
+    private func decode(_ response: HTTPResponse) throws(AccountError) -> AccountMe {
+        guard let body = try? JSONDecoder().decode(MeBody.self, from: response.body) else {
+            throw AccountError.unknown(status: response.status)
+        }
+        return AccountMe(uid: body.uid, email: body.email, displayName: body.displayName,
+                         dateOfBirth: body.dateOfBirth, phoneNumber: body.phoneNumber,
+                         status: .fromWire(body.status), role: (body.role ?? "user").lowercased())
+    }
+
+    /// The ONE status table. `own` is the endpoint's own codes and is consulted FIRST, because the
+    /// same status means different things per endpoint — 409 is `profileAlreadyCompleted` on
+    /// `POST /profile` and `lastAdmin` on `DELETE /me`, and only the endpoint knows which.
+    private func failure(_ response: HTTPResponse,
+                         _ own: (Int, Data) -> AccountError? = { _, _ in nil }) -> AccountError {
+        let peek = response.body.prefix(ApiErrorEnvelope.maxErrorBodyBytes)
+        if let own = own(response.status, peek) { return own }
+        // The lifecycle pair comes from `ApiErrorEnvelope`'s table, not from a second copy of the
+        // two code strings (R9-P3 #17).
+        if response.status == 403 {
+            switch ApiErrorEnvelope.lifecycle(in: peek) {
+            case .blocked: return .blocked
+            case .deleted: return .deletedAccount
+            case .signedOut, .none: break
+            }
+        }
+        switch response.status {
+        case 422 where ApiErrorEnvelope.hasCode("AGE_INELIGIBLE", in: peek): return .ageIneligible
+        case 429: return .rateLimited(retryAfterSeconds: ApiErrorEnvelope.retryAfterSeconds(response))
+        case 400, 422: return validationFailure(peek)
+        default: return .unknown(status: response.status)
+        }
+    }
+
+    /// `"<field>: <reason>"` (`ProfileValidationException` -> `AccountUpdateRepository.kt:81-91`),
+    /// honouring ONLY the three field names the backend can prefix, so an unrelated colon
+    /// ("Error: HTTP 500") is not read as a field. Android defaults those to "displayName", which
+    /// points the error at an input the user never touched; iOS reports no field instead and shows
+    /// the whole message.
+    private func validationFailure(_ peek: Data) -> AccountError {
+        struct Body: Decodable { let message: String? }
+        let raw = (try? JSONDecoder().decode(Body.self, from: peek))?.message ?? "Validation failed"
+        guard let separator = raw.range(of: ": ") else { return .validation(field: nil, message: raw) }
+        let field = String(raw[raw.startIndex..<separator.lowerBound])
+        guard Self.knownValidationFields.contains(field) else { return .validation(field: nil, message: raw) }
+        return .validation(field: field,
+                           message: String(raw[separator.upperBound...]).trimmingCharacters(in: .whitespaces))
+    }
+}

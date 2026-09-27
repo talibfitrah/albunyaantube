@@ -1,10 +1,12 @@
 package com.albunyaan.tube.ui
 
+import android.Manifest
 import android.content.Intent
 import android.content.res.Configuration
 import android.os.Build
 import android.os.Bundle
 import androidx.activity.OnBackPressedCallback
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.appcompat.app.AppCompatActivity
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.bundleOf
@@ -18,8 +20,10 @@ import androidx.navigation.navOptions
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.auth.AccountStatusEvent
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.databinding.ActivityMainBinding
+import com.albunyaan.tube.download.DownloadNotificationPermission
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.preferences.SettingsPreferences
@@ -50,6 +54,31 @@ class MainActivity : AppCompatActivity() {
     // Track pending navigation listener to prevent memory leaks
     private var pendingNavigationListener: NavController.OnDestinationChangedListener? = null
 
+    /**
+     * ANDROID-PLAY-02: single POST_NOTIFICATIONS launcher for every download
+     * entry point. Registered as a field initializer because the ActivityResult
+     * API requires registration before the activity reaches STARTED; the three
+     * fragments that start downloads (player, shorts, playlist) all live in this
+     * one activity, so they route through [requestNotificationPermissionForDownload]
+     * instead of each registering their own launcher.
+     *
+     * The result is intentionally ignored: a denied notification permission must
+     * not stop the download, it only means the progress notification is lost.
+     */
+    private val notificationPermissionLauncher =
+        registerForActivityResult(ActivityResultContracts.RequestPermission()) { /* download proceeds either way */ }
+
+    /**
+     * Ask for notification permission at the moment a download starts. No-op on
+     * API < 33 and when already granted; the OS itself no-ops after the user has
+     * permanently denied, so no extra "already asked" bookkeeping is needed.
+     */
+    fun requestNotificationPermissionForDownload() {
+        if (DownloadNotificationPermission.shouldRequest(this)) {
+            notificationPermissionLauncher.launch(Manifest.permission.POST_NOTIFICATIONS)
+        }
+    }
+
     // Track initial theme/locale applied at startup for correction check
     private var startupTheme: String? = null
     private var startupLocale: String? = null
@@ -76,6 +105,7 @@ class MainActivity : AppCompatActivity() {
         }
 
         observeAccountStatusEvents()
+        observeSignedOut()
 
         // Handle back press for nested navigation
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -126,6 +156,39 @@ class MainActivity : AppCompatActivity() {
                     if (event !is AccountStatusEvent.SignedOut) {
                         showAccountStatusDialog(event)
                     }
+                }
+            }
+        }
+    }
+
+    /**
+     * Whatever signs the user out mid-session (revalidation 401, Firebase
+     * force sign-out, 403 envelope, Settings/Me), stop all playback and Cast,
+     * then route off content to sign-in with the back
+     * stack cleared — the same navigation Settings' sign-out uses. Collecting
+     * on STARTED also catches a sign-out that happened while backgrounded.
+     */
+    private fun observeSignedOut() {
+        // Stop playback at once on a sign-out, even while backgrounded: audio
+        // must not outlive the account. Navigation below waits for STARTED;
+        // this doesn't. Transition only — the player lives in this activity's
+        // PlayerFragment, so a sign-out while no activity existed left nothing
+        // local playing.
+        lifecycleScope.launch {
+            var previous: AuthState? = null
+            authRepository.authState.collect { state ->
+                if (SplashRouter.isSignOut(previous, state)) PlaybackService.stopForSignOut(this@MainActivity)
+                previous = state
+            }
+        }
+        lifecycleScope.launch {
+            repeatOnLifecycle(Lifecycle.State.STARTED) {
+                authRepository.authState.collect { state ->
+                    if (SplashRouter.leaveForSignIn(
+                            signedIn = state is AuthState.SignedIn,
+                            currentDestination = navController.currentDestination?.id,
+                        )
+                    ) navigateToSignIn()
                 }
             }
         }

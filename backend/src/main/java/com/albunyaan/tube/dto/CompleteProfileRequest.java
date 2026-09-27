@@ -18,7 +18,7 @@ public class CompleteProfileRequest {
     @JsonFormat(pattern = "yyyy-MM-dd")
     private LocalDate dateOfBirth;
 
-    @NotBlank
+    /** Optional (owner ruling 2026-09-27): null when absent; the pattern applies only to a given number. */
     @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "must be E.164 format")
     private String phoneNumber;
 
@@ -27,5 +27,5 @@ public class CompleteProfileRequest {
     public LocalDate getDateOfBirth() { return dateOfBirth; }
     public void setDateOfBirth(LocalDate d) { this.dateOfBirth = d; }
     public String getPhoneNumber() { return phoneNumber; }
-    public void setPhoneNumber(String s) { this.phoneNumber = s; }
+    public void setPhoneNumber(String s) { this.phoneNumber = (s == null || s.isBlank()) ? null : s; }
 }
