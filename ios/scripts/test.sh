@@ -4,13 +4,13 @@
 #   xcodebuild test (Debug, iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
 #   (FitrahAPI + InnerTubeKit packages) -> Package.resolved drift check. Ordinary tasks stop here.
 # RELEASE=1 bash ios/scripts/test.sh additionally builds Release (simulator SDK -- compiles the
-# non-DEBUG paths) after the gate passes, in its own separate 300s watchdog window: the
-# Debug->Release flip invalidates the ~320 SPM package compile units the gate just built, and
-# charging that recompile to the gate's window is what pushed a combined run past 300s once
-# Firebase/GoogleSignIn landed (Phase 4 Task 1). REQUIRED for the Phase 4 gate tasks (19, 31) and
-# any task touching ios/project.yml, an xcconfig, entitlements, or Info.plist keys; ordinary
-# tasks run the Debug gate only. Prints "RELEASE: built", "RELEASE: failed" or "RELEASE: skipped
-# (set RELEASE=1)".
+# non-DEBUG paths) and launches it on $IPHONE_SIM (must outlive the splash) after the gate passes,
+# in its own separate 300s watchdog window: the Debug->Release flip invalidates the ~320 SPM
+# package compile units the gate just built, and charging that recompile to the gate's window is
+# what pushed a combined run past 300s once Firebase/GoogleSignIn landed (Phase 4 Task 1).
+# REQUIRED for the Phase 4 gate tasks (19, 31) and any task touching ios/project.yml, an xcconfig,
+# entitlements, or Info.plist keys; ordinary tasks run the Debug gate only. Prints "RELEASE:
+# built", "RELEASE: failed" or "RELEASE: skipped (set RELEASE=1)".
 # Per-test limit: 60s -- XCTest rounds `defaultTestExecutionTimeAllowance` up to 60s and Swift
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
@@ -182,7 +182,25 @@ run_release() {
         -onlyUsePackageVersionsFromResolvedFile \
         2>&1 | grep -E "$SUMMARY"
     local release_status=${PIPESTATUS[0]}
-    return "$release_status"
+    [ "$release_status" -eq 0 ] || return "$release_status"
+
+    # Build 1.0.0 (2) compiled here and died on EVERY launch (a Release-only environment default
+    # trapped on the root's own `.environment` write): compiling never runs the #else branches.
+    # Launch it and require the process to outlive the splash. Replaces the sim's installed app.
+    echo "== Release launch (simulator) =="
+    xcrun simctl boot "$IPHONE_SIM" 2>/dev/null   # "already booted" is fine
+    xcrun simctl bootstatus "$IPHONE_SIM" -b >/dev/null   # wait until SpringBoard is up
+    xcrun simctl terminate "$IPHONE_SIM" com.albunyaan.tube 2>/dev/null
+    xcrun simctl install "$IPHONE_SIM" DerivedData-Release/Build/Products/Release-iphonesimulator/FitrahTube.app || return $?
+    local pid
+    pid=$(xcrun simctl launch "$IPHONE_SIM" com.albunyaan.tube | awk '{print $NF}')
+    sleep 15   # catches launch-time crashes only, not ones that happen later in a session
+    if ! kill -0 "$pid" 2>/dev/null; then
+        echo "error: Release app (pid ${pid:-none}) died within 15s of launch -- see ~/Library/Logs/DiagnosticReports/FitrahTube-*.ips" >&2
+        return 1
+    fi
+    xcrun simctl terminate "$IPHONE_SIM" com.albunyaan.tube
+    echo "Release app alive 15s after launch"
 }
 
 RESULTS=$(mktemp -d)
