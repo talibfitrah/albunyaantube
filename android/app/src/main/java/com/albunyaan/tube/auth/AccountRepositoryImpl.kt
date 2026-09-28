@@ -324,14 +324,15 @@ class AccountRepositoryImpl(
         // Atomic CAS via MutableStateFlow.update so a concurrent signOut
         // from an off-main observerScope can't be clobbered by a
         // post-read overwrite. Not-Loaded states (NotSignedIn / Loading /
-        // Failed / etc.) pass through unchanged.
+        // Failed / etc.) and another account's late response pass through unchanged.
         synchronized(lock) {
             val updated = _state.updateAndGet { current ->
-                if (current is AccountState.Loaded) {
+                if (current is AccountState.Loaded && current.uid == response.uid) {
                     current.copy(
                         displayName = response.displayName ?: current.displayName,
                         dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
-                        phoneNumber = response.phoneNumber ?: current.phoneNumber,
+                        // The response is the whole account: null = no phone (removed via "").
+                        phoneNumber = response.phoneNumber,
                     )
                 } else {
                     current

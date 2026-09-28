@@ -26,6 +26,7 @@ enum class BootstrapError {
     INVALID_PHONE_COUNTRY,
     INVALID_PHONE,
     INVALID_PASSWORD,
+    CONFIRM_PASSWORD,
     PASSWORD_MISMATCH,
     PASSWORD_SET_FAILED,
     SAVE_FAILED,
@@ -76,6 +77,8 @@ class ProfileBootstrapViewModel @Inject constructor(
         val error: BootstrapError? = null,
         /** Fields the user has changed; seeds and setText echoes don't count. */
         val touched: Set<BootstrapField> = emptySet(),
+        /** Fields the user has left (focus lost) at least once. */
+        val left: Set<BootstrapField> = emptySet(),
     )
 
     private val _ui = MutableStateFlow(UiState())
@@ -112,6 +115,7 @@ class ProfileBootstrapViewModel @Inject constructor(
         }
         if (s.passwordRequired) {
             if (s.password.length < MIN_PASSWORD_LENGTH) return BootstrapError.INVALID_PASSWORD
+            if (s.passwordConfirm.isEmpty())             return BootstrapError.CONFIRM_PASSWORD
             if (s.password != s.passwordConfirm)         return BootstrapError.PASSWORD_MISMATCH
         }
         return null
@@ -124,17 +128,20 @@ class ProfileBootstrapViewModel @Inject constructor(
      * The error the screen shows: a submit/server error, else — once the user has started
      * filling the form — the first thing keeping Continue disabled. A disabled button can't
      * be tapped to reveal submit errors, so without this the user gets no reason at all.
-     * It goes on its field only once the user has touched that field; otherwise it is shown
-     * by Continue. A mismatch waits until the confirmation is as long as the password.
+     * It goes on its field once the user has changed that field — or, for a typed field in
+     * [LEAVE_FIRST], once the user has left it; until then it is shown by Continue. A
+     * confirmation that is still a prefix of the password asks to confirm until its field is
+     * left; any other wrong confirmation is a mismatch.
      */
     fun shownError(s: UiState = _ui.value): ShownError? {
         s.error?.let { return ShownError(it, onField = true) }
         if (s.touched.isEmpty()) return null
         val e = firstValidationError(s) ?: return null
         val field = fieldOf(e)
-        if (field == BootstrapField.CONFIRM && field in s.touched &&
-            s.passwordConfirm.length < s.password.length) return null  // still typing
-        return ShownError(e, onField = field in s.touched)
+        if (e == BootstrapError.PASSWORD_MISMATCH && field !in s.left && s.password.startsWith(s.passwordConfirm)) {
+            return ShownError(BootstrapError.CONFIRM_PASSWORD, onField = false)  // still typing it
+        }
+        return ShownError(e, onField = if (field in LEAVE_FIRST) field in s.left else field in s.touched)
     }
 
     private fun fieldOf(e: BootstrapError): BootstrapField? = when (e) {
@@ -142,7 +149,7 @@ class ProfileBootstrapViewModel @Inject constructor(
         BootstrapError.INVALID_DOB, BootstrapError.UNDER_AGE -> BootstrapField.DOB
         BootstrapError.INVALID_PHONE_COUNTRY, BootstrapError.INVALID_PHONE -> BootstrapField.PHONE
         BootstrapError.INVALID_PASSWORD -> BootstrapField.PASSWORD
-        BootstrapError.PASSWORD_MISMATCH -> BootstrapField.CONFIRM
+        BootstrapError.CONFIRM_PASSWORD, BootstrapError.PASSWORD_MISMATCH -> BootstrapField.CONFIRM
         BootstrapError.PASSWORD_SET_FAILED, BootstrapError.SAVE_FAILED -> null
     }
 
@@ -184,6 +191,10 @@ class ProfileBootstrapViewModel @Inject constructor(
 
     fun onPasswordConfirmChanged(v: String) {
         _ui.update { it.copy(passwordConfirm = v, error = null, touched = it.touched.plusIf(v != it.passwordConfirm, BootstrapField.CONFIRM)) }
+    }
+
+    fun onFieldLeft(f: BootstrapField) {
+        _ui.update { it.copy(left = it.left + f) }
     }
 
     fun setLoading(loading: Boolean) {
@@ -258,6 +269,9 @@ class ProfileBootstrapViewModel @Inject constructor(
 
     companion object {
         const val MIN_PASSWORD_LENGTH = 8
+
+        /** Typed fields whose own error stays off the field while the user is still in it. */
+        private val LEAVE_FIRST = setOf(BootstrapField.PHONE, BootstrapField.PASSWORD, BootstrapField.CONFIRM)
 
         /** Mirrors AccountProfileService.MIN_AGE on the backend. */
         const val MIN_AGE_YEARS = 13

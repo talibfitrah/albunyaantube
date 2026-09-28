@@ -50,6 +50,15 @@
         android:layout_marginTop="@dimen/spacing_md"
         android:text="@string/edit_phone_save" />
 
+    <!-- Shown only when the account has a saved phone (EditPhoneViewModel.hasSavedPhone). -->
+    <com.google.android.material.button.MaterialButton
+        android:id="@+id/removeButton"
+        style="@style/Widget.Material3.Button.TextButton"
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:text="@string/profile_phone_remove"
+        android:visibility="gone" />
+
     <TextView
         android:id="@+id/errorText"
         android:layout_width="match_parent"

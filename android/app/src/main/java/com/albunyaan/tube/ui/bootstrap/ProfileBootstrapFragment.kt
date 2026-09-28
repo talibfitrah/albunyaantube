@@ -194,6 +194,12 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
                 viewModel.onPhoneNumberChanged(s?.toString().orEmpty())
             }
         })
+        // Typed fields keep their own error off until the user leaves them (ViewModel.shownError).
+        fun View.reportLeft(f: BootstrapField) =
+            setOnFocusChangeListener { _, hasFocus -> if (!hasFocus) viewModel.onFieldLeft(f) }
+        phoneField.reportLeft(BootstrapField.PHONE)
+        passwordField.reportLeft(BootstrapField.PASSWORD)
+        passwordConfirmField.reportLeft(BootstrapField.CONFIRM)
         dobField.setOnClickListener { openDatePicker() }
         dobField.isFocusable = false
         submitButton.setOnClickListener { viewModel.submit() }
@@ -251,7 +257,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         passwordLayout.visibility = passwordVisibility
         passwordConfirmLayout.visibility = passwordVisibility
 
-        // Field errors only on a field the user touched; any other blocker goes in formHint
+        // Field errors only on a field the user touched (typed fields: left); any other blocker goes in formHint
         // by Continue. Set only on change so TalkBack doesn't re-announce every render.
         val shown = viewModel.shownError(state)
         val onField = shown?.takeIf { it.onField }?.error
@@ -266,7 +272,9 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         passwordLayout.setErrorIfChanged(msg(onField.takeIf {
             it == BootstrapError.INVALID_PASSWORD || it == BootstrapError.PASSWORD_SET_FAILED
         }))
-        passwordConfirmLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.PASSWORD_MISMATCH }))
+        passwordConfirmLayout.setErrorIfChanged(msg(onField.takeIf {
+            it == BootstrapError.PASSWORD_MISMATCH || it == BootstrapError.CONFIRM_PASSWORD
+        }))
         phoneCountryLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_PHONE_COUNTRY }))
         phoneLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_PHONE }))
         val hint = msg(shown?.takeIf { !it.onField }?.error)
@@ -287,6 +295,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         BootstrapError.INVALID_PHONE_COUNTRY -> R.string.bootstrap_error_invalid_phone_country
         BootstrapError.INVALID_PHONE -> R.string.bootstrap_error_invalid_phone
         BootstrapError.INVALID_PASSWORD -> R.string.bootstrap_error_invalid_password
+        BootstrapError.CONFIRM_PASSWORD -> R.string.bootstrap_error_confirm_password
         BootstrapError.PASSWORD_MISMATCH -> R.string.bootstrap_error_password_mismatch
         BootstrapError.PASSWORD_SET_FAILED -> R.string.bootstrap_error_password_set_failed
         BootstrapError.SAVE_FAILED -> R.string.bootstrap_error_save_failed

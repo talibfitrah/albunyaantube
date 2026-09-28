@@ -751,6 +751,7 @@
     <string name="profile_phone_unset">Niet ingesteld</string>
     <string name="profile_edit">Bewerken</string>
     <string name="profile_add">Toevoegen</string>
+    <string name="profile_phone_remove">Telefoonnummer verwijderen</string>
     <string name="profile_password">Wachtwoord</string>
     <string name="profile_password_dots">••••••••••</string>
 
@@ -786,6 +787,7 @@
     <string name="edit_password_update">Wachtwoord bijwerken</string>
     <string name="edit_password_updated">Wachtwoord bijgewerkt.</string>
     <string name="edit_phone_updated">Telefoonnummer bijgewerkt.</string>
+    <string name="edit_phone_removed">Telefoonnummer verwijderd.</string>
     <string name="edit_password_wrong_current">Huidig wachtwoord is onjuist</string>
     <string name="edit_password_weak">Wachtwoord moet minimaal 8 tekens bevatten</string>
     <string name="edit_password_mismatch">Wachtwoorden komen niet overeen</string>
