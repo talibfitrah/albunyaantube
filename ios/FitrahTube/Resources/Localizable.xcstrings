@@ -1278,6 +1278,28 @@
         }
       }
     },
+    "bootstrap_error_confirm_password": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أكّد كلمة المرور"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm your password"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bevestig je wachtwoord"
+          }
+        }
+      }
+    },
     "bootstrap_error_invalid_dob": {
       "localizations": {
         "ar": {
@@ -5184,6 +5206,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Telefoonnummer"
+          }
+        }
+      }
+    },
+    "edit_phone_removed": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "تمت إزالة رقم الجوال."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Phone number removed."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telefoonnummer verwijderd."
           }
         }
       }
@@ -13600,6 +13644,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Telefoonnummer"
+          }
+        }
+      }
+    },
+    "profile_phone_remove": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "إزالة رقم الجوال"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Remove phone number"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Telefoonnummer verwijderen"
           }
         }
       }

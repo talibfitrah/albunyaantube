@@ -244,13 +244,16 @@ struct ProfileBootstrapViewModelTests {
         fixture.model.displayName = "Aisha Rahman"   // a binding echo: the same value, not a touch
         #expect(fixture.model.shownError == nil, "an unchanged write counted as the user starting")
 
+        // The name is not a leave-first field (Android's LEAVE_FIRST is phone/password/confirm):
+        // its error goes on it as soon as it is changed.
         fixture.model.displayName = ""
         #expect(fixture.model.shownError == ShownError(error: .invalidName, onField: true),
                 "clearing the seeded name is a start")
     }
 
-    /// Cubic P3, Android parity (`ProfileBootstrapViewModel.kt`, `shownError`): an error sits ON its
-    /// field only once the user touched that field; any other first blocker is said by Continue.
+    /// Cubic P3, Android parity (`ProfileBootstrapViewModel.kt`, `shownError`): any first blocker
+    /// is said by Continue; it moves ON its field only once the user has LEFT that field (1.0.1 —
+    /// "touched" put the password rule under the field at the first keystroke).
     /// One letter of a name used to raise "choose your date of birth" as if the name were wrong,
     /// and a Google user who picked a date got a password-length error before touching a password.
     @Test func anUntouchedFieldsBlockerIsSaidByContinueNotOnTheField() async {
@@ -261,20 +264,78 @@ struct ProfileBootstrapViewModelTests {
         #expect(fixture.model.shownError == ShownError(error: .invalidDOB, onField: false))
         fixture.model.dateOfBirth = Self.dob
         #expect(fixture.model.shownError == ShownError(error: .invalidPassword, onField: false))
-        fixture.model.password = "hunter2"
+        for typed in ["h", "hu", "hun", "hunter2"] {
+            fixture.model.password = typed
+            #expect(fixture.model.shownError == ShownError(error: .invalidPassword, onField: false),
+                    "\(typed): the rule sat under a field the user is still typing in")
+        }
+        fixture.model.leave(.password)
         #expect(fixture.model.shownError == ShownError(error: .invalidPassword, onField: true))
     }
 
-    /// A half-typed confirmation is not a mismatch: it is judged once it is as long as the password.
-    @Test func aMismatchWaitsUntilTheConfirmationIsAsLongAsThePassword() async {
+    /// The phone is the same rule: Continue says it while the number is being typed, the field once
+    /// it is left. A picked date is a finished answer, so an under-13 one goes on its field at once.
+    @Test func aPhoneErrorWaitsForTheFieldToBeLeftAndAPickedDateDoesNot() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)))
+        await fixture.model.load()
+        fixture.model.displayName = "Aisha"
+        fixture.model.dateOfBirth = Self.day(2020, 1, 1)
+        #expect(fixture.model.shownError == ShownError(error: .underAge, onField: true))
+        fixture.model.dateOfBirth = Self.dob
+
+        fixture.model.phoneNumber = "3"
+        #expect(fixture.model.shownError == ShownError(error: .invalidPhone, onField: false))
+        fixture.model.leave(.phone)
+        #expect(fixture.model.shownError == ShownError(error: .invalidPhone, onField: true))
+    }
+
+    /// A confirmation that is still a PREFIX of the password is unfinished ("Confirm your
+    /// password"); one that has already left it is a mismatch at once. Both stay by Continue while
+    /// the confirmation field is focused, and move onto it once it is left.
+    @Test func aConfirmationIsAMismatchOnceItStopsBeingAPrefixOfThePassword() async {
         let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
         await fixture.model.load()
         fill(fixture.model, password: "hunter2hunter2")
 
         fixture.model.passwordConfirm = "hunter"
-        #expect(fixture.model.shownError == nil, "a half-typed confirmation was called a mismatch")
+        #expect(fixture.model.shownError == ShownError(error: .confirmPassword, onField: false),
+                "a half-typed confirmation was called a mismatch")
+        fixture.model.passwordConfirm = "huntex"
+        #expect(fixture.model.shownError == ShownError(error: .passwordMismatch, onField: false),
+                "a confirmation that already differs was still 'confirm your password'")
         fixture.model.passwordConfirm = "hunter2hunter3"
+        #expect(fixture.model.shownError == ShownError(error: .passwordMismatch, onField: false),
+                "the mismatch sat on a field the user is still typing in")
+        fixture.model.leave(.confirm)
         #expect(fixture.model.shownError == ShownError(error: .passwordMismatch, onField: true))
+    }
+
+    @Test func aValidPasswordWithAnEmptyConfirmationAsksToConfirmIt() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
+        await fixture.model.load()
+        fixture.model.displayName = "Aisha"
+        fixture.model.dateOfBirth = Self.dob
+        fixture.model.password = "hunter2hunter2"
+
+        #expect(fixture.model.shownError == ShownError(error: .confirmPassword, onField: false))
+        #expect(BootstrapError.confirmPassword.messageKey == "bootstrap_error_confirm_password")
+        #expect(fixture.model.isFormValid == false)
+        fixture.model.leave(.confirm)
+        #expect(fixture.model.shownError == ShownError(error: .confirmPassword, onField: true))
+    }
+
+    /// Android parity: a shorter prefix is unfinished only while its field is focused; once LEFT it
+    /// is a mismatch on the field. An EMPTY one that was left still asks to confirm, on the field.
+    @Test func aShortPrefixConfirmationIsAMismatchOnceItsFieldIsLeft() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.googleUser)))
+        await fixture.model.load()
+        fill(fixture.model, password: "hunter2hunter2")
+
+        fixture.model.passwordConfirm = "hunter"
+        fixture.model.leave(.confirm)
+        #expect(fixture.model.shownError == ShownError(error: .passwordMismatch, onField: true))
+        fixture.model.passwordConfirm = ""
+        #expect(fixture.model.shownError == ShownError(error: .confirmPassword, onField: true))
     }
 
     // MARK: - The happy path

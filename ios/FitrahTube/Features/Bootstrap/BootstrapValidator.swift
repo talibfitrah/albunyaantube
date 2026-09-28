@@ -7,6 +7,7 @@ import Foundation
 nonisolated enum BootstrapError: Sendable, Equatable {
     case invalidName, invalidDOB, underAge, invalidPhone, invalidPassword, passwordMismatch
     case passwordSetFailed, saveFailed
+    case confirmPassword
 }
 
 /// ONE validator behind the submit button's enabled state, the line that says why it is disabled,

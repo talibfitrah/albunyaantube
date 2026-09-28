@@ -41,21 +41,25 @@ nonisolated enum DeleteAccountState: Equatable {
 
     private enum ReauthMethod { case apple, password, google }
 
-    /// Set when Apple's re-authentication was refused (e.g. another Apple ID on the device).
-    private var appleRefused = false
+    /// Consecutive Apple re-auth failures. Any failure adds one (a cancel included), a success
+    /// resets it, and `.userMismatch` jumps straight to the limit: another Apple ID answers the same
+    /// way every time. Unavailable Apple is `apple.isAvailable`, read below.
+    private var appleFailures = 0
+    private static let appleFailureLimit = 2
 
     /// How this attempt proves the account, from the methods it actually has. Apple first when
     /// usable: its sheet is the only proof that yields the code the grant is revoked with (guideline
-    /// 5.1.1(v)). Then the password, then Google — the order they had before Apple went first. A
-    /// refused Apple sheet steps aside for the next method, and stays the retry when it is the only
-    /// one; either way the deletion only skips the revocation.
+    /// 5.1.1(v)). Then the password, then Google — the order they had before Apple went first.
+    /// Apple steps aside for the next method after two failures in a row (at once for another
+    /// Apple ID), and stays the retry when it is the only one; either way the deletion only skips
+    /// the revocation.
     private var reauthMethod: ReauthMethod? {
         guard let user = session.user else { return nil }
         var methods: [ReauthMethod] = []
         if user.hasAppleProvider, apple.isAvailable { methods.append(.apple) }
         if user.hasPasswordProvider { methods.append(.password) }
         if user.providerIDs.contains("google.com") { methods.append(.google) }
-        if appleRefused, methods.count > 1 { methods.removeAll { $0 == .apple } }
+        if appleFailures >= Self.appleFailureLimit, methods.count > 1 { methods.removeAll { $0 == .apple } }
         return methods.first
     }
 
@@ -184,11 +188,15 @@ nonisolated enum DeleteAccountState: Equatable {
             // server then refuses leaves the grant revoked on a live account; the next Apple
             // sign-in simply asks for consent again and lands on the same account.
             if let code = credential.authorizationCode { await auth.revokeAppleToken(authorizationCode: code) }
+            if method == .apple { appleFailures = 0 }
             return true
         } catch {
-            // A cancel is a refusal like any other: nothing is deleted, and the row goes back to
-            // saying what it is.
-            if method == .apple { appleRefused = true }
+            // Nothing is deleted. Apple's sheet is the only proof that yields the code the grant is
+            // revoked with, so one cancel or failure (`.failed(...)` also covers a re-entrant tap and
+            // a missing key window) is retried once; another Apple ID never will succeed.
+            if method == .apple {
+                appleFailures = error as? AuthErrorCode == .userMismatch ? Self.appleFailureLimit : appleFailures + 1
+            }
             return false
         }
     }

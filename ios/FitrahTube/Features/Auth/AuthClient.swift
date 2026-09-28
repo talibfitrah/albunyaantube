@@ -26,6 +26,7 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
     case invalidEmail, wrongPassword, userNotFound, userDisabled, emailAlreadyInUse, weakPassword
     case network, tooManyRequests, invalidCredential
     case googleSignInFailed, appleSignInFailed, passwordResetFailed, unknown
+    case userMismatch
 
     /// The input mapping is rewritten against the iOS SDK (ruling C12): Firebase iOS raises
     /// `NSError` in `AuthErrors.domain` whose `code` is an `AuthErrorCode` raw Int, NOT Android's
@@ -49,6 +50,10 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
         case 17004, 17017: self = .invalidCredential        // invalidCredential, invalidUserToken
         case 17020: self = .network                         // networkError
         case 17010: self = .tooManyRequests                 // tooManyRequests
+        // 1.0.1: iOS's own. Firebase raises it from `User.reauthenticate(with:)` — which BOTH
+        // re-auth legs call — for another account's credential; the delete confirmation's Apple leg
+        // reads it to tell "another Apple ID" (fall back) from a transient failure (offer Apple again).
+        case 17024: self = .userMismatch                    // userMismatch
         default: self = .unknown
         }
     }
@@ -72,7 +77,7 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
         case .googleSignInFailed: "auth_error_google"
         case .appleSignInFailed: "auth_error_apple"      // authored in Task 10
         case .passwordResetFailed: "auth_error_password_reset_failed"
-        case .unknown: "auth_error_generic"
+        case .unknown, .userMismatch: "auth_error_generic"
         }
     }
 }

@@ -35,6 +35,8 @@ nonisolated enum EditPhoneError: Sendable, Equatable {
     private let session: AccountSession
     private(set) var state = UiState()
     private(set) var didUpdate = false
+    /// What the banner says once `didUpdate`: "removed" after `removePhone()`, else "updated".
+    private(set) var successMessageKey = "edit_phone_updated"
 
     init(account: AccountClient, session: AccountSession) {
         self.account = account
@@ -60,26 +62,40 @@ nonisolated enum EditPhoneError: Sendable, Equatable {
 
     var e164: String { BootstrapValidator.e164(state.number) }
 
+    /// Whether the account holds a phone — read off the session, so it follows the server's answer.
+    var hasSavedPhone: Bool { !(session.state.me?.phoneNumber ?? "").isEmpty }
+
     /// `wholeMatch`, not `firstMatch`: `$` alone can match ahead of a trailing newline.
     var isValid: Bool { e164.wholeMatch(of: BootstrapValidator.phonePattern) != nil }
 
     /// **A cleared field sends NOTHING.** `nil` on the wire means "no change", never "clear this"
-    /// (`AccountClient.updateProfile` omits nils), so there is no way to express a deletion here
-    /// and no affordance that pretends there is. An empty field simply fails the pattern — one
-    /// rule, no special case — and never reaches the network.
+    /// (`AccountClient.updateProfile` omits nils); deleting is `removePhone()`, its own action. An
+    /// empty field simply fails the pattern — one rule, no special case — and never reaches the
+    /// network.
     func submit() async {
         guard !state.saving else { return }
         guard isValid else {
             state.error = .invalidPhone
             return
         }
+        await send(e164)
+    }
+
+    /// 1.0.1: `"phoneNumber": ""` is the server's "remove the saved phone" (`PUT /api/account/profile`).
+    func removePhone() async {
+        guard !state.saving else { return }
+        await send("")
+    }
+
+    private func send(_ phoneNumber: String) async {
         state.saving = true
         state.error = nil
         do {
             let updated = try await account.updateProfile(displayName: nil, dateOfBirth: nil,
-                                                          phoneNumber: e164)
+                                                          phoneNumber: phoneNumber)
             session.apply(updated)
             state.saving = false
+            successMessageKey = phoneNumber.isEmpty ? "edit_phone_removed" : "edit_phone_updated"
             didUpdate = true
         } catch {
             state.saving = false
@@ -145,7 +161,23 @@ struct EditPhoneSheet: View {
                 EditSheetAction(title: String(localized: "edit_phone_save"),
                                 isLoading: model.state.saving) {
                     await model.submit()
-                    if model.didUpdate { onUpdated(String(localized: "edit_phone_updated")) }
+                    if model.didUpdate { onUpdated(String(localized: String.LocalizationValue(model.successMessageKey))) }
+                }
+                if model.hasSavedPhone {
+                    Button(role: .destructive) {
+                        Task {
+                            await model.removePhone()
+                            if model.didUpdate { onUpdated(String(localized: String.LocalizationValue(model.successMessageKey))) }
+                        }
+                    } label: {
+                        // The frame is INSIDE the label: outside it, the tappable area is the text alone.
+                        Text(String(localized: "profile_phone_remove"))
+                            .font(TypeScale.body(widthClass))
+                            .foregroundStyle(Color.errorText)
+                            .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))
+                            .contentShape(Rectangle())
+                    }
+                    .disabled(model.state.saving)
                 }
             }
         }

@@ -539,11 +539,12 @@ struct ProfileViewModelTests {
         #expect(sent.count == 1)
         #expect(body(sent[0]) == ["phoneNumber": "+31699999999"])
         #expect(model.didUpdate)
+        #expect(model.successMessageKey == "edit_phone_updated")
         #expect(fixture.session.state.me?.phoneNumber == "+31699999999")
     }
 
-    /// `nil` on the wire means "no change", never "clear this", so there is no delete affordance —
-    /// and this pins the ABSENCE: a cleared field sends nothing at all.
+    /// `nil` on the wire means "no change", never "clear this" — removal is its own action
+    /// (`removePhone()`, below), so a cleared field sends nothing at all.
     @Test func aClearedPhoneFieldSendsNothingAtAll() async {
         let fixture = await make()
         let model = EditPhoneViewModel(account: fixture.account, session: fixture.session)
@@ -572,5 +573,43 @@ struct ProfileViewModelTests {
         model.number = "٣١٦١٢٣٤٥٦٧٨"
         #expect(model.e164 == "+31612345678")
         #expect(model.isValid)
+    }
+
+    /// 1.0.1: `"phoneNumber": ""` is the server's "remove the saved phone" (nil stays "no change").
+    /// The action is offered only while a phone is saved, and Profile reads the unset state once the
+    /// server's answer lands.
+    @Test func removingThePhoneSendsAnEmptyPhoneNumberAloneAndProfileShowsItUnset() async throws {
+        let fixture = await make(then: [.json(200, Self.meJSON(phone: nil))])
+        let profile = await loaded(fixture)
+        let model = EditPhoneViewModel(account: fixture.account, session: fixture.session)
+        #expect(model.hasSavedPhone)
+
+        await model.removePhone()
+
+        let sent = puts(fixture.transport)
+        #expect(sent.count == 1)
+        #expect(body(try #require(sent.first)) == ["phoneNumber": ""])
+        #expect(model.didUpdate)
+        // Review round: the banner says what happened — "removed", not "updated".
+        #expect(model.successMessageKey == "edit_phone_removed")
+        let english = Format.localizedBundle(for: Locale(identifier: "en"))
+        #expect(english.localizedString(forKey: model.successMessageKey, value: nil, table: nil)
+                == "Phone number removed.")
+        #expect(model.hasSavedPhone == false, "the remove action outlived the phone it removes")
+        await profile.sync()
+        #expect(profile.draft?.phoneNumber == nil, "Profile still shows the removed phone")
+    }
+
+    @Test func aFailedRemovalKeepsThePhoneAndSaysWhy() async {
+        let fixture = await make()   // nothing scripted after `/me`: the PUT fails as `.network`
+        let model = EditPhoneViewModel(account: fixture.account, session: fixture.session)
+
+        await model.removePhone()
+
+        #expect(puts(fixture.transport).count == 1)
+        #expect(model.state.error == .network)
+        #expect(model.state.saving == false)
+        #expect(model.didUpdate == false)
+        #expect(fixture.session.state.me?.phoneNumber == "+31612345678")
     }
 }
