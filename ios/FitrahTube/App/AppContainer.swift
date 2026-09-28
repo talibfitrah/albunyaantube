@@ -961,11 +961,14 @@ struct FixedStatusTransport: HTTPTransport {
 #endif
 
 extension EnvironmentValues {
-    // Release must not ship the fake default silently -- an un-injected .container in Release
-    // traps instead of serving fake data.
+    // Release must not ship the fake default silently, and the default must never trap: the root's
+    // own `.environment(\.container, …)` is a key-path write, which READS the current value first
+    // (get, then set), so SwiftUI evaluates this default on every launch. A trapping default killed
+    // every Release launch (build 1.0.0 (2), EXC_BREAKPOINT in `__Key_container.defaultValue`).
+    // Release answers with the app's one live container, set by `FitrahTubeApp.init`.
     #if DEBUG
     @Entry var container: AppContainer = AppContainer.sharedFake   // previews / tests
     #else
-    @Entry var container: AppContainer = { preconditionFailure("AppContainer not injected — wrap the root in .environment(\\.container, …)") }()
+    @Entry var container: AppContainer = AppContainer.current!
     #endif
 }

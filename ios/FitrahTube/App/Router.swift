@@ -114,11 +114,7 @@ extension EnvironmentValues {
     /// Owned by `FitrahTubeApp` (not `MainShellView`) so a deep link that arrives before the
     /// shell exists -- e.g. tapped while Onboarding is still showing -- has somewhere to land.
     ///
-    /// Same shape as `\.container`: previews and tests get one shared instance, Release traps
-    /// rather than silently handing every reader its own Router (gate A-I2).
-    #if DEBUG
-    @Entry var router: Router = .shared   // previews / tests
-    #else
-    @Entry var router: Router = { preconditionFailure("Router not injected — wrap the root in .environment(\\.router, …)") }()
-    #endif
+    /// One shared instance, never a fresh Router per read (gate A-I2) and never a trap: the root's
+    /// `.environment(\.router, …)` reads this default before it writes (see `\.container`).
+    @Entry var router: Router = .shared
 }

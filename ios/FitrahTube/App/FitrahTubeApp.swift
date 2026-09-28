@@ -46,7 +46,7 @@ struct FitrahTubeApp: App {
     // Owned at the app scope, not inside MainShellView, so a deep link that arrives before the
     // shell exists -- e.g. tapped while Onboarding is still showing -- has somewhere to land
     // (RULING 4: held in `pendingRoute`, applied once `Router.shellDidAppear()` runs).
-    @State private var router = Router()
+    @State private var router = Router.shared   // the same instance `\.router` defaults to
 
     @Environment(\.scenePhase) private var scenePhase
     // CF-B4: last time `remoteConfig.refresh()` fired, so returning to the foreground doesn't
