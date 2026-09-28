@@ -280,7 +280,8 @@ class LegalPagesControllerTest {
         String privacy = page("/privacy");
         has(privacy,
                 "<strong>Phone number (optional).</strong> You can leave it out when you set up your profile.",
-                "If you give one, it is stored with your profile.",
+                "If you give one, it is stored with your profile. You can have it removed at any time: "
+                        + "from Profile in the app (version 1.0.1 and later), or by contacting us.",
                 "Used to check that you are at least 13, and kept with your profile until you delete your account.",
                 "Our administrators can see it when they manage accounts.",
                 "It is shown back to you in the app and to our administrators when they manage accounts;");

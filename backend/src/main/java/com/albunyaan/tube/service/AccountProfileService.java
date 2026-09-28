@@ -273,7 +273,8 @@ public class AccountProfileService {
             validateDateOfBirth(body.dateOfBirth());
             enforceAgeOrReject(uid, body.dateOfBirth());
         }
-        if (body.phoneNumber() != null) {
+        // Phone: null = no change; blank = remove (stored as null); else E.164.
+        if (body.phoneNumber() != null && !body.phoneNumber().isBlank()) {
             validatePhoneNumber(body.phoneNumber());
         }
 
@@ -297,9 +298,9 @@ public class AccountProfileService {
             updated.setDateOfBirth(dobTs);
         }
         if (body.phoneNumber() != null) {
-            String trimmed = body.phoneNumber().trim();
-            updates.put("phoneNumber", trimmed);
-            updated.setPhoneNumber(trimmed);
+            String phone = phoneOrNull(body.phoneNumber());
+            updates.put("phoneNumber", phone);
+            updated.setPhoneNumber(phone);
         }
         userRepository.updateFields(uid, updates);
         // Mirror the persisted serverTimestamp on the local response
@@ -323,8 +324,13 @@ public class AccountProfileService {
         boolean dobSame = body.dateOfBirth() == null
                 || body.dateOfBirth().equals(timestampToLocalDate(u.getDateOfBirth()));
         boolean phoneSame = body.phoneNumber() == null
-                || body.phoneNumber().trim().equals(u.getPhoneNumber());
+                || Objects.equals(phoneOrNull(body.phoneNumber()), u.getPhoneNumber());
         return nameSame && dobSame && phoneSame;
+    }
+
+    /** A blank phone in an update means "remove it"; the removal is stored as null. */
+    private static String phoneOrNull(String phoneNumber) {
+        return phoneNumber.isBlank() ? null : phoneNumber.trim();
     }
 
     private LocalDate timestampToLocalDate(Timestamp t) {
@@ -389,10 +395,8 @@ public class AccountProfileService {
         }
     }
 
+    /** Callers map a blank phone to "none" before calling; only a given phone is validated. */
     void validatePhoneNumber(String phoneNumber) {
-        if (phoneNumber == null || phoneNumber.isBlank()) {
-            throw new ProfileValidationException("phoneNumber", "must not be blank");
-        }
         if (!E164_PATTERN.matcher(phoneNumber).matches()) {
             throw new ProfileValidationException("phoneNumber",
                     "must be E.164 format (e.g. +31612345678)");

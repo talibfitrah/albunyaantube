@@ -43,6 +43,7 @@ import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -269,6 +270,39 @@ class AccountControllerTest {
                         .content("{\"displayName\":\"Test User\",\"dateOfBirth\":\"2000-01-01\",\"phoneNumber\":\"0612345678\"}"))
                 .andExpect(status().isBadRequest());
         verify(accountProfileService, never()).completeProfile(any(), any(), any(), any());
+    }
+
+    /** PUT: "" or whitespace reaches the service as-is (it means "remove"); omitted/null = no change. */
+    @Test
+    void putProfileBlankPhoneReachesTheServiceAndNullMeansNoChange() throws Exception {
+        when(accountProfileService.updateProfile(eq(TEST_UID), any()))
+                .thenReturn(com.albunyaan.tube.dto.AccountMeResponse.from(activeUser()));
+
+        for (String phone : java.util.Arrays.asList("", "  ", null)) {
+            String body = phone == null ? "{\"displayName\":\"Test User\"}"
+                    : "{\"phoneNumber\":\"" + phone + "\"}";
+            mockMvc.perform(put("/api/account/profile").contentType(MediaType.APPLICATION_JSON).content(body))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.phoneNumber").value(org.hamcrest.Matchers.nullValue()));
+            verify(accountProfileService).updateProfile(eq(TEST_UID), eq(
+                    new com.albunyaan.tube.dto.UpdateProfileRequest(phone == null ? "Test User" : null, null, phone)));
+        }
+        mockMvc.perform(put("/api/account/profile").contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"phoneNumber\":null}"))
+                .andExpect(status().isOk());
+        verify(accountProfileService).updateProfile(eq(TEST_UID),
+                eq(new com.albunyaan.tube.dto.UpdateProfileRequest(null, null, null)));
+    }
+
+    /** PUT: a phone that is neither blank nor E.164 is still a 400. */
+    @Test
+    void putProfileMalformedPhoneStillReturns400() throws Exception {
+        for (String bad : java.util.List.of("0612345678", " +31612345678", "abc")) {
+            mockMvc.perform(put("/api/account/profile").contentType(MediaType.APPLICATION_JSON)
+                            .content("{\"phoneNumber\":\"" + bad + "\"}"))
+                    .andExpect(status().isBadRequest());
+        }
+        verify(accountProfileService, never()).updateProfile(any(), any());
     }
 
     // ── Test 5: malformed dateOfBirth → 400 (Jackson deserialization) ───────
