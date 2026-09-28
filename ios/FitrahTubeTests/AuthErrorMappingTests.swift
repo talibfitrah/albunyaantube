@@ -28,6 +28,7 @@ private enum FirebaseCode {
     static let userNotFound = 17011           // AuthErrorCode.userNotFound
     static let invalidUserToken = 17017       // AuthErrorCode.invalidUserToken
     static let networkError = 17020           // AuthErrorCode.networkError
+    static let userMismatch = 17024           // AuthErrorCode.userMismatch (12.19.1)
     static let weakPassword = 17026           // AuthErrorCode.weakPassword
 }
 
@@ -48,6 +49,9 @@ private enum FirebaseCode {
             (FirebaseCode.invalidUserToken, .invalidCredential),
             (FirebaseCode.networkError, .network),
             (FirebaseCode.tooManyRequests, .tooManyRequests),
+            // 1.0.1: not Android's, iOS's own — the delete confirmation's Apple leg must tell
+            // "another Apple ID" (fall back) from a transient failure (offer Apple again).
+            (FirebaseCode.userMismatch, .userMismatch),
         ]
         for (raw, expected) in table {
             #expect(AuthErrorCode(firebaseCode: raw) == expected, "\(raw) mapped wrong")
@@ -63,10 +67,11 @@ private enum FirebaseCode {
         #expect(AuthErrorCode(firebaseCode: -1) == .unknown)
     }
 
-    /// Android's 13 codes minus `MICROSOFT_SIGN_IN_FAILED` (spec §3 Out) plus `appleSignInFailed`.
-    /// A 14th case added without a `messageKey` and without a screen is what this catches.
-    @Test func theTableIsThirteenCodes() {
-        #expect(AuthErrorCode.allCases.count == 13)
+    /// Android's 13 codes minus `MICROSOFT_SIGN_IN_FAILED` (spec §3 Out) plus `appleSignInFailed`
+    /// and `userMismatch` (1.0.1, read by `DeleteAccountViewModel`). A 15th case added without a
+    /// `messageKey` and without a reader is what this catches.
+    @Test func theTableIsFourteenCodes() {
+        #expect(AuthErrorCode.allCases.count == 14)
     }
 
     /// Every code an auth screen can render must have copy in all three locales — a missing key

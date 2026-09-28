@@ -121,6 +121,39 @@ class AccountControllerIT extends BaseIntegrationTest {
         assertNull(reloaded.getPhoneNumber());
     }
 
+    /** PUT "phoneNumber":"" removes a saved phone: stored as null, and /me says null. */
+    @Test
+    void updateProfileSetThenRemovePhone() throws Exception {
+        String uid = seedPendingProfileUser("dave@test");
+        stubAuthAs(uid, "user");
+        mvc.perform(post("/api/account/profile")
+                .header("Authorization", "Bearer fake-token")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content("{\"displayName\":\"Dave\",\"dateOfBirth\":\"2000-01-01\"}"))
+            .andExpect(status().isOk());
+
+        mvc.perform(put("/api/account/profile")
+                .header("Authorization", "Bearer fake-token")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"phoneNumber\":\"+31612345678\"}"))
+            .andExpect(status().isOk())
+            .andExpect(jsonPath("$.phoneNumber").value("+31612345678"));
+        assertEquals("+31612345678", userRepository.findByUid(uid).orElseThrow().getPhoneNumber());
+
+        mvc.perform(put("/api/account/profile")
+                .header("Authorization", "Bearer fake-token")
+                .contentType(MediaType.APPLICATION_JSON).content("{\"phoneNumber\":\"\"}"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"phoneNumber\":null")));
+
+        mvc.perform(get("/api/account/me").header("Authorization", "Bearer fake-token"))
+            .andExpect(status().isOk())
+            .andExpect(content().string(org.hamcrest.Matchers.containsString("\"phoneNumber\":null")))
+            .andExpect(jsonPath("$.displayName").value("Dave"));
+        User reloaded = userRepository.findByUid(uid).orElseThrow();
+        assertNull(reloaded.getPhoneNumber());
+        assertEquals("Dave", reloaded.getDisplayName());
+    }
+
     @Test
     void getMeReturnsCallerProfile() throws Exception {
         String uid = seedPendingProfileUser("carol@test");

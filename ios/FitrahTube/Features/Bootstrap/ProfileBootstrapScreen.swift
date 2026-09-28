@@ -17,6 +17,8 @@ struct ProfileBootstrapScreen: View {
 
     @State private var viewModel: ProfileBootstrapViewModel?
     @State private var isPickingDate = false
+    /// Which text field has focus; moving OFF one is what lets its own error show (`leave(_:)`).
+    @FocusState private var focus: BootstrapField?
 
     var body: some View {
         form.task {
@@ -25,6 +27,9 @@ struct ProfileBootstrapScreen: View {
                                                       session: container.session)
             }
             await viewModel?.load()
+        }
+        .onChange(of: focus) { old, _ in
+            if let old { viewModel?.leave(old) }
         }
     }
 
@@ -79,6 +84,7 @@ struct ProfileBootstrapScreen: View {
         // name this field accepts can never be one the gate silently refuses.
         labelled("bootstrap_display_name_label") {
             TextField(String(localized: "bootstrap_display_name_hint"), text: $bindable.displayName)
+                .focused($focus, equals: .name)
                 .textContentType(.name)
                 .autocorrectionDisabled()
                 .fieldChrome(widthClass)
@@ -161,6 +167,7 @@ struct ProfileBootstrapScreen: View {
                 TextField(String(localized: "bootstrap_phone_hint"), text: $bindable.phoneNumber,
                           prompt: Text(verbatim: "31612345678"), axis: .vertical)
                     .lineLimit(1)
+                    .focused($focus, equals: .phone)
                     .textContentType(.telephoneNumber)
                     .keyboardType(.phonePad)
                     .autocorrectionDisabled()
@@ -187,6 +194,7 @@ struct ProfileBootstrapScreen: View {
 
         labelled("bootstrap_password_label") {
             SecureField(String(localized: "bootstrap_password_label"), text: $bindable.password)
+                .focused($focus, equals: .password)
                 .textContentType(.newPassword)
                 .textInputAutocapitalization(.never)
                 .fieldChrome(widthClass)
@@ -196,6 +204,7 @@ struct ProfileBootstrapScreen: View {
 
         labelled("bootstrap_password_confirm_label") {
             SecureField(String(localized: "bootstrap_password_confirm_label"), text: $bindable.passwordConfirm)
+                .focused($focus, equals: .confirm)
                 .textContentType(.newPassword)
                 .textInputAutocapitalization(.never)
                 .fieldChrome(widthClass)
@@ -239,7 +248,7 @@ struct ProfileBootstrapScreen: View {
             .accessibilityIdentifier("bootstrap.signOut")
     }
 
-    /// The shown error when it belongs ON this field — the user touched it (`shownError`).
+    /// The shown error when it belongs ON this field — the user left it (`shownError`).
     @ViewBuilder
     private func fieldError(_ model: ProfileBootstrapViewModel, _ field: BootstrapField) -> some View {
         if let shown = model.shownError, shown.onField, shown.error.field == field {

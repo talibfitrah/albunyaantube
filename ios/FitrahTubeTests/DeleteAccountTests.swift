@@ -702,7 +702,7 @@ struct DeleteAccountTests {
     @Test func anAppleAccountWithAPasswordFallsBackToThePasswordAfterAppleIsRefused() async throws {
         let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: Self.appleSheet())
         let running = try await signedIn(fixture); defer { running.cancel() }
-        fixture.auth.nextError = .unknown   // Firebase's userMismatch
+        fixture.auth.nextError = .userMismatch
 
         await fixture.model.delete()
         #expect(fixture.model.state == .failedReauth(password: false))
@@ -743,7 +743,7 @@ struct DeleteAccountTests {
         let apple = Self.appleSheet()
         let fixture = makeFixture(delete: .json(204, ""), user: Self.appleGoogleUser, apple: apple)
         let running = try await signedIn(fixture); defer { running.cancel() }
-        fixture.auth.nextError = .unknown   // Firebase's userMismatch
+        fixture.auth.nextError = .userMismatch
 
         await fixture.model.delete()
         #expect(fixture.model.state == .failedReauth(password: false))
@@ -777,6 +777,145 @@ struct DeleteAccountTests {
 
         #expect(apple.presentCount == 2)
         #expect(fixture.auth.operations == [.reauthenticateCredential, .reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"), .deleteUser])
+    }
+
+    /// 1.0.1: only a refusal that will REPEAT steps Apple aside — its sheet cannot run here, or it
+    /// answered for another Apple ID. An accidental cancel or a transient failure offers Apple
+    /// again, because only Apple's sheet yields the code the grant is revoked with.
+    @Test func aCancelledAppleSheetOffersAppleAgainNextTime() async throws {
+        let apple = Self.appleSheet()
+        apple.error = .cancelled
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.transport.sent.contains { $0.method == "DELETE" } == false)
+        #expect(fixture.model.requiresPassword == false, "a cancel switched Apple off for every later attempt")
+
+        apple.error = nil
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.auth.operations == [.reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"), .deleteUser])
+    }
+
+    @Test(arguments: [AuthErrorCode.network, .tooManyRequests])
+    func aTransientAppleFailureOffersAppleAgainNextTime(_ transient: AuthErrorCode) async throws {
+        let apple = Self.appleSheet()
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+        fixture.auth.nextError = transient
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.model.requiresPassword == false, "\(transient) switched Apple off for every later attempt")
+
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.auth.operations == [.reauthenticateCredential, .reauthenticateCredential,
+                                            .revokeAppleToken(authorizationCode: "apple-auth-code"), .deleteUser])
+    }
+
+    /// Final rule: a failure that is not a mismatch is retried ONCE. Two in a row — cancels
+    /// included — fall back to the account's next method, so a sheet that keeps failing cannot
+    /// strand an account that has another way in.
+    @Test(arguments: [OAuthSignInFailure.cancelled, .failed(.appleSignInFailed)])
+    func twoAppleFailuresInARowFallBackToThePassword(_ failure: OAuthSignInFailure) async throws {
+        let apple = Self.appleSheet()
+        apple.error = failure
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        #expect(fixture.model.requiresPassword == false, "one \(failure) already gave up on Apple")
+        await fixture.model.delete()
+        #expect(fixture.model.requiresPassword, "two \(failure)s in a row still offered Apple")
+
+        fixture.model.password = "hunter2"
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.auth.operations == [.reauthenticate, .deleteUser])
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// A transient Firebase failure counts the same way as a failed sheet.
+    @Test func twoTransientAppleFailuresInARowFallBackToGoogle() async throws {
+        let apple = Self.appleSheet()
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleGoogleUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        fixture.auth.nextError = .network
+        await fixture.model.delete()
+        fixture.auth.nextError = .network
+        await fixture.model.delete()
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.google.presentCount == 1, "two transient Apple failures still offered Apple")
+        #expect(fixture.transport.sent.last?.method == "DELETE")
+    }
+
+    /// A successful Apple re-auth resets the count: a failure after it is the first again.
+    @Test func aSuccessfulAppleReauthResetsTheFailureCount() async throws {
+        let body = #"{"code":"LAST_ADMIN","message":"last active administrator"}"#
+        let apple = Self.appleSheet()
+        let fixture = makeFixture(delete: .json(409, body), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        apple.error = .cancelled
+        await fixture.model.delete()                 // failure 1
+        apple.error = nil
+        await fixture.model.delete()                 // Apple succeeds; the server refuses the DELETE
+        #expect(fixture.model.state == .failedLastAdmin)
+        apple.error = .cancelled
+        await fixture.model.delete()                 // failure 1 again, not 2
+
+        #expect(fixture.model.requiresPassword == false, "a success did not reset the failure count")
+    }
+
+    /// With Apple as the ONLY method there is nothing to fall back to: it stays the retry.
+    @Test func anAppleOnlyAccountKeepsOfferingAppleAfterRepeatedFailures() async throws {
+        let apple = Self.appleSheet()
+        apple.error = .cancelled
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.appleUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        for _ in 0..<3 { await fixture.model.delete() }
+
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.model.requiresPassword == false)
+        #expect(apple.presentCount == 3)
+    }
+
+    /// Review round: a sheet FAILURE is not "Apple unavailable". `AppleAuthProvider` maps every
+    /// non-cancel `ASAuthorizationError` (and a re-entrant tap, and a missing key window) to
+    /// `.failed(.appleSignInFailed)`, most of them transient, so it keeps Apple as the next attempt.
+    /// Unavailable is `apple.isAvailable == false`, which `reauthMethod` already reads.
+    @Test func aFailedAppleSheetOffersAppleAgainNextTime() async throws {
+        let apple = Self.appleSheet()
+        apple.error = .failed(.appleSignInFailed)
+        let fixture = makeFixture(delete: .json(204, ""), user: Self.applePasswordUser, apple: apple)
+        let running = try await signedIn(fixture); defer { running.cancel() }
+
+        await fixture.model.delete()
+        #expect(fixture.model.state == .failedReauth(password: false))
+        #expect(fixture.model.requiresPassword == false, "one failed sheet switched Apple off for good")
+
+        apple.error = nil
+        await fixture.model.delete()
+        await settle(fixture)
+
+        #expect(apple.presentCount == 2)
+        #expect(fixture.auth.operations == [.reauthenticateCredential,
                                             .revokeAppleToken(authorizationCode: "apple-auth-code"), .deleteUser])
     }
 

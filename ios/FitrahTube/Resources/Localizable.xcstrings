@@ -1278,6 +1278,28 @@
         }
       }
     },
+    "bootstrap_error_confirm_password": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "أكّد كلمة المرور"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Confirm your password"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Bevestig je wachtwoord"
+          }
+        }
+      }
+    },
     "bootstrap_error_invalid_dob": {
       "localizations": {
         "ar": {

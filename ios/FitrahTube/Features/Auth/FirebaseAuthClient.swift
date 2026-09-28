@@ -181,11 +181,9 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 
     /// Stage 9 / P1: `User.reauthenticate(with:)`, NOT `Auth.signIn(with:)` — the same primitive
     /// the password leg above uses, on the same `currentUser`. Firebase raises `userMismatch`
-    /// (17024) when the sheet returned a credential for a DIFFERENT account, which is not in
-    /// `AuthErrorCode(firebaseCode:)`'s table and therefore lands on `.unknown`; `.unknown`'s
-    /// `messageKey` IS `auth_error_generic`, the provider-refusal copy the delete confirmation
-    /// renders, so a new case would be a second code carrying the identical string and no reader.
-    /// With no current user this throws `.unknown` too, through `requireUser()` — the same answer
+    /// (17024) when the sheet returned a credential for a DIFFERENT account — `.userMismatch`
+    /// (1.0.1), whose reader is `DeleteAccountViewModel`'s Apple fallback.
+    /// With no current user this throws `.unknown`, through `requireUser()` — the same answer
     /// `reauthenticate(password:)` gives for it.
     func reauthenticate(with credential: FitrahTube.OAuthCredential) async throws(AuthErrorCode) {
         let firebase = Self.firebaseCredential(credential)

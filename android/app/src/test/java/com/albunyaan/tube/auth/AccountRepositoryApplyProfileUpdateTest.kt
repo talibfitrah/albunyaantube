@@ -165,13 +165,28 @@ class AccountRepositoryApplyProfileUpdateTest {
         assertEquals("+447412345678", loaded.phoneNumber)
     }
 
+    /** A late response for a signed-out account must not overwrite the account signed in now. */
     @Test
-    fun `applyProfileUpdate preserves existing phoneNumber when response has null`() = runTest(dispatcher) {
+    fun `applyProfileUpdate ignores a response for a different account`() = runTest(dispatcher) {
+        whenever(service.getMe()).thenReturn(fakeDto().copy(phoneNumber = "+31612345678"))
+        repository.fetchMe()
+        val before = repository.accountState.value
+        repository.applyProfileUpdate(fakeDto(displayName = "Other").copy(uid = "uid-2", phoneNumber = null))
+        assertEquals(before, repository.accountState.value)
+    }
+
+    /**
+     * The PUT response is the whole account, so a null phone means the account
+     * has no phone (e.g. removed on request) — the Profile screen must fall
+     * back to its unset state, not keep showing the old number.
+     */
+    @Test
+    fun `applyProfileUpdate clears phoneNumber when response has null`() = runTest(dispatcher) {
         whenever(service.getMe()).thenReturn(fakeDto().copy(phoneNumber = "+31612345678"))
         repository.fetchMe()
         val response = fakeDto().copy(phoneNumber = null)
         repository.applyProfileUpdate(response)
         val loaded = repository.accountState.value as AccountState.Loaded
-        assertEquals("+31612345678", loaded.phoneNumber)
+        assertEquals(null, loaded.phoneNumber)
     }
 }

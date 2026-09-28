@@ -176,6 +176,9 @@ class UpdateCheckerTest {
             installSource = mock { on { isPlayStore() } doReturn false }
         )
         checker.apiBaseUrlForTest = server.url("/").toString()
+        // A beta install, so the all-prerelease fixture is eligible. Unpinned, this read
+        // BuildConfig.VERSION_NAME and broke at 1.0.0: a stable build hides prereleases.
+        checker.currentVersionForTest = "1.0.0-beta.10"
         val result = checker.listReleases(limit = 5)
 
         val info = result.getOrThrow()
@@ -217,6 +220,51 @@ class UpdateCheckerTest {
         assertEquals("1.0.0-beta.33", info!!.versionName)
         assertEquals("https://example/33.apk", info.apkUrl)
         server.shutdown()
+    }
+
+    // 1.0.0 dropped the "-beta" suffix: the first stable sideload build must reach every
+    // beta user, and a stable user must never be offered a beta (GitHub prerelease flag).
+    private fun release(tag: String, prerelease: Boolean) =
+        """{"tag_name":"v$tag","name":"$tag","body":"","prerelease":$prerelease,
+           "assets":[{"name":"fitrahtube-$tag.apk","browser_download_url":"https://example/$tag.apk","size":2048,"content_type":"application/vnd.android.package-archive"}]}"""
+
+    private suspend fun offeredTo(installed: String, vararg releases: String): UpdateInfo? {
+        val server = MockWebServer()
+        server.enqueue(MockResponse().setBody(releases.joinToString(",", "[", "]")))
+        server.start()
+        try {
+            val checker = UpdateChecker(
+                okHttpClient = OkHttpClient(),
+                installSource = mock { on { isPlayStore() } doReturn false }
+            )
+            checker.apiBaseUrlForTest = server.url("/").toString()
+            checker.currentVersionForTest = installed
+            return checker.checkForUpdate().getOrThrow()
+        } finally {
+            server.shutdown()
+        }
+    }
+
+    @Test
+    fun `a beta user is offered the first stable release`() = runTest {
+        val info = offeredTo(
+            "1.0.0-beta.45",
+            release("1.0.1", prerelease = false),
+            release("1.0.0-beta.45", prerelease = true),
+            release("1.0.0-beta.44", prerelease = true),
+        )
+        assertEquals("1.0.1", info?.versionName)
+    }
+
+    @Test
+    fun `a stable user is never offered a beta, even a semver-newer one`() = runTest {
+        assertNull(offeredTo(
+            "1.0.1",
+            release("1.1.0-beta.1", prerelease = true),
+            release("1.0.1", prerelease = false),
+            release("1.0.0-beta.45", prerelease = true),
+            release("1.0.0-beta.18", prerelease = false),  // the one beta GitHub has as non-prerelease
+        ))
     }
 
     @Test

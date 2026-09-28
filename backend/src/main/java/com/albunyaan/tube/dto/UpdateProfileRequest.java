@@ -20,10 +20,11 @@ import java.time.LocalDate;
  * the Android client's {@code UpdateProfileRequestDto}.
  *
  * <p>{@code phoneNumber} is an E.164-formatted string (e.g. "+31612345678").
- * Null means "no change"; backend validates the pattern only when non-null.
+ * Null means "no change"; blank ("" or whitespace) removes the saved phone
+ * (stored as null); anything else must match the E.164 pattern.
  */
 public record UpdateProfileRequest(
     @Size(min = 1, max = 40) String displayName,   // null = no change
     LocalDate dateOfBirth,                          // null = no change
-    @Pattern(regexp = "^\\+[1-9]\\d{7,14}$", message = "must be E.164 format") String phoneNumber
+    @Pattern(regexp = "^\\s*$|^\\+[1-9]\\d{7,14}$", message = "must be E.164 format or blank") String phoneNumber
 ) {}

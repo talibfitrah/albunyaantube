@@ -394,6 +394,55 @@ class AccountProfileServiceUpdateProfileTest {
     }
 
     // ------------------------------------------------------------------
+    // Phone: blank ("" or whitespace) removes the saved phone -- stored as null
+    // ------------------------------------------------------------------
+    @Test
+    void updateProfileBlankPhoneRemovesIt() throws Exception {
+        for (String blank : java.util.List.of("", "  ")) {
+            User existing = baseUser("uid-1", "Alice", null);
+            existing.setPhoneNumber("+31612345678");
+            when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+            clearInvocations(userRepository, auditLogService);
+
+            AccountMeResponse resp = svc.updateProfile("uid-1", new UpdateProfileRequest(null, null, blank));
+
+            assertThat(resp.getPhoneNumber()).isNull();
+            @SuppressWarnings("unchecked")
+            ArgumentCaptor<java.util.Map<String, Object>> updates = ArgumentCaptor.forClass(java.util.Map.class);
+            verify(userRepository).updateFields(eq("uid-1"), updates.capture());
+            assertThat(updates.getValue()).containsEntry("phoneNumber", null).hasSize(1);
+            verify(auditLogService).logProfileEdit("uid-1", java.util.Map.of("phoneNumber", "changed"));
+        }
+    }
+
+    /** Removing a phone that is not there is an idempotent no-op (a retried removal). */
+    @Test
+    void updateProfileBlankPhoneWithNoneStoredIsNoOp() throws Exception {
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(baseUser("uid-1", "Alice", null)));
+
+        svc.updateProfile("uid-1", new UpdateProfileRequest(null, null, ""));
+
+        verify(userRepository, never()).updateFields(any(), any());
+        verify(auditLogService, never()).logProfileEdit(any(), any());
+    }
+
+    /** Null phone = no change: a name-only edit leaves the saved phone alone. */
+    @Test
+    void updateProfileNullPhoneKeepsTheSavedOne() throws Exception {
+        User existing = baseUser("uid-1", "Alice", null);
+        existing.setPhoneNumber("+31612345678");
+        when(userRepository.findByUid("uid-1")).thenReturn(Optional.of(existing));
+
+        AccountMeResponse resp = svc.updateProfile("uid-1", new UpdateProfileRequest("Bob", null, null));
+
+        assertThat(resp.getPhoneNumber()).isEqualTo("+31612345678");
+        @SuppressWarnings("unchecked")
+        ArgumentCaptor<java.util.Map<String, Object>> updates = ArgumentCaptor.forClass(java.util.Map.class);
+        verify(userRepository).updateFields(eq("uid-1"), updates.capture());
+        assertThat(updates.getValue()).doesNotContainKey("phoneNumber");
+    }
+
+    // ------------------------------------------------------------------
     // Status gate: PENDING_PROFILE user cannot use the partial-update path
     // ------------------------------------------------------------------
     @Test

@@ -282,8 +282,33 @@ class ProfileBootstrapViewModelTest {
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = false), viewModel.shownError())
 
+        // Still typing in the password field: no error on it, but Continue says why it is off.
         viewModel.onPasswordChanged("short")
+        assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = false), viewModel.shownError())
+        viewModel.onFieldLeft(BootstrapField.PASSWORD)
         assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = true), viewModel.shownError())
+    }
+
+    @Test fun `the password rule stays off the password field on every keystroke until it is left`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        for (typed in listOf("v", "va", "val", "vali")) {
+            viewModel.onPasswordChanged(typed)
+            assertEquals(ShownError(BootstrapError.INVALID_PASSWORD, onField = false), viewModel.shownError())
+        }
+    }
+
+    @Test fun `a valid password with an empty confirmation asks to confirm it, by Continue`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        assertEquals(ShownError(BootstrapError.CONFIRM_PASSWORD, onField = false), viewModel.shownError())
+        assertFalse(viewModel.isFormValid)
+        // Leaving the confirmation empty puts the same ask on its field.
+        viewModel.onFieldLeft(BootstrapField.CONFIRM)
+        assertEquals(ShownError(BootstrapError.CONFIRM_PASSWORD, onField = true), viewModel.shownError())
     }
 
     @Test fun `password mismatch waits until the confirmation is as long as the password`() {
@@ -291,23 +316,48 @@ class ProfileBootstrapViewModelTest {
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         viewModel.setPasswordRequirement(true)
         viewModel.onPasswordChanged("validpass1")
-        // Confirmation not started: the reason goes by Continue so the button isn't silently off.
-        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = false), viewModel.shownError())
 
-        viewModel.onPasswordConfirmChanged("valid")          // still typing
-        assertNull(viewModel.shownError())
-        viewModel.onPasswordConfirmChanged("validpass2")     // same length, different
+        viewModel.onPasswordConfirmChanged("valid")          // a prefix, still typing: not a mismatch yet
+        assertEquals(ShownError(BootstrapError.CONFIRM_PASSWORD, onField = false), viewModel.shownError())
+        viewModel.onPasswordConfirmChanged("validpass2")     // same length, different: by Continue while focused
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = false), viewModel.shownError())
+        viewModel.onFieldLeft(BootstrapField.CONFIRM)
         assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = true), viewModel.shownError())
         viewModel.onPasswordConfirmChanged("validpass1")
         assertNull(viewModel.shownError())
         assertTrue(viewModel.isFormValid)
     }
 
-    @Test fun `a typed but invalid phone is shown on the phone field`() {
+    @Test fun `a confirmation that is not a prefix of the password is a mismatch at once`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        viewModel.onPasswordConfirmChanged("vx")             // shorter, but already wrong
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = false), viewModel.shownError())
+        viewModel.onFieldLeft(BootstrapField.CONFIRM)
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = true), viewModel.shownError())
+    }
+
+    @Test fun `a short confirmation is a mismatch once its field is left`() {
+        viewModel.onDisplayNameChanged("Alice")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.setPasswordRequirement(true)
+        viewModel.onPasswordChanged("validpass1")
+        viewModel.onPasswordConfirmChanged("valid")
+        viewModel.onFieldLeft(BootstrapField.CONFIRM)
+        assertEquals(ShownError(BootstrapError.PASSWORD_MISMATCH, onField = true), viewModel.shownError())
+    }
+
+    @Test fun `a typed but invalid phone goes on the phone field only once the field is left`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
         viewModel.onPhoneCountryChanged("NL")
+        viewModel.onPhoneNumberChanged("1")
+        assertEquals(ShownError(BootstrapError.INVALID_PHONE, onField = false), viewModel.shownError())
         viewModel.onPhoneNumberChanged("12345")
+        assertEquals(ShownError(BootstrapError.INVALID_PHONE, onField = false), viewModel.shownError())
+        viewModel.onFieldLeft(BootstrapField.PHONE)
         assertEquals(ShownError(BootstrapError.INVALID_PHONE, onField = true), viewModel.shownError())
         viewModel.onPhoneNumberChanged("")
         assertNull(viewModel.shownError())

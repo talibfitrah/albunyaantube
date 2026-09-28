@@ -216,3 +216,4 @@ __pycache__/
 
 # Playwright MCP page snapshots and console logs (can contain console/portal IDs)
 .playwright-mcp/
+landing/site/

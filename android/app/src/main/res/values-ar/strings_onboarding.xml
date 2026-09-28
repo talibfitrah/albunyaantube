@@ -35,6 +35,7 @@
     <string name="bootstrap_password_confirm_label">تأكيد كلمة المرور</string>
     <string name="bootstrap_error_invalid_password">يجب أن تتكون كلمة المرور من 8 أحرف على الأقل</string>
     <string name="bootstrap_error_password_mismatch">كلمتا المرور غير متطابقتين</string>
+    <string name="bootstrap_error_confirm_password">أكّد كلمة المرور</string>
     <string name="bootstrap_error_password_set_failed">تعذّر تعيين كلمة المرور — جرّب كلمة أخرى</string>
 
     <!-- Plan C T12: D12 — splash error on failed /me fetch -->

@@ -21,6 +21,9 @@ import Observation
         /// Fields the user has changed. A seed (`load()`) or a write of the same value (a binding
         /// echo) is not a touch (`shownError`).
         var touched: Set<BootstrapField> = []
+        /// Fields the user has LEFT at least once (1.0.1, Android's `onFieldLeft`): for the
+        /// `leaveFirst` fields, only then does the field's own error sit under it.
+        var left: Set<BootstrapField> = []
         /// True when the signed-in account has no password provider: attaching one during bootstrap
         /// is what lets the same email later reach the admin dashboard from a browser
         /// (`ProfileBootstrapViewModel.kt:54-61`). Never for an Apple account — Apple's HIG: "Don't
@@ -87,6 +90,9 @@ import Observation
         set { edit(\.passwordConfirm, newValue, .confirm) }
     }
 
+    /// The screen's focus moved off `field`.
+    func leave(_ field: BootstrapField) { state.left.insert(field) }
+
     /// One text write: a changed value touches its field (`shownError`).
     private func edit(_ keyPath: WritableKeyPath<UiState, String>, _ value: String, _ field: BootstrapField) {
         if state[keyPath: keyPath] != value { state.touched.insert(field) }
@@ -114,16 +120,26 @@ import Observation
     /// What the screen says (Android's `shownError`): a failed submit's reason, else — once the
     /// user has touched anything — what still keeps Continue disabled. Without the second half
     /// every refusal was silent (owner report 2026-09-27): `state.error` is written only by
-    /// `submit()`, which a disabled button never reaches. The error sits ON its field only once
-    /// that field was touched, otherwise by Continue; a mismatch waits until the confirmation is as
-    /// long as the password.
+    /// `submit()`, which a disabled button never reaches. The error sits ON its field once that
+    /// field was touched — or, for a `leaveFirst` field, once it was LEFT (1.0.1: "touched" put the
+    /// password rule there at the first keystroke) — otherwise by Continue. An empty confirmation,
+    /// or one still a prefix of the password while its field is focused, is "confirm your
+    /// password"; any other is a mismatch (Android parity).
     var shownError: ShownError? {
         if let error = state.error { return ShownError(error: error, onField: true) }
         guard !state.touched.isEmpty, let error = firstError() else { return nil }
-        let touched = error.field.map(state.touched.contains) ?? false
-        if error == .passwordMismatch, touched, state.passwordConfirm.count < state.password.count { return nil }
-        return ShownError(error: error, onField: touched)
+        let onField = error.field.map {
+            Self.leaveFirst.contains($0) ? state.left.contains($0) : state.touched.contains($0)
+        } ?? false
+        let confirm = state.passwordConfirm
+        let unfinished = error == .passwordMismatch
+            && (confirm.isEmpty || (!state.left.contains(.confirm) && state.password.hasPrefix(confirm)))
+        return ShownError(error: unfinished ? .confirmPassword : error, onField: onField)
     }
+
+    /// Android's `LEAVE_FIRST`: the typed fields whose own error stays off the field while the user
+    /// is still in it. The name is judged as it is changed; a picked date is a finished answer.
+    private static let leaveFirst: Set<BootstrapField> = [.phone, .password, .confirm]
 
     // MARK: - Lifecycle
 
@@ -272,7 +288,7 @@ extension BootstrapError {
         case .invalidDOB, .underAge: .dob
         case .invalidPhone: .phone
         case .invalidPassword: .password
-        case .passwordMismatch: .confirm
+        case .passwordMismatch, .confirmPassword: .confirm
         case .passwordSetFailed, .saveFailed: nil
         }
     }
@@ -286,6 +302,7 @@ extension BootstrapError {
         case .invalidPhone: "bootstrap_error_invalid_phone"
         case .invalidPassword: "bootstrap_error_invalid_password"
         case .passwordMismatch: "bootstrap_error_password_mismatch"
+        case .confirmPassword: "bootstrap_error_confirm_password"
         case .passwordSetFailed: "bootstrap_error_password_set_failed"
         case .saveFailed: "bootstrap_error_save_failed"
         }
