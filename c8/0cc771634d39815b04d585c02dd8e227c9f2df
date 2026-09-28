@@ -1,0 +1,62 @@
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModel.kt
+  s_974be43fdb0416::t_8d0b13734c57b0 80-81,118,131,143-144,196-199,273-274
+  s_974be43fdb0416::t_5e2c063c616b45 132-134,141-142
+  s_974be43fdb0416::t_888d510827f75e 29,152
+  s_974be43fdb0416::t_9eda217bd66564 275
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_974be43fdb0416::t_8d0b13734c57b0 197-202,260,275-277,298
+android/app/src/main/res/values-nl/strings_onboarding.xml
+  s_974be43fdb0416::t_7616d12bbfff01 38
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_974be43fdb0416::t_41b8861e0d2a36 334-335
+  s_974be43fdb0416::t_5e2c063c616b45 327,330
+android/app/src/main/res/values-ar/strings_onboarding.xml
+  s_974be43fdb0416::t_7616d12bbfff01 38
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryApplyProfileUpdateTest.kt
+  s_974be43fdb0416::t_bc39b112d98d7a 178-184,190
+  s_974be43fdb0416::t_02fe5d42cbaa4e 168,170-177
+android/app/src/test/java/com/albunyaan/tube/data/account/AccountUpdateRepositoryTest.kt
+  s_974be43fdb0416::t_bc39b112d98d7a 59-69
+android/app/src/main/res/layout/bottom_sheet_edit_phone.xml
+  s_974be43fdb0416::t_275989ad7afaec 53-61
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneViewModel.kt
+  s_974be43fdb0416::t_888d510827f75e 55
+  s_974be43fdb0416::t_41b8861e0d2a36 7,37,52-54,56-60,73-76,79
+  s_974be43fdb0416::t_5e2c063c616b45 83
+android/app/src/main/res/values/strings_onboarding.xml
+  s_974be43fdb0416::t_7616d12bbfff01 38
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModelTest.kt
+  s_974be43fdb0416::t_f9c2c968ac1907 285,287-288,292-313,321,340-352,356-357,359-360
+  s_974be43fdb0416::t_02fe5d42cbaa4e 320,322-324,331-339
+android/app/src/main/res/values-ar/strings.xml
+  s_974be43fdb0416::t_7616d12bbfff01 816
+  s_974be43fdb0416::t_5e2c063c616b45 852
+android/app/src/main/res/values-nl/strings.xml
+  s_974be43fdb0416::t_7616d12bbfff01 754
+  s_974be43fdb0416::t_5e2c063c616b45 790
+android/app/src/test/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneViewModelTest.kt
+  s_974be43fdb0416::t_02fe5d42cbaa4e 73,89
+  s_974be43fdb0416::t_bc39b112d98d7a 6-7,14,71-72,74-88,90-113
+android/app/src/main/res/values/strings.xml
+  s_974be43fdb0416::t_7616d12bbfff01 781
+  s_974be43fdb0416::t_5e2c063c616b45 890
+android/app/src/main/java/com/albunyaan/tube/ui/me/profile/edit/EditPhoneBottomSheetFragment.kt
+  s_974be43fdb0416::t_5e2c063c616b45 106-109,111-117
+  s_974be43fdb0416::t_275989ad7afaec 43,82-83,89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c80cc771634d39815b04d585c02dd8e227c9f2df",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
