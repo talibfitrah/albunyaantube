@@ -13,14 +13,13 @@ import javax.inject.Inject
 import javax.inject.Singleton
 
 /**
- * Fetches releases-meta.json from the repo's develop branch and exposes localized
+ * Fetches releases-meta.json from the repo's main branch and exposes localized
  * one-line summaries per release tag. Authoring lives in the repo so the release
  * process is a single git operation; the app reads via raw.githubusercontent.com
  * without depending on a backend.
  *
- * Branch choice: pinned to develop because the project's branching policy keeps
- * main empty until a stable release lands. Once stable releases start cutting
- * into main, switch [META_URL] back to main.
+ * Branch choice: main, where stable releases land (1.0.0 onward); the release
+ * checklist makes the merge to main what publishes a new entry.
  *
  * Failure modes (404, 5xx, timeout, parse error) all degrade to an empty map.
  * Missing locale falls back to "en"; missing version returns null. The picker
@@ -105,14 +104,8 @@ class ReleaseSummaryFetcher @Inject constructor(
          *  beyond what the picker subtitle (maxLines=2) can show (cso S2-1). */
         internal const val MAX_SUMMARY_CHARS = 160
 
-        // Pinned to `develop` because the project branching policy keeps `main`
-        // empty of in-flight work until a stable release lands. releases-meta.json
-        // is authored on develop alongside the versionCode bump; reading from
-        // main would 404 for every beta cut. Switch back to main once stable
-        // releases start landing there (see CLAUDE.md release checklist).
-        //
-        // TODO(ANDROID-VERSIONS-01): flip META_URL back to /main/releases-meta.json
-        // on the first stable release that merges to main.
+        // `main`: stable releases land there and the CLAUDE.md release checklist
+        // makes the merge to main what publishes a releases-meta.json entry.
         //
         // Enforcement: ReleaseSummaryFetcherTest.`stable build must not read meta
         // from develop branch` asserts that a stable VERSION_NAME (no '-' suffix)
@@ -120,7 +113,7 @@ class ReleaseSummaryFetcher @Inject constructor(
         // stable release ships with the develop pin still in place (S1 I2).
         @VisibleForTesting
         internal const val META_URL =
-            "https://raw.githubusercontent.com/talibfitrah/albunyaantube/develop/releases-meta.json"
+            "https://raw.githubusercontent.com/talibfitrah/albunyaantube/main/releases-meta.json"
     }
 }
 
