@@ -211,8 +211,7 @@ public class LegalPagesController {
                       report an age under 13 are refused and immediately deactivated.</li>
                   <li><strong>Phone number (optional).</strong> You can leave it out when you set
                       up your profile. If you give one, it is stored with your profile. You can
-                      have it removed at any time: from Profile in the app (version 1.0.1 and
-                      later), or by contacting us. It is shown
+                      have it removed at any time by contacting us. It is shown
                       back to you in the app and to our administrators
                       when they manage accounts; we do not verify it,
                       send it SMS messages, show it to moderators or use it for anything
