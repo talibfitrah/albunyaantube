@@ -5210,28 +5210,6 @@
         }
       }
     },
-    "edit_phone_removed": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تمت إزالة رقم الجوال."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Phone number removed."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Telefoonnummer verwijderd."
-          }
-        }
-      }
-    },
     "edit_phone_save": {
       "localizations": {
         "ar": {
@@ -13644,28 +13622,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Telefoonnummer"
-          }
-        }
-      }
-    },
-    "profile_phone_remove": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إزالة رقم الجوال"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Remove phone number"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Telefoonnummer verwijderen"
           }
         }
       }

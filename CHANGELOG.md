@@ -5,13 +5,12 @@ stable release.
 
 ## [Unreleased]
 
-Planned 1.0.1. Deploy the backend BEFORE either app goes live (older backends reject the empty phone the Remove action sends).
+## [1.0.1] - 2026-09-28
 
-- Profile: remove a saved phone number (server: an empty phone in `PUT /api/account/profile` removes it; Android and iOS: "Remove phone number" in the edit-phone sheet, confirmed with "Phone number removed.").
-- Sign-up form: a field's error waits until you leave it; the line above Continue always names the blocker; "Confirm your password" while the confirmation is empty or a correct prefix, "Passwords don't match" otherwise.
-- iOS account deletion: Apple re-authentication is retried after a one-off failure and gives way to password/Google after two in a row or a different Apple ID.
+- Sign-up form: a field's error waits until you leave it; the line above Continue always names what is missing; "Confirm your password" while the confirmation is empty or a correct prefix, "Passwords don't match" otherwise.
+- iOS: account deletion retries Apple re-authentication after a one-off failure and gives way to password/Google after two in a row or a different Apple ID.
 - Android: a late profile response for a previous account can no longer overwrite the signed-in account.
-- Privacy policy: the phone number can be removed at any time.
+- Server: an empty phone in `PUT /api/account/profile` removes it (not used by the apps); the privacy policy says the phone can be removed at any time by contacting us.
 
 ## [1.0.0] - 2026-09-27
 

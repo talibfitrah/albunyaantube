@@ -1,4 +1,9 @@
 {
+  "1.0.1": {
+    "en": "Sign-up now tells you exactly what is missing before you can continue.",
+    "ar": "صفحة التسجيل تخبرك الآن بما ينقص بالضبط قبل أن تتابع.",
+    "nl": "Aanmelden vertelt je nu precies wat er nog ontbreekt voordat je verder kunt."
+  },
   "1.0.0": {
     "en": "First stable release. Password-reset and email-change emails now arrive reliably.",
     "ar": "أول إصدار مستقر. رسائل إعادة تعيين كلمة المرور وتغيير البريد الإلكتروني تصل الآن بشكل موثوق.",

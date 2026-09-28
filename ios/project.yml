@@ -25,7 +25,7 @@ settings:
     CODE_SIGN_STYLE: Automatic
     "CODE_SIGNING_ALLOWED[sdk=iphonesimulator*]": NO
     DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)
-    MARKETING_VERSION: "1.0.0"
+    MARKETING_VERSION: "1.0.1"
     CURRENT_PROJECT_VERSION: "1"
     # Phase 6 Task 5: the numeric App Store ID (App Store Connect > App Information > Apple ID).
     # `UpdateRequiredView` hides its Update button while it is empty. Public and identical for
