@@ -1,0 +1,62 @@
+ios/FitrahTubeTests/AuthErrorMappingTests.swift
+  s_974be43fdb0416::t_174b83588e2ca3 31,52-54,70-74
+ios/FitrahTube/Features/Profile/DeleteAccountViewModel.swift
+  s_974be43fdb0416::t_bafb677ba68379 52
+  s_974be43fdb0416::t_7aacd4523fd1cc 44-48,53-55,62,191,194-199
+ios/FitrahTube/Features/Profile/EditPhoneSheet.swift
+  s_974be43fdb0416::t_8f2beccd6fbc87 167,172-178
+  s_974be43fdb0416::t_9e2013f4100367 85-88
+  s_974be43fdb0416::t_6784037cee3cc7 39
+  s_974be43fdb0416::t_1d7c18b43a4e17 38,98,164,170
+  s_974be43fdb0416::t_4a393e23bf188d 65-66,72-74,81-84,89-90,95,165-166,168-169,171,179-180
+  s_974be43fdb0416::t_75fefcbdec8956 67
+ios/FitrahTube/Features/Auth/FirebaseAuthClient.swift
+  s_974be43fdb0416::t_9b16185da6b49d 184-186
+ios/FitrahTubeTests/ProfileViewModelTests.swift
+  s_974be43fdb0416::t_bb8ce47ff94ac3 546-547,577-580,582-590,592,598-614
+  s_974be43fdb0416::t_7c2afee7734376 542,593-597
+  s_974be43fdb0416::t_d0c61024e066a6 581,591
+ios/FitrahTube/Features/Auth/AuthClient.swift
+  s_974be43fdb0416::t_1d7c18b43a4e17 53-55
+  s_974be43fdb0416::t_9b16185da6b49d 56
+  s_974be43fdb0416::t_75fefcbdec8956 29,80
+ios/FitrahTubeTests/ProfileBootstrapViewModelTests.swift
+  s_974be43fdb0416::t_05f92cea3dac17 327-329,337
+  s_974be43fdb0416::t_7c2afee7734376 247-248,292-295,303-305,307-309,338
+  s_974be43fdb0416::t_ac4faa855b2f78 254-256,267-272,276-291,301-302,310-326,330-335
+ios/FitrahTube/Features/Bootstrap/ProfileBootstrapScreen.swift
+  s_974be43fdb0416::t_80cfedec561c6e 20-21,31-33,87,170,197,207,251
+ios/FitrahTubeTests/DeleteAccountTests.swift
+  s_974be43fdb0416::t_7c2afee7734376 899-903,911-918
+  s_974be43fdb0416::t_5a313186e01585 825-898
+  s_974be43fdb0416::t_174b83588e2ca3 705,746,781-824,904-910,919
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_974be43fdb0416::t_1d7c18b43a4e17 5213-5230
+  s_974be43fdb0416::t_553cc2555d4846 1281-1302,5231-5234,13651-13672
+ios/FitrahTube/Features/Bootstrap/BootstrapValidator.swift
+  s_974be43fdb0416::t_75fefcbdec8956 10
+ios/FitrahTube/Features/Bootstrap/ProfileBootstrapViewModel.swift
+  s_974be43fdb0416::t_80cfedec561c6e 26,93-94
+  s_974be43fdb0416::t_1d7c18b43a4e17 24-25,123-124,131-133,137,140-142
+  s_974be43fdb0416::t_75fefcbdec8956 95,291,305
+  s_974be43fdb0416::t_4b428b78406943 125-127,134-136
+  s_974be43fdb0416::t_d93ddd9fbfcc00 143
+CHANGELOG.md
+  s_974be43fdb0416::t_38801cc882dcf7 8-15
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c68add797e438857a49d6a524cc35f591bc86de0",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
