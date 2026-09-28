@@ -1,0 +1,127 @@
+{
+  "meta": {
+    "en": "FitrahTube is a free video app for Muslim families, with no ads, no algorithm feed and only channels our team has approved.",
+    "ar": "FitrahTube تطبيق فيديو مجاني للعائلات المسلمة، بلا إعلانات ولا خوارزميات، ولا يعرض إلا قنوات وافق عليها فريقنا.",
+    "nl": "FitrahTube is een gratis video-app voor moslimgezinnen, zonder reclame en zonder algoritme, met alleen kanalen die ons team heeft goedgekeurd."
+  },
+  "languageLabel": {
+    "en": "Language",
+    "ar": "اللغة",
+    "nl": "Taal"
+  },
+  "eyebrow": {
+    "en": "Free · No ads · Made for Muslim families",
+    "ar": "مجاني · بلا إعلانات · صُمّم للعائلات المسلمة",
+    "nl": "Gratis · Zonder reclame · Voor moslimgezinnen"
+  },
+  "headline1": {
+    "en": "You held their hand through their first salah.",
+    "ar": "أمسكتَ بأيديهم في أول صلاة…",
+    "nl": "Je hield hun hand vast bij hun eerste gebed."
+  },
+  "headline2": {
+    "en": "Who holds it when they're on a screen?",
+    "ar": "فمن يمسك بأيديهم أمام الشاشة؟",
+    "nl": "Wie houdt die vast als ze op een scherm zitten?"
+  },
+  "lede": {
+    "en": "With FitrahTube, it's still a hand you trust: no ads, no algorithm feed, only channels our team has approved. Quran, lessons and entertainment that teaches what you teach.",
+    "ar": "مع FitrahTube تبقى أيديهم في يدٍ أمينة: بلا إعلانات ولا خوارزميات، فقط قنوات وافق عليها فريقنا، فيها القرآن والدروس وترفيه يعلّمهم ما تعلّمهم أنت.",
+    "nl": "Met FitrahTube blijft het een hand die je vertrouwt: geen reclame, geen algoritme, alleen kanalen die ons team heeft goedgekeurd. Koran, lessen en ontspanning die ze leren wat jij ze leert."
+  },
+  "downloadLabel": {
+    "en": "Download FitrahTube",
+    "ar": "تنزيل FitrahTube",
+    "nl": "FitrahTube downloaden"
+  },
+  "comingSoon": {
+    "en": "Coming soon",
+    "ar": "قريباً",
+    "nl": "Binnenkort"
+  },
+  "getItOn": {
+    "en": "Get it on",
+    "ar": "احصل عليه من",
+    "nl": "Ontdek het op"
+  },
+  "downloadOnThe": {
+    "en": "Download on the",
+    "ar": "حمّله من",
+    "nl": "Download in de"
+  },
+  "apk": {
+    "en": "APK",
+    "ar": "APK",
+    "nl": "APK"
+  },
+  "download": {
+    "en": "Download",
+    "ar": "تنزيل",
+    "nl": "Download"
+  },
+  "samsungTv": {
+    "en": "Samsung TV",
+    "ar": "تلفاز Samsung",
+    "nl": "Samsung TV"
+  },
+  "lgTv": {
+    "en": "LG TV",
+    "ar": "تلفاز LG",
+    "nl": "LG TV"
+  },
+  "desktop": {
+    "en": "Desktop",
+    "ar": "الحاسوب",
+    "nl": "Computer"
+  },
+  "directDownload": {
+    "en": "Direct download",
+    "ar": "تنزيل مباشر",
+    "nl": "Directe download"
+  },
+  "apkNote": {
+    "en": "The APK is for Android devices outside the Play Store.",
+    "ar": "ملف APK مخصّص لأجهزة Android التي لا تستخدم متجر Play.",
+    "nl": "De APK is voor Android-apparaten zonder Play Store."
+  },
+  "featuresLabel": {
+    "en": "Features",
+    "ar": "المزايا",
+    "nl": "Functies"
+  },
+  "featureSignIn": {
+    "en": "Sign in with email, Google or Apple",
+    "ar": "تسجيل الدخول بالبريد الإلكتروني أو Google أو Apple",
+    "nl": "Inloggen met e-mail, Google of Apple"
+  },
+  "featureSync": {
+    "en": "Favourites and subscriptions sync across devices",
+    "ar": "مزامنة المفضلة والاشتراكات بين أجهزتك",
+    "nl": "Favorieten en abonnementen op al je apparaten"
+  },
+  "featureOffline": {
+    "en": "Save for offline",
+    "ar": "الحفظ دون اتصال",
+    "nl": "Offline opslaan"
+  },
+  "featureAudioOnly": {
+    "en": "Audio-only listening",
+    "ar": "الاستماع بالصوت فقط",
+    "nl": "Alleen audio"
+  },
+  "featureCasting": {
+    "en": "Chromecast and AirPlay",
+    "ar": "البث عبر Chromecast و AirPlay",
+    "nl": "Chromecast en AirPlay"
+  },
+  "featureLanguages": {
+    "en": "English, العربية, Nederlands",
+    "ar": "العربية والإنجليزية والهولندية",
+    "nl": "Nederlands, Engels en Arabisch"
+  },
+  "homeScreenAlt": {
+    "en": "FitrahTube's Home screen on iPhone, showing featured channels and the Qur'an and its sciences category.",
+    "ar": "الشاشة الرئيسية لتطبيق FitrahTube على iPhone، وتظهر فيها القنوات المميزة وقسم القرآن الكريم.",
+    "nl": "Het startscherm van FitrahTube op iPhone, met uitgelichte kanalen en de categorie De Qur’an en zijn wetenschappen."
+  }
+}

@@ -1,0 +1,485 @@
+<title>{{TITLE}}</title>
+<script>
+/* Download destinations. null shows "Coming soon"; paste a URL to make that button live. */
+const LINKS = {
+  googlePlay: "https://play.google.com/store/apps/details?id=com.albunyaan.tube.play",
+  appStore:   null,
+  androidTv:  "https://github.com/talibfitrah/albunyaantube/releases/latest",
+  samsungTv:  null,
+  lgTv:       null,
+  desktop:    null,
+  apk:        "https://github.com/talibfitrah/albunyaantube/releases/latest",
+};
+/* Every visible string, alt text, aria-label and the meta description, keyed by id, then language.
+   Static fallback text in the markup is filled from the "en" values by build.py. */
+const STRINGS = {{STRINGS}};
+/* Language: a bare #en / #ar / #nl hash wins, then a remembered choice, then the browser's languages. */
+const LANGS = ["en", "ar", "nl"];
+const LANG_KEY = "fitrahtube-lang";
+function pickLang() {
+  const hash = location.hash.slice(1).toLowerCase();
+  if (LANGS.includes(hash)) return hash;
+  try { const saved = localStorage.getItem(LANG_KEY); if (LANGS.includes(saved)) return saved; } catch (e) {}
+  for (const tag of navigator.languages || [navigator.language || ""]) {
+    const base = String(tag).toLowerCase().slice(0, 2);
+    if (LANGS.includes(base)) return base;
+  }
+  return "en";
+}
+document.documentElement.lang = pickLang();
+document.documentElement.dir = document.documentElement.lang === "ar" ? "rtl" : "ltr";
+</script>
+{{META}}
+<style>
+:root {
+  --bg: #EFF4F2;
+  --bg-deep: #E3E9E7;
+  --ink: #1A1A1A;
+  --ink-2: #4F5B55;
+  --accent: #275E4B;
+  --on-accent: #FFFFFF;
+  --glow: rgba(53, 196, 145, .30);
+  --z-line: rgba(39, 94, 75, .13);
+  --z-glaze: rgba(39, 94, 75, .045);
+  --surface: #FFFFFF;
+  --soon-line: rgba(39, 94, 75, .24);
+  --tag: #E8F5F0;
+  --frame: #1D2622;
+  --focus: #275E4B;
+  --shadow: rgba(15, 21, 18, .28);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --bg: #0F1512;
+    --bg-deep: #0A0F0D;
+    --ink: #F1F5F9;
+    --ink-2: #9CB3A7;
+    --accent: #35C491;
+    --on-accent: #0A1F18;
+    --glow: rgba(53, 196, 145, .34);
+    --z-line: rgba(156, 179, 167, .10);
+    --z-glaze: rgba(53, 196, 145, .05);
+    --surface: #1A231F;
+    --soon-line: rgba(156, 179, 167, .24);
+    --tag: #12352B;
+    --frame: #27322D;
+    --focus: #35C491;
+    --shadow: rgba(0, 0, 0, .6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --bg: #0F1512;
+  --bg-deep: #0A0F0D;
+  --ink: #F1F5F9;
+  --ink-2: #9CB3A7;
+  --accent: #35C491;
+  --on-accent: #0A1F18;
+  --glow: rgba(53, 196, 145, .34);
+  --z-line: rgba(156, 179, 167, .10);
+  --z-glaze: rgba(53, 196, 145, .05);
+  --surface: #1A231F;
+  --soon-line: rgba(156, 179, 167, .24);
+  --tag: #12352B;
+  --frame: #27322D;
+  --focus: #35C491;
+  --shadow: rgba(0, 0, 0, .6);
+  color-scheme: dark;
+}
+
+html, body { height: 100%; }
+html { box-sizing: border-box; }
+*, *::before, *::after { box-sizing: inherit; }
+body {
+  margin: 0;
+  background: var(--bg);
+  color: var(--ink);
+  font-family: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  -webkit-font-smoothing: antialiased;
+}
+img { max-width: 100%; }
+.sprite { position: absolute; width: 0; height: 0; overflow: hidden; }
+
+.page {
+  position: relative;
+  isolation: isolate;
+  height: 100%;
+  display: grid;
+  grid-template-rows: auto auto minmax(0, 1fr);
+  justify-items: center;
+  padding-inline: 16px;
+  padding-block-start: clamp(14px, 3.2vh, 40px);
+  background:
+    radial-gradient(ellipse 42% 58% at 50% 88%, var(--glow), transparent 72%),
+    radial-gradient(120% 70% at 50% 120%, var(--bg-deep), transparent 70%),
+    var(--bg);
+}
+/* Zellige drawn as grout lines only, at the strength of a quiet grid, with a faint glaze on the stars
+   (geometry from zellige.py). It frames the page and fades out behind the headline and downloads. */
+.zellige {
+  position: absolute; inset: 0; z-index: -1;
+  width: 100%; height: 100%;
+  -webkit-mask-image: radial-gradient(ellipse 64% 60% at 50% 40%, transparent 40%, rgba(0, 0, 0, .4) 72%, #000 100%);
+          mask-image: radial-gradient(ellipse 64% 60% at 50% 40%, transparent 40%, rgba(0, 0, 0, .4) 72%, #000 100%);
+}
+.zellige path { fill: none; stroke: var(--z-line); stroke-width: 1; stroke-linejoin: round; }
+.zellige .z-star { fill: var(--z-glaze); }
+
+/* Top row: brand in the centre, language switcher at the end */
+.bar { width: 100%; display: grid; grid-template-columns: 1fr auto 1fr; align-items: center; }
+.brand { grid-column: 2; display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 19px; letter-spacing: -.01em; }
+.brand img { width: 34px; height: 34px; }
+.lang {
+  grid-column: 3; justify-self: end; display: flex; align-items: center; font-size: 13px;
+  padding: 3px; border: 1px solid var(--soon-line); border-radius: 999px; background: var(--surface);
+}
+.lang button {
+  font: inherit; font-weight: 600; color: var(--ink-2);
+  min-height: 34px; padding-inline: 9px; border: 0; border-radius: 999px;
+  background: none; cursor: pointer;
+}
+.lang button:hover { color: var(--ink); }
+.lang button[aria-pressed="true"] { color: var(--accent); background: var(--tag); }
+.lang button:focus-visible { outline: 3px solid var(--focus); outline-offset: 2px; }
+.lang .sep { color: var(--ink-2); opacity: .55; }
+
+.hero {
+  display: flex; flex-direction: column; align-items: center; text-align: center;
+  gap: clamp(10px, 1.9vh, 22px);
+  width: 100%; max-width: 1240px;
+  padding-block-start: clamp(14px, 4.6vh, 64px);
+}
+.eyebrow {
+  margin: 0;
+  font-size: 12px; font-weight: 650; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--accent);
+  text-wrap: balance;
+}
+h1 {
+  margin: 0;
+  font-size: clamp(26px, min(3.7vw, 5.6vh), 64px);
+  line-height: 1.08; letter-spacing: -.03em; font-weight: 750;
+}
+/* Two sentences, one per line on wide screens; the question carries the emphasis */
+h1 span { display: block; text-wrap: balance; }
+.h1a { font-weight: 600; }
+.h1b { color: var(--accent); }
+.lede {
+  margin: 0; max-width: 60ch;
+  font-size: clamp(15px, min(1.45vw, 2.1vh), 21px);
+  line-height: 1.5; color: var(--ink-2);
+  text-wrap: pretty;
+}
+
+/* Downloads */
+.dl { display: grid; justify-items: center; gap: 10px; width: 100%; margin-block-start: clamp(2px, 1.2vh, 14px); }
+.dl-items { display: grid; justify-items: center; gap: 10px; width: 100%; }
+.stores, .more { display: flex; flex-wrap: wrap; justify-content: center; }
+.stores { gap: 12px; }
+.more { gap: 8px; }
+a { color: inherit; text-decoration: none; -webkit-tap-highlight-color: transparent; }
+.store, .chip { display: flex; align-items: center; border: 1px solid var(--soon-line); background: var(--surface); text-align: start; }
+.ico { flex: none; color: var(--accent); }
+.txt { display: flex; min-width: 0; }
+.tag { display: flex; align-items: center; gap: 4px; white-space: nowrap; color: var(--ink-2); }
+.txt b { white-space: nowrap; }
+.go { display: none; width: 15px; height: 15px; flex: none; }
+.is-live .go { display: block; }
+
+/* Wide: two store pills, then a row of platform chips */
+.store { gap: 12px; min-width: 200px; padding-block: 9px; padding-inline: 16px 22px; border-radius: 999px; }
+.store .ico { width: 26px; height: 26px; }
+.store .txt { flex-direction: column; }
+.store .tag { font-size: 11.5px; line-height: 1.3; letter-spacing: .02em; }
+.store b { font-size: 18px; line-height: 1.2; font-weight: 650; letter-spacing: -.01em; }
+.store.is-live { background: var(--accent); border-color: var(--accent); color: var(--on-accent); }
+.store.is-live .ico, .store.is-live .tag { color: var(--on-accent); }
+.store .go { display: none; }
+
+.chip { gap: 9px; height: 42px; padding-inline: 13px 7px; border-radius: 999px; }
+.chip .ico { width: 19px; height: 19px; color: var(--ink-2); }
+.chip .txt { flex-direction: row-reverse; align-items: center; gap: 10px; }
+.chip b { font-size: 14.5px; font-weight: 600; }
+.chip .tag { font-size: 12px; font-weight: 600; line-height: 1; padding: 6px 9px; border-radius: 999px; }
+.chip.is-live { background: var(--surface); border-color: var(--accent); }
+.chip.is-live .ico { color: var(--accent); }
+.chip.is-live .tag { background: var(--accent); color: var(--on-accent); }
+.note { margin: 0; font-size: 12.5px; color: var(--ink-2); }
+
+.is-live { transition: box-shadow .15s ease; }
+.is-live:hover { box-shadow: 0 6px 22px -6px var(--glow); }
+.is-live:focus-visible { outline: 3px solid var(--focus); outline-offset: 3px; box-shadow: 0 0 0 8px var(--glow); }
+
+/* Compact: all seven become one grid of uniform two-line tiles */
+@media (max-width: 1179px), (max-height: 560px) {
+  .dl-items { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 8px; max-width: 900px; justify-items: stretch; }
+  .stores, .more { display: contents; }
+  .store, .chip { min-width: 0; height: auto; gap: 10px; padding: 8px 12px; border-radius: 16px; }
+  .store .ico, .chip .ico { width: 22px; height: 22px; color: var(--accent); }
+  .chip .txt { flex-direction: column; align-items: flex-start; gap: 0; }
+  .store .tag, .chip .tag { padding: 0; background: none !important; font-size: 11.5px; font-weight: 500; line-height: 1.35; letter-spacing: 0; }
+  .store b, .chip b { font-size: 15px; line-height: 1.25; font-weight: 650; }
+  .store.is-live, .chip.is-live { background: var(--surface); border-color: var(--accent); color: var(--ink); }
+  .store.is-live .tag, .chip.is-live .tag { color: var(--accent); }
+  .chip .go { width: 13px; height: 13px; }
+  .more .chip:last-child { grid-column: span 2; }
+}
+@media (max-width: 599px) {
+  .dl-items { grid-template-columns: repeat(2, minmax(0, 1fr)); max-width: 440px; }
+  /* Text runs edge to edge on phones: keep the tiles to the top and bottom bands */
+  .zellige {
+    -webkit-mask-image: radial-gradient(ellipse 110% 42% at 50% 44%, transparent 58%, rgba(0, 0, 0, .4) 82%, #000 100%);
+            mask-image: radial-gradient(ellipse 110% 42% at 50% 44%, transparent 58%, rgba(0, 0, 0, .4) 82%, #000 100%);
+  }
+}
+
+/* Stage: phone rising from the bottom edge */
+.stage {
+  position: relative; width: 100%;
+  container-type: size;
+  overflow: hidden;
+  margin-block-start: clamp(14px, 3.4vh, 44px);
+}
+.phone {
+  --w: min(33vh, 72vw, 420px);
+  width: var(--w);
+  margin-inline: auto;
+  padding: calc(var(--w) * .034);
+  border-radius: calc(var(--w) * .17);
+  background: var(--frame);
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, .08), 0 40px 90px -30px var(--shadow);
+  position: relative;
+}
+.phone::before {
+  content: ""; position: absolute; z-index: 1;
+  top: calc(var(--w) * .062); left: 50%; translate: -50% 0;
+  width: 28%; height: calc(var(--w) * .085);
+  border-radius: 999px; background: #000;
+}
+.phone img { display: block; width: 100%; height: auto; border-radius: calc(var(--w) * .14); }
+
+.ticker {
+  position: absolute; inset-inline: 0; bottom: 0;
+  padding-block: 34px 16px;
+  background: linear-gradient(to top, var(--bg) 58%, transparent);
+  overflow: hidden;
+  -webkit-mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+          mask-image: linear-gradient(90deg, transparent, #000 14%, #000 86%, transparent);
+}
+.track { display: flex; width: max-content; animation: slide 70s linear infinite; }
+.track ul { display: flex; align-items: center; margin: 0; padding: 0; list-style: none; }
+.track li { display: flex; align-items: center; gap: 28px; padding-inline-end: 28px; font-size: 14px; color: var(--ink-2); white-space: nowrap; }
+.track li::after { content: ""; width: 9px; height: 9px; background: var(--accent); opacity: .7; clip-path: polygon(50% 0, 64% 21%, 85% 15%, 79% 36%, 100% 50%, 79% 64%, 85% 85%, 64% 79%, 50% 100%, 36% 79%, 15% 85%, 21% 64%, 0 50%, 21% 36%, 15% 15%, 36% 21%); }
+@keyframes slide { to { transform: translateX(-50%); } }
+/* Right to left: the strip starts at the right edge, so it travels the other way */
+[dir="rtl"] .track { animation-name: slide-rtl; }
+@keyframes slide-rtl { to { transform: translateX(50%); } }
+
+@container (max-height: 110px) { .phone { display: none; } }
+@container (max-height: 280px) { .ticker { display: none; } }
+
+/* Arabic: no tracking (it breaks joined letters) and taller lines for the script */
+:lang(ar) h1 { letter-spacing: 0; line-height: 1.24; }
+:lang(ar) .eyebrow { letter-spacing: 0; font-size: 14px; }
+:lang(ar) .store b, :lang(ar) .store .tag, :lang(ar) .brand { letter-spacing: 0; }
+:lang(ar) .lede { line-height: 1.6; }
+
+@media (max-width: 599px) {
+  h1 { font-size: clamp(22px, 6.3vw, 28px); }
+  .eyebrow { font-size: 11px; letter-spacing: .12em; }
+  :lang(ar) .eyebrow { font-size: 13px; letter-spacing: 0; }
+  .bar { grid-template-columns: auto 1fr auto; }
+  .brand { grid-column: 1; }
+}
+/* Short screens (landscape phones) */
+@media (max-height: 560px) {
+  .page { padding-block-start: 10px; }
+  .brand { font-size: 16px; }
+  .brand img { width: 26px; height: 26px; }
+  .hero { padding-block-start: 8px; gap: 8px; }
+  .eyebrow { display: none; }
+  .lede { max-width: 76ch; font-size: 14.5px; line-height: 1.42; }
+  .dl { gap: 8px; margin-block-start: 2px; }
+  .store, .chip { padding-block: 6px; }
+  .stage { margin-block-start: 8px; }
+}
+/* TV and large desktop screens */
+@media (min-width: 1600px) and (min-height: 900px) {
+  .brand { font-size: 23px; }
+  .brand img { width: 42px; height: 42px; }
+  .lang { font-size: 16px; }
+  .lang button { min-height: 44px; padding-inline: 12px; }
+  .eyebrow { font-size: 14px; }
+  :lang(ar) .eyebrow { font-size: 17px; }
+  .hero { max-width: 1500px; }
+  .store { min-width: 240px; padding-block: 12px; }
+  .store b { font-size: 21px; }
+  .store .tag { font-size: 13px; }
+  .chip { height: 52px; padding-inline: 17px 9px; }
+  .chip b { font-size: 17px; }
+  .chip .ico { width: 22px; height: 22px; }
+  .chip .tag { font-size: 14px; padding: 8px 11px; }
+  .note { font-size: 15px; }
+  .track li { font-size: 16px; }
+  .is-live:focus-visible, .lang button:focus-visible { outline-width: 4px; outline-offset: 4px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .track { animation: none; }
+  .is-live { transition: none; }
+}
+</style>
+<!--BODY-->
+<svg class="sprite" aria-hidden="true" focusable="false">
+  <symbol id="i-gplay" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.7" stroke-linejoin="round" stroke-linecap="round"><path d="M5.3 3.2 19.3 11.3a.8.8 0 0 1 0 1.4L5.3 20.8a.8.8 0 0 1-1.2-.7V3.9a.8.8 0 0 1 1.2-.7Z"/><path d="M4.6 3.6 13.1 12l-8.5 8.4M13.1 12l3.2-2.8M13.1 12l3.2 2.8"/></g></symbol>
+  <symbol id="i-apple" viewBox="0 0 24 24"><path fill="currentColor" d="M12 7.3c-1.2-.9-2.8-1.1-4.1-.4C5.9 8 5 10.6 5.5 13.4c.5 2.8 2.1 5.8 3.7 6.9.8.5 1.6.3 2.2 0 .4-.2.8-.2 1.2 0 .6.3 1.4.5 2.2 0 1.2-.8 2.6-2.8 3.3-4.7-1.5-.7-2.4-2.1-2.3-3.6.1-1.2.8-2.2 1.8-2.8-.8-1.3-2.2-2.1-3.7-2.1-.7 0-1.3.1-1.9.2Zm.1-1.1c-.1-1.6 1.1-3.1 2.7-3.3.2 1.6-1.1 3.2-2.7 3.3Z"/></symbol>
+  <symbol id="i-tv" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="2.5" y="4.5" width="19" height="12.5" rx="2"/><path d="M8.5 20.5h7"/></g></symbol>
+  <symbol id="i-laptop" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><rect x="4.5" y="5" width="15" height="10.5" rx="1.5"/><path d="M2.5 18.8h19"/></g></symbol>
+  <symbol id="i-android" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round"><path d="M3 17.5a9 9 0 0 1 18 0Z"/><path d="M7.5 9.7 5.8 6.9M16.5 9.7l1.7-2.8"/></g><circle cx="8.8" cy="14" r="1.1" fill="currentColor"/><circle cx="15.2" cy="14" r="1.1" fill="currentColor"/></symbol>
+  <symbol id="i-download" viewBox="0 0 24 24"><g fill="none" stroke="currentColor" stroke-width="2.2" stroke-linecap="round" stroke-linejoin="round"><path d="M12 4v11M7.5 10.5 12 15l4.5-4.5M5 19.5h14"/></g></symbol>
+</svg>
+
+<div class="page">
+  <svg class="zellige" aria-hidden="true" focusable="false">
+    <defs>
+      <pattern id="zellige" width="96.00" height="96.00" patternUnits="userSpaceOnUse" x="50%">
+        <path class="z-star" d="M19.20 0L13.58 5.62L13.58 13.58L5.62 13.58L0 19.20L-5.62 13.58L-13.58 13.58L-13.58 5.62L-19.20 0L-13.58 -5.62L-13.58 -13.58L-5.62 -13.58L-0 -19.20L5.62 -13.58L13.58 -13.58L13.58 -5.62ZM19.20 96L13.58 101.62L13.58 109.58L5.62 109.58L0 115.20L-5.62 109.58L-13.58 109.58L-13.58 101.62L-19.20 96L-13.58 90.38L-13.58 82.42L-5.62 82.42L-0 76.80L5.62 82.42L13.58 82.42L13.58 90.38ZM115.20 0L109.58 5.62L109.58 13.58L101.62 13.58L96 19.20L90.38 13.58L82.42 13.58L82.42 5.62L76.80 0L82.42 -5.62L82.42 -13.58L90.38 -13.58L96 -19.20L101.62 -13.58L109.58 -13.58L109.58 -5.62ZM115.20 96L109.58 101.62L109.58 109.58L101.62 109.58L96 115.20L90.38 109.58L82.42 109.58L82.42 101.62L76.80 96L82.42 90.38L82.42 82.42L90.38 82.42L96 76.80L101.62 82.42L109.58 82.42L109.58 90.38Z"/>
+        <path class="z-line" d="M19.20 0H76.80M19.20 96H76.80M0 19.20V76.80M96 19.20V76.80"/>
+      </pattern>
+    </defs>
+    <rect width="100%" height="100%" fill="url(#zellige)"/>
+  </svg>
+
+  <div class="bar">
+    <div class="brand">
+      <img src="img/logo.png" alt="" width="34" height="34">
+      <span translate="no">FitrahTube</span>
+    </div>
+    <div class="lang" role="group" aria-label="{{t:languageLabel}}" data-t-aria="languageLabel">
+      <button type="button" id="lang-en" data-lang="en" lang="en" aria-label="English" aria-pressed="true">EN</button>
+      <span class="sep" aria-hidden="true">·</span>
+      <button type="button" id="lang-ar" data-lang="ar" lang="ar" dir="rtl" aria-pressed="false">العربية</button>
+      <span class="sep" aria-hidden="true">·</span>
+      <button type="button" id="lang-nl" data-lang="nl" lang="nl" aria-label="Nederlands" aria-pressed="false">NL</button>
+    </div>
+  </div>
+
+  <main class="hero">
+    <p class="eyebrow" data-t="eyebrow">{{t:eyebrow}}</p>
+    <h1><span class="h1a" data-t="headline1">{{t:headline1}}</span> <span class="h1b" data-t="headline2">{{t:headline2}}</span></h1>
+    <p class="lede" data-t="lede">{{t:lede}}</p>
+
+    <section class="dl" aria-label="{{t:downloadLabel}}" data-t-aria="downloadLabel">
+      <div class="dl-items">
+      <div class="stores">
+        <a class="store" data-dl="googlePlay" data-live="getItOn">
+          <svg class="ico" aria-hidden="true"><use href="#i-gplay"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:comingSoon}}</span></small><b>Google Play</b></span>
+        </a>
+        <a class="store" data-dl="appStore" data-live="downloadOnThe">
+          <svg class="ico" aria-hidden="true"><use href="#i-apple"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:comingSoon}}</span></small><b>App Store</b></span>
+        </a>
+      </div>
+      <div class="more">
+        <a class="chip" data-dl="androidTv" data-live="apk">
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:apk}}</span></small><b>Android TV</b></span>
+        </a>
+        <a class="chip" data-dl="samsungTv" data-live="download">
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:comingSoon}}</span></small><b data-t="samsungTv">{{t:samsungTv}}</b></span>
+        </a>
+        <a class="chip" data-dl="lgTv" data-live="download">
+          <svg class="ico" aria-hidden="true"><use href="#i-tv"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:comingSoon}}</span></small><b data-t="lgTv">{{t:lgTv}}</b></span>
+        </a>
+        <a class="chip" data-dl="desktop" data-live="download">
+          <svg class="ico" aria-hidden="true"><use href="#i-laptop"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:comingSoon}}</span></small><b data-t="desktop">{{t:desktop}}</b></span>
+        </a>
+        <a class="chip" data-dl="apk" data-live="apk">
+          <svg class="ico" aria-hidden="true"><use href="#i-android"/></svg>
+          <span class="txt"><small class="tag"><svg class="go" aria-hidden="true"><use href="#i-download"/></svg><span class="dl-text">{{t:apk}}</span></small><b data-t="directDownload">{{t:directDownload}}</b></span>
+        </a>
+      </div>
+      </div>
+      <p class="note" data-t="apkNote">{{t:apkNote}}</p>
+    </section>
+  </main>
+
+  <div class="stage">
+    <div class="phone">
+      <img src="img/home-en.jpg" alt="{{t:homeScreenAlt}}" width="552" height="1200">
+    </div>
+    <div class="ticker">
+      <div class="track">
+        <ul aria-label="{{t:featuresLabel}}" data-t-aria="featuresLabel">
+          <li><span data-t="featureSignIn">{{t:featureSignIn}}</span></li>
+          <li><span data-t="featureSync">{{t:featureSync}}</span></li>
+          <li><span data-t="featureOffline">{{t:featureOffline}}</span></li>
+          <li><span data-t="featureAudioOnly">{{t:featureAudioOnly}}</span></li>
+          <li><span data-t="featureCasting">{{t:featureCasting}}</span></li>
+          <li><span data-t="featureLanguages">{{t:featureLanguages}}</span></li>
+        </ul>
+        <ul aria-hidden="true">
+          <li><span data-t="featureSignIn">{{t:featureSignIn}}</span></li>
+          <li><span data-t="featureSync">{{t:featureSync}}</span></li>
+          <li><span data-t="featureOffline">{{t:featureOffline}}</span></li>
+          <li><span data-t="featureAudioOnly">{{t:featureAudioOnly}}</span></li>
+          <li><span data-t="featureCasting">{{t:featureCasting}}</span></li>
+          <li><span data-t="featureLanguages">{{t:featureLanguages}}</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+const HOME_SCREEN = { en: "img/home-en.jpg", ar: "img/home-ar.jpg", nl: "img/home-nl.jpg" };
+
+function applyLang(lang) {
+  const t = (id) => STRINGS[id][lang];
+  const root = document.documentElement;
+  root.lang = lang;
+  root.dir = lang === "ar" ? "rtl" : "ltr";
+  document.querySelectorAll("[data-t]").forEach((el) => { el.textContent = t(el.dataset.t); });
+  document.querySelectorAll("[data-t-aria]").forEach((el) => { el.setAttribute("aria-label", t(el.dataset.tAria)); });
+  const meta = document.querySelector('meta[name="description"]');
+  if (meta) meta.content = t("meta");
+  const shot = document.querySelector(".phone img");
+  shot.src = HOME_SCREEN[lang];
+  shot.alt = t("homeScreenAlt");
+  /* LINKS: live items become real links; the rest read "Coming soon". */
+  document.querySelectorAll("[data-dl]").forEach((el) => {
+    const url = LINKS[el.dataset.dl];
+    el.classList.toggle("is-live", Boolean(url));
+    if (url) el.href = url; else el.removeAttribute("href");
+    el.querySelector(".dl-text").textContent = t(url ? el.dataset.live : "comingSoon");
+  });
+  document.querySelectorAll(".lang button").forEach((b) => b.setAttribute("aria-pressed", String(b.dataset.lang === lang)));
+}
+applyLang(document.documentElement.lang);
+
+/* A manual choice is remembered and written to the hash, so the link can be shared. */
+document.querySelectorAll(".lang button").forEach((b) => b.addEventListener("click", () => {
+  const lang = b.dataset.lang;
+  try { localStorage.setItem(LANG_KEY, lang); } catch (e) {}
+  try { history.replaceState(null, "", "#" + lang); } catch (e) {}
+  applyLang(lang);
+}));
+addEventListener("hashchange", () => {
+  const hash = location.hash.slice(1).toLowerCase();
+  if (LANGS.includes(hash)) applyLang(hash);
+});
+/* TV remotes: arrow keys step through the language buttons and the live download links. */
+addEventListener("keydown", (e) => {
+  let step = { ArrowRight: 1, ArrowDown: 1, ArrowLeft: -1, ArrowUp: -1 }[e.key];
+  if (!step || e.altKey || e.metaKey || e.ctrlKey || e.shiftKey) return;   // keep Back and other shortcuts
+  if (document.documentElement.dir === "rtl" && (e.key === "ArrowLeft" || e.key === "ArrowRight")) step = -step;
+  const stops = [...document.querySelectorAll(".lang button, a[href]")];
+  const i = stops.indexOf(document.activeElement);
+  stops[i < 0 ? 0 : (i + step + stops.length) % stops.length].focus();
+  e.preventDefault();
+});
+</script>
