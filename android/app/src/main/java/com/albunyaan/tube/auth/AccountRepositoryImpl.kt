@@ -331,7 +331,7 @@ class AccountRepositoryImpl(
                     current.copy(
                         displayName = response.displayName ?: current.displayName,
                         dateOfBirth = response.dateOfBirth ?: current.dateOfBirth,
-                        // The response is the whole account: null = no phone (removed via "").
+                        // The response is the whole account: null = no phone (e.g. removed on request).
                         phoneNumber = response.phoneNumber,
                     )
                 } else {

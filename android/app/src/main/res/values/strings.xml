@@ -778,7 +778,6 @@
     <string name="profile_phone_unset">Not set</string>
     <string name="profile_edit">Edit</string>
     <string name="profile_add">Add</string>
-    <string name="profile_phone_remove">Remove phone number</string>
     <string name="profile_password">Password</string>
     <string name="profile_password_dots">••••••••••</string>
     <string name="profile_save">Save</string>
@@ -887,7 +886,6 @@
     <string name="edit_password_update">Update password</string>
     <string name="edit_password_updated">Password updated.</string>
     <string name="edit_phone_updated">Phone number updated.</string>
-    <string name="edit_phone_removed">Phone number removed.</string>
     <string name="edit_password_wrong_current">Incorrect current password</string>
     <string name="edit_password_weak">Password must be at least 8 characters</string>
     <string name="edit_password_mismatch">Passwords do not match</string>

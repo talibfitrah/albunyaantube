@@ -4,7 +4,6 @@ import android.content.Context
 import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AccountRepository
-import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.data.account.AccountUpdateRepository
 import com.albunyaan.tube.data.account.ProfileUpdateResult
 import com.albunyaan.tube.data.account.dto.UpdateProfileRequestDto
@@ -34,7 +33,7 @@ class EditPhoneViewModel @Inject constructor(
         val error: EditPhoneError? = null,
     )
 
-    sealed interface Nav { data object Idle : Nav; data object Done : Nav; data object Removed : Nav }
+    sealed interface Nav { data object Idle : Nav; data object Done : Nav }
     fun consumeNav() { _nav.value = Nav.Idle }
 
     private val _ui = MutableStateFlow(UiState())
@@ -49,15 +48,6 @@ class EditPhoneViewModel @Inject constructor(
     fun onCountryChanged(c: String) = _ui.update { it.copy(country = c, error = null) }
     fun onNumberChanged(n: String)  = _ui.update { it.copy(number = n, error = null) }
 
-    /** Offer "Remove phone number" only when the account has a phone to remove. */
-    val hasSavedPhone: Boolean
-        get() = !(accountRepository.accountState.value as? AccountState.Loaded)?.phoneNumber.isNullOrBlank()
-
-    /** PUT phoneNumber "" removes the saved phone server-side (null would mean "no change"). */
-    fun removePhone() {
-        if (!_ui.value.saving) save("")
-    }
-
     fun submit() {
         val s = _ui.value
         if (s.saving) return
@@ -70,17 +60,13 @@ class EditPhoneViewModel @Inject constructor(
             _ui.update { it.copy(error = EditPhoneError.INVALID_PHONE) }
             return
         }
-        save(e164)
-    }
-
-    private fun save(phoneNumber: String) {
         _ui.update { it.copy(saving = true, error = null) }
         viewModelScope.launch {
-            when (val r = updateRepository.updateProfile(UpdateProfileRequestDto(phoneNumber = phoneNumber))) {
+            when (val r = updateRepository.updateProfile(UpdateProfileRequestDto(phoneNumber = e164))) {
                 is ProfileUpdateResult.Success -> {
                     accountRepository.applyProfileUpdate(r.response)
                     _ui.update { it.copy(saving = false) }
-                    _nav.value = if (phoneNumber.isEmpty()) Nav.Removed else Nav.Done
+                    _nav.value = Nav.Done
                 }
                 is ProfileUpdateResult.RateLimited ->
                     _ui.update { it.copy(saving = false, error = EditPhoneError.RATE_LIMITED) }

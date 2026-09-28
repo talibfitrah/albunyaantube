@@ -40,7 +40,6 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         val numberLayout: TextInputLayout = view.findViewById(R.id.numberLayout)
         val numberField: TextInputEditText = view.findViewById(R.id.numberField)
         val saveButton: MaterialButton = view.findViewById(R.id.saveButton)
-        val removeButton: MaterialButton = view.findViewById(R.id.removeButton)
         val errorText: TextView = view.findViewById(R.id.errorText)
         val spinner: ProgressBar = view.findViewById(R.id.savingSpinner)
 
@@ -79,14 +78,11 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         })
 
         saveButton.setOnClickListener { viewModel.submit() }
-        removeButton.visibility = if (viewModel.hasSavedPhone) View.VISIBLE else View.GONE
-        removeButton.setOnClickListener { viewModel.removePhone() }
 
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.ui.collect { s ->
                     saveButton.isEnabled = !s.saving
-                    removeButton.isEnabled = !s.saving
                     spinner.visibility = if (s.saving) View.VISIBLE else View.GONE
                     val msgRes = when (s.error) {
                         EditPhoneError.INVALID_COUNTRY -> R.string.bootstrap_error_invalid_phone_country
@@ -103,18 +99,15 @@ class EditPhoneBottomSheetFragment : BottomSheetDialogFragment() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewLifecycleOwner.repeatOnLifecycle(Lifecycle.State.STARTED) {
                 viewModel.nav.collect { nav ->
-                    val message = when (nav) {
-                        EditPhoneViewModel.Nav.Done -> R.string.edit_phone_updated
-                        EditPhoneViewModel.Nav.Removed -> R.string.edit_phone_removed
-                        EditPhoneViewModel.Nav.Idle -> return@collect
+                    if (nav == EditPhoneViewModel.Nav.Done) {
+                        Snackbar.make(
+                            requireActivity().findViewById(android.R.id.content),
+                            R.string.edit_phone_updated,
+                            Snackbar.LENGTH_SHORT,
+                        ).show()
+                        viewModel.consumeNav()
+                        dismiss()
                     }
-                    Snackbar.make(
-                        requireActivity().findViewById(android.R.id.content),
-                        message,
-                        Snackbar.LENGTH_SHORT,
-                    ).show()
-                    viewModel.consumeNav()
-                    dismiss()
                 }
             }
         }

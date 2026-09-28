@@ -176,9 +176,9 @@ class AccountRepositoryApplyProfileUpdateTest {
     }
 
     /**
-     * The PUT response is the whole account, so a null phone means the phone
-     * was removed (phoneNumber "" in the request) — the Profile screen must
-     * fall back to its unset state, not keep showing the old number.
+     * The PUT response is the whole account, so a null phone means the account
+     * has no phone (e.g. removed on request) — the Profile screen must fall
+     * back to its unset state, not keep showing the old number.
      */
     @Test
     fun `applyProfileUpdate clears phoneNumber when response has null`() = runTest(dispatcher) {

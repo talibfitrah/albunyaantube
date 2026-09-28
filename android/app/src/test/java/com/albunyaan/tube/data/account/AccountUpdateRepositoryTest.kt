@@ -56,17 +56,6 @@ class AccountUpdateRepositoryTest {
         assertEquals(null, (result as ProfileUpdateResult.Success).response.displayName)
     }
 
-    // ── request wire format ──────────────────────────────────────────────
-
-    /** "" removes the saved phone server-side, so it must reach the wire; null means no change. */
-    @Test
-    fun `request serialises an empty phoneNumber and omits null fields`() {
-        val adapter = com.albunyaan.tube.di.NetworkModule.provideMoshi()
-            .adapter(UpdateProfileRequestDto::class.java)
-        assertEquals("""{"phoneNumber":""}""", adapter.toJson(UpdateProfileRequestDto(phoneNumber = "")))
-        assertEquals("{}", adapter.toJson(UpdateProfileRequestDto()))
-    }
-
     // ── 429 rate limited ─────────────────────────────────────────────────
 
     @Test
