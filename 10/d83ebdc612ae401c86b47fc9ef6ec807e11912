@@ -1,0 +1,23 @@
+android/app/src/sideload/java/com/albunyaan/tube/update/ReleaseSummaryFetcher.kt
+  s_974be43fdb0416::t_d698e0bfc021c3 107-108
+  s_974be43fdb0416::t_249281c04bf0d7 16,21-22,116
+android/app/src/testSideload/java/com/albunyaan/tube/update/UpdateCheckerTest.kt
+  s_974be43fdb0416::t_249281c04bf0d7 179-181
+  s_974be43fdb0416::t_6d666536a179e4 225-269
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "10d83ebdc612ae401c86b47fc9ef6ec807e11912",
+  "prompts": {},
+  "sessions": {
+    "s_974be43fdb0416": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a9df6439-8806-4575-9a75-9f4513fe668d",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
