@@ -1,0 +1,56 @@
+ios/FitrahTube/Features/Player/CaptionsMenu.swift
+  s_dbb6b1f3671904::t_a960d8123a480c 1,4-32,34-35,40-42,45,47,49-50,52,55,63-65,69-88,90-92,94-126,128-177
+  s_dbb6b1f3671904::t_57305f43a0f9a1 93,127
+ios/FitrahTubeTests/CaptionsProviderTests.swift
+  s_dbb6b1f3671904::t_f2e1d2becc8fbf 362
+  s_dbb6b1f3671904::t_2e142de57e6dac 1,142-145,148,150,159-163,180,185-189,191-202,205-209,212-216,219-235,243-247,252,255,260,277,279-361,363-368
+  s_dbb6b1f3671904::t_22c2c386158121 4,6,172-173,236-242,248-251,253-254,256-259,261-276
+  s_dbb6b1f3671904::t_76970adfca3b1c 278
+ios/FitrahTubeTests/PlayerScreenEmbedTests.swift
+  s_dbb6b1f3671904::t_c16e6e22de7e56 51
+ios/FitrahTube/Features/Player/ShortsOverlay.swift
+  s_dbb6b1f3671904::t_cba2905fa69ab3 227
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_dbb6b1f3671904::t_dbb7ed8dc3b52c 44-64,74,79
+  s_dbb6b1f3671904::t_b5dcaf8164d887 65-73,75-78,80
+ios/FitrahTubeTests/EmbedPolicyTests.swift
+  s_dbb6b1f3671904::t_c16e6e22de7e56 16,20-21,28,30,35,55,64
+  s_dbb6b1f3671904::t_c427e84ea7faf1 43-44
+  s_dbb6b1f3671904::t_27856817a4687b 41-42
+ios/FitrahTube/Features/Player/ShortsScreen.swift
+  s_dbb6b1f3671904::t_cba2905fa69ab3 91
+ios/FitrahTube/Features/Player/CaptionOverlay.swift
+  s_dbb6b1f3671904::t_4aae6fc273ae82 54
+  s_dbb6b1f3671904::t_cba2905fa69ab3 6-9,57-59
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_dbb6b1f3671904::t_cba2905fa69ab3 305-306,308,310-311,348,534-537
+  s_dbb6b1f3671904::t_437bb4ef980b26 538-539
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_dbb6b1f3671904::t_d52f1c235ecfbf 27-44
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_dbb6b1f3671904::t_cba2905fa69ab3 2,168-170,187-198
+ios/FitrahTube/Features/Player/EmbedPolicy.swift
+  s_dbb6b1f3671904::t_c16e6e22de7e56 38,48
+ios/FitrahTube/Features/Player/EmbedRungView.swift
+  s_dbb6b1f3671904::t_c16e6e22de7e56 285
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_dbb6b1f3671904::t_4aae6fc273ae82 737-741
+ios/FitrahTubeTests/Support/PlayerTestDoubles.swift
+  s_dbb6b1f3671904::t_dbb7ed8dc3b52c 47-48,64-67,150-151
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "75127224bf7564935e4693cd024aae1b43baec7a",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
