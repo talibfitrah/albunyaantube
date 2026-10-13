@@ -44,6 +44,8 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// the stream the player already holds UNLESS it is near expiry, and that margin is the only
     /// thing separating "cast what we have" from "walk the network again".
     private var _expiresIn: TimeInterval = 3600
+    /// Per-video `captionTracks` for the `.hls` answer (the caption carry-over test); default none.
+    private var _captionTracks: [String: [CaptionTrack]] = [:]
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }
@@ -58,6 +60,10 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     var expiresIn: TimeInterval {
         get { lock.withLock { _expiresIn } }
         set { lock.withLock { _expiresIn = newValue } }
+    }
+    var captionTracks: [String: [CaptionTrack]] {
+        get { lock.withLock { _captionTracks } }
+        set { lock.withLock { _captionTracks = newValue } }
     }
     var calls: [Call] { lock.withLock { _calls } }
     var outcomes: [String: Outcome] {
@@ -141,7 +147,8 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         switch outcome {
         case .hls:
             return Resolved(stream: .hls(url: nonResolvingURL, isLive: false,
-                                         audioOnlyURL: URL(string: "https://r1/a140")!, captionTracks: []),
+                                         audioOnlyURL: URL(string: "https://r1/a140")!,
+                                         captionTracks: captionTracks[videoId] ?? []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt)
         case .liveHLS:

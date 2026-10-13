@@ -734,6 +734,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // `assetOptions(userAgent:url:)` below already makes, so this stays one player with no
             // offline fork.
             player.allowsExternalPlayback = !url.isFileURL && !airPlayFellBack
+            // Captions start Off: left on, AVFoundation applies the system caption setting
+            // ("Closed Captions + SDH") to every item this player ever plays and turns YouTube's
+            // `AUTOSELECT=YES` subtitles on by itself. Audio is unaffected: `AudioLanguageMenu`
+            // selects it explicitly on every item.
+            player.appliesMediaSelectionCriteriaAutomatically = false
             if resume > 0 { player.seek(to: resumeTime) }
             if !pausedForCast { player.play() }
             return player

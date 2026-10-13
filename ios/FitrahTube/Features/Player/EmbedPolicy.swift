@@ -35,7 +35,7 @@ enum EmbedPage {
     /// No `customUserAgent` is set anywhere in this rung: plan §6.3's fixed per-client UAs govern
     /// InnerTube API calls, and `youtube-nocookie.com` serves a different player to a UA it does
     /// not read as a mobile browser. WKWebView's stock UA carries no app or device identifier.
-    static func html(videoId: String, locale: String, captionsPreferred: Bool) -> String? {
+    static func html(videoId: String, locale: String) -> String? {
         // `^[A-Za-z0-9_-]{11}$`, spelled without a `Regex` so nothing non-Sendable is stored.
         guard videoId.count == 11,
               videoId.allSatisfy({ $0.isASCII && ($0.isLetter || $0.isNumber || $0 == "_" || $0 == "-") }),
@@ -45,11 +45,7 @@ enum EmbedPage {
         let hl = supportedLocales.contains(locale) ? locale : "en"  // ruling 19; not a security boundary
         var vars: [String: Any] = ["playsinline": 1, "rel": 0, "enablejsapi": 1]
         vars["origin"] = origin
-        vars["hl"] = hl
-        if captionsPreferred {                                     // plan §6.5's cc_* pair
-            vars["cc_load_policy"] = 1
-            vars["cc_lang_pref"] = hl
-        }
+        vars["hl"] = hl   // no cc_* pair: captions start Off on every rung, whatever the system setting
         // `.withoutEscapingSlashes`: cosmetic only -- JS unescapes `\/` at parse time, so the
         // default escaped form would not have broken the origin comparison either. Kept for
         // readable HTML source when inspecting the bundle.

@@ -48,8 +48,7 @@ struct PlayerScreenEmbedTests {
         #expect(EmbedRungView.embedLocale(Locale(identifier: "en-US")) == "en")
         #expect(EmbedRungView.embedLocale(Locale(identifier: "fr-FR")) == "en")
         #expect(EmbedPage.html(videoId: "xc7keR2piUM",
-                               locale: EmbedRungView.embedLocale(Locale(identifier: "fr-FR")),
-                               captionsPreferred: false) != nil)
+                               locale: EmbedRungView.embedLocale(Locale(identifier: "fr-FR"))) != nil)
     }
 
     /// Controller carry-in: the `.embed` ENTRY is offline-gated. A `WKWebView` pointed at

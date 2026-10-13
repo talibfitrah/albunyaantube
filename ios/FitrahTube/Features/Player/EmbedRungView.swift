@@ -282,8 +282,7 @@ struct EmbedWebView: UIViewRepresentable {
             self.model = model
             self.loadTimeout = loadTimeout
             self.html = videoId.flatMap {
-                EmbedPage.html(videoId: $0, locale: locale,
-                               captionsPreferred: UIAccessibility.isClosedCaptioningEnabled)
+                EmbedPage.html(videoId: $0, locale: locale)
             }
         }
 

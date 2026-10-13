@@ -88,9 +88,7 @@ struct ShortsScreen: View {
                 // overlay. Same I8 gate; the clearance is Android's `shorts_caption_bottom_clearance`
                 // (200 dp) so cues sit above the channel/title/scrub block, not under it.
                 .overlay {
-                    if let resolved = state.resolved,
-                       let track = PlayerScreen.activeCaptionTrack(selected: model.selectedCaptionTrack,
-                                                                   tracks: PlayerScreen.captionTracks(state)) {
+                    if let resolved = state.resolved, let track = CaptionsMenu.overlayTrack(model) {
                         CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent, bottomClearance: 200)
                     }
                 }

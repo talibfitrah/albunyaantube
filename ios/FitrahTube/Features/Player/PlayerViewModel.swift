@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import InnerTubeKit
 
@@ -164,6 +165,9 @@ extension StreamState {
             audioLanguageGroup = nil
             audioLanguageOptions = []
             audioLanguageLoad = Task { await AudioLanguageMenu.load(self) }
+            legibleGroup = nil
+            captionSelectionSync = nil
+            captionsLoad = Task { await CaptionsMenu.load(self) }
         }
     }
 
@@ -180,21 +184,24 @@ extension StreamState {
     /// `currentItem` in `PlayerHostView`'s make/update pair.
     var currentPlayer: AVPlayer?
 
-    /// Task 6 (captions): the toggle's current pick (`nil` = Off). Session-only, like
-    /// `selectedQuality`/`stickyAudioLanguage` -- survives a re-resolve within one player lifetime,
-    /// never persisted.
-    var selectedCaptionTrack: CaptionTrack?
+    /// The captions menu's pick (`CaptionChoice`, nil = Off). Session-only, like `selectedQuality`/
+    /// `stickyAudioLanguage` -- survives a re-resolve and Up Next (`CaptionChoice.resolve`), never
+    /// persisted; a freshly opened player screen starts Off.
+    var captionChoice: CaptionChoice?
+
+    /// `CaptionsMenu.load`'s result for `currentItem`: its legible (HLS SUBTITLES) group -- the
+    /// uploader's tracks. Cleared with the audio group on every new item.
+    var legibleGroup: AVMediaSelectionGroup?
+    /// The load `currentItem`'s `didSet` started, kept so a caller can await it landing.
+    private(set) var captionsLoad: Task<Void, Never>?
+    /// Follows AVKit's own Subtitles menu on `currentItem` (`CaptionsMenu.load`); a new item drops it.
+    @ObservationIgnored var captionSelectionSync: AnyCancellable?
 
     /// Ruling 34: the Settings "Audio only" value SEEDS this per-session toggle (Android's settings
     /// value is written and never read -- player.md §15, defect). Session-only after seeding:
     /// flipping it here never writes back to `SettingsStore`, matching Android's own non-persisted
     /// toggle (player.md §5, "Not persisted; resets with the ViewModel").
     var audioOnly: Bool
-
-    /// Guards the one-time "auto-enable the first track when VoiceOver's closed-captioning
-    /// setting is on" default (spec §10) so it never fights a later manual "Off" pick across
-    /// re-renders of the same session.
-    var captionsAutoEnableApplied = false
 
     private let resolver: any StreamResolving
     private let settings: any SettingsStore

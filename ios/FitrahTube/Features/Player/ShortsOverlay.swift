@@ -224,7 +224,7 @@ struct ShortsOverlay: View {
 
             // Hides itself at <=1 option (ruling 52) -- nothing here writes its visibility.
             AudioLanguageMenu(model: model)
-            CaptionsMenu(model: model, tracks: PlayerScreen.captionTracks(model.state))
+            CaptionsMenu(model: model)
         }
     }
 

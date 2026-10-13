@@ -24,6 +24,24 @@ struct PlayerHostTests {
         #expect(asset.url == url)
     }
 
+    /// Captions bug, cause 2: at its default (true) AVFoundation applies the system caption setting
+    /// ("Closed Captions + SDH") to every item and selects YouTube's `DEFAULT=NO,AUTOSELECT=YES`
+    /// subtitle rendition by itself. The flag lives on the `AVPlayer`, so the item a later
+    /// `replaceCurrentItem` swaps in (Up Next, recovery) is covered by the same player.
+    @Test func builtPlayerNeverAutoSelectsMediaFromTheSystemCaptionSetting() throws {
+        let first = Self.resolved(.hls(url: URL(string: "https://127.0.0.1:9/a.m3u8")!, isLive: false,
+                                       audioOnlyURL: nil, captionTracks: []))
+        let next = Self.resolved(.hls(url: URL(string: "https://127.0.0.1:9/b.m3u8")!, isLive: false,
+                                      audioOnlyURL: nil, captionTracks: []))
+
+        let player = try #require(PlayerHostView.player(for: .ready(first), replacing: nil))
+        #expect(player.appliesMediaSelectionCriteriaAutomatically == false)
+
+        let advanced = PlayerHostView.player(for: .ready(next), replacing: player, continuesCurrentVideo: false)
+        #expect(advanced === player)
+        #expect(advanced?.appliesMediaSelectionCriteriaAutomatically == false)
+    }
+
     @Test func readyStateAssetOptionsCarryTheResolvedUserAgent() {
         // `AVURLAsset` doesn't expose its `options` dictionary back out once built, so this asserts
         // the options `player(for:replacing:)` actually passes to `AVURLAsset(url:options:)` --

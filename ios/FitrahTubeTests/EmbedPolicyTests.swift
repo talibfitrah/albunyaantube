@@ -13,34 +13,35 @@ struct EmbedPolicyTests {
     // MARK: - EmbedPage
 
     @Test func htmlSubstitutesOnlyAValidVideoIdAndLocale() {
-        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "ar", captionsPreferred: false)?
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "ar")?
             .contains("xc7keR2piUM") == true)
         // The one injection point in this app that puts a value inside a <script>. A validated
         // 11-char id is the whole defence -- escaping is not attempted, refusal is.
-        #expect(EmbedPage.html(videoId: "\";alert(1);//", locale: "en", captionsPreferred: false) == nil)
-        #expect(EmbedPage.html(videoId: "short", locale: "en", captionsPreferred: false) == nil)
+        #expect(EmbedPage.html(videoId: "\";alert(1);//", locale: "en") == nil)
+        #expect(EmbedPage.html(videoId: "short", locale: "en") == nil)
     }
 
     @Test func htmlDefaultsUnsupportedHlToEnglish() {
         // `hl` is JSON-encoded, not a security boundary (unlike `videoId`, which stays strict and
         // nil-returning): any value outside {en, ar, nl} -- including one shaped like an injection
         // attempt -- just defaults to "en" rather than failing the whole embed.
-        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "fr", captionsPreferred: false)?
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "fr")?
             .contains("\"hl\":\"en\"") == true)
-        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "en-US\";x", captionsPreferred: false)?
+        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "en-US\";x")?
             .contains("\"hl\":\"en\"") == true)
     }
 
     @Test func htmlCarriesThePlayerVarsPlan64RequiresAndNothingElse() {
-        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: true)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl")!
         #expect(html.contains("playsinline"))
         #expect(html.contains("enablejsapi"))
         #expect(html.contains("rel"))
         #expect(html.contains("youtube-nocookie.com"))
         #expect(html.contains("hl") && html.contains("nl"))
-        #expect(html.contains("cc_load_policy"))          // captionsPreferred: true
-        #expect(EmbedPage.html(videoId: "xc7keR2piUM", locale: "nl", captionsPreferred: false)!
-            .contains("cc_load_policy") == false)
+        // Captions start Off on every rung: the page never forces YouTube's captions on (it used to
+        // whenever "Closed Captions + SDH" was on).
+        #expect(html.contains("cc_load_policy") == false)
+        #expect(html.contains("cc_lang_pref") == false)
         // 2.5.2 / plan §6.14: the ONLY remote script is YouTube's own IFrame API.
         let scripts = html.components(separatedBy: "src=\"").dropFirst().map { $0.prefix(while: { $0 != "\"" }) }
         #expect(scripts == ["https://www.youtube.com/iframe_api"])
@@ -51,7 +52,7 @@ struct EmbedPolicyTests {
         // a path never matches. `baseURL` (with `/embed`) stays the `loadHTMLString` base and the
         // navigation lock's one accepted URL; `origin` is the app-owned https origin, not youtube.com
         // and not `baseURL`'s full path.
-        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en", captionsPreferred: false)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en")!
         #expect(html.contains("\"origin\":\"https://app.fitrahtube.com\""))
         #expect(html.contains("https://app.fitrahtube.com/embed") == false)
         #expect(EmbedPage.baseURL.absoluteString == "https://app.fitrahtube.com/embed")
@@ -60,7 +61,7 @@ struct EmbedPolicyTests {
     @Test func htmlAutoplaysOnReadyAndReportsTheFourEvents() {
         // Ruled: autoplay is driven from `onReady`, not the `autoplay` player var -- the var races
         // the API's own readiness and is ignored on iOS without a user gesture in some builds.
-        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en", captionsPreferred: false)!
+        let html = EmbedPage.html(videoId: "xc7keR2piUM", locale: "en")!
         #expect(html.contains("playVideo()"))
         #expect(html.contains("onReady"))
         #expect(html.contains("onStateChange"))
