@@ -64,8 +64,8 @@ struct MainShellRoutingTests {
 
     /// Phase 4 Task 29: the ONE new `Route` case this task adds — it lands WITH its screen and with
     /// the LAST Me kebab row (`MeKebabItem.landed` is now every case). Unlike the C4 pair the gate
-    /// on this row is capability, not role: `MeViewModel.enabledKebabItems` drops it for an account
-    /// with no Google grant to extend.
+    /// on this row is capability, not role: `MeViewModel.enabledKebabItems` drops it in a build
+    /// without Google sign-in.
     @Test func theImportFromYouTubeRouteRendersTheRealScreen() {
         #expect(leaf(for: .importFromYouTube) == "ImportFromYouTubeScreen")
     }

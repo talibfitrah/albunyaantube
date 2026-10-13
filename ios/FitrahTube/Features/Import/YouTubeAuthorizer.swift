@@ -4,7 +4,7 @@ import Foundation
 /// layer above renders a message, and only "the user backed out" is worth telling apart (the
 /// `OAuthSignInFailure` shape, one flow over).
 nonisolated enum YouTubeAuthorizerError: Error, Sendable, Equatable {
-    /// No Google account signed in, or no client id / callback scheme in this build. The import
+    /// No client id / callback scheme in this build, or no window to present from. The import
     /// affordance should not have been offered — `isAvailable` says so before anything is asked.
     case unavailable
     /// The user dismissed the consent screen. Silent: back to idle, never a banner.
@@ -46,9 +46,9 @@ extension YouTubeAuthorizer {
 /// The FIXTURE authorizer, in the app target for `FakeAuthClient`'s reason: `AppContainer.fake()`
 /// cannot see the test bundle.
 ///
-/// **`available: false` is the default and the honest one** — a screenshot rig has no Google grant,
-/// so `isAvailable` is false, the Me kebab's Import row is ABSENT (RULING 28), and `authorize()`
-/// refuses rather than inventing a token.
+/// **`available: false` is the default and the honest one** — a screenshot rig cannot drive
+/// Google's sign-in, so `isAvailable` is false, the Me kebab's Import row is ABSENT (RULING 28),
+/// and `authorize()` refuses rather than inventing a token.
 ///
 /// Task 30 adds the other setting, for ONE purpose: `-fitrah-seed-import-review` photographs the
 /// import review screen, which needs a token to get past `.authorizing`. The token it hands back is

@@ -125,13 +125,13 @@ import Observation
                 state.error = .notYetVerified
                 return false
             }
-            // Stage 5 / C1.1: `reload()` refreshes the USER RECORD, not the cached ID token, and
-            // the backend gates on the token CLAIM (`FirebaseAuthFilter` reads
-            // `decodedToken.isEmailVerified()`). Without a forced re-mint the next
-            // `POST /api/account/profile` answers 403 `EMAIL_NOT_VERIFIED` for up to the token's
-            // remaining hour, which the bootstrap form renders as "couldn't save your profile" with
-            // no way forward. `try?`-free: `idToken` already answers nil on refusal, and a refusal
-            // here is not worth blocking a verification the reload just confirmed.
+            // Stage 5 / C1.1: `reload()` refreshes the USER RECORD, not the cached ID token, whose
+            // `email_verified` CLAIM is frozen at mint. `POST /api/account/profile` falls back to
+            // the Firebase record when the claim says false (`AccountController.java:117`,
+            // `emailVerifiedOnRecord`), but a failed record lookup still answers 403, and every
+            // other route's principal carries only the claim (`FirebaseAuthFilter`) — so the
+            // token is re-minted to match. `try?`-free: `idToken` already answers nil on refusal,
+            // and a refusal here is not worth blocking a verification the reload just confirmed.
             _ = await auth.idToken(forceRefresh: true)
             // Firebase's auth-state listener does NOT fire on a reload, so `AccountSession.user`
             // would keep the stale `isEmailVerified: false` that put the account here — and that is

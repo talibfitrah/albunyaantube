@@ -214,6 +214,13 @@ public actor BrowseClient {
         let browseId = continuation == nil ? id : nil
         let params = continuation == nil ? tab.params : nil
         var page = try Self.parsePage(await send(browseId: browseId, params: params, continuation: continuation))
+        // A tab can open with pages holding only a continuation (Zad's Live tab, 2026-10-13: two of
+        // them before the streams). Follow them, at most 5 more fetches (Android parity,
+        // `MAX_APPEND_EMPTY_PAGE_FETCHES`).
+        for _ in 1...5 {
+            guard page.items.isEmpty, let next = page.nextContinuation else { break }
+            page = try Self.parsePage(await send(browseId: nil, params: nil, continuation: next))
+        }
         // Channel-tab items carry no byline (the channel is implicit); backfill from the known id.
         page.items = page.items.map { item in
             guard item.channelId == nil else { return item }

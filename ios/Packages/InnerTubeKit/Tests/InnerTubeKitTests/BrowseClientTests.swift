@@ -18,6 +18,9 @@ import Testing
 /// `trackingParams`/`clickTrackingParams` and per-item action-menu JSON stripped.
 /// `browse-channel-playlists-page2.json` is LIVE, recorded 2026-08-30 (Task 6, CF-C-3): the Playlists
 /// tab's first continuation, trimmed the same way.
+/// `browse-channel-live-shell.json` / `-shell-cont.json` / `-shell-items.json` are LIVE, recorded
+/// 2026-10-13 from Zad's (`UCOll3M-P7oKs5cSrQ9ytt6g`) Live tab as one linked chain: two pages that
+/// hold only a continuation item, then 25 streams (trimmed to 5 + the continuation item).
 ///
 /// Every `responseContext.visitorData` in these fixtures is SYNTHETIC (`CgtGSVhUVVJFXzAwMSiFAA%3D%3D`):
 /// a real one is a session identifier for the machine that captured it and must never be committed.
@@ -317,6 +320,50 @@ import Testing
         let body = transport.capturedBodies[0]
         #expect(body.contains("\"browseId\":\"\(Self.channelId)\""))
         #expect(body.contains("\"params\""))
+    }
+
+    // MARK: - f1) a tab whose first pages are empty continuation shells (Android parity, cap 5)
+
+    private func token(_ response: HTTPResponse) throws -> String {
+        let body = String(decoding: response.body, as: UTF8.self)
+        return String(try #require(body.firstMatch(of: #/"token": "([^"]+)"/#)).output.1)
+    }
+
+    /// Zad's Live tab answers with two pages that hold nothing but a continuation; the streams
+    /// (the in-progress one first) are on the third. Shown as-is, page one read as "no streams".
+    @Test func channelTabFollowsEmptyContinuationShells() async throws {
+        let shell = try fixtureResponse("browse-channel-live-shell")
+        let cont = try fixtureResponse("browse-channel-live-shell-cont")
+        let items = try fixtureResponse("browse-channel-live-shell-items")
+        let transport = RecordingTransport([shell, cont, items])
+        let zad = "UCOll3M-P7oKs5cSrQ9ytt6g"
+
+        let page = try await makeClient(transport).channelTab(zad, tab: .live, continuation: nil)
+
+        try #require(transport.callCount == 3)
+        let bodies = transport.capturedBodies
+        for (body, previous) in [(bodies[1], shell), (bodies[2], cont)] {
+            #expect(body.contains("\"continuation\":\"\(try token(previous))\""))
+            #expect(!body.contains("\"browseId\""))
+            #expect(!body.contains("\"params\""))
+        }
+        #expect(page.items.count == 5)
+        let first = try #require(page.items.first)
+        #expect(first.id == "eaOtcUNHDB8")
+        #expect(first.badge == .live)
+        #expect(first.channelId == zad)
+        #expect(page.nextContinuation == (try token(items)))
+    }
+
+    @Test func channelTabStopsFollowingEmptyShellsAfterFiveExtraFetches() async throws {
+        let cont = try fixtureResponse("browse-channel-live-shell-cont")
+        let transport = RecordingTransport([cont])  // repeats: every page is an empty shell
+
+        let page = try await makeClient(transport).channelTab(Self.channelId, tab: .live, continuation: nil)
+
+        #expect(transport.callCount == 1 + 5)
+        #expect(page.items.isEmpty)
+        #expect(page.nextContinuation == (try token(cont)))
     }
 
     // MARK: - f2) VideoItem.badge (C T5 fix I2: LIVE vs UPCOMING is the badge, not `durationSeconds == nil`)

@@ -34,9 +34,7 @@ struct ProfileBootstrapScreen: View {
     }
 
     private var form: some View {
-        ScrollView {
-            content.padding(Spacing.md(widthClass))
-        }
+        CentredFormColumn { content }
         .background(Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden()
         .navigationBarTitleDisplayMode(.inline)
@@ -62,10 +60,10 @@ struct ProfileBootstrapScreen: View {
                         .font(TypeScale.body(widthClass))
                         .foregroundStyle(Color.errorText)
                         .fixedSize(horizontal: false, vertical: true)
-                    // R9-P2: the exit. Only on `.passwordSetFailed`, which is the one error this
-                    // screen can repeat forever with no other way off it — the profile is already
-                    // committed, the back button is hidden and there is no tab bar underneath.
-                    if error == .passwordSetFailed { signOutButton(viewModel) }
+                    // R9-P2 / R2-B: the exit. Only on the two errors this screen can repeat forever
+                    // with no other way off it — the back button is hidden and there is no tab bar
+                    // underneath (`signOutFromStuckForm`).
+                    if error == .passwordSetFailed || error == .saveFailed { signOutButton(viewModel) }
                 }
 
                 submitButton(viewModel)
@@ -240,7 +238,7 @@ struct ProfileBootstrapScreen: View {
     /// Me kebab and Settings already carry — nothing authored for this screen.
     private func signOutButton(_ model: ProfileBootstrapViewModel) -> some View {
         let title = String(localized: "settings_account_sign_out")
-        return Button(title) { model.signOutFromStuckPasswordStep() }
+        return Button(title) { model.signOutFromStuckForm() }
             .font(TypeScale.body(widthClass))
             .foregroundStyle(Color.brand)
             .frame(maxWidth: .infinity, minHeight: Size.button(widthClass))

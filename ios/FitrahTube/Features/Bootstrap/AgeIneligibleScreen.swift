@@ -16,7 +16,7 @@ struct AgeIneligibleScreen: View {
     @Environment(\.widthClass) private var widthClass
 
     var body: some View {
-        ScrollView {
+        CentredFormColumn {
             VStack(alignment: .leading, spacing: Spacing.md(widthClass)) {
                 // The screen's own heading, not `.navigationTitle`: it renders as a root destination
                 // too, where there is no navigation bar to put one in.
@@ -32,7 +32,6 @@ struct AgeIneligibleScreen: View {
                 okButton
             }
             .frame(maxWidth: .infinity, alignment: .leading)
-            .padding(Spacing.md(widthClass))
         }
         .background(Color.background.ignoresSafeArea())
         .navigationBarBackButtonHidden()

@@ -185,10 +185,13 @@ import Observation
                 // into "couldn't save your profile", which for the 409 is a dead end BY
                 // CONSTRUCTION: the server says the form is already done, and the only thing that
                 // could move the user on is the `/me` re-read this arm never issued, so the screen
-                // repeated the same refusal forever. A 403 `EMAIL_NOT_VERIFIED` is the same shape —
-                // the router lands on verification once the session is re-read.
+                // repeated the same refusal forever. A 403 `EMAIL_NOT_VERIFIED` is NOT that shape:
+                // the backend already re-checks the Firebase RECORD (`AccountController.java:117`),
+                // so it means the record itself is unverified, and `/me` still says
+                // `pending_profile` — a re-read only re-rendered this form, a spinner that stopped
+                // on nothing every time. It falls to `default`: a visible `.saveFailed`.
                 switch error {
-                case .profileAlreadyCompleted, .emailNotVerified:
+                case .profileAlreadyCompleted:
                     await session.refresh()
                     state.isLoading = false
                     nav = .main
@@ -205,6 +208,14 @@ import Observation
                     // screen on `session.isAgeIneligible`, over whatever the outcome now resolves
                     // to; the terminal screen IS the message, so no inline error either.
                     await session.terminateAgeIneligible(for: issuedFor)
+                    return
+                // The server refuses names the local gate passes (`validateDisplayName`: control
+                // and invisible format characters, URLs) with a 400 naming the field: say so ON it,
+                // in its own words — `.invalidName`'s "1–40 characters" is about a length this
+                // name already meets (R2-C).
+                case .validation(field: "displayName"?, message: _):
+                    state.isLoading = false
+                    state.error = .invalidNameCharacters
                     return
                 default:
                     state.isLoading = false
@@ -251,10 +262,12 @@ import Observation
     /// to attach the password. `session.signOut()`, the path the Me kebab and Settings already use
     /// — no new teardown.
     ///
-    /// Offered ONLY on `.passwordSetFailed`: this is the recovery for a stranded form, not a second
-    /// sign-out control on a screen that is working.
-    func signOutFromStuckPasswordStep() {
-        guard state.error == .passwordSetFailed else { return }
+    /// Offered ONLY on `.passwordSetFailed` and `.saveFailed`: this is the recovery for a stranded
+    /// form, not a second sign-out control on a screen that is working. R2-B: a failed save strands
+    /// it too — a 403 `EMAIL_NOT_VERIFIED` (an unverified Firebase record) is `.saveFailed` on
+    /// every retry.
+    func signOutFromStuckForm() {
+        guard state.error == .passwordSetFailed || state.error == .saveFailed else { return }
         session.signOut()
     }
 
@@ -284,7 +297,7 @@ extension BootstrapError {
     /// The field an error is about; nil for the two that are no field's fault.
     var field: BootstrapField? {
         switch self {
-        case .invalidName: .name
+        case .invalidName, .invalidNameCharacters: .name
         case .invalidDOB, .underAge: .dob
         case .invalidPhone: .phone
         case .invalidPassword: .password
@@ -297,6 +310,7 @@ extension BootstrapError {
     var messageKey: String {
         switch self {
         case .invalidName: "bootstrap_error_invalid_name"
+        case .invalidNameCharacters: "bootstrap_error_invalid_name_characters"
         case .invalidDOB: "bootstrap_error_invalid_dob"
         case .underAge: "bootstrap_error_under_age"
         case .invalidPhone: "bootstrap_error_invalid_phone"

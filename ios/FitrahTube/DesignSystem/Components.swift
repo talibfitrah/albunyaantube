@@ -498,12 +498,14 @@ struct ChannelRow: View {
 /// "Channel card"; spec §7 `HomeChannelItem`).
 struct HomeChannelItem: View {
     let item: ContentItem
+    let width: CGFloat
     let onTap: () -> Void
     @Environment(\.widthClass) private var widthClass
     @Environment(\.locale) private var locale
 
-    init(item: ContentItem, onTap: @escaping () -> Void) {
+    init(item: ContentItem, width: CGFloat, onTap: @escaping () -> Void) {
         self.item = item
+        self.width = width
         self.onTap = onTap
     }
 
@@ -529,6 +531,9 @@ struct HomeChannelItem: View {
             }
             .padding(.vertical, Spacing.sm)
             .padding(.horizontal, Spacing.xs)
+            // The rail's horizontal ScrollView proposes no width, so without this the name never
+            // wraps (Android: item width = `channelCardWidth`, `HomeFeaturedAdapter.kt:79-86`).
+            .frame(width: width)
         }
         .buttonStyle(.plain)
         .accessibilityLabel(accessibilityLabel)
@@ -670,7 +675,8 @@ struct HomeSectionRow: View {
                 seeAllAccessibilityLabel: Format.sectionSeeAllLabel(section, locale: locale)
             )
             ScrollView(.horizontal, showsIndicators: false) {
-                LazyHStack(spacing: GridRules.cardGap(widthClass)) {
+                // `.top`: a channel whose name wraps to two lines must not push its avatar below its neighbours'.
+                LazyHStack(alignment: .top, spacing: GridRules.cardGap(widthClass)) {
                     ForEach(section.items) { item in
                         itemView(item)
                     }
@@ -688,7 +694,7 @@ struct HomeSectionRow: View {
         case .video, .playlist:
             MediaCard(item: item, width: cardWidth(for: item.type)) { router.push(Route(item: item)) }
         case .channel:
-            HomeChannelItem(item: item) { router.push(Route(item: item)) }
+            HomeChannelItem(item: item, width: cardWidth(for: item.type)) { router.push(Route(item: item)) }
         }
     }
 
@@ -1095,11 +1101,11 @@ private enum PreviewData {
         .environment(\.layoutDirection, .rightToLeft)
 }
 
-#Preview("HomeChannelItem - Light") { HomeChannelItem(item: PreviewData.channel) {}.padding() }
-#Preview("HomeChannelItem - Dark") { HomeChannelItem(item: PreviewData.channel) {}.padding().preferredColorScheme(.dark) }
-#Preview("HomeChannelItem - Regular") { HomeChannelItem(item: PreviewData.channel) {}.padding().environment(\.widthClass, .regular) }
+#Preview("HomeChannelItem - Light") { HomeChannelItem(item: PreviewData.channel, width: 171) {}.padding() }
+#Preview("HomeChannelItem - Dark") { HomeChannelItem(item: PreviewData.channel, width: 171) {}.padding().preferredColorScheme(.dark) }
+#Preview("HomeChannelItem - Regular") { HomeChannelItem(item: PreviewData.channel, width: 171) {}.padding().environment(\.widthClass, .regular) }
 #Preview("HomeChannelItem - RTL") {
-    HomeChannelItem(item: PreviewData.channel) {}.padding()
+    HomeChannelItem(item: PreviewData.channel, width: 171) {}.padding()
         .environment(\.locale, Locale(identifier: "ar"))
         .environment(\.layoutDirection, .rightToLeft)
 }

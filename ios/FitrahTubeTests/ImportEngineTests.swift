@@ -104,33 +104,27 @@ struct YouTubeAuthorizerTests {
     /// back a token, so "an unavailable provider is never asked" is a property a caller's test can
     /// actually break.
     @Test func anUnavailableAuthorizerFailsInsteadOfHandingBackAToken() async {
-        let authorizer = FakeYouTubeAuthorizer(hasCurrentUser: false)
+        let authorizer = FakeYouTubeAuthorizer(isAvailable: false)
         await #expect(throws: YouTubeAuthorizerError.unavailable) { try await authorizer.authorize() }
         #expect(authorizer.authorizeCount == 1)
     }
 
-    /// Review C1. `GIDSignIn.currentUser` is nil on EVERY cold launch — the SDK's initializer
-    /// reads the bundle configuration and migrates keychain state but assigns `_currentUser`
-    /// nowhere (`GIDSignIn.m:510-540`); the only two assignments are the interactive sign-in
-    /// completion (`:936`) and a restore. Availability that reads `currentUser` alone therefore
-    /// goes false at the next launch and the Import affordance disappears for every returning
-    /// Google user, silently. The keychain-backed half is `hasPreviousSignIn` (`GIDSignIn.h:116`,
-    /// `GIDSignIn.m:213-219`), and the RELAUNCH state — no current user, a previous sign-in — must
-    /// be available AND must authorize.
-    ///
-    /// Tier 3 boundary: this pins the CONTRACT the Import screen consumes. The SDK half of
-    /// `GoogleYouTubeAuthorizer` is NOT pinned by any hermetic test and cannot be.
-    @Test func aRelaunchedSessionWithNoCurrentUserIsStillAvailableAndAuthorizes() async throws {
-        let relaunched = FakeYouTubeAuthorizer(token: Fixture.token, hasCurrentUser: false,
-                                               hasPreviousSignIn: true)
-        #expect(relaunched.isAvailable)
-        #expect(try await relaunched.authorize() == Fixture.token)
-
-        // Neither fact: no Google grant to extend, so the affordance stays HIDDEN (RULING 28) —
-        // which is what keeps an Apple or email/password account from being offered an import.
-        let signedOut = FakeYouTubeAuthorizer(hasCurrentUser: false, hasPreviousSignIn: false)
-        #expect(signedOut.isAvailable == false)
-        await #expect(throws: YouTubeAuthorizerError.unavailable) { try await signedOut.authorize() }
+    /// The Google SDK's session is DEVICE-wide and can belong to a Google identity other than the
+    /// signed-in account's (the app killed mid Google sign-in, a sheet that completed after
+    /// sign-out). It is reused only when it IS this account's own Google identity; otherwise
+    /// `authorize()` clears it and raises Google's picker, so no account imports another Google
+    /// identity's YouTube library — a `google.com`-linked account included.
+    @Test func onlyTheAccountsOwnGoogleIdentityReusesTheGoogleSession() {
+        func reuses(session: String?, account: String?) -> Bool {
+            GoogleYouTubeAuthorizer(accountGoogleUserID: { account }).reusesGoogleSession(of: session)
+        }
+        #expect(reuses(session: "g-1", account: "g-1"))
+        #expect(reuses(session: "g-2", account: "g-1") == false,
+                "a Google-linked account reused another Google identity's session")
+        #expect(reuses(session: "g-1", account: nil) == false,
+                "an email/password or Apple account reused a leftover Google session")
+        #expect(reuses(session: nil, account: "g-1") == false)
+        #expect(reuses(session: nil, account: nil) == false)
     }
 
     /// F9: `forget()` drops the in-memory token so the next import asks again. It must NEVER be

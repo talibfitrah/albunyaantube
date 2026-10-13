@@ -8,6 +8,9 @@ nonisolated enum BootstrapError: Sendable, Equatable {
     case invalidName, invalidDOB, underAge, invalidPhone, invalidPassword, passwordMismatch
     case passwordSetFailed, saveFailed
     case confirmPassword
+    /// The SERVER refused a name the local gate passed (links, control or invisible format
+    /// characters) — never produced by `firstError`, whose `.invalidName` is about length.
+    case invalidNameCharacters
 }
 
 /// ONE validator behind the submit button's enabled state, the line that says why it is disabled,

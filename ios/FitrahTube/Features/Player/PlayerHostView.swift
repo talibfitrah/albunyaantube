@@ -300,7 +300,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// `!==` guard: writing the same reference every `updateUIViewController` pass (most of
     /// them -- state changes for reasons that have nothing to do with the item, e.g. a quality
     /// pick) is harmless either way, but skipping the redundant write avoids churning
-    /// `AudioLanguageMenu`'s `.task(id: model.currentItem)`.
+    /// observers of `model.currentItem`.
     private func applyAudioLanguageHandoff(to controller: AVPlayerViewController) {
         guard let item = controller.player?.currentItem, item !== model.currentItem else { return }
         model.currentItem = item

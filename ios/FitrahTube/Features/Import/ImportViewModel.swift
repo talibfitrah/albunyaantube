@@ -68,7 +68,9 @@ import Observation
     private func authorizeAndFetch() async {
         do {
             let token = try await authorizer.authorize()
-            guard !Task.isCancelled else { return }
+            // A grant that lands after `revoke()`/`reset()`: Google's sheet persisted its session
+            // on completion — after that revoke or sign-out had cleared it. Drop it again.
+            guard !Task.isCancelled else { authorizer.forget(); return }
             state = .fetching
             let fetched = await source.fetchAll(accessToken: token)
             guard !Task.isCancelled else { return }
@@ -99,8 +101,8 @@ import Observation
             // WHAT, never why: `.unavailable` (the affordance should not have been offered) and
             // `.failed` (the SDK refused) are the same sentence to a user, and neither is a
             // membership fact about their Google account worth spelling out. Retry is offered only
-            // for `.failed` (Cubic round 2 P3): with no Google session to extend, a retry re-fails
-            // identically until the next Google sign-in.
+            // for `.failed` (Cubic round 2 P3): a build that cannot raise Google's sign-in re-fails
+            // identically on every retry.
             guard !Task.isCancelled else { return }
             let retryable = (error as? YouTubeAuthorizerError) != .unavailable
             state = .error(messageKey: "auth_error_generic", retryable: retryable)
