@@ -14286,6 +14286,28 @@
         }
       }
     },
+    "search_closest_results": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يوجد تطابق تام — إليك أقرب النتائج"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No exact match — showing closest results"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen exacte overeenkomst — dichtstbijzijnde resultaten"
+          }
+        }
+      }
+    },
     "search_error": {
       "localizations": {
         "ar": {

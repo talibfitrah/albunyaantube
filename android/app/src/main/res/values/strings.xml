@@ -604,6 +604,7 @@
     <string name="search_error">Search failed: %1$s</string>
     <string name="search_error_generic">Search failed. Please try again.</string>
     <string name="search_loading">Searching…</string>
+    <string name="search_closest_results">No exact match — showing closest results</string>
     <string name="error_title">Error</string>
 
     <!-- Home Overflow Menu -->

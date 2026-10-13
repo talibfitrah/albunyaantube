@@ -616,6 +616,7 @@
     <string name="search_error">فشل البحث: %1$s</string>
     <string name="search_error_generic">فشل البحث. يرجى المحاولة مرة أخرى.</string>
     <string name="search_loading">جارٍ البحث…</string>
+    <string name="search_closest_results">لا يوجد تطابق تام — إليك أقرب النتائج</string>
     <string name="error_title">خطأ</string>
 
     <!-- Home Overflow Menu -->

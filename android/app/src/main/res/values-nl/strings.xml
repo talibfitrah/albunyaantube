@@ -517,6 +517,7 @@
     <string name="search_try_different_hint">Probeer andere zoektermen</string>
     <string name="search_error">Zoeken mislukt: %1$s</string>
     <string name="search_loading">Zoeken…</string>
+    <string name="search_closest_results">Geen exacte overeenkomst — dichtstbijzijnde resultaten</string>
     <string name="error_title">Fout</string>
 
     <!-- Home Overflow Menu -->
