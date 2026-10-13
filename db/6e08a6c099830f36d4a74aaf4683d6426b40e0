@@ -1,0 +1,27 @@
+backend/src/main/java/com/albunyaan/tube/scheduler/TombstoneGcScheduler.java
+  s_dbb6b1f3671904::t_47be887b1ec357 88-93
+backend/src/test/java/com/albunyaan/tube/integration/ImportGraduationServiceIT.java
+  s_dbb6b1f3671904::t_4d7edd3eb18c98 138-181
+  s_dbb6b1f3671904::t_ab54a3a4f1f6c7 10
+backend/src/test/java/com/albunyaan/tube/integration/SyncTombstoneGcIT.java
+  s_dbb6b1f3671904::t_a4d8d31070ed53 60-80
+backend/src/main/java/com/albunyaan/tube/service/ImportGraduationService.java
+  s_dbb6b1f3671904::t_1e129b287950f4 317-323
+  s_dbb6b1f3671904::t_929c620ce62051 337-340
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "db6e08a6c099830f36d4a74aaf4683d6426b40e0",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
