@@ -154,7 +154,25 @@ extension StreamState {
     /// `PlayerScreen` with no view-hierarchy access to that item, so this is how it reaches it to
     /// read/apply audible-track selections. Written on every (re)build/update -- same hook
     /// `PlayerHostView.applyQuality` uses for the quality ceiling.
-    var currentItem: AVPlayerItem?
+    /// `didSet` loads the new item's audio options HERE, not from the menu: the menu renders
+    /// nothing until there are >1 options, and a `.task` on that empty body never runs -- no globe,
+    /// and AVPlayer keeps its own device-language dub pick. The previous item's
+    /// options are cleared first, so nothing lists or selects into its group while the load runs.
+    var currentItem: AVPlayerItem? {
+        didSet {
+            guard currentItem !== oldValue else { return }
+            audioLanguageGroup = nil
+            audioLanguageOptions = []
+            audioLanguageLoad = Task { await AudioLanguageMenu.load(self) }
+        }
+    }
+
+    /// The load `currentItem`'s `didSet` started, kept so a caller can await it landing.
+    private(set) var audioLanguageLoad: Task<Void, Never>?
+
+    /// `AudioLanguageMenu.load`'s result for `currentItem`: what the menu lists and selects into.
+    var audioLanguageGroup: AVMediaSelectionGroup?
+    var audioLanguageOptions: [AudioLanguageOption] = []
 
     /// Same hand-off reasoning as `currentItem`, one level up: `CaptionOverlay` needs the live
     /// `AVPlayer` itself (`addPeriodicTimeObserver` is an `AVPlayer` method, not `AVPlayerItem`'s),

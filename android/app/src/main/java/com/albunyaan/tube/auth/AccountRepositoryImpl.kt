@@ -207,6 +207,8 @@ class AccountRepositoryImpl(
         } catch (e: HttpException) {
             if (e.code() == 422 && bodyHasCode(e, "AGE_INELIGIBLE")) {
                 Result.failure(AgeIneligibleError())
+            } else if (e.code() == 400 && bodyMatches(e, DISPLAY_NAME_REJECTED)) {
+                Result.failure(InvalidDisplayNameError())
             } else {
                 Result.failure(e)
             }
@@ -360,7 +362,10 @@ class AccountRepositoryImpl(
      * P2). Looks for the exact JSON key/value pair `"code":"$code"` (with
      * optional whitespace) instead.
      */
-    private fun bodyHasCode(e: HttpException, code: String): Boolean {
+    private fun bodyHasCode(e: HttpException, code: String): Boolean =
+        bodyMatches(e, Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\""))
+
+    private fun bodyMatches(e: HttpException, pattern: Regex): Boolean {
         // Cubic R7 P2 — bound the error-body read. A misbehaving server
         // returning a multi-MB error body would OOM the app on
         // errorBody().string(). The code envelope is two short fields;
@@ -377,7 +382,6 @@ class AccountRepositoryImpl(
             val peeked = source.buffer.snapshot(
                 minOf(source.buffer.size, MAX_ERROR_BODY_BYTES).toInt()
             ).utf8()
-            val pattern = Regex("\"code\"\\s*:\\s*\"" + Regex.escape(code) + "\"")
             pattern.containsMatchIn(peeked)
         }
     }
@@ -386,5 +390,8 @@ class AccountRepositoryImpl(
         private const val TAG = "AccountRepository"
         private const val MAX_ATTEMPTS = 3
         private const val MAX_ERROR_BODY_BYTES = 4_096L
+
+        /** Both 400 shapes on POST /profile say "field: reason" (AccountController.handleProfileValidation, @Valid). */
+        private val DISPLAY_NAME_REJECTED = Regex("\"message\"\\s*:\\s*\"displayName:")
     }
 }

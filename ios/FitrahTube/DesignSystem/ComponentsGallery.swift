@@ -85,7 +85,7 @@ struct ComponentsGallery: View {
                     }
 
                     group("HomeChannelItem") {
-                        HStack(spacing: 12) { HomeChannelItem(item: channel) {} }
+                        HStack(spacing: 12) { HomeChannelItem(item: channel, width: 171) {} }
                     }
 
                     group("VideoRow") { VideoRow(item: video) {} }

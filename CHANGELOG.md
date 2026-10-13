@@ -5,6 +5,18 @@ stable release.
 
 ## [Unreleased]
 
+## [1.0.2] - 2026-10-13
+
+- Sign-up: an email/password account whose app still held the pre-verification sign-in token could not save its profile ("Couldn't save your profile"); the server now checks the account's current verification state, and Android refreshes the token right after verification (iOS already did).
+- Android: profile save errors appear above Continue instead of on the date-of-birth field; a display name the server refuses is shown on the name field; the minimum-age check uses the earlier of the device date and the UTC date, as the server and iOS do; reopening the app before verifying an email/password account returns to email verification instead of the profile step.
+- iOS: a refused profile save always shows an error, with Sign out beneath it, instead of silently returning to the form; a refused display name is shown on the name field.
+- Sign-in, create account, email verification and the sign-up profile step are vertically centred when they fit (both apps); on iOS they use a 480 pt column on iPad and wider side margins on iPhone.
+- iOS: long channel names on Home wrap to two lines inside a fixed-width tile (2/4/6 per screen, as on Android) instead of one wide line.
+- iOS: a channel's Live tab shows the current and past livestreams for channels (e.g. Zad) whose first results page arrives empty; up to 5 empty pages are followed, as on Android.
+- iOS: the audio-language (globe) button appears on dubbed videos and Shorts; playback starts in the original language, listed first as "Original"; audio-only mode and audio-only downloads use the original track instead of the first dub.
+- iOS: Import from YouTube is offered to every signed-in account, as on Android; accounts not signed in with Google pick a Google account, and a Google session is reused only for the account's own Google identity.
+- iOS: larger logo in the app icon; splash logo 1.5× larger (kept on screen in iPhone landscape).
+
 ## [1.0.1] - 2026-09-28
 
 - Sign-up form: a field's error waits until you leave it; the line above Continue always names what is missing; "Confirm your password" while the confirmation is empty or a correct prefix, "Passwords don't match" otherwise.

@@ -16,25 +16,29 @@ class SplashRouterTest {
     @Test fun `onboarding not done routes to onboarding regardless of auth`() {
         assertEquals(
             R.id.action_splash_to_onboarding,
-            SplashRouter.decideSplashRoute(onboardingCompleted = false, signedIn = false, accountStatus = null),
+            SplashRouter.decideSplashRoute(onboardingCompleted = false, signedIn = false, accountStatus = null,
+                hasPasswordProvider = false, isEmailVerified = true),
         )
         assertEquals(
             R.id.action_splash_to_onboarding,
-            SplashRouter.decideSplashRoute(onboardingCompleted = false, signedIn = true, accountStatus = AccountStatus.ACTIVE),
+            SplashRouter.decideSplashRoute(onboardingCompleted = false, signedIn = true, accountStatus = AccountStatus.ACTIVE,
+                hasPasswordProvider = false, isEmailVerified = true),
         )
     }
 
     @Test fun `onboarding done plus signed-in routes to main`() {
         assertEquals(
             R.id.action_splash_to_main,
-            SplashRouter.decideSplashRoute(onboardingCompleted = true, signedIn = true, accountStatus = AccountStatus.ACTIVE),
+            SplashRouter.decideSplashRoute(onboardingCompleted = true, signedIn = true, accountStatus = AccountStatus.ACTIVE,
+                hasPasswordProvider = false, isEmailVerified = true),
         )
     }
 
     @Test fun `onboarding done plus signed-out routes to sign-in`() {
         assertEquals(
             R.id.action_splash_to_signIn,
-            SplashRouter.decideSplashRoute(onboardingCompleted = true, signedIn = false, accountStatus = null),
+            SplashRouter.decideSplashRoute(onboardingCompleted = true, signedIn = false, accountStatus = null,
+                hasPasswordProvider = false, isEmailVerified = true),
         )
     }
 
@@ -54,6 +58,7 @@ class SplashRouterTest {
             SplashRouter.decideSplashRoute(
                 onboardingCompleted = true, signedIn = true,
                 accountStatus = AccountStatus.PENDING_PROFILE,
+                hasPasswordProvider = false, isEmailVerified = true,
             ),
         )
     }
@@ -64,6 +69,7 @@ class SplashRouterTest {
             SplashRouter.decideSplashRoute(
                 onboardingCompleted = true, signedIn = true,
                 accountStatus = AccountStatus.BLOCKED,
+                hasPasswordProvider = false, isEmailVerified = true,
             ),
         )
     }
@@ -74,6 +80,7 @@ class SplashRouterTest {
             SplashRouter.decideSplashRoute(
                 onboardingCompleted = true, signedIn = true,
                 accountStatus = AccountStatus.DELETED,
+                hasPasswordProvider = false, isEmailVerified = true,
             ),
         )
     }
@@ -86,8 +93,36 @@ class SplashRouterTest {
             SplashRouter.decideSplashRoute(
                 onboardingCompleted = true, signedIn = true,
                 accountStatus = null,
+                hasPasswordProvider = false, isEmailVerified = true,
             ),
         )
+    }
+
+    // --- Email verification on cold start (iOS SplashRouter: password provider && !emailVerified) ---
+
+    private fun pending(hasPasswordProvider: Boolean, isEmailVerified: Boolean, status: AccountStatus? = AccountStatus.PENDING_PROFILE) =
+        SplashRouter.decideSplashRoute(
+            onboardingCompleted = true, signedIn = true, accountStatus = status,
+            hasPasswordProvider = hasPasswordProvider, isEmailVerified = isEmailVerified,
+        )
+
+    @Test fun `unverified password account in PENDING_PROFILE routes to email verification`() {
+        // Killed on the verification screen and relaunched: bootstrap would 403 EMAIL_NOT_VERIFIED forever.
+        assertEquals(R.id.action_splash_to_emailVerification, pending(hasPasswordProvider = true, isEmailVerified = false))
+    }
+
+    @Test fun `verified password account in PENDING_PROFILE routes to bootstrap`() {
+        assertEquals(R.id.action_splash_to_bootstrap, pending(hasPasswordProvider = true, isEmailVerified = true))
+    }
+
+    @Test fun `unverified email without a password provider routes to bootstrap`() {
+        assertEquals(R.id.action_splash_to_bootstrap, pending(hasPasswordProvider = false, isEmailVerified = false))
+    }
+
+    @Test fun `unverified password account that is BLOCKED or DELETED still routes to sign-in`() {
+        for (status in listOf(AccountStatus.BLOCKED, AccountStatus.DELETED)) {
+            assertEquals("$status", R.id.action_splash_to_signIn, pending(hasPasswordProvider = true, isEmailVerified = false, status = status))
+        }
     }
 
     // --- Mid-session sign-out: no content without an account ---

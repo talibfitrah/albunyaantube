@@ -1,0 +1,18 @@
+{
+  "playabilityStatus": {"status": "OK"},
+  "streamingData": {
+    "expiresInSeconds": "21540",
+    "hlsManifestUrl": "https://manifest.googlevideo.com/api/manifest/hls_variant/x.m3u8",
+    "adaptiveFormats": [
+      {"itag": 137, "url": "https://r1.googlevideo.com/videoplayback?itag=137", "mimeType": "video/mp4; codecs=\"avc1.640028\""},
+      {"itag": 139, "url": "https://r1.googlevideo.com/videoplayback?itag=139&xtags=ar.10", "mimeType": "audio/mp4; codecs=\"mp4a.40.5\"", "audioTrack": {"displayName": "Arabic", "id": "ar.10", "audioIsDefault": false, "isAutoDubbed": true}},
+      {"itag": 139, "url": "https://r1.googlevideo.com/videoplayback?itag=139&xtags=en-US.4", "mimeType": "audio/mp4; codecs=\"mp4a.40.5\"", "audioTrack": {"displayName": "English (US) original", "id": "en-US.4", "audioIsDefault": true}},
+      {"itag": 140, "url": "https://r1.googlevideo.com/videoplayback?itag=140&xtags=ar.10", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "audioTrack": {"displayName": "Arabic", "id": "ar.10", "audioIsDefault": false, "isAutoDubbed": true}},
+      {"itag": 140, "url": "https://r1.googlevideo.com/videoplayback?itag=140&xtags=nl-NL.10", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "audioTrack": {"displayName": "Dutch (NL)", "id": "nl-NL.10", "audioIsDefault": false, "isAutoDubbed": true}},
+      {"itag": 140, "url": "https://r1.googlevideo.com/videoplayback?itag=140&xtags=en-US.4", "mimeType": "audio/mp4; codecs=\"mp4a.40.2\"", "audioTrack": {"displayName": "English (US) original", "id": "en-US.4", "audioIsDefault": true}},
+      {"itag": 251, "url": "https://r1.googlevideo.com/videoplayback?itag=251&xtags=ar.10", "mimeType": "audio/webm; codecs=\"opus\"", "audioTrack": {"displayName": "Arabic", "id": "ar.10", "audioIsDefault": false, "isAutoDubbed": true}},
+      {"itag": 251, "url": "https://r1.googlevideo.com/videoplayback?itag=251&xtags=en-US.4", "mimeType": "audio/webm; codecs=\"opus\"", "audioTrack": {"displayName": "English (US) original", "id": "en-US.4", "audioIsDefault": true}}
+    ]
+  },
+  "videoDetails": {"isLive": false}
+}

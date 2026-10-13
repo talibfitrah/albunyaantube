@@ -329,11 +329,10 @@ struct EmailVerificationViewModelTests {
         #expect(outcome.destination == .main)
     }
 
-    /// Stage 5 / C1.1 + C3.1. `reload()` refreshes the USER RECORD, not the cached ID token, and the
-    /// backend gates on the token CLAIM (`FirebaseAuthFilter` reads `decodedToken.isEmailVerified()`).
-    /// Without a forced re-mint the next `POST /api/account/profile` answers 403 `EMAIL_NOT_VERIFIED`
-    /// for up to the token's remaining hour, which the bootstrap form renders as "couldn't save your
-    /// profile" with no way forward.
+    /// Stage 5 / C1.1 + C3.1. `reload()` refreshes the USER RECORD, not the cached ID token. Routes
+    /// other than `POST /api/account/profile` trust only the token CLAIM (`FirebaseAuthFilter` reads
+    /// `decodedToken.isEmailVerified()`), and the profile save falls back to the record only when that
+    /// lookup succeeds, so the verified account must carry a re-minted token.
     ///
     /// The fake's token now carries CLAIMS that lag `reloadedUser` until a forced refresh, so the
     /// old one-line fake — whose token was derived from the state user and could never disagree with

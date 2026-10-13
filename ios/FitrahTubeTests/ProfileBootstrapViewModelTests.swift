@@ -507,7 +507,7 @@ struct ProfileBootstrapViewModelTests {
         #expect(fixture.model.state.error == .passwordSetFailed)
         #expect(fixture.model.state.profileSaved, "the profile committed; only the password failed")
 
-        fixture.model.signOutFromStuckPasswordStep()
+        fixture.model.signOutFromStuckForm()
 
         #expect(await auth.currentUser() == nil, "the user is still stranded on the screen")
         for _ in 0..<500 where fixture.status.pending == nil { await Task.yield() }
@@ -515,20 +515,21 @@ struct ProfileBootstrapViewModelTests {
     }
 
     /// Not a second sign-out control: the action is the recovery for a stranded form and does
-    /// nothing on a screen that is merely incomplete.
-    @Test func theSignOutExitIsOfferedOnlyForTheStuckPasswordStep() async throws {
+    /// nothing on a screen that is merely incomplete. A failed profile save IS stranded (R2-B): a
+    /// 403 `EMAIL_NOT_VERIFIED` is `.saveFailed` on every retry, with no back button and no tab bar.
+    @Test func theSignOutExitIsOfferedOnlyOnAFailedSave() async throws {
         let auth = FakeAuthClient(state: .signedIn(Self.googleUser))
         let fixture = make(auth: auth, responses: [.json(200, Self.pendingJSON)])
         await fixture.session.refresh(maxAttempts: 1)   // a session that CAN be dropped
 
-        fixture.model.signOutFromStuckPasswordStep()
+        fixture.model.signOutFromStuckForm()
         #expect(await auth.currentUser() != nil, "an untouched form signed the user out")
 
         fill(fixture.model)
         await fixture.model.submit()      // the queue is dry: `.saveFailed`, not the password step
         #expect(fixture.model.state.error == .saveFailed)
-        fixture.model.signOutFromStuckPasswordStep()
-        #expect(await auth.currentUser() != nil, "a failed profile save is retryable in place")
+        fixture.model.signOutFromStuckForm()
+        #expect(await auth.currentUser() == nil, "a permanent save failure left no way off the screen")
     }
 
     @Test func aMissingCurrentUserAtThePasswordStepIsPasswordSetFailed() async throws {
@@ -620,17 +621,43 @@ struct ProfileBootstrapViewModelTests {
         #expect(fixture.session.state.me != nil, "nothing re-read /me, so the router could not move")
     }
 
-    /// Same shape for the 403: the session is re-read, the screen releases, and `SplashRouter` is
-    /// what lands the account on verification.
-    @Test func anEmailNotVerified403RefreshesTheSessionSoTheRouterCanLand() async {
-        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
-                           responses: [.json(403, #"{"code":"EMAIL_NOT_VERIFIED"}"#), .json(200, Self.meJSON)])
+    /// The 403 is NOT the 409's shape. The backend already re-checks the Firebase RECORD
+    /// (`AccountController.java:117`), so it means the record itself is unverified — a federated
+    /// ID such as Apple's "at Work & School", say — and `/me` still answers `pending_profile`. The
+    /// old arm re-read it and "moved on" to this same form: the spinner stopped on nothing, and
+    /// every retry did the same. The screen has to SAY it.
+    @Test func anEmailNotVerified403IsAVisibleSaveFailed() async {
+        let unverified = AuthUser(uid: "fake-uid", email: "x1y2@privaterelay.appleid.com",
+                                  isEmailVerified: false, providerIDs: ["apple.com"])
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(unverified)),
+                           responses: [.json(403, #"{"code":"EMAIL_NOT_VERIFIED"}"#),
+                                       .json(200, Self.pendingJSON)])
         fill(fixture.model)
 
         await fixture.model.submit()
 
-        #expect(fixture.model.state.error == nil)
-        #expect(fixture.model.nav == .main)
-        #expect(fixture.session.state.me != nil)
+        #expect(profilePosts(fixture.transport).count == 1)
+        #expect(fixture.model.state.error == .saveFailed, "the refusal was silent")
+        #expect(fixture.model.state.isLoading == false)
+        #expect(fixture.model.state.profileSaved == false)
+        #expect(fixture.model.nav == .idle)
+    }
+
+    /// The server refuses names the local gate lets through — an RLM, the ZWJ inside an emoji
+    /// sequence, a control character, a URL (`AccountProfileService.validateDisplayName`) — with a
+    /// 400 naming `displayName`. Read as "couldn't save your profile", nothing said WHICH answer
+    /// to change; read as `.invalidName` (R2-C), it said "1–40 characters" about a name that is.
+    @Test func aServerDisplayNameRefusalLandsOnTheNameField() async {
+        let fixture = make(auth: FakeAuthClient(state: .signedIn(Self.passwordUser)),
+                           responses: [.json(400, #"{"code":"VALIDATION","message":"displayName: zero-width or bidi-override characters not allowed"}"#)])
+        fill(fixture.model, name: "Aisha\u{200F}")
+        #expect(fixture.model.isFormValid, "the local gate refused the name, so the server was never asked")
+
+        await fixture.model.submit()
+
+        #expect(fixture.model.shownError == ShownError(error: .invalidNameCharacters, onField: true))
+        #expect(BootstrapError.invalidNameCharacters.messageKey == "bootstrap_error_invalid_name_characters")
+        #expect(fixture.model.state.isLoading == false)
+        #expect(fixture.model.nav == .idle)
     }
 }

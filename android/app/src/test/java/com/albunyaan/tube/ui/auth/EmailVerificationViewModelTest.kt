@@ -39,6 +39,7 @@ class EmailVerificationViewModelTest {
         whenever(auth.currentUser).thenReturn(user)
         whenever(user.sendEmailVerification()).thenReturn(Tasks.forResult(null))
         whenever(user.reload()).thenReturn(Tasks.forResult(null))
+        whenever(user.getIdToken(true)).thenReturn(Tasks.forResult(mock<com.google.firebase.auth.GetTokenResult>()))
         authRepository = mock()
         accountService = mock {
             onBlocking { sendVerificationEmail() } doReturn retrofit2.Response.success(Unit)
@@ -57,6 +58,15 @@ class EmailVerificationViewModelTest {
         assertNotNull(vm.ui.value.lastSentAtMs)
     }
 
+    /** Cold start (splash route, autoSend=false): sign-up or sign-in already mailed, in an earlier process. */
+    @Test fun `arriving from the splash sends nothing`() = runTest(dispatcher) {
+        saved["autoSend"] = false
+        newVm()
+        advanceUntilIdle()
+        verify(accountService, never()).sendVerificationEmail()
+        verify(user, never()).sendEmailVerification()
+    }
+
     @Test fun `enter does not resend when lastSentAt already in saved state`() = runTest(dispatcher) {
         saved["lastSentAtMs"] = 1_700_000_000_000L
         newVm()
@@ -73,12 +83,39 @@ class EmailVerificationViewModelTest {
         assertEquals(EmailVerificationViewModel.Nav.NavigateToSplash, vm.nav.value)
     }
 
+    /** reload() refreshes the user record, not the cached ID token, whose email_verified claim every
+     *  backend route but POST /api/account/profile trusts as minted. */
+    @Test fun `checkNow force-refreshes the ID token after a verified reload`() = runTest(dispatcher) {
+        val vm = newVm()
+        advanceUntilIdle()
+        whenever(user.isEmailVerified).thenReturn(true)
+        vm.checkNow()
+        advanceUntilIdle()
+        val order = inOrder(user)
+        order.verify(user).reload()
+        order.verify(user).getIdToken(true)
+        assertEquals(EmailVerificationViewModel.Nav.NavigateToSplash, vm.nav.value)
+    }
+
+    @Test fun `checkNow stays put when the token refresh fails`() = runTest(dispatcher) {
+        val vm = newVm()
+        advanceUntilIdle()
+        whenever(user.isEmailVerified).thenReturn(true)
+        whenever(user.getIdToken(true)).thenReturn(Tasks.forException(java.io.IOException("offline")))
+        vm.checkNow()
+        advanceUntilIdle()
+        assertEquals(EmailVerificationViewModel.Nav.Idle, vm.nav.value)
+        assertEquals(EmailVerifyError.NETWORK, vm.ui.value.error)
+        assertFalse(vm.ui.value.isChecking)
+    }
+
     @Test fun `checkNow surfaces NOT_YET_VERIFIED when still false`() = runTest(dispatcher) {
         val vm = newVm()
         advanceUntilIdle()
         vm.checkNow()
         advanceUntilIdle()
         assertEquals(EmailVerifyError.NOT_YET_VERIFIED, vm.ui.value.error)
+        verify(user, never()).getIdToken(any())
     }
 
     @Test fun `resend respects 60s cooldown`() = runTest(dispatcher) {

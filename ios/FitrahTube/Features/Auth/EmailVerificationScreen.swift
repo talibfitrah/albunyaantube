@@ -15,9 +15,7 @@ struct EmailVerificationScreen: View {
     @State private var banner: BannerMessage?
 
     var body: some View {
-        ScrollView {
-            content.padding(Spacing.md(widthClass))
-        }
+        CentredFormColumn { content }
         .background(Color.background.ignoresSafeArea())
         .navigationBarTitleDisplayMode(.inline)
         // Fix round 1 / I1: the outcome of "I've verified my email" used to be a bare inline `Text`

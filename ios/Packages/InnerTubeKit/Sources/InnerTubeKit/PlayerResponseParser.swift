@@ -101,8 +101,14 @@ public struct PlayerResponseParser: Sendable {
         )
     }
 
+    /// Dubbed videos list one format per audio track for the same itag, dubs FIRST (live VISIONOS
+    /// probe 2026-10-13: `ar.10` first, the original `en-US.4` last) -- so prefer the track YouTube
+    /// flags `audioIsDefault` (the original), else the first match -- among the formats with a
+    /// usable URL, so a cipher-only original never turns a playable itag into nil.
     private func url(forItag itag: Int, in formats: [Wire.Format]) -> URL? {
-        Self.httpsURL(formats.first(where: { $0.itag == itag })?.url)
+        let matches = formats.filter { $0.itag == itag && Self.httpsURL($0.url) != nil }
+        let format = matches.first(where: { $0.audioTrack?.audioIsDefault == true }) ?? matches.first
+        return Self.httpsURL(format?.url)
     }
 
     /// Defense-in-depth at the trust boundary (M2): a URL handed to AVPlayer must be `https`.
@@ -136,6 +142,11 @@ public struct PlayerResponseParser: Sendable {
         struct Format: Decodable {
             var itag: Int?
             var url: String?
+            var audioTrack: AudioTrack?
+
+            struct AudioTrack: Decodable {
+                var audioIsDefault: Bool?
+            }
         }
         struct StreamingData: Decodable {
             var expiresInSeconds: String?

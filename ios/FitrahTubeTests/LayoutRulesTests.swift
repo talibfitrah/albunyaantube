@@ -94,4 +94,25 @@ struct LayoutRulesTests {
         #expect(GridRules.cardGap(.regular) == 16)
         #expect(GridRules.cardGap(.large) == 20)
     }
+
+    /// A long channel name ran on one wide line on Home: the rail's horizontal `ScrollView` gives
+    /// the item NO width proposal (the `nil` below), so only the item's own width makes
+    /// `.lineLimit(2)` wrap — Android sets it to `channelCardWidth` (`HomeFeaturedAdapter.kt:79-86`,
+    /// `item_home_channel.xml` maxLines 2).
+    @MainActor @Test func aLongHomeChannelNameWrapsWithinItsCarouselWidth() {
+        func renderedSize(_ title: String) -> CGSize {
+            let item = ContentItem(id: "c", type: .channel, title: title, category: nil, description: nil,
+                                   thumbnailURL: nil, durationSeconds: nil, uploadedDaysAgo: nil, viewCount: nil,
+                                   channelTitle: nil, subscribers: 48_200, videoCount: nil, itemCount: nil)
+            let renderer = ImageRenderer(content: HomeChannelItem(item: item, width: 171) {}
+                .environment(\.layoutDirection, .rightToLeft)
+                .environment(\.locale, Locale(identifier: "ar")))
+            renderer.proposedSize = ProposedViewSize(width: nil, height: nil)
+            return renderer.uiImage?.size ?? .zero
+        }
+        let long = renderedSize("Almajd Quran Channel HD - قناة المجد للقرآن الكريم")
+        let short = renderedSize("Arabic 101")
+        #expect(abs(long.width - 171) < 1, "the name widened the item to \(long.width) pt")
+        #expect(long.height > short.height, "the long name stayed on one line (\(long.height) vs \(short.height) pt)")
+    }
 }

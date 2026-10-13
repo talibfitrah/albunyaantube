@@ -327,14 +327,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Ruling F9's seam. `GoogleYouTubeAuthorizer` is the sixth and last app file allowed to name a
     /// Google SDK type; every reader above it sees `any YouTubeAuthorizer` and a `String`.
     ///
-    /// A FIXTURE gets a fake with NEITHER Google fact, so `isAvailable` is false and the Me kebab's
-    /// Import row is absent — the screenshot rig must not depend on a Google grant it cannot have,
-    /// and RULING 28 says an unavailable affordance is not rendered at all.
+    /// A FIXTURE gets an unavailable fake, so `isAvailable` is false and the Me kebab's
+    /// Import row is absent — the screenshot rig must not depend on Google's sign-in, which it
+    /// cannot drive, and RULING 28 says an unavailable affordance is not rendered at all.
     private(set) lazy var youtubeAuthorizer: any YouTubeAuthorizer = {
         #if DEBUG
         if isFixture { return UnavailableYouTubeAuthorizer(available: Self.seedsImportReview) }
         #endif
-        return GoogleYouTubeAuthorizer()
+        return GoogleYouTubeAuthorizer(accountGoogleUserID: { [weak self] in self?.session.user?.googleUserID })
     }()
 
     #if DEBUG
@@ -399,12 +399,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// The session ended: the run in flight belonged to it (`ImportViewModel.reset`).
     func endImportRun() { builtImportViewModel?.reset() }
 
-    /// The ONE spelling of "may this account import" (`MeViewModel.canImport`): the signed-in
-    /// account's own providers AND the SDK session, read at render time.
-    var canImportFromYouTube: Bool {
-        MeViewModel.canImport(providerIDs: session.user?.providerIDs,
-                              sdkSessionAvailable: youtubeAuthorizer.isAvailable)
-    }
+    /// The ONE spelling of "may this account import": any signed-in account, whenever this build
+    /// can raise Google's picker (`YouTubeAuthorizer.isAvailable`), read at render time — Android
+    /// shows it to every signed-in user (`MeFragment.kt:295-299`).
+    var canImportFromYouTube: Bool { youtubeAuthorizer.isAvailable }
 
     /// The signed transport, except for a FIXTURE, which gets a canned 503 — the `gateTransport`
     /// precedent: the fixture's `authorizedTransport` is a `ScriptedTransport` holding canned `/me`

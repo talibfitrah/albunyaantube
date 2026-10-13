@@ -56,6 +56,7 @@ class SplashRouterOfflineTest {
 
     private fun route(status: AccountStatus?) = SplashRouter.decideSplashRoute(
         onboardingCompleted = true, signedIn = true, accountStatus = status,
+        hasPasswordProvider = false, isEmailVerified = true,
     )
 
     @Test fun `offline with a persisted ACTIVE record routes to main with no sign-out`() {

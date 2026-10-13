@@ -72,7 +72,7 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     private let favorites: any FavoritesStore
     private let subscriptions: any SubscriptionsStore
     private let savedPlaylists: any SavedPlaylistsStore
-    /// Task 29: whether this account has a Google grant the import flow can extend, read at RENDER
+    /// Task 29: whether this build can raise Google's sign-in for the import flow, read at RENDER
     /// time rather than captured. A closure, not `any YouTubeAuthorizer`, because that is the whole
     /// of what this screen needs to know — the Me tab has no other business with the import feature.
     private let canImportFromYouTube: () -> Bool
@@ -179,7 +179,7 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
     /// while the first dialog is still up cannot fire a second one. Returns whether to present.
     ///
     /// It also requires the affordance the offer leads to: the positive button pushes
-    /// `Route.importFromYouTube`, which an account with no Google grant cannot use (RULING 28 keeps
+    /// `Route.importFromYouTube`, which a build without Google sign-in cannot use (RULING 28 keeps
     /// that row off the kebab for the same reason) — offering it there would be a dialog whose one
     /// action fails.
     func consumeImportOffer() -> Bool {
@@ -188,22 +188,13 @@ nonisolated enum MeKebabItem: Sendable, Equatable, CaseIterable {
         return true
     }
 
-    /// Part B gate (Cubic round 5 P1): Import is offered only to an account that ITSELF signed in
-    /// with Google — the SDK's keychain session is device-wide (`hasPreviousSignIn`), so on its own
-    /// it would offer an email/password or Apple account the previous Google user's library. Both
-    /// facts, never one: the account's provider list AND a session the SDK can extend.
-    nonisolated static func canImport(providerIDs: [String]?, sdkSessionAvailable: Bool) -> Bool {
-        providerIDs?.contains("google.com") == true && sdkSessionAvailable
-    }
-
     /// `MeFragment.kt:270-271` compares `ignoreCase = true`; `AccountMe.isModerator` carries that.
     var showsModeratorItems: Bool { session.state.me?.isModerator == true }
 
-    /// Task 29's capability gate: Import
-    /// needs a signed-in GOOGLE user to extend a scope onto (`GIDGoogleUser.addScopes` lives on the
-    /// user, not on `GIDSignIn`), so an Apple or email/password account has nothing to authorize.
-    /// RULING 28 again: the row is ABSENT for those accounts, never rendered greyed — a greyed row
-    /// is still a visible promise, and this one could never be kept.
+    /// Task 29's capability gate: Import needs Google sign-in configured in this build (its picker
+    /// is how any account, Google or not, authorizes). RULING 28 again: the row is ABSENT without
+    /// it, never rendered greyed — a greyed row is still a visible promise, and this one could
+    /// never be kept.
     var enabledKebabItems: [MeKebabItem] {
         MeKebabItem.items(isModerator: showsModeratorItems)
             .filter { $0 != .importYouTube || canImportFromYouTube() }

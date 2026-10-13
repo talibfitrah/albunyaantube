@@ -1,4 +1,9 @@
 {
+  "1.0.2": {
+    "en": "Sign-up profiles save again after verifying your email; sign-in screens are centred.",
+    "ar": "يُحفظ ملف التسجيل مجددًا بعد تأكيد بريدك الإلكتروني؛ شاشات الدخول أصبحت في المنتصف.",
+    "nl": "Je profiel wordt weer opgeslagen na het bevestigen van je e-mail; inlogschermen staan nu gecentreerd."
+  },
   "1.0.1": {
     "en": "Sign-up now tells you exactly what is missing before you can continue.",
     "ar": "صفحة التسجيل تخبرك الآن بما ينقص بالضبط قبل أن تتابع.",

@@ -1,8 +1,8 @@
 import SwiftUI
 
 /// `Route.importFromYouTube` — the Me kebab's Import row (`ImportFromYouTubeFragment.kt`), offered
-/// to every signed-in user whose account actually has a Google grant to extend (RULING 28: the row
-/// is ABSENT for an Apple or email/password account, never greyed).
+/// to every signed-in user whenever this build can raise Google's sign-in (RULING 28: the row is
+/// ABSENT when it cannot, never greyed).
 ///
 /// **Nothing here links to YouTube.** The one external destination on the screen is Google's own
 /// account-permissions page, on the revoke confirmation — ruling F9's "we forgot the token; the
@@ -83,9 +83,9 @@ struct ImportFromYouTubeScreen: View {
         // offer instead, in Android's own words for it: `import_offer_*`, which the catalog has
         // carried unrendered since the converter first ran.
         case .idle where model.didRevoke:
-            // Part B gate: `forget()` drops the SDK session, so there is nothing to authorize until
-            // the next Google sign-in — RULING 28, the offer is ABSENT, and `revokeSection` below
-            // carries the whole message.
+            // `revokeSection` below carries the whole message; an offer here would put a button
+            // that re-asks Google beside the line saying access was just forgotten. `forget()`
+            // dropped the SDK session, so reopening Import starts over at Google's picker.
             EmptyView()
         case .idle:
             EmptyStateView(systemImage: "square.and.arrow.down.on.square",

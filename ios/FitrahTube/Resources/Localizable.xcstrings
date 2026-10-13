@@ -1344,6 +1344,28 @@
         }
       }
     },
+    "bootstrap_error_invalid_name_characters": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يمكن أن يحتوي الاسم على روابط أو رموز خاصة."
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "This name can't include links or special characters."
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Deze naam mag geen links of speciale tekens bevatten."
+          }
+        }
+      }
+    },
     "bootstrap_error_invalid_password": {
       "localizations": {
         "ar": {

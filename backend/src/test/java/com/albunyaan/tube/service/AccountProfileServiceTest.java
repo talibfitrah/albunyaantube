@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ClockConfig;
 import com.albunyaan.tube.model.User;
 import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.UserRepository;
@@ -111,6 +112,38 @@ class AccountProfileServiceTest {
         assertThrows(AgeIneligibleException.class,
             () -> service.completeProfile("uid-1", "Almost",
                 LocalDate.of(2013, 5, 12), "+31612345678"));
+    }
+
+    private AccountProfileService serviceAt(String instant) {
+        // ClockConfig is Clock.systemUTC(): the server's "today" is the UTC date.
+        return new AccountProfileService(userRepository, firebaseAuth,
+                Clock.fixed(java.time.Instant.parse(instant), ZoneOffset.UTC), auditLogService);
+    }
+
+    private void anyUidIsPendingProfile() throws Exception {
+        when(userRepository.findByUid(any())).thenAnswer(inv -> {
+            User u = new User(inv.getArgument(0), "a@b.com", null, "user");
+            u.setStatusEnum(UserStatus.PENDING_PROFILE);
+            return Optional.of(u);
+        });
+        when(userRepository.save(any(User.class))).thenAnswer(inv -> inv.getArgument(0));
+    }
+
+    /** The age gate's "today" is the application Clock's date, and that clock is UTC. */
+    @Test
+    void ageGateClockIsUtc() {
+        assertEquals(ZoneOffset.UTC, new ClockConfig().systemClock().getZone());
+    }
+
+    /** Period.between: a Feb 29 birth is 13 on Mar 1 of a common year. */
+    @Test
+    void feb29BirthTurnsThirteenOnMarch1InACommonYear() throws Exception {
+        anyUidIsPendingProfile();
+
+        assertThrows(AgeIneligibleException.class, () -> serviceAt("2025-02-28T12:00:00Z")
+                .completeProfile("uid-feb28", "Leap", LocalDate.of(2012, 2, 29), null));
+        assertEquals(UserStatus.ACTIVE, serviceAt("2025-03-01T00:00:00Z")
+                .completeProfile("uid-mar1", "Leap", LocalDate.of(2012, 2, 29), null).getStatusEnum());
     }
 
     @Test

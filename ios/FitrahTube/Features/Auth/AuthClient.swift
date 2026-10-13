@@ -13,6 +13,9 @@ nonisolated struct AuthUser: Sendable, Equatable {
     /// Firebase's `User.displayName`: the name a provider shared (Google's profile, Apple's first
     /// authorization). Seeds the bootstrap form's name field (`ProfileBootstrapViewModel.load()`).
     var displayName: String? = nil
+    /// The `google.com` provider's own uid — Google's user id (`GIDGoogleUser.userID`) — or nil
+    /// when the account has no Google provider. `GoogleYouTubeAuthorizer` reuses only this identity.
+    var googleUserID: String? = nil
     var hasPasswordProvider: Bool { providerIDs.contains("password") }
     var hasAppleProvider: Bool { providerIDs.contains("apple.com") }
 }

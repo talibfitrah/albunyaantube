@@ -58,7 +58,9 @@ struct SplashView: View {
             Color.background.ignoresSafeArea()
             VStack(spacing: 0) {
                 Spacer(minLength: 0)
-                logoBlock
+                // First claim on the height, so the logo is full size wherever it fits and only
+                // as tall as what is left where it does not (iPhone landscape, ~370 pt).
+                logoBlock.layoutPriority(1)
                 Spacer(minLength: 0)
                 ProgressView()
                     .tint(.brand)
@@ -90,7 +92,7 @@ struct SplashView: View {
             Image("logo")
                 .resizable()
                 .aspectRatio(contentMode: .fit)
-                .frame(width: widthClass.pick(160, 220, 280), height: widthClass.pick(160, 220, 280))
+                .frame(maxWidth: widthClass.pick(240, 330, 420), maxHeight: widthClass.pick(240, 330, 420))
                 .accessibilityHidden(true)
             Text(String(localized: "app_name"))
                 .font(.system(size: widthClass.pick(32, 40, 48), weight: .bold))

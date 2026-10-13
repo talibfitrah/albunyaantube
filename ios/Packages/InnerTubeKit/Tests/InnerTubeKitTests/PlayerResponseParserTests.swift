@@ -214,6 +214,49 @@ import Testing
         }
     }
 
+    // Dubbed videos carry one itag-140 per audio track, dubs FIRST (live VISIONOS probe
+    // 2026-10-13, I-WkGE4aTdE: 20 `*.10` dubs, then the original `en-US.4`, the only one with
+    // `audioTrack.audioIsDefault: true`). Trimmed synthetic fixture with that real structure.
+    @Test func dubbedVideoItag140IsTheAudioIsDefaultTrackNotTheFirstDub() throws {
+        let result = try parser.parse(try loadFixture("player-dubbed-audio")).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.itag140URL?.absoluteString == "https://r1.googlevideo.com/videoplayback?itag=140&xtags=en-US.4")
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
+    @Test func itag140WithoutAudioTrackStaysTheFirstMatch() throws {
+        let body = Data(
+            """
+            {"playabilityStatus":{"status":"OK"},"streamingData":{"adaptiveFormats":[{"itag":140,"url":"https://r1.googlevideo.com/first"},{"itag":140,"url":"https://r1.googlevideo.com/second"}]}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.itag140URL?.absoluteString == "https://r1.googlevideo.com/first")
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
+    // The `audioIsDefault` track can be cipher-only (no `url`): the preference applies among the
+    // formats that have a usable URL, rather than turning a playable itag into nil.
+    @Test func itag140FallsBackToAUsableURLWhenTheDefaultTrackHasNone() throws {
+        let body = Data(
+            """
+            {"playabilityStatus":{"status":"OK"},"streamingData":{"adaptiveFormats":[{"itag":140,"url":"https://r1.googlevideo.com/dub","audioTrack":{"audioIsDefault":false}},{"itag":140,"signatureCipher":"s=x&url=https%3A%2F%2Fr1.googlevideo.com%2Foriginal","audioTrack":{"audioIsDefault":true}}]}}
+            """.utf8)
+        let result = try parser.parse(body).playability
+        switch result {
+        case .ok(let streaming):
+            #expect(streaming.itag140URL?.absoluteString == "https://r1.googlevideo.com/dub")
+        default:
+            Issue.record("expected .ok, got \(result)")
+        }
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)

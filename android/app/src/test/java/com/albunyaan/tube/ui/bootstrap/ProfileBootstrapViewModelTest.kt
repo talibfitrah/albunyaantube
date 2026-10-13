@@ -6,6 +6,7 @@ import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AgeIneligibleError
+import com.albunyaan.tube.auth.InvalidDisplayNameError
 import com.google.firebase.auth.FirebaseAuth
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
@@ -115,6 +116,19 @@ class ProfileBootstrapViewModelTest {
         advanceUntilIdle()
 
         assertEquals(BootstrapNav.NavigateToAgeIneligible, viewModel.nav.value)
+    }
+
+    @Test fun `submit puts the server's displayName rejection on the name field`() = runTest(dispatcher) {
+        whenever(repository.completeProfile(any(), any(), anyOrNull()))
+            .thenReturn(Result.failure(InvalidDisplayNameError()))
+
+        viewModel.onDisplayNameChanged("Ali\u200F")
+        viewModel.onDobChanged(LocalDate.of(2000, 1, 1))
+        viewModel.submit()
+        advanceUntilIdle()
+
+        // Not the 1–40 length message: the server rejects format/control characters and links.
+        assertEquals(ShownError(BootstrapError.INVALID_NAME_CHARACTERS, onField = true), viewModel.shownError())
     }
 
     @Test fun `submit network error surfaces SAVE_FAILED`() = runTest(dispatcher) {
@@ -363,10 +377,12 @@ class ProfileBootstrapViewModelTest {
         assertNull(viewModel.shownError())
     }
 
+    /** SAVE_FAILED is the server's answer, not any one field's: it goes in the line by Continue,
+     *  never on a field (it used to sit on Date of birth, painting a valid date red). */
     @Test fun `shownError prefers a submit or server error`() {
         viewModel.onDisplayNameChanged("Alice")
         viewModel.surfaceError(BootstrapError.SAVE_FAILED)
-        assertEquals(ShownError(BootstrapError.SAVE_FAILED, onField = true), viewModel.shownError())
+        assertEquals(ShownError(BootstrapError.SAVE_FAILED, onField = false), viewModel.shownError())
     }
 
     /**

@@ -73,3 +73,25 @@ extension View {
         }
     }
 }
+
+/// The sign-in flow's one layout (sign-in/create-account, email verification, profile bootstrap,
+/// age-ineligible): a 480 pt column on wide screens (Android's layout-sw600dp/fragment_sign_in.xml),
+/// at least the visible height, so content that fits sits centred in it (the frame's default
+/// alignment) and taller content (keyboard, landscape, large text) grows past it and scrolls from its
+/// top. Not `.defaultScrollAnchor(.center)`: a screen that builds its form in `.task` would have its
+/// empty first frame centred and a tall form left half-scrolled. `SignInLayoutTests` covers both.
+struct CentredFormColumn<Content: View>: View {
+    @Environment(\.widthClass) private var widthClass
+    @ViewBuilder let content: Content
+
+    var body: some View {
+        GeometryReader { proxy in
+            ScrollView {
+                content.padding(.vertical, Spacing.md(widthClass))
+                    .padding(.horizontal, Spacing.lg(widthClass))
+                    .frame(maxWidth: 480)
+                    .frame(maxWidth: .infinity, minHeight: proxy.size.height)
+            }
+        }
+    }
+}

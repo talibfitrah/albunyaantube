@@ -149,30 +149,25 @@ final class SleepRecorder: Sendable {
 /// never asked" is a property a caller's test can break: an Import screen that asks one anyway
 /// gets `.unavailable`, not a silent success.
 @MainActor final class FakeYouTubeAuthorizer: YouTubeAuthorizer {
-    /// The two SDK facts `GoogleYouTubeAuthorizer.isAvailable` reads, kept APART so the RELAUNCH
-    /// state is expressible: `GIDSignIn.currentUser` is nil on every cold launch, while the
-    /// keychain-backed `hasPreviousSignIn` is not. A fake with one `isAvailable` flag could not
-    /// state the case review C1 found, which is why it now has two.
-    private(set) var hasCurrentUser: Bool
-    private(set) var hasPreviousSignIn: Bool
-    var isAvailable: Bool { hasCurrentUser || hasPreviousSignIn }
+    /// `GoogleYouTubeAuthorizer.isAvailable`'s one fact: this build can raise Google's picker. No
+    /// Google session is part of it — `authorize()` signs one in when there is none — so `forget()`
+    /// leaves it alone and the next `authorize()` simply asks Google again.
+    let isAvailable: Bool
     /// `var`: a suite that needs the SECOND authorization to be refused cannot rebuild the
     /// authorizer mid-flow.
     var error: YouTubeAuthorizerError?
     let gate: Gate?
     private(set) var authorizeCount = 0
     private(set) var forgetCount = 0
-    /// The last token handed out; `forget()` drops it, and — the production contract since the
-    /// Part B gate — both SDK facts with it, so the next `authorize()` is refused as unavailable.
+    /// The last token handed out; `forget()` drops it.
     private(set) var heldToken: String?
 
     private let token: String
 
-    init(token: String = "fake-youtube-access-token", hasCurrentUser: Bool = true,
-         hasPreviousSignIn: Bool = false, error: YouTubeAuthorizerError? = nil, gate: Gate? = nil) {
+    init(token: String = "fake-youtube-access-token", isAvailable: Bool = true,
+         error: YouTubeAuthorizerError? = nil, gate: Gate? = nil) {
         self.token = token
-        self.hasCurrentUser = hasCurrentUser
-        self.hasPreviousSignIn = hasPreviousSignIn
+        self.isAvailable = isAvailable
         self.error = error
         self.gate = gate
     }
@@ -189,8 +184,6 @@ final class SleepRecorder: Sendable {
     func forget() {
         forgetCount += 1
         heldToken = nil
-        hasCurrentUser = false
-        hasPreviousSignIn = false
     }
 }
 

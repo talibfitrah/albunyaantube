@@ -325,9 +325,9 @@ struct SignInViewModelTests {
     }
 
     /// Part B gate, Cubic round 5 P1: the provider SDK signed its user in and Firebase then refused
-    /// the credential. That SDK session must not outlive the failed sign-in — `GoogleYouTubeAuthorizer
-    /// .isAvailable` reads the SDK's keychain, and the next account on the device would otherwise be
-    /// offered the stranger's YouTube library.
+    /// the credential. That SDK session — a Google identity no account here signed in as — must not
+    /// outlive the failed sign-in on the device; `GoogleYouTubeAuthorizer.authorize()` would never
+    /// reuse it for another account, so nothing needs it kept.
     @Test func aFirebaseRefusalAfterAProviderSuccessForgetsTheProviderSession() async {
         let auth = FakeAuthClient(state: .signedOut, scriptedErrors: [.network])
         let (model, _, _) = make(auth: auth)

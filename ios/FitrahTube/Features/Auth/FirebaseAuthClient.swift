@@ -300,6 +300,7 @@ nonisolated final class FirebaseAuthClient: AuthClient {
 private nonisolated extension AuthUser {
     init(_ user: User) {
         self.init(uid: user.uid, email: user.email, isEmailVerified: user.isEmailVerified,
-                  providerIDs: user.providerData.map(\.providerID), displayName: user.displayName)
+                  providerIDs: user.providerData.map(\.providerID), displayName: user.displayName,
+                  googleUserID: user.providerData.first { $0.providerID == FirebaseAuth.GoogleAuthProvider.id }?.uid)
     }
 }

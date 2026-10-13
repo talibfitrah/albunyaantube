@@ -57,7 +57,8 @@ class EmailVerificationViewModel @Inject constructor(
     val nav: StateFlow<Nav> = _nav.asStateFlow()
 
     init {
-        if (saved.get<Long>("lastSentAtMs") == null) {
+        // autoSend=false: the splash's cold-start route (app_nav_graph.xml), which an earlier process mailed.
+        if (saved.get<Long>("lastSentAtMs") == null && saved.get<Boolean>("autoSend") != false) {
             sendVerificationEmail()
         }
     }
@@ -78,6 +79,10 @@ class EmailVerificationViewModel @Inject constructor(
             try {
                 user.reload().await()
                 if (user.isEmailVerified) {
+                    // reload() refreshes the user record, not the cached ID token: re-mint it so its
+                    // email_verified claim is true. Only POST /api/account/profile re-checks the record
+                    // (and 403s if that lookup fails); every other route trusts the claim as minted.
+                    user.getIdToken(true).await()
                     _ui.update { it.copy(isChecking = false) }
                     _nav.value = Nav.NavigateToSplash
                 } else {

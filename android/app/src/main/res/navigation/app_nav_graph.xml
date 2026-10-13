@@ -31,6 +31,18 @@
             app:destination="@id/profileBootstrapFragment"
             app:popUpTo="@id/splashFragment"
             app:popUpToInclusive="true" />
+        <!-- Cold start of a password account still unverified (killed on the verification screen).
+             autoSend=false: sign-up or sign-in already mailed, in an earlier process (iOS: its latch). -->
+        <action
+            android:id="@+id/action_splash_to_emailVerification"
+            app:destination="@id/emailVerificationFragment"
+            app:popUpTo="@id/splashFragment"
+            app:popUpToInclusive="true">
+            <argument
+                android:name="autoSend"
+                app:argType="boolean"
+                android:defaultValue="false" />
+        </action>
     </fragment>
 
     <fragment

@@ -114,7 +114,7 @@ public class AccountController {
         // Reviewer-flagged: client-only email gate is bypassed via curl. The
         // EmailVerificationFragment is a UX-layer enforcement; the backend
         // is the source of truth.
-        if (!principal.isEmailVerified()) {
+        if (!principal.isEmailVerified() && !emailVerifiedOnRecord(principal.getUid())) {
             // Google/Microsoft tokens always have emailVerified=true; if false,
             // the user is on email/password and hasn't clicked the link.
             return ResponseEntity.status(HttpStatus.FORBIDDEN)
@@ -123,6 +123,21 @@ public class AccountController {
         var saved = accountProfileService.completeProfile(
                 principal.getUid(), req.getDisplayName(), req.getDateOfBirth(), req.getPhoneNumber());
         return ResponseEntity.ok(AccountMeResponse.from(saved));
+    }
+
+    /**
+     * The token's email_verified claim is frozen when the token is minted, so a client that
+     * verified and kept its cached token still says false. The uid's record is current.
+     * Any failed lookup keeps the 403: the claim alone never said verified.
+     */
+    private boolean emailVerifiedOnRecord(String uid) {
+        try {
+            return firebaseAuth.getUser(uid).isEmailVerified();
+        } catch (FirebaseAuthException | RuntimeException e) {
+            logger.warn("email-verified record lookup failed uid={}: {}", uid,
+                    e instanceof FirebaseAuthException f ? f.getErrorCode() : e.getClass().getSimpleName());
+            return false;
+        }
     }
 
     /** Plan G B3 — partial profile update for an authenticated ACTIVE user. */

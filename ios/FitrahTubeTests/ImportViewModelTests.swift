@@ -247,13 +247,15 @@ struct ImportViewModelTests {
         await running?.value
 
         #expect(rig.model.state == .idle)
-        #expect(rig.authorizer.forgetCount == 1)
+        #expect(rig.authorizer.forgetCount == 2, "the revoke's forget, then the late grant's")
     }
 
     /// Cubic round 1 P2 (stage 7 regression of the I-5 fix): the container-owned model outlives a
     /// sign-out, and account A's fetch — or A's review list — must not be what account B finds.
-    /// `reset()` runs from the session drop: the run is cancelled and the screen starts over,
-    /// with nothing forgotten (the SDK session is the provider sign-out's to clear).
+    /// `reset()` runs from the session drop: the run is cancelled and the screen starts over. The
+    /// reset itself forgets nothing (the SDK session is the provider sign-out's to clear), but a
+    /// grant that lands AFTER it is forgotten: Google's sheet persists its session on completion,
+    /// re-creating one the sign-out already cleared.
     @Test func resetEndsTheRunInFlightAndLeavesNothingOfItForTheNextAccount() async throws {
         let gate = Gate()
         let rig = try rig(youtube: fullLibrary(),
@@ -263,13 +265,14 @@ struct ImportViewModelTests {
         let running = rig.model.job
 
         rig.model.reset()
+        #expect(rig.authorizer.forgetCount == 0, "a reset is not a revoke")
         await gate.release()
         await running?.value
 
         #expect(rig.model.state == .idle, "A's fetch landed on the model B will be handed")
         #expect(rig.model.isRunning == false)
         #expect(rig.model.didRevoke == false)
-        #expect(rig.authorizer.forgetCount == 0, "a reset is not a revoke")
+        #expect(rig.authorizer.forgetCount == 1, "a grant that landed after the reset stayed in the SDK")
         #expect(rig.youtube.sent.isEmpty, "the cancelled run fetched A's library anyway")
     }
 
@@ -285,7 +288,7 @@ struct ImportViewModelTests {
         await gate.waitUntilBlocked()
         let running = rig.model.job
         rig.model.revoke()
-        // After `forget()` the fake is unavailable, so the parked authorize wakes up and THROWS.
+        rig.authorizer.error = .failed  // the parked consent sheet completes with a refusal
         await gate.release()
         await running?.value
 
@@ -322,7 +325,7 @@ struct ImportViewModelTests {
 
     /// WHAT, never why: `.unavailable` and `.failed` are the same sentence to a user, and neither
     /// leaks a fact about their Google account. Only `.failed` offers Retry (Cubic round 2 P3):
-    /// with no Google session to extend, a retry re-fails identically until the next sign-in.
+    /// a build that cannot raise Google's sign-in re-fails identically on every retry.
     @Test func aRefusedAuthorizationIsOneErrorWhateverTheSdkSaidAndRetryableOnlyWhenTheSdkFailed() async throws {
         for (failure, retryable) in [(YouTubeAuthorizerError.failed, true), (.unavailable, false)] {
             let rig = try rig(youtube: [], authorizer: FakeYouTubeAuthorizer(error: failure))
@@ -512,9 +515,6 @@ struct ImportViewModelTests {
             #expect(code.contains("signOut(") == (url.lastPathComponent == "GoogleYouTubeAuthorizer.swift"),
                     "\(url.lastPathComponent): the local sign-out belongs to the authorizer alone")
         }
-        // After the forget the SDK has no session to extend: the affordance is gone until the next
-        // Google sign-in, which is the same state Google's own permissions page leaves.
-        #expect(rig.authorizer.isAvailable == false)
     }
 
     /// The confirmation links to GOOGLE's account-permissions page — never YouTube (owner
@@ -630,14 +630,12 @@ struct ImportViewModelTests {
         revoked.model.revoke()
         #expect(revoked.model.state == .idle)
         #expect(revoked.model.didRevoke)
-        // Part B gate: a revoke forgets the SDK session, so there is nothing left to authorize
-        // and the screen hides the offer (RULING 28) until the next Google sign-in. A `start()`
-        // that somehow still ran would be refused as unavailable — and NOT retryable (Cubic round
-        // 2 P3): a retry with no Google session re-fails identically.
-        #expect(revoked.authorizer.isAvailable == false)
+        // A revoke forgets the SDK session and nothing else: the next `start()` (reopening Import)
+        // asks Google again — picker and consent — rather than being refused.
         revoked.model.start()
         await revoked.model.job?.value
-        #expect(revoked.model.state == .error(messageKey: "auth_error_generic", retryable: false))
+        #expect(revoked.authorizer.authorizeCount == 2)
+        #expect(revoked.model.didRevoke == false)
 
         let bundle = try #require(Bundle.main.path(forResource: "en", ofType: "lproj")
             .flatMap(Bundle.init(path:)))

@@ -427,7 +427,7 @@ struct MeSignedInView: View {
     // MARK: - Kebab
 
     /// Renders `enabledKebabItems`, NOT `items(isModerator:)`: `.importYouTube` is offered only
-    /// when this account has a Google grant to extend. RULING 28 refuses a greyed row that promises
+    /// when this build has Google sign-in configured. RULING 28 refuses a greyed row that promises
     /// otherwise; every row's DESTINATION is guaranteed by this switch being exhaustive.
     /// No `.disabled(true)` anywhere. The role gate itself is fully tested through the pure
     /// `MeKebabItem.items(isModerator:)`, which needs no rendering.
@@ -444,8 +444,8 @@ struct MeSignedInView: View {
                         // and they move together, never on their own.
                         case .mySubmissions: router.push(.mySubmissions)
                         case .suggestContent: router.push(.suggestContent)
-                        // Capability, not role — `enabledKebabItems` drops it for an account with
-                        // no Google grant to extend.
+                        // Capability, not role — `enabledKebabItems` drops it in a build without
+                        // Google sign-in.
                         case .importYouTube: router.push(.importFromYouTube)
                         }
                     } label: {

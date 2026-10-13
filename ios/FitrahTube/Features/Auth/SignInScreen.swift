@@ -23,9 +23,7 @@ struct SignInScreen: View {
     @State private var providerLabelHeights: [SignInProvider: CGFloat] = [:]
 
     var body: some View {
-        ScrollView {
-            content.padding(Spacing.md(widthClass))
-        }
+        CentredFormColumn { content }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(title)
         .navigationBarTitleDisplayMode(.inline)

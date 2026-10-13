@@ -4,10 +4,12 @@ import UIKit
 /// The SIXTH and last app file allowed to name a Google/Firebase SDK type (plan Global
 /// Constraints). Above this file the import flow sees `any YouTubeAuthorizer` and a `String`.
 ///
-/// **Incremental authorization, and nothing else.** `addScopes` lives on `GIDGoogleUser`, not on
-/// `GIDSignIn` (`GIDGoogleUser.h:88`) — so there must already be a signed-in Google user, which is
-/// exactly the precondition the flow wants: Import is offered to a signed-in account, and the
-/// consent screen it raises is Google's own, not a YouTube redirect (owner directive 2026-08-27).
+/// **Authorization, and nothing else.** A Google user who already exists gets the scope added
+/// (`addScopes`, `GIDGoogleUser.h:88`); with none — an email/password or Apple account — Google's
+/// own account picker signs one in WITH the scope (`GIDSignIn.h:191-193`), Android's
+/// `AuthorizationClient` parity. Either way the consent screen is Google's own, not a YouTube
+/// redirect (owner directive 2026-08-27), and the result is an access token and nothing more: it
+/// never reaches Firebase, links no provider and never changes the signed-in account.
 ///
 /// **Main actor throughout**, `GoogleAuthProvider`'s reason: `GIDSignIn.sharedInstance` is
 /// main-thread-affine and carries no actor annotation.
@@ -22,22 +24,23 @@ import UIKit
 /// closed by construction.
 @MainActor final class GoogleYouTubeAuthorizer: YouTubeAuthorizer {
 
-    /// Same two prerequisites Google sign-in itself needs (a client id from the plist AND a
-    /// matching callback scheme in this bundle), plus a Google grant to extend.
-    ///
-    /// **`currentUser` alone would be wrong, and silently so** (review C1). The SDK never restores
-    /// it at launch: its initializer reads the bundle configuration and migrates keychain state but
-    /// assigns `_currentUser` nowhere (`GIDSignIn.m:510-540`), and the only two assignments are the
-    /// interactive sign-in completion (`:936`) and a restore. Reading it alone would make Import
-    /// available for the session that signed in and unavailable in every session after — hidden,
-    /// per RULING 28, with no error and nothing to debug from. `hasPreviousSignIn` is the
-    /// keychain-backed half of the same fact ("Checks if there is a previous user sign-in saved in
-    /// keychain", `GIDSignIn.h:113-116`, implemented over `loadAuthState` at `GIDSignIn.m:213-219`)
-    /// and it survives relaunch. It stays FALSE for an Apple or email/password account, so the
-    /// hiding rule for those accounts is preserved.
-    var isAvailable: Bool {
-        SignInCapabilities.current().google
-            && (GIDSignIn.sharedInstance.currentUser != nil || GIDSignIn.sharedInstance.hasPreviousSignIn())
+    /// The two prerequisites Google sign-in itself needs (a client id from the plist AND a matching
+    /// callback scheme in this bundle) — and nothing about who is signed in: every account may
+    /// import (`MeFragment.kt:295-299`), because `authorize()` raises the picker when there is no
+    /// Google user to extend.
+    var isAvailable: Bool { SignInCapabilities.current().google }
+
+    /// The signed-in account's own Google identity (`AuthUser.googleUserID`), read at
+    /// `authorize()` time; nil for an account with no Google provider.
+    private let accountGoogleUserID: () -> String?
+
+    init(accountGoogleUserID: @escaping () -> String?) { self.accountGoogleUserID = accountGoogleUserID }
+
+    /// The SDK's session is DEVICE-wide and can belong to another Google identity (the app killed
+    /// mid Google sign-in, a sheet that completed after sign-out), so it is reused only when it IS
+    /// this account's own — `google.com` among the providers is not enough.
+    func reusesGoogleSession(of sessionUserID: String?) -> Bool {
+        sessionUserID != nil && sessionUserID == accountGoogleUserID()
     }
 
     func authorize() async throws -> String {
@@ -47,23 +50,48 @@ import UIKit
               let presenter = Self.presenter else {
             throw YouTubeAuthorizerError.unavailable
         }
-        // The async half of `hasPreviousSignIn`, and the reason `isAvailable` can promise anything
-        // after a relaunch: there is no `currentUser` until somebody asks for one. "Attempts to
-        // restore a previous user sign-in without interaction … refreshes tokens if they have
-        // expired" (`GIDSignIn.h:118-124`) — no UI, so it cannot be a hidden consent prompt. A
-        // restore that fails means there is no Google grant left to extend, which is `.unavailable`
-        // and not `.failed`: the affordance should not have been offered.
-        var user = GIDSignIn.sharedInstance.currentUser
-        if user == nil { user = try? await GIDSignIn.sharedInstance.restorePreviousSignIn() }
-        guard let user else { throw YouTubeAuthorizerError.unavailable }
+        // A Google account: its own session. There is no `currentUser` after a relaunch until
+        // somebody asks for one (the SDK never restores it at launch, `GIDSignIn.m:510-540`).
+        // "Attempts to restore a previous user sign-in without interaction … refreshes tokens if
+        // they have expired" (`GIDSignIn.h:118-124`) — no UI, so it cannot be a hidden consent
+        // prompt. Any session that is not this account's own Google identity — or any session at
+        // all for an account without one — is cleared, and the picker below asks Google who this is.
+        var user: GIDGoogleUser?
+        if accountGoogleUserID() != nil {
+            user = GIDSignIn.sharedInstance.currentUser
+            if user == nil { user = try? await GIDSignIn.sharedInstance.restorePreviousSignIn() }
+        }
+        // Signed out or revoked while the restore ran: the restore re-saved the session that cleared
+        // (`addSaveAuthCallback`, `GIDSignIn.m:917-930`). Drop it, and raise no sheet over what follows.
+        if Task.isCancelled {
+            GIDSignIn.sharedInstance.signOut()
+            throw CancellationError()
+        }
+        if !reusesGoogleSession(of: user?.userID) {
+            GIDSignIn.sharedInstance.signOut()
+            user = nil
+        }
         do {
-            if user.grantedScopes?.contains(Self.scope) == true {
+            if let user, user.grantedScopes?.contains(Self.scope) == true {
                 // Already granted (a previous import, or a re-launch): the SDK's persisted access
                 // token can still be hours old, so refresh before handing it to three paginators.
                 let refreshed = try await user.refreshTokensIfNeeded()
                 return refreshed.accessToken.tokenString
             }
-            let result = try await user.addScopes([Self.scope], presenting: presenter)
+            let result: GIDSignInResult
+            if let user {
+                result = try await user.addScopes([Self.scope], presenting: presenter)
+            } else {
+                // No Google user of this account's (every email/password or Apple import, a
+                // forgotten grant, or a session of another Google identity cleared above):
+                // Google's picker signs one in for this scope. Its result stays in this file — no
+                // Firebase credential is made from it. A Google account's own id is the hint ("the
+                // user's ID or email address", `GIDSignIn.h:186-187`), so the identity it reuses next
+                // time is the one preselected; nil for an account without one.
+                result = try await GIDSignIn.sharedInstance.signIn(withPresenting: presenter,
+                                                                   hint: accountGoogleUserID(),
+                                                                   additionalScopes: [Self.scope])
+            }
             // The user can dismiss the sheet without granting; the SDK answers success either way.
             guard result.user.grantedScopes?.contains(Self.scope) == true else {
                 throw YouTubeAuthorizerError.cancelled
@@ -84,10 +112,10 @@ import UIKit
 
     /// F9, the keychain half: `signOut()` clears the SDK's LOCAL session — the persisted user, its
     /// tokens and the scope it holds — and nothing server-side. NEVER `disconnect()`, which revokes
-    /// every scope the user ever granted (sign-in included). Consequence, deliberate: `isAvailable`
-    /// reads false until the next Google sign-in, which is the same state the Google permissions
-    /// page's remedy leaves (a revoked grant fails `restorePreviousSignIn`), so the confirmation's
-    /// "no longer has access" is true either way.
+    /// every scope the user ever granted (sign-in included). Consequence, deliberate: the next
+    /// `authorize()` finds no Google user and asks Google again (picker and consent), the same
+    /// state the Google permissions page's remedy leaves, so the confirmation's "no longer has
+    /// access" is true either way.
     func forget() { GIDSignIn.sharedInstance.signOut() }
 
     /// Presentation context for `ASWebAuthenticationSession` only — the key window's root is

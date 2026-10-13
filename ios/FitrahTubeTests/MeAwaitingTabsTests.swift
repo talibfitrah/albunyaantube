@@ -238,9 +238,9 @@ struct MeAwaitingTabsTests {
         #expect(relaunched.consumeImportOffer() == false)
     }
 
-    /// A guest is never offered an import — there is no account to import into. Nor is an account
-    /// with no Google grant to extend: the offer's one action pushes `Route.importFromYouTube`,
-    /// which RULING 28 already keeps off that account's kebab for the same reason.
+    /// A guest is never offered an import — there is no account to import into. Nor is any account
+    /// in a build without Google sign-in: the offer's one action pushes `Route.importFromYouTube`,
+    /// which RULING 28 already keeps off the kebab there for the same reason.
     @Test func theOfferIsNotMadeToAGuestOrToAnAccountThatCannotImport() async throws {
         let guestSettings = settings()
         let guest = model(try stores(), session: try await session(signedIn: false),
@@ -248,11 +248,11 @@ struct MeAwaitingTabsTests {
         #expect(guest.consumeImportOffer() == false)
         #expect(guestSettings.importOfferShown == false, "a guest must not burn the one offer")
 
-        let appleSettings = settings()
-        let apple = model(try stores(), session: try await session(signedIn: true),
-                          settings: appleSettings, canImport: false)
-        #expect(apple.consumeImportOffer() == false)
-        #expect(appleSettings.importOfferShown == false,
+        let unconfiguredSettings = settings()
+        let unconfigured = model(try stores(), session: try await session(signedIn: true),
+                                 settings: unconfiguredSettings, canImport: false)
+        #expect(unconfigured.consumeImportOffer() == false)
+        #expect(unconfiguredSettings.importOfferShown == false,
                 "an account that cannot import must not burn the one offer either")
     }
 
