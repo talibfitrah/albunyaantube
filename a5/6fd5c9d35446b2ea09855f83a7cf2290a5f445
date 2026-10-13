@@ -1,0 +1,98 @@
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModelTest.kt
+  s_864f5af1be05f9::t_a0cbc8fea9645e 9,121-130
+  s_864f5af1be05f9::t_ce1fa84e2110e6 380
+  s_864f5af1be05f9::t_2cdc4d668fe96f 131-133,381,385
+android/app/src/main/java/com/albunyaan/tube/ui/auth/EmailVerificationViewModel.kt
+  s_864f5af1be05f9::t_8732d2a54d35f3 60-61
+  s_864f5af1be05f9::t_67be832f35b7d3 82,85
+  s_864f5af1be05f9::t_40375e8c21dd89 83-84
+android/app/build.gradle.kts
+  s_864f5af1be05f9::t_0a9108f9fa5977 90-91
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterOfflineTest.kt
+  s_864f5af1be05f9::t_4198c4f68940ec 59
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapFragment.kt
+  s_864f5af1be05f9::t_31ff954ddb0aee 267
+  s_864f5af1be05f9::t_d350b0a3135e54 41-42
+  s_864f5af1be05f9::t_0e9b5b45761f73 265-266,269,294
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepository.kt
+  s_864f5af1be05f9::t_07a2c098ab83c6 77-78
+  s_864f5af1be05f9::t_5420d219cbad4f 37-38
+  s_864f5af1be05f9::t_8ba94c46ce40e3 79
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_864f5af1be05f9::t_a0cbc8fea9645e 124-145
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_864f5af1be05f9::t_04d87c9c8937e2 210-211,365-368,393-395
+android/app/src/test/java/com/albunyaan/tube/ui/auth/EmailVerificationViewModelTest.kt
+  s_864f5af1be05f9::t_ce1fa84e2110e6 42,88-111,118
+  s_864f5af1be05f9::t_0cdd37b2b3dee7 61-69
+  s_864f5af1be05f9::t_4913a62419d54d 86-87
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_864f5af1be05f9::t_dd56e53c78a611 27,285-286,335-336
+android/app/src/main/res/navigation/app_nav_graph.xml
+  s_864f5af1be05f9::t_9d1bd86482763e 36-39
+  s_864f5af1be05f9::t_8c4d23a21b276d 34-35,40-45
+android/app/src/main/java/com/albunyaan/tube/ui/SplashRouter.kt
+  s_864f5af1be05f9::t_bb43c26d3cff10 37-38
+  s_864f5af1be05f9::t_8daeec51b09480 23-25,44-45
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterTest.kt
+  s_864f5af1be05f9::t_4198c4f68940ec 19-20,24-25,32-33,40-41,61,72,83,96
+  s_864f5af1be05f9::t_509c0d42b83c20 101-126
+  s_864f5af1be05f9::t_f54c9968875f37 127
+android/app/src/main/java/com/albunyaan/tube/ui/bootstrap/ProfileBootstrapViewModel.kt
+  s_864f5af1be05f9::t_04d87c9c8937e2 8,244
+  s_864f5af1be05f9::t_a8e22994c139dd 142-143
+  s_864f5af1be05f9::t_a0292127fd0b3e 20,22
+  s_864f5af1be05f9::t_abb13898a04e7f 27-28,154,243
+  s_864f5af1be05f9::t_f452c6b855fc8f 291-296
+  s_864f5af1be05f9::t_603c90493eb8f3 287-289
+android/app/src/test/java/com/albunyaan/tube/ui/bootstrap/MinimumAgeTest.kt
+  s_864f5af1be05f9::t_633e5adc630c49 58
+  s_864f5af1be05f9::t_2bdfc329f59424 6-7,9-10,23,28,35,42,51-57,59-61
+android/app/src/test/java/com/albunyaan/tube/ui/auth/AuthScreensVerticalCenteringTest.kt
+  s_864f5af1be05f9::t_b2e1c9babfdbc0 68,77-80
+  s_864f5af1be05f9::t_dd59990e66eec9 73,75
+  s_864f5af1be05f9::t_bda1754f881a6b 1-67,69-72,74,76,81-118
+android/app/src/test/java/com/albunyaan/tube/ui/SplashNavGraphTest.kt
+  s_864f5af1be05f9::t_d3d86a617a89e9 26
+  s_864f5af1be05f9::t_6ac8b8912a58ca 1-25,27-35
+android/app/src/main/res/layout-sw600dp/fragment_email_verification.xml
+  s_864f5af1be05f9::t_8bc45b2d3eb01d 15,17
+android/app/src/main/res/layout-sw600dp/fragment_profile_bootstrap.xml
+  s_864f5af1be05f9::t_57e2210b3c517c 27
+android/app/src/main/res/layout-sw600dp/fragment_sign_in.xml
+  s_864f5af1be05f9::t_424be5996bf5d8 27
+android/app/src/main/res/layout-sw720dp/fragment_email_verification.xml
+  s_864f5af1be05f9::t_b781c5dc85d350 15,17
+android/app/src/main/res/layout-sw720dp/fragment_profile_bootstrap.xml
+  s_864f5af1be05f9::t_9b08741ca30ea1 29
+android/app/src/main/res/layout-sw720dp/fragment_sign_in.xml
+  s_864f5af1be05f9::t_39de71a3c75683 31
+android/app/src/main/res/layout/fragment_email_verification.xml
+  s_864f5af1be05f9::t_0c6017008d0a46 15,17
+android/app/src/main/res/layout/fragment_profile_bootstrap.xml
+  s_864f5af1be05f9::t_a39fb9eb10c89a 35-36,48,71,96,116,147,161,185,211,223
+android/app/src/main/res/layout/fragment_sign_in.xml
+  s_864f5af1be05f9::t_712ee460fd17ba 27
+android/app/src/main/res/values-ar/strings_onboarding.xml
+  s_864f5af1be05f9::t_6984e63c062773 30
+android/app/src/main/res/values-nl/strings_onboarding.xml
+  s_864f5af1be05f9::t_35b38eded8c099 30
+android/app/src/main/res/values/strings_onboarding.xml
+  s_864f5af1be05f9::t_c6d18430052941 30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a56fd5c9d35446b2ea09855f83a7cf2290a5f445",
+  "prompts": {},
+  "sessions": {
+    "s_864f5af1be05f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c5818f7-95ec-4d4e-9081-27e371ad0645",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
