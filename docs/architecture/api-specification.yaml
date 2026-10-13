@@ -137,6 +137,14 @@ paths:
       responses:
         '200':
           description: Content page
+          headers:
+            X-Search-Match:
+              description: |
+                Set only when `q` is present: the match tier of the first item —
+                exact, approximate, related or none. Clients read a missing or
+                unknown value as exact.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -326,6 +334,13 @@ paths:
       responses:
         '200':
           description: Search results
+          headers:
+            X-Search-Match:
+              description: |
+                The match tier of the first item — exact, approximate, related
+                or none. Clients read a missing or unknown value as exact.
+              schema:
+                type: string
           content:
             application/json:
               schema:
