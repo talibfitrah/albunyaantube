@@ -185,6 +185,28 @@ class AccountControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.uid").value(TEST_UID))
                 .andExpect(jsonPath("$.status").value("active"));
+        // A verified claim never costs a Firebase Admin lookup (emailVerifiedOnRecord is the fallback).
+        verify(firebaseAuth, never()).getUser(any());
+    }
+
+    /** Both apps put this 400 on the name field by its "displayName: " prefix. */
+    @Test
+    void postProfileServerRefusedDisplayNameNamesTheField() throws Exception {
+        when(accountProfileService.completeProfile(eq(TEST_UID), any(), any(LocalDate.class), any(String.class)))
+                .thenThrow(new com.albunyaan.tube.service.ProfileValidationException(
+                        "displayName", "URLs not allowed in display name"));
+
+        CompleteProfileRequest req = new CompleteProfileRequest();
+        req.setDisplayName("www.example.com");
+        req.setDateOfBirth(LocalDate.of(2000, 1, 1));
+        req.setPhoneNumber("+31612345678");
+
+        mockMvc.perform(post("/api/account/profile")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(objectMapper.writeValueAsString(req)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("VALIDATION"))
+                .andExpect(jsonPath("$.message").value("displayName: URLs not allowed in display name"));
     }
 
     // ── Test 2: under-13 → 422 ─────────────────────────────────────────────
@@ -450,23 +472,68 @@ class AccountControllerTest {
     }
 
     // ── Test 9: email not verified → 403 EMAIL_NOT_VERIFIED ──────────────
-    @Test
-    void postProfile_returnsForbidden_whenEmailNotVerified() throws Exception {
-        // Replace the @BeforeEach principal with one that has emailVerified=false
-        FirebaseUserDetails unverified = new FirebaseUserDetails(TEST_UID, TEST_EMAIL, "user", false);
-        UsernamePasswordAuthenticationToken auth =
-                new UsernamePasswordAuthenticationToken(unverified, null, java.util.List.of());
-        SecurityContextHolder.getContext().setAuthentication(auth);
+    // The token's email_verified claim is frozen at mint time: a client that verified and kept
+    // its cached token still says false. The uid's Firebase record is the authority.
 
+    private org.springframework.test.web.servlet.ResultActions postAliceProfile() throws Exception {
         CompleteProfileRequest req = new CompleteProfileRequest();
         req.setDisplayName("Alice");
         req.setDateOfBirth(LocalDate.of(2000, 1, 1));
         req.setPhoneNumber("+31612345678");
-        mockMvc.perform(post("/api/account/profile")
-                        .contentType(MediaType.APPLICATION_JSON)
-                        .content(objectMapper.writeValueAsString(req)))
+        return mockMvc.perform(post("/api/account/profile")
+                .contentType(MediaType.APPLICATION_JSON)
+                .content(objectMapper.writeValueAsString(req)));
+    }
+
+    private void firebaseRecordVerified(boolean verified) throws Exception {
+        com.google.firebase.auth.UserRecord rec =
+                org.mockito.Mockito.mock(com.google.firebase.auth.UserRecord.class);
+        when(rec.isEmailVerified()).thenReturn(verified);
+        when(firebaseAuth.getUser(TEST_UID)).thenReturn(rec);
+    }
+
+    @Test
+    void postProfile_succeedsWhenTokenClaimStaleButFirebaseRecordVerified() throws Exception {
+        signInUnverified(TEST_UID);
+        firebaseRecordVerified(true);
+        when(accountProfileService.completeProfile(eq(TEST_UID), eq("Alice"), any(LocalDate.class), any(String.class)))
+                .thenReturn(activeUser());
+
+        postAliceProfile().andExpect(status().isOk());
+    }
+
+    @Test
+    void postProfile_stillForbiddenWhenFirebaseRecordUnverified() throws Exception {
+        signInUnverified(TEST_UID);
+        firebaseRecordVerified(false);
+
+        postAliceProfile()
                 .andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+        verify(accountProfileService, never()).completeProfile(any(), any(), any(), any());
+    }
+
+    @Test
+    void postProfile_stillForbiddenWhenFirebaseRecordLookupFails() throws Exception {
+        signInUnverified(TEST_UID);
+        when(firebaseAuth.getUser(TEST_UID)).thenThrow(new com.google.firebase.auth.FirebaseAuthException(
+                com.google.firebase.ErrorCode.UNAVAILABLE, "backend unavailable", null, null, null));
+
+        postAliceProfile()
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+        verify(accountProfileService, never()).completeProfile(any(), any(), any(), any());
+    }
+
+    @Test
+    void postProfile_stillForbiddenWhenFirebaseRecordLookupThrowsUnchecked() throws Exception {
+        signInUnverified(TEST_UID);
+        when(firebaseAuth.getUser(TEST_UID)).thenThrow(new IllegalStateException("FirebaseApp deleted"));
+
+        postAliceProfile()
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("EMAIL_NOT_VERIFIED"));
+        verify(accountProfileService, never()).completeProfile(any(), any(), any(), any());
     }
 
     // ── DELETE /api/account/me — self-serve account deletion ────────────────
