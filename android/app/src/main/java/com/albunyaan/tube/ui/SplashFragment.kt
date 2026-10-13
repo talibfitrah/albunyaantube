@@ -24,6 +24,7 @@ import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.albunyaan.tube.update.UpdateInfo
 import com.albunyaan.tube.update.UpdateGateway
+import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.Deferred
@@ -281,7 +282,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
         // and crash the dispatcher. Bail early on detach instead.
         if (!isAdded) return
         if (findNavController().currentDestination?.id != R.id.splashFragment) return
-        val signedIn = firebaseAuth.currentUser != null
+        val user = firebaseAuth.currentUser
+        val signedIn = user != null
         if (signedIn && accountStatus == null) {
             // D12: /api/account/me fetch failed after retries. Surface to user
             // and sign out so they get a clean re-attempt instead of an infinite
@@ -330,6 +332,8 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             onboardingCompleted = onboardingCompleted,
             signedIn = signedIn,
             accountStatus = accountStatus,
+            hasPasswordProvider = user?.providerData?.any { it.providerId == EmailAuthProvider.PROVIDER_ID } == true,
+            isEmailVerified = user?.isEmailVerified == true,
         )
         findNavController().navigate(action)
     }

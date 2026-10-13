@@ -28,7 +28,7 @@
         <LinearLayout
             android:layout_width="560dp"
             android:layout_height="wrap_content"
-            android:layout_gravity="center_horizontal"
+            android:layout_gravity="center"
             android:orientation="vertical"
             android:gravity="center_horizontal"
             android:paddingHorizontal="@dimen/spacing_lg">

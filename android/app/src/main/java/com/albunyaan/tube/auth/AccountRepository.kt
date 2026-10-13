@@ -34,7 +34,8 @@ interface AccountRepository {
 
     /**
      * Submit `/api/account/profile`. On 422 AGE_INELIGIBLE returns
-     * `Result.failure(AgeIneligibleError)`; on other failures returns the
+     * `Result.failure(AgeIneligibleError)`, on a 400 refusing the display name
+     * `Result.failure(InvalidDisplayNameError)`; on other failures returns the
      * underlying exception.
      */
     suspend fun completeProfile(
@@ -72,6 +73,9 @@ interface AccountRepository {
 
 /** Sentinel error type for under-13 rejection. UI maps this to navigation. */
 class AgeIneligibleError : RuntimeException("age-ineligible")
+
+/** The server refused the display name (400 "displayName: …"). UI maps this to the name field. */
+class InvalidDisplayNameError : RuntimeException("invalid-display-name")
 
 /**
  * Plan D T26 — synchronous read of the current uid for sync writes.

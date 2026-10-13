@@ -27,6 +27,7 @@
     <string name="bootstrap_dob_hint">Tik om te kiezen</string>
     <string name="bootstrap_submit_button">Doorgaan</string>
     <string name="bootstrap_error_invalid_name">Vul je naam in (1–40 tekens)</string>
+    <string name="bootstrap_error_invalid_name_characters">Deze naam mag geen links of speciale tekens bevatten.</string>
     <string name="bootstrap_error_invalid_dob">Kies je geboortedatum</string>
     <string name="bootstrap_error_under_age">Je moet minstens 13 jaar zijn om FitrahTube te gebruiken. Controleer het jaar dat je hebt gekozen.</string>
     <string name="bootstrap_error_save_failed">Kon je profiel niet opslaan — probeer het opnieuw</string>

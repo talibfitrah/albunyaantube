@@ -5,6 +5,7 @@ import androidx.lifecycle.ViewModel
 import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AgeIneligibleError
+import com.albunyaan.tube.auth.InvalidDisplayNameError
 import com.albunyaan.tube.util.PhoneFormat
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.lifecycle.HiltViewModel
@@ -16,11 +17,15 @@ import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.tasks.await
 
+import java.time.Clock
 import java.time.LocalDate
+import java.time.ZoneOffset
 import javax.inject.Inject
 
 enum class BootstrapError {
     INVALID_NAME,
+    /** The server's displayName rejection: format/control characters or a link (length is local). */
+    INVALID_NAME_CHARACTERS,
     INVALID_DOB,
     UNDER_AGE,
     INVALID_PHONE_COUNTRY,
@@ -134,7 +139,8 @@ class ProfileBootstrapViewModel @Inject constructor(
      * left; any other wrong confirmation is a mismatch.
      */
     fun shownError(s: UiState = _ui.value): ShownError? {
-        s.error?.let { return ShownError(it, onField = true) }
+        // SAVE_FAILED is the server's answer, not a field's: it goes by Continue.
+        s.error?.let { return ShownError(it, onField = it != BootstrapError.SAVE_FAILED) }
         if (s.touched.isEmpty()) return null
         val e = firstValidationError(s) ?: return null
         val field = fieldOf(e)
@@ -145,7 +151,7 @@ class ProfileBootstrapViewModel @Inject constructor(
     }
 
     private fun fieldOf(e: BootstrapError): BootstrapField? = when (e) {
-        BootstrapError.INVALID_NAME -> BootstrapField.NAME
+        BootstrapError.INVALID_NAME, BootstrapError.INVALID_NAME_CHARACTERS -> BootstrapField.NAME
         BootstrapError.INVALID_DOB, BootstrapError.UNDER_AGE -> BootstrapField.DOB
         BootstrapError.INVALID_PHONE_COUNTRY, BootstrapError.INVALID_PHONE -> BootstrapField.PHONE
         BootstrapError.INVALID_PASSWORD -> BootstrapField.PASSWORD
@@ -234,7 +240,8 @@ class ProfileBootstrapViewModel @Inject constructor(
                         if (e is AgeIneligibleError) {
                             _nav.value = BootstrapNav.NavigateToAgeIneligible
                         } else {
-                            _ui.update { it.copy(error = BootstrapError.SAVE_FAILED) }
+                            val error = if (e is InvalidDisplayNameError) BootstrapError.INVALID_NAME_CHARACTERS else BootstrapError.SAVE_FAILED
+                            _ui.update { it.copy(error = error) }
                         }
                         return@launch
                     }
@@ -277,10 +284,15 @@ class ProfileBootstrapViewModel @Inject constructor(
         const val MIN_AGE_YEARS = 13
 
         /**
-         * True when [dob] is younger than [MIN_AGE_YEARS] as of [today]. Pure and
-         * parameterised on today so it is testable without touching the clock.
+         * True when [dob] is younger than [MIN_AGE_YEARS] as of the earlier of [clock]'s local
+         * date and its UTC date. The server measures on the UTC date (ClockConfig), which east of
+         * UTC is still yesterday: a day's "too young" here is correctable, its rejection is not.
          */
-        fun isUnderMinimumAge(dob: LocalDate, today: LocalDate = LocalDate.now()): Boolean =
-            dob.isAfter(today.minusYears(MIN_AGE_YEARS.toLong()))
+        fun isUnderMinimumAge(dob: LocalDate, clock: Clock = Clock.systemDefaultZone()): Boolean {
+            val local = LocalDate.now(clock)
+            val utc = LocalDate.now(clock.withZone(ZoneOffset.UTC))
+            val today = if (utc < local) utc else local
+            return dob.isAfter(today.minusYears(MIN_AGE_YEARS.toLong()))
+        }
     }
 }

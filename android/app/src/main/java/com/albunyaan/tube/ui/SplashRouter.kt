@@ -20,6 +20,9 @@ import com.albunyaan.tube.auth.isTerminalAccountFailure
  *                                                        last /me for that uid instead — see
  *                                                        [accountForRoute]; null means none.
  *   - signed-in + ACTIVE                               → main shell
+ *   - signed-in + PENDING_PROFILE, password provider
+ *     and email unverified                             → email verification (as iOS SplashRouter and
+ *                                                        SignInFragment; bootstrap would 403 forever)
  *   - signed-in + PENDING_PROFILE                      → profile bootstrap (Plan C T8 surface)
  *   - signed-in + BLOCKED / DELETED                    → sign-in (warm-path AccountStatusInterceptor
  *                                                        handles status changes during a session;
@@ -31,11 +34,15 @@ internal object SplashRouter {
         onboardingCompleted: Boolean,
         signedIn: Boolean,
         accountStatus: AccountStatus?,
+        hasPasswordProvider: Boolean,
+        isEmailVerified: Boolean,
     ): Int = when {
         !onboardingCompleted -> R.id.action_splash_to_onboarding
         !signedIn -> R.id.action_splash_to_signIn
         accountStatus == null -> R.id.action_splash_to_signIn
         accountStatus == AccountStatus.ACTIVE -> R.id.action_splash_to_main
+        accountStatus == AccountStatus.PENDING_PROFILE && hasPasswordProvider && !isEmailVerified ->
+            R.id.action_splash_to_emailVerification
         accountStatus == AccountStatus.PENDING_PROFILE -> R.id.action_splash_to_bootstrap
         else -> R.id.action_splash_to_signIn  // BLOCKED, DELETED
     }

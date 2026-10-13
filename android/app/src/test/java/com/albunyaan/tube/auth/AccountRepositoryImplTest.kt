@@ -121,6 +121,28 @@ class AccountRepositoryImplTest {
         assertTrue(result.exceptionOrNull() is AgeIneligibleError)
     }
 
+    /** AccountProfileService.validateDisplayName (zero-width/bidi, control chars, URLs) answers
+     *  400 "displayName: <reason>"; the screen must put that on the name field, not "couldn't save". */
+    @Test fun `completeProfile maps a 400 displayName rejection to InvalidDisplayNameError`() = runTest(dispatcher) {
+        val errJson = """{"code":"VALIDATION","message":"displayName: zero-width or bidi-override characters not allowed"}"""
+        whenever(service.completeProfile(any())).thenThrow(
+            HttpException(Response.error<Any>(400, errJson.toResponseBody("application/json".toMediaTypeOrNull())))
+        )
+
+        val result = repository.completeProfile("Ali\u200F", LocalDate.of(2000, 1, 1), null)
+        assertTrue(result.exceptionOrNull() is InvalidDisplayNameError)
+    }
+
+    @Test fun `completeProfile leaves a 400 on another field as the raw HttpException`() = runTest(dispatcher) {
+        val errJson = """{"code":"VALIDATION","message":"dateOfBirth: must not be in the future"}"""
+        whenever(service.completeProfile(any())).thenThrow(
+            HttpException(Response.error<Any>(400, errJson.toResponseBody("application/json".toMediaTypeOrNull())))
+        )
+
+        val result = repository.completeProfile("Alice", LocalDate.of(2000, 1, 1), null)
+        assertTrue(result.exceptionOrNull() is HttpException)
+    }
+
     @Test fun `signOut resets accountState`() = runTest(dispatcher) {
         whenever(service.getMe()).thenReturn(dto(status = "active"))
         repository.fetchMe()

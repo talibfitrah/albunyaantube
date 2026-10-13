@@ -27,6 +27,7 @@
     <string name="bootstrap_dob_hint">Tap to select</string>
     <string name="bootstrap_submit_button">Continue</string>
     <string name="bootstrap_error_invalid_name">Please tell us your name (1–40 characters)</string>
+    <string name="bootstrap_error_invalid_name_characters">This name can\'t include links or special characters.</string>
     <string name="bootstrap_error_invalid_dob">Please choose your date of birth</string>
     <string name="bootstrap_error_under_age">You need to be at least 13 to use FitrahTube. Please check the year you selected.</string>
     <string name="bootstrap_error_save_failed">Couldn\’t save your profile — try again</string>

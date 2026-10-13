@@ -38,8 +38,8 @@ import javax.inject.Inject
  * Shown after first sign-in when the user's account status is PENDING_PROFILE.
  * Collects displayName + date-of-birth, submits to AccountRepository which
  * calls POST /api/account/profile. On success, navigates to main shell. On
- * 422 AGE_INELIGIBLE, navigates to AgeIneligibleFragment (T9). On network
- * error, surfaces an inline error via TextInputLayout.
+ * 422 AGE_INELIGIBLE, navigates to AgeIneligibleFragment (T9). Any other save
+ * failure shows in the line above Continue (formHint).
  *
  * Navigation: see app_nav_graph.xml — profileBootstrapFragment node (T8 stub,
  * finalised in T10).
@@ -262,10 +262,11 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
         val shown = viewModel.shownError(state)
         val onField = shown?.takeIf { it.onField }?.error
         fun msg(e: BootstrapError?): String? = e?.let { getString(errorText(it)) }
-        displayNameLayout.setErrorIfChanged(msg(onField.takeIf { it == BootstrapError.INVALID_NAME }))
-        // SAVE_FAILED stays on dobLayout: the problem isn't the user's input.
+        displayNameLayout.setErrorIfChanged(msg(onField.takeIf {
+            it == BootstrapError.INVALID_NAME || it == BootstrapError.INVALID_NAME_CHARACTERS
+        }))
         dobLayout.setErrorIfChanged(msg(onField.takeIf {
-            it == BootstrapError.INVALID_DOB || it == BootstrapError.UNDER_AGE || it == BootstrapError.SAVE_FAILED
+            it == BootstrapError.INVALID_DOB || it == BootstrapError.UNDER_AGE
         }))
         // PASSWORD_SET_FAILED: profile already saved; retry the password step (profileSaved
         // guards against a duplicate completeProfile call).
@@ -290,6 +291,7 @@ class ProfileBootstrapFragment : Fragment(R.layout.fragment_profile_bootstrap) {
 
     private fun errorText(e: BootstrapError): Int = when (e) {
         BootstrapError.INVALID_NAME -> R.string.bootstrap_error_invalid_name
+        BootstrapError.INVALID_NAME_CHARACTERS -> R.string.bootstrap_error_invalid_name_characters
         BootstrapError.INVALID_DOB -> R.string.bootstrap_error_invalid_dob
         BootstrapError.UNDER_AGE -> R.string.bootstrap_error_under_age
         BootstrapError.INVALID_PHONE_COUNTRY -> R.string.bootstrap_error_invalid_phone_country
