@@ -1,0 +1,24 @@
+CHANGELOG.md
+  s_864f5af1be05f9::t_6a2243e1937e43 18
+  s_864f5af1be05f9::t_72588333073b44 8-10,13,19
+  s_864f5af1be05f9::t_80560b221db143 14-17
+  s_864f5af1be05f9::t_e4e523a8d02a37 11-12
+releases-meta.json
+  s_864f5af1be05f9::t_0a9108f9fa5977 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "78495f8885de484b9ab8282366b74bdc31851f1c",
+  "prompts": {},
+  "sessions": {
+    "s_864f5af1be05f9": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "5c5818f7-95ec-4d4e-9081-27e371ad0645",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
