@@ -7,6 +7,7 @@ import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -132,6 +133,50 @@ class ImportGraduationServiceIT extends BaseIntegrationTest {
         assertThat(readSubscription("user-b", awaitingDoc).getBoolean("deleted")).isTrue();
         // Still scoped to the rejected content only.
         assertThat(readSubscription("user-a", controlDoc).getBoolean("deleted")).isFalse();
+    }
+
+    // ── Catalog safety: the collection-group query also matches top-level `playlists` ──
+
+    /** Seed catalog playlists/PLX and user row users/u1/playlists/PLX, both youtubeId=PLX. */
+    private void seedCatalogAndUserPlaylist() throws Exception {
+        firestore.collection("playlists").document("PLX")
+                .set(Map.of("youtubeId", "PLX", "status", "APPROVED"))
+                .get(5, TimeUnit.SECONDS);
+        firestore.collection("users").document("u1").collection("playlists").document("PLX")
+                .set(Map.of("youtubeId", "PLX", "approvalStatus", "APPROVED",
+                        "deleted", false, "updatedAt", 1000L))
+                .get(5, TimeUnit.SECONDS);
+    }
+
+    private void assertUserRowTombstonedAndCatalogUntouched() throws Exception {
+        DocumentSnapshot userRow = firestore.collection("users").document("u1")
+                .collection("playlists").document("PLX").get().get(5, TimeUnit.SECONDS);
+        assertThat(userRow.getBoolean("deleted")).isTrue();
+
+        DocumentSnapshot catalog = firestore.collection("playlists").document("PLX")
+                .get().get(5, TimeUnit.SECONDS);
+        assertThat(catalog.exists()).isTrue();
+        assertThat(catalog.contains("deleted"))
+                .as("catalog playlist must never be tombstoned by a per-user reject fan-out")
+                .isFalse();
+    }
+
+    @Test
+    void onRejected_tombstonesUserRowButNeverTheCatalogPlaylist() throws Exception {
+        seedCatalogAndUserPlaylist();
+
+        graduationService.onRejected(YouTubeContentType.PLAYLIST, "PLX");
+
+        assertUserRowTombstonedAndCatalogUntouched();
+    }
+
+    @Test
+    void onRejectedAll_tombstonesUserRowButNeverTheCatalogPlaylist() throws Exception {
+        seedCatalogAndUserPlaylist();
+
+        graduationService.onRejectedAll(YouTubeContentType.PLAYLIST, Set.of("PLX"));
+
+        assertUserRowTombstonedAndCatalogUntouched();
     }
 
     @Test

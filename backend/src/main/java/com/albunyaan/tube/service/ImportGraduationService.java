@@ -314,6 +314,13 @@ public class ImportGraduationService {
         WriteBatch batch = db.batch();
         int n = 0;
         for (QueryDocumentSnapshot doc : docs) {
+            // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc. The
+            // collection-group query also matches the top-level catalog collection of the same
+            // name (playlists/{id}) — never write to anything outside a user's library.
+            var userRef = doc.getReference().getParent().getParent();
+            if (userRef == null || !userRef.getParent().getPath().equals("users")) {
+                continue;
+            }
             Map<String, Object> upd = new HashMap<>();
             // Must be a Firestore Timestamp (not numeric millis): the sync delta-pull orders by
             // updatedAt and reads it via getTimestamp(). A raw long sorts in the wrong type-band,
@@ -327,14 +334,10 @@ public class ImportGraduationService {
             batch.update(doc.getReference(), upd);
 
             if (uidSink != null) {
-                // Path is users/{uid}/{coll}/{docId}; the doc's grandparent is the user doc, whose
-                // id is the owning uid. Recorded as its update is staged, so a later failed commit
-                // can leave this a superset — benign for the personal-grant caller, whose per-user
-                // derive re-applies APPROVED from the persisted grants (never a leak).
-                var userRef = doc.getReference().getParent().getParent();
-                if (userRef != null) {
-                    uidSink.add(userRef.getId());
-                }
+                // The user doc's id is the owning uid. Recorded as its update is staged, so a later
+                // failed commit can leave this a superset — benign for the personal-grant caller,
+                // whose per-user derive re-applies APPROVED from the persisted grants (never a leak).
+                uidSink.add(userRef.getId());
             }
             if (++n % BATCH_WRITE_LIMIT == 0) {
                 batch.commit().get(FAN_OUT_TIMEOUT_SECONDS, TimeUnit.SECONDS);
