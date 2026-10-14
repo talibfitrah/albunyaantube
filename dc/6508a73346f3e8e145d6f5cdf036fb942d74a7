@@ -1,0 +1,109 @@
+backend/src/main/java/com/albunyaan/tube/controller/PublicContentController.java
+  s_dbb6b1f3671904::t_1cf7cd43d334f0 122
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_dbb6b1f3671904::t_689a2bf405ec97 1174
+  s_dbb6b1f3671904::t_da43148aceba07 1068-1072,1144-1148,1172-1173
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_dbb6b1f3671904::t_ff756ec3cdd2af 1015,1083,1099,1107-1110,1113-1123
+  s_dbb6b1f3671904::t_68653d5a5bc960 1013
+  s_dbb6b1f3671904::t_4b47f61e1fe183 1041
+  s_dbb6b1f3671904::t_d0319c980d030e 131,1037-1040,1056-1057,1059-1060,1378,1382
+  s_dbb6b1f3671904::t_c25e9db1f3e6d9 1084
+  s_dbb6b1f3671904::t_1cf7cd43d334f0 97,100
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_dbb6b1f3671904::t_914feda24de27d 1-59,63-65
+  s_dbb6b1f3671904::t_e975b79df780dd 60-62
+backend/src/main/java/com/albunyaan/tube/repository/SearchableStreamRepository.java
+  s_dbb6b1f3671904::t_336452a630c539 61-63,65,69
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dbb6b1f3671904::t_c404432b882160 91,104,107,449,463,465
+  s_dbb6b1f3671904::t_e09ee5088d5ab1 71-73,75,105-106,108,110-111,435-437,439,464,466,468-469
+  s_dbb6b1f3671904::t_689a2bf405ec97 74,109,112,438,467,470
+  s_dbb6b1f3671904::t_336452a630c539 504-506,508-509
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceSearchTest.java
+  s_dbb6b1f3671904::t_5f4457216f0fdf 138,146,179,193,204,214-223
+  s_dbb6b1f3671904::t_5320243767669d 91-113,124,136-137,140,181,191,195,213
+  s_dbb6b1f3671904::t_9015d1237efa81 125-135,139,141-145,147,177-178,180,182-190,192,194,196-203,205
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_3bb63d7ba4cd8b 143-147,162-171,363-371
+backend/src/main/java/com/albunyaan/tube/search/CatalogChanged.java
+  s_dbb6b1f3671904::t_0f985133e10ac3 3-4,11-17
+  s_dbb6b1f3671904::t_049be35b7c992d 6-8,10
+backend/src/main/java/com/albunyaan/tube/search/SearchText.java
+  s_dbb6b1f3671904::t_c25e9db1f3e6d9 59-61
+  s_dbb6b1f3671904::t_07fc65445c7b1f 47,171-176,180,190-204,206,216-217,233
+  s_dbb6b1f3671904::t_7bc4f3c3230e2b 39,48-49,55-56
+backend/src/test/java/com/albunyaan/tube/integration/PaginationIntegrationTest.java
+  s_dbb6b1f3671904::t_1cf7cd43d334f0 223,266,279,312,333,341,370,404,432,470,478,663,692,715,730,752,756,760,796,873,889,903,919,924,946,961,986,1001,1023,1037
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_dbb6b1f3671904::t_e975b79df780dd 205,222,239,255,471,477
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexReadsIT.java
+  s_dbb6b1f3671904::t_d380b8e34ce54f 1-53
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_dbb6b1f3671904::t_336452a630c539 165-171
+  s_dbb6b1f3671904::t_689a2bf405ec97 83,118,121,372,437,466,469
+  s_dbb6b1f3671904::t_c404432b882160 100,113,116,448,462,464
+  s_dbb6b1f3671904::t_e09ee5088d5ab1 80-82,84,114-115,117,119-120,366-371,373,434-436,438,463,465,467-468
+  s_dbb6b1f3671904::t_79517012f46295 164,172-173
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryBulkGraduationTest.java
+  s_dbb6b1f3671904::t_ba5cdb830a8a98 277-278
+  s_dbb6b1f3671904::t_689a2bf405ec97 254,273,284
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryDeleteReachesDevicesTest.java
+  s_dbb6b1f3671904::t_ba5cdb830a8a98 129-135
+  s_dbb6b1f3671904::t_689a2bf405ec97 125,136
+  s_dbb6b1f3671904::t_532e267baeb7f2 126-128
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_c4aceb6b653eab 266-267
+  s_dbb6b1f3671904::t_713a23c374eb6c 361-375
+  s_dbb6b1f3671904::t_96c08059374136 711-779
+  s_dbb6b1f3671904::t_b7c4a9da426aec 25,27,179-218,247,249-265,268-270,454-456,459-460,464,470,474-475,478,482,528,537,546,555,566,576,584,593,599-614,616-618,621-631,813
+  s_dbb6b1f3671904::t_d51aefe8dee7ee 490-492,512-513,515,520-521
+  s_dbb6b1f3671904::t_3f920ba712b72c 20-23,376,780-805
+  s_dbb6b1f3671904::t_dc92972a6cd00f 17,377,409,428,430,505,661,672-673,684,700,806,823,859
+backend/src/test/java/com/albunyaan/tube/search/SearchTextTest.java
+  s_dbb6b1f3671904::t_5c537004ec5587 141,204
+  s_dbb6b1f3671904::t_07fc65445c7b1f 95,98,104,142,166,169,177,190-198,235-236,247,276-278
+  s_dbb6b1f3671904::t_ce564cc81bca27 206,209-226,279
+  s_dbb6b1f3671904::t_be7588ee0b7f21 199-203,205,207-208,280
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java
+  s_dbb6b1f3671904::t_49da72484e03e8 83,105,128,151,172,195,216,238,259,262,306,336,360
+backend/src/test/java/com/albunyaan/tube/repository/CatalogChangedEventsTest.java
+  s_dbb6b1f3671904::t_689a2bf405ec97 74,78,83,89,95,101,150-152,166,193,197,201,206,212,218,224,230,234,238,243,249,255
+  s_dbb6b1f3671904::t_ba5cdb830a8a98 8,15,19,21,28,32-33,35-36,113-126,128-149,153-165
+  s_dbb6b1f3671904::t_3380f00fa32c17 41,70
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_dbb6b1f3671904::t_0f985133e10ac3 78-80,82,348-350,352,408-411,413
+  s_dbb6b1f3671904::t_e09ee5088d5ab1 114-115,117,119-120,381,383,385-386
+  s_dbb6b1f3671904::t_c404432b882160 100,113,116,367,380,382
+  s_dbb6b1f3671904::t_336452a630c539 207-213
+  s_dbb6b1f3671904::t_689a2bf405ec97 81,118,121,351,384,387,412
+  s_dbb6b1f3671904::t_6305cf0132b515 206,214-215
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_5f4457216f0fdf 521-522
+  s_dbb6b1f3671904::t_07fc65445c7b1f 52,73,477-485,488
+  s_dbb6b1f3671904::t_9d824946635bd7 72,123,201,237,302,435-437,445-449
+  s_dbb6b1f3671904::t_50edc2223c716f 450,704-706,709-712
+  s_dbb6b1f3671904::t_8edb5e3637f594 17,207,214-216,219-231,234,239,244,246-247,250-251,263-265,270-271,275-292,299
+  s_dbb6b1f3671904::t_3f549c51300153 124-125
+  s_dbb6b1f3671904::t_d802c7387d9d04 311-312,316-320,322,324-334,336,339-344,351-353,451
+  s_dbb6b1f3671904::t_a7f2bfcd77b752 173-177
+  s_dbb6b1f3671904::t_3b09454eca0c3c 156
+  s_dbb6b1f3671904::t_d0319c980d030e 538-541,545-548
+  s_dbb6b1f3671904::t_d402e1b9b7df7a 21,36-37,42,88-89,452,663
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "dc6508a73346f3e8e145d6f5cdf036fb942d74a7",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
