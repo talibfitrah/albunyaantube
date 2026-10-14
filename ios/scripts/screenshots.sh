@@ -462,21 +462,28 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     xcrun simctl shutdown "$device" >/dev/null 2>&1
 done
 
-# Phase 3 Task 8: the player toolbar with all five slots (favorite / share / report / save / cast),
-# en + ar. Phone only -- the toolbar row is the subject and it is identical on iPad.
+# Phase 3 Task 8 + action row 1.0.3: the player toolbar with all five slots (favorite / share / report
+# / save / cast), en + ar, phone AND iPad. `testPlayerSaveAndCastToolbarPhase3` also asserts the
+# equal-width columns on one top edge, and on a tablet the 600 pt cap + centring in the player column
+# -- that branch runs ONLY on the iPad leg (`UIDevice` idiom), so both legs are needed. FitrahTubeUITests
+# is outside test.sh's gate, so this block is where those assertions run. One `-only-testing:` per
+# invocation (the Plan C scoping trap).
 CAST_OUT="$ROOT/.superpowers/sdd/2026-09-01-ios-phase3-offline-cast/screenshots/phase3-player-save-cast"
-echo "== phase3-player-save-cast (iPhone 17) -> $CAST_OUT =="
-rm -rf "${CAST_OUT:?}"
-TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT" xcodebuild test \
-    -project FitrahTube.xcodeproj \
-    -scheme FitrahTube \
-    -testPlan FitrahTubeUITests \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerSaveAndCastToolbarPhase3 \
-    -destination "platform=iOS Simulator,name=iPhone 17" \
-    -derivedDataPath DerivedData \
-    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
-[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== phase3-player-save-cast ($device) -> $CAST_OUT/$slug =="
+    rm -rf "${CAST_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT/$slug" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerSaveAndCastToolbarPhase3 \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
 
 # Phase 4 Task 19 (docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md): the account screens
 # the R-G matrix cannot reach -- the two splash-router ROOT destinations picked from the fixture

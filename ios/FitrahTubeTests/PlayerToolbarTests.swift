@@ -231,6 +231,19 @@ struct PlayerToolbarLayoutTests {
                 "four-button toolbar no longer fits one row at 320pt: \(narrow3.height) -> \(narrow4.height)")
     }
 
+    /// Action row 1.0.3: the captions wrap inside their equal columns, they are never truncated (no
+    /// `lineLimit` on the slot caption; accessibility Dynamic Type must stay readable). The
+    /// unconstrained ideal size is the SINGLE-line row; at 320 pt the equal columns are narrower than
+    /// the accessibility3 captions, so the row must come out taller by at least a caption line. A
+    /// `lineLimit(1)` or a fixed-height caption would leave the two equal and fail this. An XCUITest
+    /// cannot assert it: the captions are not separate elements inside the slot buttons.
+    @Test func captionsWrapInsteadOfTruncatingAtAccessibilitySizes() {
+        let singleLine = idealSize(gate: .allowed, width: nil)
+        let narrow = idealSize(gate: .allowed, width: 320)
+        #expect(narrow.height > singleLine.height + 20,
+                "captions did not wrap in the 320 pt columns (single-line row \(singleLine.height), narrow row \(narrow.height)) — truncated?")
+    }
+
     /// Task 8 fix round 1 (review Minor 7): the requirement is "the TOOLBAR hides the button", and
     /// asserting `CastAffordance.isVisible`'s truth table alone stays green if someone drops the
     /// guard from the view. Same `ImageRenderer` width discriminator the Save slot uses above; the

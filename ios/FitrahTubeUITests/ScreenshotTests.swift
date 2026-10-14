@@ -2808,40 +2808,15 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
-    /// Action row 1.0.3 at Dynamic Type `.accessibility3` (phone): the captions must WRAP inside
-    /// their equal columns, never truncate (no `lineLimit` on the label), and every slot stays
-    /// reachable. The equal-width/top-edge property is asserted at the default size only, where one
-    /// column width fits every caption; here the screenshot is the evidence.
-    func testPlayerActionRowAtAccessibility3() throws {
-        let directory = try shotsDirectory()
-        let screen = Screen(key: "phase3-player-save-cast",
-                            arguments: ["-fitrah-seed-offline", "-fitrah-fake-player-hls",
-                                        "-fitrah-route", "player", "seed-offline-3"],
-                            anchor: .button("unused"))
-        for locale in Self.locales {
-            XCUIDevice.shared.orientation = .portrait
-            let app = launch(screen, locale: locale, extraArguments: Self.accessibility3)
-            XCTAssertTrue(app.buttons["player.favoriteButton"].waitForExistence(timeout: 20),
-                          "row-a11y3/\(locale.key): the toolbar never appeared")
-            for id in ["player.shareButton", "player.reportButton", "player.saveButton", "player.castButton"] {
-                XCTAssertTrue(app.buttons[id].waitForExistence(timeout: 10), "row-a11y3/\(locale.key): \(id) missing")
-            }
-            for id in ["player.favoriteButton", "player.shareButton", "player.reportButton",
-                       "player.saveButton", "player.castButton"] {
-                let frame = app.buttons[id].frame
-                print("ACTIONROW-A11Y3 \(locale.key) \(id) \(frame)")
-                XCTAssertGreaterThanOrEqual(frame.height, 44, "row-a11y3/\(locale.key): \(id) under the 44 pt floor")
-            }
-            try write(named: "phase3-player-save-cast-a11y3-\(locale.key)-\(locale.theme)-portrait", into: directory)
-        }
-    }
-
     /// The action row is N equal columns on one top edge (Android parity,
     /// `fragment_player.xml` weights): every slot the same width, the same `minY`, each starting
     /// where its neighbour ends, and — on a tablet — the whole row no wider than the 600 pt cap and
-    /// centred in the player COLUMN. `column` is a full-column-width sibling (the video box / embed
-    /// frame), not the window: the iPad's navigation rail takes the window's leading 96 pt, so the
-    /// window's midpoint is not the column's. ±1 pt absorbs the rounding of a fractional column width.
+    /// centred in the player COLUMN. `column` is a full-column-width sibling (the video box), not
+    /// the window: the iPad's navigation rail takes the window's leading 96 pt, so the window's
+    /// midpoint is not the column's. ±1 pt absorbs the rounding of a fractional column width.
+    /// The 600 is `Size.playerActionRowMaxWidth` (this bundle cannot import the app's tokens).
+    /// Wrapping at large Dynamic Type is asserted in `PlayerToolbarLayoutTests`, where a layout
+    /// measurement is exact; an XCUITest cannot see the captions inside the slot buttons.
     private func assertEvenToolbar(_ app: XCUIApplication, label: String, column: XCUIElement, ids: [String],
                                    file: StaticString = #filePath, line: UInt = #line) {
         XCTAssertTrue(column.exists, "\(label): the full-column reference element is missing", file: file, line: line)
@@ -2863,7 +2838,6 @@ final class ScreenshotTests: XCTestCase {
         }
         let span = ordered.last!.frame.maxX - ordered[0].frame.minX
         let rowMid = ordered[0].frame.minX + span / 2
-        print("ACTIONROW \(label) idiom=\(UIDevice.current.userInterfaceIdiom.rawValue) column=\(column.frame) span=\(span) rowMid=\(rowMid) w=\(first.width)")
         // A phone's row fills the column minus the padding, so it is centred by construction; the
         // assertion that can fail is the tablet's cap + centring.
         XCTAssertEqual(rowMid, column.frame.midX, accuracy: 2,
@@ -2872,8 +2846,8 @@ final class ScreenshotTests: XCTestCase {
         // `UIDevice`, not `app.windows.firstMatch.frame`: on the 5-slot screen that frame reads
         // (0, 0, 0, 0), which silently turned the cap check off.
         if UIDevice.current.userInterfaceIdiom == .pad {
-            XCTAssertLessThanOrEqual(span, 601, "\(label): the tablet row is \(span) pt wide, cap is 600",
-                                     file: file, line: line)
+            XCTAssertEqual(span, 600, accuracy: 1, "\(label): the tablet row is \(span) pt wide, the cap is 600",
+                           file: file, line: line)
         }
     }
 

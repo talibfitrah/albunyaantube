@@ -215,4 +215,10 @@ enum Size {
     static func playerMaxWidth(_ w: WidthClass) -> CGFloat? {
         w.pick(nil, 1200, 1600)
     }
+
+    /// The player's action row (Favorite / Share / Report / Save / Cast) is equal columns, so on a
+    /// tablet it is capped here and centred in the player column, instead of spreading five slots
+    /// across 1200 pt. Phones (`.compact`) are unconstrained. `ScreenshotTests`' `assertEvenToolbar`
+    /// pins the same 600 (the UI-test bundle cannot import this target).
+    static let playerActionRowMaxWidth: CGFloat = 600
 }

@@ -53,9 +53,6 @@ struct PlayerToolbar: View {
     /// glyph never spills into its caption.
     @ScaledMetric(relativeTo: .body) private var iconBox: CGFloat = 24
 
-    /// Tablet cap for the row (`Spacing`'s regular/large classes); phones span the whole width.
-    private static let tabletRowMaxWidth: CGFloat = 600
-
     var body: some View {
         // Equal columns (Android's `layout_weight="1"` row): each slot fills `maxWidth: .infinity`
         // via `slotLabel`, so 3, 4 or 5 slots tile the row, instead of `Spacer`s equalising the
@@ -76,7 +73,7 @@ struct PlayerToolbar: View {
                 castSlot
             }
         }
-        .frame(maxWidth: widthClass == .compact ? nil : Self.tabletRowMaxWidth)
+        .frame(maxWidth: widthClass == .compact ? nil : Size.playerActionRowMaxWidth)
         .frame(maxWidth: .infinity)
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
