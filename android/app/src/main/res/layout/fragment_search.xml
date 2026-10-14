@@ -27,6 +27,15 @@
 
         </androidx.appcompat.widget.Toolbar>
 
+        <!-- Spec §6: a newer search is loading while the previous results stay on screen -->
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/searchProgress"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:visibility="gone"
+            app:indicatorColor="@color/primary_green" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
@@ -87,6 +96,19 @@
                     android:nestedScrollingEnabled="false" />
 
             </LinearLayout>
+
+            <!-- Spec §6: shown when the best match was approximate or related (X-Search-Match) -->
+            <TextView
+                android:id="@+id/searchMatchNote"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/spacing_md"
+                android:paddingVertical="@dimen/spacing_sm"
+                android:text="@string/search_closest_results"
+                android:textAlignment="viewStart"
+                android:textSize="14sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone" />
 
             <!-- Search Results -->
             <androidx.recyclerview.widget.RecyclerView

@@ -14,6 +14,7 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.source.SearchMatch
 import com.albunyaan.tube.databinding.FragmentSearchBinding
 import coil.ImageLoader
 import com.albunyaan.tube.player.PlaybackFeatureFlags
@@ -95,6 +96,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 override fun onQueryTextSubmit(query: String?): Boolean {
                     query?.let {
                         if (it.isNotBlank()) {
+                            searchJob?.cancel() // the typing debounce would repeat this search
                             performSearch(it)
                             saveToHistory(it)
                         }
@@ -106,14 +108,13 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                     // Debounce search as user types
                     searchJob?.cancel()
 
-                    if (newText.isNullOrBlank()) {
+                    if (newText == null || newText.trim().length < 2) {
+                        // Also cancels an in-flight search: an old "qu" result must not land under "q".
                         showSearchHistory()
                     } else {
                         searchJob = lifecycleScope.launch {
-                            delay(500) // 500ms debounce
-                            if (newText.length >= 2) {
-                                performSearch(newText)
-                            }
+                            delay(300) // spec §6: 300 ms on both apps (owner, 2026-10-13)
+                            performSearch(newText)
                         }
                     }
                     return true
@@ -209,7 +210,12 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                         showError(getString(R.string.search_error_generic))
                     }
                 }
+                binding?.searchMatchNote?.isVisible = state is SearchViewModel.SearchState.Success &&
+                    (state.match == SearchMatch.APPROXIMATE || state.match == SearchMatch.RELATED)
             }
+        }
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isSearching.collect { binding?.searchProgress?.isVisible = it }
         }
     }
 
