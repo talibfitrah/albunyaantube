@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
@@ -59,7 +60,7 @@ class ContentListViewModel(
         searchJob?.cancel()
         searchJob = viewModelScope.launch {
             delay(300L)
-            loadContent()
+            loadContent(keepListOnScreen = true)
         }
     }
 
@@ -88,8 +89,17 @@ class ContentListViewModel(
 
     /**
      * Initial load or refresh - clears existing data and fetches from the beginning.
+     * [keepListOnScreen]: a search-query change keeps the visible list under the top spinner
+     * (REFRESH) instead of swapping to the skeleton (INITIAL) - spec §6.1 step 7.
      */
-    fun loadContent() {
+    fun loadContent(keepListOnScreen: Boolean = false) {
+        val listShown = when (val current = _content.value) {
+            is ContentState.Success -> current.items.isNotEmpty()
+            is ContentState.Loading -> current.type != LoadingType.INITIAL // a previous search/refresh kept it up
+            else -> false
+        }
+        val loadingType = if (keepListOnScreen && listShown) LoadingType.REFRESH else LoadingType.INITIAL
+
         // Cancel any ongoing request to prevent race conditions
         loadJob?.cancel()
 
@@ -101,7 +111,7 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
-            _content.value = ContentState.Loading(LoadingType.INITIAL)
+            _content.value = ContentState.Loading(loadingType)
             try {
                 Log.d(TAG, "Fetching content for type=$contentType (initial load)")
                 val response = contentService.fetchContent(
@@ -122,6 +132,8 @@ class ContentListViewModel(
                     hasMoreData = _hasMoreData,
                     isSearchActive = isSearchActive
                 )
+            } catch (e: CancellationException) {
+                throw e // superseded by a newer load: never flash an error for it
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
                 _content.value = ContentState.Error(e.message ?: "Unknown error")

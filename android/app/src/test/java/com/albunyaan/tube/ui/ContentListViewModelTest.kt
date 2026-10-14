@@ -9,9 +9,12 @@ import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
+import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
+import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
@@ -328,6 +331,42 @@ class ContentListViewModelTest {
         assertFalse(retryState.hasMoreData)
     }
 
+    // --- In-tab search keeps the list (spec §6.1 step 7) ---
+
+    @Test
+    fun `a query change with items on screen keeps the list (REFRESH, not INITIAL)`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), null))
+        val vm = createViewModel()
+        advanceUntilIdle()
+        val states = mutableListOf<ContentListViewModel.ContentState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.content.collect { states.add(it) } }
+
+        vm.setSearchQuery("ab")
+        advanceUntilIdle()
+
+        assertTrue(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH)))
+        assertFalse(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.INITIAL)))
+    }
+
+    @Test
+    fun `typing again while a search is in flight shows neither the skeleton nor an error`() = runTest {
+        // Review Focus 5
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.gates[1] = CompletableDeferred() // the first search hangs until it is superseded
+        val vm = createViewModel()
+        advanceUntilIdle()
+        val states = mutableListOf<ContentListViewModel.ContentState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.content.collect { states.add(it) } }
+
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+        vm.setSearchQuery("abc"); advanceUntilIdle()
+
+        assertFalse(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.INITIAL)))
+        assertTrue(states.none { it is ContentListViewModel.ContentState.Error })
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Success)
+    }
+
     // --- Helper functions ---
 
     private fun createVideo(id: String) = ContentItem.Video(
@@ -347,6 +386,7 @@ class ContentListViewModelTest {
         val responses = mutableListOf<CursorResponse>()
         var errorOnCall: Int? = null
         var callCount = 0
+        val gates = mutableMapOf<Int, CompletableDeferred<Unit>>()
 
         override suspend fun fetchContent(
             type: ContentType,
@@ -356,6 +396,7 @@ class ContentListViewModelTest {
             query: String?
         ): CursorResponse {
             val index = callCount++
+            gates[index]?.await()
             if (errorOnCall == index) {
                 throw RuntimeException("Simulated error on call $index")
             }

@@ -113,6 +113,17 @@ class FakeContentApi : ContentApi {
         onSearch = noResults
     }
 
+    private val emptyPage: suspend (String?) -> CursorPage =
+        { CursorPage(data = emptyList(), pageInfo = PageInfo(hasNext = false, nextCursor = null)) }
+
+    /** What /v1/content answers, by its `q`; a test sets it and calls [resetContent] in @After. */
+    @Volatile
+    var onContent = emptyPage
+
+    fun resetContent() {
+        onContent = emptyPage
+    }
+
     override suspend fun fetchContent(
         type: String?,
         cursor: String?,
@@ -122,15 +133,7 @@ class FakeContentApi : ContentApi {
         date: String?,
         sort: String?,
         query: String?
-    ): CursorPage {
-        return CursorPage(
-            data = emptyList(),
-            pageInfo = PageInfo(
-                hasNext = false,
-                nextCursor = null
-            )
-        )
-    }
+    ): CursorPage = onContent(query)
 
     override suspend fun fetchCategories(): List<CategoryResponse> {
         return emptyList()
