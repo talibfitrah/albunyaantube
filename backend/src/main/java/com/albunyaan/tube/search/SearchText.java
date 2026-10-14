@@ -22,6 +22,7 @@ import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.BoostQuery;
 import org.apache.lucene.search.FuzzyQuery;
+import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.PhraseQuery;
 import org.apache.lucene.search.PrefixQuery;
 import org.apache.lucene.search.Query;
@@ -34,6 +35,7 @@ import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -46,6 +48,13 @@ import java.util.Set;
 final class SearchText {
 
     static final int MAX_TOKENS = 10;
+
+    // Lucene 9 counts every leaf of the rewritten tree, and a fuzzy query expands to 50 terms on each
+    // of 3 fields. Ten distinct long tokens reach about 10 x (157 + 91) = 2.5k leaves, past the default
+    // 1,024, which would answer 500. Process-wide; this class is loaded before the first query is built.
+    static {
+        IndexSearcher.setMaxClauseCount(4096);
+    }
 
     private static final NormalizeCharMap CHARS = charMap();
     static final Analyzer BASE = analyzer(false);
@@ -133,7 +142,7 @@ final class SearchText {
                 List<List<String>> group = new ArrayList<>();
                 for (String variant : (comment >= 0 ? line.substring(0, comment) : line).split(",")) {
                     List<String> variantTokens = tokens(BASE, variant);
-                    if (!variantTokens.isEmpty()) group.add(variantTokens);
+                    if (!variantTokens.isEmpty()) group.add(List.copyOf(variantTokens));
                 }
                 for (List<String> variant : group) {
                     if (variant.size() == 1) {
@@ -149,7 +158,7 @@ final class SearchText {
 
     /** Concept-map variants (each a list of BASE tokens) for a query token, matched by stem. */
     static Set<List<String>> concepts(String token) {
-        return CONCEPTS.getOrDefault(stem(token), Set.of());
+        return Collections.unmodifiableSet(CONCEPTS.getOrDefault(stem(token), Set.of()));
     }
 
     /** Tier 1 = exact, 2 = approximate, 3 = related (spec §4.4). `tokens` are BASE tokens. */
@@ -158,7 +167,8 @@ final class SearchText {
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
             Query clause = tokenClause(token, i == tokens.size() - 1, tier >= 2);
-            if (tier == 3) clause = withConcepts(clause, token);
+            // A stopword can share a stem with a concept key (له with the Allah group): never expand it.
+            if (tier == 3 && !STOPWORDS.contains(token)) clause = withConcepts(clause, token);
             boolean optional = tier == 3 || STOPWORDS.contains(token);
             query.add(clause, optional ? Occur.SHOULD : Occur.MUST);
         }
@@ -192,7 +202,9 @@ final class SearchText {
         Set<List<String>> variants = concepts(token);
         if (variants.isEmpty()) return clause;
         BooleanQuery.Builder b = new BooleanQuery.Builder().add(clause, Occur.SHOULD);
+        List<String> self = List.of(token);
         for (List<String> variant : variants) {
+            if (variant.equals(self)) continue; // already the token's own clause
             Query expansion = variant.size() == 1
                     ? tokenClause(variant.get(0), false, false)
                     : new BoostQuery(new PhraseQuery("title", variant.toArray(String[]::new)), BOOSTS[0]);
