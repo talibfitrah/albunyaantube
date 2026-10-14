@@ -114,6 +114,33 @@ struct PlaybackRecoveryTests {
         #expect(PlaybackRecovery.httpStatus(comment: nil, statusCode: 403) == 403)
     }
 
+    /// Task 7 fix round 3 (N2): an event older than the last moment the player was seen actually
+    /// playing is a failure AVFoundation already recovered from (probe 2026-10-14: a variant's segment
+    /// 401 logged at 0.15 s, failover to the other variant, playback from 0.42 s). It must not speak
+    /// for a later stall -- that would make the stall a sticky step-down.
+    @Test func anErrorLoggedBeforeThePlayerLastPlayedIsIgnored() {
+        let lastPlayed = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let comment = "The operation couldn\u{2019}t be completed. (CoreMediaErrorDomain error -16840 - HTTP 401: Unauthorized)"
+        #expect(PlaybackRecovery.httpStatus(date: lastPlayed.addingTimeInterval(-5), comment: comment,
+                                            statusCode: -16840, after: lastPlayed) == nil)
+        #expect(PlaybackRecovery.httpStatus(date: lastPlayed.addingTimeInterval(0.5), comment: comment,
+                                            statusCode: -16840, after: lastPlayed) == 401)
+    }
+
+    /// A player never seen playing has no floor: every dated event is this incident's (the real 401
+    /// before the first frame -- the simulator proof's `status=401`).
+    @Test func aPlayerThatNeverPlayedReadsEveryDatedEvent() {
+        #expect(PlaybackRecovery.httpStatus(date: Date(timeIntervalSinceReferenceDate: 1), comment: "HTTP 401: Unauthorized",
+                                            statusCode: -16840, after: nil) == 401)
+    }
+
+    /// An undated event cannot be placed before or after the floor, so it is not trusted: nil keeps
+    /// the class ladder, which costs at most one same-rung re-resolve.
+    @Test func anUndatedEventIsNotTrusted() {
+        #expect(PlaybackRecovery.httpStatus(date: nil, comment: "HTTP 401: Unauthorized", statusCode: -16840,
+                                            after: nil) == nil)
+    }
+
     /// Review Focus 5: a device whose comment carries no `HTTP NNN` reads nil -- and nil keeps the
     /// class ladder (one same-rung re-resolve, then the step-down), never a dead end.
     @Test func anUnreadableStatusIsNilAndKeepsTheClassLadder() {

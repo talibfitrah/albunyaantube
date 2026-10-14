@@ -226,8 +226,12 @@ struct PlayerHostTests {
         defer { coordinator.stopObserving(); player.pause() }
 
         try Self.swap(player, to: server.url, coordinator, model)   // playing -> the builder plays it
+        let floor = coordinator.errorLogFloor
         try await Task.sleep(for: .seconds(4))
         #expect(player.timeControlStatus == .waitingToPlayAtSpecifiedRate, "not a real wait")
+        // Fix round 3 (N2): waiting is not playing -- an error logged during the wait is this
+        // incident's and must stay readable, so the floor does not move.
+        #expect(coordinator.errorLogFloor == floor, "a wait moved the error-log floor")
         Self.postFailure(on: player)
         player.pause()
 
@@ -239,7 +243,10 @@ struct PlayerHostTests {
     /// item-timeline observer, so a REAL stall never fired `.stall` and recovery waited for
     /// AVFoundation's own timeout. The server hands AVPlayer the clip's metadata (`.readyToPlay`,
     /// the watchdog armed) and then never one sample byte: a wait whose buffer never grows.
-    @Test(.timeLimit(.minutes(1))) func aRealStallFiresTheWatchdog() async throws {
+    /// Fix round 3 (re-review Minor A), same stall, no second 8 s wait: a stall never pauses the
+    /// player, so its replacement must follow the player's LIVE state -- a pause made while the
+    /// re-resolve is out (the user, headphones pulled) holds.
+    @Test(.timeLimit(.minutes(1))) func aRealStallFiresTheWatchdogAndAPauseDuringItsReResolveHolds() async throws {
         let clip = try Self.moovFirstFixture()
         let server = try StallingServer(body: clip.body, withheldFrom: clip.mediaStart)
         await server.start()
@@ -260,6 +267,10 @@ struct PlayerHostTests {
         #expect(player.currentItem?.status == .readyToPlay)
         #expect(player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
         #expect(resolver.calls.contains { $0.kind == .autoRecovery }, "a real stall never fired the watchdog")
+
+        player.pause()                                     // during the stall's re-resolve
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the stall's replacement overrode a pause")
     }
 
     /// Review M1 (I5 at the host): a failure while the USER had paused, long after the last time the
@@ -305,9 +316,10 @@ struct PlayerHostTests {
         UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerHostTests.\(UUID().uuidString)")!)
     }
 
-    /// The bundled clip on a real coordinator, playing, sampled at least once while it played: item
-    /// time 1 s is at least 1 s of wall clock after `observe`, so both the item-timeline tick and the
-    /// wall-clock tick are due by then; the extra 200 ms lets the latter run.
+    /// The bundled clip on a real coordinator, playing, and sampled at least once while it played.
+    /// Fix round 3 (re-review Minor B): polls for the stamps themselves instead of sleeping and hoping
+    /// the timer had ticked -- a nil `lastPlayingAt` reads as "resume" and would let the N1 mutation
+    /// survive.
     private static func playingHarness() async throws
         -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
         let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings(),
@@ -317,9 +329,11 @@ struct PlayerHostTests {
         coordinator.lastVideoId = "fixture-1"
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
                             isLive: false, playToEnd: .none)
-        for _ in 0..<300 where model.currentTime < 1 { try await Task.sleep(for: .milliseconds(10)) }
-        try await Task.sleep(for: .milliseconds(200))
-        #expect(model.currentTime >= 1)
+        for _ in 0..<300 where coordinator.lastPlayingAt == nil || coordinator.errorLogFloor == nil {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.lastPlayingAt != nil, "the wall-clock sampler never stamped a playing player")
+        #expect(coordinator.errorLogFloor != nil, "a playing player sets the error-log floor (N2)")
         #expect(player.timeControlStatus != .paused)
         return (model, player, coordinator)
     }

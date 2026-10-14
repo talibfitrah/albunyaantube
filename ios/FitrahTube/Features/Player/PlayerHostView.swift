@@ -238,7 +238,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             if let player {
                 _ = Self.player(for: state, replacing: player, audioOnly: audioOnly)
                 // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
-                // observer (status KVO, failed-to-play-to-end, the periodic stall sampler) is
+                // observer (status KVO, failed-to-play-to-end, the wall-clock stall sampler) is
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
                 // background would never reach the recovery ladder. Same hook
                 // `updateUIViewController` uses; it no-ops if the pair is already the observed one.
@@ -313,10 +313,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// plus (Task 7) the per-item recovery observers, whose lifetime is the same one-owner
     /// start/stop shape `CaptionOverlay.TimeObserver` uses for its periodic observer.
     ///
-    /// Untested glue by design: every input here is a real decoding `AVPlayer`'s behaviour (KVO
-    /// status, the failed-to-play-to-end notification, `loadedTimeRanges` growth), which the unit
-    /// target can't produce. All the *decisions* live in `PlaybackRecovery`, which is tested
-    /// exhaustively.
+    /// Thin glue: every input here is a real decoding `AVPlayer`'s behaviour (KVO status, the
+    /// failed-to-play-to-end notification, `loadedTimeRanges` growth). All the *decisions* live in
+    /// `PlaybackRecovery`, which is tested exhaustively; `PlayerHostTests` drives this glue with real
+    /// players, including real stalls from a localhost server (Task 7 fix rounds 2-3).
     @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
         private(set) var path: NWPath
         /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
@@ -363,7 +363,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// wall-clock sampler. A failure leaves AVPlayer paused (spike 2026-10-14: `tc=0` after
         /// `AVPlayerItemFailedToPlayToEndTime`), so once recovery's replacement item lands, the player
         /// itself can no longer say whether the USER had paused. Per player, not per item.
-        private var lastPlayingAt: Date?
+        /// `private(set)`, not private: the host tests poll for the first stamp (fix round 3, Minor B).
+        private(set) var lastPlayingAt: Date?
+        /// When the player was last seen actually PLAYING (`.playing`, not waiting): an error-log event
+        /// older than this is one AVFoundation recovered from, so `fire` does not read it (N2). Nil
+        /// until the first such sample.
+        private(set) var errorLogFloor: Date?
         /// Set by `fire`, spent by the next `observe` of a NEW item on the SAME player: recovery's
         /// replacement, which plays iff `PlaybackRecovery.shouldResume` said so.
         private var resumeOnNextItem = false
@@ -641,6 +646,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private func sample() {
             guard let item = observedItem, let player = observedPlayer else { return }
             if player.timeControlStatus != .paused { lastPlayingAt = Date() }
+            if player.timeControlStatus == .playing { errorLogFloor = Date() }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
             let tick = watchdog.tick(playbackTime: player.currentTime().seconds, bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
@@ -651,10 +657,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         private func fire(_ event: RecoveryEvent) {
             guard let model else { return }
-            resumeOnNextItem = PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
-            // The CDN's answer, when AVFoundation logged one (`PlaybackRecovery.httpStatus`).
+            // A stall never pauses the player, so the builder's live `wasPlaying` at swap time is the
+            // right answer -- and it honours a pause made while the re-resolve was out (fix round 3,
+            // Minor A). Only a failure, which pauses the player, needs the intent carried over.
+            resumeOnNextItem = event != .stall
+                && PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
+            // The CDN's answer, when AVFoundation logged one since the player last played (N2).
             let status = observedItem?.errorLog()?.events.last.flatMap {
-                PlaybackRecovery.httpStatus(comment: $0.errorComment, statusCode: $0.errorStatusCode)
+                PlaybackRecovery.httpStatus(date: $0.date, comment: $0.errorComment,
+                                            statusCode: $0.errorStatusCode, after: errorLogFloor)
             }
             Task { await model.handleRecoveryEvent(event, httpStatus: status) }
         }

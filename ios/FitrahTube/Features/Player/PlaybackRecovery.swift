@@ -63,7 +63,7 @@ struct RecoveryBudget: Equatable, Sendable {
     /// unrecoverable. `retryCount` resets only on the FIRST successful playback (`hasAutoHidden`
     /// guards it), which keeps `retries` a genuine per-stream lifetime cap: a stream that flaps
     /// (plays a second, fails, plays a second, fails) still terminates at `maxRetries`.
-    /// Called by `PlayerHostView`'s periodic sampler when the playback position actually advances.
+    /// Called by `PlayerHostView`'s wall-clock sampler when the playback position actually advances.
     mutating func recordPlaybackProgress() {
         reResolves = 0
         sameRungUsed = []
@@ -109,6 +109,17 @@ enum PlaybackRecovery {
             return nil
         }
         return Int(comment[range].dropFirst(5))
+    }
+
+    /// Task 7 fix round 3 (N2): the status of the item's NEWEST error-log event, but only when it is
+    /// dated after `floor` -- the last time the player was seen actually playing. An older event is a
+    /// failure AVFoundation already recovered from (probe 2026-10-14: a variant's segment 401 logged,
+    /// failover to the other variant, then normal playback), and reading it would turn a later,
+    /// unrelated stall into a sticky step-down. `floor == nil`: never seen playing, so every dated
+    /// event is this incident's. An undated event cannot be placed, so it is not trusted.
+    static func httpStatus(date: Date?, comment: String?, statusCode: Int, after floor: Date?) -> Int? {
+        guard let date, date > floor ?? .distantPast else { return nil }
+        return httpStatus(comment: comment, statusCode: statusCode)
     }
 
     /// How recently the player must have wanted to play for a failure to count as "died under the
@@ -161,8 +172,8 @@ nonisolated enum AirPlayFallback {
     }
 }
 
-/// The stall watchdog as a pure value (fix round 1, C1): the host feeds it one sample per periodic
-/// tick and it answers what changed. Previously this logic lived inline in
+/// The stall watchdog as a pure value (fix round 1, C1): the host feeds it one sample per second of
+/// wall clock and it answers what changed. Previously this logic lived inline in
 /// `PlayerHostView.Coordinator.sample` and measured only `loadedTimeRanges` growth, which false-fired
 /// on healthy playback three ways -- a fully-buffered item (rung-2 MP4s finish downloading in
 /// seconds) stopped "progressing" and stalled 6 s later; a backward seek froze the mark against the
