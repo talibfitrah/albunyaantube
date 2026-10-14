@@ -96,10 +96,11 @@ abstract class NoYouTubeLinksScreensBase(private val lang: String) {
     fun theLinkRuleHoldsOnTheDevice() {
         val notOpenable = listOf(
             "https://ｙｏｕｔｕｂｅ.com/a", "https://youtube\u3002com/a", "https://you\u00ADtube.com/a", "https://%79outube.com/a",
-            "https://YOUTUBE.COM./a", "https://youtube.com\\@example.org/a", "https://\\youtube.com/a", "https://www.youtube.co.uk/x"
+            "https://YOUTUBE.COM./a", "https://youtube.com\\@example.org/a", "https://\\youtube.com/a", "https://www.youtube.co.uk/x",
+            "https://y\u1D52utube.com/a", "https://you\uD82F\uDCA0tube.com/a", " https://example.org/a"
         )
         for (url in notOpenable) assertFalse("$url opens", PlayerDescriptions.isOpenableLink(url))
-        for (url in listOf("https://مثال.مصر/", "https://youtube.com@example.org/a", "https://myyoutube.org/x")) {
+        for (url in listOf("https://مثال.مصر/", "https://bücher.de/", "https://youtube.com@example.org/a", "https://myyoutube.org/x")) {
             assertTrue("$url does not open", PlayerDescriptions.isOpenableLink(url))
         }
     }

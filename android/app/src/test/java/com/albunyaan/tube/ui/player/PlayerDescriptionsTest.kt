@@ -242,8 +242,8 @@ class PlayerDescriptionsTest {
         }
     }
 
-    // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike. These are the
-    // shared vectors of .superpowers/sdd/2026-10-13-search-relevance/link-rule.md (iOS uses the same list).
+    // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike. iOS must pass
+    // the same vectors.
 
     @Test
     fun every_shared_link_rule_vector() {
@@ -273,6 +273,12 @@ class PlayerDescriptionsTest {
             "https://you\u00ADtube.com/a", // soft hyphen
             "https://you\ttube.com/",
             "https://you\ntube.com/",
+            "https://y\u1D52utube.com/a", // modifier letter small o (Unicode newer than IDNA2003's 3.2)
+            "https://\uD83C\uDD88\uD83C\uDD3E\uD83C\uDD44\uD83C\uDD43\uD83C\uDD44\uD83C\uDD31\uD83C\uDD34.com/a", // 🅈🄾🅄🅃🅄🄱🄴
+            "https://you\uD82F\uDCA0tube.com/a", // U+1BCA0, a format character a browser drops
+            " https://example.org/a", // the tap path parses the untrimmed URL: it would be a dead link
+            "\u00A0https://example.org/a",
+            "https://example.org/a ",
             "",
             null,
         )
@@ -281,6 +287,7 @@ class PlayerDescriptionsTest {
             "http://Example.org",
             "https://youtube.com@example.org/a", // the host is example.org
             "https://مثال.مصر/", // a real IDN: xn--mgbh0fb.xn--wgbh1c
+            "https://bücher.de/",
             "https://notyoutube.com/x",
             "https://myyoutube.org/x",
         )

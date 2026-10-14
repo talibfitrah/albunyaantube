@@ -58,16 +58,17 @@ internal object PlayerDescriptions {
     }
 
     /**
-     * The one rule for links the app lets the user open (descriptions and channel About links), the same rule as
-     * iOS (keep the two in step). Anything that fails it is shown as text and
-     * never opened:
-     * 1. after one trim, no `\`, whitespace, ISO control character or soft hyphen (a browser drops or rewrites them);
+     * The one rule for links the app lets the user open (descriptions and channel About links), and iOS must
+     * follow the same rule. Anything that fails it is shown as text and never opened:
+     * 1. no `\`, whitespace (leading and trailing too: the tap parses the raw URL), ISO control character or soft
+     *    hyphen (a browser drops or rewrites them);
      * 2. scheme `http` or `https`;
      * 3. a host that converts to ASCII (IDNA, as a browser does), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
+     *    unassigned code points are refused, since a browser's newer Unicode maps them (`yᵒutube.com`);
      * 4. not YouTube ([isYouTubeLink]).
      */
     fun isOpenableLink(url: String?): Boolean {
-        val link = url?.trim() ?: return false
+        val link = url ?: return false
         if (link.any { it == '\\' || it.isWhitespace() || it.isISOControl() || it == '\u00AD' }) return false
         return isSafeLinkScheme(link) && asciiHost(link) != null && !isYouTubeLink(link)
     }
@@ -84,7 +85,7 @@ internal object PlayerDescriptions {
     private fun asciiHost(url: String): String? {
         val host = url.toUri().host?.takeIf { it.isNotBlank() } ?: return null
         val ascii = try {
-            IDN.toASCII(host, IDN.ALLOW_UNASSIGNED)
+            IDN.toASCII(host, 0)
         } catch (e: IllegalArgumentException) {
             return null
         }
