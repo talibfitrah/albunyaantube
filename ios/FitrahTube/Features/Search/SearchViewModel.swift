@@ -139,7 +139,11 @@ import Foundation
             let result = try await catalog.search(query: q, type: nil, limit: Self.pageSize)
             guard !Task.isCancelled else { return }
             isSearching = false
-            guard !result.items.isEmpty else { state = .noResults; return }
+            guard !result.items.isEmpty else {
+                state = .noResults
+                announce(String(localized: "search_no_results"))   // the empty state posts nothing itself
+                return
+            }
             let noteWasShown = if case .results(_, let match) = state { match != .exact } else { false }
             let isNewQuery = q != shownQuery
             state = .results(result.items, match: result.match)

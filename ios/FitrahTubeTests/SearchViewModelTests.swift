@@ -571,7 +571,7 @@ struct SearchViewModelTests {
     }
 
     /// VoiceOver hears a new query's results replace the list: their count, once the search lands.
-    /// The same query again, no results and a failure say nothing new here.
+    /// No results says so (`search_no_results`); the same query again and a failure say nothing new.
     @Test func aNewQuerysResultsAreAnnouncedWithTheirCount() async {
         let (history, defaults, suite) = makeHistoryStore()
         defer { defaults.removePersistentDomain(forName: suite) }
@@ -590,15 +590,17 @@ struct SearchViewModelTests {
         await vm.searchTask?.value
         #expect(spoken.spoken == [Self.count(3), Self.count(5)])
 
-        vm.query = "abcd"                    // no results: the empty state speaks for itself
+        vm.query = "abcd"                    // no results: the empty state posts nothing itself
         await vm.searchTask?.value
-        vm.query = "abce"                    // a failure: the error state does
+        let none = String(localized: "search_no_results")
+        #expect(spoken.spoken == [Self.count(3), Self.count(5), none])
+        vm.query = "abce"                    // a failure: the error state and its Retry
         await vm.searchTask?.value
-        #expect(spoken.spoken == [Self.count(3), Self.count(5)])
+        #expect(spoken.spoken == [Self.count(3), Self.count(5), none])
 
         vm.query = "abc"                     // back to results after leaving them: a new list
         await vm.searchTask?.value
-        #expect(spoken.spoken == [Self.count(3), Self.count(5), Self.count(5)])
+        #expect(spoken.spoken == [Self.count(3), Self.count(5), none, Self.count(5)])
     }
 
     /// Android's note is a live region; here the note's text is spoken when it appears, ahead of

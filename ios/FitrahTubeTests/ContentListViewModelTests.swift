@@ -658,6 +658,45 @@ struct ContentListViewModelTests {
         #expect(!vm.isSearching)
     }
 
+    /// Typing and then undoing it during a pull-to-refresh still reloads: the rows on screen stop
+    /// being an answer to return to once a refresh asks for them again (Android's
+    /// `shownQuery = null`), whether the undo lands inside the keystroke's debounce or while the
+    /// redone refresh is in flight.
+    @Test(arguments: ["debounce", "fetch"])
+    func aTypeAndUndoDuringAPullToRefreshStillReloads(undoDuring: String) async throws {
+        let refresh = Gate(), redo = Gate(), debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: undoDuring == "fetch" ? [2: refresh, 3: redo] : [2: refresh])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if undoDuring == "debounce", await sleeps.recorded.count == 1 { await debounce.block() }
+        }
+        await vm.load()
+
+        let pull = Task { await vm.refresh() }
+        await refresh.waitUntilBlocked()
+        vm.query = "a"
+        let typed = try #require(vm.searchTask, "the keystroke dropped the refresh") // else the waits below never end
+        await refresh.release()
+        await pull.value
+        if undoDuring == "fetch" {
+            await redo.waitUntilBlocked()       // the debounce ran: the refresh is being redone
+            #expect(vm.isSearching)
+        } else {
+            await debounce.waitUntilBlocked()   // still inside the keystroke's debounce
+        }
+        vm.query = ""
+        await redo.release()
+        await debounce.release()
+        await typed.value
+        await vm.searchTask?.value
+
+        let expected: [String?] = undoDuring == "fetch" ? [nil, nil, nil, nil] : [nil, nil, nil]
+        #expect(await client.queries == expected, "the refresh was dropped")
+        #expect(!vm.isSearching)
+    }
+
     /// The Search key on the text already being fetched changes nothing: that fetch is not
     /// cancelled and sent again.
     @Test func theSearchKeyDoesNotRestartTheSameSearchInFlight() async {
@@ -708,9 +747,11 @@ struct ContentListViewModelTests {
         #expect(!vm.isSearching)
     }
 
-    /// The list a failed refresh left is not a loaded answer: a keystroke undone inside its debounce
-    /// still retries, as it did before the list stayed on screen (and as Android does).
-    @Test func undoingAKeystrokeAfterAFailedRefreshStillRetries() async {
+    /// The list a failed refresh -- or a failed Retry from its banner, which is `load()` -- left is
+    /// not a loaded answer: a keystroke undone inside its debounce still retries, as it did before
+    /// the list stayed on screen (and as Android does).
+    @Test(arguments: ["refresh", "retry"])
+    func undoingAKeystrokeAfterAFailedRefreshStillRetries(reload: String) async {
         let debounce = Gate()
         let sleeps = SleepRecorder()
         let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
@@ -720,7 +761,8 @@ struct ContentListViewModelTests {
             if await sleeps.recorded.count == 1 { await debounce.block() } // holds the first keystroke's debounce
         }
         await vm.load()
-        await vm.refresh()
+        if reload == "refresh" { await vm.refresh() } else { await vm.load() }
+        #expect(vm.lastItems.count == 5)
 
         vm.query = "a"
         let typed = vm.searchTask
@@ -740,7 +782,7 @@ struct ContentListViewModelTests {
         @MainActor final class Spoken { var texts: [String] = [] }
         let spoken = Spoken()
         let count = { (n: Int) in Format.localizedFormat("list_footer_status", locale: .current, Int64(n)) }
-        let client = QueryEchoClient()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: "1"), gates: [:])
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep,
                                       announce: { spoken.texts.append($0) })
 
@@ -750,15 +792,16 @@ struct ContentListViewModelTests {
 
         vm.query = "ab"
         await vm.searchTask?.value
-        #expect(spoken.texts == [count(3)])
+        #expect(spoken.texts == [count(5)])
 
-        await vm.loadMore()                  // QueryEchoClient has no next page: nothing to append
+        #expect(await vm.loadMore())         // a next page, fetched and appended below
+        #expect(await client.queries == [nil, nil, "ab", "ab"])
         vm.query = "ab "                     // the same request: nothing reloads
         await vm.searchTask?.value
-        #expect(spoken.texts == [count(3)])
+        #expect(spoken.texts == [count(5)])
 
         vm.query = ""                        // the full list replaces the results
         await vm.searchTask?.value
-        #expect(spoken.texts == [count(3), count(3)])
+        #expect(spoken.texts == [count(5), count(5)])
     }
 }

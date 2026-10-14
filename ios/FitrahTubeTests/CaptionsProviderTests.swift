@@ -274,6 +274,25 @@ struct PlayerScreenCaptionsTests {
         #expect(CaptionsMenu.overlayTrack(vm)?.languageCode == "en")
     }
 
+    /// The menu follows the same rule as the overlay, in the ONE shared component: hidden while
+    /// audio-only, on every screen that mounts it. Shorts' rail mounts it unconditionally, so the
+    /// menu itself has to hide -- a pick there drew nothing.
+    @MainActor @Test func audioOnlyHidesTheCaptionsMenu() async {
+        let resolver = RecordingResolver(.hls)
+        resolver.captionTracks = ["abcdefghijk": [Self.track("en", auto: true)]]
+        let vm = Self.model(resolver)
+        await vm.open()
+        // `body` is an `if` with no `else`: an Optional that is empty when nothing is shown.
+        let shown = { Mirror(reflecting: CaptionsMenu(model: vm).body).children.count == 1 }
+        #expect(shown())
+
+        vm.audioOnly = true
+        #expect(!shown())
+
+        vm.audioOnly = false
+        #expect(shown())
+    }
+
     /// I8: a mid-play rung-2 demotion empties both lists; a pick that survives it must stop drawing.
     @MainActor @Test func aRung2DemotionStopsTheOverlay() async {
         let vm = Self.model(RecordingResolver(.progressive))

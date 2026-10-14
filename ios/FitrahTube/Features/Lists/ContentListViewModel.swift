@@ -44,7 +44,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// 22 collapses Android's two composed 300 ms timers into this one). <2 chars still updates
     /// `isSearchActive`, and the fetch omits `q` -- the server requires ≥2 chars, so below that it
     /// returns the unfiltered list. A change that leaves the request as it is on screen (an undone
-    /// keystroke, trailing spaces) fetches nothing.
+    /// keystroke, trailing spaces) fetches nothing -- unless a reload asked for that list again.
     var query: String = "" {
         // Read before the field moves on: `lastItems` empties once the text no longer matches them.
         willSet { if state == .error, !lastItems.isEmpty { keepsFailedList = true } }
@@ -55,10 +55,9 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
             // answer or error never lands under the newer text.
             searchTask?.cancel()
             loadTask?.cancel()
-            // Back on the query whose results are on screen: nothing to reload. Unless a refresh was
-            // in flight -- the line above just cancelled it, and the debounce must run it again.
-            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam,
-               isSearching || !isFullLoading, !keepsFailedList {
+            // Back on the query whose results are on screen: nothing to reload. Unless a refresh or a
+            // reload asked for those rows again and none has landed: the debounce must run it.
+            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam, !reloadPending {
                 isSearching = false
                 return
             }
@@ -105,8 +104,13 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// The `q` the newest full load fetches, so the Search key can tell it is already running.
     private var loadQuery: String?
     /// The field changed over a failed refresh's retained list: it stays on screen until the next
-    /// first page lands or fails, and is not a loaded answer an undone keystroke can return to.
+    /// first page lands or fails.
     private var keepsFailedList = false
+    /// Set by `refresh()` and `load()`, cleared when a first page lands (Android's
+    /// `shownQuery = null`): until then the rows on screen are no answer an undone keystroke can
+    /// return to -- the reload they asked for has not happened, whether it is in flight, was
+    /// cancelled by the keystroke, or failed.
+    private var reloadPending = false
 
     /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
     /// must keep the list visible, not blank it. `items` is only ever reassigned on a *successful*
@@ -159,7 +163,10 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         self.announce = announce
     }
 
-    func load() async { await performFullLoad(showLoading: true) }
+    func load() async {
+        reloadPending = true
+        await performFullLoad(showLoading: true)
+    }
 
     /// Gate wave-4 V2: SwiftUI restarts a `.task` every time a compact-width `TabView` tab is
     /// re-selected, so the views' `.task { await load() }` blanked every accumulated page back to
@@ -177,6 +184,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// existing `.content`/`.error` stays on screen, swapped only once the new page arrives.
     func refresh() async {
         guard !isFullLoading else { return }
+        reloadPending = true
         await performFullLoad(showLoading: false)
     }
 
@@ -247,6 +255,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
             if requestQuery != itemsQuery {
                 announce(Format.localizedFormat("list_footer_status", locale: .current, Int64(page.items.count)))
             }
+            reloadPending = false
             items = page.items
             itemsFilter = requestFilter
             itemsQuery = requestQuery
