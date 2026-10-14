@@ -455,6 +455,8 @@ class ContentListViewModelTest {
         runCurrent() // no virtual time passes
 
         assertEquals("the emptied box waited out the typing debounce", null to null, fakeService.asked.last())
+        advanceUntilIdle() // past the 300 ms
+        assertEquals("the emptied box loaded the list more than once", listOf<Pair<String?, String?>>(null to null, "ab" to null, null to null), fakeService.asked)
     }
 
     @Test
@@ -695,6 +697,59 @@ class ContentListViewModelTest {
         fakeService.gates[1]!!.complete(Unit); advanceUntilIdle()
         assertTrue(vm.content.value is ContentListViewModel.ContentState.Error)
         assertEquals(listOf(createVideo("1")), vm.content.value.items)
+    }
+
+    @Test
+    fun `after a filter change fails, undoing a keystroke does not bring back the old filter's rows`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a1")), CursorResponse.PageInfo("cA"))) // filter A
+        fakeService.errorOnCall = 1 // filter B fails (offline): A's rows stay up with an error
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 1 throws instead)
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 2, "x", is gated)
+        fakeService.responses.add(CursorResponse(listOf(createVideo("b1")), null)) // filter B
+        fakeService.gates[2] = CompletableDeferred() // "x" loads under the spinner, over A's rows
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setFilters(FilterState(category = "b")); advanceUntilIdle()
+
+        vm.setSearchQuery("x", debounceMs = 300); advanceUntilIdle()
+        vm.setSearchQuery("", debounceMs = 300); advanceUntilIdle() // backspace
+
+        assertEquals("filter A's rows came back as filter B's result", listOf(createVideo("b1")), vm.content.value.items)
+        assertEquals(null to null, fakeService.asked.last())
+    }
+
+    @Test
+    fun `pressing Search on the typed query already loading does not send it again`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("ab")), null))
+        fakeService.gates[1] = CompletableDeferred() // "ab" is slow
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab", debounceMs = ContentListViewModel.TYPING_DEBOUNCE_MS)
+        advanceTimeBy(ContentListViewModel.TYPING_DEBOUNCE_MS); runCurrent() // past the debounce: "ab" is in flight
+        assertEquals(2, fakeService.callCount)
+
+        vm.setSearchQuery("ab") // the keyboard's Search key
+        fakeService.gates[1]!!.complete(Unit); advanceUntilIdle()
+
+        assertEquals("the search in flight was sent again", 2, fakeService.callCount)
+        assertEquals(listOf(createVideo("ab")), (vm.content.value as ContentListViewModel.ContentState.Success).items)
+    }
+
+    @Test
+    fun `typing a character and undoing it does not drop a pull-to-refresh`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("old")), null))
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 1, the refresh, never answers)
+        fakeService.responses.add(CursorResponse(listOf(createVideo("new")), null))
+        fakeService.gates[1] = CompletableDeferred()
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.refresh(); runCurrent() // the user pulled to refresh
+
+        vm.setSearchQuery("a", debounceMs = 300); advanceTimeBy(100)
+        vm.setSearchQuery("", debounceMs = 300); advanceUntilIdle() // and undid it
+
+        assertEquals("the refresh was dropped", listOf(createVideo("new")), vm.content.value.items)
     }
 
     // --- Helper functions ---

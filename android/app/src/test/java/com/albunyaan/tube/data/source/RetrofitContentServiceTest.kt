@@ -191,10 +191,10 @@ class RetrofitContentServiceTest {
 
     // --- One automatic retry while a restarted server builds its search index (503 + Retry-After) ---
 
-    private fun <T> unavailable(retryAfter: String): Response<T> = Response.error(
+    private fun <T> unavailable(retryAfter: String, code: Int = 503): Response<T> = Response.error(
         "".toResponseBody(null),
         okhttp3.Response.Builder()
-            .code(503).message("Service Unavailable").protocol(Protocol.HTTP_1_1)
+            .code(code).message("Unavailable").protocol(Protocol.HTTP_1_1)
             .request(Request.Builder().url("http://localhost/api/v1/search").build())
             .header("Retry-After", retryAfter)
             .build()
@@ -217,6 +217,20 @@ class RetrofitContentServiceTest {
 
         assertTrue(runCatching { service.search("quran", null, 50) }.exceptionOrNull() is HttpException)
         verify(api, times(2)).search("quran", null, 50)
+    }
+
+    @Test
+    fun `a 500 or 429 with Retry-After is surfaced, never retried`() = runTest {
+        for (code in listOf(500, 429)) {
+            val api: ContentApi = mock()
+            whenever(api.search("quran", null, 50)).thenReturn(unavailable(retryAfter = "5", code = code), Response.success(listOf()))
+
+            val error = runCatching { RetrofitContentService(api).search("quran", null, 50) }.exceptionOrNull()
+
+            assertEquals("a $code was not surfaced as it came", code, (error as? HttpException)?.code())
+            verify(api, times(1)).search("quran", null, 50)
+        }
+        assertEquals("it waited", 0L, testScheduler.currentTime)
     }
 
     @Test

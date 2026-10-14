@@ -246,7 +246,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         prefs.edit().putString(KEY_SEARCH_HISTORY, searchHistory.joinToString("|")).apply()
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        binding?.searchHistorySection?.isVisible = searchHistory.isNotEmpty() // a search typed just before still runs
+        // A search typed just before still runs, and a posted row tap can land after it started loading: the
+        // history shows only on the history screen (Empty).
+        binding?.searchHistorySection?.isVisible =
+            searchHistory.isNotEmpty() && viewModel.searchResults.value is SearchViewModel.SearchState.Empty
     }
 
     private fun clearHistory() {

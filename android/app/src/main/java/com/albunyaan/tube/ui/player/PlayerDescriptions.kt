@@ -4,6 +4,7 @@ import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.URLSpan
+import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
 
 /**
@@ -16,6 +17,7 @@ import androidx.core.text.HtmlCompat
 internal object PlayerDescriptions {
 
     private val ALLOWED_LINK_SCHEMES = setOf("http", "https")
+    private val YOUTUBE_HOSTS = listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
 
     /**
      * Convert raw description text (HTML for YouTube, occasionally plain) to a
@@ -30,7 +32,8 @@ internal object PlayerDescriptions {
      * into a description and weaponise the tappable link to navigate inside
      * our own app's deep-link routes or hand-off to arbitrary other apps with
      * attacker-chosen payloads. Stripping non-http(s) spans keeps the link
-     * text visible (so users still see the URL) but inert.
+     * text visible (so users still see the URL) but inert. YouTube links
+     * ([isYouTubeLink]) are stripped the same way.
      */
     fun render(rawHtml: String?): CharSequence? {
         if (rawHtml.isNullOrBlank()) return null
@@ -44,13 +47,23 @@ internal object PlayerDescriptions {
         if (text !is Spanned) return text
         val spans = text.getSpans(0, text.length, URLSpan::class.java)
         if (spans.isEmpty()) return text
-        val unsafe = spans.filterNot { isSafeLinkScheme(it.url) }
+        val unsafe = spans.filter { !isSafeLinkScheme(it.url) || isYouTubeLink(it.url) }
         if (unsafe.isEmpty()) return text
         // Copy into a mutable builder once so we can remove the offending
-        // spans without affecting the safe http(s) ones that remain clickable.
+        // spans without affecting the safe ones that remain clickable.
         val builder = SpannableStringBuilder(text)
         for (span in unsafe) builder.removeSpan(span)
         return builder as Spannable
+    }
+
+    /**
+     * Owner rule: the app exists so users don't go to YouTube. A link to a YouTube host
+     * (`youtube.com`, `youtu.be`, `youtube-nocookie.com` or any subdomain, any case) stays
+     * visible as text but never opens. The channel About links use this rule too.
+     */
+    fun isYouTubeLink(url: String?): Boolean {
+        val host = url?.trim()?.toUri()?.host?.lowercase()?.trimEnd('.') ?: return false
+        return YOUTUBE_HOSTS.any { host == it || host.endsWith(".$it") }
     }
 
     private fun isSafeLinkScheme(url: String?): Boolean {

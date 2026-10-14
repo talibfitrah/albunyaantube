@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.player
 import android.text.Spanned
 import android.text.style.URLSpan
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -181,5 +182,56 @@ class PlayerDescriptionsTest {
         )!!
         val spans = (rendered as Spanned).getSpans(0, rendered.length, URLSpan::class.java)
         assertEquals("blank and schemeless URLs must be stripped", 0, spans.size)
+    }
+    // Owner rule: the app exists so users don't go to YouTube. A YouTube link stays as text, not a tap target.
+
+    private fun linksIn(rendered: CharSequence?) =
+        (rendered as Spanned).getSpans(0, rendered.length, URLSpan::class.java).map { it.url }
+
+    @Test
+    fun youtube_links_keep_their_text_but_are_not_tappable() {
+        val hrefs = listOf(
+            "https://youtu.be/V2Brp_esIVI",
+            "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv",
+            "https://m.youtube.com/watch?v=V2Brp_esIVI",
+            "https://MUSIC.YOUTUBE.COM/channel/UCabcdefghijklmnopqrstuv",
+            "https://www.youtube-nocookie.com/embed/V2Brp_esIVI",
+            "http://youtube.com/@channel",
+        )
+        for (href in hrefs) {
+            val rendered = PlayerDescriptions.render("see <a href=\"$href\">$href</a> now")
+            assertEquals("$href must not be tappable", emptyList<String>(), linksIn(rendered))
+            assertEquals("see $href now", rendered.toString())
+        }
+    }
+
+    @Test
+    fun other_hosts_stay_tappable_next_to_an_inert_youtube_link() {
+        val rendered = PlayerDescriptions.render(
+            "<a href=\"https://youtu.be/V2Brp_esIVI\">video</a> and <a href=\"https://example.org\">site</a>"
+        )
+        assertEquals(listOf("https://example.org"), linksIn(rendered))
+        assertEquals("video and site", rendered.toString())
+    }
+
+    @Test
+    fun look_alike_hosts_are_not_youtube() {
+        for (href in listOf("https://notyoutube.com/x", "https://youtube.com.example.org/x", "https://example.org/youtube.com")) {
+            assertEquals(listOf(href), linksIn(PlayerDescriptions.render("<a href=\"$href\">x</a>")))
+        }
+    }
+
+    @Test
+    fun the_host_rule_the_channel_links_use() {
+        assertTrue(PlayerDescriptions.isYouTubeLink("https://youtu.be/V2Brp_esIVI"))
+        assertTrue(PlayerDescriptions.isYouTubeLink("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"))
+        assertTrue(PlayerDescriptions.isYouTubeLink("https://m.youtube.com/watch?v=V2Brp_esIVI"))
+        assertTrue(PlayerDescriptions.isYouTubeLink("https://MUSIC.YOUTUBE.COM/"))
+        assertTrue(PlayerDescriptions.isYouTubeLink("https://youtube-nocookie.com/embed/V2Brp_esIVI"))
+        assertFalse(PlayerDescriptions.isYouTubeLink("https://example.org"))
+        assertFalse(PlayerDescriptions.isYouTubeLink("https://notyoutube.com"))
+        assertFalse(PlayerDescriptions.isYouTubeLink("https://youtube.com.example.org"))
+        assertFalse(PlayerDescriptions.isYouTubeLink(""))
+        assertFalse(PlayerDescriptions.isYouTubeLink(null))
     }
 }

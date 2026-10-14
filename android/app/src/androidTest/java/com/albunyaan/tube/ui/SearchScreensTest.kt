@@ -9,11 +9,8 @@ import androidx.core.view.ViewCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
 import androidx.test.espresso.matcher.ViewMatchers.withId
 import androidx.test.espresso.matcher.ViewMatchers.withText
-import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
@@ -24,18 +21,22 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.di.TestNetworkModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
 import com.albunyaan.tube.util.eventually
+import com.albunyaan.tube.util.onResumedActivity
 import com.albunyaan.tube.util.screenshot
 import com.albunyaan.tube.util.searchAnswer
 import com.albunyaan.tube.util.searchVideo
 import com.albunyaan.tube.util.typeQuery
+import com.albunyaan.tube.util.viewDisplayed
+import com.albunyaan.tube.util.viewGone
 import androidx.media3.datasource.cache.SimpleCache
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
-import org.hamcrest.Matchers.not
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
@@ -83,18 +84,17 @@ abstract class SearchScreensBase(
         simpleCache.release()
     }
 
-    private fun shown(id: Int) = onView(withId(id)).check(matches(isDisplayed()))
-    private fun gone(id: Int) = onView(withId(id)).check(matches(withEffectiveVisibility(Visibility.GONE)))
-    private fun notShown(id: Int) = onView(withId(id)).check(matches(not(isDisplayed())))
+    // Views are read through onResumedActivity, not Espresso or ActivityScenario: while the indeterminate bar runs, a
+    // slow emulator never lets the main looper idle, and those wait for it (see onResumedActivity).
+    private fun name(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.resources.getResourceEntryName(id)
+    private fun shown(id: Int) = assertTrue("${name(id)} is not on screen", viewDisplayed(id))
+    private fun gone(id: Int) = assertTrue("${name(id)} is not gone", viewGone(id))
+    private fun notShown(id: Int) = assertFalse("${name(id)} is on screen", viewDisplayed(id))
 
-    private fun resultsListTop(): Int {
-        var top = 0
-        scenario!!.onActivity {
-            val location = IntArray(2)
-            it.findViewById<View>(R.id.searchResultsList).getLocationOnScreen(location)
-            top = location[1]
-        }
-        return top
+    private fun resultsListTop(): Int = onResumedActivity {
+        val location = IntArray(2)
+        it.findViewById<View>(R.id.searchResultsList).getLocationOnScreen(location)
+        location[1]
     }
 
     @Test
@@ -137,13 +137,13 @@ abstract class SearchScreensBase(
         shown(R.id.searchResultsList)
         gone(R.id.loadingState)
         assertEquals("showing the bar must not push the list down", listTop, resultsListTop())
-        scenario!!.onActivity {
+        onResumedActivity {
             val bar = it.findViewById<LinearProgressIndicator>(R.id.searchProgress)
             assertEquals("the bar spans the screen width", (bar.parent as View).width, bar.width)
             assertEquals("the track follows the theme", it.getColor(R.color.surface_variant), bar.trackColor)
         }
         // The bar is indeterminate: wait for a frame where the green segment is on screen.
-        val barRow = Rect().also { r -> scenario!!.onActivity { it.findViewById<View>(R.id.searchProgress).getGlobalVisibleRect(r) } }
+        val barRow = Rect().also { r -> onResumedActivity { it.findViewById<View>(R.id.searchProgress).getGlobalVisibleRect(r) } }
         val green = InstrumentationRegistry.getInstrumentation().targetContext.getColor(R.color.primary_green)
         screenshot("android-$device-$lang-loading") { bitmap ->
             (barRow.left until barRow.right step 4).any { x -> bitmap.getPixel(x, barRow.centerY()) == green }

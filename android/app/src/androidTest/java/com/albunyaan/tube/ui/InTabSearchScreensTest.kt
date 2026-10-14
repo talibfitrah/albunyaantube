@@ -4,17 +4,11 @@ import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
 import android.view.View
+import android.widget.EditText
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
-import androidx.test.espresso.Espresso.onView
-import androidx.test.espresso.action.ViewActions.replaceText
-import androidx.test.espresso.assertion.ViewAssertions.matches
-import androidx.test.espresso.matcher.ViewMatchers.isDisplayed
-import androidx.test.espresso.matcher.ViewMatchers.withEffectiveVisibility
-import androidx.test.espresso.matcher.ViewMatchers.withId
-import androidx.test.espresso.matcher.ViewMatchers.Visibility
 import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
@@ -27,8 +21,11 @@ import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.di.TestNetworkModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
 import com.albunyaan.tube.util.eventually
+import com.albunyaan.tube.util.onResumedActivity
 import com.albunyaan.tube.util.screenshot
 import com.albunyaan.tube.util.searchVideo
+import com.albunyaan.tube.util.viewDisplayed
+import com.albunyaan.tube.util.viewGone
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
@@ -81,20 +78,26 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         simpleCache.release()
     }
 
-    private fun shown(id: Int) = onView(withId(id)).check(matches(isDisplayed()))
-    private fun gone(id: Int) = onView(withId(id)).check(matches(withEffectiveVisibility(Visibility.GONE)))
+    // Views are read through onResumedActivity, not Espresso or ActivityScenario: while the spinner turns, a slow
+    // emulator never lets the main looper idle, and those wait for it (see onResumedActivity).
+    private fun name(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.resources.getResourceEntryName(id)
+    private fun shown(id: Int) = assertTrue("${name(id)} is not on screen", viewDisplayed(id))
+    private fun gone(id: Int) = assertTrue("${name(id)} is not gone", viewGone(id))
     private fun page(vararg ids: String) = CursorPage(
         data = ids.map { searchVideo(it, "Quran lesson $it") },
         pageInfo = PageInfo(hasNext = false, nextCursor = null)
     )
-    private fun list(): RecyclerView {
-        lateinit var rv: RecyclerView
-        scenario!!.onActivity { rv = it.findViewById(R.id.recyclerView) }
-        return rv
+    private fun <T> list(read: (RecyclerView) -> T) = onResumedActivity { read(it.findViewById(R.id.recyclerView)) }
+    private fun rows() = list { it.adapter!!.itemCount }
+    private fun firstVisible() = list { (it.layoutManager as GridLayoutManager).findFirstVisibleItemPosition() }
+    /** Where the list sits: the first visible row and that row's on-screen position. */
+    private fun place() = list { rv ->
+        (rv.layoutManager as GridLayoutManager).findFirstVisibleItemPosition() to
+            rv.getChildAt(0)?.let { c -> IntArray(2).also(c::getLocationOnScreen).toList() }
     }
-    private fun rows() = list().adapter!!.itemCount
-    private fun firstVisible() = (list().layoutManager as GridLayoutManager).findFirstVisibleItemPosition()
-    private fun type(text: String) = onView(withId(R.id.searchEditText)).perform(replaceText(text))
+    private fun refreshing() = onResumedActivity { it.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh).isRefreshing }
+    /** What Espresso's replaceText does (setText), without its idle wait: "quran" may be loading under the spinner. */
+    private fun type(text: String) = onResumedActivity { it.findViewById<EditText>(R.id.searchEditText).setText(text) }
 
     @Test
     fun newQueryKeepsTheListUnderTheSpinner() {
@@ -118,14 +121,15 @@ abstract class InTabSearchScreensBase(private val lang: String) {
 
         // 1. The plain list, then a first search whose answer lands at once.
         eventually { assertEquals(3, rows()) }
-        onView(withId(R.id.searchEditText)).perform(replaceText("quran"))
+        type("quran")
         eventually { shown(R.id.recyclerView) }
+        val placeBefore = place()
 
-        // 2. A newer query in flight: the 3 rows stay under the spinner; no skeleton, no empty view.
-        onView(withId(R.id.searchEditText)).perform(replaceText("quran tv"))
+        // 2. A newer query in flight: the 3 rows stay, in place, under the spinner; no skeleton, no empty view.
+        type("quran tv")
         eventually { assertEquals(0L, slowStarted.count) }
         eventually {
-            scenario!!.onActivity {
+            onResumedActivity {
                 val swipe = it.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh)
                 assertTrue("the top spinner is refreshing", swipe.isRefreshing)
                 // The spinner is the one SwipeRefreshLayout child that is not the list.
@@ -135,17 +139,19 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         }
         shown(R.id.recyclerView)
         assertEquals(3, rows())
+        assertEquals("the list moved under the spinner", placeBefore, place())
         gone(R.id.listSkeleton)
         gone(R.id.emptyState)
         screenshot("android-$device-$lang-tab-loading")
 
         // 2b. The view is recreated mid-search (rotation): the 3 rows come back under the spinner, never blank.
-        scenario!!.recreate()
+        // Activity.recreate(), not scenario.recreate(): that one waits for an idle looper too.
+        val before = onResumedActivity { it }
+        onResumedActivity { it.recreate() }
         eventually {
+            assertTrue("the activity was not recreated", onResumedActivity { it } !== before)
             assertEquals("the recreated view lost the kept rows", 3, rows())
-            scenario!!.onActivity {
-                assertTrue("the recreated view dropped the spinner", it.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh).isRefreshing)
-            }
+            assertTrue("the recreated view dropped the spinner", refreshing())
         }
         shown(R.id.recyclerView)
         gone(R.id.listSkeleton)
@@ -153,9 +159,7 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         // 3. It lands: the spinner stops and the new rows replace the old.
         slowGate.complete(Unit)
         eventually {
-            scenario!!.onActivity {
-                assertTrue(!it.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh).isRefreshing)
-            }
+            assertTrue(!refreshing())
             assertEquals(2, rows())
         }
         shown(R.id.recyclerView)
@@ -231,10 +235,46 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         eventually { assertEquals(1, searches.get()) } // it failed: the 3 rows stay with an error
 
         // The bare test host draws the search bar under the status bar, so a real tap there opens the shade.
+        // An emptied box loads at once (no debounce) and the fake answers inline, so every load the click causes has
+        // run when performClick returns. ContentListViewModelTest pins that nothing follows once the 300 ms pass.
         scenario!!.onActivity { it.findViewById<View>(R.id.searchClearButton).performClick() }
-        Thread.sleep(700) // past the debounce
 
         assertEquals("the clear button loaded the list more than once", 2, plainLoads.get())
+    }
+
+    @Test
+    fun aPageAppendedBelowKeepsThePlace() {
+        hiltRule.inject()
+        val calls = AtomicInteger()
+        val pageTwoGate = CompletableDeferred<Unit>()
+        api.onContent = {
+            if (calls.incrementAndGet() == 1) {
+                CursorPage(
+                    data = (0 until 40).map { searchVideo("v$it", "Quran lesson $it") },
+                    pageInfo = PageInfo(hasNext = true, nextCursor = "c1")
+                )
+            } else {
+                pageTwoGate.await()
+                page(*Array(40) { "w$it" })
+            }
+        }
+        scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
+        eventually { assertEquals(40, rows()) }
+
+        // Scrolling near the end asks for page 2; it is held until the place is noted.
+        onResumedActivity { it.findViewById<RecyclerView>(R.id.recyclerView).smoothScrollToPosition(39) }
+        eventually { assertEquals(2, calls.get()) }
+        eventually { assertEquals(RecyclerView.SCROLL_STATE_IDLE, list { it.scrollState }) }
+        val placeBefore = place()
+        assertTrue("the list did not scroll", placeBefore.first > 0)
+
+        pageTwoGate.complete(Unit)
+        eventually {
+            assertEquals(80, rows())
+            assertTrue("the list has not laid out the new page yet", !list { it.isLayoutRequested })
+        }
+
+        assertEquals("appending a page moved the list", placeBefore, place())
     }
 }
 

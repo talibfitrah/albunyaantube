@@ -16,6 +16,8 @@ import com.albunyaan.tube.databinding.FragmentChannelAboutTabBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
 import com.albunyaan.tube.ui.detail.ChannelDetailViewModel
+import com.albunyaan.tube.ui.player.PlayerDescriptions
+import com.google.android.material.color.MaterialColors
 import dagger.hilt.android.AndroidEntryPoint
 import dagger.hilt.android.lifecycle.withCreationCallback
 import kotlinx.coroutines.launch
@@ -118,9 +120,19 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
                     val linkView = LayoutInflater.from(requireContext())
                         .inflate(R.layout.item_channel_link, linksContainer, false)
                     linkView.findViewById<TextView>(R.id.linkName).text = link.name
-                    linkView.findViewById<TextView>(R.id.linkUrl).text = link.url
-                    linkView.setOnClickListener {
-                        openUrl(link.url)
+                    val urlView = linkView.findViewById<TextView>(R.id.linkUrl)
+                    urlView.text = link.url
+                    if (PlayerDescriptions.isYouTubeLink(link.url)) {
+                        // Shown, never opened: no hand-off to YouTube. Plain text, no ripple, no chevron.
+                        urlView.setTextColor(MaterialColors.getColor(urlView, android.R.attr.textColorSecondary))
+                        linkView.isClickable = false
+                        linkView.isFocusable = false
+                        linkView.background = null
+                        linkView.findViewById<View>(R.id.linkChevron).isVisible = false
+                    } else {
+                        linkView.setOnClickListener {
+                            openUrl(link.url)
+                        }
                     }
                     linksContainer.addView(linkView)
                 }

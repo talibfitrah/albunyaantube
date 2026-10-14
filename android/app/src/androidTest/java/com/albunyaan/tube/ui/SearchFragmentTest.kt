@@ -19,15 +19,18 @@ import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.di.TestNetworkModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
 import com.albunyaan.tube.util.eventually
+import com.albunyaan.tube.util.onResumedActivity
 import com.albunyaan.tube.util.searchAnswer
 import com.albunyaan.tube.util.searchVideo
 import com.albunyaan.tube.util.typeQuery
+import com.albunyaan.tube.util.viewDisplayed
 import androidx.media3.datasource.cache.SimpleCache
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Rule
@@ -184,6 +187,32 @@ class SearchFragmentTest {
         }
 
         eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+    }
+
+    @Test
+    fun deletingAHistoryEntryWhileASearchLoads_keepsTheHistoryHidden() {
+        val started = CountDownLatch(1)
+        val gate = CompletableDeferred<Unit>()
+        api.onSearch = { q ->
+            if (q == "quran") {
+                started.countDown()
+                gate.await()
+            }
+            searchAnswer("exact", searchVideo("v-$q", "$q lesson"))
+        }
+        showHistoryWith("fiqh")
+        showHistoryWith("tafsir") // two entries: one is left after the delete
+
+        typeQuery("quran")
+        assertTrue(started.await(5, TimeUnit.SECONDS)) // past the debounce: the full-screen spinner is up
+        eventually { assertTrue(viewDisplayed(R.id.loadingState)) }
+        // A history-row tap is posted after ACTION_UP, so it can land just after the search started.
+        onResumedActivity {
+            it.findViewById<RecyclerView>(R.id.searchHistoryList).getChildAt(0).findViewById<View>(R.id.deleteButton).performClick()
+        }
+
+        assertFalse("the history showed over the loading search", viewDisplayed(R.id.searchHistorySection))
+        gate.complete(Unit)
     }
 
     @Test

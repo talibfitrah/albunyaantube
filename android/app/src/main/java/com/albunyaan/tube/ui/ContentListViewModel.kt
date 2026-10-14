@@ -14,6 +14,7 @@ import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
+import kotlinx.coroutines.job
 import kotlinx.coroutines.launch
 
 /**
@@ -53,9 +54,13 @@ class ContentListViewModel(
     val isSearchActive: Boolean
         get() = _searchQuery.value.isNotEmpty()
 
-    // The query (trimmed) of the rows on screen, and the cursor of their next page
+    // The query (trimmed) of the rows on screen, and the cursor of their next page. Null once those rows are being
+    // replaced by other filters or a refresh: they are then no restore target.
     private var shownQuery: String? = null
     private var shownCursor: String? = null
+
+    // The search whose page-1 fetch is running (past its debounce), and the query it fetches
+    private var fetching: Pair<Job, String>? = null
 
     /**
      * Typing passes [debounceMs] = 300 (spec §6). The keystroke cancels the previous load at once, so its late answer
@@ -64,9 +69,11 @@ class ContentListViewModel(
      */
     fun setSearchQuery(q: String, debounceMs: Long = 0L) {
         val state = _content.value
-        // The same text again (a restored view re-sends it), or a submit of the query on screen, changes nothing;
-        // after a failure it is a retry. A submit of a query still in its debounce runs now.
-        if (_searchQuery.value == q && state !is ContentState.Error && (debounceMs > 0 || q.trim() == shownQuery)) return
+        // The same text again (a restored view re-sends it), or a submit of the query on screen or already being
+        // fetched, changes nothing; after a failure it is a retry. A submit of a query still in its debounce runs now.
+        if (_searchQuery.value == q && state !is ContentState.Error &&
+            (debounceMs > 0 || q.trim() == shownQuery || fetching?.let { (job, query) -> job.isActive && query == q.trim() } == true)
+        ) return
         _searchQuery.value = q
         // Typed back to the query on screen (an undone keystroke): drop the newer load, keep the rows and their pages.
         if (debounceMs > 0 && q.trim() == shownQuery && state !is ContentState.Error &&
@@ -110,6 +117,7 @@ class ContentListViewModel(
         if (currentFilters != filters) {
             Log.d(TAG, "Filters changed: $currentFilters -> $filters")
             currentFilters = filters
+            shownQuery = null
             loadContent()
         }
     }
@@ -138,6 +146,7 @@ class ContentListViewModel(
 
         loadJob = viewModelScope.launch {
             delay(debounceMs)
+            fetching = coroutineContext.job to _searchQuery.value.trim()
             _content.value = ContentState.Loading(loadingType, if (loadingType == LoadingType.REFRESH) onScreen else emptyList())
             try {
                 Log.d(TAG, "Fetching content for type=$contentType (initial load)")
@@ -182,6 +191,7 @@ class ContentListViewModel(
         }
 
         _isRefreshing = true
+        shownQuery = null
         val onScreen = _content.value.items
         // Cancel any ongoing request to prevent race conditions
         loadJob?.cancel()
