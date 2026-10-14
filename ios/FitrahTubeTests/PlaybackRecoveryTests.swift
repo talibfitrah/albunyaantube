@@ -100,6 +100,74 @@ struct PlaybackRecoveryTests {
         #expect(budget.retries == 1) // second progress: no further refund
     }
 
+    // MARK: - the CDN's HTTP status (owner directive 2026-10-14, spec R3/R4)
+
+    /// The exact comment AVPlayer logged for catalog video V2Brp_esIVI (spike 2026-10-14, macOS 15.7):
+    /// the code is -16840; the HTTP status exists only in the text.
+    @Test func theStatusIsReadFromTheCommentWhenTheCodeIsCoreMedias() {
+        let comment = "The operation couldn\u{2019}t be completed. (CoreMediaErrorDomain error -16840 - HTTP 401: Unauthorized)"
+        #expect(PlaybackRecovery.httpStatus(comment: comment, statusCode: -16840) == 401)
+        #expect(PlaybackRecovery.httpStatus(comment: "HTTP 410: Gone", statusCode: -16840) == 410)
+    }
+
+    @Test func aPlainHTTPStatusCodeIsTakenAsIs() {
+        #expect(PlaybackRecovery.httpStatus(comment: nil, statusCode: 403) == 403)
+    }
+
+    /// Review Focus 5: a device whose comment carries no `HTTP NNN` reads nil -- and nil keeps the
+    /// class ladder (one same-rung re-resolve, then the step-down), never a dead end.
+    @Test func anUnreadableStatusIsNilAndKeepsTheClassLadder() {
+        #expect(PlaybackRecovery.httpStatus(comment: "CoreMediaErrorDomain error -12938", statusCode: -12938) == nil)
+        #expect(PlaybackRecovery.httpStatus(comment: nil, statusCode: 0) == nil)
+        var budget = RecoveryBudget()
+        let first = PlaybackRecovery.decide(event: .playbackError, httpStatus: nil, state: budget)
+        budget.apply(first, for: .playbackError)
+        let second = PlaybackRecovery.decide(event: .playbackError, httpStatus: nil, state: budget)
+        #expect([first, second] == [.reResolveSameRung, .stepDownRung])
+    }
+
+    @Test(arguments: [RecoveryEvent.playbackError, .stall, .failedBeforeFirstFrame])
+    func a401StepsDownAtOnce(_ event: RecoveryEvent) {
+        #expect(PlaybackRecovery.decide(event: event, httpStatus: 401, state: RecoveryBudget()) == .stepDownRung)
+    }
+
+    @Test(arguments: [403, 404, 410])
+    func anExpiredOrRevokedURLGetsOneSameRungReResolveFirst(_ status: Int) {
+        var budget = RecoveryBudget()
+        let first = PlaybackRecovery.decide(event: .playbackError, httpStatus: status, state: budget)
+        budget.apply(first, for: .playbackError)
+        #expect(first == .reResolveSameRung)
+        #expect(PlaybackRecovery.decide(event: .playbackError, httpStatus: status, state: budget) == .stepDownRung)
+    }
+
+    @Test func a401StillRespectsTheRetryBudget() {
+        var budget = RecoveryBudget()
+        for _ in 0..<RecoveryBudget.maxRetries { budget.apply(.stepDownRung, for: .playbackError) }
+        #expect(PlaybackRecovery.decide(event: .playbackError, httpStatus: 401, state: budget) == .exhausted)
+    }
+
+    // MARK: - does recovery's replacement item play? (spec R12; I5 kept)
+
+    @Test func aStallAlwaysResumes() {
+        #expect(PlaybackRecovery.shouldResume(after: .stall, lastPlayingAt: .distantPast, now: Date()))
+    }
+
+    @Test func aFailureRightAfterPlayingResumes() {
+        let now = Date()
+        #expect(PlaybackRecovery.shouldResume(after: .playbackError, lastPlayingAt: now.addingTimeInterval(-1), now: now))
+    }
+
+    /// Review Focus 4: the user paused a minute ago and the stream then failed while paused. No
+    /// playback the user did not ask for.
+    @Test func aFailureLongAfterTheUserPausedStaysPaused() {
+        let now = Date()
+        #expect(!PlaybackRecovery.shouldResume(after: .playbackError, lastPlayingAt: now.addingTimeInterval(-60), now: now))
+    }
+
+    @Test func aFailureBeforeTheFirstSampleResumes() {
+        #expect(PlaybackRecovery.shouldResume(after: .failedBeforeFirstFrame, lastPlayingAt: nil, now: Date()))
+    }
+
     // MARK: - stall watchdog (player.md §3.2: armed after first READY, VOD 6 s / live 45 s,
     // only when the buffered position has NOT advanced)
 
@@ -407,5 +475,31 @@ struct PlaybackRecoveryTests {
         // Budget refilled: recovery works again after the manual escape hatch.
         await vm.handleRecoveryEvent(.playbackError)
         #expect(vm.state == .ready(Self.hls))
+    }
+
+    /// F1 (V2Brp_esIVI): the step-down demotes the rung on screen BEFORE the forced re-resolve, so
+    /// the walk resumes at rung 2 instead of handing back the HLS that would not play.
+    @Test @MainActor func aStepDownDemotesTheRungOnScreenBeforeReResolving() async {
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.progressive)])
+        let vm = makeViewModel(resolver)
+        await vm.open()
+
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+
+        #expect(await resolver.demotions == ["abcdefghijk:visionos"])
+        #expect(await resolver.calls == [false, true])
+        #expect(vm.state == .rung2Progressive(Self.progressive))
+    }
+
+    /// Mid-play expiry (403): a fresh URL from the SAME rung, nothing demoted, never `.loading`.
+    @Test @MainActor func aMidPlayExpiryReResolvesTheSameRungAndDemotesNothing() async {
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.freshHLS)])
+        let vm = makeViewModel(resolver)
+        await vm.open()
+
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
+
+        #expect(await resolver.demotions.isEmpty)
+        #expect(vm.state == .ready(Self.freshHLS))
     }
 }

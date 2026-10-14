@@ -332,6 +332,24 @@ struct PlayerViewModelTests {
         #expect(inner.demotions == ["abcdefghijk:visionos"])
     }
 
+    /// End to end through the production decorator: two step-downs inside 30 s both reach the
+    /// resolver and the player keeps playing -- no cooldown screen (V2Brp_esIVI's trace).
+    @Test func twoStepDownsInsideThirtySecondsNeverShowACooldown() async {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let vm = makeViewModel(resolver: RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                                             clock: clock))
+        await vm.open()
+
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+        clock.now = .seconds(5)
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+
+        guard case .ready = vm.state else { return #expect(Bool(false), "expected playback, got \(vm.state)") }
+        #expect(inner.calls.map(\.kind) == [.player, .autoRecovery, .autoRecovery])
+        #expect(inner.demotions == ["abcdefghijk:visionos", "abcdefghijk:visionos"])
+    }
+
     @Test func recoveryReResolvesUseTheAutoRecoveryLane() async {
         let resolver = RecordingResolver(.hls)   // records every (kind, forceRefresh) pair
         let model = makeViewModel(resolver: resolver)

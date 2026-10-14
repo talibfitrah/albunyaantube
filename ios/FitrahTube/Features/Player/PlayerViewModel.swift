@@ -550,21 +550,20 @@ extension StreamState {
     }
 
     /// Task 7: one recovery incident (`PlayerHostView`'s KVO/notification/stall observers feed this).
-    /// Runs the pure budget machine, then either re-resolves in place or gives up.
+    /// Runs the pure budget machine, then re-resolves in place, steps down, or gives up.
     ///
-    /// **Rung tracking**: there is none, deliberately. `StreamResolver` walks its whole
-    /// `resolverOrder` ladder top-down on every forced resolve and exposes no "start at rung N"
-    /// entry point, so `.reResolveSameRung` and `.stepDownRung` are the *same* network call -- the
-    /// rung is whatever the resolver hands back, read off `Resolved.stream` by `map` (`.hls` = rung
-    /// 1, `.progressive` = rung 2). A rung the resolver can still serve keeps playing; one that has
-    /// started failing at resolve time demotes on its own. The two actions differ only in budget
-    /// accounting (which is exactly what bounds the loop). A VM-side rung index would be a second,
-    /// unenforceable model of the resolver's ladder.
+    /// **Step-down** (owner directive 2026-10-14): `.stepDownRung` tells the resolver the rung on
+    /// screen failed for this video (`StreamResolving.demote`) BEFORE re-resolving, so the walk
+    /// resumes at the next rung -- and stays there for this video for the session. `.reResolveSameRung`
+    /// demotes nothing: a fresh URL from the same rung is the fix for an expired or revoked one.
+    /// `httpStatus` is the CDN's answer from the failed item's error log, when AVFoundation gave one.
+    /// Recovery is never refused by the extraction limiter (`RateLimitedResolver`): `RecoveryBudget`
+    /// is its budget.
     ///
     /// Position is preserved by NOT passing through `.loading`: `PlayerHostView.player(for:replacing:)`
     /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
-    func handleRecoveryEvent(_ event: RecoveryEvent) async {
+    func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil) async {
         // One failure raises several observers at once -- `AVPlayerItemFailedToPlayToEndTime` and
         // `status == .failed` land together on a dead stream. Without this the same incident spends
         // two budget slots and fires two resolves, one of which the generation guard then discards.
@@ -586,12 +585,17 @@ extension StreamState {
             await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
             return
         }
-        let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
+        let action = PlaybackRecovery.decide(event: event, httpStatus: httpStatus, state: recoveryBudget)
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
             state = .recoveryExhausted(resolved)
-        case .reResolveSameRung, .stepDownRung:
+        case .stepDownRung:
+            // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
+            // advance moves `args` before its own resolve lands.
+            await resolver.demote(hostVideoId, failed: resolved.client)
+            await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
+        case .reResolveSameRung:
             // `showLoading: false` but NOT `silent:` -- by the time this runs the stream has
             // genuinely stopped working, so a failed re-resolve SHOULD surface as `.error` /
             // `.contentUnavailable` / `.cooldown` rather than leaving a dead player on screen.

@@ -8,9 +8,10 @@ enum RecoveryEvent: Hashable, Sendable {
     /// never produced a first frame.
     case failedBeforeFirstFrame
     /// A failure after playback had started: `AVPlayerItemFailedToPlayToEndTime`, or a `.failed`
-    /// item status once armed. This is the 403-class incident (an expired/revoked stream URL
-    /// surfaces here, not as a distinguishable HTTP status -- AVFoundation gives no code we can
-    /// branch on, and the recovery is identical either way).
+    /// item status once armed. An expired or revoked URL lands here. The CDN's answer, when there is
+    /// one, travels beside the event as `httpStatus`: AVFoundation logs it in the item's error-log
+    /// comment ("… -16840 - HTTP 401: Unauthorized", spike 2026-10-14), not as a code to branch on
+    /// (`PlaybackRecovery.httpStatus`).
     case playbackError
     /// The buffered position stopped advancing past the watchdog threshold (`shouldFireStall`).
     case stall
@@ -19,11 +20,10 @@ enum RecoveryEvent: Hashable, Sendable {
 /// What the VM should do about one `RecoveryEvent`.
 enum RecoveryAction: Hashable, Sendable {
     /// Re-resolve and keep playing whatever rung the resolver hands back (spec §10: "re-resolve
-    /// same rung once, `replaceCurrentItem` + seek").
+    /// same rung once, `replaceCurrentItem` + seek"). A fresh URL is the fix for an expired one.
     case reResolveSameRung
-    /// The same class already spent its same-rung allowance -- re-resolve and accept the demotion
-    /// the resolver's own ladder produces. See `PlayerViewModel.handleRecoveryEvent` for why both
-    /// actions issue the identical call and differ only in accounting.
+    /// The rung on screen has failed: `StreamResolving.demote` it for this video (sticky for the
+    /// session), then re-resolve -- the walk resumes at the NEXT rung (owner directive 2026-10-14).
     case stepDownRung
     /// Budget gone -> `.recoveryExhausted` and the manual Retry escape hatch.
     case exhausted
@@ -83,8 +83,12 @@ enum PlaybackRecovery {
     static let vodStallThreshold: TimeInterval = 6
     static let liveStallThreshold: TimeInterval = 45
 
-    static func decide(event: RecoveryEvent, state: RecoveryBudget) -> RecoveryAction {
+    static func decide(event: RecoveryEvent, httpStatus: Int? = nil, state: RecoveryBudget) -> RecoveryAction {
         guard state.retries < RecoveryBudget.maxRetries else { return .exhausted }
+        // 401: the CDN refuses this client's URLs outright, and a fresh URL from the same rung is
+        // refused too (V2Brp_esIVI: 14 of 21 AVPlayer attempts over 50 min). 403/404/410 fall
+        // through: an expired or revoked URL is exactly what one same-rung re-resolve fixes.
+        if httpStatus == 401 { return .stepDownRung }
         // spec §10: a `.failed` status before the first frame goes straight to the next rung -- this
         // rung has proven it can't produce one, so re-resolving it is a wasted attempt.
         guard event != .failedBeforeFirstFrame else { return .stepDownRung }
@@ -92,6 +96,33 @@ enum PlaybackRecovery {
             return .stepDownRung
         }
         return .reResolveSameRung
+    }
+
+    /// The HTTP status of a CDN refusal, from the failed item's last error-log event. AVFoundation
+    /// reports it as `errorStatusCode` -16840 with the code only in the comment ("The operation
+    /// couldn’t be completed. (CoreMediaErrorDomain error -16840 - HTTP 401: Unauthorized)", macOS
+    /// 15.7, spike 2026-10-14); a plain 4xx/5xx `statusCode` is taken as-is in case a platform puts
+    /// it there. Nil when neither says -- `decide` then keeps the class rule.
+    static func httpStatus(comment: String?, statusCode: Int) -> Int? {
+        if (400...599).contains(statusCode) { return statusCode }
+        guard let comment, let range = comment.range(of: #"HTTP (\d{3})"#, options: .regularExpression) else {
+            return nil
+        }
+        return Int(comment[range].dropFirst(5))
+    }
+
+    /// How recently the player must have wanted to play for a failure to count as "died under the
+    /// user" rather than "the user had paused" (I5).
+    static let resumeWindow: TimeInterval = 3
+
+    /// Whether recovery's replacement item should play. A stall means AVPlayer still wanted to play
+    /// (the watchdog only counts `.waitingToPlayAtSpecifiedRate`). A failure leaves AVPlayer paused
+    /// (spike 2026-10-14: `timeControlStatus == .paused` after `FailedToPlayToEndTime`), so intent
+    /// comes from when it was last seen wanting to play; `nil` = never sampled, a fresh player the
+    /// builder had just started.
+    static func shouldResume(after event: RecoveryEvent, lastPlayingAt: Date?, now: Date) -> Bool {
+        guard event != .stall, let lastPlayingAt else { return true }
+        return now.timeIntervalSince(lastPlayingAt) <= resumeWindow
     }
 
     /// The threshold primitive: how long a stall has to last before it counts. `StallWatchdog` below
@@ -118,8 +149,8 @@ nonisolated enum AirPlayFallback {
         guard externalPlaybackActive, !alreadyFellBack else { return false }
         switch event {
         case .playbackError, .failedBeforeFirstFrame:
-            // AVFoundation surfaces no HTTP status, so "the item failed" is the whole 403 signal
-            // available -- the same reasoning `RecoveryEvent.playbackError`'s own doc records.
+            // Any item failure while an external route plays it points at the route (the plan's
+            // IP-binding risk), whatever status the CDN gave, so the status is not consulted here.
             return true
         case .stall:
             // A stall is not an item failure: the stream is still valid, the route is not the

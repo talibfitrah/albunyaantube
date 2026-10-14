@@ -759,6 +759,58 @@ import Testing
         #expect(await session.loadCooldown().tripCount == 0)
     }
 
+    /// Same rule, from the other end of the ladder: a video demoted after ANDROID walks VISIONOS
+    /// first, and ANDROID's later refusal is held behind VISIONOS's our-side failure -- retryable.
+    @Test func aWalkDemotedAfterAndroidWhoseVisionosFailedOnOurSideIsRetryable() async throws {
+        let transport = FailFirstTransport(error: URLError(.notConnectedToInternet),
+                                           then: try fixtureResponse("player-geo-android"))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .android)
+
+        do {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+            Issue.record("expected VISIONOS's transport error to be thrown")
+        } catch let error as URLError {
+            #expect(error.code == .notConnectedToInternet)
+        } catch {
+            Issue.record("expected URLError(.notConnectedToInternet), got \(error)")
+        }
+        #expect(transport.callCount == 2)   // VISIONOS failed, ANDROID refused
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Cancellation in a demoted walk is cancellation, whatever ANDROID said first: not its held
+    /// refusal, and no trip for its 429 bot check. The walk throws `CancellationError`, which
+    /// `awaitJob` hands an awaiter nobody cancelled as `.cancelled`.
+    @Test(arguments: [false, true])
+    func aCancelledDemotedWalkIsNeitherTheHeldVerdictNorATrip(androidRateLimited: Bool) async throws {
+        let android = androidRateLimited
+            ? HTTPResponse(status: 429, headers: [:], body: Data()) : try fixtureResponse("player-geo-android")
+        let transport = RespondThenFailTransport(android, thenThrow: URLError(.cancelled))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.cancelled) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.callCount == 2)   // ANDROID answered, the wrapped rung was cancelled
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// A wrapped rung whose answer will not decode failed on OUR side too: retryable, no verdict.
+    @Test func aDemotedWalkWhoseWrappedRungCannotBeDecodedIsRetryable() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("player-geo-android"), HTTPResponse(status: 200, headers: [:], body: Data("not json".utf8))])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await #expect(throws: DecodingError.self) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
     /// R6 is unchanged for a walk nobody demoted: ANDROID's refusal is the verdict at once, even with
     /// a rung left (here ANDROID is first in a published order).
     @Test func anUndemotedAndroidRefusalIsStillTerminalAtOnce() async throws {
