@@ -109,6 +109,27 @@ class CatalogChangedEventsTest {
         verifyNoInteractions(events);
     }
 
+    @Test
+    void aConditionalWriteThatMissesPublishesNothing() {
+        // The status check failed inside the transaction: nothing was written, so the index must not hear of it.
+        doReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("status changed")))
+                .when(firestore).runTransaction(any(Transaction.Function.class));
+        Channel channel = new Channel("UCmissTest");
+        channel.setId("c1");
+        Playlist playlist = new Playlist("PLmissTest");
+        playlist.setId("p1");
+        Video video = new Video("vMissTest");
+        video.setId("v1");
+
+        assertThrows(ExecutionException.class, () -> channels().saveIfStatus(channel, "PENDING"));
+        assertThrows(ExecutionException.class, () -> channels().deleteByIdIfStatusIn("c1", Set.of("PENDING")));
+        assertThrows(ExecutionException.class, () -> playlists().saveIfStatus(playlist, "PENDING"));
+        assertThrows(ExecutionException.class, () -> playlists().deleteByIdIfStatusIn("p1", Set.of("PENDING")));
+        assertThrows(ExecutionException.class, () -> videos().saveIfStatus(video, "PENDING"));
+        assertThrows(ExecutionException.class, () -> videos().deleteByIdIfStatusIn("v1", Set.of("PENDING")));
+        verifyNoInteractions(events);
+    }
+
     // ---- playlists ----
 
     @Test

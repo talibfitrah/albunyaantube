@@ -69,20 +69,6 @@ public class SearchableStreamRepository {
     }
 
     /**
-     * Search streams by a single token. Caller intersects multiple tokens in memory.
-     */
-    public List<SearchableStream> searchByToken(String token, int limit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        return getCollection()
-                .whereArrayContains("searchTokens", token)
-                .whereEqualTo("visible", true)
-                .limit(limit)
-                .get()
-                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
-                .toObjects(SearchableStream.class);
-    }
-
-    /**
      * Find all streams contributed by a given sourceKey — used when a source is rejected.
      */
     public List<SearchableStream> findBySourceKey(String sourceKey, int limit)

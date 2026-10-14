@@ -50,6 +50,7 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -151,8 +152,12 @@ public class SearchIndex {
             log.warn("search index close interrupted", e);
         } catch (IOException e) {
             log.warn("search index close failed", e);
+        } finally { // whatever failed above, the temp directory must not outlive the context
+            if (path != null) delete(path);
         }
-        if (path == null) return;
+    }
+
+    private static void delete(Path path) {
         try (Stream<Path> files = Files.walk(path)) {
             for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
         } catch (IOException e) {
@@ -247,6 +252,8 @@ public class SearchIndex {
             try {
                 replaceCatalog();
             } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                if (executor.isShutdown()) return;
                 log.warn("search index reconcile failed; keeping the last good index", e);
             }
         });
@@ -254,22 +261,46 @@ public class SearchIndex {
 
     // ---- freshness (spec §5.2, §5.3) -----------------------------------------------------------
 
+    /**
+     * The entity is the caller's live object: it is turned into Lucene documents here, on the caller's
+     * thread, so later changes to it cannot reach the index (and a save costs no Firestore read, spec §5.6).
+     * An event without an entity (delete, partial update) is re-read by id on the writer thread.
+     */
     @EventListener
     public void onCatalogChanged(CatalogChanged event) {
-        submit("catalog " + event.type() + " " + event.docId(), () -> applyCatalogChange(event));
+        String what = "catalog " + event.type() + " " + event.docId();
+        Built snapshot = null;
+        if (event.entity() != null) {
+            try {
+                snapshot = build(event.entity());
+            } catch (Throwable e) { // Firestore already committed: the publisher must not see a failure (spec §7)
+                log.warn("search index update dropped ({}): snapshot failed", what, e);
+                return;
+            }
+        }
+        Built built = snapshot;
+        submit(what, () -> applyCatalogChange(event, built != null ? built : build(reload(event.type(), event.docId()))));
     }
 
-    private void applyCatalogChange(CatalogChanged event) throws Exception {
-        Object entity = event.entity() != null ? event.entity() : reload(event.type(), event.docId());
+    /** What {@link #admit} produced for one entity, not yet applied to the index or the visibility maps. */
+    private record Built(Map<String, Set<String>> sources, Set<String> videoIds, List<Document> docs) {}
+
+    private static Built build(Object entity) throws IOException {
+        Built built = new Built(new HashMap<>(), new HashSet<>(), new ArrayList<>());
+        admit(entity, built.sources(), built.videoIds(), built.docs());
+        return built;
+    }
+
+    private void applyCatalogChange(CatalogChanged event, Built built) throws Exception {
         Term key = new Term("key", event.type() + ":" + event.docId());
-        // The old source key goes first: admit() may register the same one again, and must not lose it.
+        // The old source key goes first: the new one may be the same key, and must not lose it.
         String oldId = storedValues(key.text(), "id").stream().findFirst().orElse(null);
         if (oldId != null && !"VIDEO".equals(event.type())) {
             admittedSources.remove(event.type().toLowerCase(Locale.ROOT) + ":" + oldId);
         }
-        List<Document> docs = new ArrayList<>();
-        admit(entity, admittedSources, videoIds, docs); // a deleted Video's id stays in videoIds until the next reconcile: its stream stays hidden (fail closed)
-        replace(key, docs);
+        admittedSources.putAll(built.sources());
+        videoIds.addAll(built.videoIds()); // a deleted Video's id stays in videoIds until the next reconcile: its stream stays hidden (fail closed)
+        replace(key, built.docs());
     }
 
     /** Swaps the documents matching `term` for `docs` in one step. An empty block must not reach updateDocuments: it breaks rollback. */
@@ -349,7 +380,7 @@ public class SearchIndex {
                 try {
                     task.run();
                     searchers.maybeRefreshBlocking();
-                } catch (Exception e) {
+                } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future
                     if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                     if (!executor.isShutdown()) log.warn("search index update failed ({})", what, e);
                 }

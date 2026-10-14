@@ -27,7 +27,6 @@ public class CacheConfig {
     public static final String CACHE_PLAYLISTS = "playlists";
     public static final String CACHE_VIDEOS = "videos";
     public static final String CACHE_PUBLIC_CONTENT = "public-content";
-    public static final String CACHE_PUBLIC_CONTENT_SEARCH = "public-content-search";
     public static final String CACHE_CATEGORY_TREE = "category-tree";
     public static final String CACHE_YOUTUBE_CHANNEL_SEARCH = "youtubeChannelSearch";
     public static final String CACHE_YOUTUBE_PLAYLIST_SEARCH = "youtubePlaylistSearch";
@@ -83,7 +82,6 @@ public class CacheConfig {
                 CACHE_PLAYLISTS,
                 CACHE_VIDEOS,
                 CACHE_PUBLIC_CONTENT,
-                CACHE_PUBLIC_CONTENT_SEARCH,
 
                 // YouTube admin search caches
                 CACHE_YOUTUBE_CHANNEL_SEARCH,

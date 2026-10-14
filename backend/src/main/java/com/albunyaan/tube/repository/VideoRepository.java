@@ -383,39 +383,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> searchByTitle(String query) throws ExecutionException, InterruptedException, TimeoutException {
-        // Firestore doesn't support full-text search, so we'll use prefix matching
-        // For production, consider using Algolia or Elasticsearch
-        // Note: Filtering by status removed from query to avoid composite index requirement
-        // Status filtering done in PublicContentService layer
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Search videos by title prefix with limit (bounded query).
-     * This prevents quota exhaustion for broad search queries.
-     *
-     * @param query Search prefix
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByTitle(String query, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     /**
      * Search videos by normalized titleLower field for case-insensitive prefix matching.
      * This is the preferred search method as it supports case-insensitive queries.

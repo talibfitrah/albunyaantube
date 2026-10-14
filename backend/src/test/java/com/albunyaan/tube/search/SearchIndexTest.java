@@ -16,6 +16,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import com.google.cloud.Timestamp;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.ByteBuffersDirectory;
+import org.apache.lucene.store.NIOFSDirectory;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -23,6 +24,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 import org.slf4j.LoggerFactory;
 
+import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Duration;
@@ -35,6 +37,7 @@ import java.util.Set;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
 import java.util.stream.Stream;
@@ -609,6 +612,79 @@ class SearchIndexTest {
         } finally {
             failing.close();
         }
+    }
+
+    // ---- writer hardening (B5) -----------------------------------------------------------------
+
+    @Test
+    void anErrorInAWriterTaskIsLoggedWithItsStackTrace() throws Exception {
+        // An Error (not an Exception) used to vanish inside the executor's future: no log, no trace.
+        when(channelRepo.findById("doc-UCzakir")).thenThrow(new NoClassDefFoundError("boom"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", null));
+        index.awaitWrites();
+        assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getThrowableProxy() != null
+                && NoClassDefFoundError.class.getName().equals(e.getThrowableProxy().getClassName())));
+    }
+
+    @Test
+    void shuttingDownDuringAReconcileLogsNoWarning() throws Exception {
+        SearchIndex reconciling = started(newIndex(channels(), playlists(), videos(), streams(), 5_000));
+        CountDownLatch inFirestore = new CountDownLatch(1);
+        when(channelRepo.findByStatus("APPROVED")).thenAnswer(inv -> {
+            inFirestore.countDown();
+            new CountDownLatch(1).await(); // until close() interrupts the writer thread
+            return List.of();
+        });
+        reconciling.reconcile();
+        assertTrue(inFirestore.await(10, TimeUnit.SECONDS));
+
+        reconciling.close();
+
+        assertEquals(List.of(), logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage).toList());
+    }
+
+    @Test
+    void aCloseThatFailsStillDeletesTheDirectory() throws Exception {
+        // rollback() lists the directory; a non-IOException there used to skip the delete and leak the temp dir.
+        Path path = Files.createTempDirectory("fitrahtube-search-");
+        AtomicBoolean failing = new AtomicBoolean();
+        SearchIndex fragile = new SearchIndex(new NIOFSDirectory(path) {
+            @Override
+            public String[] listAll() throws IOException {
+                if (failing.get()) throw new IllegalStateException("directory gone");
+                return super.listAll();
+            }
+        }, channelRepo, playlistRepo, videoRepo, streamRepo, 5_000);
+        started(fragile);
+        failing.set(true);
+
+        assertThrows(IllegalStateException.class, fragile::close);
+
+        assertFalse(Files.exists(path), "the index directory is deleted even though close failed");
+    }
+
+    @Test
+    void mutatingAnEntityAfterPublishingItDoesNotChangeWhatIsIndexed() throws Exception {
+        // Block the writer thread so the mutation lands before the writer task runs.
+        CountDownLatch writerBusy = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(channelRepo.findById("doc-blocker")).thenAnswer(inv -> {
+            writerBusy.countDown();
+            release.await();
+            return Optional.empty();
+        });
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-blocker", null));
+        assertTrue(writerBusy.await(10, TimeUnit.SECONDS));
+
+        Channel live = channel("UCsnapshot", "Original Snapshot Name");
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", live.getId(), live));
+        live.setName("Mutated Afterwards");
+        live.setStatus("REJECTED");
+        release.countDown();
+        index.awaitWrites();
+
+        assertEquals("UCsnapshot", ids("original").stream().findFirst().orElse("<empty>"));
+        assertTrue(ids("mutated").isEmpty());
     }
 
     @Test
