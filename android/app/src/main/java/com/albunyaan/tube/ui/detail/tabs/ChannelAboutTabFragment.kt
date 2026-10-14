@@ -216,7 +216,8 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
 
     private fun openUrl(url: String) {
         try {
-            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url))
+            // Intent matching is case-sensitive: `Https://` would open nothing.
+            val intent = Intent(Intent.ACTION_VIEW, Uri.parse(url).normalizeScheme())
             startActivity(intent)
         } catch (e: Exception) {
             // URL couldn't be opened

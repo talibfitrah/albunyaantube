@@ -17,6 +17,8 @@ import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import okhttp3.Headers
 import org.hamcrest.Matchers.allOf
+import org.junit.Assert.assertFalse
+import org.junit.Assert.assertTrue
 import retrofit2.Response
 import java.io.File
 
@@ -77,6 +79,16 @@ fun viewDisplayed(@IdRes id: Int): Boolean =
 /** Espresso's withEffectiveVisibility(GONE), read through [onResumedActivity]. */
 fun viewGone(@IdRes id: Int): Boolean =
     onResumedActivity { a -> generateSequence(a.findViewById<View>(id)) { it.parent as? View }.any { it.visibility == View.GONE } }
+
+// Idle-free view assertions: while a spinner turns, a slow emulator never lets the main looper idle (see onResumedActivity).
+private fun name(@IdRes id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.resources.getResourceEntryName(id)
+fun shown(@IdRes id: Int) = assertTrue("${name(id)} is not on screen", viewDisplayed(id))
+fun notShown(@IdRes id: Int) = assertFalse("${name(id)} is on screen", viewDisplayed(id))
+fun gone(@IdRes id: Int) = assertTrue("${name(id)} is not gone", viewGone(id))
+
+/** The device class in screenshot names: "tablet" from sw600dp, else "phone". */
+fun device() = if (InstrumentationRegistry.getInstrumentation().targetContext.resources
+        .configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
 
 /**
  * Saves a screenshot where AGP's connected-test run collects it: build/outputs/connected_android_test_additional_output.

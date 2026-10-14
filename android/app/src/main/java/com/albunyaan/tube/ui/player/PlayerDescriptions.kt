@@ -1,6 +1,5 @@
 package com.albunyaan.tube.ui.player
 
-import android.text.Spannable
 import android.text.SpannableStringBuilder
 import android.text.Spanned
 import android.text.style.URLSpan
@@ -18,7 +17,6 @@ import java.net.IDN
 internal object PlayerDescriptions {
 
     private val ALLOWED_LINK_SCHEMES = setOf("http", "https")
-    private val YOUTUBE_LABELS = setOf("youtube", "youtu", "youtube-nocookie", "youtubekids")
 
     /**
      * Convert raw description text (HTML for YouTube, occasionally plain) to a
@@ -34,7 +32,8 @@ internal object PlayerDescriptions {
      * our own app's deep-link routes or hand-off to arbitrary other apps with
      * attacker-chosen payloads. Every span that fails [isOpenableLink] is
      * stripped: the link text stays visible (so users still see the URL) but
-     * is inert.
+     * is inert. A kept span opens its URL with the scheme lower-cased: intent
+     * matching is case-sensitive, so a tap on `Https://` would open nothing.
      */
     fun render(rawHtml: String?): CharSequence? {
         if (rawHtml.isNullOrBlank()) return null
@@ -46,15 +45,14 @@ internal object PlayerDescriptions {
 
     private fun stripUnsafeLinkSpans(text: CharSequence): CharSequence {
         if (text !is Spanned) return text
-        val spans = text.getSpans(0, text.length, URLSpan::class.java)
-        if (spans.isEmpty()) return text
-        val unsafe = spans.filterNot { isOpenableLink(it.url) }
-        if (unsafe.isEmpty()) return text
-        // Copy into a mutable builder once so we can remove the offending
-        // spans without affecting the safe ones that remain clickable.
         val builder = SpannableStringBuilder(text)
-        for (span in unsafe) builder.removeSpan(span)
-        return builder as Spannable
+        for (span in text.getSpans(0, text.length, URLSpan::class.java)) {
+            val kept = span.url?.takeIf(::isOpenableLink)?.toUri()?.normalizeScheme()?.toString()?.takeIf(::isOpenableLink)
+            if (kept != null && kept == span.url) continue
+            builder.removeSpan(span)
+            if (kept != null) builder.setSpan(URLSpan(kept), text.getSpanStart(span), text.getSpanEnd(span), text.getSpanFlags(span))
+        }
+        return builder
     }
 
     /**
@@ -66,30 +64,34 @@ internal object PlayerDescriptions {
      * 3. a host that converts to ASCII (IDNA, as a browser does), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
      *    unassigned code points are refused, since a browser's newer Unicode maps them (`yᵒutube.com`); the cost:
      *    a real site whose name uses a letter added after Unicode 3.2 (`ভবিষ্যৎ.com`) shows as text;
-     * 4. not YouTube ([isYouTubeLink]).
+     * 4. not YouTube ([isYouTube]).
      */
     fun isOpenableLink(url: String?): Boolean {
         val link = url ?: return false
         if (link.any { it == '\\' || it.isWhitespace() || it.isISOControl() || it == '\u00AD' }) return false
-        return isSafeLinkScheme(link) && asciiHost(link) != null && !isYouTubeLink(link)
+        if (!isSafeLinkScheme(link)) return false
+        val host = asciiHost(link) ?: return false
+        return !isYouTube(host)
     }
 
     /**
-     * Owner rule: the app exists so users don't go to YouTube. A host with a `youtube`, `youtu`, `youtube-nocookie`
-     * or `youtubekids` label (after IDNA) is YouTube: youtube.com, youtu.be, every country domain and subdomain,
-     * youtube.googleapis.com. An unrelated site with such a label is caught too; that cost is accepted.
+     * Owner rule: the app exists so users don't go to YouTube. A label that starts with `youtube` or is `youtu` or
+     * `withyoutube` is YouTube (youtube.com, youtu.be, youtube-nocookie, youtubekids, youtubego, every country domain
+     * and subdomain, youtube.googleapis.com), and so is YouTube's short domain `yt.be`, which redirects there. An
+     * unrelated site with such a label (`youtuber.com`) is caught too; that cost is accepted.
      */
-    fun isYouTubeLink(url: String?): Boolean =
-        url?.trim()?.let(::asciiHost)?.split('.')?.any { it in YOUTUBE_LABELS } == true
+    private fun isYouTube(host: String) = host == "yt.be" || host.endsWith(".yt.be") ||
+        host.split('.').any { it.startsWith("youtube") || it == "youtu" || it == "withyoutube" }
 
     /** The host as a browser compares it: IDNA to ASCII, lowercase, no trailing dot. Null when there is none. */
     private fun asciiHost(url: String): String? {
-        val host = url.toUri().host?.takeIf { it.isNotBlank() } ?: return null
+        val host = url.toUri().host ?: return null
         val ascii = try {
             IDN.toASCII(host, 0)
         } catch (e: IllegalArgumentException) {
             return null
         }
+        // toASCII returns ASCII or throws; the check is the shared rule's (iOS gets the host back as is).
         return ascii.lowercase().trimEnd('.').takeIf { it.isNotBlank() && it.all { c -> c.code < 0x80 } }
     }
 

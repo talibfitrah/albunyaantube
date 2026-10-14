@@ -5,6 +5,7 @@ import android.graphics.Rect
 import android.os.Build
 import android.os.Bundle
 import android.os.LocaleList
+import android.os.ParcelFileDescriptor
 import android.text.Spanned
 import android.text.style.URLSpan
 import android.view.View
@@ -29,6 +30,7 @@ import com.albunyaan.tube.launchFragmentInHiltContainer
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import com.albunyaan.tube.ui.player.PlayerDescriptions
 import com.albunyaan.tube.ui.player.PlayerFragment
+import com.albunyaan.tube.util.device
 import com.albunyaan.tube.util.eventually
 import com.albunyaan.tube.util.screenshot
 import com.google.android.material.appbar.AppBarLayout
@@ -88,21 +90,28 @@ abstract class NoYouTubeLinksScreensBase(private val lang: String) {
     private fun iconTint(row: View) =
         ImageViewCompat.getImageTintList(row.findViewById<ImageView>(R.id.linkIcon))?.defaultColor
 
-    private fun device() = if (InstrumentationRegistry.getInstrumentation().targetContext.resources
-            .configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
-
     /** The unit tests run the link rule on the JVM's IDN and Uri; this runs the IDNA-dependent vectors on Android's. */
     @Test
     fun theLinkRuleHoldsOnTheDevice() {
         val notOpenable = listOf(
             "https://ｙｏｕｔｕｂｅ.com/a", "https://youtube\u3002com/a", "https://you\u00ADtube.com/a", "https://%79outube.com/a",
             "https://YOUTUBE.COM./a", "https://youtube.com\\@example.org/a", "https://\\youtube.com/a", "https://www.youtube.co.uk/x",
-            "https://y\u1D52utube.com/a", "https://you\uD82F\uDCA0tube.com/a", " https://example.org/a"
+            "https://y\u1D52utube.com/a", "https://you\uD82F\uDCA0tube.com/a", " https://example.org/a",
+            "https://yt.be/x", "https://youtubego.com/",
+            "https://\uD83C\uDD48\uD83C\uDD3E\uD83C\uDD44\uD83C\uDD43\uD83C\uDD44\uD83C\uDD31\uD83C\uDD34.com/a" // 🅈🄾🅄🅃🅄🄱🄴
         )
         for (url in notOpenable) assertFalse("$url opens", PlayerDescriptions.isOpenableLink(url))
         for (url in listOf("https://مثال.مصر/", "https://bücher.de/", "https://youtube.com@example.org/a", "https://myyoutube.org/x")) {
             assertTrue("$url does not open", PlayerDescriptions.isOpenableLink(url))
         }
+        // The tap must open: intent matching is case-sensitive, and no browser takes `Https`. Resolved as the shell, like
+        // the tap's startActivity: this app's own resolveActivity sees no browser (package visibility, no <queries>).
+        val text = PlayerDescriptions.render("<a href=\"Https://example.org/a\">a</a>") as Spanned
+        val url = text.getSpans(0, text.length, URLSpan::class.java).single().url
+        val resolved = InstrumentationRegistry.getInstrumentation().uiAutomation
+            .executeShellCommand("cmd package resolve-activity --brief -a android.intent.action.VIEW -d $url")
+            .let { ParcelFileDescriptor.AutoCloseInputStream(it).bufferedReader().readText().trim() }
+        assertTrue("$url resolves no activity: $resolved", resolved.lines().last().matches(Regex("""[\w.]+/[\w.$]+""")))
     }
 
     @Test

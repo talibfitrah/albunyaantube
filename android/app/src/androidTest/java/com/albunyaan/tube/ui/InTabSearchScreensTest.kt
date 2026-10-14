@@ -20,12 +20,13 @@ import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.di.TestNetworkModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
+import com.albunyaan.tube.util.device
 import com.albunyaan.tube.util.eventually
+import com.albunyaan.tube.util.gone
 import com.albunyaan.tube.util.onResumedActivity
 import com.albunyaan.tube.util.screenshot
 import com.albunyaan.tube.util.searchVideo
-import com.albunyaan.tube.util.viewDisplayed
-import com.albunyaan.tube.util.viewGone
+import com.albunyaan.tube.util.shown
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
@@ -78,11 +79,7 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         simpleCache.release()
     }
 
-    // Views are read through onResumedActivity, not Espresso or ActivityScenario: while the spinner turns, a slow
-    // emulator never lets the main looper idle, and those wait for it (see onResumedActivity).
-    private fun name(id: Int) = InstrumentationRegistry.getInstrumentation().targetContext.resources.getResourceEntryName(id)
-    private fun shown(id: Int) = assertTrue("${name(id)} is not on screen", viewDisplayed(id))
-    private fun gone(id: Int) = assertTrue("${name(id)} is not gone", viewGone(id))
+    // Views are read through onResumedActivity, not Espresso or ActivityScenario (see onResumedActivity).
     private fun page(vararg ids: String) = CursorPage(
         data = ids.map { searchVideo(it, "Quran lesson $it") },
         pageInfo = PageInfo(hasNext = false, nextCursor = null)
@@ -104,9 +101,11 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         hiltRule.inject()
         val slowStarted = CountDownLatch(1)
         val slowGate = CompletableDeferred<Unit>()
+        val quranCalls = AtomicInteger()
         api.onContent = { q ->
             when (q) {
-                null, "quran" -> page("v1", "v2", "v3")
+                null -> page("v1", "v2", "v3", "v9")
+                "quran" -> page("v1", "v2", "v3").also { quranCalls.incrementAndGet() }
                 "quran tv" -> {
                     slowStarted.countDown()
                     slowGate.await()
@@ -116,13 +115,15 @@ abstract class InTabSearchScreensBase(private val lang: String) {
             }
         }
         scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
-        val device = if (InstrumentationRegistry.getInstrumentation().targetContext.resources
-                .configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
 
-        // 1. The plain list, then a first search whose answer lands at once.
-        eventually { assertEquals(3, rows()) }
+        // 1. The plain list (4 rows), then a first search whose 3 rows land.
+        eventually { assertEquals(4, rows()) }
         type("quran")
-        eventually { shown(R.id.recyclerView) }
+        eventually {
+            assertEquals(1, quranCalls.get())
+            assertEquals(3, rows())
+            shown(R.id.recyclerView)
+        }
         val placeBefore = place()
 
         // 2. A newer query in flight: the 3 rows stay, in place, under the spinner; no skeleton, no empty view.
@@ -142,7 +143,7 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         assertEquals("the list moved under the spinner", placeBefore, place())
         gone(R.id.listSkeleton)
         gone(R.id.emptyState)
-        screenshot("android-$device-$lang-tab-loading")
+        screenshot("android-${device()}-$lang-tab-loading")
 
         // 2b. The view is recreated mid-search (rotation): the 3 rows come back under the spinner, never blank.
         // Activity.recreate(), not scenario.recreate(): that one waits for an idle looper too.

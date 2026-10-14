@@ -4,7 +4,6 @@ import android.text.Spanned
 import android.text.style.URLSpan
 import org.hamcrest.CoreMatchers.equalTo
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
@@ -227,21 +226,6 @@ class PlayerDescriptionsTest {
         }
     }
 
-    @Test
-    fun youtube_is_matched_by_whole_label_after_idna() {
-        val youTube = listOf(
-            "https://youtu.be/V2Brp_esIVI", "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv",
-            "https://m.youtube.com/watch?v=V2Brp_esIVI", "https://MUSIC.YOUTUBE.COM/", "https://youtube-nocookie.com/embed/V2Brp_esIVI",
-            "https://www.youtube.de/x", "https://youtubekids.com/x", "https://youtube.googleapis.com/x",
-            "https://ｙｏｕｔｕｂｅ.com/a", "https://youtube\u3002com/a",
-            "https://youtube.com.example.org", // the accepted cost: any host with a youtube label
-        )
-        for (url in youTube) assertTrue("$url is not matched as YouTube", PlayerDescriptions.isYouTubeLink(url))
-        for (url in listOf("https://example.org", "https://notyoutube.com", "https://myyoutube.org", "", null)) {
-            assertFalse("$url is matched as YouTube", PlayerDescriptions.isYouTubeLink(url))
-        }
-    }
-
     // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike. iOS must pass
     // the same vectors.
 
@@ -262,6 +246,16 @@ class PlayerDescriptionsTest {
             "https://www.youtube.co.uk/x",
             "https://youtubekids.com/x",
             "https://youtube.googleapis.com/x",
+            "https://youtube-nocookie.com/embed/x",
+            "https://youtube.com.example.org/", // accepted cost: any host with a youtube label
+            "https://yt.be/x",
+            "https://www.yt.be/x",
+            "https://youtubego.com/",
+            "https://withyoutube.com/",
+            "https://youtubegaming.com/",
+            "http://youtubemusic.com/",
+            "http://youtubetv.com/",
+            "https://youtubeshorts.com/",
             "https://x@youtube.com/a",
             "https://%79outube.com/a",
             "https://YOUTUBE.COM./a",
@@ -274,11 +268,12 @@ class PlayerDescriptionsTest {
             "https://you\ttube.com/",
             "https://you\ntube.com/",
             "https://y\u1D52utube.com/a", // modifier letter small o (Unicode newer than IDNA2003's 3.2)
-            "https://\uD83C\uDD88\uD83C\uDD3E\uD83C\uDD44\uD83C\uDD43\uD83C\uDD44\uD83C\uDD31\uD83C\uDD34.com/a", // 🅈🄾🅄🅃🅄🄱🄴
+            "https://\uD83C\uDD48\uD83C\uDD3E\uD83C\uDD44\uD83C\uDD43\uD83C\uDD44\uD83C\uDD31\uD83C\uDD34.com/a", // 🅈🄾🅄🅃🅄🄱🄴
             "https://you\uD82F\uDCA0tube.com/a", // U+1BCA0, a format character a browser drops
             " https://example.org/a", // the tap path parses the untrimmed URL: it would be a dead link
             "\u00A0https://example.org/a",
             "https://example.org/a ",
+            "https:///a", // a blank host
             "https://ভবিষ্যৎ.com/", // accepted cost: a real IDN using a letter added after Unicode 3.2 (U+09CE)
             "",
             null,
@@ -291,10 +286,21 @@ class PlayerDescriptionsTest {
             "https://bücher.de/",
             "https://notyoutube.com/x",
             "https://myyoutube.org/x",
+            "https://notyt.be/x",
         )
         // Every vector is checked and every failure reported, one message per vector.
         for (url in notOpenable) vectors.checkThat("${url?.let(::visible)} opens", PlayerDescriptions.isOpenableLink(url), equalTo(false))
         for (url in openable) vectors.checkThat("${visible(url)} does not open", PlayerDescriptions.isOpenableLink(url), equalTo(true))
+    }
+
+    @Test
+    fun a_kept_link_with_an_upper_case_scheme_opens_lower_cased() {
+        // Intent matching is case-sensitive: a tap on `Https://` would resolve no activity. Same range and flags.
+        val shape = { href: String ->
+            val text = PlayerDescriptions.render("see <a href=\"$href\">notes</a> now") as Spanned
+            text.getSpans(0, text.length, URLSpan::class.java).map { listOf(it.url, text.getSpanStart(it), text.getSpanEnd(it), text.getSpanFlags(it)) }
+        }
+        assertEquals(shape("https://example.org/a"), shape("Https://example.org/a"))
     }
 
     /** Spells out the invisible characters of a vector for the failure message. */
