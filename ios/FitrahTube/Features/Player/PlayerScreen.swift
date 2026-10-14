@@ -646,6 +646,8 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with a
@@ -662,6 +664,8 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Resolves every video id to `player-fixture.mp4` (`ios/FitrahTube/Resources/`), a 2s local clip
@@ -681,6 +685,8 @@ private struct FixturePlayerResolver: StreamResolving {
         return Resolved(stream: .progressive(url: url, label: "360p"), client: .visionos,
                          userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.transport` maps to `.error(messageKey: "player_error_message")` --
@@ -691,6 +697,8 @@ private struct FixtureErrorResolver: StreamResolving {
                  requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.transport("fixture error")
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.unavailable` maps to `.contentUnavailable` (ruling 14: one
@@ -701,6 +709,8 @@ private struct FixtureUnavailableResolver: StreamResolving {
                  requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.unavailable(videoId: videoId)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.cooldown(until:)` maps straight through to `StreamState.cooldown`.
@@ -711,6 +721,8 @@ private struct FixtureCooldownResolver: StreamResolving {
                  requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// B5 screenshot rig: one page of eight fixture items. With `deadItems`, three ids carry the

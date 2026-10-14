@@ -945,6 +945,8 @@ nonisolated struct ParkedStreamResolver: StreamResolving {
                  requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(86_400))
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// `-fitrah-fake-report <status>`: one canned status for every request, no network. Also the fake

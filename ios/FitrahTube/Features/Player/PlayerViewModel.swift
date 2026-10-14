@@ -20,6 +20,13 @@ protocol StreamResolving: Sendable {
     /// conform.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved
+
+    /// Recovery's step-down (owner directive 2026-10-14): `failed`'s stream for `videoId` resolved but
+    /// would not play, so the next walks for this video resume the ladder at the rung after it
+    /// (`StreamResolver.demote`). A requirement with NO default, on purpose (the R8-3 rule above): a
+    /// decorator that forgot to forward it would silently send every step-down back to rung 1.
+    /// Resolvers with no ladder (fixtures, the offline resolver, test doubles) implement it empty.
+    func demote(_ videoId: String, failed: ClientFamily) async
 }
 
 extension StreamResolving {
@@ -48,6 +55,10 @@ struct LiveStreamResolver: StreamResolving {
         try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
                                    forceRefresh: forceRefresh, requiresMuxed: requiresMuxed)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        await resolver.demote(videoId, failed: failed)
+    }
 }
 
 /// CF-B1-2. The limiter goes in a DECORATOR rather than inside `LiveStreamResolver`, so the gate is
@@ -73,7 +84,10 @@ struct RateLimitedResolver: StreamResolving {
         // is gated even though it is never forced (B5, reconciliation note 7): a prefetch is the
         // non-forced resolve most likely to hit the network, and it is the one lane the limiter
         // exists to keep behind the interactive one.
-        if forceRefresh || kind == .prefetch {
+        // Owner directive 2026-10-14: `.autoRecovery` is never gated. Its budget is the player's own
+        // `RecoveryBudget` (at most 3 recovery resolves per stream); a refusal here surfaced as a
+        // cooldown screen in the middle of a step-down that would have played (V2Brp_esIVI).
+        if (forceRefresh && kind != .autoRecovery) || kind == .prefetch {
             switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
             case .allowed:
                 break
@@ -88,6 +102,10 @@ struct RateLimitedResolver: StreamResolving {
                                                  requiresMuxed: requiresMuxed)
         await rateLimiter.onSuccess(videoId)   // clears the .player exponential backoff (Android :1551)
         return resolved
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        await wrapped.demote(videoId, failed: failed)
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {
@@ -118,7 +136,6 @@ extension StreamState {
         guard let resolved, case .hls(_, let isLive, _, _) = resolved.stream else { return false }
         return isLive
     }
-
 }
 
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
@@ -902,8 +919,8 @@ extension StreamState {
               cast.stillCasting(videoId, owner: castOwner) else { return }
         guard let media else {
             // Nothing castable: a resolve that did not come back, or a near-expiry URL that could
-            // not outlive what is left to play. Same outcome for the user as a receiver refusing the load, so
-            // it gets the same banner rather than copy of its own.
+            // not outlive what is left to play. Same outcome for the user as a receiver refusing
+            // the load, so it gets the same banner rather than copy of its own.
             cast.reportLoadFailure(claim: CastClaim(videoId: videoId, owner: castOwner))
             return
         }

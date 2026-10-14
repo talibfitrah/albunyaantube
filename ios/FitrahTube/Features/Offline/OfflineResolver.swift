@@ -47,4 +47,7 @@ struct OfflineResolver: StreamResolving {
         return Resolved(stream: stream, client: .visionos, userAgent: "",
                         resolvedAt: Date(), expiresAt: nil)
     }
+
+    /// One source, the saved file: there is no ladder to step down.
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }

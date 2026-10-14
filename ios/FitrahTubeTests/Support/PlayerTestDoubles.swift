@@ -46,6 +46,13 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     private var _expiresIn: TimeInterval = 3600
     /// Per-video `captionTracks` for the `.hls` answer (the caption carry-over test); default none.
     private var _captionTracks: [String: [CaptionTrack]] = [:]
+    /// `demote` calls in order, as "videoId:family" (playback hardening, spec §4.1).
+    private var _demotions: [String] = []
+    var demotions: [String] { lock.withLock { _demotions } }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        lock.withLock { _demotions.append("\(videoId):\(failed)") }
+    }
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }

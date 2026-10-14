@@ -259,6 +259,8 @@ struct PlaybackRecoveryTests {
         private let gate: Gate?
         private let gatedCallIndex: Int
         private(set) var calls: [Bool] = [] // forceRefresh per call
+        private(set) var demotions: [String] = []
+        func demote(_ videoId: String, failed: ClientFamily) async { demotions.append("\(videoId):\(failed)") }
 
         init(_ outcomes: [Result<Resolved, Error>], gate: Gate? = nil, gatedCallIndex: Int = 0) {
             self.outcomes = outcomes

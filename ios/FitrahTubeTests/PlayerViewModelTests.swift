@@ -66,6 +66,8 @@ struct PlayerViewModelTests {
             case .failure(let error): throw error
             }
         }
+
+        func demote(_ videoId: String, failed: ClientFamily) async {}
     }
 
     // MARK: - Outcome -> state mapping (player.md §2.2)
@@ -301,6 +303,33 @@ struct PlayerViewModelTests {
 
         await vm.retry()                                    // and the VM's own guard stops the next one dead
         #expect(inner.calls.count == 4)
+    }
+
+    // MARK: - Playback hardening: auto-recovery is never rate limited (owner directive 2026-10-14)
+
+    /// V2Brp_esIVI's trace: the second auto-recovery inside the limiter's 30 s interval was refused and
+    /// shown as a cooldown, in the middle of a step-down that would have played.
+    @Test func autoRecoveryIsNeverRefusedByTheLimiter() async throws {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let limited = RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(), clock: clock)
+        for offset in [0, 5, 10, 15] {   // inside the 30 s interval, and past the lane's reserve of 2
+            clock.now = .seconds(offset)
+            _ = try await limited.resolve("abcdefghijk", purpose: .player, kind: .autoRecovery,
+                                          sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(inner.calls.map(\.kind) == [.autoRecovery, .autoRecovery, .autoRecovery, .autoRecovery])
+    }
+
+    /// The decorator must hand the step-down on: dropping it sends every recovery back to rung 1.
+    @Test func demoteReachesTheWrappedResolver() async {
+        let inner = RecordingResolver(.hls)
+        let limited = RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                          clock: FixedMonotonicClock(now: .seconds(0)))
+
+        await limited.demote("abcdefghijk", failed: .visionos)
+
+        #expect(inner.demotions == ["abcdefghijk:visionos"])
     }
 
     @Test func recoveryReResolvesUseTheAutoRecoveryLane() async {
