@@ -337,6 +337,18 @@ class SearchIndexTest {
     }
 
     @Test
+    void aTypoOfATranslatedTagFindsTheItemWhoseOnlyMatchIsThatTag() throws Exception {
+        // P1 ruling: TagEnrichmentService adds translations ("prayer" for الصلاة) that are in no title; tags count.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(),
+                List.of(with(video("vSalahTagged", "كيفية الصلاة", null), v -> v.setKeywords(List.of("صلاة", "prayer", "gebed"))),
+                        video("vStoryTime", "Story Time", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits hits = corpus.search("prayr", null, false, 50, null);
+        assertEquals(List.of("vSalahTagged"), ids(hits));
+        assertEquals("approximate", hits.match());
+    }
+
+    @Test
     void theRelatedTierNeedsAWordNotJustAStopword() throws Exception {
         // B5 ruling: "of" alone filled the related tier with anything containing it; stopwords now only add score.
         SearchIndex corpus = started(newIndex(List.of(), List.of(),
@@ -354,6 +366,127 @@ class SearchIndexTest {
         SearchIndex.Hits hits = index.search("xqzvbnm", null, false, 50, null);
         assertTrue(hits.items().isEmpty());
         assertEquals("none", hits.match());
+    }
+
+    // ---- P1: live-shaped ranking (probe 2026-10-14 06:26Z) ------------------------------------
+
+    /**
+     * A second corpus with the live field shapes, read 2026-10-14 from the public detail endpoints: the two
+     * Zakir channels (the main one has no keywords), 26 streams of the main channel titled as the ones that
+     * outranked it live (#2-#27 for `zakir`), and the live top 6 for `arabic learn`.
+     */
+    private SearchIndex liveShaped() throws Exception {
+        List<Channel> cs = List.of(
+                with(channel("UCzakir", "Dr Zakir Naik"), c -> c.setDescription(
+                        "Alhamdulillah Dr Zakir Naik was presented:\n1. ‘King Faisal International Prize’ for ‘Service to Islam’ 2015 by King Salman Al Saud, King of Saudi Arabia.\n2. Dubai International Holy Quran Award’s ‘Islamic Personality of the year - 2013’ by Shaikh Mohammed bin Rashid Al Maktoum, Ruler of Dubai.\n3. ‘Tokoh Ma’al Hijrah Distinguished International Personality Award’ for the Year 2013 by Agong, Tuanku Abdul Halim Mu’adzam Shah, the King of Malaysia.\n4. Ranked No. 82 in the ‘100 Most Influential People in India’ in the 2009. \n5. Ranked amongst the top 70 in the Book ‘The 500 Most Influential Muslims in the World’ from 2011 to 2023 & ranked 79 in  ‘The Top 100 Cumulative Influence over 10 years’.\n6. A plaque by Shaikh Ahmed Deedat in May 2000, “Son what you have done in 4 years had taken me 40 years to accomplish, Alhamdulillah”.\n7. The Honorary ‘Doctor of Humane Letters’ (Honoris Causa), by the University of The Gambia (UTG).\n8. Has more than 25 million followers on his Facebook.\n\n\n")),
+                with(channel("UCzakirAr", "Dr. Zakir Naik in arabic"), c -> {
+                    c.setDescription("Alhamdulillah Dr Zakir Naik was presented:\n1. ‘King Faisal International Prize’ for ‘Service to Islam’ 2015 by King Salman Al Saud of Saudi Arabia.\n2. Dubai International Holy Quran Award’s ‘Islamic Personality of the year-2013’ by Shaikh Mohammed bin Rashid Al Maktoum, Ruler of Dubai.\n3. Ranked No. 82 in ‘100 Most Influential People in India’ in 2009. \n4. Ranked amongst top 70 in ‘The 500 Most Influential Muslims in the World’ from 2011 to 2020 & ranked 79 in ‘The Top 100 Cumulative Influence over 10 years’.\n5. A plaque by Shaikh Ahmed Deedat in 2000, “Son what you have done in 4 years had taken me 40 years to accomplish, Alhamdulillah”.\n6. The Honorary ‘Doctor of Humane Letters’ (Honoris Causa), by the University of The Gambia.\n7. Has more than 22 million followers on his Facebook, being highest amongst any Religious English Speaker in the world.\n8. He is founder of Peace TV Network which has four 24 hour satellite channels in English, Urdu, Bangla & Chinese with 200 million viewers.");
+                    c.setKeywords(List.of(
+                        "ذاكر نايك مترجم", "دكتور ذاكر نايك مترجم", "محاضرات دكتور ذاكر بالعربية", "Zakir naik", "Zakir",
+                        "naik", "زاكر نايك", "فارس الدعوة", "احمد ديدات", "Ahmed deedat", "deedat", "Zakir naik in arabic",
+                        "ترجمة محاضرات دكتور ذاكر نايك", "جديد ترجمة", "جديد", "الدعوة الى الاسلام",
+                        "الاسلام والالحاد والمسيحية", "الاسلام والهندوسية", "الهندوسية", "المسيحية", "ذاكر مترجم", "Dr",
+                        "arabic", "Alhamdulillah", "presented", "‘King", "Faisal", "International", "Prize’", "‘Service",
+                        "Islam’", "King", "Salman", "Al", "Saud", "Saudi", "Arabia", "Dubai", "Holy", "Quran", "Award’s",
+                        "‘Islamic", "Personality", "year-2013’", "Shaikh", "Mohammed", "bin", "Rashid", "Maktoum", "Ruler"));
+                }),
+                with(channel("UClearnArabic", "Learn Arabic-اتعلم عربي"), c -> {
+                    c.setDescription("أهلا بكم في قناة اتعلم عربي\nنشارك معكم في القناة أسهل الطرق لتعلم قراءة القرآن الكريم وقراءة اللغة العربية بكل جوانبها من قواعد وكلمات وقراءة وإملاء\nفيديوهات مبسطة لأي مبتدئ في تعلم اللغة العربية والنحو والأساليب والقرآن الكريم\nنرحب دائماً باقتراحاتكم لتطوير قناتنا للأفضل\n#اتعلم_عربي \n#قواعد_الاملاء\n#القراءة_الكتابة\n#learn_arabic \n#arabic_alphabet \n#quran\n");
+                    c.setKeywords(List.of(
+                        "القراءة والكتابة", "تعليم القراءة والكتابة", "المد_بالألف", "نور_البيان",
+                        "معالجة ضعف القراءة والكتابة", "Arabic Language", "تعليم الحروف العربية", "تعليم القراءة",
+                        "تعلم القراءة", "#تعلم_الاملاء", "#قواعد_الاملاء", "دروس الاملاء", "Reading arabic words",
+                        "Reading arabic alphabet", "تعلم القراءة والكتابة", "حرف الباء", "حرف العين", "Baa taa", "حرف الدال",
+                        "Learn", "Arabic-اتعلم", "عربي", "أهلا", "بكم", "قناة", "اتعلم", "نشارك", "معكم", "القناة", "أسهل",
+                        "الطرق", "لتعلم", "قراءة", "القرآن", "الكريم", "وقراءة", "اللغة", "العربية", "بكل", "جوانبها",
+                        "قواعد", "وكلمات", "وإملاء", "فيديوهات", "مبسطة", "لأي", "مبتدئ", "تعلم", "والنحو", "والأساليب"));
+                }));
+        List<Playlist> ps = List.of(
+                with(playlist("PLarabicKids", "Learn Arabic for Kids -  تعليم اللغة العربية للأطفال"), p -> {
+                    p.setDescription("Let's Learn Arabic language with Zakaria, the little muslim. Learn Alphabet, numbers, shapes, colors, fruits, vegetables, vehicles...\nتعلم اللغة العربية مع زكريا المسلم الصغير, تعلم الحروف, الأرقام, الأشكال, الألوان...");
+                    p.setKeywords(List.of(
+                        "Learn", "Arabic", "Kids", "تعليم", "اللغة", "العربية", "للأطفال", "Learn Arabic for Kids",
+                        "تعليم اللغة العربية للأطفال", "YouTube", "playlist", "YouTube playlist: Learn Arabic for Kids",
+                        "al-Arabiyyah", "Arabisch", "children", "أطفال", "kinderen"));
+                }),
+                with(playlist("PLarabicExamples", "Learn Arabic By Examples"), p -> p.setKeywords(List.of(
+                        "Learn", "Arabic", "Examples", "al-Arabiyyah", "العربية", "Arabisch"))),
+                with(playlist("PLarabicRachid", "Learn Arabic with Rachid"), p -> p.setKeywords(List.of(
+                        "Learn", "Arabic", "Rachid", "YouTube", "playlist", "al-Arabiyyah", "العربية", "Arabisch"))));
+        List<Video> vs = List.of(
+                with(video("vArabicAlphabetAnimals", "Arabic Alphabet for Kids with Animals – Learn Arabic ABC with Zakaria",
+                        "Learn with Zakaria - تعلم مع زكريا"), v -> {
+                    v.setDescription("Let&apos;s Learn the alphabet in arabic with this cartoon Video from “Learn with Zakaria&quot; in a fun and unique way with our cute Animals. <br><br>This video will make your kids laugh and smile while teaching theme all the arabic letters: Alif, Baa, Taa, Tha, Jeem, Haa, Kha, Dal, dhal, raa, zay, seen, sheen, Sad, Dhad, Dhaa, Ayn, Ghayn, Faa, Qaf, Kaf, Lam, Meem, Noon, Haa, Waw, Yaa. (أ ب ت ث ج ح خ د ذ ر ز س ش ص ض ط ظ ع غ ف ق ك ل م ن ه و ي.)<br><br>Hope you enjoyed this video on &quot;Learn With Zakaria&quot; Channel.<br><br>Welcome to our children’s channel: Learn with Zakaria, a good place where kids and parents can find great learning content every week. <br><br>Our channel is packed with great educational videos that will make your children laugh and smile while teaching them alphabet, colors, shapes, names of animals, fruits, vegetables and much more… in Arabic, English and even French. <br><br>Your kids will also enjoy learning and memorizing “Quran” in a fun and unique way, with our cute characters. <br><br>We hope you will enjoy our content on Zakaria&apos;s Channel.<br><br>Don’t forget to click the subscribe button :)<br><br>For more learning videos click here:<br><br><a href=\"https://www.youtube.com/learnWithZakaria\">learnwithzakaria</a><br><br>Visit our website:<br><br><a href=\"http://learnwithzakaria.com/\">http://learnwithzakaria.com/</a><br><br>Follow us on Facebook:<br><br><a href=\"https://www.facebook.com/LearnWithZakaria\">Facebook: LearnWithZakaria</a>");
+                    v.setKeywords(List.of(
+                        "الحروف الابجدية العربية للاطفال", "الحروف الهجائية", "الحروف الابجدية", "تعلم اللغة العربية",
+                        "أغنية الحروف", "أنشودة الحروف", "الحروف العربية للاطفال طيور الجنة", "الحروف و الحيوانات",
+                        "Arabic Abc", "arabic letters", "arabic alphabet for children", "arabic alphabet pronunciation",
+                        "arabic alphabet for beginner", "arabic learning for kids", "arabic letters for children",
+                        "Arabic for kids", "Arabic", "Alphabet", "Kids", "Animals", "Learn", "ABC", "Zakaria", "Let&apos",
+                        "cartoon", "Video", "“Learn", "Zakaria&quot", "fun", "unique", "way", "cute", "<br><br>This", "make",
+                        "laugh", "smile", "while", "teaching", "theme", "letters", "Alif", "Baa", "Taa", "Tha", "Jeem",
+                        "Haa", "Kha", "Dal", "dhal", "raa"));
+                }),
+                with(video("vLearnArabicAlphabet", "Learn arabic alphabet تعليم اللغة العربية للمبتدئين", "Quizzes Edu"), v -> {
+                    v.setDescription("Learn Arabic the easy way! <br><br>How to learn Arabic? Arabic is a beautiful language to learn. But you shouldn&apos;t just pick up a random textbook, and randomly start reading Arabic sentences and speaking Arabic. You have to learn it the right way. In this video, I go over the best methods to learn Arabic in the most efficient and fastest way.<br><br>In this video, I have talked about the best methods to learn Arabic easily and with fun. Also, there are methods to learn Arabic online, to learn Arabic offline, to learn Arabic with Arabic songs, to learn Arabic with Arabic Alphabets. So, I would suggest you to learn Arabic with any of these methods.<br><br>I will teach you the best methods to learn Arabic. If you follow this method, you will be able to speak Arabic in 2-3 months. You will also learn Arabic grammar, vocabulary, reading &amp; writing Arabic.<br><br>I will be teaching you how to learn Arabic. I will be showing you different methods and will show you how to learn Arabic.<br><br>I have covered the best methods and resources to learn Arabic. You can learn Arabic in 2-3 months by using these methods and resources, but it depends on you how much effort you put into it.<br><br>I have discussed that how you can learn Arabic. You will know about Arabic pronunciation, Arabic grammar, Arabic alphabet and the Arabic language. You will also learn different method to learn Arabic.<br><br>Arabic is one of the most ancient languages in the world. It is spoken in 22 countries. It is the official language of 22 countries. Arabic is also spoken as a first language in more than 140 countries. It is a language of the Qur&apos;an.");
+                    v.setKeywords(List.of(
+                        "Learn arabic alphabet", "تعليم اللغة العربية للمبتدئين", "تعليم اللغة العربية", "Arabisk skolen",
+                        "كتاب الصف الأول", "تعليم العربية", "lær arabisk", "تعليم العربية لغير الناطقين بها",
+                        "تعليم العربية للاطفال", "تعليم العربية للأجانب", "تعليم العربية لغير الناطقين بها pdf",
+                        "تعليم العربية للاطفال مجانا", "تعليم العربية الحروف", "تعليم العربية القراءة", "learn arabic",
+                        "arabic alphabet", "arabic language", "الموسوعة التعليمية", "Learn", "arabic", "alphabet", "تعليم",
+                        "اللغة", "العربية", "للمبتدئين", "easy", "way", "<br><br>How", "beautiful", "language",
+                        "shouldn&apos", "pick", "random", "textbook", "randomly", "start", "reading", "sentences",
+                        "speaking", "right", "video", "go", "best", "methods", "most", "efficient", "fastest", "<br><br>In",
+                        "talked", "easily"));
+                }));
+        List<SearchableStream> ss = new ArrayList<>();
+        for (int i = 0; i < ZAKIR_UPLOADS.size(); i++) {
+            ss.add(with(stream("zakir-" + i, ZAKIR_UPLOADS.get(i), "channel:UCzakir"), s -> s.setChannelName("Dr Zakir Naik")));
+        }
+        return started(newIndex(cs, ps, vs, ss, 5_000));
+    }
+
+    private static final List<String> ZAKIR_UPLOADS = List.of(
+                "Dr Zakir Naik’s Comment on Free Masonry - Dr Zakir Naik",
+                "The Reason Dr Zakir Naik Left India - Dr Zakir Naik",
+                "Dr Zakir Naik Buys the Best and Latest Cameras - Dr Zakir Naik",
+                "51% Wealth Of Dr Zakir Naik Goes To Charity?! - Dr Zakir Naik",
+                "The Untold Story Behind Dr Zakir Naik's Career Shift - Dr Zakir Naik",
+                "Dr Zakir Naik’s Dream was to be a Heart Specialist - Dr Zakir Naik",
+                "Islamic Dress - Dr Zakir Naik", "Allah-Centred Women - Dr Zakir Naik",
+                "Proving the Hereafter - Dr Zakir Naik", "Nisaab for Animals - Dr Zakir Naik",
+                "Criteria for Hijaab - Dr Zakir Naik", "Man’s Involuntary Actions - Dr Zakir Naik",
+                "Hijaab in Islam - Dr Zakir Naik", "Sharia Eliminates Robbery - Dr Zakir Naik",
+                "Inheritance of Spouses - Dr Zakir Naik", "Punishment for Rape - Dr Zakir Naik",
+                "Secret About Dr Zakir Naik Success?",
+                "At the Beginning of his Dawah, Dr Zakir Naik Used to Go to Churches - Dr Zakir Naik",
+                "Being Addicted to Luxuries - Dr Zakir Naik", "Signs of Accepted Repentance - Dr Zakir Naik",
+                "Diseases Caused by Alcohol - Dr Zakir Naik", "Holidays in IIS School - Dr Zakir Naik",
+                "Signs of Unaccepted Repentance - Dr Zakir Naik", "Interaction Q&A with Dr Zakir Naik",
+                "A Wrong Common Supplication - Dr Zakir Naik", "All Messengers are Muslims- Dr Zakir Naik");
+
+    @Test
+    void bothZakirChannelsOutrankTheMainChannelsOwnUploads() throws Exception {
+        SearchIndex.Hits hits = liveShaped().search("zakir", null, false, 50, null);
+        assertEquals("exact", hits.match());
+        assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
+    }
+
+    @ParameterizedTest(name = "{0}")
+    @CsvSource({"zakit", "zaikr"})
+    void aTypoOfTheNamePutsBothZakirChannelsFirst(String query) throws Exception {
+        // Ruling: which Zakir channel leads is not a defect; both must beat the main channel's own uploads.
+        SearchIndex.Hits hits = liveShaped().search(query, null, false, 50, null);
+        assertEquals("approximate", hits.match());
+        assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
+    }
+
+    @Test
+    void wordsOutOfOrderPutTheKidsPlaylistInTheTopFive() throws Exception {
+        SearchIndex.Hits hits = liveShaped().search("arabic learn", null, false, 50, null);
+        assertEquals("exact", hits.match());
+        assertTrue(ids(hits).subList(0, 5).contains("PLarabicKids"), ids(hits).toString());
     }
 
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------

@@ -18,17 +18,23 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import jakarta.annotation.PreDestroy;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.NumericDocValuesField;
 import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
+import org.apache.lucene.index.DocValues;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.LeafReaderContext;
+import org.apache.lucene.index.NumericDocValues;
 import org.apache.lucene.index.StoredFields;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
 import org.apache.lucene.search.BooleanQuery;
+import org.apache.lucene.search.DoubleValues;
+import org.apache.lucene.search.DoubleValuesSource;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
@@ -86,8 +92,64 @@ public class SearchIndex {
     static final int MIN_CONFIDENT_HITS = 3;
     static final int STREAM_PAGE = 500;
     private static final String[] TIER_NAMES = {"", "exact", "approximate", "related"};
-    /** Relevance, then `key`: tied hits keep one order across page fetches even when a save re-appends one (F9). */
-    private static final Sort RELEVANCE = new Sort(SortField.FIELD_SCORE, new SortField("key", SortField.Type.STRING));
+    /**
+     * A channel or playlist ranks at 1.25x its score (P1): at near-equal relevance the collection comes first. BM25
+     * alone ranked "Learn Arabic for Kids" (8-word bilingual title) under 4-word titles and videos. Applied as the
+     * sort value, not as a second copy of the query, so the clause count and the query cost do not change.
+     */
+    private static final float COLLECTION_PRIOR = 1.25f;
+    private static final DoubleValuesSource PRIORED_SCORE = new DoubleValuesSource() {
+        @Override
+        public DoubleValues getValues(LeafReaderContext leaf, DoubleValues scores) throws IOException {
+            NumericDocValues collection = DocValues.getNumeric(leaf.reader(), "collection");
+            return new DoubleValues() {
+                private boolean isCollection;
+
+                @Override
+                public double doubleValue() throws IOException {
+                    return scores.doubleValue() * (isCollection ? COLLECTION_PRIOR : 1);
+                }
+
+                @Override
+                public boolean advanceExact(int doc) throws IOException {
+                    isCollection = collection.advanceExact(doc);
+                    return scores.advanceExact(doc);
+                }
+            };
+        }
+
+        @Override
+        public boolean needsScores() {
+            return true;
+        }
+
+        @Override
+        public DoubleValuesSource rewrite(IndexSearcher searcher) {
+            return this;
+        }
+
+        @Override
+        public boolean isCacheable(LeafReaderContext leaf) {
+            return false;
+        }
+
+        @Override
+        public int hashCode() {
+            return System.identityHashCode(this);
+        }
+
+        @Override
+        public boolean equals(Object other) {
+            return other == this;
+        }
+
+        @Override
+        public String toString() {
+            return "score x collection prior";
+        }
+    };
+    /** Relevance (with the prior), then `key`: tied hits keep one order across page fetches even when a save re-appends one (F9). */
+    private static final Sort RELEVANCE = new Sort(PRIORED_SCORE.getSortField(true), new SortField("key", SortField.Type.STRING));
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -620,7 +682,8 @@ public class SearchIndex {
             throws IOException {
         if (entity instanceof Channel c) {
             if (!admitted(c.getStatus(), c.getVisibility(), c.getValidationStatus(), c.getYoutubeId())) return false;
-            docs.add(catalogDoc("CHANNEL", c.getId(), c.getYoutubeId(), c.getName(), c.getKeywords(), null,
+            // Its own name in `channel` too: every upload of it matches there, and the channel must not lose to them (P1).
+            docs.add(catalogDoc("CHANNEL", c.getId(), c.getYoutubeId(), c.getName(), c.getKeywords(), c.getName(),
                     c.getDescription(), ContentItemMapper.fromChannel(c), null));
             sources.put("channel:" + c.getYoutubeId(), exclusions(c));
         } else if (entity instanceof Playlist p) {
@@ -660,6 +723,7 @@ public class SearchIndex {
                                        String channel, String description, ContentItemDto dto,
                                        Timestamp uploadedAt) throws IOException {
         Document doc = doc(type + ":" + docId, id, type, "CATALOG", title, keywords, channel, dto);
+        if (!"VIDEO".equals(type)) doc.add(new NumericDocValuesField("collection", 1)); // the prior (P1)
         if (description != null && !description.isBlank()) {
             doc.add(new TextField("description", description, Field.Store.NO));
         }
