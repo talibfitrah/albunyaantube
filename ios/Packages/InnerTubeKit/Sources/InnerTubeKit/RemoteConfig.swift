@@ -85,8 +85,9 @@ extension RemoteConfig {
     /// YouTube) and `embed` (owner directive 2026-10-14: no YouTube player of any kind) are
     /// deliberately ABSENT. Leaving them out of this set is what makes `sanitized(_:)` DROP the rung
     /// from any published config that still lists it, and from a persisted last-known-good copy --
-    /// the ban survives a remote config the app did not author. Builds 1.0.0 / 1.0.2 were served an
-    /// `embed` third rung by the published file; this is what ignores it.
+    /// the ban survives a remote config the app did not author. That protects THIS build and later
+    /// ones only: installed 1.0.0 / 1.0.2 builds still list `embed` in their own set, so for them the
+    /// published `ios-remote-config.json` is the only guard (`RemoteConfigTests` checks it raw).
     public static let knownResolverStrategies: Set<String> = [
         "visionosHLS", "androidItag18",
     ]

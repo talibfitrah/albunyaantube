@@ -10,12 +10,123 @@ struct PlayerToolbarTests {
 
     // MARK: - attributedDescription (PlayerDescriptions.kt allow-list, ported)
 
-    @Test func httpAndHttpsLinksAreKept() {
-        let raw = "Visit http://a.example or https://b.example/x?y=1 for more."
+    @Test func nonYouTubeHttpAndHttpsLinksAreKeptAndYouTubeLinksAreInert() {
+        let raw = "Visit http://a.example or https://b.example/x?y=1, not https://youtu.be/V2Brp_esIVI, for more."
         let result = attributedDescription(raw)
         #expect(String(result.characters) == raw)
         let links = result.runs.compactMap(\.link).map(\.absoluteString)
         #expect(links == ["http://a.example", "https://b.example/x?y=1"])
+    }
+
+    /// Owner directives 2026-08-27 / 2026-10-14: a description never hands the user to YouTube. The
+    /// link stays visible as text; only `https://example.org` is tappable. The two bare ones have no
+    /// scheme in the text: `NSDataDetector` adds `http://` itself.
+    @Test(arguments: [
+        "https://youtu.be/V2Brp_esIVI",
+        "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw",
+        "https://m.youtube.com/watch?v=V2Brp_esIVI",
+        "https://MUSIC.YOUTUBE.COM/watch?v=V2Brp_esIVI",
+        "youtube.com/watch?v=V2Brp_esIVI",
+        "www.youtu.be/V2Brp_esIVI",
+    ])
+    func aYouTubeLinkInADescriptionStaysInertText(_ link: String) {
+        let raw = "Watch \(link) and read https://example.org"
+        let result = attributedDescription(raw)
+        #expect(String(result.characters) == raw, "\(link): the text must stay visible")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["https://example.org"], "\(link) must not be tappable")
+    }
+
+    /// The rule also runs on the text as written, not only on the detector's normalised URL: the
+    /// detector drops a soft hyphen, so `match.url` alone passes it. A bare domain is judged with the
+    /// `http://` the detector adds, so `example.org/b` stays a link and `ｙｏｕｔｕｂｅ.com/x` does not.
+    @Test func theTextAsWrittenMustPassTheLinkRuleToo() {
+        let raw = "See https://ex\u{AD}ample.org/a and example.org/b and ｙｏｕｔｕｂｅ.com/x here."
+        let result = attributedDescription(raw)
+        #expect(String(result.characters) == raw)
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org/b"])
+    }
+
+    // MARK: - isOpenableLink (the vectors shared with Android's PlayerDescriptionsTest)
+
+    @Test(arguments: [
+        "https:youtube.com/watch?v=x",
+        "HTTPS:YOUTU.BE/x",
+        "intent://x#Intent;end",
+        "albunyaantube://video/x",
+        "javascript:alert(1)",
+        "mailto:a@b.c",
+        "https://youtu.be/abc",
+        "https://www.youtube.com/channel/x",
+        "https://m.youtube.com/watch?v=x",
+        "https://MUSIC.YOUTUBE.COM/x",
+        "https://www.youtube.de/x",
+        "https://www.youtube.co.uk/x",
+        "https://youtubekids.com/x",
+        "https://youtube.googleapis.com/x",
+        "https://x@youtube.com/a",
+        "https://%79outube.com/a",
+        "https://YOUTUBE.COM./a",
+        "//youtube.com/a",
+        "https://youtube.com\\@example.org/a",
+        "https://\\youtube.com/a",
+        "https://\u{FF59}\u{FF4F}\u{FF55}\u{FF54}\u{FF55}\u{FF42}\u{FF45}.com/a",   // fullwidth
+        "https://youtube\u{3002}com/a",
+        "https://you\u{AD}tube.com/a",
+        "https://you\ttube.com/",
+        "https://you\ntube.com/",
+        "https://yt.be/x",
+        "https://www.yt.be/x",
+        "https://youtubego.com/",
+        "https://withyoutube.com/",
+        "https://youtubegaming.com/",
+        "http://youtubemusic.com/",
+        "http://youtubetv.com/",
+        "https://youtubeshorts.com/",
+        "https://y\u{1D52}utube.com/a",
+        "https://\u{1F148}\u{1F13E}\u{1F144}\u{1F143}\u{1F144}\u{1F131}\u{1F134}.com/a",
+        "https://you\u{1BCA0}tube.com/a",
+        " https://example.org/a",
+        "\u{A0}https://example.org/a",
+        "https://example.org/a ",
+    ])
+    func theLinkRuleKeepsThisAsText(_ link: String) {
+        #expect(!isOpenableLink(link), "\(link.debugDescription) must stay text")
+    }
+
+    /// `ভবিষ্যৎ.com`: Android lists it as NOT openable, but only as its accepted cost
+    /// (`java.net.IDN` is Unicode 3.2 and refuses U+09CE). Foundation's IDNA knows the letter and
+    /// converts the host to `xn--d6bbh5a2b7ei.com`, so iOS opens the real site. It is not YouTube
+    /// on either platform.
+    @Test(arguments: [
+        "https://example.org/a",
+        "http://Example.org",
+        "https://youtube.com@example.org/a",
+        "https://\u{645}\u{62B}\u{627}\u{644}.\u{645}\u{635}\u{631}/",   // مثال.مصر
+        "https://bücher.de/",
+        "https://notyoutube.com/x",
+        "https://myyoutube.org/x",
+        "https://notyt.be/x",
+        "https://\u{9AD}\u{9AC}\u{9BF}\u{9B7}\u{9CD}\u{9AF}\u{9CE}.com/",   // ভবিষ্যৎ.com
+    ])
+    func theLinkRuleOpensThis(_ link: String) {
+        #expect(isOpenableLink(link), "\(link.debugDescription) must open")
+    }
+
+    /// The rule's IDNA step is Foundation's: `URL(string:)` converts a non-ASCII host to ASCII
+    /// (UTS 46, as a browser does) and refuses an unassigned code point. Pinned because the rule
+    /// relies on it; were it ever to stop converting, non-ASCII hosts would fail closed. Read with
+    /// `percentEncoded: false`: `host()` gives `b%C3%BCcher.de` on iOS 26.3 but `xn--…` on 18.6.
+    @Test func foundationConvertsHostsToASCIIAndRefusesUnassignedCodePoints() {
+        #expect(URL(string: "https://bücher.de/")?.host(percentEncoded: false) == "xn--bcher-kva.de")
+        #expect(URL(string: "https://\u{FF59}\u{FF4F}\u{FF55}\u{FF54}\u{FF55}\u{FF42}\u{FF45}.com/")?.host(percentEncoded: false) == "youtube.com")
+        #expect(URL(string: "https://you\u{0378}tube.com/") == nil)
+    }
+
+    /// The tap opens a lower-case scheme. Foundation keeps the case as written
+    /// (`NSDataDetector` hands back `Https://…`), so `attributedDescription` lowers it.
+    @Test func aLinkOpensWithItsSchemeLowercased() {
+        let result = attributedDescription("Read Https://example.org/a or HTTP://Example.org today.")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["https://example.org/a", "http://Example.org"])
     }
 
     @Test func nonHttpSchemesAreStrippedButTextIsKept() {

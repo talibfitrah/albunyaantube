@@ -217,8 +217,13 @@ import Testing
     @Test(.enabled(if: publishedConfigPath != nil))
     func thePublishedRepoRootConfigSurvivesSanitizing() async throws {
         let path = try #require(publishedConfigPath)
+        let data = try Data(contentsOf: URL(filePath: path))
+        // I1, checked RAW before the sanitizer hides it: installed 1.0.0 / 1.0.2 builds still know
+        // `embed` and would show YouTube's player if the published file listed it.
+        let raw = try JSONDecoder().decode(RemoteConfig.self, from: data)
+        #expect(!raw.resolverOrder.contains("embed"), "never publish embed: 1.0.0/1.0.2 would show YouTube's player")
         let store = RemoteConfigStore(
-            transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(try Data(contentsOf: URL(filePath: path))),
+            transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(data),
             url: URL(string: "https://example.invalid/none")!)
         let config = await store.current()
         // The published ladder is the two native rungs, same as the BUNDLED default. It lost its

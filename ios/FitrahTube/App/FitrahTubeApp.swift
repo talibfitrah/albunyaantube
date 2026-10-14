@@ -279,14 +279,13 @@ struct FitrahTubeApp: App {
         case "player":
             // Task 8: title/channel/description/views so the metadata-panel screenshot has
             // something real to show -- the plain `videoId`-only args used to leave the whole
-            // panel empty.
+            // panel empty. The YouTube link shows that one stays plain text (`isOpenableLink`).
             router.push(.player(PlayerArgs(
                 videoId: arg(2) ?? "fixture-video",
                 playlistId: arg(3),
                 title: "Understanding Tawakkul: Trusting Allah in Every Situation",
                 channelName: "Sample Channel",
-                description: "A short reminder on tawakkul, with a link for further reading: "
-                    + "https://example.com/tawakkul and a second note after it.",
+                description: "Read more: https://example.com/tawakkul\nSource: https://youtu.be/V2Brp_esIVI",
                 durationSeconds: 754, viewCount: 12_700_000,
                 shuffled: args.contains("-fitrah-shuffled"), targetVideoId: arg(4)
             )))
