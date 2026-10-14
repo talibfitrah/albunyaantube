@@ -36,6 +36,12 @@ public actor StreamResolver {
     /// Monotonic instant of the last `player` POST, for ≥500 ms spacing.
     private var lastPostInstant: Duration?
 
+    /// Recovery step-downs this session (`demote`): videoId -> the client whose stream would not
+    /// play. That video's walks start at the rung AFTER it and try it last.
+    /// ponytail: process-lifetime and unbounded -- one small entry per video that failed in AVPlayer.
+    /// Bound it if a session ever demotes thousands.
+    private var demoted: [String: ClientFamily] = [:]
+
     public init(
         transport: HTTPTransport,
         remoteConfigStore: RemoteConfigStore,
@@ -137,6 +143,16 @@ public actor StreamResolver {
         }
     }
 
+    /// The player's step-down (owner directive 2026-10-14): `failed`'s stream resolved but would not
+    /// play -- V2Brp_esIVI's VISIONOS HLS segments answer AVPlayer 401 while ANDROID's itag 18
+    /// plays. Every later walk for this video, this session, resumes the ladder at the NEXT rung
+    /// (`walkOrder`), and the manifest cached from `failed` is dropped so a non-forced open cannot
+    /// hand it back.
+    public func demote(_ videoId: String, failed family: ClientFamily) async {
+        demoted[videoId] = family
+        await cache.remove(videoId)
+    }
+
     // MARK: - the ladder
 
     private enum RungResult: Sendable {
@@ -163,7 +179,7 @@ public actor StreamResolver {
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
 
-        for strategy in config.resolverOrder {
+        for strategy in Self.walkOrder(config.resolverOrder, after: demoted[videoId]) {
             let outcome: RungResult
             do {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
@@ -394,6 +410,24 @@ public actor StreamResolver {
         // ^[a-zA-Z0-9_-]{11} (NewPipeExtractorClient.kt:1045); YouTube IDs are exactly 11.
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
         return id.count == 11 && id.allSatisfy(allowed.contains)
+    }
+
+    /// `ladder` rotated to start at the rung after the one `failed` serves, wrapping round: the failed
+    /// rung is tried LAST, never dropped -- a live stream has no itag 18, so its only rung must stay
+    /// reachable after a step-down. An unknown client, or none, leaves the ladder as it is. A muxed
+    /// walk needs no exception: its VISIONOS rung advances without a POST wherever it sits.
+    static func walkOrder(_ ladder: [String], after failed: ClientFamily?) -> [String] {
+        guard let failed, let index = ladder.firstIndex(where: { family(of: $0) == failed }) else { return ladder }
+        return Array(ladder[(index + 1)...] + ladder[...index])
+    }
+
+    /// The client each known strategy POSTs as (`runRung`).
+    static func family(of strategy: String) -> ClientFamily? {
+        switch strategy {
+        case "visionosHLS": return .visionos
+        case "androidItag18": return .android
+        default: return nil
+        }
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {

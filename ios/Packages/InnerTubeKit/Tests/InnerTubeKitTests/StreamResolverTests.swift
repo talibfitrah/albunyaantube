@@ -520,25 +520,88 @@ import Testing
             schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "androidItag18"],
             manifestCacheSeconds: 3600,
             clients: [
-                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101)
+                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101),
+                "android": ClientContext(clientName: "ANDROID", clientVersion: "1", clientNameId: 3),
             ])
         let keyValueStore = InMemoryKeyValueStore()
         keyValueStore.set(RemoteConfigStore.lastGoodKey, try JSONEncoder().encode(badConfig))
         let configStore = RemoteConfigStore(
             transport: NoopTransport(), keyValueStore: keyValueStore, url: URL(string: "https://example.com/config.json")!)
         #expect(await configStore.current().clients["visionos"] == nil)  // sanitized away at load
+        #expect(await configStore.current().clients["android"] != nil)   // the valid one survives
 
-        // Never called: the "visionos" client is gone, so `runPlayerRung` never reaches
-        // `PlayerRequestBuilder.build` — the rung advances, and so does android (no context was
-        // persisted for it). The ladder then ends (no rung 3, no YouTube hand-off or player), so
-        // the walk fails honestly with no POST sent.
-        let transport = RecordingTransport([])
+        // Rung 1's client is gone, so `runPlayerRung` never reaches `PlayerRequestBuilder.build` for
+        // it -- no POST, the rung advances. Rung 2 has a valid context, so it is the ONLY POST sent
+        // and it serves: the walk reaches a stream, it does not end in `.allRungsFailed`.
+        let transport = RecordingTransport([androidItag18Response])
         let (resolver, _) = makeResolver(transport: transport, configStore: configStore)
 
-        await expectThrows(.allRungsFailed) {
-            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        guard case .progressive = resolved.stream else {
+            Issue.record("expected .progressive (advanced past the sanitized rung), got \(resolved.stream)"); return
         }
-        #expect(transport.callCount == 0)
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    // MARK: - demote: a step-down resumes the ladder at the NEXT rung (spec §4.1, R2)
+
+    @Test func walkOrderStartsAfterTheFailedRungAndWrapsRound() {
+        let ladder = ["visionosHLS", "androidItag18"]
+        #expect(StreamResolver.walkOrder(ladder, after: nil) == ladder)
+        #expect(StreamResolver.walkOrder(ladder, after: .visionos) == ["androidItag18", "visionosHLS"])
+        #expect(StreamResolver.walkOrder(ladder, after: .android) == ladder)   // nothing below the last rung
+        #expect(StreamResolver.walkOrder(["androidItag18"], after: .visionos) == ["androidItag18"])
+    }
+
+    /// V2Brp_esIVI's shape: VISIONOS failed in the player, so the forced re-resolve asks ANDROID first
+    /// and never re-serves the HLS that would not play.
+    @Test func aDemotedVideoResumesAtTheNextRung() async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    /// Sticky for the session, for THAT video only, and the failing manifest is not served from cache.
+    @Test func theDemotionIsStickyForThatVideoOnly() async throws {
+        let clock = ManualClock()
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls"), androidItag18Response,
+                                            androidItag18Response, try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport, clock: clock, cache: cache)
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await resolver.demote(Self.videoId, failed: .visionos)
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        clock.advanceWall(by: .seconds(3601))   // past the cached itag 18's TTL: the next open walks again
+        let later = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = later.stream else { Issue.record("expected sticky .progressive, got \(later.stream)"); return }
+        let other = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = other.stream else { Issue.record("another video must start at rung 1: \(other.stream)"); return }
+
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
+    }
+
+    /// Review Focus 2. A live stream has no itag 18: after its rung-1 stream fails, the walk must wrap
+    /// back to VISIONOS as the last resort, not end in an error with nothing left to try.
+    @Test func aDemotedLiveStreamWrapsBackToTheFailedRung() async throws {
+        let transport = RecordingTransport([androidOKWithoutItag18, try fixtureResponse("player-live")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .hls(_, let isLive, _, _) = resolved.stream, isLive else {
+            Issue.record("expected live .hls, got \(resolved.stream)"); return
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
     }
 
     // MARK: - d5b) chained supersede: an awaiter of a superseded awaiter still adopts the final winner
