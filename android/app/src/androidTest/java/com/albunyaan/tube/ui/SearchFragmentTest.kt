@@ -1,6 +1,6 @@
 package com.albunyaan.tube.ui
 
-import android.os.SystemClock
+import android.content.Context
 import android.view.View
 import androidx.appcompat.widget.SearchView
 import androidx.recyclerview.widget.RecyclerView
@@ -37,7 +37,6 @@ import javax.inject.Inject
 import java.util.concurrent.CountDownLatch
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicInteger
-import java.util.concurrent.atomic.AtomicLong
 
 /**
  * Instrumentation tests for SearchFragment functionality.
@@ -59,9 +58,14 @@ class SearchFragmentTest {
 
     private val api get() = TestNetworkModule.fakeContentApi
 
+    // The history a submit saves outlives the test; another test would then open on it.
+    private fun clearSearchHistory() = InstrumentationRegistry.getInstrumentation().targetContext
+        .getSharedPreferences("search_prefs", Context.MODE_PRIVATE).edit().clear().commit()
+
     @Before
     fun setUp() {
         hiltRule.inject()
+        clearSearchHistory()
         scenario = launchFragmentInHiltContainer<SearchFragment>(
             themeResId = R.style.Theme_Albunyaan
         )
@@ -74,6 +78,7 @@ class SearchFragmentTest {
         scenario?.close()
         scenario = null
         simpleCache.release()
+        clearSearchHistory()
     }
 
     @Test
@@ -117,24 +122,68 @@ class SearchFragmentTest {
     }
 
     @Test
-    fun typing_searchesAfterThreeHundredMs() {
-        val started = CountDownLatch(1)
-        val calledAt = AtomicLong()
-        api.onSearch = {
-            calledAt.set(SystemClock.elapsedRealtime())
-            started.countDown()
+    fun typing_searchesOnceForTheTextWhereTypingStopped() { // the 300 ms itself is pinned in SearchViewModelTest
+        val asked = java.util.Collections.synchronizedList(mutableListOf<String>())
+        api.onSearch = { q ->
+            asked.add(q)
             searchAnswer("exact", searchVideo("v1", "Quran for beginners"))
         }
 
-        var typedAt = 0L // stamped on the UI thread right at the keystroke: Espresso's own overhead is not debounce
-        scenario!!.onActivity {
-            typedAt = SystemClock.elapsedRealtime()
-            it.findViewById<SearchView>(R.id.searchView).setQuery("quran", false)
+        scenario!!.onActivity { a ->
+            val box = a.findViewById<SearchView>(R.id.searchView)
+            listOf("qu", "qur", "qura", "quran").forEach { box.setQuery(it, false) } // one keystroke each
         }
-        assertTrue(started.await(5, TimeUnit.SECONDS))
 
-        val waited = calledAt.get() - typedAt
-        assertTrue("search fired after ${waited}ms, expected the 300 ms debounce", waited in 290..450)
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+        assertEquals(listOf("quran"), asked.toList())
+    }
+
+    @Test
+    fun recreatingTheView_keepsASubmittedOneCharacterSearch() {
+        api.onSearch = { searchAnswer("exact", searchVideo("v1", "Quran for beginners")) }
+        scenario!!.onActivity { it.findViewById<SearchView>(R.id.searchView).setQuery("q", true) }
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+
+        scenario!!.recreate() // the restored "q" is under the 2-character minimum for typing
+
+        onView(withId(R.id.searchResultsList)).check(matches(isDisplayed()))
+    }
+
+    /** Submits [saved] so it is in the history, then goes back to the history screen. */
+    private fun showHistoryWith(saved: String) {
+        scenario!!.onActivity { it.findViewById<SearchView>(R.id.searchView).setQuery(saved, true) }
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+        typeQuery("")
+        eventually { onView(withId(R.id.searchHistorySection)).check(matches(isDisplayed())) }
+    }
+
+    @Test
+    fun clearingTheHistoryRightAfterTyping_keepsThePendingSearch() {
+        api.onSearch = { q -> searchAnswer("exact", searchVideo("v-$q", "$q lesson")) }
+        showHistoryWith("tafsir")
+
+        scenario!!.onActivity {
+            it.findViewById<SearchView>(R.id.searchView).setQuery("quran", false) // its 300 ms debounce starts
+            assertTrue("the history is on screen while the search waits", it.findViewById<View>(R.id.searchHistorySection).isShown)
+            it.findViewById<View>(R.id.clearHistoryButton).performClick()
+        }
+
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+    }
+
+    @Test
+    fun deletingAHistoryEntryRightAfterTyping_keepsThePendingSearch() {
+        api.onSearch = { q -> searchAnswer("exact", searchVideo("v-$q", "$q lesson")) }
+        showHistoryWith("tafsir")
+
+        scenario!!.onActivity {
+            it.findViewById<SearchView>(R.id.searchView).setQuery("quran", false) // its 300 ms debounce starts
+            val row = it.findViewById<RecyclerView>(R.id.searchHistoryList).findViewHolderForAdapterPosition(0)!!.itemView
+            assertTrue("the history is on screen while the search waits", row.isShown)
+            row.findViewById<View>(R.id.deleteButton).performClick()
+        }
+
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
     }
 
     @Test
@@ -172,10 +221,8 @@ class SearchFragmentTest {
         assertEquals(1, calls.get())
     }
 
-    // --- Stage 7 (pipeline) ---
-
     @Test
-    fun typingOn_dropsTheInFlightSearchAtOnce_soItsLateErrorNeverLands() { // A6
+    fun typingOn_dropsTheInFlightSearchAtOnce_soItsLateErrorNeverLands() {
         val slowStarted = CountDownLatch(1)
         val gate = CompletableDeferred<Unit>()
         api.onSearch = { q ->
@@ -203,7 +250,7 @@ class SearchFragmentTest {
     }
 
     @Test
-    fun aNewQuery_showsItsResultsFromTheTop() { // A7
+    fun aNewQuery_showsItsResultsFromTheTop() {
         api.onSearch = { q -> searchAnswer("exact", *Array(30) { searchVideo("$q-$it", "$q lesson $it") }) }
         fun scrollY(): Int {
             var y = 0
@@ -226,7 +273,7 @@ class SearchFragmentTest {
     }
 
     @Test
-    fun recreatingTheView_keepsTheResultsWithoutSearchingAgain() { // A8
+    fun recreatingTheView_keepsTheResultsWithoutSearchingAgain() {
         val calls = AtomicInteger()
         api.onSearch = {
             calls.incrementAndGet()
@@ -244,7 +291,7 @@ class SearchFragmentTest {
     }
 
     @Test
-    fun closestResultsNote_isALiveRegion_andTheBarIsLabelled() { // A9
+    fun closestResultsNote_isALiveRegion_andTheBarIsLabelled() {
         scenario!!.onActivity {
             assertEquals(
                 "TalkBack must announce the closest-results note",

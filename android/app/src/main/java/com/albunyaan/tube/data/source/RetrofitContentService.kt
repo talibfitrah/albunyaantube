@@ -11,6 +11,8 @@ import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.mappers.toDomainContentItems
 import com.albunyaan.tube.data.model.mappers.toDomain
 import com.albunyaan.tube.data.source.api.ContentApi
+import kotlinx.coroutines.delay
+import retrofit2.HttpException
 
 class RetrofitContentService(
     private val api: ContentApi
@@ -29,16 +31,18 @@ class RetrofitContentService(
         // - Category filter applies regardless of type.
         // See: docs/architecture/api-specification.yaml for the full contract.
         val typeParam = if (type == ContentType.ALL) null else type.name
-        val response = api.fetchContent(
-            type = typeParam,
-            cursor = cursor,
-            limit = pageSize,
-            category = filters.category,
-            length = filters.videoLength.toQueryValue(),
-            date = filters.publishedDate.toQueryValue(),
-            sort = filters.sortOption.toQueryValue(),
-            query = query?.takeIf { it.isNotBlank() }
-        )
+        val response = retryOnceWhileIndexBuilds {
+            api.fetchContent(
+                type = typeParam,
+                cursor = cursor,
+                limit = pageSize,
+                category = filters.category,
+                length = filters.videoLength.toQueryValue(),
+                date = filters.publishedDate.toQueryValue(),
+                sort = filters.sortOption.toQueryValue(),
+                query = query?.takeIf { it.isNotBlank() }
+            )
+        }
         // Use mapper to convert generated DTOs to domain models
         val items = response.data.toDomainContentItems()
         return CursorResponse(items, CursorResponse.PageInfo(response.pageInfo.nextCursor))
@@ -80,13 +84,28 @@ class RetrofitContentService(
     }
 
     override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult {
-        val response = api.search(query, type, limit)
-        // Response<T> stops Retrofit throwing on non-2xx; keep the old failure behaviour.
-        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        val response = retryOnceWhileIndexBuilds {
+            // Response<T> stops Retrofit throwing on non-2xx; keep the old failure behaviour.
+            api.search(query, type, limit).also { if (!it.isSuccessful) throw HttpException(it) }
+        }
         return ContentSearchResult(
             items = checkNotNull(response.body()) { "search: HTTP ${response.code()} with no body" }.toDomainContentItems(),
             match = SearchMatch.fromHeader(response.headers()["X-Search-Match"])
         )
+    }
+
+    /**
+     * A restarted server answers 503 + Retry-After while its search index builds. Wait that long (≤ 10 s; the wait is
+     * cancelled with the caller, e.g. by the next keystroke) and try once more; any other failure, or a second 503,
+     * goes to the caller.
+     */
+    private suspend fun <T> retryOnceWhileIndexBuilds(call: suspend () -> T): T = try {
+        call()
+    } catch (e: HttpException) {
+        val seconds = e.response()?.headers()?.get("Retry-After")?.toLongOrNull()
+        if (e.code() != 503 || seconds == null || seconds !in 0..10) throw e
+        delay(seconds * 1_000)
+        call()
     }
 
     override suspend fun fetchCategories(): List<Category> {

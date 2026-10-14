@@ -1,20 +1,31 @@
 package com.albunyaan.tube.data.source
 
+import com.albunyaan.tube.data.filters.FilterState
+import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
+import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.albunyaan.tube.data.source.api.ContentApi
+import com.albunyaan.tube.data.source.api.CursorPage
+import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
+import okhttp3.Protocol
+import okhttp3.Request
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.eq
+import org.mockito.kotlin.isNull
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.times
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
 import retrofit2.HttpException
 import retrofit2.Response
 
+@OptIn(ExperimentalCoroutinesApi::class)
 class RetrofitContentServiceTest {
 
     private val api: ContentApi = mock()
@@ -166,7 +177,7 @@ class RetrofitContentServiceTest {
     }
 
     @Test
-    fun `A10 search fails on a 2xx with no body instead of reading it as no results`() = runTest {
+    fun `search fails on a 2xx with no body instead of reading it as no results`() = runTest {
         whenever(api.search("quran", null, 50)).thenReturn(Response.success<List<ContentItemDto>>(204, null))
         val outcome = runCatching { service.search("quran", null, 50) }
         assertTrue("a bodyless answer read as $outcome", outcome.isFailure)
@@ -176,5 +187,56 @@ class RetrofitContentServiceTest {
     fun `search still fails on a non-2xx answer`() = runTest {
         whenever(api.search("quran", null, 50)).thenReturn(Response.error(503, "".toResponseBody(null)))
         assertTrue(runCatching { service.search("quran", null, 50) }.exceptionOrNull() is HttpException)
+    }
+
+    // --- One automatic retry while a restarted server builds its search index (503 + Retry-After) ---
+
+    private fun <T> unavailable(retryAfter: String): Response<T> = Response.error(
+        "".toResponseBody(null),
+        okhttp3.Response.Builder()
+            .code(503).message("Service Unavailable").protocol(Protocol.HTTP_1_1)
+            .request(Request.Builder().url("http://localhost/api/v1/search").build())
+            .header("Retry-After", retryAfter)
+            .build()
+    )
+
+    @Test
+    fun `search waits out Retry-After on a 503 and tries once more`() = runTest {
+        whenever(api.search("quran", null, 50)).thenReturn(unavailable("5"), Response.success(listOf()))
+
+        val result = service.search("quran", null, 50)
+
+        assertEquals(emptyList<Any>(), result.items)
+        assertEquals("it did not wait the 5 s the server asked for", 5_000L, testScheduler.currentTime)
+        verify(api, times(2)).search("quran", null, 50)
+    }
+
+    @Test
+    fun `a second 503 is surfaced instead of retried again`() = runTest {
+        whenever(api.search("quran", null, 50)).thenReturn(unavailable("5"), unavailable("5"), Response.success(listOf()))
+
+        assertTrue(runCatching { service.search("quran", null, 50) }.exceptionOrNull() is HttpException)
+        verify(api, times(2)).search("quran", null, 50)
+    }
+
+    @Test
+    fun `a Retry-After over 10 s is surfaced at once`() = runTest {
+        whenever(api.search("quran", null, 50)).thenReturn(unavailable("11"), Response.success(listOf()))
+
+        assertTrue("an 11 s Retry-After was waited out", runCatching { service.search("quran", null, 50) }.exceptionOrNull() is HttpException)
+        verify(api, times(1)).search("quran", null, 50)
+    }
+
+    @Test
+    fun `content waits out Retry-After on a 503 and tries once more`() = runTest {
+        val page = CursorPage(emptyList(), PageInfo(hasNext = false))
+        whenever(api.fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull(), eq("quran")))
+            .thenThrow(HttpException(unavailable<CursorPage>("5")))
+            .thenReturn(page)
+
+        service.fetchContent(ContentType.VIDEOS, null, 20, FilterState(), "quran")
+
+        assertEquals(5_000L, testScheduler.currentTime)
+        verify(api, times(2)).fetchContent(eq("VIDEOS"), isNull(), eq(20), isNull(), isNull(), isNull(), isNull(), eq("quran"))
     }
 }

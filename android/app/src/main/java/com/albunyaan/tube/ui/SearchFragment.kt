@@ -102,14 +102,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 }
 
                 override fun onQueryTextChange(newText: String?): Boolean {
-                    if (newText == null || newText.trim().length < 2) {
-                        // Also cancels an in-flight search: an old "qu" result must not land under "q".
-                        showSearchHistory()
-                    } else {
-                        // Spec §6: 300 ms on both apps (owner, 2026-10-13). The ViewModel debounces, so this keystroke
-                        // drops the previous search at once and a recreated view keeps the pending one.
-                        viewModel.search(newText, debounceMs = 300)
-                    }
+                    // The ViewModel debounces and shows the history under 2 characters, so this keystroke drops the
+                    // previous search at once (an old "qu" result never lands under "q") and a recreated view keeps
+                    // what it showed, a submitted 1-character search included.
+                    viewModel.search(newText.orEmpty(), debounceMs = SearchViewModel.TYPING_DEBOUNCE_MS)
                     return true
                 }
             })
@@ -212,10 +208,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         }
     }
 
-    private fun showSearchHistory() {
-        viewModel.clearResults()
-    }
-
     private fun loadSearchHistory() {
         val prefs = requireContext().getSharedPreferences(PREFS_NAME, Context.MODE_PRIVATE)
         val historyString = prefs.getString(KEY_SEARCH_HISTORY, "") ?: ""
@@ -254,7 +246,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         prefs.edit().putString(KEY_SEARCH_HISTORY, searchHistory.joinToString("|")).apply()
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
+        binding?.searchHistorySection?.isVisible = searchHistory.isNotEmpty() // a search typed just before still runs
     }
 
     private fun clearHistory() {
@@ -264,7 +256,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
+        binding?.searchHistorySection?.isVisible = searchHistory.isNotEmpty() // a search typed just before still runs
     }
 
     private fun showError(message: String) {

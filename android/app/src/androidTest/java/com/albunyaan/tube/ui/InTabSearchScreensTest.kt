@@ -4,6 +4,7 @@ import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
 import android.view.View
+import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
@@ -38,7 +39,10 @@ import org.junit.Before
 import org.junit.Rule
 import org.junit.Test
 import org.junit.runner.RunWith
+import java.io.IOException
 import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicInteger
 import javax.inject.Inject
 
 /**
@@ -79,16 +83,24 @@ abstract class InTabSearchScreensBase(private val lang: String) {
 
     private fun shown(id: Int) = onView(withId(id)).check(matches(isDisplayed()))
     private fun gone(id: Int) = onView(withId(id)).check(matches(withEffectiveVisibility(Visibility.GONE)))
+    private fun page(vararg ids: String) = CursorPage(
+        data = ids.map { searchVideo(it, "Quran lesson $it") },
+        pageInfo = PageInfo(hasNext = false, nextCursor = null)
+    )
+    private fun list(): RecyclerView {
+        lateinit var rv: RecyclerView
+        scenario!!.onActivity { rv = it.findViewById(R.id.recyclerView) }
+        return rv
+    }
+    private fun rows() = list().adapter!!.itemCount
+    private fun firstVisible() = (list().layoutManager as GridLayoutManager).findFirstVisibleItemPosition()
+    private fun type(text: String) = onView(withId(R.id.searchEditText)).perform(replaceText(text))
 
     @Test
     fun newQueryKeepsTheListUnderTheSpinner() {
         hiltRule.inject()
         val slowStarted = CountDownLatch(1)
         val slowGate = CompletableDeferred<Unit>()
-        fun page(vararg ids: String) = CursorPage(
-            data = ids.map { searchVideo(it, "Quran lesson $it") },
-            pageInfo = PageInfo(hasNext = false, nextCursor = null)
-        )
         api.onContent = { q ->
             when (q) {
                 null, "quran" -> page("v1", "v2", "v3")
@@ -103,11 +115,6 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
         val device = if (InstrumentationRegistry.getInstrumentation().targetContext.resources
                 .configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
-        fun rows() = run {
-            var n = 0
-            scenario!!.onActivity { n = it.findViewById<RecyclerView>(R.id.recyclerView).adapter!!.itemCount }
-            n
-        }
 
         // 1. The plain list, then a first search whose answer lands at once.
         eventually { assertEquals(3, rows()) }
@@ -152,6 +159,82 @@ abstract class InTabSearchScreensBase(private val lang: String) {
             assertEquals(2, rows())
         }
         shown(R.id.recyclerView)
+    }
+
+    @Test
+    fun typingOnDropsTheInFlightSearchAtOnce() {
+        hiltRule.inject()
+        val slowStarted = CountDownLatch(1)
+        val slowGate = CompletableDeferred<Unit>()
+        val nextStarted = CountDownLatch(1)
+        val nextGate = CompletableDeferred<Unit>()
+        api.onContent = { q ->
+            when (q) {
+                null -> page("v1", "v2", "v3")
+                "quran" -> {
+                    slowStarted.countDown()
+                    slowGate.await()
+                    page("v4")
+                }
+                else -> {
+                    nextStarted.countDown()
+                    nextGate.await()
+                    page("v5", "v6")
+                }
+            }
+        }
+        scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
+        eventually { assertEquals(3, rows()) }
+        type("quran")
+        assertTrue(slowStarted.await(5, TimeUnit.SECONDS))
+
+        type("quran tafsir") // the user types on while "quran" is in flight
+        slowGate.complete(Unit) // "quran" answers late, inside the debounce
+        assertTrue(nextStarted.await(5, TimeUnit.SECONDS)) // the debounce is over: a late answer would have landed
+
+        assertEquals("the late answer of the query the user left landed", 3, rows())
+        nextGate.complete(Unit)
+        eventually { assertEquals(2, rows()) }
+    }
+
+    @Test
+    fun aNewQueryOpensItsResultsAtTheTop() {
+        hiltRule.inject()
+        val all = Array(60) { "v$it" }
+        api.onContent = { q -> if (q == null) page(*all) else page(*all.copyOfRange(20, 60)) } // results the user scrolled past
+        scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
+        eventually { assertEquals(60, rows()) }
+        scenario!!.onActivity { it.findViewById<RecyclerView>(R.id.recyclerView).scrollToPosition(59) }
+        eventually { assertTrue("the list did not scroll", firstVisible() > 0) }
+
+        type("quran")
+
+        eventually { assertEquals(40, rows()) }
+        eventually { assertEquals("the new results opened part way down", 0, firstVisible()) }
+    }
+
+    @Test
+    fun clearingAfterAFailedSearchLoadsTheListOnce() {
+        hiltRule.inject()
+        val plainLoads = AtomicInteger()
+        val searches = AtomicInteger()
+        api.onContent = { q ->
+            if (q == null && plainLoads.incrementAndGet() == 1) page("v1", "v2", "v3")
+            else {
+                if (q != null) searches.incrementAndGet()
+                throw IOException("offline")
+            }
+        }
+        scenario = launchFragmentInHiltContainer<VideosFragmentNew>(themeResId = R.style.Theme_Albunyaan)
+        eventually { assertEquals(3, rows()) }
+        type("quran")
+        eventually { assertEquals(1, searches.get()) } // it failed: the 3 rows stay with an error
+
+        // The bare test host draws the search bar under the status bar, so a real tap there opens the shade.
+        scenario!!.onActivity { it.findViewById<View>(R.id.searchClearButton).performClick() }
+        Thread.sleep(700) // past the debounce
+
+        assertEquals("the clear button loaded the list more than once", 2, plainLoads.get())
     }
 }
 

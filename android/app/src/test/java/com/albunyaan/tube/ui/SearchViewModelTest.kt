@@ -115,7 +115,6 @@ class SearchViewModelTest {
 
     @Test
     fun `clearing the field while a search is in flight keeps the history screen`() = runTest {
-        // Review Focus 4
         val service = GatedContentService()
         val vm = SearchViewModel(service)
         vm.search("quran"); advanceUntilIdle()
@@ -128,10 +127,116 @@ class SearchViewModelTest {
         assertFalse(vm.isSearching.value)
     }
 
-    // --- Stage 7 (pipeline): the typing debounce lives here, so a keystroke cancels the old search at once ---
+    @Test
+    fun `clearing the field while a newer search loads over results turns the progress bar off`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.getValue("quran").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+        vm.search("tafsir"); advanceUntilIdle()
+        assertTrue(vm.isSearching.value)
+
+        vm.clearResults()
+
+        assertFalse("the bar stayed on over the history screen", vm.isSearching.value)
+    }
 
     @Test
-    fun `A6 typing cancels the in-flight search at once and starts the next one 300 ms later`() = runTest {
+    fun `a query with no matches replaces the results with no results`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.getValue("quran").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+
+        vm.search("xyzzy"); advanceUntilIdle()
+        service.answers.getValue("xyzzy").complete(ContentSearchResult(emptyList()))
+        advanceUntilIdle()
+
+        assertEquals(SearchViewModel.SearchState.NoResults("xyzzy"), vm.searchResults.value)
+    }
+
+    @Test
+    fun `the next keystroke keeps no results on screen under the progress bar`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("xyzzy"); advanceUntilIdle()
+        service.answers.getValue("xyzzy").complete(ContentSearchResult(emptyList()))
+        advanceUntilIdle()
+        val states = mutableListOf<SearchViewModel.SearchState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.searchResults.collect { states.add(it) } }
+
+        vm.search("xyzzyq", debounceMs = 300); advanceUntilIdle() // in flight
+
+        assertTrue("no results flipped to the full-screen spinner: $states", states.none { it is SearchViewModel.SearchState.Loading })
+        assertTrue(vm.isSearching.value)
+    }
+
+    @Test
+    fun `typing back to the query on screen drops the newer search and its progress bar`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("ab"); advanceUntilIdle()
+        service.answers.getValue("ab").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+        vm.search("abc", debounceMs = 300); advanceUntilIdle() // in flight
+
+        vm.search("ab", debounceMs = 300) // backspace
+        service.answers.getValue("abc").complete(ContentSearchResult(listOf(video("c")))) // its late answer
+        advanceUntilIdle()
+
+        assertEquals("the results on screen were fetched again", listOf("ab", "abc"), service.asked)
+        assertFalse(vm.isSearching.value)
+        assertEquals(SearchViewModel.SearchState.Success(listOf(video("a")), SearchMatch.EXACT), vm.searchResults.value)
+    }
+
+    @Test
+    fun `a trailing space on the query on screen searches nothing`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.getValue("quran").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+
+        vm.search("quran ", debounceMs = 300); advanceUntilIdle()
+
+        assertEquals(listOf("quran"), service.asked)
+        assertFalse(vm.isSearching.value)
+    }
+
+    @Test
+    fun `typing under two characters drops the search for the history screen`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("qu", debounceMs = 300); advanceUntilIdle() // in flight
+
+        vm.search("q", debounceMs = 300) // backspace
+        service.answers.getValue("qu").complete(ContentSearchResult(listOf(video("a")))) // its late answer
+        advanceUntilIdle()
+
+        assertEquals(SearchViewModel.SearchState.Empty, vm.searchResults.value)
+        assertEquals(listOf("qu"), service.asked)
+    }
+
+    @Test
+    fun `the restored text of a submitted one-character search keeps its results`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("q"); advanceUntilIdle() // submitted: the 2-character minimum is for typing only
+        service.answers.getValue("q").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+
+        vm.search("q", debounceMs = 300); advanceUntilIdle() // a recreated view re-sends its text
+
+        assertEquals(SearchViewModel.SearchState.Success(listOf(video("a")), SearchMatch.EXACT), vm.searchResults.value)
+        assertEquals(listOf("q"), service.asked)
+    }
+
+    // --- The typing debounce lives here, so a keystroke cancels the old search at once ---
+
+    @Test
+    fun `typing cancels the in-flight search at once and starts the next one 300 ms later`() = runTest {
         val service = GatedContentService()
         val vm = SearchViewModel(service)
         vm.search("quran"); advanceUntilIdle()
@@ -139,7 +244,7 @@ class SearchViewModelTest {
         advanceUntilIdle()
         vm.search("quran tv"); advanceUntilIdle() // in flight
 
-        vm.search("quran tafsir", debounceMs = 300) // the user types on
+        vm.search("quran tafsir", debounceMs = SearchViewModel.TYPING_DEBOUNCE_MS) // the user types on, as the screen does
         service.answers.getValue("quran tv").completeExceptionally(java.io.IOException("offline")) // its late answer
         advanceTimeBy(299); runCurrent()
 
@@ -150,7 +255,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `A8 typing the query already shown, as a restored view does, does not search again`() = runTest {
+    fun `typing the query already shown, as a restored view does, does not search again`() = runTest {
         val service = GatedContentService()
         val vm = SearchViewModel(service)
         vm.search("quran"); advanceUntilIdle()
@@ -164,7 +269,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `A8 typing the same query after a failure searches again`() = runTest {
+    fun `typing the same query after a failure searches again`() = runTest {
         val service = GatedContentService()
         val vm = SearchViewModel(service)
         vm.search("quran"); advanceUntilIdle()
@@ -177,7 +282,7 @@ class SearchViewModelTest {
     }
 
     @Test
-    fun `A8 submitting the query still in its debounce searches at once, and only once`() = runTest {
+    fun `submitting the query still in its debounce searches at once, and only once`() = runTest {
         val service = GatedContentService()
         val vm = SearchViewModel(service)
 

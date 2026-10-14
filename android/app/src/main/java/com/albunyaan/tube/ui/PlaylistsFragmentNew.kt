@@ -1,8 +1,6 @@
 package com.albunyaan.tube.ui
 
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
 import android.text.Editable
 import android.text.TextWatcher
 import android.util.Log
@@ -55,7 +53,6 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private val autofillHelper = AutofillPaginationHelper(TAG)
-    private val searchHandler = Handler(Looper.getMainLooper())
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -78,17 +75,13 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
             override fun afterTextChanged(s: Editable?) {
                 val query = s?.toString() ?: ""
                 clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
-                searchHandler.removeCallbacksAndMessages(null)
-                searchHandler.postDelayed({
-                    autofillHelper.reset()
-                    viewModel.setSearchQuery(query)
-                }, SEARCH_DEBOUNCE_MS)
+                autofillHelper.reset()
+                viewModel.setSearchQuery(query, ContentListViewModel.TYPING_DEBOUNCE_MS) // the ViewModel debounces: this keystroke drops the old load at once
             }
         })
 
         editText.setOnEditorActionListener { _, actionId, _ ->
             if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                searchHandler.removeCallbacksAndMessages(null)
                 val query = editText.text?.toString() ?: ""
                 autofillHelper.reset()
                 viewModel.setSearchQuery(query)
@@ -96,12 +89,7 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
             } else false
         }
 
-        clearBtn.setOnClickListener {
-            searchHandler.removeCallbacksAndMessages(null)
-            editText.text?.clear()
-            autofillHelper.reset()
-            viewModel.setSearchQuery("")
-        }
+        clearBtn.setOnClickListener { editText.text?.clear() } // the watcher above brings the full list back, once
     }
 
     private fun observeFilters() {
@@ -216,7 +204,10 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
                             val screenWidthDp = resources.configuration.smallestScreenWidthDp
                             val rv = binding.recyclerView
+                            // A new list (another query) opens at its best match; a page appended below, or the same list, keeps its place.
+                            val replaced = adapter.currentList.let { it.isNotEmpty() && playlists.take(it.size) != it }
                             adapter.submitList(playlists) {
+                                if (replaced) rv.scrollToPosition(0)
                                 autofillHelper.check(
                                     itemCount = playlists.size,
                                     hasMoreData = state.hasMoreData,
@@ -269,11 +260,9 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
     companion object {
         private const val TAG = "PlaylistsFragmentNew"
         private const val LOAD_MORE_THRESHOLD = 5
-        private const val SEARCH_DEBOUNCE_MS = 300L
     }
 
     override fun onDestroyView() {
-        searchHandler.removeCallbacksAndMessages(null)
         autofillHelper.reset()
         binding = null
         super.onDestroyView()

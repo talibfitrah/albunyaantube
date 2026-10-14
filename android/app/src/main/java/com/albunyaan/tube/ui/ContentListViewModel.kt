@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -52,10 +53,42 @@ class ContentListViewModel(
     val isSearchActive: Boolean
         get() = _searchQuery.value.isNotEmpty()
 
-    fun setSearchQuery(q: String) {
-        if (_searchQuery.value == q && _content.value !is ContentState.Error) return // after a failure it is a retry
+    // The query (trimmed) of the rows on screen, and the cursor of their next page
+    private var shownQuery: String? = null
+    private var shownCursor: String? = null
+
+    /**
+     * Typing passes [debounceMs] = 300 (spec §6). The keystroke cancels the previous load at once, so its late answer
+     * never lands, and the list on screen stays until the new one replaces it. A submit passes 0. An emptied box (the
+     * clear button) brings the full list back at once.
+     */
+    fun setSearchQuery(q: String, debounceMs: Long = 0L) {
+        val state = _content.value
+        // The same text again (a restored view re-sends it), or a submit of the query on screen, changes nothing;
+        // after a failure it is a retry. A submit of a query still in its debounce runs now.
+        if (_searchQuery.value == q && state !is ContentState.Error && (debounceMs > 0 || q.trim() == shownQuery)) return
         _searchQuery.value = q
-        loadContent(keepListOnScreen = true) // the fragments' 300 ms is the only debounce (spec §6)
+        // Typed back to the query on screen (an undone keystroke): drop the newer load, keep the rows and their pages.
+        if (debounceMs > 0 && q.trim() == shownQuery && state !is ContentState.Error &&
+            (state is ContentState.Success || state.items.isNotEmpty())
+        ) {
+            loadJob?.cancel()
+            allItems.clear()
+            allItems.addAll(state.items)
+            nextCursor = shownCursor
+            _hasMoreData = shownCursor != null
+            _isLoadingMore = false
+            _isRefreshing = false
+            _content.value = ContentState.Success(allItems.toList(), _hasMoreData, isSearchActive = isSearchActive)
+            return
+        }
+        loadContent(keepListOnScreen = true, if (q.isEmpty()) 0L else debounceMs)
+    }
+
+    /** The rows just loaded are on screen: remember their query and next page. */
+    private fun markShown() {
+        shownQuery = _searchQuery.value.trim()
+        shownCursor = nextCursor
     }
 
     // Public read-only accessors for Fragment-side guards
@@ -84,9 +117,10 @@ class ContentListViewModel(
     /**
      * Initial load or refresh - clears existing data and fetches from the beginning.
      * [keepListOnScreen]: a search-query change keeps the visible list under the top spinner
-     * (REFRESH) instead of swapping to the skeleton (INITIAL) - spec §6.1 step 7.
+     * (REFRESH) instead of swapping to the skeleton (INITIAL) - spec §6.1 step 7. The fetch waits [debounceMs]; the
+     * cancel and the cursor reset do not.
      */
-    fun loadContent(keepListOnScreen: Boolean = false) {
+    fun loadContent(keepListOnScreen: Boolean = false, debounceMs: Long = 0L) {
         val onScreen = _content.value.items
         val loadingType = if (keepListOnScreen && onScreen.isNotEmpty()) LoadingType.REFRESH else LoadingType.INITIAL
 
@@ -103,6 +137,7 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
+            delay(debounceMs)
             _content.value = ContentState.Loading(loadingType, if (loadingType == LoadingType.REFRESH) onScreen else emptyList())
             try {
                 Log.d(TAG, "Fetching content for type=$contentType (initial load)")
@@ -119,6 +154,7 @@ class ContentListViewModel(
                 _hasMoreData = nextCursor != null
 
                 Log.d(TAG, "Received ${response.data.size} items, hasMore=$_hasMoreData")
+                markShown()
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
                     hasMoreData = _hasMoreData,
@@ -173,6 +209,7 @@ class ContentListViewModel(
                 _hasMoreData = nextCursor != null
 
                 Log.d(TAG, "Refresh complete: ${response.data.size} items, hasMore=$_hasMoreData")
+                markShown()
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
                     hasMoreData = _hasMoreData,
@@ -227,6 +264,7 @@ class ContentListViewModel(
                 _hasMoreData = nextCursor != null
 
                 Log.d(TAG, "Loaded ${response.data.size} more items, total=${allItems.size}, hasMore=$_hasMoreData")
+                markShown()
                 _content.value = ContentState.Success(
                     items = allItems.toList(),
                     hasMoreData = _hasMoreData,
@@ -294,6 +332,7 @@ class ContentListViewModel(
     }
 
     companion object {
+        const val TYPING_DEBOUNCE_MS = 300L // spec §6: both apps
         private const val TAG = "ContentListViewModel"
         private const val PAGE_SIZE = 20
     }
