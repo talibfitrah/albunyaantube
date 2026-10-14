@@ -23,8 +23,6 @@ import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -52,7 +50,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private val viewModel: SearchViewModel by viewModels()
 
-    private var searchJob: Job? = null
     private val searchHistory = mutableListOf<String>()
 
     private val PREFS_NAME = "search_prefs"
@@ -97,8 +94,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 override fun onQueryTextSubmit(query: String?): Boolean {
                     query?.let {
                         if (it.isNotBlank()) {
-                            searchJob?.cancel() // the typing debounce would repeat this search
-                            performSearch(it)
+                            performSearch(it) // now: it replaces the pending typing debounce
                             saveToHistory(it)
                         }
                     }
@@ -106,25 +102,19 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 }
 
                 override fun onQueryTextChange(newText: String?): Boolean {
-                    // Debounce search as user types
-                    searchJob?.cancel()
-
                     if (newText == null || newText.trim().length < 2) {
                         // Also cancels an in-flight search: an old "qu" result must not land under "q".
                         showSearchHistory()
                     } else {
-                        searchJob = lifecycleScope.launch {
-                            delay(300) // spec §6: 300 ms on both apps (owner, 2026-10-13)
-                            performSearch(newText)
-                        }
+                        // Spec §6: 300 ms on both apps (owner, 2026-10-13). The ViewModel debounces, so this keystroke
+                        // drops the previous search at once and a recreated view keeps the pending one.
+                        viewModel.search(newText, debounceMs = 300)
                     }
                     return true
                 }
             })
         }
-
-        // Show search history initially
-        showSearchHistory()
+        // No clearing here: a recreated view (rotation, back from a result) shows the ViewModel's state as it is.
     }
 
     private fun setupSearchHistory() {
@@ -193,7 +183,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                             searchHistorySection.isVisible = false
                             searchResultsList.isVisible = true
                         }
-                        searchResultsAdapter.submitList(state.results)
+                        // A different list opens at its best match; a recreated view (empty adapter) keeps its place.
+                        val replaced = searchResultsAdapter.currentList.let { it.isNotEmpty() && it != state.results }
+                        searchResultsAdapter.submitList(state.results) { if (replaced) binding?.searchScroll?.scrollTo(0, 0) }
                     }
                     is SearchViewModel.SearchState.NoResults -> {
                         binding?.apply {
@@ -234,7 +226,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         }
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
     }
 
     private fun saveToHistory(query: String) {
@@ -331,7 +322,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     override fun onDestroyView() {
         prefetchController?.detach()
         prefetchController = null
-        searchJob?.cancel()
         binding = null
         super.onDestroyView()
     }

@@ -84,7 +84,7 @@ class RetrofitContentService(
         // Response<T> stops Retrofit throwing on non-2xx; keep the old failure behaviour.
         if (!response.isSuccessful) throw retrofit2.HttpException(response)
         return ContentSearchResult(
-            items = response.body().orEmpty().toDomainContentItems(),
+            items = checkNotNull(response.body()) { "search: HTTP ${response.code()} with no body" }.toDomainContentItems(),
             match = SearchMatch.fromHeader(response.headers()["X-Search-Match"])
         )
     }

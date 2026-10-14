@@ -1,7 +1,9 @@
 package com.albunyaan.tube.ui
 
 import android.os.SystemClock
+import android.view.View
 import androidx.appcompat.widget.SearchView
+import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.*
@@ -13,8 +15,10 @@ import androidx.test.filters.LargeTest
 import androidx.test.platform.app.InstrumentationRegistry
 import com.albunyaan.tube.HiltTestActivity
 import com.albunyaan.tube.R
+import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.di.TestNetworkModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
+import com.albunyaan.tube.util.eventually
 import com.albunyaan.tube.util.searchAnswer
 import com.albunyaan.tube.util.searchVideo
 import com.albunyaan.tube.util.typeQuery
@@ -166,5 +170,88 @@ class SearchFragmentTest {
         Thread.sleep(900) // past the debounce
 
         assertEquals(1, calls.get())
+    }
+
+    // --- Stage 7 (pipeline) ---
+
+    @Test
+    fun typingOn_dropsTheInFlightSearchAtOnce_soItsLateErrorNeverLands() { // A6
+        val slowStarted = CountDownLatch(1)
+        val gate = CompletableDeferred<Unit>()
+        api.onSearch = { q ->
+            when (q) {
+                "quran" -> searchAnswer("exact", searchVideo("v1", "Quran for beginners"))
+                "quran tv" -> {
+                    slowStarted.countDown()
+                    gate.await()
+                    throw java.io.IOException("offline")
+                }
+                else -> searchAnswer("exact", searchVideo("v2", "Tafsir lessons"))
+            }
+        }
+        typeQuery("quran")
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+        typeQuery("quran tv")
+        assertTrue(slowStarted.await(5, TimeUnit.SECONDS))
+
+        typeQuery("quran tafsir") // the user types on while "quran tv" is in flight
+        gate.complete(Unit) // "quran tv" fails late
+        Thread.sleep(150) // still inside the 300 ms debounce
+
+        onView(withId(R.id.emptyState)).check(matches(withEffectiveVisibility(Visibility.GONE)))
+        onView(withId(R.id.searchResultsList)).check(matches(isDisplayed()))
+    }
+
+    @Test
+    fun aNewQuery_showsItsResultsFromTheTop() { // A7
+        api.onSearch = { q -> searchAnswer("exact", *Array(30) { searchVideo("$q-$it", "$q lesson $it") }) }
+        fun scrollY(): Int {
+            var y = 0
+            scenario!!.onActivity { y = it.findViewById<View>(R.id.searchScroll).scrollY }
+            return y
+        }
+        typeQuery("quran")
+        eventually { onView(withId(R.id.searchResultsList)).check(matches(isDisplayed())) }
+        scenario!!.onActivity { it.findViewById<View>(R.id.searchScroll).scrollTo(0, 2_000) }
+        assertTrue("the results did not scroll", scrollY() > 0)
+
+        typeQuery("tafsir")
+        eventually {
+            scenario!!.onActivity {
+                val shown = (it.findViewById<RecyclerView>(R.id.searchResultsList).adapter as SearchResultsAdapter).currentList
+                assertEquals("tafsir-0", (shown.first() as ContentItem.Video).id)
+            }
+        }
+        eventually { assertEquals("the new results opened scrolled past their best match", 0, scrollY()) }
+    }
+
+    @Test
+    fun recreatingTheView_keepsTheResultsWithoutSearchingAgain() { // A8
+        val calls = AtomicInteger()
+        api.onSearch = {
+            calls.incrementAndGet()
+            searchAnswer("approximate", searchVideo("v1", "Quran for beginners"))
+        }
+        typeQuery("quran")
+        eventually { onView(withId(R.id.searchMatchNote)).check(matches(isDisplayed())) }
+
+        scenario!!.recreate() // rotation, or back from a result
+
+        onView(withId(R.id.searchResultsList)).check(matches(isDisplayed()))
+        onView(withId(R.id.searchMatchNote)).check(matches(isDisplayed()))
+        Thread.sleep(700) // past the debounce the restored query text starts
+        assertEquals("the restored text searched again", 1, calls.get())
+    }
+
+    @Test
+    fun closestResultsNote_isALiveRegion_andTheBarIsLabelled() { // A9
+        scenario!!.onActivity {
+            assertEquals(
+                "TalkBack must announce the closest-results note",
+                View.ACCESSIBILITY_LIVE_REGION_POLITE,
+                it.findViewById<View>(R.id.searchMatchNote).accessibilityLiveRegion
+            )
+            assertEquals(it.getString(R.string.search_loading), it.findViewById<View>(R.id.searchProgress).contentDescription)
+        }
     }
 }

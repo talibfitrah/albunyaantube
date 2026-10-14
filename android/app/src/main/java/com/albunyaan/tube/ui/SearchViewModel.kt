@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.source.SearchMatch
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
+import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -32,16 +33,27 @@ class SearchViewModel @Inject constructor(
     val isSearching: StateFlow<Boolean> = _isSearching.asStateFlow()
 
     private var searchJob: Job? = null
+    private var query: String? = null // the one being searched or shown
 
-    fun search(query: String) {
+    /**
+     * Typing passes [debounceMs] = 300 (spec §6). The keystroke cancels the previous search at once, so its late
+     * answer can never land, and the old results stay up until the new ones replace them. A submit passes 0.
+     */
+    fun search(query: String, debounceMs: Long = 0L) {
+        // Typing the same query (a restored view re-sends its text) changes nothing; after a failure it retries.
+        // A submit always runs: a history tap types then submits, and must not wait out that debounce.
+        if (debounceMs > 0 && query == this.query && _searchResults.value !is SearchState.Error) return
         searchJob?.cancel() // a newer query wins; cancelling the coroutine cancels the OkHttp call
         if (query.isBlank()) {
+            this.query = null
             _isSearching.value = false
             _searchResults.value = SearchState.Empty
             return
         }
+        this.query = query
 
         searchJob = viewModelScope.launch {
+            delay(debounceMs)
             // Results already on screen stay while the next ones load; the spinner is for an empty screen.
             if (_searchResults.value is SearchState.Success) _isSearching.value = true
             else _searchResults.value = SearchState.Loading
@@ -65,6 +77,7 @@ class SearchViewModel @Inject constructor(
 
     fun clearResults() {
         searchJob?.cancel()
+        query = null
         _isSearching.value = false
         _searchResults.value = SearchState.Empty
     }

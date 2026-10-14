@@ -17,6 +17,7 @@ import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -345,7 +346,7 @@ class ContentListViewModelTest {
         vm.setSearchQuery("ab")
         advanceUntilIdle()
 
-        assertTrue(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH)))
+        assertTrue(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH, listOf(createVideo("1")))))
         assertFalse(states.contains(ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.INITIAL)))
     }
 
@@ -391,7 +392,7 @@ class ContentListViewModelTest {
         val vm = createViewModel()
         advanceUntilIdle()
         vm.setSearchQuery("ab"); advanceUntilIdle() // debounce passed, the search fetch is in flight
-        val refreshing = ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH)
+        val refreshing = ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH, listOf(createVideo("1")))
         assertEquals(refreshing, vm.content.value)
 
         vm.loadMore(); advanceUntilIdle() // the user scrolled near the bottom of the kept list
@@ -405,6 +406,137 @@ class ContentListViewModelTest {
         val landed = vm.content.value as ContentListViewModel.ContentState.Success
         assertEquals(listOf(createVideo("2")), landed.items) // the search was not cancelled
         assertTrue("pagination works again once the search has landed", vm.canLoadMore)
+    }
+
+    // --- Stage 7 (pipeline): smooth in-tab typing ---
+
+    @Test
+    fun `A1 a query change fetches at once - the fragments' 300 ms debounce is the only one`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.setSearchQuery("ab")
+        runCurrent() // no virtual time passes
+
+        assertEquals("the search waited on a second debounce", 2, fakeService.callCount)
+    }
+
+    @Test
+    fun `A2 after a failed search, scrolling to the end retries it`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("cA")))
+        fakeService.errorOnCall = 1 // the search fails
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 1 throws instead)
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), null)) // the retry
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Error)
+
+        assertTrue("paging is left dead after the failure", vm.canLoadMore)
+        vm.loadMore(); advanceUntilIdle()
+
+        assertEquals("ab" to null, fakeService.asked.last()) // page 1 of the failed query
+        assertEquals(listOf(createVideo("2")), (vm.content.value as ContentListViewModel.ContentState.Success).items)
+    }
+
+    @Test
+    fun `A2 a scroll retry that fails again keeps the list up instead of reading as no results`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("cA")))
+        fakeService.errorOnCall = 1 // the search fails
+        fakeService.gates[2] = CompletableDeferred<Unit>().apply { completeExceptionally(RuntimeException("still offline")) }
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+
+        vm.loadMore(); advanceUntilIdle() // the retry fails too
+
+        val state = vm.content.value
+        assertTrue("the failed retry read as $state", state is ContentListViewModel.ContentState.Error)
+        assertEquals(listOf(createVideo("1")), state.items)
+    }
+
+    @Test
+    fun `A2 submitting the same query again after a failed search reloads it`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.errorOnCall = 1
+        fakeService.responses.add(CursorResponse(emptyList(), null)) // (call 1 throws instead)
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), null))
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+
+        assertEquals("the same query was not tried again", 3, fakeService.callCount)
+        assertEquals(listOf(createVideo("2")), (vm.content.value as ContentListViewModel.ContentState.Success).items)
+    }
+
+    @Test
+    fun `A3 typing after a failed search keeps the list it left on screen`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.errorOnCall = 1 // "ab" fails; the fragment keeps row 1 on screen
+        fakeService.responses.add(CursorResponse(emptyList(), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), null))
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+        val states = mutableListOf<ContentListViewModel.ContentState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.content.collect { states.add(it) } }
+
+        vm.setSearchQuery("abc"); advanceUntilIdle()
+
+        val loadingTypes = states.filterIsInstance<ContentListViewModel.ContentState.Loading>().map { it.type }
+        assertEquals("the kept list was swapped for the skeleton", listOf(ContentListViewModel.LoadingType.REFRESH), loadingTypes)
+    }
+
+    @Test
+    fun `A4 a loadMore right after a query change never pairs the new query with the old cursor`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("cA")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), null))
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.setSearchQuery("ab")
+        vm.loadMore() // the kept list was scrolled to its end
+        advanceUntilIdle()
+
+        assertEquals(listOf<Pair<String?, String?>>(null to null, "ab" to null), fakeService.asked)
+    }
+
+    @Test
+    fun `A4 a search that superseded a loadMore is itself cancelled by the next query`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("cA")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("page2")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("ab")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("abc")), null))
+        fakeService.gates[1] = CompletableDeferred() // page 2 hangs
+        fakeService.gates[2] = CompletableDeferred() // so does "ab"
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.loadMore(); advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+        vm.setSearchQuery("abc"); advanceUntilIdle()
+        fakeService.gates[2]!!.complete(Unit); advanceUntilIdle() // a late "ab" answer
+
+        assertEquals(listOf(createVideo("abc")), (vm.content.value as ContentListViewModel.ContentState.Success).items)
+    }
+
+    @Test
+    fun `A5 a list-keeping load and its failure carry the rows on screen so a recreated view can redraw them`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.gates[1] = CompletableDeferred()
+        fakeService.errorOnCall = 1
+        val vm = createViewModel()
+        advanceUntilIdle()
+
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+        assertEquals(listOf(createVideo("1")), vm.content.value.items) // Loading(REFRESH)
+
+        fakeService.gates[1]!!.complete(Unit); advanceUntilIdle()
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Error)
+        assertEquals(listOf(createVideo("1")), vm.content.value.items)
     }
 
     // --- Helper functions ---
@@ -427,6 +559,7 @@ class ContentListViewModelTest {
         var errorOnCall: Int? = null
         var callCount = 0
         val gates = mutableMapOf<Int, CompletableDeferred<Unit>>()
+        val asked = mutableListOf<Pair<String?, String?>>() // (query, cursor) of each call
 
         override suspend fun fetchContent(
             type: ContentType,
@@ -435,6 +568,7 @@ class ContentListViewModelTest {
             filters: FilterState,
             query: String?
         ): CursorResponse {
+            asked.add(query to cursor)
             val index = callCount++
             gates[index]?.await()
             if (errorOnCall == index) {

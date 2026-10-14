@@ -32,6 +32,7 @@
              INVISIBLE, not GONE: it keeps its 4dp so showing it never shifts the list below. -->
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/searchProgress"
+            android:contentDescription="@string/search_loading"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:indeterminate="true"
@@ -42,6 +43,7 @@
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/searchScroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:paddingBottom="@dimen/bottom_nav_height"
@@ -106,6 +108,7 @@
             <!-- Spec §6: shown when the best match was approximate or related (X-Search-Match) -->
             <TextView
                 android:id="@+id/searchMatchNote"
+                android:accessibilityLiveRegion="polite"
                 android:layout_width="match_parent"
                 android:layout_height="wrap_content"
                 android:paddingHorizontal="@dimen/spacing_md"

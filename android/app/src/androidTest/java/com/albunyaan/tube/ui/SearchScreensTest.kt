@@ -5,7 +5,6 @@ import android.os.Build
 import android.graphics.Rect
 import android.os.LocaleList
 import android.view.View
-import androidx.annotation.RequiresApi
 import androidx.core.view.ViewCompat
 import androidx.test.core.app.ActivityScenario
 import androidx.test.espresso.Espresso.onView
@@ -49,7 +48,7 @@ import java.util.concurrent.CountDownLatch
  * Backend answers are scripted through [TestNetworkModule.fakeContentApi]; no production switch is involved.
  * Each run also saves screenshots named android-{phone|tablet}-{lang}-{loading|results|note}.
  */
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
 abstract class SearchScreensBase(
     private val lang: String,
     private val rtl: Boolean,

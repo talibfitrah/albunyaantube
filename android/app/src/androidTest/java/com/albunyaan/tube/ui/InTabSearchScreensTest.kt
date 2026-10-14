@@ -4,7 +4,6 @@ import android.app.LocaleManager
 import android.os.Build
 import android.os.LocaleList
 import android.view.View
-import androidx.annotation.RequiresApi
 import androidx.recyclerview.widget.RecyclerView
 import androidx.swiperefreshlayout.widget.SwipeRefreshLayout
 import androidx.test.core.app.ActivityScenario
@@ -48,7 +47,7 @@ import javax.inject.Inject
  * Backend answers are scripted through [TestNetworkModule.fakeContentApi]. Each run saves
  * android-{phone|tablet}-{lang}-tab-loading.
  */
-@RequiresApi(Build.VERSION_CODES.TIRAMISU)
+@SdkSuppress(minSdkVersion = Build.VERSION_CODES.TIRAMISU)
 abstract class InTabSearchScreensBase(private val lang: String) {
 
     @get:Rule
@@ -132,6 +131,17 @@ abstract class InTabSearchScreensBase(private val lang: String) {
         gone(R.id.listSkeleton)
         gone(R.id.emptyState)
         screenshot("android-$device-$lang-tab-loading")
+
+        // 2b. The view is recreated mid-search (rotation): the 3 rows come back under the spinner, never blank.
+        scenario!!.recreate()
+        eventually {
+            assertEquals("the recreated view lost the kept rows", 3, rows())
+            scenario!!.onActivity {
+                assertTrue("the recreated view dropped the spinner", it.findViewById<SwipeRefreshLayout>(R.id.swipeRefresh).isRefreshing)
+            }
+        }
+        shown(R.id.recyclerView)
+        gone(R.id.listSkeleton)
 
         // 3. It lands: the spinner stops and the new rows replace the old.
         slowGate.complete(Unit)

@@ -10,7 +10,6 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.MutableStateFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
@@ -49,19 +48,14 @@ class ContentListViewModel(
     // Search query — kept separate from FilterState to avoid DataStore persistence
     private val _searchQuery = MutableStateFlow("")
     val searchQuery: StateFlow<String> = _searchQuery.asStateFlow()
-    private var searchJob: Job? = null
 
     val isSearchActive: Boolean
         get() = _searchQuery.value.isNotEmpty()
 
     fun setSearchQuery(q: String) {
-        if (_searchQuery.value == q) return
+        if (_searchQuery.value == q && _content.value !is ContentState.Error) return // after a failure it is a retry
         _searchQuery.value = q
-        searchJob?.cancel()
-        searchJob = viewModelScope.launch {
-            delay(300L)
-            loadContent(keepListOnScreen = true)
-        }
+        loadContent(keepListOnScreen = true) // the fragments' 300 ms is the only debounce (spec §6)
     }
 
     // Public read-only accessors for Fragment-side guards
@@ -93,12 +87,8 @@ class ContentListViewModel(
      * (REFRESH) instead of swapping to the skeleton (INITIAL) - spec §6.1 step 7.
      */
     fun loadContent(keepListOnScreen: Boolean = false) {
-        val listShown = when (val current = _content.value) {
-            is ContentState.Success -> current.items.isNotEmpty()
-            is ContentState.Loading -> current.type != LoadingType.INITIAL // a previous search/refresh kept it up
-            else -> false
-        }
-        val loadingType = if (keepListOnScreen && listShown) LoadingType.REFRESH else LoadingType.INITIAL
+        val onScreen = _content.value.items
+        val loadingType = if (keepListOnScreen && onScreen.isNotEmpty()) LoadingType.REFRESH else LoadingType.INITIAL
 
         // Cancel any ongoing request to prevent race conditions
         loadJob?.cancel()
@@ -113,7 +103,7 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
-            _content.value = ContentState.Loading(loadingType)
+            _content.value = ContentState.Loading(loadingType, if (loadingType == LoadingType.REFRESH) onScreen else emptyList())
             try {
                 Log.d(TAG, "Fetching content for type=$contentType (initial load)")
                 val response = contentService.fetchContent(
@@ -138,7 +128,8 @@ class ContentListViewModel(
                 throw e // superseded by a newer load: never flash an error for it
             } catch (e: Exception) {
                 Log.e(TAG, "Error loading content for type=$contentType", e)
-                _content.value = ContentState.Error(e.message ?: "Unknown error")
+                _hasMoreData = true // paging stays open: a scroll to the end retries page 1
+                _content.value = ContentState.Error(e.message ?: "Unknown error", onScreen)
             }
         }
     }
@@ -155,6 +146,7 @@ class ContentListViewModel(
         }
 
         _isRefreshing = true
+        val onScreen = _content.value.items
         // Cancel any ongoing request to prevent race conditions
         loadJob?.cancel()
 
@@ -165,7 +157,7 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
-            _content.value = ContentState.Loading(LoadingType.REFRESH)
+            _content.value = ContentState.Loading(LoadingType.REFRESH, onScreen)
             try {
                 Log.d(TAG, "Refreshing content for type=$contentType")
                 val response = contentService.fetchContent(
@@ -190,7 +182,7 @@ class ContentListViewModel(
                 throw e // superseded (e.g. by a search): never flash an error for it
             } catch (e: Exception) {
                 Log.e(TAG, "Error refreshing content for type=$contentType", e)
-                _content.value = ContentState.Error(e.message ?: "Unknown error")
+                _content.value = ContentState.Error(e.message ?: "Unknown error", onScreen)
             } finally {
                 _isRefreshing = false
             }
@@ -212,9 +204,10 @@ class ContentListViewModel(
         }
 
         _isLoadingMore = true
+        val onScreen = _content.value.items
 
         // Update UI to show loading indicator at bottom
-        _content.value = ContentState.Loading(LoadingType.PAGINATION)
+        _content.value = ContentState.Loading(LoadingType.PAGINATION, onScreen)
 
         // Cancel any previous loadMore job to prevent race conditions with refresh
         loadJob?.cancel()
@@ -242,16 +235,18 @@ class ContentListViewModel(
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 Log.e(TAG, "Error loading more content", e)
-                // On error, keep existing items but show pagination error state
-                _content.value = ContentState.Success(
+                // On error, keep existing items but show pagination error state. With none loaded this was a
+                // page-1 retry after a failed load: it failed again, which is not "no results".
+                _content.value = if (allItems.isEmpty()) ContentState.Error(e.message ?: "Failed to load more", onScreen)
+                else ContentState.Success(
                     items = allItems.toList(),
                     hasMoreData = _hasMoreData,
                     paginationError = e.message ?: "Failed to load more",
                     isSearchActive = isSearchActive
                 )
             } finally {
+                // Never `loadJob = null` here: a cancelled loadMore's finally can run after a newer load took the slot.
                 _isLoadingMore = false
-                loadJob = null
             }
         }
     }
@@ -266,19 +261,23 @@ class ContentListViewModel(
     }
 
     sealed class ContentState {
+        /** The rows on screen. A refresh, a search or a page load keeps the previous rows up, and so does its
+         *  failure; a recreated view redraws them from here. INITIAL shows the skeleton instead. */
+        abstract val items: List<ContentItem>
+
         /**
          * Loading state with explicit type for correct UI indicator selection.
          * - INITIAL/REFRESH: Show swipeRefresh (top indicator)
          * - PAGINATION: Show loadingMore (bottom indicator)
          */
-        data class Loading(val type: LoadingType) : ContentState()
+        data class Loading(val type: LoadingType, override val items: List<ContentItem> = emptyList()) : ContentState()
         data class Success(
-            val items: List<ContentItem>,
+            override val items: List<ContentItem>,
             val hasMoreData: Boolean = true,
             val paginationError: String? = null,
             val isSearchActive: Boolean = false
         ) : ContentState()
-        data class Error(val message: String) : ContentState()
+        data class Error(val message: String, override val items: List<ContentItem> = emptyList()) : ContentState()
     }
 
     class Factory(

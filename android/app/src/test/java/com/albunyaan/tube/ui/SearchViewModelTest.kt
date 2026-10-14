@@ -16,8 +16,10 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
+import kotlinx.coroutines.test.advanceTimeBy
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import org.junit.After
@@ -46,9 +48,12 @@ class SearchViewModelTest {
     /** Each query answers when the test completes its deferred; a cancelled call never answers. */
     private class GatedContentService : ContentService {
         val answers = mutableMapOf<String, CompletableDeferred<ContentSearchResult>>()
+        val asked = mutableListOf<String>()
 
-        override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult =
-            answers.getOrPut(query) { CompletableDeferred() }.await()
+        override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult {
+            asked.add(query)
+            return answers.getOrPut(query) { CompletableDeferred() }.await()
+        }
 
         override suspend fun fetchContent(
             type: ContentType, cursor: String?, pageSize: Int, filters: FilterState, query: String?
@@ -121,5 +126,67 @@ class SearchViewModelTest {
 
         assertEquals(SearchViewModel.SearchState.Empty, vm.searchResults.value)
         assertFalse(vm.isSearching.value)
+    }
+
+    // --- Stage 7 (pipeline): the typing debounce lives here, so a keystroke cancels the old search at once ---
+
+    @Test
+    fun `A6 typing cancels the in-flight search at once and starts the next one 300 ms later`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.getValue("quran").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+        vm.search("quran tv"); advanceUntilIdle() // in flight
+
+        vm.search("quran tafsir", debounceMs = 300) // the user types on
+        service.answers.getValue("quran tv").completeExceptionally(java.io.IOException("offline")) // its late answer
+        advanceTimeBy(299); runCurrent()
+
+        assertEquals(SearchViewModel.SearchState.Success(listOf(video("a")), SearchMatch.EXACT), vm.searchResults.value)
+        assertEquals("searched before the 300 ms debounce ran out", listOf("quran", "quran tv"), service.asked)
+        advanceTimeBy(1); runCurrent()
+        assertEquals(listOf("quran", "quran tv", "quran tafsir"), service.asked)
+    }
+
+    @Test
+    fun `A8 typing the query already shown, as a restored view does, does not search again`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.getValue("quran").complete(ContentSearchResult(listOf(video("a"))))
+        advanceUntilIdle()
+
+        vm.search("quran", debounceMs = 300); advanceUntilIdle()
+
+        assertEquals(listOf("quran"), service.asked)
+        assertFalse(vm.isSearching.value)
+    }
+
+    @Test
+    fun `A8 typing the same query after a failure searches again`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+        vm.search("quran"); advanceUntilIdle()
+        service.answers.remove("quran")!!.completeExceptionally(java.io.IOException("offline"))
+        advanceUntilIdle()
+
+        vm.search("quran", debounceMs = 300); advanceUntilIdle()
+
+        assertEquals(listOf("quran", "quran"), service.asked)
+    }
+
+    @Test
+    fun `A8 submitting the query still in its debounce searches at once, and only once`() = runTest {
+        val service = GatedContentService()
+        val vm = SearchViewModel(service)
+
+        vm.search("quran", debounceMs = 300) // a history tap types the query...
+        vm.search("quran") // ...and submits it
+        runCurrent()
+        assertEquals(listOf("quran"), service.asked)
+
+        advanceUntilIdle()
+        assertEquals(listOf("quran"), service.asked)
     }
 }

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.data.source
 
+import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.source.api.ContentApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
@@ -162,6 +163,13 @@ class RetrofitContentServiceTest {
         whenever(api.search("later", null, 50))
             .thenReturn(Response.success(emptyList(), Headers.headersOf("X-Search-Match", "something-new")))
         assertEquals(SearchMatch.EXACT, service.search("later", null, 50).match)
+    }
+
+    @Test
+    fun `A10 search fails on a 2xx with no body instead of reading it as no results`() = runTest {
+        whenever(api.search("quran", null, 50)).thenReturn(Response.success<List<ContentItemDto>>(204, null))
+        val outcome = runCatching { service.search("quran", null, 50) }
+        assertTrue("a bodyless answer read as $outcome", outcome.isFailure)
     }
 
     @Test

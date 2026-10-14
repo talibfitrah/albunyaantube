@@ -194,6 +194,10 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     private fun observeViewModel() {
         viewLifecycleOwner.lifecycleScope.launch {
             viewModel.content.collect { state ->
+                // A recreated view starts with an empty adapter: put back the rows a load or a failure keeps up.
+                if (state !is ContentListViewModel.ContentState.Success && adapter.currentList.isEmpty() && state.items.isNotEmpty()) {
+                    adapter.submitList(state.items.filterIsInstance<ContentItem.Video>())
+                }
                 when (state) {
                     is ContentListViewModel.ContentState.Loading -> {
                         Log.d(TAG, "Loading videos (type=${state.type})...")
