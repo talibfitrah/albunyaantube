@@ -1,0 +1,88 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+  },
+  "playabilityStatus": {
+    "status": "UNPLAYABLE",
+    "reason": "Join this channel to get access to members-only content like this video, and other exclusive perks.",
+    "playableInEmbed": true,
+    "skip": {
+      "playabilityErrorSkipConfig": {
+        "skipOnPlayabilityError": false
+      }
+    },
+    "contextParams": "Q0FFU0FnZ0M="
+  },
+  "videoDetails": {
+    "videoId": "J-AuO9TNt5I",
+    "title": "LIVE | Ramadan Reset - Mufti Menk",
+    "lengthSeconds": "5022",
+    "keywords": [
+      "mufti menk",
+      "menk",
+      "ismail",
+      "ismail menk",
+      "mufti ismail",
+      "muslim central",
+      "islam",
+      "muslim",
+      "Mufti Menk Live",
+      "Mufti Menk 2022",
+      "Mufti Menk New",
+      "Mufti Menk Latest",
+      "eman channel",
+      "mufti ismail menk",
+      "مفتي منك",
+      "إسماعيل بن موسى منك",
+      "إسماعيل منك",
+      "Ramadan",
+      "Ramadan 2023",
+      "Mufti Menk Ramadan Series",
+      "Ramadan 2024",
+      "Ramadhan",
+      "Qur'an",
+      "Taraweeh",
+      "Fasting",
+      "Worship",
+      "Allah",
+      "sunnah",
+      "hadith"
+    ],
+    "channelId": "UCNB_OaI4524fASt8h0IL8dw",
+    "isOwnerViewing": false,
+    "shortDescription": "All Official Links from the Mufti Menk Channel can be found here:\n► https://muftimenk.com\n----\n\nBEWARE OF SCAMMERS WHO OPERATE IN THE COMMENTS SECTION PRETENDING TO BE MUFTI MENK! DO NOT CONTACT ANY NUMBER OR MAKE ANY DONATION. PLEASE REPORT ANY SUSPICIOUS ACTIVITY.\n\n#MuftiMenk",
+    "isCrawlable": true,
+    "thumbnail": {
+      "thumbnails": [
+        {
+          "url": "https://i.ytimg.com/vi/J-AuO9TNt5I/default.jpg?v=69a309da",
+          "width": 120,
+          "height": 90
+        },
+        {
+          "url": "https://i.ytimg.com/vi/J-AuO9TNt5I/mqdefault.jpg?v=69a309da",
+          "width": 320,
+          "height": 180
+        },
+        {
+          "url": "https://i.ytimg.com/vi/J-AuO9TNt5I/hqdefault.jpg?v=69a309da",
+          "width": 480,
+          "height": 360
+        },
+        {
+          "url": "https://i.ytimg.com/vi/J-AuO9TNt5I/sddefault.jpg?v=69a309da",
+          "width": 640,
+          "height": 480
+        }
+      ]
+    },
+    "allowRatings": true,
+    "author": "Mufti Menk",
+    "isLowLatencyLiveStream": false,
+    "isPrivate": false,
+    "isUnpluggedCorpus": false,
+    "latencyClass": "MDE_STREAM_OPTIMIZATIONS_RENDERER_LATENCY_NORMAL",
+    "isLiveContent": true,
+    "isTvfilmVideo": false
+  }
+}

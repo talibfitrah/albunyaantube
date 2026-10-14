@@ -93,6 +93,12 @@ import Testing
         return HTTPResponse(status: 200, headers: [:], body: body)
     }
 
+    /// ANDROID's answer for a live stream: OK, but no muxed format to take.
+    private var androidOKWithoutItag18: HTTPResponse {
+        HTTPResponse(status: 200, headers: [:], body: Data(
+            #"{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[]},"videoDetails":{"isLive":true}}"#.utf8))
+    }
+
     // MARK: - builder
 
     private func makeResolver(
@@ -188,6 +194,60 @@ import Testing
         }
         #expect(label == "360p")
         #expect(transport.callCount == 2)
+    }
+
+    // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
+
+    /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,
+    /// then ANDROID -- which serves made-for-kids -- refuses too. The source's verdict: "not
+    /// available", never the retryable error, and no bot-check trip. The ar pair is Review Focus 1.
+    @Test(arguments: [("player-members-only-visionos", "player-members-only-android"),
+                      ("player-members-only-visionos", "player-members-only-android-ar"),
+                      ("player-geo-visionos", "player-geo-android")])
+    func anAndroidRefusalIsTheSourcesVerdict(visionos: String, android: String) async throws {
+        let transport = RecordingTransport([try fixtureResponse(visionos), try fixtureResponse(android)])
+        let (resolver, session) = makeResolver(transport: transport)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 2)
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// A VISIONOS refusal alone decides nothing -- here the geo-locked shape, which is identical to
+    /// the kids one, followed by a working itag 18.
+    @Test func aVisionosRefusalAloneAlwaysWalksOn() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-visionos"), androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+    }
+
+    /// Private is terminal on the FIRST rung that says so: no rotation burned, no trip recorded.
+    @Test func aPrivateVideoIsUnavailableWithoutTouchingTheSession() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-private-visionos")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 1)
+        #expect(await session.visitorData(for: .visionos) == "v1")
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Nothing at the source said no and nothing played: rung 1 refuses, rung 2 answers OK with no
+    /// muxed format (a live stream). That is OUR dead end -- the retryable `.allRungsFailed`.
+    @Test func ourOwnDeadEndStaysRetryable() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidOKWithoutItag18])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        await expectThrows(.allRungsFailed) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
     }
 
     // MARK: - c) ageGate is terminal, never rotates, and never hands off to YouTube
@@ -288,10 +348,11 @@ import Testing
 
     // MARK: - d4) fallback rungs are neither cached nor counted as a clean fetch
 
-    @Test func aPublishedEmbedStrategyIsNeverWalkedAndAnExhaustedLadderCachesNothing() async throws {
+    @Test func bothRungsUnplayableIsTheSourcesVerdictEvenIfAPublishedOrderListsEmbed() async throws {
         // Both player rungs answer UNPLAYABLE. The published config of builds 1.0.0 / 1.0.2 listed
-        // `embed` as a third rung (a YouTube IFrame player); owner directive 2026-10-14 removed it,
-        // so the ladder ends at rung 2 and the walk fails honestly instead of resolving an embed.
+        // `embed` as a third rung (a YouTube IFrame player); owner directive 2026-10-14 removed it.
+        // The ANDROID rung's UNPLAYABLE is the source's verdict (spec R6), so this is the
+        // not-available outcome, never an embed and never the retryable error.
         let clock = ManualClock()
         let configStore = configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"])
         let cache = ManifestCache(remoteConfig: configStore)
@@ -300,7 +361,7 @@ import Testing
         await session.recordBotCheck()
         clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
 
-        await expectThrows(.allRungsFailed) {
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
 
@@ -309,14 +370,14 @@ import Testing
         #expect(await session.loadCooldown().tripCount == 1)   // a failed walk is not a clean fetch
     }
 
-    /// The bundled default is visionosHLS -> androidItag18 and then TERMINAL. Both rungs answering
-    /// UNPLAYABLE must surface as `allRungsFailed` (which `PlayerViewModel.map` renders as the
-    /// generic, retryable player error).
+    /// The bundled default is visionosHLS -> androidItag18 and then TERMINAL. The ANDROID rung's
+    /// UNPLAYABLE is the source's verdict (spec R6), so this is the not-available outcome, never an
+    /// embed and never the retryable error.
     @Test func defaultLadderIsTerminalAfterAndroidItag18() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, _) = makeResolver(transport: transport)
 
-        await expectThrows(.allRungsFailed) {
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(transport.callCount == 2)   // one POST per native rung, then nothing

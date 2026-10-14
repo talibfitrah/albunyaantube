@@ -1,0 +1,29 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+  },
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "This video is private",
+    "messages": [
+      "This is a private video. Please sign in to verify that you may see it."
+    ],
+    "errorScreen": {
+      "playerErrorMessageRenderer": {
+        "subreason": {
+          "runs": [
+            {
+              "text": "If the owner of this video has granted you access, please "
+            },
+            {
+              "text": "sign in"
+            },
+            {
+              "text": "."
+            }
+          ]
+        }
+      }
+    }
+  }
+}

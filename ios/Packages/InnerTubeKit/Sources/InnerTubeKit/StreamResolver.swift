@@ -277,8 +277,15 @@ public actor StreamResolver {
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
             }
             return .advance
-        case .unplayableKids:
-            return .advance
+        case .unplayable:
+            // VISIONOS refuses made-for-kids AND source-gated videos with the same shape (live probe
+            // 2026-10-14: a kids video and a geo-locked one are both `{status, reason}`, reason
+            // localized), so its refusal decides nothing: walk on. ANDROID serves made-for-kids
+            // (43/43 in the 2026-10-14 spike), so its UNPLAYABLE is the source's own verdict --
+            // members-only (J-AuO9TNt5I), geo-locked -- and the app says "not available", never the
+            // retryable error (owner directive 2026-10-14, spec R6).
+            guard family == .android else { return .advance }
+            throw ExtractionError.unavailable(videoId: videoId)
         case .ageGate:
             // Terminal, not a hand-off (owner directive 2026-08-27). `ageRestricted` is already one
             // of ruling 14's terminal states and the app maps it onto its single "not playable"

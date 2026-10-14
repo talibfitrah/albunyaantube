@@ -1,0 +1,12 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+  },
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "يرجى تسجيل الدخول",
+    "messages": [
+      "هذا الفيديو خاص. يُرجى تسجيل الدخول للتحقُّق من إمكانية مشاهدته."
+    ]
+  }
+}

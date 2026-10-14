@@ -28,13 +28,37 @@ import Testing
         }
     }
 
-    // The real capture (Task 1 probe) is UNPLAYABLE with no streamingData at all — the
-    // androidItag18 fallback comes from a *separate* ANDROID-client request per
-    // ios-app-plan.md §6.2 step 4, out of scope for parsing one response body. `.unplayableKids`
-    // also carries no associated payload, so there is no itag18 URL to assert here.
-    @Test func unplayableKidsFixtureYieldsUnplayableKids() throws {
-        let result = try parser.parse(try loadFixture("player-unplayable-kids")).playability
-        #expect(result == .unplayableKids)
+    // Live captures 2026-10-14 (spec §3). Every UNPLAYABLE comes back whole: VISIONOS refuses a
+    // made-for-kids video and a geo-locked one with the same `{status, reason}` and a localized
+    // reason, so the body cannot say what a refusal means -- the resolver decides by WHICH client
+    // refused (`StreamResolver.runPlayerRung`).
+    @Test(arguments: ["player-unplayable-kids", "player-members-only-visionos", "player-members-only-android",
+                      "player-members-only-android-ar", "player-geo-visionos", "player-geo-android"])
+    func everyUnplayableCaptureYieldsUnplayable(_ name: String) throws {
+        #expect(try parser.parse(loadFixture(name)).playability == .unplayable, "\(name)")
+    }
+
+    /// A private video answers LOGIN_REQUIRED WITH a `messages` array, on both clients and in both
+    /// locales (spec §3). Read as a bot check it rotated the session and could trip the app-wide
+    /// cooldown; it is the source's verdict.
+    @Test(arguments: ["player-private-visionos", "player-private-visionos-ar", "player-private-android"])
+    func aPrivateVideoIsUnavailableNotABotCheck(_ name: String) throws {
+        guard case .unavailable = try parser.parse(loadFixture(name)).playability else {
+            Issue.record("\(name): expected .unavailable"); return
+        }
+    }
+
+    /// The bot check never carries `messages`: the committed capture and a tokenless ar capture of
+    /// catalog video V2Brp_esIVI (Review Focus 1).
+    @Test(arguments: ["player-botcheck", "player-botcheck-ar"])
+    func aBotCheckStaysABotCheck(_ name: String) throws {
+        #expect(try parser.parse(loadFixture(name)).playability == .botCheck, "\(name)")
+    }
+
+    @Test func anArabicRemovedVideoIsUnavailable() throws {
+        guard case .unavailable = try parser.parse(loadFixture("player-removed-visionos-ar")).playability else {
+            Issue.record("expected .unavailable"); return
+        }
     }
 
     @Test func ageGatedFixtureYieldsAgeGate() throws {
