@@ -6,6 +6,7 @@ import android.text.Spanned
 import android.text.style.URLSpan
 import androidx.core.net.toUri
 import androidx.core.text.HtmlCompat
+import java.net.IDN
 
 /**
  * NewPipe returns YouTube descriptions as HTML — raw `<br>`, `<a href>`,
@@ -17,7 +18,7 @@ import androidx.core.text.HtmlCompat
 internal object PlayerDescriptions {
 
     private val ALLOWED_LINK_SCHEMES = setOf("http", "https")
-    private val YOUTUBE_HOSTS = listOf("youtube.com", "youtu.be", "youtube-nocookie.com")
+    private val YOUTUBE_LABELS = setOf("youtube", "youtu", "youtube-nocookie", "youtubekids")
 
     /**
      * Convert raw description text (HTML for YouTube, occasionally plain) to a
@@ -57,21 +58,37 @@ internal object PlayerDescriptions {
     }
 
     /**
-     * The one rule for links the app lets the user open (descriptions and channel About links): http or https, a
-     * host, and not YouTube. Anything else, `intent://`, `albunyaantube://`, `mailto:` or a host-less
-     * `https:youtube.com/x` included, fails closed: shown as text, never opened.
+     * The one rule for links the app lets the user open (descriptions and channel About links), the same rule as
+     * iOS (keep the two in step). Anything that fails it is shown as text and
+     * never opened:
+     * 1. after one trim, no `\`, whitespace, ISO control character or soft hyphen (a browser drops or rewrites them);
+     * 2. scheme `http` or `https`;
+     * 3. a host that converts to ASCII (IDNA, as a browser does), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
+     * 4. not YouTube ([isYouTubeLink]).
      */
-    fun isOpenableLink(url: String?): Boolean =
-        url != null && isSafeLinkScheme(url) && !url.trim().toUri().host.isNullOrBlank() && !isYouTubeLink(url)
+    fun isOpenableLink(url: String?): Boolean {
+        val link = url?.trim() ?: return false
+        if (link.any { it == '\\' || it.isWhitespace() || it.isISOControl() || it == '\u00AD' }) return false
+        return isSafeLinkScheme(link) && asciiHost(link) != null && !isYouTubeLink(link)
+    }
 
     /**
-     * Owner rule: the app exists so users don't go to YouTube. A link to a YouTube host
-     * (`youtube.com`, `youtu.be`, `youtube-nocookie.com` or any subdomain, any case) stays
-     * visible as text but never opens.
+     * Owner rule: the app exists so users don't go to YouTube. A host with a `youtube`, `youtu`, `youtube-nocookie`
+     * or `youtubekids` label (after IDNA) is YouTube: youtube.com, youtu.be, every country domain and subdomain,
+     * youtube.googleapis.com. An unrelated site with such a label is caught too; that cost is accepted.
      */
-    fun isYouTubeLink(url: String?): Boolean {
-        val host = url?.trim()?.toUri()?.host?.lowercase()?.trimEnd('.') ?: return false
-        return YOUTUBE_HOSTS.any { host == it || host.endsWith(".$it") }
+    fun isYouTubeLink(url: String?): Boolean =
+        url?.trim()?.let(::asciiHost)?.split('.')?.any { it in YOUTUBE_LABELS } == true
+
+    /** The host as a browser compares it: IDNA to ASCII, lowercase, no trailing dot. Null when there is none. */
+    private fun asciiHost(url: String): String? {
+        val host = url.toUri().host?.takeIf { it.isNotBlank() } ?: return null
+        val ascii = try {
+            IDN.toASCII(host, IDN.ALLOW_UNASSIGNED)
+        } catch (e: IllegalArgumentException) {
+            return null
+        }
+        return ascii.lowercase().trimEnd('.').takeIf { it.isNotBlank() && it.all { c -> c.code < 0x80 } }
     }
 
     private fun isSafeLinkScheme(url: String?): Boolean {

@@ -752,6 +752,22 @@ class ContentListViewModelTest {
         assertEquals("the refresh was dropped", listOf(createVideo("new")), vm.content.value.items)
     }
 
+    @Test
+    fun `pressing Search on the empty box during a pull-to-refresh does not send it again`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("old")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("new")), null))
+        fakeService.gates[1] = CompletableDeferred() // the refresh is slow
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.refresh(); runCurrent()
+
+        vm.setSearchQuery("") // the keyboard's Search key on the empty box
+        fakeService.gates[1]!!.complete(Unit); advanceUntilIdle()
+
+        assertEquals("the refresh was sent again", 2, fakeService.callCount)
+        assertEquals(listOf(createVideo("new")), vm.content.value.items)
+    }
+
     // --- Helper functions ---
 
     private fun createVideo(id: String) = ContentItem.Video(

@@ -59,7 +59,7 @@ class ContentListViewModel(
     private var shownQuery: String? = null
     private var shownCursor: String? = null
 
-    // The search whose page-1 fetch is running (past its debounce), and the query it fetches
+    // The page-1 fetch that is running (a search past its debounce, or a refresh), and the query it fetches
     private var fetching: Pair<Job, String>? = null
 
     /**
@@ -203,6 +203,7 @@ class ContentListViewModel(
         allItems.clear()
 
         loadJob = viewModelScope.launch {
+            fetching = coroutineContext.job to _searchQuery.value.trim()
             _content.value = ContentState.Loading(LoadingType.REFRESH, onScreen)
             try {
                 Log.d(TAG, "Refreshing content for type=$contentType")

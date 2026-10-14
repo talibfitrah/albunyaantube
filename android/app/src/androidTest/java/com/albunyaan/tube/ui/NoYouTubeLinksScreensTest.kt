@@ -9,8 +9,10 @@ import android.text.Spanned
 import android.text.style.URLSpan
 import android.view.View
 import android.view.ViewGroup
+import android.widget.ImageView
 import android.widget.TextView
 import androidx.core.view.isVisible
+import androidx.core.widget.ImageViewCompat
 import androidx.core.widget.NestedScrollView
 import androidx.media3.datasource.cache.SimpleCache
 import androidx.test.core.app.ActivityScenario
@@ -25,6 +27,7 @@ import com.albunyaan.tube.data.channel.FakeChannelDetailRepository
 import com.albunyaan.tube.di.TestChannelDetailModule
 import com.albunyaan.tube.launchFragmentInHiltContainer
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.player.PlayerDescriptions
 import com.albunyaan.tube.ui.player.PlayerFragment
 import com.albunyaan.tube.util.eventually
 import com.albunyaan.tube.util.screenshot
@@ -81,8 +84,25 @@ abstract class NoYouTubeLinksScreensBase(private val lang: String) {
         simpleCache.release()
     }
 
+    /** The colour the row's link icon is drawn in. */
+    private fun iconTint(row: View) =
+        ImageViewCompat.getImageTintList(row.findViewById<ImageView>(R.id.linkIcon))?.defaultColor
+
     private fun device() = if (InstrumentationRegistry.getInstrumentation().targetContext.resources
             .configuration.smallestScreenWidthDp >= 600) "tablet" else "phone"
+
+    /** The unit tests run the link rule on the JVM's IDN and Uri; this runs the IDNA-dependent vectors on Android's. */
+    @Test
+    fun theLinkRuleHoldsOnTheDevice() {
+        val notOpenable = listOf(
+            "https://ｙｏｕｔｕｂｅ.com/a", "https://youtube\u3002com/a", "https://you\u00ADtube.com/a", "https://%79outube.com/a",
+            "https://YOUTUBE.COM./a", "https://youtube.com\\@example.org/a", "https://\\youtube.com/a", "https://www.youtube.co.uk/x"
+        )
+        for (url in notOpenable) assertFalse("$url opens", PlayerDescriptions.isOpenableLink(url))
+        for (url in listOf("https://مثال.مصر/", "https://youtube.com@example.org/a", "https://myyoutube.org/x")) {
+            assertTrue("$url does not open", PlayerDescriptions.isOpenableLink(url))
+        }
+    }
 
     @Test
     fun aDescriptionYouTubeLinkIsTextNotALink() {
@@ -150,6 +170,12 @@ abstract class NoYouTubeLinksScreensBase(private val lang: String) {
                 "the YouTube link is still coloured as a link",
                 site.findViewById<TextView>(R.id.linkUrl).currentTextColor,
                 yt.findViewById<TextView>(R.id.linkUrl).currentTextColor
+            )
+
+            assertNotEquals(
+                "the YouTube link's icon is still tinted as a link",
+                iconTint(site),
+                iconTint(yt)
             )
 
             assertTrue("the other link lost its click", site.hasOnClickListeners() && site.isClickable)

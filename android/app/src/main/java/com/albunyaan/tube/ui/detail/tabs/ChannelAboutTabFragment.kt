@@ -1,12 +1,14 @@
 package com.albunyaan.tube.ui.detail.tabs
 
 import android.content.Intent
+import android.content.res.ColorStateList
 import android.net.Uri
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.widget.TextView
 import androidx.core.view.isVisible
+import androidx.core.widget.ImageViewCompat
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -123,8 +125,10 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
                     val urlView = linkView.findViewById<TextView>(R.id.linkUrl)
                     urlView.text = link.url
                     if (!PlayerDescriptions.isOpenableLink(link.url)) {
-                        // Shown, never opened (YouTube, other apps' schemes): plain text, no ripple, no chevron.
-                        urlView.setTextColor(MaterialColors.getColor(urlView, android.R.attr.textColorSecondary))
+                        // Shown, never opened (YouTube, other apps' schemes): no link colour, ripple or chevron.
+                        val plain = MaterialColors.getColor(urlView, android.R.attr.textColorSecondary)
+                        urlView.setTextColor(plain)
+                        ImageViewCompat.setImageTintList(linkView.findViewById(R.id.linkIcon), ColorStateList.valueOf(plain))
                         linkView.isClickable = false
                         linkView.isFocusable = false
                         linkView.background = null

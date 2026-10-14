@@ -2,12 +2,15 @@ package com.albunyaan.tube.ui.player
 
 import android.text.Spanned
 import android.text.style.URLSpan
+import org.hamcrest.CoreMatchers.equalTo
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
+import org.junit.Rule
 import org.junit.Test
+import org.junit.rules.ErrorCollector
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -22,6 +25,9 @@ import org.robolectric.annotation.Config
 @RunWith(RobolectricTestRunner::class)
 @Config(sdk = [31])
 class PlayerDescriptionsTest {
+
+    @get:Rule
+    val vectors = ErrorCollector()
 
     @Test
     fun null_input_returns_null() {
@@ -216,34 +222,84 @@ class PlayerDescriptionsTest {
 
     @Test
     fun look_alike_hosts_are_not_youtube() {
-        for (href in listOf("https://notyoutube.com/x", "https://youtube.com.example.org/x", "https://example.org/youtube.com")) {
+        for (href in listOf("https://notyoutube.com/x", "https://myyoutube.org/x", "https://example.org/youtube.com")) {
             assertEquals(listOf(href), linksIn(PlayerDescriptions.render("<a href=\"$href\">x</a>")))
         }
     }
 
     @Test
-    fun the_host_rule_the_channel_links_use() {
-        assertTrue(PlayerDescriptions.isYouTubeLink("https://youtu.be/V2Brp_esIVI"))
-        assertTrue(PlayerDescriptions.isYouTubeLink("https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv"))
-        assertTrue(PlayerDescriptions.isYouTubeLink("https://m.youtube.com/watch?v=V2Brp_esIVI"))
-        assertTrue(PlayerDescriptions.isYouTubeLink("https://MUSIC.YOUTUBE.COM/"))
-        assertTrue(PlayerDescriptions.isYouTubeLink("https://youtube-nocookie.com/embed/V2Brp_esIVI"))
-        assertFalse(PlayerDescriptions.isYouTubeLink("https://example.org"))
-        assertFalse(PlayerDescriptions.isYouTubeLink("https://notyoutube.com"))
-        assertFalse(PlayerDescriptions.isYouTubeLink("https://youtube.com.example.org"))
-        assertFalse(PlayerDescriptions.isYouTubeLink(""))
-        assertFalse(PlayerDescriptions.isYouTubeLink(null))
+    fun youtube_is_matched_by_whole_label_after_idna() {
+        val youTube = listOf(
+            "https://youtu.be/V2Brp_esIVI", "https://www.youtube.com/channel/UCabcdefghijklmnopqrstuv",
+            "https://m.youtube.com/watch?v=V2Brp_esIVI", "https://MUSIC.YOUTUBE.COM/", "https://youtube-nocookie.com/embed/V2Brp_esIVI",
+            "https://www.youtube.de/x", "https://youtubekids.com/x", "https://youtube.googleapis.com/x",
+            "https://ｙｏｕｔｕｂｅ.com/a", "https://youtube\u3002com/a",
+            "https://youtube.com.example.org", // the accepted cost: any host with a youtube label
+        )
+        for (url in youTube) assertTrue("$url is not matched as YouTube", PlayerDescriptions.isYouTubeLink(url))
+        for (url in listOf("https://example.org", "https://notyoutube.com", "https://myyoutube.org", "", null)) {
+            assertFalse("$url is matched as YouTube", PlayerDescriptions.isYouTubeLink(url))
+        }
     }
-    // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike.
+
+    // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike. These are the
+    // shared vectors of .superpowers/sdd/2026-10-13-search-relevance/link-rule.md (iOS uses the same list).
 
     @Test
-    fun only_an_http_link_with_a_host_that_is_not_youtube_opens() {
-        val inert = listOf(
-            "https:youtube.com/watch?v=x", "HTTPS:YOUTU.BE/x", "https://www.youtube.com/@channel",
-            "intent://x#Intent;end", "albunyaantube://video/x", "javascript:alert(1)", "mailto:a@example.org", "", null
+    fun every_shared_link_rule_vector() {
+        val notOpenable = listOf(
+            "https:youtube.com/watch?v=x",
+            "HTTPS:YOUTU.BE/x",
+            "intent://x#Intent;end",
+            "albunyaantube://video/x",
+            "javascript:alert(1)",
+            "mailto:a@b.c",
+            "https://youtu.be/abc",
+            "https://www.youtube.com/channel/x",
+            "https://m.youtube.com/watch?v=x",
+            "https://MUSIC.YOUTUBE.COM/x",
+            "https://www.youtube.de/x",
+            "https://www.youtube.co.uk/x",
+            "https://youtubekids.com/x",
+            "https://youtube.googleapis.com/x",
+            "https://x@youtube.com/a",
+            "https://%79outube.com/a",
+            "https://YOUTUBE.COM./a",
+            "//youtube.com/a",
+            "https://youtube.com\\@example.org/a",
+            "https://\\youtube.com/a",
+            "https://ｙｏｕｔｕｂｅ.com/a", // fullwidth
+            "https://youtube\u3002com/a", // ideographic full stop
+            "https://you\u00ADtube.com/a", // soft hyphen
+            "https://you\ttube.com/",
+            "https://you\ntube.com/",
+            "",
+            null,
         )
-        for (url in inert) assertFalse("$url opens", PlayerDescriptions.isOpenableLink(url))
-        for (url in listOf("https://example.org/a", "http://Example.org")) assertTrue("$url does not open", PlayerDescriptions.isOpenableLink(url))
+        val openable = listOf(
+            "https://example.org/a",
+            "http://Example.org",
+            "https://youtube.com@example.org/a", // the host is example.org
+            "https://مثال.مصر/", // a real IDN: xn--mgbh0fb.xn--wgbh1c
+            "https://notyoutube.com/x",
+            "https://myyoutube.org/x",
+        )
+        // Every vector is checked and every failure reported, one message per vector.
+        for (url in notOpenable) vectors.checkThat("${url?.let(::visible)} opens", PlayerDescriptions.isOpenableLink(url), equalTo(false))
+        for (url in openable) vectors.checkThat("${visible(url)} does not open", PlayerDescriptions.isOpenableLink(url), equalTo(true))
+    }
+
+    /** Spells out the invisible characters of a vector for the failure message. */
+    private fun visible(url: String) = url.replace("\t", "<TAB>").replace("\n", "<LF>").replace("\u00AD", "<U+00AD>")
+
+    @Test
+    fun crafted_youtube_hrefs_keep_their_text_and_are_not_links() {
+        val rendered = PlayerDescriptions.render(
+            "<a href=\"https://ｙｏｕｔｕｂｅ.com/@x\">a</a> <a href=\"https://you&#9;tube.com/\">b</a> " +
+                "<a href=\"https://you&#10;tube.com/\">c</a> <a href=\"https://example.org/a\">d</a>"
+        )
+        assertEquals(listOf("https://example.org/a"), linksIn(rendered))
+        assertEquals("a b c d", rendered.toString())
     }
 
     @Test
