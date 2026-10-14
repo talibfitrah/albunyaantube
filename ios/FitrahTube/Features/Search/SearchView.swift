@@ -19,6 +19,14 @@ struct SearchView: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "search"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if showsSearchingIndicator {
+                    ProgressView().controlSize(.small).tint(.brand)
+                        .accessibilityLabel(String(localized: "search_loading"))
+                }
+            }
+        }
         .task {
             if viewModel == nil {
                 viewModel = SearchViewModel(catalog: container.catalog, history: container.searchHistory)
@@ -45,7 +53,7 @@ struct SearchView: View {
     }
     #endif
 
-    // MARK: - Search field (§1.2 -- 500 ms debounce/min 2 chars live in the ViewModel; submit here
+    // MARK: - Search field (§1.2 -- 300 ms debounce/min 2 chars live in the ViewModel; submit here
     // bypasses both)
 
     private var queryBinding: Binding<String> {
@@ -74,8 +82,11 @@ struct SearchView: View {
                 }
             case .loading:
                 loadingView
-            case .results(let items):
-                resultsList(items)
+            case .results(let items, let match):
+                VStack(spacing: 0) {
+                    if match != .exact { closestResultsNote }
+                    resultsList(items)
+                }
             case .noResults:
                 EmptyStateView(
                     systemImage: "magnifyingglass",
@@ -104,6 +115,24 @@ struct SearchView: View {
         }
         .padding(Spacing.xl(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Spec §6: the list stays while a newer search loads; this says one is running. It lives in the
+    /// navigation bar, not in the content, so starting or ending a search never moves or covers the
+    /// list (owner: smooth typing). Only meaningful over results -- a stale `isSearching` is ignored.
+    private var showsSearchingIndicator: Bool {
+        guard let viewModel, viewModel.isSearching, case .results = viewModel.state else { return false }
+        return true
+    }
+
+    /// Spec §6: shown when the best match was approximate or related (`X-Search-Match`).
+    private var closestResultsNote: some View {
+        Text(String(localized: "search_closest_results"))
+            .font(TypeScale.body(widthClass))
+            .foregroundStyle(Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.md(widthClass))
+            .padding(.vertical, Spacing.sm)
     }
 
     // MARK: - History (§1.3)

@@ -2,8 +2,8 @@ import Foundation
 import Testing
 @testable import FitrahTube
 
-/// `search-categories.md:40-149,259-281` -- Search screen. 500 ms debounce (RULING 22, distinct
-/// from the tabs' 300 ms), min 2 chars; `submit()` bypasses both and is the *only* history writer
+/// `search-categories.md:40-149,259-281` -- Search screen. 300 ms debounce (owner, 2026-10-13 --
+/// supersedes RULING 22's 500 ms; same as the tabs), min 2 chars; `submit()` bypasses both and is the *only* history writer
 /// (`:95-103`); the five `SearchState`s per `:167-214` collapse RULINGS #23's "<2 chars ->
 /// zero-state" fix (Android leaves stale state on screen below 2 chars -- a deliberate deviation).
 @Suite(.perTest)
@@ -71,6 +71,31 @@ struct SearchViewModelTests {
         }
     }
 
+    /// The first `search()` answers at once; every later one suspends on `gate`.
+    private actor GatedSearchClient: CatalogClient {
+        private let results: [ContentItem]
+        private let gate: Gate
+        private var calls = 0
+
+        init(results: [ContentItem], gate: Gate) {
+            self.results = results
+            self.gate = gate
+        }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
+            calls += 1
+            if calls > 1 { await gate.block() }
+            return SearchResult(items: results)
+        }
+    }
+
 
     // MARK: - Initial state
 
@@ -128,11 +153,11 @@ struct SearchViewModelTests {
         #expect(calls[0].query == "ab")
         #expect(calls[0].type == nil)
         #expect(calls[0].limit == 50)
-        guard case .results(let results) = vm.state else { Issue.record("expected .results, got \(vm.state)"); return }
+        guard case .results(let results, _) = vm.state else { Issue.record("expected .results, got \(vm.state)"); return }
         #expect(results.count == 2)
     }
 
-    @Test func debounceWaits500Milliseconds() async {
+    @Test func debounceWaits300Milliseconds() async {
         actor DurationRecorder { var seen: Duration?; func record(_ d: Duration) { seen = d } }
         let recorder = DurationRecorder()
         let (history, defaults, suite) = makeHistoryStore()
@@ -144,7 +169,7 @@ struct SearchViewModelTests {
         vm.query = "ab"
         await vm.searchTask?.value
 
-        #expect(await recorder.seen == .milliseconds(500))
+        #expect(await recorder.seen == .milliseconds(300))
     }
 
     @Test func rapidQueryChangesCoalesceToOneRequest() async {
@@ -293,11 +318,42 @@ struct SearchViewModelTests {
 
         await vm.retry()
 
-        guard case .results(let results) = vm.state else { Issue.record("expected .results after retry, got \(vm.state)"); return }
+        guard case .results(let results, _) = vm.state else { Issue.record("expected .results after retry, got \(vm.state)"); return }
         #expect(results.count == 3)
         let calls = await client.calls
         #expect(calls == ["ab", "ab"])
         #expect(history.entries.isEmpty)
+    }
+
+    // MARK: - Spec §6: no spinner swap, the match tier reaches the state
+
+    @Test func resultsStayOnScreenWhileTheNextSearchLoads() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let gate = Gate()
+        let vm = SearchViewModel(catalog: GatedSearchClient(results: items(count: 2, prefix: "r"), gate: gate),
+                                 history: history, sleep: noSleep)
+        vm.query = "ab"
+        await vm.searchTask?.value
+
+        let next = Task { vm.query = "abc"; await vm.searchTask?.value }
+        await gate.waitUntilBlocked()
+        guard case .results = vm.state else { Issue.record("results must stay while loading, got \(vm.state)"); return }
+        #expect(vm.isSearching)
+
+        await gate.release()
+        await next.value
+        #expect(!vm.isSearching)
+    }
+
+    @Test func theMatchTierReachesTheResultsState() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let vm = SearchViewModel(catalog: RecordingCatalogClient(results: items(count: 1, prefix: "r"), match: .approximate),
+                                 history: history, sleep: noSleep)
+        vm.query = "zakit"
+        await vm.searchTask?.value
+        #expect(vm.state == .results(items(count: 1, prefix: "r"), match: .approximate))
     }
 
     // MARK: - YouTube URL/ID fast path (search-categories.md §1.7 -- entirely server-side; the

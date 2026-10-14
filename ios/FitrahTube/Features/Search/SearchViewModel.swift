@@ -5,14 +5,14 @@ import Foundation
 /// `retry()`, the fetch alone) -- reassigning it always cancels whatever it previously held,
 /// matching Android's `searchJob?.cancel()` "on every text change" (`:47`).
 ///
-/// RULINGS #22/#23: 500 ms debounce (not the tabs' 300 ms), min 2 chars; below that the screen
+/// 300 ms debounce (owner, 2026-10-13: supersedes RULINGS #22's 500 ms; same as the tabs), min 2 chars (RULINGS #23); below that the screen
 /// goes straight to the zero-state (history or an `EmptyStateView` prompt) instead of Android's
 /// "leaves the previous state on screen" edge case (`:56-59`) -- a deliberate fix, not drift.
 /// `submit()` is the *only* history writer (`:60-61`); the YouTube URL/ID fast path
 /// (`search-categories.md` §1.7) is entirely server-side -- the client only ever forwards `query`
 /// verbatim to `catalog.search(query:type:limit:)`, never inspects or rewrites it.
 @MainActor @Observable final class SearchViewModel {
-    enum State: Equatable { case zero(history: [String]), loading, results([ContentItem]), noResults, error }
+    enum State: Equatable { case zero(history: [String]), loading, results([ContentItem], match: SearchMatch), noResults, error }
 
     private(set) var state: State
 
@@ -21,7 +21,11 @@ import Foundation
     /// re-trimming a `query` that may carry padding or have changed since (gate cubic-r3 X4).
     private(set) var lastSearchedQuery: String = ""
 
-    /// 500 ms debounce, min 2 chars (`didSet` below); `submit()`/`selectHistory(_:)` bypass both.
+    /// Spec §6: true while a newer search runs with results still on screen -- the view keeps the
+    /// list and shows a small spinner instead of swapping to `.loading`.
+    private(set) var isSearching = false
+
+    /// 300 ms debounce, min 2 chars (`didSet` below); `submit()`/`selectHistory(_:)` bypass both.
     var query: String = "" {
         didSet {
             guard query != oldValue else { return }
@@ -36,7 +40,7 @@ import Foundation
                 return
             }
             let task = Task { [sleep] in
-                do { try await sleep(.milliseconds(500)) } catch { return }
+                do { try await sleep(.milliseconds(300)) } catch { return }
                 guard !Task.isCancelled else { return }
                 await self.performSearch(trimmed)
             }
@@ -114,13 +118,16 @@ import Foundation
         // exactly the request/history mismatch wave-3 D5 set out to remove.
         let q = q.trimmingCharacters(in: .whitespacesAndNewlines)
         lastSearchedQuery = q
-        state = .loading
+        // Spec §6: results already on screen stay while the next ones load; `.loading` is for an empty screen.
+        if case .results = state { isSearching = true } else { isSearching = false; state = .loading }
         do {
-            let results = try await catalog.search(query: q, type: nil, limit: Self.pageSize).items
+            let result = try await catalog.search(query: q, type: nil, limit: Self.pageSize)
             guard !Task.isCancelled else { return }
-            state = results.isEmpty ? .noResults : .results(results)
+            isSearching = false
+            state = result.items.isEmpty ? .noResults : .results(result.items, match: result.match)
         } catch {
             guard !Task.isCancelled else { return }
+            isSearching = false
             state = .error
         }
     }
