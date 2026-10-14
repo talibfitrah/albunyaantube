@@ -10,7 +10,6 @@ import com.google.api.core.ApiFutures;
 import com.google.cloud.firestore.DocumentReference;
 import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.Transaction;
-import com.google.cloud.firestore.WriteResult;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.function.Executable;
 import org.junit.jupiter.api.extension.ExtendWith;
