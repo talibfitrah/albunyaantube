@@ -88,15 +88,19 @@ public actor SessionStore {
         saveCooldown(CooldownRecord())
     }
 
-    /// A record a 1.0.2 install persisted can say up to 24 h. The DEADLINE is bounded to
-    /// `maxCooldown` after the trip, not just the remaining time: clamping only the latter would
-    /// read "300 s left" for the whole day and block exactly as 1.0.2 did.
+    /// R10: a read is never more than `maxCooldown`. A record a 1.0.2 install persisted can say up
+    /// to 24 h, so the DEADLINE is bounded to `maxCooldown` after the trip (clamping only the
+    /// remaining time would read "300 s left" all day). A legitimate remaining time can then never
+    /// exceed `maxCooldown`, so one that does means the wall clock moved back past the trip (or the
+    /// record has no `lastTrip`): fail open, because nothing else could clear it -- `performResolve`
+    /// throws `.cooldown` before any walk, so no `recordSuccess` runs.
     public func cooldownRemaining(now: Date) -> Duration? {
         let record = loadCooldown()
         guard let until = record.until else { return nil }
         let deadline = min(until, (record.lastTrip ?? until).addingTimeInterval(Self.maxCooldown))
-        guard deadline > now else { return nil }
-        return .seconds(Int(deadline.timeIntervalSince(now).rounded(.up)))
+        let remaining = deadline.timeIntervalSince(now)
+        guard remaining > 0, remaining <= Self.maxCooldown else { return nil }
+        return .seconds(Int(remaining.rounded(.up)))
     }
 
     // MARK: - private helpers

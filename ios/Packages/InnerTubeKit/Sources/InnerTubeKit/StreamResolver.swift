@@ -167,7 +167,7 @@ public actor StreamResolver {
             let outcome: RungResult
             do {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
-                // a bot-check rung is POST + rotate + retry POST, which per-POST would allow ~16 s.
+                // a bot-check rung is POST + (adopt | rotate) + retry POST, which per-POST would allow ~16 s.
                 outcome = try await Self.withTimeout(Self.rungBudget) {
                     try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
                 }

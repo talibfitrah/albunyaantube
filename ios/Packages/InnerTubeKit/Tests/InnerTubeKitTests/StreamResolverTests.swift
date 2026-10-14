@@ -634,6 +634,37 @@ import Testing
         #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
     }
 
+    // MARK: - d8c2) every bot check hands over a DIFFERENT token: adoption stays bounded
+
+    /// Real YouTube mints a new `visitorData` on every bot check (the fixtures reuse one). The
+    /// adopt-and-retry must still be ONE retry per rung -- the retry runs with `canRotate: false`,
+    /// so its own fresh token is adopted for the next walk but never chased. Two rungs, two POSTs
+    /// each, both rotation slots untouched, one trip for the walk.
+    @Test func botChecksThatEachCarryANewTokenStillCostOnlyOneRetryPerRung() async throws {
+        let clock = ManualClock()
+        let template = try String(decoding: fixtureResponse("player-botcheck").body, as: UTF8.self)
+        let minted = (0..<12).map { "TOKEN\($0)" }
+        let transport = RecordingTransport(minted.map {
+            HTTPResponse(status: 200, headers: [:],
+                         body: Data(template.replacingOccurrences(of: "CgtGSVhUVVJFXzAwMSiFAA%3D%3D", with: $0).utf8))
+        })
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+
+        #expect(transport.callCount == 4)
+        #expect(transport.recorded.map { $0.headers["X-Goog-Visitor-Id"] } == ["v1", "TOKEN0", "v1", "TOKEN2"])
+        #expect(await session.visitorData(for: .visionos) == "TOKEN1")   // the retry's token is kept, not chased
+        #expect(await session.visitorData(for: .android) == "TOKEN3")
+        #expect(await session.rotate(.visionos) == true)
+        #expect(await session.rotate(.android) == true)
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
     // MARK: - d8d) failed bot-checked walks back off in minutes (spec R10)
 
     /// The walk-end trip stays for a walk that fails with no source verdict, and the second
@@ -874,7 +905,7 @@ import Testing
 
     /// Combined review P2: from the common `.hls` state the phone never tried the android rung, so
     /// a cast's muxed walk POSTs it first -- and a bot check there recorded the GLOBAL cooldown,
-    /// blocking the phone's working rung-1 playback for 1-24 h. A cast walk fails the CAST only;
+    /// blocking the phone's working rung-1 playback for the cooldown. A cast walk fails the CAST only;
     /// the save walk keeps the one trip it has always recorded.
     @Test(arguments: [(Purpose.cast, 0), (Purpose.prefetch, 1)])
     func aBotCheckedMuxedWalkRecordsATripOnlyForASave(purpose: Purpose, trips: Int) async throws {
@@ -908,7 +939,7 @@ import Testing
             _ = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil,
                                            forceRefresh: false, requiresMuxed: true)
         }
-        #expect(transport.callCount == 2)   // android rung: POST + rotate + retry POST; HLS rung skipped
+        #expect(transport.callCount == 2)   // android rung: POST + adopt + retry POST; HLS rung skipped
         #expect(await session.loadCooldown().tripCount == 1)
         #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)  // one failed walk arms nothing (spec R10)
     }

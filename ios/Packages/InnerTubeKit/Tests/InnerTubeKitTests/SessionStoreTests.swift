@@ -113,6 +113,48 @@ import Testing
         #expect(await store.cooldownRemaining(now: clock.wallNow) == nil)
     }
 
+    /// R10: reads never exceed 5 minutes. A wall clock set BACK past the trip (a device clock that was
+    /// ahead and got corrected) would otherwise read hours, and nothing clears it: `performResolve`
+    /// throws `.cooldown` before any walk, so no `recordSuccess` can run. Fail open.
+    @Test(arguments: [2 * 3600, 26 * 3600])
+    func aWallClockSetBackPastTheTripNeverReadsMoreThanFiveMinutes(setBack: Int) async {
+        let clock = ManualClock()
+        clock.wallNow = Date(timeIntervalSinceReferenceDate: 30 * 3600)
+        let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
+        await store.recordBotCheck()
+        await store.recordBotCheck()
+        #expect(await store.cooldownRemaining(now: clock.wallNow) == .seconds(60))
+
+        clock.wallNow = clock.wallNow.addingTimeInterval(-Double(setBack))
+
+        let remaining = await store.cooldownRemaining(now: clock.wallNow)
+        #expect(remaining == nil || remaining! <= .seconds(300))
+        #expect(remaining == nil)   // fail open: a legitimate read is never more than 300 s
+    }
+
+    /// A record with no `lastTrip` cannot bound its own deadline from the trip, so it must not be
+    /// trusted for hours either.
+    @Test func aRecordWithNoLastTripCannotBlockForHours() async {
+        let clock = ManualClock()
+        let keyValueStore = InMemoryKeyValueStore()
+        keyValueStore.set("InnerTubeKit.SessionStore.cooldown", Data(#"{"until":86400,"tripCount":4}"#.utf8))
+        let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore)
+
+        #expect(await store.cooldownRemaining(now: clock.wallNow) == nil)
+    }
+
+    /// The window is strict: 29:59 apart is consecutive, exactly 30:00 is not.
+    @Test func theThirtyMinuteWindowIsStrict() async {
+        for (gap, expectedCount) in [(30 * 60 - 1, 2), (30 * 60, 1)] {
+            let clock = ManualClock()
+            let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
+            await store.recordBotCheck()
+            clock.advanceWall(by: .seconds(gap))
+            await store.recordBotCheck()
+            #expect(await store.loadCooldown().tripCount == expectedCount, "gap \(gap) s")
+        }
+    }
+
     @Test func cooldownRemainingIsNilWhenNeverTripped() async {
         let clock = ManualClock()
         let store = SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: InMemoryKeyValueStore())
