@@ -5,6 +5,11 @@ stable release.
 
 ## [Unreleased]
 
+- iOS: when a video's first stream is refused by the server, playback continues on the standard-quality stream instead of showing an error or a countdown, and that video stays on it for the rest of the session.
+- iOS: members-only, private, region-blocked and removed videos say "not available" with no Retry; every other failure keeps the retryable "There was a problem loading this video" message.
+- iOS: a temporary block from the video source no longer stops all playback for 1–24 hours; the app renews its session and retries at once, and repeated blocks wait at most 5 minutes.
+- iOS: after an automatic recovery the video resumes where it stopped, and keeps playing unless you had paused it; a stream that stops delivering data recovers within about 8 seconds instead of waiting for the system timeout.
+
 ## [1.0.2] - 2026-10-13
 
 - Sign-up: an email/password account whose app still held the pre-verification sign-in token could not save its profile ("Couldn't save your profile"); the server now checks the account's current verification state, and Android refreshes the token right after verification (iOS already did).
