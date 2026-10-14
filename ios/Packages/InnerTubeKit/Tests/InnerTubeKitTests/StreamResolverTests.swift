@@ -273,29 +273,22 @@ import Testing
         #expect(transport.callCount == 1)
     }
 
-    // MARK: - d) botCheck rotates once and retries the same rung, succeeding on retry
+    // MARK: - d) a bot check on a STALE session adopts the fresh visitor and retries once
 
-    @Test func botCheckRotatesAndRetriesSameRung() async throws {
+    /// Live probe 2026-10-14 (spec §3): a bot check answered to a stale token still hands over a
+    /// fresh `responseContext.visitorData`. Adopting it IS the re-bootstrap -- one retry under the
+    /// new session, no tokenless round trip, and the 10-minute rotation slot is left untouched.
+    @Test func aBotCheckOnAStaleSessionAdoptsTheFreshVisitorAndRetriesOnce() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-botcheck"), try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport)
-        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("stale", for: .visionos)
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .hls = resolved.stream else { Issue.record("expected .hls after retry, got \(resolved.stream)"); return }
+        guard case .hls = resolved.stream else { Issue.record("expected .hls after the retry, got \(resolved.stream)"); return }
 
-        #expect(transport.callCount == 2)
-        // The retry must carry a REFRESHED session, not a byte-identical repeat: rotate() dropped
-        // the tripped visitor, so the retry goes out tokenless and YouTube mints a new one.
-        let sent = transport.recorded
-        #expect(sent.count == 2)
-        #expect(sent.first?.headers["X-Goog-Visitor-Id"] == "v1")
-        #expect(sent.last?.headers["X-Goog-Visitor-Id"] == nil)
-        #expect(sent.first?.body != sent.last?.body)
-        // ...and the visitor the successful retry came back with is captured for the next call
-        // (§6.3). Without the `setVisitorData` wiring this is nil and the ladder stays tokenless.
-        let captured = try #require(await session.visitorData(for: .visionos))
-        let expected = try #require(try PlayerResponseParser().parse(fixtureResponse("player-ok-hls").body).visitorData)
-        #expect(captured == expected)
+        let fresh = try #require(try PlayerResponseParser().parse(fixtureResponse("player-botcheck").body).visitorData)
+        #expect(transport.recorded.map { $0.headers["X-Goog-Visitor-Id"] } == ["stale", fresh])
+        #expect(await session.rotate(.visionos) == true)   // rotation slot unburned
     }
 
     // MARK: - d1) a tokenless first call bootstraps its session from the bot-check response
@@ -365,7 +358,6 @@ import Testing
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache, configStore: configStore)
         await session.recordBotCheck()
-        clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
 
         await expectThrows(.unavailable(videoId: Self.videoId)) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -395,7 +387,6 @@ import Testing
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()
-        clock.advanceWall(by: .seconds(8 * 24 * 3600))
 
         _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
 
@@ -578,7 +569,7 @@ import Testing
 
     /// Both rungs see the same LOGIN_REQUIRED, so a single walk used to call `recordBotCheck()`
     /// once PER RUNG: one video escalated trip 1 -> trip 2 = a 4 h app-wide persisted cooldown
-    /// in seconds. A walk is one incident; it records one trip (the 1 h tier) — and only because
+    /// in seconds. A walk is one incident; it records one trip (which alone arms nothing, spec R10) — and only because
     /// the walk FAILS overall (owner ruling 2026-09-01: the trip is recorded at walk end, never
     /// mid-walk).
     @Test func aTwoRungWalkAgainstABotCheckedTransportRecordsExactlyOneTrip() async throws {
@@ -591,9 +582,9 @@ import Testing
         await expectThrows(.botCheck) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
-        #expect(transport.callCount == 4)   // per rung: POST + rotate + retry POST
+        #expect(transport.callCount == 4)   // per rung: POST + adopt the fresh visitor + retry POST
         #expect(await session.loadCooldown().tripCount == 1)
-        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)  // the failed walk arms it
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)  // one failed walk arms nothing (spec R10)
     }
 
     // MARK: - d8b) a walk that ends in working playback leaves no armed trip (owner ruling 2026-09-01)
@@ -616,9 +607,52 @@ import Testing
         guard case .progressive = resolved.stream else {
             Issue.record("expected .progressive, got \(resolved.stream)"); return
         }
-        #expect(transport.callCount == 3)   // rung 1: POST + rotate + retry POST; rung 2: one POST
+        #expect(transport.callCount == 3)   // rung 1: POST + adopt + retry POST; rung 2: one POST
         #expect(await session.loadCooldown().tripCount == 0)
         #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+    }
+
+    // MARK: - d8c) a walk that ENDS in a source verdict records no trip (Task 1 review M4)
+
+    /// VISIONOS is bot-checked, then ANDROID answers the source's own verdict (members-only). The
+    /// source answered, so the network path works: whatever rung 1 saw, there is nothing to back
+    /// off from. Only a walk that fails without a source verdict records the trip.
+    @Test func aBotCheckedRungFollowedByASourceVerdictRecordsNoTrip() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([
+            try fixtureResponse("player-botcheck"), try fixtureResponse("player-botcheck"),
+            try fixtureResponse("player-members-only-android"),
+        ])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)   // genuine bot check, not a bootstrap
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 3)   // rung 1: POST + adopt + retry POST; rung 2: one POST
+        #expect(await session.loadCooldown().tripCount == 0)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+    }
+
+    // MARK: - d8d) failed bot-checked walks back off in minutes (spec R10)
+
+    /// The walk-end trip stays for a walk that fails with no source verdict, and the second
+    /// consecutive one arms the first back-off: 60 s, never hours.
+    @Test func twoFailedBotCheckedWalksArmTheSixtySecondBackOff() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        for _ in 0..<2 {
+            await expectThrows(.botCheck) {
+                _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+            }
+        }
+
+        #expect(await session.loadCooldown().tripCount == 2)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == .seconds(60))
     }
 
     // MARK: - d9) an HTTP-level 429/403 routes into the bot-check path (Cubic r3 #4)
@@ -754,7 +788,8 @@ import Testing
         let clock = ManualClock()
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock)
-        await session.recordBotCheck()  // 1st trip -> 1 h cooldown
+        await session.recordBotCheck()
+        await session.recordBotCheck()  // 2nd consecutive trip -> 60 s (spec R10)
 
         do {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -764,8 +799,8 @@ import Testing
         }
         #expect(transport.callCount == 0)  // gated before any network
 
-        // Once the 1 h backoff elapses, resolve proceeds and hits the wire.
-        clock.advanceWall(by: .seconds(3600 + 1))
+        // Once the 60 s back-off elapses, resolve proceeds and hits the wire.
+        clock.advanceWall(by: .seconds(60 + 1))
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         guard case .hls = resolved.stream else { Issue.record("expected .hls, got \(resolved.stream)"); return }
         #expect(transport.callCount == 1)
@@ -875,7 +910,7 @@ import Testing
         }
         #expect(transport.callCount == 2)   // android rung: POST + rotate + retry POST; HLS rung skipped
         #expect(await session.loadCooldown().tripCount == 1)
-        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)  // one failed walk arms nothing (spec R10)
     }
 
     /// Serves call 1 only after `release()` (a live player walk held open at the transport);

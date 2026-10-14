@@ -172,7 +172,9 @@ public actor StreamResolver {
                     try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
                 }
             } catch let error as ExtractionError where error.terminal {
-                if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
+                // A source verdict (private, members-only, removed, age gate, ...): the source
+                // ANSWERED, so the network path works. No trip, even if an earlier rung saw a bot
+                // check (Task 1 review M4); only a walk that fails without a verdict records one.
                 throw error
             } catch is CancellationError {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
@@ -292,17 +294,15 @@ public actor StreamResolver {
             // surface.
             throw ExtractionError.ageRestricted
         case .botCheck:
-            // Session bootstrap (Appendix A.1 `probe.py`: "a bare request establishes the session;
-            // reuse responseContext.visitorData for everything after"). The very first call under a
-            // family goes out tokenless and YouTube answers with a bot check that *carries* a
-            // freshly-minted `responseContext.visitorData`; adopting it and retrying flips the same
-            // rung to OK+HLS (verified live 2026-08-24 against `xc7keR2piUM`). This is session
-            // establishment, not a rotation — rotating here would clear the token we were just
-            // handed and burn the 10-minute rotation budget on the first play of every launch.
-            // ADOPTION is not slot-limited (only rotation is), so even the post-rotation retry
-            // (`canRotate: false`) keeps a fresh interstitial token for the next walk (CF-G-15) --
-            // discarding it left the family tokenless after every failed rotate-retry.
-            if visitorData == nil, let visitor = parsed.visitorData {
+            // Session (re)bootstrap. A bot-checked response carries a freshly-minted
+            // `responseContext.visitorData` whether the request went out tokenless (a family's first
+            // call; verified live 2026-08-24 on `xc7keR2piUM`) or under a STALE token (live probe
+            // 2026-10-14: a bogus `visitorData` came back with a different, fresh one). Adopting it
+            // discards the old session; ONE retry under it is the recovery (owner directive
+            // 2026-10-14). Adoption is not slot-limited (only rotation is), so even the retry keeps
+            // the fresh token for the next walk (CF-G-15). Rotation below is the fallback for a bot
+            // check that hands over nothing new.
+            if let visitor = parsed.visitorData, visitor != visitorData {
                 await sessionStore.setVisitorData(visitor, for: family)
                 if canRotate {
                     return try await runPlayerRung(

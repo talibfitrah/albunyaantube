@@ -288,7 +288,7 @@ public actor BrowseClient {
     //
     // Deliberately no `recordBotCheck()` here either: the shared cooldown ladder is consulted by
     // `StreamResolver` before every resolve, so escalating it from browse would let one
-    // bot-checked listing page silence playback for an hour (24 h on the fourth trip). Android's
+    // bot-checked listing page silence playback for minutes (up to 5 per trip). Android's
     // cooldown exempts the player for the same reason; a bot-checked browse goes degraded
     // instead (reconciliation note 3, CF-C2).
 

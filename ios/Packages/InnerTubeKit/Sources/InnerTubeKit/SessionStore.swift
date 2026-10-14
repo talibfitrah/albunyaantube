@@ -6,22 +6,25 @@ import Foundation
 ///
 /// The 10-minute rotation guard is process-lifetime only (monotonic clock,
 /// never persisted — a fresh process naturally starts unthrottled). The
-/// cooldown escalation/reset is wall-clock and persisted via `KeyValueStore`,
-/// mirroring Android's `CooldownState.kt`.
+/// cooldown is wall-clock and persisted via `KeyValueStore`; since 1.0.3 it is minutes, never hours
+/// (owner directive 2026-10-14).
 public actor SessionStore {
     private static let cooldownKey = "InnerTubeKit.SessionStore.cooldown"
     private static let visitorDataKeyPrefix = "InnerTubeKit.SessionStore.visitorData."
 
     private static let rotationMinInterval: Duration = .seconds(600)
-    private static let cooldownDurations: [TimeInterval] = [3600, 4 * 3600, 12 * 3600, 24 * 3600]
-    private static let tripWindow: TimeInterval = 24 * 3600
-    private static let cleanResetWindow: TimeInterval = 7 * 24 * 3600
+    /// Consecutive failed bot-checked walks: the 1st arms nothing (the rung already re-bootstrapped
+    /// and retried), then 1 / 2 / 5 min. Owner directive 2026-10-14: never block playback for hours.
+    private static let cooldownDurations: [TimeInterval] = [0, 60, 120, 300]
+    /// Also the read bound: a 1.0.2 install persisted up to 24 h under `cooldownKey`.
+    private static let maxCooldown: TimeInterval = 300
+    /// Trips further apart than this are not consecutive.
+    private static let tripWindow: TimeInterval = 30 * 60
 
     struct CooldownRecord: Codable, Sendable {
         var until: Date?
         var tripCount: Int = 0
         var lastTrip: Date?
-        var cleanStreakStart: Date?
     }
 
     private let monotonicClock: MonotonicClock
@@ -64,38 +67,36 @@ public actor SessionStore {
 
     // MARK: - cooldown
 
-    /// Records a bot-check/429 trip. Escalates by trip count within a rolling
-    /// 24 h window: 1st -> 1 h, 2nd -> 4 h, 3rd -> 12 h, 4th+ -> 24 h
-    /// (`extraction.md` §6.3).
+    /// Records one failed walk that saw a bot check. Escalates over CONSECUTIVE trips (each within
+    /// `tripWindow` of the last): 1st -> none, 2nd -> 60 s, 3rd -> 120 s, 4th+ -> 300 s.
     public func recordBotCheck() {
         let now = wallClock.wallNow
         var record = loadCooldown()
-        let withinWindow = record.lastTrip.map { now.timeIntervalSince($0) < Self.tripWindow } ?? false
-        let tripCount = withinWindow ? record.tripCount + 1 : 1
-        let durationIndex = min(tripCount - 1, Self.cooldownDurations.count - 1)
-        record.until = now.addingTimeInterval(Self.cooldownDurations[durationIndex])
+        let consecutive = record.lastTrip.map { now.timeIntervalSince($0) < Self.tripWindow } ?? false
+        let tripCount = consecutive ? record.tripCount + 1 : 1
+        record.until = now.addingTimeInterval(Self.cooldownDurations[min(tripCount, Self.cooldownDurations.count) - 1])
         record.tripCount = tripCount
         record.lastTrip = now
-        record.cleanStreakStart = now
         saveCooldown(record)
     }
 
-    /// Records a clean (non-tripped) fetch. If 7 days have elapsed since the
-    /// last trip, resets the trip count so the next trip starts back at 1 h.
+    /// Any clean fetch ends the streak and lifts the cooldown. Writes only when there is something
+    /// to clear -- this runs on every successful resolve.
     public func recordSuccess() {
-        let now = wallClock.wallNow
-        var record = loadCooldown()
-        guard let streakStart = record.cleanStreakStart,
-            now.timeIntervalSince(streakStart) >= Self.cleanResetWindow
-        else { return }
-        record.tripCount = 0
-        record.cleanStreakStart = now
-        saveCooldown(record)
+        let record = loadCooldown()
+        guard record.tripCount > 0 || record.until != nil else { return }
+        saveCooldown(CooldownRecord())
     }
 
+    /// A record a 1.0.2 install persisted can say up to 24 h. The DEADLINE is bounded to
+    /// `maxCooldown` after the trip, not just the remaining time: clamping only the latter would
+    /// read "300 s left" for the whole day and block exactly as 1.0.2 did.
     public func cooldownRemaining(now: Date) -> Duration? {
-        guard let until = loadCooldown().until, until > now else { return nil }
-        return .seconds(Int(until.timeIntervalSince(now).rounded(.up)))
+        let record = loadCooldown()
+        guard let until = record.until else { return nil }
+        let deadline = min(until, (record.lastTrip ?? until).addingTimeInterval(Self.maxCooldown))
+        guard deadline > now else { return nil }
+        return .seconds(Int(deadline.timeIntervalSince(now).rounded(.up)))
     }
 
     // MARK: - private helpers
