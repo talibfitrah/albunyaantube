@@ -178,8 +178,11 @@ public actor StreamResolver {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
+        // A refusal by ANDROID held back in a demoted walk (F4); see the `AndroidRefusal` catch below.
+        var heldVerdict: ExtractionError?
+        let demotedFamily = demoted[videoId]
 
-        for strategy in Self.walkOrder(config.resolverOrder, after: demoted[videoId]) {
+        for strategy in Self.walkOrder(config.resolverOrder, after: demotedFamily) {
             let outcome: RungResult
             do {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
@@ -192,6 +195,16 @@ public actor StreamResolver {
                 // ANSWERED, so the network path works. No trip, even if an earlier rung saw a bot
                 // check (Task 1 review M4); only a walk that fails without a verdict records one.
                 throw error
+            } catch is AndroidRefusal {
+                // The source's own verdict (spec R6), terminal at once -- EXCEPT in a demoted walk,
+                // where it now opens the ladder: VISIONOS served this very video moments ago, so
+                // "the source no longer serves it" is not yet proven (owner rule: a video plays
+                // unless the source no longer serves it). Hold the verdict, try the wrapped rungs,
+                // and throw it if none plays. Without a demotion this is the old terminal throw.
+                let verdict = ExtractionError.unavailable(videoId: videoId)
+                guard demotedFamily != nil else { throw verdict }
+                heldVerdict = verdict
+                continue
             } catch is CancellationError {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
                 // No trip either: the superseding walk sees the bot check itself if it's real.
@@ -211,6 +224,11 @@ public actor StreamResolver {
                 continue
             }
         }
+        // A held source verdict ends the walk like any other: no trip, and not the retryable error --
+        // unless a wrapped rung saw a bot check. ANDROID's word is doubted in a demoted walk (VISIONOS
+        // just served this video), so a bot check on the rung that could have confirmed it is OUR
+        // session problem: the walk ends as a bot-checked one does (retryable, trip below).
+        if let heldVerdict, !sawBotCheck { throw heldVerdict }
         if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }
@@ -303,7 +321,7 @@ public actor StreamResolver {
             // members-only (J-AuO9TNt5I), geo-locked -- and the app says "not available", never the
             // retryable error (owner directive 2026-10-14, spec R6).
             guard family == .android else { return .advance }
-            throw ExtractionError.unavailable(videoId: videoId)
+            throw AndroidRefusal()
         case .ageGate:
             // Terminal, not a hand-off (owner directive 2026-08-27). `ageRestricted` is already one
             // of ruling 14's terminal states and the app maps it onto its single "not playable"
@@ -344,6 +362,10 @@ public actor StreamResolver {
     /// Internal marker for an HTTP 429: routed to `.botCheck` WITHOUT the rotation a 403 gets
     /// (CF-G-15). Never escapes `runPlayerRung`.
     private struct RateLimited: Error {}
+
+    /// Internal marker: ANDROID answered UNPLAYABLE. `performResolve` turns it into the terminal
+    /// `.unavailable` verdict, or holds it in a demoted walk. Never escapes `performResolve`.
+    private struct AndroidRefusal: Error {}
 
     /// Enforces ≥`minPostSpacing` between `player` POSTs, then delegates to the injected
     /// transport. The 8 s budget wraps the whole rung, one level up.

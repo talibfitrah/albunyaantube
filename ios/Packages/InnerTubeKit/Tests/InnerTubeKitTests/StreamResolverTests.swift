@@ -604,6 +604,114 @@ import Testing
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
     }
 
+    /// Review F2: `demote` rotates by `family(of:)`, and an unmapped strategy would make it a silent
+    /// no-op. A strategy added to the known set must be given a client here.
+    @Test func everyKnownStrategyMapsToAClientFamily() {
+        for strategy in RemoteConfig.knownResolverStrategies {
+            #expect(StreamResolver.family(of: strategy) != nil, "\(strategy) has no client family: demote would do nothing for it")
+        }
+    }
+
+    /// Review F3. A demotion is per VIDEO, not per lane: a prefetch, a cast's muxed walk and a save's
+    /// muxed walk all start after the failed rung. (A muxed walk skips VISIONOS without a POST either
+    /// way, so those two pin the observable result: one POST, ANDROID's.)
+    @Test func aPrefetchWalkRespectsTheDemotion() async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    @Test(arguments: [Purpose.cast, Purpose.prefetch])
+    func aMuxedWalkRespectsTheDemotion(purpose: Purpose) async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(
+            Self.videoId, purpose: purpose, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    // MARK: - demote x R6: a demoted walk starts at ANDROID, so its refusal is not yet the verdict (F4)
+
+    /// Owner rule: a video plays unless the source no longer serves it. VISIONOS was serving this one
+    /// moments ago, so after a demotion ANDROID's UNPLAYABLE (it opens the walk now) is held as the
+    /// pending verdict while the wrapped VISIONOS rung gets its turn.
+    @Test func aDemotedWalkTriesTheWrappedRungAfterAnAndroidRefusal() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .hls = resolved.stream else { Issue.record("expected .hls, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+    }
+
+    /// If nothing then serves and the wrapped rungs failed WITHOUT a bot check (here VISIONOS refuses
+    /// too), the held verdict stands: "not available", no Retry, no trip.
+    @Test func aDemotedWalkThatEndsWithoutAStreamKeepsTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-geo-visionos")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])   // the wrapped rung was tried
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Also without a bot check: the wrapped VISIONOS rung is skipped (a muxed walk POSTs no HLS rung).
+    @Test func aDemotedMuxedWalkWhoseWrappedRungIsSkippedKeepsTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(
+                Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    /// The refined rule (controller, concern 3): ANDROID's verdict is doubted because VISIONOS was just
+    /// serving this video, so if the wrapped VISIONOS rung then only shows a BOT CHECK, that is OUR
+    /// session problem -- not "not available". The walk ends as any bot-checked walk does: the
+    /// retryable `.botCheck` and ONE recorded trip.
+    @Test func aDemotedWalkWhoseWrappedRungSeesABotCheckIsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.first?.headers["X-YouTube-Client-Name"] == "3")
+        #expect(transport.recorded.contains { $0.headers["X-YouTube-Client-Name"] == "101" })   // the wrapped rung was tried
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    /// R6 is unchanged for a walk nobody demoted: ANDROID's refusal is the verdict at once, even with
+    /// a rung left (here ANDROID is first in a published order).
+    @Test func anUndemotedAndroidRefusalIsStillTerminalAtOnce() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["androidItag18", "visionosHLS"]))
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
     // MARK: - d5b) chained supersede: an awaiter of a superseded awaiter still adopts the final winner
 
     @Test func chainedSupersedeAdoptsFinalWinnerNotCancellation() async throws {
