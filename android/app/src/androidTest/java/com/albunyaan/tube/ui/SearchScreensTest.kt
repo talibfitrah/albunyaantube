@@ -2,6 +2,7 @@ package com.albunyaan.tube.ui
 
 import android.app.LocaleManager
 import android.os.Build
+import android.graphics.Rect
 import android.os.LocaleList
 import android.view.View
 import androidx.annotation.RequiresApi
@@ -18,6 +19,7 @@ import androidx.test.ext.junit.runners.AndroidJUnit4
 import androidx.test.filters.LargeTest
 import androidx.test.filters.SdkSuppress
 import androidx.test.platform.app.InstrumentationRegistry
+import com.google.android.material.progressindicator.LinearProgressIndicator
 import com.albunyaan.tube.HiltTestActivity
 import com.albunyaan.tube.R
 import com.albunyaan.tube.di.TestNetworkModule
@@ -31,6 +33,7 @@ import androidx.media3.datasource.cache.SimpleCache
 import dagger.hilt.android.testing.HiltAndroidRule
 import dagger.hilt.android.testing.HiltAndroidTest
 import kotlinx.coroutines.CompletableDeferred
+import org.hamcrest.Matchers.not
 import org.junit.After
 import org.junit.Before
 import org.junit.Assert.assertEquals
@@ -75,15 +78,26 @@ abstract class SearchScreensBase(
 
     @After
     fun tearDown() {
+        api.resetSearch() // first: the shared fake must be reset even if a later step throws
         InstrumentationRegistry.getInstrumentation().targetContext
             .getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.getEmptyLocaleList()
-        api.resetSearch()
         scenario?.close()
         simpleCache.release()
     }
 
     private fun shown(id: Int) = onView(withId(id)).check(matches(isDisplayed()))
     private fun gone(id: Int) = onView(withId(id)).check(matches(withEffectiveVisibility(Visibility.GONE)))
+    private fun notShown(id: Int) = onView(withId(id)).check(matches(not(isDisplayed())))
+
+    private fun resultsListTop(): Int {
+        var top = 0
+        scenario!!.onActivity {
+            val location = IntArray(2)
+            it.findViewById<View>(R.id.searchResultsList).getLocationOnScreen(location)
+            top = location[1]
+        }
+        return top
+    }
 
     @Test
     fun progressBarOverResults_andClosestResultsNote() {
@@ -100,6 +114,7 @@ abstract class SearchScreensBase(
                 }
                 "qurn" -> searchAnswer("approximate", searchVideo("v1", "Quran for beginners"))
                 "koran" -> searchAnswer("related", searchVideo("v1", "Quran for beginners"))
+                "boom" -> throw java.io.IOException("offline")
                 else -> searchAnswer("exact")
             }
         }
@@ -113,8 +128,9 @@ abstract class SearchScreensBase(
         // 1. First search: list shown, no bar, no note (exact).
         typeQuery("quran")
         eventually { shown(R.id.searchResultsList) }
-        gone(R.id.searchProgress)
+        notShown(R.id.searchProgress)
         gone(R.id.searchMatchNote)
+        val listTop = resultsListTop()
 
         // 2. A newer search in flight: the old list stays, the bar shows, no full-screen spinner.
         typeQuery("quran tv")
@@ -122,25 +138,39 @@ abstract class SearchScreensBase(
         eventually { shown(R.id.searchProgress) }
         shown(R.id.searchResultsList)
         gone(R.id.loadingState)
+        assertEquals("showing the bar must not push the list down", listTop, resultsListTop())
         scenario!!.onActivity {
-            val bar = it.findViewById<View>(R.id.searchProgress)
+            val bar = it.findViewById<LinearProgressIndicator>(R.id.searchProgress)
             assertEquals("the bar spans the screen width", (bar.parent as View).width, bar.width)
+            assertEquals("the track follows the theme", it.getColor(R.color.surface_variant), bar.trackColor)
         }
-        shot("loading")
+        // The bar is indeterminate: wait for a frame where the green segment is on screen.
+        val barRow = Rect().also { r -> scenario!!.onActivity { it.findViewById<View>(R.id.searchProgress).getGlobalVisibleRect(r) } }
+        val green = InstrumentationRegistry.getInstrumentation().targetContext.getColor(R.color.primary_green)
+        screenshot("android-$device-$lang-loading") { bitmap ->
+            (barRow.left until barRow.right step 4).any { x -> bitmap.getPixel(x, barRow.centerY()) == green }
+        }
 
         // 3. It lands: bar gone, exact results show no note.
         slowGate.complete(Unit)
-        eventually { gone(R.id.searchProgress) }
+        eventually { notShown(R.id.searchProgress) }
         shown(R.id.searchResultsList)
         gone(R.id.searchMatchNote)
         shot("results")
 
-        // 4. Approximate and related answers show the note, in the device language and direction.
-        for (query in listOf("koran", "qurn")) {
+        // 4. Each closest-match tier shows the note on its own. An exact answer comes first and the test waits for
+        //    the note to go, so a note left over from the previous tier cannot satisfy the next assertion.
+        for (query in listOf("koran", "qurn")) { // related, then approximate
+            typeQuery("quran")
+            eventually { gone(R.id.searchMatchNote) }
             typeQuery(query)
-            eventually { shown(R.id.searchMatchNote) }
+            try {
+                eventually { shown(R.id.searchMatchNote) }
+            } catch (e: Throwable) {
+                throw AssertionError("no closest-results note for \"$query\"", e)
+            }
+            onView(withId(R.id.searchMatchNote)).check(matches(withText(noteText)))
         }
-        onView(withId(R.id.searchMatchNote)).check(matches(withText(noteText)))
         scenario!!.onActivity {
             val note = it.findViewById<View>(R.id.searchMatchNote)
             val direction = if (rtl) View.LAYOUT_DIRECTION_RTL else View.LAYOUT_DIRECTION_LTR
@@ -148,9 +178,16 @@ abstract class SearchScreensBase(
         }
         shot("note")
 
-        // 5. Back to an exact answer: the note goes away again.
-        typeQuery("quran")
-        eventually { gone(R.id.searchMatchNote) }
+        // 5. The note never outlives its results. The note is showing here ("qurn"), so each check is real.
+        typeQuery("q") // under 2 characters: the history screen
+        eventually { gone(R.id.searchResultsList) }
+        gone(R.id.searchMatchNote)
+
+        typeQuery("qurn")
+        eventually { shown(R.id.searchMatchNote) }
+        typeQuery("boom") // the scripted search throws: the error screen
+        eventually { shown(R.id.emptyState) }
+        gone(R.id.searchMatchNote)
     }
 }
 

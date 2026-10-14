@@ -28,14 +28,16 @@
 
         </androidx.appcompat.widget.Toolbar>
 
-        <!-- Spec §6: a newer search is loading while the previous results stay on screen -->
+        <!-- Spec §6: a newer search is loading while the previous results stay on screen.
+             INVISIBLE, not GONE: it keeps its 4dp so showing it never shifts the list below. -->
         <com.google.android.material.progressindicator.LinearProgressIndicator
             android:id="@+id/searchProgress"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:indeterminate="true"
-            android:visibility="gone"
-            app:indicatorColor="@color/primary_green" />
+            android:visibility="invisible"
+            app:indicatorColor="@color/primary_green"
+            app:trackColor="@color/surface_variant" />
 
     </com.google.android.material.appbar.AppBarLayout>
 

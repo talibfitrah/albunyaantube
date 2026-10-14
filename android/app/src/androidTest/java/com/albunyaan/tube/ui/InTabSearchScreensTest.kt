@@ -71,9 +71,9 @@ abstract class InTabSearchScreensBase(private val lang: String) {
 
     @After
     fun tearDown() {
+        api.resetContent() // first: the shared fake must be reset even if a later step throws
         InstrumentationRegistry.getInstrumentation().targetContext
             .getSystemService(LocaleManager::class.java).applicationLocales = LocaleList.getEmptyLocaleList()
-        api.resetContent()
         scenario?.close()
         simpleCache.release()
     }

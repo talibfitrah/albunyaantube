@@ -1,6 +1,7 @@
 package com.albunyaan.tube.util
 
 import android.graphics.Bitmap
+import androidx.test.espresso.Espresso
 import androidx.test.espresso.Espresso.onView
 import androidx.test.espresso.action.ViewActions.replaceText
 import androidx.test.espresso.matcher.ViewMatchers.isDescendantOfA
@@ -48,11 +49,20 @@ fun eventually(timeoutMs: Long = 5_000, check: () -> Unit) {
     }
 }
 
-/** Saves a screenshot where AGP's connected-test run collects it: build/outputs/connected_android_test_additional_output. */
-fun screenshot(name: String) {
+/**
+ * Saves a screenshot where AGP's connected-test run collects it: build/outputs/connected_android_test_additional_output.
+ * [until] lets a caller wait for a moving frame (the indeterminate bar's segment): it retries ~3 s, keeping the last one.
+ */
+fun screenshot(name: String, until: (Bitmap) -> Boolean = { true }) {
     val inst = InstrumentationRegistry.getInstrumentation()
-    Thread.sleep(500) // let the indeterminate bar slide into view and the list settle
-    val bitmap = inst.uiAutomation.takeScreenshot()
+    Espresso.closeSoftKeyboard() // the focused SearchView pops it up on AVDs without a hardware keyboard
+    Thread.sleep(500) // let the list settle
+    var bitmap = inst.uiAutomation.takeScreenshot()
+    repeat(20) {
+        if (until(bitmap)) return@repeat
+        Thread.sleep(150)
+        bitmap = inst.uiAutomation.takeScreenshot()
+    }
     val dir = File(InstrumentationRegistry.getArguments().getString("additionalTestOutputDir") ?: inst.targetContext.cacheDir.path)
     dir.mkdirs()
     File(dir, "$name.png").outputStream().use { bitmap.compress(Bitmap.CompressFormat.PNG, 100, it) }

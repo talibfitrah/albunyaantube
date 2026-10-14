@@ -105,7 +105,9 @@ class ContentListViewModel(
 
         // Reset pagination state
         nextCursor = null
-        _hasMoreData = true
+        // A search that keeps the list up must not be cancelled by a scroll-triggered loadMore();
+        // the Success below re-enables paging.
+        _hasMoreData = loadingType != LoadingType.REFRESH
         _isLoadingMore = false
         _isRefreshing = false
         allItems.clear()
@@ -184,6 +186,8 @@ class ContentListViewModel(
                     hasMoreData = _hasMoreData,
                     isSearchActive = isSearchActive
                 )
+            } catch (e: CancellationException) {
+                throw e // superseded (e.g. by a search): never flash an error for it
             } catch (e: Exception) {
                 Log.e(TAG, "Error refreshing content for type=$contentType", e)
                 _content.value = ContentState.Error(e.message ?: "Unknown error")

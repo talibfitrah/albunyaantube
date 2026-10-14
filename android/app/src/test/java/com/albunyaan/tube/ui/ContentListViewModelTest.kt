@@ -367,6 +367,46 @@ class ContentListViewModelTest {
         assertTrue(vm.content.value is ContentListViewModel.ContentState.Success)
     }
 
+    @Test
+    fun `a pull-to-refresh cancelled by a search shows no error`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), null))
+        fakeService.gates[1] = CompletableDeferred() // the refresh hangs until the search supersedes it
+        val vm = createViewModel()
+        advanceUntilIdle()
+        val states = mutableListOf<ContentListViewModel.ContentState>()
+        backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.content.collect { states.add(it) } }
+
+        vm.refresh(); advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle()
+
+        assertTrue("the cancelled refresh emitted an Error: $states", states.none { it is ContentListViewModel.ContentState.Error })
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Success)
+    }
+
+    @Test
+    fun `loadMore during an in-flight search load neither cancels it nor fetches`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("1")), CursorResponse.PageInfo("c1"))) // page 1 of the tab, has more
+        fakeService.responses.add(CursorResponse(listOf(createVideo("2")), CursorResponse.PageInfo("c2"))) // the search result, has more
+        fakeService.gates[1] = CompletableDeferred() // the search hangs until released
+        val vm = createViewModel()
+        advanceUntilIdle()
+        vm.setSearchQuery("ab"); advanceUntilIdle() // debounce passed, the search fetch is in flight
+        val refreshing = ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH)
+        assertEquals(refreshing, vm.content.value)
+
+        vm.loadMore(); advanceUntilIdle() // the user scrolled near the bottom of the kept list
+
+        assertEquals("loadMore fetched while the search was loading", 2, fakeService.callCount)
+        assertEquals("loadMore replaced the search's loading state", refreshing, vm.content.value)
+        assertFalse(vm.canLoadMore)
+
+        fakeService.gates[1]!!.complete(Unit); advanceUntilIdle()
+
+        val landed = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf(createVideo("2")), landed.items) // the search was not cancelled
+        assertTrue("pagination works again once the search has landed", vm.canLoadMore)
+    }
+
     // --- Helper functions ---
 
     private fun createVideo(id: String) = ContentItem.Video(
