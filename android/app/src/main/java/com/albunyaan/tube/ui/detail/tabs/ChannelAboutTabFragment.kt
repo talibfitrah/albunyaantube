@@ -122,8 +122,8 @@ class ChannelAboutTabFragment : Fragment(R.layout.fragment_channel_about_tab) {
                     linkView.findViewById<TextView>(R.id.linkName).text = link.name
                     val urlView = linkView.findViewById<TextView>(R.id.linkUrl)
                     urlView.text = link.url
-                    if (PlayerDescriptions.isYouTubeLink(link.url)) {
-                        // Shown, never opened: no hand-off to YouTube. Plain text, no ripple, no chevron.
+                    if (!PlayerDescriptions.isOpenableLink(link.url)) {
+                        // Shown, never opened (YouTube, other apps' schemes): plain text, no ripple, no chevron.
                         urlView.setTextColor(MaterialColors.getColor(urlView, android.R.attr.textColorSecondary))
                         linkView.isClickable = false
                         linkView.isFocusable = false

@@ -234,4 +234,22 @@ class PlayerDescriptionsTest {
         assertFalse(PlayerDescriptions.isYouTubeLink(""))
         assertFalse(PlayerDescriptions.isYouTubeLink(null))
     }
+    // Fail closed: one rule decides whether a link opens, for descriptions and channel links alike.
+
+    @Test
+    fun only_an_http_link_with_a_host_that_is_not_youtube_opens() {
+        val inert = listOf(
+            "https:youtube.com/watch?v=x", "HTTPS:YOUTU.BE/x", "https://www.youtube.com/@channel",
+            "intent://x#Intent;end", "albunyaantube://video/x", "javascript:alert(1)", "mailto:a@example.org", "", null
+        )
+        for (url in inert) assertFalse("$url opens", PlayerDescriptions.isOpenableLink(url))
+        for (url in listOf("https://example.org/a", "http://Example.org")) assertTrue("$url does not open", PlayerDescriptions.isOpenableLink(url))
+    }
+
+    @Test
+    fun a_hostless_youtube_anchor_keeps_its_text_and_is_not_a_link() {
+        val rendered = PlayerDescriptions.render("see <a href=\"https:youtube.com/watch?v=x\">youtube.com/watch</a> now")
+        assertEquals(emptyList<String>(), linksIn(rendered))
+        assertEquals("see youtube.com/watch now", rendered.toString())
+    }
 }

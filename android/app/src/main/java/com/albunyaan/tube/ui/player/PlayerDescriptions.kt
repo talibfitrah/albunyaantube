@@ -31,9 +31,9 @@ internal object PlayerDescriptions {
      * `albunyaantube://`, `intent://`, `tel:`, `sms:`, `mailto:`, `geo:`, etc.
      * into a description and weaponise the tappable link to navigate inside
      * our own app's deep-link routes or hand-off to arbitrary other apps with
-     * attacker-chosen payloads. Stripping non-http(s) spans keeps the link
-     * text visible (so users still see the URL) but inert. YouTube links
-     * ([isYouTubeLink]) are stripped the same way.
+     * attacker-chosen payloads. Every span that fails [isOpenableLink] is
+     * stripped: the link text stays visible (so users still see the URL) but
+     * is inert.
      */
     fun render(rawHtml: String?): CharSequence? {
         if (rawHtml.isNullOrBlank()) return null
@@ -47,7 +47,7 @@ internal object PlayerDescriptions {
         if (text !is Spanned) return text
         val spans = text.getSpans(0, text.length, URLSpan::class.java)
         if (spans.isEmpty()) return text
-        val unsafe = spans.filter { !isSafeLinkScheme(it.url) || isYouTubeLink(it.url) }
+        val unsafe = spans.filterNot { isOpenableLink(it.url) }
         if (unsafe.isEmpty()) return text
         // Copy into a mutable builder once so we can remove the offending
         // spans without affecting the safe ones that remain clickable.
@@ -57,9 +57,17 @@ internal object PlayerDescriptions {
     }
 
     /**
+     * The one rule for links the app lets the user open (descriptions and channel About links): http or https, a
+     * host, and not YouTube. Anything else, `intent://`, `albunyaantube://`, `mailto:` or a host-less
+     * `https:youtube.com/x` included, fails closed: shown as text, never opened.
+     */
+    fun isOpenableLink(url: String?): Boolean =
+        url != null && isSafeLinkScheme(url) && !url.trim().toUri().host.isNullOrBlank() && !isYouTubeLink(url)
+
+    /**
      * Owner rule: the app exists so users don't go to YouTube. A link to a YouTube host
      * (`youtube.com`, `youtu.be`, `youtube-nocookie.com` or any subdomain, any case) stays
-     * visible as text but never opens. The channel About links use this rule too.
+     * visible as text but never opens.
      */
     fun isYouTubeLink(url: String?): Boolean {
         val host = url?.trim()?.toUri()?.host?.lowercase()?.trimEnd('.') ?: return false
