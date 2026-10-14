@@ -1,0 +1,23 @@
+android/app/src/androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt
+  s_dbb6b1f3671904::t_35602c82cbfe1a 52
+android/app/src/main/java/com/albunyaan/tube/ui/SearchFragment.kt
+  s_dbb6b1f3671904::t_0e13e1b717eeb5 97
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_dbb6b1f3671904::t_00d65505096c67 394
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "03d29033e1cac34223237137b37f1d24ee22d33c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
