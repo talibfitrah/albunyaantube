@@ -106,10 +106,10 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// The field changed over a failed refresh's retained list: it stays on screen until the next
     /// first page lands or fails.
     private var keepsFailedList = false
-    /// Set by `refresh()` and `load()`, cleared when a first page lands (Android's
-    /// `shownQuery = null`): until then the rows on screen are no answer an undone keystroke can
-    /// return to -- the reload they asked for has not happened, whether it is in flight, was
-    /// cancelled by the keystroke, or failed.
+    /// Set by `refresh()` (Android's `shownQuery = null`) and by any first page that fails, cleared
+    /// when one lands: until then the rows on screen are no answer an undone keystroke can return
+    /// to -- the reload asked for has not happened, whether it is in flight, was cancelled by the
+    /// keystroke, or failed (a refresh, the banner's Retry, a Search-key resubmit).
     private var reloadPending = false
 
     /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
@@ -163,10 +163,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         self.announce = announce
     }
 
-    func load() async {
-        reloadPending = true
-        await performFullLoad(showLoading: true)
-    }
+    func load() async { await performFullLoad(showLoading: true) }
 
     /// Gate wave-4 V2: SwiftUI restarts a `.task` every time a compact-width `TabView` tab is
     /// re-selected, so the views' `.task { await load() }` blanked every accumulated page back to
@@ -265,6 +262,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         } catch {
             guard !Task.isCancelled else { return }
             errorToken += 1
+            reloadPending = true
             state = .error // initial/refresh failure loses items, matching Android §2.5
         }
     }

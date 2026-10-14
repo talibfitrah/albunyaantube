@@ -776,6 +776,36 @@ struct ContentListViewModelTests {
         #expect(!vm.isSearching)
     }
 
+    /// The same for a Search-key resubmit of the query on screen that fails: its rows stay with the
+    /// banner, and a keystroke undone inside its debounce still retries rather than keeping them.
+    @Test func undoingAKeystrokeAfterAFailedResubmitStillRetries() async {
+        let debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [:], failing: [3])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if await sleeps.recorded.count == 2 { await debounce.block() } // holds the "abs" keystroke's debounce
+        }
+        await vm.load()
+        vm.query = "ab"
+        await vm.searchTask?.value
+        await vm.submit()                    // the Search key on the query on screen: the refetch fails
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 5)
+
+        vm.query = "abs"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        vm.query = "ab"
+        await debounce.release()
+        await typed?.value
+        await vm.searchTask?.value
+
+        #expect(await client.queries == [nil, "ab", "ab", "ab"])
+        #expect(!vm.isSearching)
+    }
+
     /// VoiceOver hears a new query's results replace the list: their count, when page 1 lands.
     /// The first load, a page appended below and a refresh of the same query say nothing.
     @Test func aNewQuerysFirstPageIsAnnouncedWithItsCount() async {
