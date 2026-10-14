@@ -1,0 +1,41 @@
+docs/superpowers/plans/2026-09-22-ios-phase6-app-store-readiness.md
+  s_dbb6b1f3671904::t_31dfa6a063def6 21-22,46-47,251
+  s_dbb6b1f3671904::t_6f057f2b972fe9 252
+ios/FitrahTube/Features/Player/PlayerMetadataView.swift
+  s_dbb6b1f3671904::t_ef88b1d40621ef 170-171,173
+  s_dbb6b1f3671904::t_1a26bc4ceae557 155-159
+  s_dbb6b1f3671904::t_592da6ca048377 179-181
+  s_dbb6b1f3671904::t_8ed7cd2c6893f5 144-145,147
+ios/FitrahTubeTests/NoYouTubePlayerTests.swift
+  s_dbb6b1f3671904::t_3204cdb7e6debf 65-70
+docs/architecture/ios-app-plan.md
+  s_dbb6b1f3671904::t_31dfa6a063def6 359,388
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/RemoteConfigTests.swift
+  s_dbb6b1f3671904::t_156dbc93bdfbb5 215-218,291-301
+docs/superpowers/plans/2026-08-27-ios-phase2b3-embed-safemode.md
+  s_dbb6b1f3671904::t_31dfa6a063def6 3-4,46-47,924
+  s_dbb6b1f3671904::t_c972017c65f664 925
+ios/FitrahTubeTests/PlayerToolbarTests.swift
+  s_dbb6b1f3671904::t_e4ea8ec851a47a 42,44,47
+  s_dbb6b1f3671904::t_250ab124fce1f6 92-101
+ios/scripts/test.sh
+  s_dbb6b1f3671904::t_156dbc93bdfbb5 38-39
+docs/superpowers/plans/2026-09-01-ios-phase3-offline-cast.md
+  s_dbb6b1f3671904::t_31dfa6a063def6 17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a0f5ea663455f40d27dd4849cc6d48af38290db8",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
