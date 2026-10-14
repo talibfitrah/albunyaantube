@@ -1,0 +1,44 @@
+ios/FitrahTubeTests/CategoriesCacheTests.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 37,49,66
+ios/FitrahTubeTests/SearchViewModelTests.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 26,30,32,43,46,66,70
+ios/FitrahTubeTests/HomeViewModelTests.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 31,52,78,91
+ios/FitrahTubeTests/ContentListViewModelTests.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 33,59,82,107
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Types.swift
+  s_dbb6b1f3671904::t_45f5f8fc944bf5 878-881,906,928-929,952,976,1463-1481,1550,1552-1556,2532-2549,2572,2574-2578
+ios/FitrahTubeTests/FeaturedViewModelTests.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 42,67,76,99
+ios/FitrahTube/Catalog/FakeCatalogClient.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 68
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Client.swift
+  s_dbb6b1f3671904::t_45f5f8fc944bf5 151-155,176-179,645-649,670-673
+ios/FitrahTube/Features/Search/SearchViewModel.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 119
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_dbb6b1f3671904::t_df62373c6d8f8a 120-121,124-136
+  s_dbb6b1f3671904::t_21239ac9188493 137
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 8-24
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_dbb6b1f3671904::t_ca0010ff14fdd3 50,53-55
+ios/Packages/FitrahAPI/Tests/FitrahAPITests/RecordingTransport.swift
+  s_dbb6b1f3671904::t_df62373c6d8f8a 12,21
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0561f70d212925f51675b00d808a4205fc859757",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
