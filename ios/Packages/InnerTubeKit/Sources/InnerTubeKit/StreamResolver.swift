@@ -178,6 +178,9 @@ public actor StreamResolver {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
+        // True once any rung failed on OUR side (a bot check, transport error, rung timeout, decode
+        // error: whatever reaches the generic catch). Gates the held verdict below.
+        var sawOurFailure = false
         // A refusal by ANDROID held back in a demoted walk (F4); see the `AndroidRefusal` catch below.
         var heldVerdict: ExtractionError?
         let demotedFamily = demoted[videoId]
@@ -200,7 +203,8 @@ public actor StreamResolver {
                 // where it now opens the ladder: VISIONOS served this very video moments ago, so
                 // "the source no longer serves it" is not yet proven (owner rule: a video plays
                 // unless the source no longer serves it). Hold the verdict, try the wrapped rungs,
-                // and throw it if none plays. Without a demotion this is the old terminal throw.
+                // and throw it if none plays and none failed on our side (see the walk's end). Without
+                // a demotion this is the old terminal throw.
                 let verdict = ExtractionError.unavailable(videoId: videoId)
                 guard demotedFamily != nil else { throw verdict }
                 heldVerdict = verdict
@@ -214,6 +218,7 @@ public actor StreamResolver {
                 // player-lane never-trip. A bot check only NOTES here; the (per-walk single,
                 // review F2a) trip is recorded at walk end, and only when the walk fails overall.
                 if case ExtractionError.botCheck = error { sawBotCheck = true }
+                sawOurFailure = true
                 lastError = error
                 continue
             }
@@ -225,10 +230,12 @@ public actor StreamResolver {
             }
         }
         // A held source verdict ends the walk like any other: no trip, and not the retryable error --
-        // unless a wrapped rung saw a bot check. ANDROID's word is doubted in a demoted walk (VISIONOS
-        // just served this video), so a bot check on the rung that could have confirmed it is OUR
-        // session problem: the walk ends as a bot-checked one does (retryable, trip below).
-        if let heldVerdict, !sawBotCheck { throw heldVerdict }
+        // unless a wrapped rung failed on OUR side. ANDROID's word is doubted in a demoted walk
+        // (VISIONOS just served this video), so a bot check, transport error or rung timeout on the
+        // rung that could have confirmed it proves nothing about the source: the walk ends as any
+        // failed one does (the retryable `lastError`; the trip below only if a bot check was seen).
+        // A wrapped rung that merely advanced (answered, but has nothing to play) leaves the verdict.
+        if let heldVerdict, !sawOurFailure { throw heldVerdict }
         if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }

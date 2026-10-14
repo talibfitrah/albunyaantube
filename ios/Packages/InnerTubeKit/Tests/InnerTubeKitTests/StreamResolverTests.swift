@@ -443,6 +443,28 @@ import Testing
         }
     }
 
+    /// First call answers with the response; every later call throws the given error (a network
+    /// that drops after ANDROID's answer, while the wrapped rung is still to be tried).
+    private final class RespondThenFailTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private let response: HTTPResponse
+        private let error: Error
+
+        init(_ response: HTTPResponse, thenThrow error: Error) {
+            self.response = response
+            self.error = error
+        }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal > 1 { throw error }
+            return response
+        }
+    }
+
     /// First call throws the given error synchronously; later calls answer with the response.
     private final class FailFirstTransport: HTTPTransport, @unchecked Sendable {
         private let lock = NSLock()
@@ -697,6 +719,44 @@ import Testing
         #expect(transport.recorded.first?.headers["X-YouTube-Client-Name"] == "3")
         #expect(transport.recorded.contains { $0.headers["X-YouTube-Client-Name"] == "101" })   // the wrapped rung was tried
         #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    /// Our-side failure rule (Cubic; controller ruling): the held verdict is the SOURCE's word, thrown
+    /// only when nothing on OUR side failed in the walk. VISIONOS was serving this video moments ago,
+    /// so a transport error on the wrapped rung proves nothing about the source: the walk ends as a
+    /// normal failed one -- the retryable last error, no trip (no bot check was seen).
+    @Test func aDemotedWalkWhoseWrappedRungHitsATransportErrorIsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RespondThenFailTransport(
+            try fixtureResponse("player-geo-android"), thenThrow: URLError(.notConnectedToInternet))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        do {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+            Issue.record("expected the wrapped rung's transport error to be thrown")
+        } catch let error as URLError {
+            #expect(error.code == .notConnectedToInternet)
+        } catch {
+            Issue.record("expected URLError(.notConnectedToInternet), got \(error)")
+        }
+        #expect(transport.callCount == 2)   // ANDROID refused, the wrapped rung was tried and failed
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Same rule, for a rung that fails inside the resolver rather than on the wire: a non-2xx answer
+    /// is `.transport("HTTP 503")`. The rung-budget timeout throws `.transport("rung budget exceeded")`
+    /// into the very same generic catch, but its budget is a fixed 8 s (private), so it is not driven here.
+    @Test func aDemotedWalkWhoseWrappedRungAnswers503IsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("player-geo-android"), HTTPResponse(status: 503, headers: [:], body: Data())])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.transport("HTTP 503")) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+        #expect(await session.loadCooldown().tripCount == 0)
     }
 
     /// R6 is unchanged for a walk nobody demoted: ANDROID's refusal is the verdict at once, even with
