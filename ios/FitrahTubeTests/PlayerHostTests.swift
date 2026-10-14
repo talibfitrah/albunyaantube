@@ -2,6 +2,7 @@ import AVFoundation
 import AVKit
 import Foundation
 import InnerTubeKit
+import Network
 import Testing
 @testable import FitrahTube
 
@@ -185,6 +186,8 @@ struct PlayerHostTests {
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
     }
 
+    // MARK: - Recovery chain at the host (Task 7: resume intent; fix round 2: the wall-clock sampler)
+
     /// Task 7 fix round 1 (review N1): `lastPlayingAt` is per player and only the periodic sampler
     /// stamped it. Recovery played rung 2's replacement, which then failed more than 3 s after rung
     /// 1's last stamp with no tick in between (it never produced a frame), so `shouldResume` read
@@ -192,43 +195,165 @@ struct PlayerHostTests {
     /// failures are posted by hand inside one main-actor turn, so no tick can refresh the stamp;
     /// `.playbackError` vs `.failedBeforeFirstFrame` is the same answer in `shouldResume`.
     @Test(.timeLimit(.minutes(1))) func aResumedReplacementThatFailsLateStillResumesTheNextAttempt() async throws {
-        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
-        let settings = UserDefaultsSettingsStore(
-            defaults: UserDefaults(suiteName: "PlayerHostTests.\(UUID().uuidString)")!)
-        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+
+        // Rung 1 dies under the user (stamp fresh -> resume), and the failure pauses the player.
+        Self.postFailure(on: player)
+        player.pause()
+        try await Task.sleep(for: .milliseconds(3300))     // past `resumeWindow`; paused, so no stamps
+
+        // Rung 2's replacement: resumed by `observe`, then fails before any tick, and pauses.
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+        #expect(player.timeControlStatus != .paused, "recovery's replacement must play")
+        Self.postFailure(on: player)
+        player.pause()
+
+        // The third attempt: the user never paused, so it must play.
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)
+        #expect(player.timeControlStatus != .paused, "the third attempt stayed paused")
+    }
+
+    /// Fix round 2 (review I1): the periodic time observer runs on the ITEM's timeline, which stops
+    /// while AVPlayer waits for data, so it stamped nothing during a stall although the player never
+    /// stopped wanting to play. Here rung 2's replacement waits on a localhost server that accepts
+    /// and never answers; after 4 s of that, its failure must still resume the next attempt.
+    @Test(.timeLimit(.minutes(1))) func aFailureAfterFourSecondsOfWaitingStillResumesTheNextAttempt() async throws {
+        let server = try StallingServer(body: Data(), withheldFrom: 0)   // accepts, never answers
+        await server.start()
+        defer { server.stop() }
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+
+        try Self.swap(player, to: server.url, coordinator, model)   // playing -> the builder plays it
+        try await Task.sleep(for: .seconds(4))
+        #expect(player.timeControlStatus == .waitingToPlayAtSpecifiedRate, "not a real wait")
+        Self.postFailure(on: player)
+        player.pause()
+
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)
+        #expect(player.timeControlStatus != .paused, "a failure after a long wait left the next attempt paused")
+    }
+
+    /// Fix round 2 (pre-existing P1, same cause as I1): the stall watchdog was fed by the same
+    /// item-timeline observer, so a REAL stall never fired `.stall` and recovery waited for
+    /// AVFoundation's own timeout. The server hands AVPlayer the clip's metadata (`.readyToPlay`,
+    /// the watchdog armed) and then never one sample byte: a wait whose buffer never grows.
+    @Test(.timeLimit(.minutes(1))) func aRealStallFiresTheWatchdog() async throws {
+        let clip = try Self.moovFirstFixture()
+        let server = try StallingServer(body: clip.body, withheldFrom: clip.mediaStart)
+        await server.start()
+        defer { server.stop() }
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(), args: PlayerArgs(videoId: "fixture-1"))
+        await model.open()           // a resolved state, so the stall reaches the budget machine
+        let player = try #require(PlayerHostView.player(for: Self.progressive(server.url), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
+                            isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+
+        // 6 s of stall (`vodStallThreshold`) plus the first ticks; 12 s is the bound.
+        for _ in 0..<1200 where !resolver.calls.contains(where: { $0.kind == .autoRecovery }) {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(player.currentItem?.status == .readyToPlay)
+        #expect(player.timeControlStatus == .waitingToPlayAtSpecifiedRate)
+        #expect(resolver.calls.contains { $0.kind == .autoRecovery }, "a real stall never fired the watchdog")
+    }
+
+    /// Review M1 (I5 at the host): a failure while the USER had paused, long after the last time the
+    /// player wanted to play, must not start playback on the replacement.
+    @Test(.timeLimit(.minutes(1))) func aFailureWhileTheUserPausedLeavesTheReplacementPaused() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        player.pause()                                     // the user
+        try await Task.sleep(for: .milliseconds(3300))
+        Self.postFailure(on: player)
+
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "recovery resumed a video the user had paused")
+    }
+
+    /// Review M1: the resume intent is spent by the ONE replacement it was for. A later same-player
+    /// swap (the audio-only toggle, a background restore) after the user paused stays paused.
+    @Test(.timeLimit(.minutes(1))) func theResumeIntentIsSpentByTheFirstReplacement() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        Self.postFailure(on: player)                       // dies under the user -> resume
+        player.pause()
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+        #expect(player.timeControlStatus != .paused, "recovery's replacement must play")
+
+        player.pause()                                     // the user
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)
+        #expect(player.timeControlStatus == .paused, "a spent resume intent played a later swap")
+    }
+
+    /// A URL nothing answers on (the discard port): an item that never produces a frame.
+    private static let unanswered = URL(string: "https://127.0.0.1:9/replacement.m3u8")!
+
+    private static func fixtureURL() throws -> URL {
+        try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+    }
+
+    private static func progressive(_ url: URL) -> StreamState {
+        .rung2Progressive(resolved(.progressive(url: url, label: "360p")))
+    }
+
+    private static func settings() -> UserDefaultsSettingsStore {
+        UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerHostTests.\(UUID().uuidString)")!)
+    }
+
+    /// The bundled clip on a real coordinator, playing, sampled at least once while it played: item
+    /// time 1 s is at least 1 s of wall clock after `observe`, so both the item-timeline tick and the
+    /// wall-clock tick are due by then; the extra 200 ms lets the latter run.
+    private static func playingHarness() async throws
+        -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings(),
                                     args: PlayerArgs(videoId: "fixture-1"))
-        let player = try #require(PlayerHostView.player(
-            for: .rung2Progressive(Self.resolved(.progressive(url: url, label: "360p"))), replacing: nil))
+        let player = try #require(PlayerHostView.player(for: progressive(try fixtureURL()), replacing: nil))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
         coordinator.lastVideoId = "fixture-1"
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
                             isLive: false, playToEnd: .none)
-        defer { coordinator.stopObserving(); player.pause() }
-        // The 1 s tick ran `sample` while playing: rung 1's stamp exists.
         for _ in 0..<300 where model.currentTime < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(200))
         #expect(model.currentTime >= 1)
+        #expect(player.timeControlStatus != .paused)
+        return (model, player, coordinator)
+    }
 
-        // Rung 1 dies under the user (stamp fresh -> resume), and the failure pauses the player.
-        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
-        player.pause()
-        try await Task.sleep(for: .milliseconds(3300))     // past `resumeWindow`, no ticks while paused
-
-        // Rung 2's replacement: resumed by `observe`, then fails before any tick, and pauses.
-        let rung2 = Self.resolved(.hls(url: URL(string: "https://127.0.0.1:9/rung2.m3u8")!, isLive: false,
-                                       audioOnlyURL: nil, captionTracks: []))
-        _ = PlayerHostView.player(for: .ready(rung2), replacing: player)
+    /// One same-player item swap the way the host makes it: the builder, then `observe`.
+    private static func swap(_ player: AVPlayer, to url: URL, _ coordinator: PlayerHostView.Coordinator,
+                             _ model: PlayerViewModel) throws {
+        _ = PlayerHostView.player(for: progressive(url), replacing: player)
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
                             isLive: false, playToEnd: .none)
-        #expect(player.timeControlStatus != .paused, "recovery's replacement must play")
-        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
-        player.pause()
+    }
 
-        // The third attempt: the user never paused, so it must play.
-        _ = PlayerHostView.player(for: .rung2Progressive(Self.resolved(.progressive(url: url, label: "360p"))),
-                                  replacing: player)
-        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
-                            isLive: false, playToEnd: .none)
-        #expect(player.timeControlStatus != .paused, "the third attempt stayed paused")
+    /// What AVFoundation posts when the item dies mid-play. Posted on main to a `.main` observer, it
+    /// runs before `post` returns (the N1 test's GREEN depends on exactly that).
+    private static func postFailure(on player: AVPlayer) {
+        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
+    }
+
+    /// The bundled clip with its `moov` moved ahead of the `mdat`, chunk offsets left as they were:
+    /// no sample byte is ever served, so only the metadata has to be right. AVPlayer reads a file this
+    /// small in one sequential request, so with the `moov` last it never got past the withheld bytes.
+    private static func moovFirstFixture() throws -> (body: Data, mediaStart: Int) {
+        let file = try Data(contentsOf: try fixtureURL())
+        func int(_ range: Range<Int>) -> Int { file[range].reduce(0) { $0 << 8 | Int($1) } }
+        var boxes: [String: Range<Int>] = [:]
+        var offset = 0
+        while offset + 8 <= file.count {
+            var size = int(offset..<offset + 4)
+            if size == 1 { size = int(offset + 8..<offset + 16) }    // 64-bit largesize
+            boxes[String(decoding: file[offset + 4..<offset + 8], as: UTF8.self)] = offset..<offset + size
+            offset += size
+        }
+        let ftyp = try #require(boxes["ftyp"]), moov = try #require(boxes["moov"]), mdat = try #require(boxes["mdat"])
+        return (Data(file[ftyp]) + file[moov] + file[mdat], ftyp.count + moov.count)
     }
 
     // MARK: - Task 3: audio-only URL selection and the same-player swap
@@ -615,5 +740,64 @@ struct PlayerHostTests {
     /// Polls the live clock until `done` holds (seeks without a completion handler are async).
     private static func settle(_ player: AVPlayer, until done: (Double) -> Bool) async throws {
         for _ in 0..<400 where !done(player.currentTime().seconds) { try await Task.sleep(for: .milliseconds(5)) }
+    }
+}
+
+/// Fix round 2: a localhost HTTP server for REAL AVPlayer waits. It serves `body` by byte range but
+/// never sends a byte at or past `withheldFrom`: a request reaching that far gets what comes before
+/// it and is then held open, unanswered (`withheldFrom: 0` accepts and never answers at all). Main
+/// queue throughout -- this target is MainActor by default.
+private final class StallingServer {
+    private let listener: NWListener
+    private var connections: [NWConnection] = []
+
+    init(body: Data, withheldFrom: Int) throws {
+        listener = try NWListener(using: .tcp, on: .any)
+        listener.newConnectionHandler = { [weak self] connection in
+            MainActor.assumeIsolated { self?.connections.append(connection) }   // the listener runs on .main
+            connection.start(queue: .main)
+            Self.serve(connection, body: body, withheldFrom: withheldFrom)
+        }
+    }
+
+    var url: URL { URL(string: "http://127.0.0.1:\(listener.port?.rawValue ?? 0)/clip.mp4")! }
+
+    func start() async {
+        await withCheckedContinuation { (ready: CheckedContinuation<Void, Never>) in
+            listener.stateUpdateHandler = { [listener] state in
+                switch state {
+                case .ready, .failed, .cancelled:
+                    listener.stateUpdateHandler = nil
+                    ready.resume()
+                default: break
+                }
+            }
+            listener.start(queue: .main)
+        }
+    }
+
+    func stop() {
+        connections.forEach { $0.cancel() }
+        listener.cancel()
+    }
+
+    nonisolated private static func serve(_ connection: NWConnection, body: Data, withheldFrom: Int) {
+        connection.receive(minimumIncompleteLength: 1, maximumLength: 65_536) { data, _, _, _ in
+            guard let data, !data.isEmpty else { return }
+            let request = String(decoding: data, as: UTF8.self)
+            var lower = 0, upper = body.count - 1
+            if let range = request.range(of: #"bytes=\d+-\d*"#, options: .regularExpression) {
+                let bounds = request[range].dropFirst(6).split(separator: "-", omittingEmptySubsequences: false)
+                lower = Int(bounds[0]) ?? 0
+                upper = min(Int(bounds[1]) ?? upper, upper)
+            }
+            let cut = min(upper + 1, max(lower, withheldFrom))
+            guard cut > lower else { return }                      // nothing it may send: hold, unanswered
+            let head = "HTTP/1.1 206 Partial Content\r\nContent-Type: video/mp4\r\nAccept-Ranges: bytes\r\n"
+                + "Content-Range: bytes \(lower)-\(upper)/\(body.count)\r\nContent-Length: \(upper - lower + 1)\r\n\r\n"
+            connection.send(content: Data(head.utf8) + body[lower..<cut], completion: .contentProcessed { _ in
+                if cut > upper { serve(connection, body: body, withheldFrom: withheldFrom) }   // keep-alive
+            })
+        }
     }
 }

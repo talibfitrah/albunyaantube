@@ -354,8 +354,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
         private var watchdog = StallWatchdog()
+        /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
+        /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
+        /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
+        /// like every other observer here; the run loop holds it, its block holds `self` weakly.
+        private var sampleTimer: Timer?
         /// When the player was last seen wanting to play (`timeControlStatus != .paused`), from the
-        /// periodic sampler. A failure leaves AVPlayer paused (spike 2026-10-14: `tc=0` after
+        /// wall-clock sampler. A failure leaves AVPlayer paused (spike 2026-10-14: `tc=0` after
         /// `AVPlayerItemFailedToPlayToEndTime`), so once recovery's replacement item lands, the player
         /// itself can no longer say whether the USER had paused. Per player, not per item.
         private var lastPlayingAt: Date?
@@ -534,9 +539,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 }
 
             failedToEndObserver = NotificationCenter.default.addObserver(
-                forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self] _ in
+                forName: .AVPlayerItemFailedToPlayToEndTime, object: item, queue: .main) { [weak self, weak item] _ in
                 MainActor.assumeIsolated {
-                    self?.fire(.playbackError)
+                    // Same guard as the status sink (review M2): a notification queued before an item
+                    // swap must not start a recovery on -- and read the error log of -- the replacement.
+                    guard let self, let item, item === self.observedItem else { return }
+                    self.fire(.playbackError)
                 }
             }
 
@@ -571,7 +579,6 @@ struct PlayerHostView: UIViewControllerRepresentable {
             timeObserverToken = player.addPeriodicTimeObserver(
                 forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
-                    self?.sample(time: time.seconds)
                     // B5 (CF-B1-8): the hoisted position, ~1 s coarse -- the host prefers a live
                     // `currentTime()` and reads this only when rebuilding from no player. Gated on
                     // the VM still being on the video this coordinator last built: between an
@@ -587,13 +594,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
                             if self.model?.videoIsPortrait != portrait { self.model?.videoIsPortrait = portrait }
                         }
                     }
-                    // Task 4: the ONE periodic observer feeds both the stall watchdog and the lock
-                    // screen's elapsed/rate. AVFoundation fires it on rate changes and time jumps
-                    // as well as on the interval, so a play/pause/seek made in the stock AVKit
-                    // chrome republishes here without a second observer.
+                    // Task 4: the lock screen's elapsed/rate. AVFoundation fires this on rate changes
+                    // and time jumps as well as on the interval, so a play/pause/seek made in the
+                    // stock AVKit chrome republishes here without a second observer. The stall
+                    // watchdog is NOT fed from here any more: see `sampleTimer`.
                     self?.background.refreshNowPlaying()
                 }
             }
+            // `.common`, so it keeps ticking while a scroll view tracks a touch.
+            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+                MainActor.assumeIsolated { self?.sample() }
+            }
+            RunLoop.main.add(timer, forMode: .common)
+            sampleTimer = timer
             // Stamped here, not left to the sampler: a replacement that never produces a frame never
             // ticks, and its failure would read rung 1's old stamp as "the user had paused" (review N1).
             if resumes, self.model?.pausedForCast != true {
@@ -615,6 +628,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             endObserver = nil
             if let timeObserverToken, let observedPlayer { observedPlayer.removeTimeObserver(timeObserverToken) }
             timeObserverToken = nil
+            sampleTimer?.invalidate()
+            sampleTimer = nil
             observedItem = nil
             observedPlayer = nil
         }
@@ -623,11 +638,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// its answer. `waitingToPlayAtSpecifiedRate` is AVFoundation's own "wants to play, can't" --
         /// false while paused, while playing, and while fully buffered, which is exactly the three
         /// healthy cases the pre-fix version false-fired on.
-        private func sample(time: TimeInterval) {
+        private func sample() {
             guard let item = observedItem, let player = observedPlayer else { return }
             if player.timeControlStatus != .paused { lastPlayingAt = Date() }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
-            let tick = watchdog.tick(playbackTime: time, bufferedEnd: buffered,
+            let tick = watchdog.tick(playbackTime: player.currentTime().seconds, bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
                                      isLive: isLive, now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
@@ -663,7 +678,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // already inactive session), and the `dismantledWhilePiP` guard only narrowed this to
             // the ONE leak path the review happened to find -- a coordinator released on any other
             // path with an attached controller leaked exactly the same session + lock screen.
-            MainActor.assumeIsolated { background.detach() }
+            MainActor.assumeIsolated {
+                background.detach()
+                sampleTimer?.invalidate()   // released without `stopObserving`: stop the run loop's copy
+            }
         }
     }
 

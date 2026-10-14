@@ -509,6 +509,8 @@ class Refuse(http.server.BaseHTTPRequestHandler):
 http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), Refuse).serve_forever()
 ' "$HARDENING_PORT" &
 HARDENING_SERVER=$!
+# A Ctrl-C or a killed xcodebuild must not leave the 401 server bound to the port (review M3).
+trap 'kill "$HARDENING_SERVER" 2>/dev/null' EXIT
 for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
     echo "== playback hardening: $device -> $HARDENING_OUT/$slug =="
