@@ -1,0 +1,21 @@
+ios-remote-config.json
+  s_dbb6b1f3671904::t_5036406d4504b5 4
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/RemoteConfigTests.swift
+  s_dbb6b1f3671904::t_4f42e0cf6b2a31 223-225
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9cf523edb4ccf5c52bc5c7ba4041160c40099254",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
