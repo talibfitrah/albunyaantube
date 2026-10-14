@@ -2720,6 +2720,52 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    // MARK: - Playback hardening, Phase 1 (local-docs/plans/2026-10-14-ios-playback-hardening.md)
+
+    /// Owner directive 2026-10-14, two halves, en + ar on whichever simulator runs it
+    /// (`screenshots.sh` runs iPhone 17 and iPad Pro 13-inch (M5)):
+    /// 1. Rung 1 answered with a REAL HTTP 401 (a localhost server, `FITRAH_RUNG1_401_URL`): the
+    ///    coordinator reads 401 from AVPlayer's error log (`status=401` on the DEBUG route probe), the
+    ///    player steps down to rung 2 and KEEPS PLAYING (`time=` moving), with no error copy and no Retry.
+    /// 2. A video the source gates (`-fitrah-fake-player-unavailable` throws the `.unavailable` a
+    ///    members-only walk now ends in): the not-available card, no Retry.
+    func testPlaybackHardeningStates() throws {
+        let directory = try shotsDirectory()
+        let rung1 = try XCTUnwrap(ProcessInfo.processInfo.environment["FITRAH_RUNG1_401_URL"],
+                                  "FITRAH_RUNG1_401_URL unset — run via ios/scripts/screenshots.sh")
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let stepDown = Screen(key: "playback-step-down",
+                                  arguments: ["-fitrah-fake-player-rung1-401", rung1, "-fitrah-route-probe", "YES",
+                                              "-fitrah-route", "player", "fixture-video"],
+                                  anchor: .button("unused"))
+            let app = launch(stepDown, locale: locale, extraArguments: [])
+            let probe = app.descendants(matching: .any)["player.debugRoute"]
+            XCTAssertTrue(probe.waitForExistence(timeout: 20), "step-down/\(locale.key): route probe never mounted")
+            let saw401 = expectation(for: NSPredicate(format: "value CONTAINS 'status=401'"), evaluatedWith: probe)
+            wait(for: [saw401], timeout: 20)
+            XCTAssertTrue(app.staticTexts["player.rung2Pill"].waitForExistence(timeout: 20),
+                          "step-down/\(locale.key): never reached rung 2")
+            let playing = expectation(for: NSPredicate(format: "value MATCHES '.*time=[1-9].*'"), evaluatedWith: probe)
+            wait(for: [playing], timeout: 15)
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "step-down/\(locale.key): Retry shown")
+            XCTAssertFalse(app.staticTexts["player.state.message"].exists, "step-down/\(locale.key): error copy shown")
+            try write(named: "step-down-rung2-playing-\(locale.key)", into: directory)
+            app.terminate()
+
+            let gone = Screen(key: "playback-not-available",
+                              arguments: ["-fitrah-fake-player-unavailable", "-fitrah-route", "player", "fixture-video"],
+                              anchor: .button("unused"))
+            let unavailable = launch(gone, locale: locale, extraArguments: [])
+            XCTAssertTrue(unavailable.staticTexts["player.state.message"].waitForExistence(timeout: 20),
+                          "not-available/\(locale.key): message never appeared")
+            XCTAssertFalse(unavailable.buttons["player.state.retryButton"].exists,
+                           "not-available/\(locale.key): must not offer Retry")
+            try write(named: "not-available-\(locale.key)", into: directory)
+            unavailable.terminate()
+        }
+    }
+
     // MARK: - Helpers
 
     /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real

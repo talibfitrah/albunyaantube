@@ -585,6 +585,12 @@ struct PlayerScreen: View {
     /// lands on both screens.
     static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
+        // Playback hardening (plan Task 7): rung 1 at a local server that answers HTTP 401, rung 2
+        // the bundled clip -- the step-down proof, with no network beyond localhost.
+        if let i = LaunchArguments.debug.firstIndex(of: "-fitrah-fake-player-rung1-401"),
+           LaunchArguments.debug.indices.contains(i + 1), let url = URL(string: LaunchArguments.debug[i + 1]) {
+            return FixtureLadderResolver(rung1: url)
+        }
         if LaunchArguments.debug.contains("-fitrah-fake-player-audio-only") {
             return FixtureAudioOnlyResolver()
         }
@@ -723,6 +729,33 @@ private struct FixtureCooldownResolver: StreamResolving {
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {}
+}
+
+/// Playback hardening (plan Task 7): a two-rung ladder that honours `demote`. Rung 1 is an `.hls`
+/// whose URL a local server answers with HTTP 401 (`screenshots.sh`), so the REAL coordinator reads
+/// a real 401 out of AVPlayer's error log; rung 2 is the bundled clip as `.progressive`. Proves
+/// coordinator -> VM -> `demote` -> forced re-resolve -> replacement item playing.
+private actor FixtureLadderResolver: StreamResolving {
+    let rung1: URL
+    private var demoted = false
+
+    init(rung1: URL) { self.rung1 = rung1 }
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool) async throws -> Resolved {
+        guard demoted else {
+            return Resolved(stream: .hls(url: rung1, isLive: false, audioOnlyURL: nil, captionTracks: []),
+                            client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        }
+        guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
+            throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
+        }
+        return Resolved(stream: .progressive(url: url, label: "360p"), client: .android,
+                        userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async { demoted = true }
 }
 
 /// B5 screenshot rig: one page of eight fixture items. With `deadItems`, three ids carry the

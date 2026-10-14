@@ -354,6 +354,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
         private var watchdog = StallWatchdog()
+        /// When the player was last seen wanting to play (`timeControlStatus != .paused`), from the
+        /// periodic sampler. A failure leaves AVPlayer paused (spike 2026-10-14: `tc=0` after
+        /// `AVPlayerItemFailedToPlayToEndTime`), so once recovery's replacement item lands, the player
+        /// itself can no longer say whether the USER had paused. Per player, not per item.
+        private var lastPlayingAt: Date?
+        /// Set by `fire`, spent by the next `observe` of a NEW item on the SAME player: recovery's
+        /// replacement, which plays iff `PlaybackRecovery.shouldResume` said so.
+        private var resumeOnNextItem = false
 
         /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
         /// `…DidStopPictureInPicture` knows it owes the deferred detach + player release.
@@ -476,6 +484,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // carrying a VM it has no reason to know about; a nil never CLEARS the live one.
             if let model { self.model = model }
             guard item !== observedItem || player !== observedPlayer else { return }
+            // Recovery's replacement on the same player: the builder's `wasPlaying` read the failure's
+            // pause, so it did not play it. `fire` already decided what the user wanted.
+            let resumes = resumeOnNextItem && player === observedPlayer
+            resumeOnNextItem = false
             stopObserving()
             observedItem = item
             observedPlayer = player
@@ -582,6 +594,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     self?.background.refreshNowPlaying()
                 }
             }
+            if resumes, self.model?.pausedForCast != true { player.play() }
         }
 
         /// M6: `monitor` is private, so teardown goes through here (see
@@ -607,6 +620,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// healthy cases the pre-fix version false-fired on.
         private func sample(time: TimeInterval) {
             guard let item = observedItem, let player = observedPlayer else { return }
+            if player.timeControlStatus != .paused { lastPlayingAt = Date() }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
             let tick = watchdog.tick(playbackTime: time, bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
@@ -617,7 +631,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         private func fire(_ event: RecoveryEvent) {
             guard let model else { return }
-            Task { await model.handleRecoveryEvent(event) }
+            resumeOnNextItem = PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
+            // The CDN's answer, when AVFoundation logged one (`PlaybackRecovery.httpStatus`).
+            let status = observedItem?.errorLog()?.events.last.flatMap {
+                PlaybackRecovery.httpStatus(comment: $0.errorComment, statusCode: $0.errorStatusCode)
+            }
+            Task { await model.handleRecoveryEvent(event, httpStatus: status) }
         }
 
         /// The path monitor, plus the backstop for the one teardown path that has no other exit
@@ -885,6 +904,8 @@ struct AirPlayRouteProbe: UIViewRepresentable {
                 let receiver = cast.map { states[min($0.receiverState.rawValue, states.count - 1)] } ?? "none"
                 return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs="
                     + outputs.joined(separator: ",") + ";cast=\(receiver)"
+                    + ";time=\(Int(model?.currentTime ?? 0))"
+                    + ";status=\(model?.debugLastRecoveryStatus.map { String($0) } ?? "-")"
             }
             set {}
         }

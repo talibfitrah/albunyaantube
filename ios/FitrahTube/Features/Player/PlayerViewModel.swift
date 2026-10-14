@@ -239,6 +239,9 @@ extension StreamState {
     /// read off `player.upNext.header`'s accessibilityValue. Debug builds only.
     private(set) var playToEndCalls = 0
     private(set) var advanceCalls = 0
+    /// The CDN status the last recovery event carried, for the DEBUG route probe's `status=` -- the
+    /// simulator step-down proof reads the real 401 its local server returned (plan Task 7).
+    private(set) var debugLastRecoveryStatus: Int?
     #endif
 
     /// Ruling 33 / spec §10. Empty in single-video mode; populated from `args.playlistId`.
@@ -564,6 +567,9 @@ extension StreamState {
     /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
     func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil) async {
+        #if DEBUG
+        if let httpStatus { debugLastRecoveryStatus = httpStatus }
+        #endif
         // One failure raises several observers at once -- `AVPlayerItemFailedToPlayToEndTime` and
         // `status == .failed` land together on a dead stream. Without this the same incident spends
         // two budget slots and fires two resolves, one of which the generation guard then discards.
@@ -593,7 +599,10 @@ extension StreamState {
         case .stepDownRung:
             // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
             // advance moves `args` before its own resolve lands.
+            let myGeneration = generation
             await resolver.demote(hostVideoId, failed: resolved.client)
+            // `demote` suspends: an advance or Up Next tap that landed meanwhile owns the screen now.
+            guard myGeneration == generation else { return }
             await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
         case .reResolveSameRung:
             // `showLoading: false` but NOT `silent:` -- by the time this runs the stream has

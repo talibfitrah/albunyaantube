@@ -164,6 +164,16 @@ struct PlaybackRecoveryTests {
         #expect(!PlaybackRecovery.shouldResume(after: .playbackError, lastPlayingAt: now.addingTimeInterval(-60), now: now))
     }
 
+    /// Task 6 review M3: R12's 3 s, pinned at its edge. Inclusive: exactly 3 s still resumes. A fixed
+    /// `now` keeps the 3 s offset exact in `Double`.
+    @Test(arguments: [(2.9, true), (3, true), (3.1, false)])
+    func theResumeWindowIsThreeSecondsInclusive(secondsSincePlaying: TimeInterval, resumes: Bool) {
+        let now = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        #expect(PlaybackRecovery.shouldResume(after: .playbackError,
+                                              lastPlayingAt: now.addingTimeInterval(-secondsSincePlaying),
+                                              now: now) == resumes)
+    }
+
     @Test func aFailureBeforeTheFirstSampleResumes() {
         #expect(PlaybackRecovery.shouldResume(after: .failedBeforeFirstFrame, lastPlayingAt: nil, now: Date()))
     }
@@ -328,7 +338,12 @@ struct PlaybackRecoveryTests {
         private let gatedCallIndex: Int
         private(set) var calls: [Bool] = [] // forceRefresh per call
         private(set) var demotions: [String] = []
-        func demote(_ videoId: String, failed: ClientFamily) async { demotions.append("\(videoId):\(failed)") }
+        /// `resolve` and `demote` in the order they ran -- the two arrays above cannot show it.
+        private(set) var log: [String] = []
+        func demote(_ videoId: String, failed: ClientFamily) async {
+            demotions.append("\(videoId):\(failed)")
+            log.append("demote")
+        }
 
         init(_ outcomes: [Result<Resolved, Error>], gate: Gate? = nil, gatedCallIndex: Int = 0) {
             self.outcomes = outcomes
@@ -341,6 +356,7 @@ struct PlaybackRecoveryTests {
                      requiresMuxed: Bool) async throws -> Resolved {
             let index = calls.count
             calls.append(forceRefresh)
+            log.append("resolve")
             if calls.count == gatedCallIndex, let gate { await gate.block() }
             guard outcomes.indices.contains(index) else { fatalError("FakeResolver ran out of scripted outcomes") }
             return try outcomes[index].get()
@@ -489,6 +505,18 @@ struct PlaybackRecoveryTests {
         #expect(await resolver.demotions == ["abcdefghijk:visionos"])
         #expect(await resolver.calls == [false, true])
         #expect(vm.state == .rung2Progressive(Self.progressive))
+    }
+
+    /// Task 6 review: the order itself. A re-resolve that ran before `demote` would walk from the rung
+    /// that just failed and hand it straight back.
+    @Test @MainActor func theStepDownDemotesBeforeTheForcedReResolve() async {
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.progressive)])
+        let vm = makeViewModel(resolver)
+        await vm.open()
+
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+
+        #expect(await resolver.log == ["resolve", "demote", "resolve"])
     }
 
     /// Mid-play expiry (403): a fresh URL from the SAME rung, nothing demoted, never `.loading`.

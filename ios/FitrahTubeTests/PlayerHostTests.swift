@@ -157,6 +157,34 @@ struct PlayerHostTests {
         #expect(asset.url == secondURL)
     }
 
+    // MARK: - Mid-play recovery keeps the position (playback hardening, spec §4.4)
+
+    /// A re-resolve after an expired URL (403/410) hands the host a fresh URL for the SAME video: the
+    /// item is rebuilt on the same player and seeked to where the dead one was. Characterization pin --
+    /// the builder already does this, and recovery now depends on it.
+    @Test(.timeLimit(.minutes(1))) func aMidPlayReResolveRebuildsTheItemAtTheSamePosition() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        // The same file under a different URL string -- what a fresh googlevideo URL is to the host.
+        let fresh = try #require(URL(string: url.deletingLastPathComponent().absoluteString + "./" + url.lastPathComponent))
+        let player = try #require(PlayerHostView.player(
+            for: .rung2Progressive(Self.resolved(.progressive(url: url, label: "360p"))), replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        #expect(position >= 1)
+        let deadItem = player.currentItem
+
+        let rebuilt = PlayerHostView.player(
+            for: .rung2Progressive(Self.resolved(.progressive(url: fresh, label: "360p"))), replacing: player)
+
+        #expect(rebuilt === player)
+        #expect(rebuilt?.currentItem !== deadItem)
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+    }
+
     // MARK: - Task 3: audio-only URL selection and the same-player swap
 
     @Test func audioOnlySelectsTheItag140URL() {

@@ -491,4 +491,40 @@ EOF
     xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 fi
 
+# Playback hardening Phase 1 (local-docs/plans/2026-10-14-ios-playback-hardening.md, Task 7): rung 1
+# answered with a REAL HTTP 401 by a localhost server, the step-down to rung 2 still playing, and the
+# not-available card -- en + ar, iPhone and iPad. Same localhost technique as the C task 6 live leg.
+HARDENING_OUT="$ROOT/local-docs/screens/playback-hardening"
+HARDENING_PORT="${HARDENING_PORT:-8766}"
+python3 -I -c '
+import http.server, sys
+class Refuse(http.server.BaseHTTPRequestHandler):
+    def do_GET(self):
+        self.send_response(401)
+        self.send_header("Content-Length", "0")
+        self.end_headers()
+    do_HEAD = do_GET
+    def log_message(self, *args):
+        pass
+http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), Refuse).serve_forever()
+' "$HARDENING_PORT" &
+HARDENING_SERVER=$!
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== playback hardening: $device -> $HARDENING_OUT/$slug =="
+    rm -rf "${HARDENING_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$HARDENING_OUT/$slug" \
+        TEST_RUNNER_FITRAH_RUNG1_401_URL="http://localhost:$HARDENING_PORT/rung1/master.m3u8" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlaybackHardeningStates \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+kill "$HARDENING_SERVER" 2>/dev/null
+
 exit "$status"

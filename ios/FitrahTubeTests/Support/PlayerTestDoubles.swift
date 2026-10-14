@@ -50,8 +50,16 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     private var _demotions: [String] = []
     var demotions: [String] { lock.withLock { _demotions } }
 
+    /// Holds every `demote` open until released (a race test's window); nil = return at once.
+    private var _demoteGate: Gate?
+    var demoteGate: Gate? {
+        get { lock.withLock { _demoteGate } }
+        set { lock.withLock { _demoteGate = newValue } }
+    }
+
     func demote(_ videoId: String, failed: ClientFamily) async {
         lock.withLock { _demotions.append("\(videoId):\(failed)") }
+        await demoteGate?.block()
     }
 
     var outcome: Outcome {

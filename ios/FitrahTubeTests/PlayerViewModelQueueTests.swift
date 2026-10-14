@@ -224,6 +224,25 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Task 6 review M1: a step-down's `demote` is a real suspension. An Up Next tap that lands in it
+    /// owns the screen; the resumed recovery must not force-resolve the tapped video on the
+    /// `.autoRecovery` lane and supersede the tap's own resolve.
+    @Test(.timeLimit(.minutes(1))) func anUpNextTapDuringTheStepDownsDemoteWins() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        let gate = Gate()
+        resolver.demoteGate = gate
+        let recovering = Task { await vm.handleRecoveryEvent(.playbackError, httpStatus: 401) }
+        await gate.waitUntilBlocked()                      // recovery is inside `demote`
+        await vm.play(at: 1)                               // the user taps "b"
+        await gate.release()
+        await recovering.value
+        #expect(resolver.demotions == ["a:visionos"])
+        #expect(!resolver.calls.contains { $0.kind == .autoRecovery })
+        #expect(vm.args.videoId == "b")
+        #expect(vm.state.isPlayable)
+    }
+
     @Test func autoSkipWalksPastUnplayableItemsAndStopsAfterThree() async {
         // `PlayerViewModel.kt:1349-1366`. Four dead items in a row: skip 1, 2, 3, then STOP on the
         // 4th with the real terminal state so the user sees something instead of a silent walk.
