@@ -34,7 +34,7 @@ class SearchViewModel @Inject constructor(
             _searchResults.value = SearchState.Loading
             try {
                 if (BuildConfig.DEBUG) android.util.Log.d("SearchViewModel", "Searching for: $query")
-                val results = contentService.search(query = query, type = null, limit = 50)
+                val results = contentService.search(query = query, type = null, limit = 50).items
 
                 if (BuildConfig.DEBUG) android.util.Log.d("SearchViewModel", "Received ${results.size} search results")
 

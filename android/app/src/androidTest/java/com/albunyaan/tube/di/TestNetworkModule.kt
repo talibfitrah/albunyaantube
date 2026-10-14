@@ -104,8 +104,8 @@ class FakeContentApi : ContentApi {
         query: String,
         type: String?,
         limit: Int
-    ): List<ContentItemDto> {
-        return emptyList()
+    ): retrofit2.Response<List<ContentItemDto>> {
+        return retrofit2.Response.success(emptyList())
     }
 
     override suspend fun fetchHomeFeed(

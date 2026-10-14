@@ -2,13 +2,16 @@ package com.albunyaan.tube.data.source
 
 import com.albunyaan.tube.data.source.api.ContentApi
 import kotlinx.coroutines.test.runTest
+import okhttp3.Headers
 import okhttp3.ResponseBody.Companion.toResponseBody
+import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Test
 import org.mockito.kotlin.mock
 import org.mockito.kotlin.verify
 import org.mockito.kotlin.whenever
+import retrofit2.HttpException
 import retrofit2.Response
 
 class RetrofitContentServiceTest {
@@ -143,5 +146,27 @@ class RetrofitContentServiceTest {
         )
 
         service.verifyAvailable(AvailabilityCheckType.VIDEO, "ytv-err")
+    }
+
+    // --- search: X-Search-Match (spec §4.6, §6) ---
+
+    @Test
+    fun `search reads X-Search-Match and treats a missing or unknown value as EXACT`() = runTest {
+        whenever(api.search("zakit", null, 50))
+            .thenReturn(Response.success(emptyList(), Headers.headersOf("X-Search-Match", "approximate")))
+        assertEquals(SearchMatch.APPROXIMATE, service.search("zakit", null, 50).match)
+
+        whenever(api.search("zakir", null, 50)).thenReturn(Response.success(emptyList()))
+        assertEquals(SearchMatch.EXACT, service.search("zakir", null, 50).match)
+
+        whenever(api.search("later", null, 50))
+            .thenReturn(Response.success(emptyList(), Headers.headersOf("X-Search-Match", "something-new")))
+        assertEquals(SearchMatch.EXACT, service.search("later", null, 50).match)
+    }
+
+    @Test
+    fun `search still fails on a non-2xx answer`() = runTest {
+        whenever(api.search("quran", null, 50)).thenReturn(Response.error(503, "".toResponseBody(null)))
+        assertTrue(runCatching { service.search("quran", null, 50) }.exceptionOrNull() is HttpException)
     }
 }

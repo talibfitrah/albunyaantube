@@ -16,6 +16,7 @@ import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.model.Category
 import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
@@ -291,8 +292,8 @@ class HomeViewModelTest {
             return CursorResponse(emptyList(), null)
         }
 
-        override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
-            return emptyList()
+        override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult {
+            return ContentSearchResult(emptyList())
         }
 
         override suspend fun fetchCategories(): List<Category> {

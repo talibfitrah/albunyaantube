@@ -9,6 +9,22 @@ import com.albunyaan.tube.data.model.HomeFeedResult
 
 enum class AvailabilityCheckType { CHANNEL, PLAYLIST, VIDEO }
 
+/** `X-Search-Match` (spec §4.6). A missing or unknown value — an older backend — reads as EXACT. */
+enum class SearchMatch {
+    EXACT, APPROXIMATE, RELATED;
+
+    companion object {
+        fun fromHeader(value: String?): SearchMatch = when (value?.lowercase(java.util.Locale.ROOT)) {
+            "approximate" -> APPROXIMATE
+            "related" -> RELATED
+            else -> EXACT
+        }
+    }
+}
+
+/** A global-search answer: the items plus how well the best one matched. */
+data class ContentSearchResult(val items: List<ContentItem>, val match: SearchMatch = SearchMatch.EXACT)
+
 interface ContentService {
     suspend fun fetchContent(
         type: ContentType,
@@ -25,7 +41,7 @@ interface ContentService {
         category: String? = null
     ): HomeFeedResult
 
-    suspend fun search(query: String, type: String? = null, limit: Int = 20): List<ContentItem>
+    suspend fun search(query: String, type: String? = null, limit: Int = 20): ContentSearchResult
 
     suspend fun fetchCategories(): List<Category>
 

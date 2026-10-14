@@ -80,10 +80,14 @@ class RetrofitContentService(
         )
     }
 
-    override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
-        val dtos = api.search(query, type, limit)
-        // Use mapper to convert generated DTOs to domain models
-        return dtos.toDomainContentItems()
+    override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult {
+        val response = api.search(query, type, limit)
+        // Response<T> stops Retrofit throwing on non-2xx; keep the old failure behaviour.
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+        return ContentSearchResult(
+            items = response.body().orEmpty().toDomainContentItems(),
+            match = SearchMatch.fromHeader(response.headers()["X-Search-Match"])
+        )
     }
 
     override suspend fun fetchCategories(): List<Category> {

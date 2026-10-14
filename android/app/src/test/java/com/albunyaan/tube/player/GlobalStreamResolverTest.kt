@@ -4,11 +4,11 @@ import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.filters.FilterState
 import com.albunyaan.tube.data.model.Category
-import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.source.AvailabilityCheckType
+import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.delay
@@ -958,7 +958,7 @@ class GlobalStreamResolverTest {
             query: String,
             type: String?,
             limit: Int,
-        ): List<ContentItem> = throw UnsupportedOperationException("not used in resolver gate tests")
+        ): ContentSearchResult = throw UnsupportedOperationException("not used in resolver gate tests")
 
         override suspend fun fetchCategories(): List<Category> =
             throw UnsupportedOperationException("not used in resolver gate tests")
