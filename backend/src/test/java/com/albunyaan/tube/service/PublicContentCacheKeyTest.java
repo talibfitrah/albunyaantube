@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
@@ -23,6 +24,7 @@ import java.util.Base64;
 import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
@@ -64,9 +66,14 @@ class PublicContentCacheKeyTest {
         }
 
         @Bean
+        VideoRepository videoRepository() {
+            return mock(VideoRepository.class);
+        }
+
+        @Bean
         PublicContentService publicContentService(ChannelRepository channels, PlaylistRepository playlists,
-                                                  CategoryRepository categories) {
-            return new PublicContentService(channels, playlists, mock(VideoRepository.class),
+                                                  VideoRepository videos, CategoryRepository categories) {
+            return new PublicContentService(channels, playlists, videos,
                     categories, mock(CategoryContentOrderRepository.class), Runnable::run,
                     mock(SearchIndex.class));
         }
@@ -76,6 +83,7 @@ class PublicContentCacheKeyTest {
     @Autowired private ChannelRepository channels;
     @Autowired private PlaylistRepository playlists;
     @Autowired private CategoryRepository categories;
+    @Autowired private VideoRepository videos;
     @Autowired private CacheManager cacheManager;
 
     @BeforeEach
@@ -147,6 +155,51 @@ class PublicContentCacheKeyTest {
         service.getHomeFeed(cursor("0:c1"), 1, 10, null);
         service.getHomeFeed(cursor("0:c1"), 1, 10, null);
         verify(categories, times(7)).findAll();
+    }
+
+    // ---- X1: a literal "null" query value never shares the key of an omitted parameter ----
+
+    @Test
+    void homeWithCategoryNullNeverBlanksTheUnfilteredHomeFeed() throws Exception {
+        // SpEL rendered a null category as "null": the unknown-category empty feed was cached under the unfiltered key.
+        when(categories.findAll()).thenReturn(List.of(category("c1", 0)));
+        Channel channel = new Channel("UCany");
+        channel.setId("ch1");
+        channel.setStatus("APPROVED");
+        when(channels.findByCategoryIds(anyList(), anyInt())).thenReturn(List.of(channel));
+
+        assertTrue(service.getHomeFeed(null, 5, 10, "null").getData().isEmpty(), "precondition: an unknown category");
+
+        assertEquals(List.of("c1"), service.getHomeFeed(null, 5, 10, null).getData().stream().map(c -> c.getId()).toList());
+    }
+
+    @Test
+    void contentWithCategoryNullNeverBlanksTheUnfilteredTab() throws Exception {
+        newestVideosPageHoldsOneVideo();
+        when(videos.findApprovedByCategoryAndUploadedAtDescWithCursor(eq("null"), anyInt(), isNull()))
+                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(), null, false));
+
+        assertTrue(service.getContent("VIDEOS", null, 20, "null", null, null, null).getData().isEmpty(), "precondition");
+
+        assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
+    }
+
+    @Test
+    void contentWithSortNullNeverReplacesTheUnsortedTab() throws Exception {
+        // sort=null takes the legacy path (empty here), whose page must not answer the unsorted request.
+        newestVideosPageHoldsOneVideo();
+
+        assertTrue(service.getContent("VIDEOS", null, 20, null, null, null, "null").getData().isEmpty(), "precondition");
+
+        assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
+    }
+
+    private void newestVideosPageHoldsOneVideo() throws Exception {
+        Video video = new Video("vNewest");
+        video.setId("v1");
+        video.setStatus("APPROVED");
+        when(videos.findApprovedByUploadedAtDescWithCursor(anyInt(), isNull()))
+                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(video), null, false));
     }
 
     private static Category category(String id, int displayOrder) {

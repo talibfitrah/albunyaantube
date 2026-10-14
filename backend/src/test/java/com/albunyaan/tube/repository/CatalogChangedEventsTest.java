@@ -150,7 +150,8 @@ class CatalogChangedEventsTest {
 
         verify(events, times(5)).publishEvent(new CatalogChanged("CHANNEL", "c1", true));
         verify(events, times(5)).publishEvent(new CatalogChanged("PLAYLIST", "p1", true));
-        verify(events, times(4)).publishEvent(new CatalogChanged("VIDEO", "v1", true));
+        verify(events, times(2)).publishEvent(new CatalogChanged("VIDEO", "v1", true, "vAckTest")); // saves carry the id (R1)
+        verify(events, times(2)).publishEvent(new CatalogChanged("VIDEO", "v1", true)); // deletes have none
     }
 
     @Test
@@ -189,7 +190,8 @@ class CatalogChangedEventsTest {
 
         verify(events, times(2)).publishEvent(new CatalogChanged("CHANNEL", "c1", true)); // one per miss: save, delete
         verify(events, times(2)).publishEvent(new CatalogChanged("PLAYLIST", "p1", true));
-        verify(events, times(2)).publishEvent(new CatalogChanged("VIDEO", "v1", true));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", true, "vMissTest"));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", true));
         verifyNoMoreInteractions(events);
     }
 
@@ -237,7 +239,7 @@ class CatalogChangedEventsTest {
         Video video = new Video("vSaveTest");
         video.setId("v1");
         videos().save(video);
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", false));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", false, "vSaveTest")); // the id travels (R1)
     }
 
     @Test
@@ -246,7 +248,7 @@ class CatalogChangedEventsTest {
         video.setId("v1");
         transactionReturns(video);
         videos().saveIfStatus(video, "PENDING");
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", false));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", false, "vSaveTest"));
     }
 
     @Test

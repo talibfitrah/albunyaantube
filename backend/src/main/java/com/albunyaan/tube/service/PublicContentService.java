@@ -95,7 +95,7 @@ public class PublicContentService {
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
                condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null",
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + (#category == null ? '' : 'c:' + #category) + '-' + (#length == null ? '' : 'l:' + #length) + '-' + (#date == null ? '' : 'd:' + #date) + '-' + (#sort == null ? '' : 's:' + #sort)")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
             String category, String length, String date, String sort
@@ -429,7 +429,7 @@ public class PublicContentService {
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
                condition = "T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) != null",
-               key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
+               key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + (#category == null ? '' : 'c:' + #category)")
     public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
 
@@ -480,7 +480,7 @@ public class PublicContentService {
                 if (subcategory != null) {
                     parentCategories.add(subcategory);
                 } else {
-                    // Unknown category ID — return empty without caching garbage
+                    // Unknown category ID — empty; cached under its own "c:" key, never the unfiltered one (X1)
                     return new CursorPageDto<>(List.of(), null);
                 }
             }

@@ -361,6 +361,7 @@ public class SearchIndex {
         Set<String> ids = new HashSet<>();
         List<Document> docs = new ArrayList<>();
         admit(entity, sources, ids, docs);
+        if (event.youtubeId() != null) ids.add(event.youtubeId()); // blocks its stream even when no Video mapped (R1)
         Term key = new Term("key", event.type() + ":" + event.docId());
         // The old source key goes first: the new one may be the same key, and must not lose it.
         String oldId = storedValues(key.text(), "id").stream().findFirst().orElse(null);

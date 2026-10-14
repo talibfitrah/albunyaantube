@@ -215,7 +215,7 @@ class SearchIndexTest {
 
     private void saved(Video v) throws Exception {
         when(videoRepo.findById(v.getId())).thenReturn(Optional.of(v));
-        index.onCatalogChanged(new CatalogChanged("VIDEO", v.getId(), false));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", v.getId(), false, v.getYoutubeId())); // as VideoRepository.save publishes
     }
 
     private static SearchIndex started(SearchIndex index) throws Exception {
@@ -701,6 +701,39 @@ class SearchIndexTest {
         when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
         started(fresh);
         assertFalse(ids(fresh.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+    }
+
+    @Test
+    void aNewVideoThatCannotBeMappedOnTheEventPathStillHidesItsStream() throws Exception {
+        // R1: findById threw in toObject on every re-read, so the event path never learned the id (fail open for 6 h).
+        index.rereadRetryMs = new long[]{0, 0, 0};
+        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new RuntimeException("Could not deserialize object"));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
+        index.awaitWrites();
+        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+    }
+
+    @Test
+    void aNewVideoWhoseRereadsAllFailStillHidesItsStream() throws Exception {
+        // R1: all 4 re-reads failed, so applyCatalogChange(event, null) ran with no id to block.
+        index.rereadRetryMs = new long[]{0, 0, 0};
+        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new ExecutionException("firestore down", new RuntimeException()));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
+        index.awaitWrites();
+        verify(videoRepo, times(4)).findById("doc-orphan-lecture"); // the read, then 3 retries
+        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+    }
+
+    @Test
+    void aNewApprovedVideoIsFoundAsItsCatalogDocumentAndItsStreamCopyHides() throws Exception {
+        // R1 positive control: the event's id changes nothing for a Video that maps.
+        saved(with(video("orphan-lecture", "Orphan Lecture", null), v -> v.setUploadedAt(daysAgo(3))));
+        index.awaitWrites();
+        List<ContentItemDto> items = index.search("orphan", "VIDEO", false, 10, null).items();
+        assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
+        assertEquals(3, items.get(0).getUploadedDaysAgo(), "answered by the catalog document, not the stream");
     }
 
     @Test

@@ -68,7 +68,7 @@ public class VideoRepository {
                 .document(video.getId())
                 .set(video);
 
-        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", video.getId());
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
         return video;
     }
 
@@ -98,7 +98,7 @@ public class VideoRepository {
             transaction.set(docRef, video);
             return video;
         });
-        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId());
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
