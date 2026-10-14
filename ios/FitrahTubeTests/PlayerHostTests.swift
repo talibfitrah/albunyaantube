@@ -185,6 +185,52 @@ struct PlayerHostTests {
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
     }
 
+    /// Task 7 fix round 1 (review N1): `lastPlayingAt` is per player and only the periodic sampler
+    /// stamped it. Recovery played rung 2's replacement, which then failed more than 3 s after rung
+    /// 1's last stamp with no tick in between (it never produced a frame), so `shouldResume` read
+    /// the stale stamp as "the user had paused" and the third attempt stayed paused. The two
+    /// failures are posted by hand inside one main-actor turn, so no tick can refresh the stamp;
+    /// `.playbackError` vs `.failedBeforeFirstFrame` is the same answer in `shouldResume`.
+    @Test(.timeLimit(.minutes(1))) func aResumedReplacementThatFailsLateStillResumesTheNextAttempt() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let settings = UserDefaultsSettingsStore(
+            defaults: UserDefaults(suiteName: "PlayerHostTests.\(UUID().uuidString)")!)
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings,
+                                    args: PlayerArgs(videoId: "fixture-1"))
+        let player = try #require(PlayerHostView.player(
+            for: .rung2Progressive(Self.resolved(.progressive(url: url, label: "360p"))), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.lastVideoId = "fixture-1"
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
+                            isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+        // The 1 s tick ran `sample` while playing: rung 1's stamp exists.
+        for _ in 0..<300 where model.currentTime < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.currentTime >= 1)
+
+        // Rung 1 dies under the user (stamp fresh -> resume), and the failure pauses the player.
+        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
+        player.pause()
+        try await Task.sleep(for: .milliseconds(3300))     // past `resumeWindow`, no ticks while paused
+
+        // Rung 2's replacement: resumed by `observe`, then fails before any tick, and pauses.
+        let rung2 = Self.resolved(.hls(url: URL(string: "https://127.0.0.1:9/rung2.m3u8")!, isLive: false,
+                                       audioOnlyURL: nil, captionTracks: []))
+        _ = PlayerHostView.player(for: .ready(rung2), replacing: player)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
+                            isLive: false, playToEnd: .none)
+        #expect(player.timeControlStatus != .paused, "recovery's replacement must play")
+        NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
+        player.pause()
+
+        // The third attempt: the user never paused, so it must play.
+        _ = PlayerHostView.player(for: .rung2Progressive(Self.resolved(.progressive(url: url, label: "360p"))),
+                                  replacing: player)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
+                            isLive: false, playToEnd: .none)
+        #expect(player.timeControlStatus != .paused, "the third attempt stayed paused")
+    }
+
     // MARK: - Task 3: audio-only URL selection and the same-player swap
 
     @Test func audioOnlySelectsTheItag140URL() {

@@ -594,7 +594,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     self?.background.refreshNowPlaying()
                 }
             }
-            if resumes, self.model?.pausedForCast != true { player.play() }
+            // Stamped here, not left to the sampler: a replacement that never produces a frame never
+            // ticks, and its failure would read rung 1's old stamp as "the user had paused" (review N1).
+            if resumes, self.model?.pausedForCast != true {
+                player.play()
+                lastPlayingAt = Date()
+            }
         }
 
         /// M6: `monitor` is private, so teardown goes through here (see
