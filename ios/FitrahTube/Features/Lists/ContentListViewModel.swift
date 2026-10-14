@@ -17,9 +17,9 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
 /// `isLoadingMore` field (unlike `HomeViewModel.State.content`), and `PaginationGuard.shouldAutoLoad`
 /// takes no such flag either -- both are the given brief interfaces verbatim -- so the pagination
 /// spinner and refresh spinner are necessarily View-local UI concerns (`ContentListView`'s own
-/// `@State`), not part of this type. `.loading(.initial)` is the only kind ever set: on `load()` and
-/// on every debounced query change (search resets pagination and shows the full skeleton, matching
-/// Android's `setSearchQuery` -> `loadContent()` -> `Loading(INITIAL)`, `content-lists.md:59-63`).
+/// `@State`), not part of this type. `.loading(.initial)` is the only kind ever set: on `load()`, and
+/// on a debounced query change only when nothing is on screen yet -- otherwise the list stays and
+/// `isSearching` drives a small spinner (spec §6.2, 2026-10-13).
 @MainActor @Observable final class ContentListViewModel {
     enum State: Equatable {
         case loading(LoadKind)
@@ -37,22 +37,44 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// error, no state change. An event needs an event channel, not a level.
     private(set) var errorToken = 0
 
+    /// Spec §6.2: true while a search-query reload runs with content still on screen.
+    private(set) var isSearching = false
+
     /// Bound directly by `ContentListView`'s search field. No fragment-level pre-debounce (RULING
     /// 22 collapses Android's two composed 300 ms timers into this one). <2 chars still updates
-    /// `isSearchActive` and still re-fetches (matching Android's "any change re-fetches"), just
-    /// without a `q` param -- the server requires ≥2 chars, so below that the fetch simply returns
-    /// the unfiltered list.
+    /// `isSearchActive`, and the fetch omits `q` -- the server requires ≥2 chars, so below that it
+    /// returns the unfiltered list. A change that leaves the request as it is on screen (an undone
+    /// keystroke, trailing spaces) fetches nothing.
     var query: String = "" {
         didSet {
             guard query != oldValue else { return }
+            submitted = false
+            // A6: the keystroke drops the search already in flight, not only its debounce, so an
+            // older answer or error never lands under the newer text.
             searchTask?.cancel()
+            loadTask?.cancel()
+            // S13: back on the query whose results are on screen -- nothing to reload.
+            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam {
+                isSearching = false
+                return
+            }
             let task = Task { [sleep] in
                 do { try await sleep(.milliseconds(300)) } catch { return }
                 guard !Task.isCancelled else { return }
-                await self.performFullLoad(showLoading: true)
+                await self.search()
             }
             searchTask = task
         }
+    }
+
+    /// S14 (RULINGS #22 parity): the keyboard's Search key searches the field at once -- no
+    /// debounce and no 2-character floor (the server answers a 1-character `q` with the plain list).
+    func submit() async {
+        searchTask?.cancel()
+        submitted = true
+        let task = Task { await self.search() }
+        searchTask = task
+        await task.value
     }
 
     private let type: ListType
@@ -64,7 +86,9 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private var items: [ContentItem] = []
     /// The `(filter, query)` `items` were actually fetched under. `nil` until the first success.
     private var itemsFilter: FilterState?
-    private var itemsQuery: String?
+    /// Readable by `ContentListView`, which scrolls to the top when it changes: a new query's
+    /// results replaced the list (A7). A page appended below or a refresh leaves it as it is.
+    private(set) var itemsQuery: String?
 
     /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
     /// must keep the list visible, not blank it. `items` is only ever reassigned on a *successful*
@@ -160,6 +184,16 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     @discardableResult
     func retryPagination() async -> Bool { await loadMore() }
 
+    /// The debounced keystroke and the Search key share this. A list on screen stays while the next
+    /// one loads (spec §6.2); a failure still clears it through `.error` + `lastItems` (gate B1-C2).
+    private func search() async {
+        let keepContent: Bool
+        if case .content = state { keepContent = true } else { keepContent = false }
+        isSearching = keepContent
+        await performFullLoad(showLoading: !keepContent)
+        if !Task.isCancelled { isSearching = false }
+    }
+
     private func performFullLoad(showLoading: Bool) async {
         loadGeneration += 1
         let generation = loadGeneration
@@ -234,8 +268,11 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// the unfiltered list), not sent as a too-short string. Interpretation accepted as-is for
     /// these browse tabs: <2 chars means "show the unfiltered list", not "no results" / no fetch.
     /// Whitespace does not count toward the threshold and is never sent (gate wave-2 W8): `"  "`
-    /// used to pass `count >= 2` and go out as `q="  "`.
-    private var queryParam: String? { trimmedQuery.count >= 2 ? trimmedQuery : nil }
+    /// used to pass `count >= 2` and go out as `q="  "`. A submitted query (S14) skips the floor.
+    private var queryParam: String? { trimmedQuery.count >= (submitted ? 1 : 2) ? trimmedQuery : nil }
+
+    /// Set by the Search key, cleared by the next keystroke.
+    private var submitted = false
 
     private var trimmedQuery: String { query.trimmingCharacters(in: .whitespacesAndNewlines) }
 }

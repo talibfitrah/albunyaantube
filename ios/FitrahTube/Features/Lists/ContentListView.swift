@@ -56,11 +56,24 @@ struct ContentListView: View {
                     guard signal?.tab == tab else { return }
                     withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
                 }
+                // A7: a new query's results replacing the list open at their top; a page appended
+                // below or a refresh of the same query keeps the place.
+                .onChange(of: viewModel?.itemsQuery) { _, _ in
+                    proxy.scrollTo(Self.topAnchor, anchor: .top)
+                }
             }
         }
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(navTitle)
         .toolbar {
+            // Spec §6.2: the list stays while a search reloads it; this says one is running. In the
+            // bar, not the content, so it never pushes the list down or covers its first row.
+            ToolbarItem(placement: .topBarTrailing) {
+                if showsSearchingIndicator {
+                    ProgressView().controlSize(.small).tint(.brand)
+                        .accessibilityLabel(String(localized: "search_loading"))
+                }
+            }
             if type == .channels {
                 ToolbarItem(placement: .topBarTrailing) {
                     Button { router.push(.categories) } label: {
@@ -135,10 +148,18 @@ struct ContentListView: View {
         Binding(get: { viewModel?.query ?? "" }, set: { viewModel?.query = $0 })
     }
 
-    /// Shared chrome with `SearchView` (gate wave-2 W9); this one has neither auto-focus nor a
-    /// submit action -- it is one element of a header, and only the debounced `query` change fetches.
+    /// Shared chrome with `SearchView` (gate wave-2 W9); no auto-focus -- it is one element of a
+    /// header. Typing fetches after the debounce; the keyboard's Search key fetches at once (S14).
     private var searchBar: some View {
-        SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"))
+        SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"),
+                    onSubmit: { Task { await viewModel?.submit() } })
+    }
+
+    /// Only over content, like `SearchView`'s: a flag still set for the frame after a failure lands
+    /// is ignored.
+    private var showsSearchingIndicator: Bool {
+        guard let viewModel, viewModel.isSearching, case .content = viewModel.state else { return false }
+        return true
     }
 
     // MARK: - Filter chip (content-lists.md §4.9 -- "Category: %1$@" + Clear)

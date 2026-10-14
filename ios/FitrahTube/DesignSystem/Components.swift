@@ -719,8 +719,8 @@ struct SearchField: View {
     /// Set by `SearchView` (auto-focus on appear); `nil` on the list tabs, whose field is just one
     /// element of a header.
     var focus: FocusState<Bool>.Binding?
-    /// Set by `SearchView`, which submits on the keyboard's Search key (bypassing its debounce);
-    /// `nil` on the list tabs, which only ever fetch on the debounced `query` change.
+    /// Set by `SearchView` and the list tabs, which search on the keyboard's Search key (bypassing
+    /// their debounce).
     var onSubmit: (() -> Void)?
     /// Overrides the placeholder. `nil` (every Phase 1-3 caller) keeps `search_hint`; Task 27's
     /// Suggest screen searches YouTube through the BACKEND and says so (`suggest_search_hint`).
@@ -754,6 +754,8 @@ struct SearchField: View {
             .accessibilityLabel(accessibilityLabel)
         if let focus, let onSubmit {
             base.focused(focus).submitLabel(.search).onSubmit(onSubmit)
+        } else if let onSubmit {
+            base.submitLabel(.search).onSubmit(onSubmit)
         } else {
             base
         }
