@@ -1,0 +1,38 @@
+android/app/src/androidTest/java/com/albunyaan/tube/ui/InTabSearchScreensTest.kt
+  s_dbb6b1f3671904::t_0e7595f98c1a7c 122-126
+  s_dbb6b1f3671904::t_258ade3f42b69a 23,25,29,82,104,107-108,119-120,146
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerDescriptionsTest.kt
+  s_dbb6b1f3671904::t_a998e80f7c4a08 249-258,276,289,296-303
+  s_dbb6b1f3671904::t_4a67aabc90580b 271
+  s_dbb6b1f3671904::t_81ee166cc453ca 304-305
+android/app/src/androidTest/java/com/albunyaan/tube/ui/SearchScreensTest.kt
+  s_dbb6b1f3671904::t_258ade3f42b69a 23,25-26,31,115,139
+android/app/src/androidTest/java/com/albunyaan/tube/util/SearchTestSupport.kt
+  s_dbb6b1f3671904::t_258ade3f42b69a 20-21,83-91
+  s_dbb6b1f3671904::t_d9845dcb028f48 92
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerDescriptions.kt
+  s_dbb6b1f3671904::t_863c1ccea9f8c1 35-36,49,52,54-55,67,72-74,78-81,83-84,88,94
+  s_dbb6b1f3671904::t_72175effa0a674 50
+  s_dbb6b1f3671904::t_126d9c24812d00 51,53
+android/app/src/androidTest/java/com/albunyaan/tube/ui/NoYouTubeLinksScreensTest.kt
+  s_dbb6b1f3671904::t_1e43e583f61e7b 8,107-108,111-114
+  s_dbb6b1f3671904::t_258ade3f42b69a 33,99-101,109-110
+android/app/src/main/java/com/albunyaan/tube/ui/detail/tabs/ChannelAboutTabFragment.kt
+  s_dbb6b1f3671904::t_863c1ccea9f8c1 219-220
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34eb85ca0e888e3781cf4076bb2525f7249d2197",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
