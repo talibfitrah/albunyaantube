@@ -500,10 +500,6 @@
     <string name="downloads_storage_used">Storage Used</string>
     <string name="downloads_storage_format">%1$d downloads • %2$s used • %3$s available</string>
     <string name="downloads_storage_calculating">Calculating…</string>
-    <string name="downloads_no_file">No file found</string>
-    <string name="downloads_file_not_found">File not found: %1$s</string>
-    <string name="downloads_open_error">Error: %1$s</string>
-    <string name="downloads_no_player">No video player found</string>
     <string name="library_section_title">Library</string>
     <string name="library_saved">Saved</string>
     <string name="library_saved_count">%1$d videos</string>

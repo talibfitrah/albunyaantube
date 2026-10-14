@@ -14,7 +14,14 @@ import com.albunyaan.tube.auth.AccountRepositoryImpl
 import com.albunyaan.tube.auth.LastKnownAccountStore
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.AccountMeResponseDto
+import com.albunyaan.tube.auth.AuthRepository
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.mock
@@ -159,18 +166,99 @@ class SplashRouterOfflineTest {
         whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
         val repo = repoWith(store) { throw IOException("offline") }
 
-        val account = SplashRouter.resolveAccount(repo, "uid-a")
+        val account = SplashRouter.resolveAccount(repo, "uid-a", backgroundScope)
 
         assertEquals(loaded(AccountStatus.ACTIVE), account)
         assertEquals(loaded(AccountStatus.ACTIVE), repo.accountState.value)
     }
 
-    @Test fun `resolveAccount on a signed 401 never reads the record`() = runTest {
+    @Test fun `resolveAccount with no record on a signed 401 routes to sign-in`() = runTest {
         val store = mock<LastKnownAccountStore>()
         val repo = repoWith(store) { throw http(401, signed = true) }
 
-        assertNull(SplashRouter.resolveAccount(repo, "uid-a"))
-        verify(store, never()).read(any())
+        assertNull(SplashRouter.resolveAccount(repo, "uid-a", backgroundScope))
+        verify(store, never()).write(any())
+    }
+
+    // ── Launch must never wait on sync or long on /me (1.0.3, R4) ─────────
+
+    private fun me(status: String) = AccountMeResponseDto(
+        uid = "uid-a", email = "a@b.com", displayName = "A", dateOfBirth = null,
+        phoneNumber = null, status = status, role = "user", profileCompletedAt = null,
+    )
+
+    @Test fun `the launch status does not wait for sync`() = runTest {
+        // A dead backend held the splash for minutes: bind's pull retries ran as a
+        // child of the coroutine routing awaited (SplashFragment.kt:147-150 pre-fix).
+        val repo = repoWith(mock()) { me("active") }
+        var boundUid: String? = null
+
+        val status = withTimeout(1_000) {
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) { uid ->
+                boundUid = uid
+                awaitCancellation()
+            }
+        }
+        runCurrent()
+
+        assertEquals(AccountStatus.ACTIVE, status)
+        assertEquals("sync still starts, off the routing path", "uid-a", boundUid)
+    }
+
+    @Test fun `a hanging me with a saved record routes on it within 3 s and a later signed 401 signs out`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val auth = mock<AuthRepository>()
+        val pendingMe = CompletableDeferred<AccountMeResponseDto>()
+        val repo = AccountRepositoryImpl(
+            mock<AccountService>().also { svc -> svc.stub { onBlocking { getMe() } doSuspendableAnswer { pendingMe.await() } } },
+            backoffMs = 0L,
+            lastKnown = store,
+            auth = auth,
+        )
+
+        val start = currentTime
+        val status = withTimeout(10_000) {
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {}
+        }
+
+        assertEquals(AccountStatus.ACTIVE, status)
+        assertTrue("waited ${currentTime - start} ms", currentTime - start <= SplashRouter.LAUNCH_ME_BUDGET_MS)
+
+        // The /me kept running after routing; the server's verdict lands now.
+        pendingMe.completeExceptionally(http(401, signed = true))
+        runCurrent()
+
+        assertEquals(AccountState.NotSignedIn, repo.accountState.value)
+        verify(store).clear()
+        verify(auth).signOut()
+    }
+
+    @Test fun `with a saved record a me that answers within the budget wins`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val repo = repoWith(store) { me("pending_profile") }
+
+        val status = SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {}
+
+        assertEquals(AccountStatus.PENDING_PROFILE, status)
+        verify(store).write(loaded(AccountStatus.PENDING_PROFILE))
+    }
+
+    @Test fun `with a saved record a signed 401 within the budget signs out`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val auth = mock<AuthRepository>()
+        val repo = AccountRepositoryImpl(
+            mock<AccountService>().also { svc -> svc.stub { onBlocking { getMe() } doAnswer { throw http(401, signed = true) } } },
+            backoffMs = 0L,
+            lastKnown = store,
+            auth = auth,
+        )
+
+        assertNull(SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {})
+        verify(store).clear()
+        verify(auth).signOut()
     }
 
     @Test fun `429 and 408 are non-terminal and use the record, like 5xx`() {

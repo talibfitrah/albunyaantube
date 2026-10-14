@@ -5,7 +5,6 @@ import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import dagger.hilt.android.lifecycle.HiltViewModel
-import java.io.File
 import kotlinx.coroutines.flow.SharingStarted
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.map
@@ -42,6 +41,4 @@ class DownloadViewModel @Inject constructor(
             repository.refreshPersistedDownloads()
         }
     }
-
-    fun fileFor(entry: DownloadEntry): File? = entry.filePath?.let { File(it) }
 }

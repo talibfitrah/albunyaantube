@@ -520,10 +520,6 @@
     <string name="downloads_storage_used">التخزين المستخدم</string>
     <string name="downloads_storage_format">%1$d تنزيل • %2$s مستخدم • %3$s متاح</string>
     <string name="downloads_storage_calculating">جارٍ الحساب…</string>
-    <string name="downloads_no_file">لم يتم العثور على الملف</string>
-    <string name="downloads_file_not_found">الملف غير موجود: %1$s</string>
-    <string name="downloads_open_error">خطأ: %1$s</string>
-    <string name="downloads_no_player">لم يتم العثور على مشغل فيديو</string>
     <string name="library_section_title">المكتبة</string>
     <string name="library_saved">المحفوظات</string>
     <string name="library_saved_count">%1$d فيديو</string>

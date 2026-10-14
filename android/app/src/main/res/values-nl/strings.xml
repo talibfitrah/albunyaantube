@@ -422,10 +422,6 @@
     <string name="downloads_storage_used">Opslagruimte gebruikt</string>
     <string name="downloads_storage_format">%1$d downloads • %2$s gebruikt • %3$s beschikbaar</string>
     <string name="downloads_storage_calculating">Berekenen…</string>
-    <string name="downloads_no_file">Geen bestand gevonden</string>
-    <string name="downloads_file_not_found">Bestand niet gevonden: %1$s</string>
-    <string name="downloads_open_error">Fout: %1$s</string>
-    <string name="downloads_no_player">Geen videospeler gevonden</string>
     <string name="library_section_title">Bibliotheek</string>
     <string name="library_saved">Opgeslagen</string>
     <string name="library_saved_count">%1$d video\'s</string>

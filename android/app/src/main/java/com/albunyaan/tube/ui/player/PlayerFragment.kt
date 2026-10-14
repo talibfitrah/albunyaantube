@@ -26,12 +26,12 @@ import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
 import androidx.core.view.isVisible
-import androidx.core.content.FileProvider
 import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DefaultDataSource
 import androidx.media3.datasource.HttpDataSource
 import androidx.media3.exoplayer.DefaultRenderersFactory
 import androidx.media3.exoplayer.ExoPlayer
@@ -84,7 +84,6 @@ import javax.inject.Inject
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.io.File
 
 /**
  * P3-T4: PlayerFragment with Hilt DI
@@ -418,7 +417,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
         val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
 
+        val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
+
         when {
+            // Offline downloads (1.0.3): Downloads "Open" and the player's Download button
+            // play the completed file in this player, never the network.
+            !downloadId.isNullOrEmpty() -> viewModel.loadDownload(downloadId)
             !playlistId.isNullOrEmpty() -> {
                 // Playlist playback mode - load playlist and start from specified video
                 // PR6.6: Pass targetVideoId as authoritative, startIndex as hint for fast path
@@ -1536,6 +1540,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "streamId=${ready?.streamId} langCount=$langCount visible=${binding.audioLanguageButton.isVisible}"
                 )
             }
+            // A local file has one quality, is not castable, and has no queue.
+            binding.qualityButton.isVisible = !state.playingDownload
+            binding.castButton.isVisible = !state.playingDownload
+            binding.upNextHeader.isVisible = !state.playingDownload
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             binding.upNextEmpty.isVisible = state.upNext.isEmpty()
@@ -2112,7 +2120,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val currentItem = state.currentItem
         val downloadEntry = state.currentDownload
 
-        if (currentItem == null) {
+        // Playing a download's file: there is nothing to download or open.
+        if (currentItem == null || state.playingDownload) {
             button.isEnabled = false
             button.setOnClickListener(null)
             return
@@ -2121,7 +2130,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         when (downloadEntry?.status) {
             DownloadStatus.COMPLETED -> {
                 button.isEnabled = true
-                button.setOnClickListener { openDownloadedFile(downloadEntry) }
+                button.setOnClickListener { openDownload(downloadEntry) }
             }
             DownloadStatus.RUNNING -> {
                 button.isEnabled = false
@@ -2817,6 +2826,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
         }
 
+        if (state.playingDownload) {
+            prepareDownload(currentPlayer, streamState, state)
+            return
+        }
+
         // Re-evaluate the network ceiling per stream so a WiFi↔cellular change between
         // videos is honored. Cheap, and a no-op when the network is unchanged.
         applyNetworkCeilingFromCurrentNetwork()
@@ -3208,6 +3222,48 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     /**
+     * Offline downloads (1.0.3): play the download's local file through this same player.
+     * A plain progressive file source, none of the adaptive/MPD path. Audio-only mode turns
+     * the video renderer off instead of swapping sources (there is one file). Re-resolves
+     * (retry, refresh, recovery) come back through here at the saved position.
+     */
+    private fun prepareDownload(player: ExoPlayer, ready: StreamState.Ready, state: PlayerState) {
+        player.trackSelectionParameters = player.trackSelectionParameters.buildUpon()
+            .setTrackTypeDisabled(C.TRACK_TYPE_VIDEO, state.audioOnly)
+            .build()
+        val url = ready.selection.audio.url
+        val key = ready.streamId to state.audioOnly
+        if (preparedStreamKey?.first == ready.streamId && preparedStreamUrl == url) {
+            preparedStreamKey = key
+            return
+        }
+        val resume = pendingResumeStreamId == ready.streamId
+        val position = if (resume) pendingResumePositionMs ?: 0L else 0L
+        val playWhenReady = if (resume) pendingResumePlayWhenReady ?: true else true
+        pendingResumeStreamId = null
+        pendingResumePositionMs = null
+        pendingResumePlayWhenReady = null
+
+        player.setMediaSource(
+            ProgressiveMediaSource.Factory(DefaultDataSource.Factory(requireContext()))
+                .createMediaSource(MediaItem.fromUri(url))
+        )
+        player.prepare()
+        if (position > 0L) player.seekTo(position)
+        player.playWhenReady = playWhenReady
+        preparedStreamKey = key
+        preparedStreamUrl = url
+        preparedIsAdaptive = false
+        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
+        preparedQualityCapHeight = null
+        factorySelectedVideoTrack = null
+        streamPlaybackStartTimeMs = android.os.SystemClock.elapsedRealtime()
+        currentStreamIsLive = false
+        cancelStallWatchdog()
+        state.currentItem?.let { syncMediaSessionMetadata(it, force = true) }
+    }
+
+    /**
      * Abort the current prepare cleanly: clear first-frame mute, reset prepared-source state, and
      * transition to the Error state. Using Error (not just a Toast) is load-bearing — maybePrepareStream
      * early-returns on non-Ready, so this stops the state observer from re-invoking prepare on every
@@ -3260,60 +3316,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private fun openDownloadedFile(entry: DownloadEntry) {
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "openDownloadedFile called with entry: ${entry.request.videoId}")
-        val filePath = entry.filePath ?: run {
-            android.util.Log.e("PlayerFragment", "No filePath in entry")
-            Toast.makeText(requireContext(), R.string.downloads_no_file, Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "File path: $filePath")
-        val file = File(filePath)
-        if (!file.exists()) {
-            android.util.Log.e("PlayerFragment", "File does not exist: $filePath")
-            Toast.makeText(requireContext(), getString(R.string.downloads_file_not_found, file.name), Toast.LENGTH_SHORT).show()
-            return
-        }
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "File exists, size: ${file.length()} bytes")
-        val uri: Uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${BuildConfig.APPLICATION_ID}.downloads.provider",
-            file
+    /** Replaces this streaming player with one playing the download's local file. */
+    private fun openDownload(entry: DownloadEntry) {
+        findNavController().navigate(
+            R.id.action_global_playerFragment,
+            Bundle().apply { putString(ARG_DOWNLOAD_ID, entry.request.id) },
+            androidx.navigation.NavOptions.Builder().setPopUpTo(R.id.playerFragment, true).build(),
         )
-        val mimeType = if (entry.request.audioOnly) "audio/*" else "video/*"
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        // Grant temporary read permission to all apps that can handle this intent
-        val resolvedActivities = requireContext().packageManager.queryIntentActivities(intent, 0)
-        if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Found ${resolvedActivities.size} apps that can handle video")
-        for (resolvedInfo in resolvedActivities) {
-            val packageName = resolvedInfo.activityInfo.packageName
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Granting permission to: $packageName")
-            requireContext().grantUriPermission(
-                packageName,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
-
-        if (resolvedActivities.isNotEmpty()) {
-            if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Starting activity with intent")
-            try {
-                startActivity(intent)
-                if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Activity started successfully")
-            } catch (e: Exception) {
-                android.util.Log.e("PlayerFragment", "Failed to start activity", e)
-                val errorMessage = e.localizedMessage ?: getString(R.string.error_unknown)
-                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, errorMessage), Toast.LENGTH_LONG).show()
-            }
-        } else {
-            android.util.Log.e("PlayerFragment", "No apps found to handle video")
-            Toast.makeText(requireContext(), R.string.downloads_no_player, Toast.LENGTH_SHORT).show()
-        }
     }
 
     private fun shareCurrentVideo() {
@@ -3940,6 +3949,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun loadMediaToCast() {
+        if (viewModel.state.value.playingDownload) return
         val currentItem = viewModel.state.value.currentItem ?: return
             val streamState = viewModel.state.value.streamState
             if (streamState !is StreamState.Ready) return
@@ -4277,7 +4287,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "Synced MediaSession metadata for: ${item.title}${if (force) " (forced)" else ""}")
     }
 
-    private companion object {
+    companion object {
+        /** Nav arg: id of a completed download to play from its local file (see [PlayerViewModel.loadDownload]). */
+        const val ARG_DOWNLOAD_ID = "downloadId"
+
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"
         private const val DEFAULT_VIDEO_MIME = "video/mp4"
 

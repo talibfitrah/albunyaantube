@@ -52,6 +52,7 @@ import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.withLock
 import kotlinx.coroutines.withTimeoutOrNull
+import java.io.File
 import javax.inject.Inject
 
 /**
@@ -184,6 +185,9 @@ class PlayerViewModel @Inject constructor(
     private var resolveJob: Job? = null
     private var prefetchJob: Job? = null
     private var latestDownloads: List<DownloadEntry> = emptyList()
+
+    /** Set by [loadDownload]: this player plays that download's local file and never resolves online. */
+    private var playingDownloadId: String? = null
 
     /**
      * Cached prefetch result paired with the wall-clock timestamp at which it
@@ -841,6 +845,82 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * Offline downloads (1.0.3): play a completed download from its local file, the
+     * Android counterpart of iOS's OfflineResolver. No stream resolution, metadata fetch
+     * or dub lookup runs, and there is no queue, so Up Next and paging stay off. Every
+     * re-resolve (retry, refresh, auto-recovery) re-reads the file through
+     * [resolveDownload]; a deleted or expired file ends in the error state.
+     */
+    fun loadDownload(downloadId: String) {
+        pendingRefreshJob?.cancel()
+        pendingRefreshJob = null
+        liveRefreshJob?.cancel()
+        liveRefreshJob = null
+        isPlaylistMode = false
+        playlistChannelApproved = false
+        activePlaylistId = null
+        pagingJob?.cancel()
+        pagingJob = null
+        playlistPagingState = null
+        consecutiveSkips = 0
+        queue.clear()
+        previousItems.clear()
+
+        val entry = completedDownload(downloadId)
+        playingDownloadId = downloadId
+        currentItem = entry?.let {
+            UpNextItem(
+                id = it.request.videoId,
+                title = it.metadata?.title ?: it.request.title,
+                channelName = "",
+                durationSeconds = 0,
+                streamId = it.request.videoId,
+                thumbnailUrl = it.metadata?.thumbnailUrl ?: it.request.thumbnailUrl,
+            )
+        }
+        applyQueueState()
+        updateState { it.copy(audioOnly = entry?.request?.audioOnly == true, playingDownload = true) }
+        val item = currentItem ?: run {
+            updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+            return
+        }
+        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
+        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+    }
+
+    private fun completedDownload(downloadId: String): DownloadEntry? =
+        downloadRepository.downloads.value.firstOrNull {
+            it.request.id == downloadId && it.status == com.albunyaan.tube.download.DownloadStatus.COMPLETED
+        }
+
+    /** The local-file "resolve": re-reads the entry and file each time, never the network. */
+    private fun resolveDownload(downloadId: String) {
+        val entry = completedDownload(downloadId)
+        val file = entry?.filePath?.let(::File)?.takeIf { it.isFile }
+        if (entry == null || file == null) {
+            updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+            return
+        }
+        val uri = file.toURI().toString()
+        val mime = entry.metadata?.mimeType
+        val audio = AudioTrack(url = uri, mimeType = mime, bitrate = null, codec = null)
+        val video = if (entry.request.audioOnly) null else VideoTrack(
+            url = uri, mimeType = mime, width = null, height = null, bitrate = null,
+            qualityLabel = null, fps = null, isVideoOnly = false,
+        )
+        val videoId = entry.request.videoId
+        val resolved = ResolvedStreams(
+            streamId = videoId,
+            videoTracks = listOfNotNull(video),
+            audioTracks = listOf(audio),
+            durationSeconds = null,
+        )
+        updateState {
+            it.copy(streamState = StreamState.Ready(videoId, PlaybackSelection(videoId, video, audio, resolved)), retryCount = 0)
+        }
+    }
+
+    /**
      * Load and play a playlist from the specified position.
      *
      * PR6.6: Now supports deep starts via targetVideoId. Will page through playlist
@@ -1406,6 +1486,7 @@ class PlayerViewModel @Inject constructor(
      * @param forceRefresh If true, bypass all caches (prefetch and stream URL cache)
      */
     private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int, forceRefresh: Boolean = false) {
+        playingDownloadId?.let { resolveDownload(it); return }
         // Check tap-to-prefetch service first (triggered when user taps video in list)
         // This will await in-flight prefetch for up to 3 seconds, providing in-flight dedupe
         if (!forceRefresh) {
@@ -2074,7 +2155,9 @@ data class PlayerState(
     /** Current retry attempt (0 = first attempt, 1 = first retry, etc.) */
     val retryCount: Int = 0,
     /** Whether the current video is in favorites */
-    val isFavorite: Boolean = false
+    val isFavorite: Boolean = false,
+    /** True while a completed download plays from its local file (see [PlayerViewModel.loadDownload]). */
+    val playingDownload: Boolean = false,
 )
 
 data class UpNextItem(
