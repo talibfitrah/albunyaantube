@@ -61,7 +61,8 @@ internal object PlayerDescriptions {
      * 1. no `\`, whitespace (leading and trailing too: the tap parses the raw URL), ISO control character or soft
      *    hyphen (a browser drops or rewrites them);
      * 2. scheme `http` or `https`;
-     * 3. a host that converts to ASCII (IDNA, as a browser does), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
+     * 3. a host that converts to ASCII (IDNA, as a browser does) and is then only letters, digits, `.` and `-` (or an
+     *    IPv6 literal), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
      *    unassigned code points are refused, since a browser's newer Unicode maps them (`yᵒutube.com`); the cost:
      *    a real site whose name uses a letter added after Unicode 3.2 (`ভবিষ্যৎ.com`) shows as text;
      * 4. not YouTube ([isYouTube]).
@@ -91,9 +92,15 @@ internal object PlayerDescriptions {
         } catch (e: IllegalArgumentException) {
             return null
         }
-        // toASCII returns ASCII or throws; the check is the shared rule's (iOS gets the host back as is).
-        return ascii.lowercase().trimEnd('.').takeIf { it.isNotBlank() && it.all { c -> c.code < 0x80 } }
+        // Only letters, digits, `.` and `-` (or an IPv6 literal), as on iOS: a fullwidth `％40` maps to `%40`,
+        // which a parser may read as userinfo in front of a YouTube host.
+        return ascii.lowercase().trimEnd('.').takeIf { it.isNotBlank() && (it.all(::isLdh) || isIpv6Literal(it)) }
     }
+
+    private fun isLdh(c: Char) = c in 'a'..'z' || c in '0'..'9' || c == '.' || c == '-'
+
+    private fun isIpv6Literal(host: String) = host.length > 2 && host.first() == '[' && host.last() == ']' &&
+        host.substring(1, host.length - 1).all { it in '0'..'9' || it in 'a'..'f' || it == ':' || it == '.' }
 
     private fun isSafeLinkScheme(url: String?): Boolean {
         if (url.isNullOrBlank()) return false

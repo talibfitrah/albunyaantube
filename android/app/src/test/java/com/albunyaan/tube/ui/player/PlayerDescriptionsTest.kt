@@ -246,7 +246,7 @@ class PlayerDescriptionsTest {
             "https://www.youtube.co.uk/x",
             "https://youtubekids.com/x",
             "https://youtube.googleapis.com/x",
-            "https://youtube-nocookie.com/embed/x",
+            "https://www.youtube-nocookie.com/embed/x",
             "https://youtube.com.example.org/", // accepted cost: any host with a youtube label
             "https://yt.be/x",
             "https://www.yt.be/x",
@@ -275,6 +275,8 @@ class PlayerDescriptionsTest {
             "https://example.org/a ",
             "https:///a", // a blank host
             "https://ভবিষ্যৎ.com/", // accepted cost: a real IDN using a letter added after Unicode 3.2 (U+09CE)
+            "https://example.org\uFF0540youtube.com/", // a host must be LDH or an IP literal (iOS 26 read this as userinfo)
+            "https://you_tube.com/", // accepted cost: not LDH
             "",
             null,
         )
@@ -284,6 +286,7 @@ class PlayerDescriptionsTest {
             "https://youtube.com@example.org/a", // the host is example.org
             "https://مثال.مصر/", // a real IDN: xn--mgbh0fb.xn--wgbh1c
             "https://bücher.de/",
+            "https://[2001:db8::1]/",
             "https://notyoutube.com/x",
             "https://myyoutube.org/x",
             "https://notyt.be/x",
