@@ -28,6 +28,9 @@ struct PlayerToolbarTests {
         "https://MUSIC.YOUTUBE.COM/watch?v=V2Brp_esIVI",
         "youtube.com/watch?v=V2Brp_esIVI",
         "www.youtu.be/V2Brp_esIVI",
+        // Host-less: a scheme with no `//` is not judged as written, so these lean on `match.url`.
+        "https:youtube.com/watch?v=V2Brp_esIVI",
+        "HTTPS:YOUTU.BE/V2Brp_esIVI",
     ])
     func aYouTubeLinkInADescriptionStaysInertText(_ link: String) {
         let raw = "Watch \(link) and read https://example.org"
@@ -45,6 +48,13 @@ struct PlayerToolbarTests {
         let result = attributedDescription(raw)
         #expect(String(result.characters) == raw)
         #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org/b", "http://example.org/r?to=https://foo.com"])
+    }
+
+    /// A bare `host:port` is bare too: only a leading `scheme://` counts as written, so
+    /// `example.org:8080/x` is judged as `http://example.org:8080/x`, the link the detector made.
+    @Test func aBareHostWithAPortStaysALink() {
+        let result = attributedDescription("Mirror at example.org:8080/x today.")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org:8080/x"])
     }
 
     // MARK: - isOpenableLink (the vectors shared with Android's PlayerDescriptionsTest)
@@ -99,6 +109,8 @@ struct PlayerToolbarTests {
         "https://example.org\u{FF05}40youtube.com/",
         // Trailing-dot stripping: `yt.be.` is `yt.be`.
         "https://yt.be./x",
+        // Not LDH (accepted cost: no real host has `_`).
+        "https://you_tube.com/",
     ])
     func theLinkRuleKeepsThisAsText(_ link: String) {
         #expect(!isOpenableLink(link), "\(link.debugDescription) must stay text")
@@ -118,6 +130,7 @@ struct PlayerToolbarTests {
         "https://myyoutube.org/x",
         "https://notyt.be/x",
         "https://\u{9AD}\u{9AC}\u{9BF}\u{9B7}\u{9CD}\u{9AF}\u{9CE}.com/",   // ভবিষ্যৎ.com
+        "https://[2001:db8::1]/",   // an IPv6 literal
     ])
     func theLinkRuleOpensThis(_ link: String) {
         #expect(isOpenableLink(link), "\(link.debugDescription) must open")
@@ -131,6 +144,8 @@ struct PlayerToolbarTests {
         #expect(URL(string: "https://bücher.de/")?.host(percentEncoded: false) == "xn--bcher-kva.de")
         #expect(URL(string: "https://\u{FF59}\u{FF4F}\u{FF55}\u{FF54}\u{FF55}\u{FF42}\u{FF45}.com/")?.host(percentEncoded: false) == "youtube.com")
         #expect(URL(string: "https://you\u{0378}tube.com/") == nil)
+        // The rule's IPv6 branch reads the literal without its brackets.
+        #expect(URL(string: "https://[2001:db8::1]/")?.host(percentEncoded: false) == "2001:db8::1")
     }
 
     /// The tap opens a lower-case scheme. Foundation keeps the case as written

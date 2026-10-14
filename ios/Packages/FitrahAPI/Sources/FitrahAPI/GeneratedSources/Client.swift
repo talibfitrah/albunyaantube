@@ -177,6 +177,13 @@ public struct Client: APIProtocol {
                         headers: headers,
                         body: body
                     ))
+                case 503:
+                    let headers: Operations.GetPublicContent.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Retry-After",
+                        as: Swift.Int.self
+                    ))
+                    return .serviceUnavailable(.init(headers: headers))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,
@@ -671,6 +678,13 @@ public struct Client: APIProtocol {
                         headers: headers,
                         body: body
                     ))
+                case 503:
+                    let headers: Operations.SearchPublicContent.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Retry-After",
+                        as: Swift.Int.self
+                    ))
+                    return .serviceUnavailable(.init(headers: headers))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,

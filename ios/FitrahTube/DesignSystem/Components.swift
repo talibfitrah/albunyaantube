@@ -847,6 +847,12 @@ struct BannerMessage: Equatable {
     var identity: UUID { id }
 }
 
+/// VoiceOver speaks `text` now. The default of the search view models' `announce` seam, which a
+/// test replaces to capture what would be spoken.
+@MainActor func postAnnouncement(_ text: String) {
+    AccessibilityNotification.Announcement(text).post()
+}
+
 /// Bottom banner, 2.5 s auto-dismiss, optional action, VoiceOver announcement.
 struct TransientBanner: ViewModifier {
     @Binding var message: BannerMessage?

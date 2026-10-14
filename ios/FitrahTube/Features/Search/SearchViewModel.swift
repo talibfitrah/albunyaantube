@@ -14,7 +14,15 @@ import Foundation
 @MainActor @Observable final class SearchViewModel {
     enum State: Equatable { case zero(history: [String]), loading, results([ContentItem], match: SearchMatch), noResults, error }
 
-    private(set) var state: State
+    /// Only results carry the searching spinner and a shown query, so every way out of them ends
+    /// both: a field cut below 2 characters, history removed or cleared, no results, an error.
+    private(set) var state: State {
+        didSet {
+            if case .results = state { return }
+            isSearching = false
+            shownQuery = nil
+        }
+    }
 
     /// The trimmed value the most recent search actually ran with -- distinct from `query` (the
     /// live field text), so "no results" messaging shows what was actually searched instead of
@@ -24,6 +32,10 @@ import Foundation
     /// Spec §6: true while a newer search runs with results still on screen -- the view keeps the
     /// list and shows a small spinner instead of swapping to `.loading`.
     private(set) var isSearching = false
+
+    /// The trimmed query whose results are on screen, nil when none are. `SearchView` scrolls to the
+    /// top when it changes: a new query's results replaced the list.
+    private(set) var shownQuery: String?
 
     /// 300 ms debounce, min 2 chars (`didSet` below); `submit()`/`selectHistory(_:)` bypass both.
     var query: String = "" {
@@ -51,6 +63,7 @@ import Foundation
     private let catalog: any CatalogClient
     private let history: any SearchHistoryStore
     private let sleep: @Sendable (Duration) async throws -> Void
+    private let announce: @MainActor (String) -> Void
 
     private static let pageSize = 50 // search-categories.md §1.5 -- one request, no paging
 
@@ -60,10 +73,12 @@ import Foundation
     private(set) var searchTask: Task<Void, Never>?
 
     init(catalog: any CatalogClient, history: any SearchHistoryStore,
-         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         announce: @escaping @MainActor (String) -> Void = postAnnouncement) {
         self.catalog = catalog
         self.history = history
         self.sleep = sleep
+        self.announce = announce
         state = .zero(history: history.entries)
     }
 
@@ -124,7 +139,17 @@ import Foundation
             let result = try await catalog.search(query: q, type: nil, limit: Self.pageSize)
             guard !Task.isCancelled else { return }
             isSearching = false
-            state = result.items.isEmpty ? .noResults : .results(result.items, match: result.match)
+            guard !result.items.isEmpty else { state = .noResults; return }
+            let noteWasShown = if case .results(_, let match) = state { match != .exact } else { false }
+            let isNewQuery = q != shownQuery
+            state = .results(result.items, match: result.match)
+            shownQuery = q
+            // VoiceOver hears what a sighted user sees change: the closest-results note when it
+            // appears (Android's live region), and the count when a new query's results land.
+            let spoken = [result.match != .exact && !noteWasShown ? String(localized: "search_closest_results") : nil,
+                          isNewQuery ? Format.localizedFormat("list_footer_status", locale: .current, Int64(result.items.count)) : nil]
+                .compactMap { $0 }
+            if !spoken.isEmpty { announce(spoken.joined(separator: "\n")) }
         } catch {
             guard !Task.isCancelled else { return }
             isSearching = false

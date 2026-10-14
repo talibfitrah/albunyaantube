@@ -141,10 +141,10 @@ func attributedDescription(_ raw: String) -> AttributedString {
 }
 
 /// The match's text as written, with `http://` in front of a bare domain (`example.org/b`), the
-/// same scheme the detector adds, so the rule still judges the written host. Only a LEADING scheme
-/// counts: `example.org/r?to=https://foo.com` is bare.
+/// same scheme the detector adds, so the rule still judges the written host. Only a LEADING
+/// `scheme://` counts: `example.org/r?to=https://foo.com` and `example.org:8080/x` are bare.
 private func asWritten(_ text: Substring) -> String {
-    text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:", options: .regularExpression) == nil ? "http://" + text : String(text)
+    text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) == nil ? "http://" + text : String(text)
 }
 
 /// The ONE link rule, the same as Android's `PlayerDescriptions.isOpenableLink` (keep the two in

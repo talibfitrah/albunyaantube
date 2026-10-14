@@ -56,8 +56,8 @@ struct ContentListView: View {
                     guard signal?.tab == tab else { return }
                     withAnimation { proxy.scrollTo(Self.topAnchor, anchor: .top) }
                 }
-                // A7: a new query's results replacing the list open at their top; a page appended
-                // below or a refresh of the same query keeps the place.
+                // A new query's results replacing the list open at their top; a page appended below
+                // or a refresh of the same query keeps the place.
                 .onChange(of: viewModel?.itemsQuery) { _, _ in
                     proxy.scrollTo(Self.topAnchor, anchor: .top)
                 }
@@ -149,7 +149,7 @@ struct ContentListView: View {
     }
 
     /// Shared chrome with `SearchView` (gate wave-2 W9); no auto-focus -- it is one element of a
-    /// header. Typing fetches after the debounce; the keyboard's Search key fetches at once (S14).
+    /// header. Typing fetches after the debounce; the keyboard's Search key fetches at once.
     private var searchBar: some View {
         SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"),
                     onSubmit: { Task { await viewModel?.submit() } })

@@ -96,6 +96,48 @@ struct SearchViewModelTests {
         }
     }
 
+    /// Answers each query with its own items (`"<q>-0"`, …; `counts` sets how many, default 3) at
+    /// the tier `matches` gives it (default exact). A query in `gates` waits there first; one in
+    /// `failing` then throws.
+    private actor EchoSearchClient: CatalogClient {
+        struct Boom: Error {}
+        private let gates: [String: Gate]
+        private let failing: Set<String>
+        private let counts: [String: Int]
+        private let matches: [String: SearchMatch]
+
+        init(gates: [String: Gate] = [:], failing: Set<String> = [], counts: [String: Int] = [:],
+             matches: [String: SearchMatch] = [:]) {
+            self.gates = gates
+            self.failing = failing
+            self.counts = counts
+            self.matches = matches
+        }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
+            if let gate = gates[query] { await gate.block() }
+            if failing.contains(query) { throw Boom() }
+            return SearchResult(items: await items(count: counts[query] ?? 3, prefix: query), match: matches[query] ?? .exact)
+        }
+    }
+
+    /// What VoiceOver was asked to say, in order.
+    @MainActor private final class Announcements {
+        private(set) var spoken: [String] = []
+        func record(_ text: String) { spoken.append(text) }
+    }
+
+    private static func count(_ n: Int) -> String {
+        Format.localizedFormat("list_footer_status", locale: .current, Int64(n))
+    }
+
 
     // MARK: - Initial state
 
@@ -435,5 +477,156 @@ struct SearchViewModelTests {
 
         #expect(await client.calls.isEmpty)
         guard case .zero = vm.state else { Issue.record("expected .zero, got \(vm.state)"); return }
+    }
+
+    // MARK: - Final wave: the shown query, the spinner's exits, VoiceOver
+
+    /// `SearchView` scrolls to the top when `shownQuery` changes, so it must move only when a
+    /// different query's results land: never for the same query again, and never mid-flight.
+    @Test func theShownQueryMovesOnlyWhenANewQuerysResultsLand() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let abc = Gate()
+        let vm = SearchViewModel(catalog: EchoSearchClient(gates: ["abc": abc]), history: history, sleep: noSleep)
+
+        vm.query = "ab"
+        await vm.searchTask?.value
+        #expect(vm.shownQuery == "ab")
+
+        vm.query = "abc"
+        let typed = vm.searchTask
+        await abc.waitUntilBlocked()
+        #expect(vm.shownQuery == "ab")   // the old results are still the ones on screen
+        await abc.release()
+        await typed?.value
+        #expect(vm.shownQuery == "abc")
+
+        vm.query = ""
+        #expect(vm.shownQuery == nil)
+    }
+
+    /// The toolbar spinner only shows over results, but the flag must not outlive them: leaving
+    /// the results while a search runs (fewer than 2 characters, removing or clearing history)
+    /// ends it.
+    @Test(arguments: ["short", "remove", "clear"])
+    func everyWayOutOfTheResultsStopsTheSpinner(exit: String) async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        history.add("tafsir")
+        let abc = Gate()
+        let vm = SearchViewModel(catalog: EchoSearchClient(gates: ["abc": abc]), history: history, sleep: noSleep)
+        vm.query = "ab"
+        await vm.searchTask?.value
+
+        vm.query = "abc"
+        let typed = vm.searchTask
+        await abc.waitUntilBlocked()
+        #expect(vm.isSearching)
+
+        switch exit {
+        case "short": vm.query = "a"
+        case "remove": vm.removeHistory("tafsir")
+        default: vm.clearHistory()
+        }
+        #expect(!vm.isSearching, "\(exit) left the spinner on")
+
+        await abc.release()
+        await typed?.value
+        #expect(!vm.isSearching, "\(exit): the cancelled search turned it back on")
+    }
+
+    /// Pins today's UX (the same as Android's): a search that fails over results replaces them
+    /// with the error state and its Retry; the spinner stops.
+    @Test func aFailedSearchOverResultsShowsTheErrorStateAndStopsTheSpinner() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let vm = SearchViewModel(catalog: EchoSearchClient(failing: ["abc"]), history: history, sleep: noSleep)
+        vm.query = "ab"
+        await vm.searchTask?.value
+
+        vm.query = "abc"
+        await vm.searchTask?.value
+
+        #expect(vm.state == .error)
+        #expect(!vm.isSearching)
+        #expect(vm.shownQuery == nil)
+    }
+
+    /// With nothing on screen there is no list to keep: the full-screen `.loading`, no spinner.
+    @Test func aSearchFromAnEmptyScreenShowsLoadingWithoutTheSpinner() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let ab = Gate()
+        let vm = SearchViewModel(catalog: EchoSearchClient(gates: ["ab": ab]), history: history, sleep: noSleep)
+
+        vm.query = "ab"
+        let typed = vm.searchTask
+        await ab.waitUntilBlocked()
+        #expect(vm.state == .loading)
+        #expect(!vm.isSearching)
+
+        await ab.release()
+        await typed?.value
+        guard case .results = vm.state else { Issue.record("expected .results, got \(vm.state)"); return }
+    }
+
+    /// VoiceOver hears a new query's results replace the list: their count, once the search lands.
+    /// The same query again, no results and a failure say nothing new here.
+    @Test func aNewQuerysResultsAreAnnouncedWithTheirCount() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let spoken = Announcements()
+        let vm = SearchViewModel(catalog: EchoSearchClient(failing: ["abce"], counts: ["abc": 5, "abcd": 0]),
+                                 history: history, sleep: noSleep, announce: spoken.record)
+
+        vm.query = "ab"
+        await vm.searchTask?.value
+        #expect(spoken.spoken == [Self.count(3)])
+
+        await vm.submit()                    // the same query: the list does not change
+        #expect(spoken.spoken == [Self.count(3)])
+
+        vm.query = "abc"
+        await vm.searchTask?.value
+        #expect(spoken.spoken == [Self.count(3), Self.count(5)])
+
+        vm.query = "abcd"                    // no results: the empty state speaks for itself
+        await vm.searchTask?.value
+        vm.query = "abce"                    // a failure: the error state does
+        await vm.searchTask?.value
+        #expect(spoken.spoken == [Self.count(3), Self.count(5)])
+
+        vm.query = "abc"                     // back to results after leaving them: a new list
+        await vm.searchTask?.value
+        #expect(spoken.spoken == [Self.count(3), Self.count(5), Self.count(5)])
+    }
+
+    /// Android's note is a live region; here the note's text is spoken when it appears, ahead of
+    /// the count, and not again while it stays.
+    @Test func theClosestResultsNoteIsAnnouncedWhenItAppears() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let spoken = Announcements()
+        let note = String(localized: "search_closest_results")
+        let vm = SearchViewModel(catalog: EchoSearchClient(matches: ["zakit": .approximate, "zakitt": .related,
+                                                                     "zakix": .approximate]),
+                                 history: history, sleep: noSleep, announce: spoken.record)
+
+        vm.query = "zakit"
+        await vm.searchTask?.value
+        #expect(spoken.spoken.last == note + "\n" + Self.count(3))
+
+        vm.query = "zakitt"                  // the note stays on screen
+        await vm.searchTask?.value
+        #expect(spoken.spoken.last == Self.count(3))
+
+        vm.query = "zakir"                   // exact: the note goes
+        await vm.searchTask?.value
+        #expect(spoken.spoken.last == Self.count(3))
+
+        vm.query = "zakix"                   // and comes back
+        await vm.searchTask?.value
+        #expect(spoken.spoken.last == note + "\n" + Self.count(3))
+        #expect(spoken.spoken.count == 4)
     }
 }

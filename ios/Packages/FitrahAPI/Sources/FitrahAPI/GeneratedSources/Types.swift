@@ -1462,9 +1462,11 @@ public enum Operations {
             public struct Ok: Sendable, Hashable {
                 /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers`.
                 public struct Headers: Sendable, Hashable {
-                    /// Set only when `q` is present: the match tier of the first item —
-                    /// exact, approximate, related or none. Clients read a missing or
-                    /// unknown value as exact.
+                    /// Set only when `q` has 2 or more characters and `type` is CHANNELS,
+                    /// PLAYLISTS or VIDEOS (the request is then a relevance search): the
+                    /// match tier of the first item — exact, approximate, related or none.
+                    /// Otherwise the plain list is returned without this header. Clients
+                    /// read a missing or unknown value as exact.
                     ///
                     ///
                     /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers/X-Search-Match`.
@@ -1472,7 +1474,7 @@ public enum Operations {
                     /// Creates a new `Headers`.
                     ///
                     /// - Parameters:
-                    ///   - xSearchMatch: Set only when `q` is present: the match tier of the first item —
+                    ///   - xSearchMatch: Set only when `q` has 2 or more characters and `type` is CHANNELS,
                     public init(xSearchMatch: Swift.String? = nil) {
                         self.xSearchMatch = xSearchMatch
                     }
@@ -1575,6 +1577,57 @@ public enum Operations {
                     default:
                         try throwUnexpectedResponseStatus(
                             expectedStatus: "ok",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct ServiceUnavailable: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/content/GET/responses/503/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// Seconds to wait before retrying (5)
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/content/GET/responses/503/headers/Retry-After`.
+                    public var retryAfter: Swift.Int?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - retryAfter: Seconds to wait before retrying (5)
+                    public init(retryAfter: Swift.Int? = nil) {
+                        self.retryAfter = retryAfter
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetPublicContent.Output.ServiceUnavailable.Headers
+                /// Creates a new `ServiceUnavailable`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                public init(headers: Operations.GetPublicContent.Output.ServiceUnavailable.Headers = .init()) {
+                    self.headers = headers
+                }
+            }
+            /// The search index is still building after a server start. Only a relevance
+            /// search (`q` of 2 or more characters with `type` CHANNELS, PLAYLISTS or
+            /// VIDEOS) can answer this. Empty body; retry after `Retry-After` seconds.
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/content/get(getPublicContent)/responses/503`.
+            ///
+            /// HTTP response code: `503 serviceUnavailable`.
+            case serviceUnavailable(Operations.GetPublicContent.Output.ServiceUnavailable)
+            /// The associated value of the enum case if `self` is `.serviceUnavailable`.
+            ///
+            /// - Throws: An error if `self` is not `.serviceUnavailable`.
+            /// - SeeAlso: `.serviceUnavailable`.
+            public var serviceUnavailable: Operations.GetPublicContent.Output.ServiceUnavailable {
+                get throws {
+                    switch self {
+                    case let .serviceUnavailable(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "serviceUnavailable",
                             response: self
                         )
                     }
@@ -2597,6 +2650,56 @@ public enum Operations {
                     default:
                         try throwUnexpectedResponseStatus(
                             expectedStatus: "ok",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct ServiceUnavailable: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/search/GET/responses/503/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// Seconds to wait before retrying (5)
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/search/GET/responses/503/headers/Retry-After`.
+                    public var retryAfter: Swift.Int?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - retryAfter: Seconds to wait before retrying (5)
+                    public init(retryAfter: Swift.Int? = nil) {
+                        self.retryAfter = retryAfter
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.SearchPublicContent.Output.ServiceUnavailable.Headers
+                /// Creates a new `ServiceUnavailable`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                public init(headers: Operations.SearchPublicContent.Output.ServiceUnavailable.Headers = .init()) {
+                    self.headers = headers
+                }
+            }
+            /// The search index is still building after a server start. Empty body;
+            /// retry after `Retry-After` seconds.
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/search/get(searchPublicContent)/responses/503`.
+            ///
+            /// HTTP response code: `503 serviceUnavailable`.
+            case serviceUnavailable(Operations.SearchPublicContent.Output.ServiceUnavailable)
+            /// The associated value of the enum case if `self` is `.serviceUnavailable`.
+            ///
+            /// - Throws: An error if `self` is not `.serviceUnavailable`.
+            /// - SeeAlso: `.serviceUnavailable`.
+            public var serviceUnavailable: Operations.SearchPublicContent.Output.ServiceUnavailable {
+                get throws {
+                    switch self {
+                    case let .serviceUnavailable(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "serviceUnavailable",
                             response: self
                         )
                     }

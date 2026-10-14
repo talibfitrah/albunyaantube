@@ -46,17 +46,26 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// returns the unfiltered list. A change that leaves the request as it is on screen (an undone
     /// keystroke, trailing spaces) fetches nothing.
     var query: String = "" {
+        // Read before the field moves on: `lastItems` empties once the text no longer matches them.
+        willSet { if state == .error, !lastItems.isEmpty { keepsFailedList = true } }
         didSet {
             guard query != oldValue else { return }
             submitted = false
-            // A6: the keystroke drops the search already in flight, not only its debounce, so an
-            // older answer or error never lands under the newer text.
+            // The keystroke drops the search already in flight, not only its debounce, so an older
+            // answer or error never lands under the newer text.
             searchTask?.cancel()
             loadTask?.cancel()
-            // S13: back on the query whose results are on screen -- nothing to reload.
-            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam {
+            // Back on the query whose results are on screen: nothing to reload. Unless a refresh was
+            // in flight -- the line above just cancelled it, and the debounce must run it again.
+            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam,
+               isSearching || !isFullLoading, !keepsFailedList {
                 isSearching = false
                 return
+            }
+            // A failed refresh leaves its list on screen with the banner; it stays there under the
+            // search, as it does over `.content`, instead of turning into the error page.
+            if keepsFailedList, case .error = state {
+                state = .content(items: items, hasMore: hasMore, paginationError: false, isSearchActive: isSearchActive)
             }
             let task = Task { [sleep] in
                 do { try await sleep(.milliseconds(300)) } catch { return }
@@ -67,11 +76,13 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         }
     }
 
-    /// S14 (RULINGS #22 parity): the keyboard's Search key searches the field at once -- no
-    /// debounce and no 2-character floor (the server answers a 1-character `q` with the plain list).
+    /// The keyboard's Search key searches the field at once -- no debounce and no 2-character floor
+    /// (RULINGS #22; the server answers a 1-character `q` with the plain list). On the text a live
+    /// fetch is already asking for it changes nothing; a debounce still pending searches now.
     func submit() async {
-        searchTask?.cancel()
         submitted = true
+        if isFullLoading, loadTask?.isCancelled == false, loadQuery == queryParam { return }
+        searchTask?.cancel()
         let task = Task { await self.search() }
         searchTask = task
         await task.value
@@ -82,14 +93,20 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private let filter: any FilterStore
     private let pageSize: Int
     private let sleep: @Sendable (Duration) async throws -> Void
+    private let announce: @MainActor (String) -> Void
 
     private var items: [ContentItem] = []
     /// The `(filter, query)` `items` were actually fetched under. `nil` until the first success.
     private var itemsFilter: FilterState?
     /// Readable by `ContentListView`, which scrolls to the top when it changes: a new query's
-    /// results replaced the list (A7). A page appended below or a refresh leaves it as it is.
+    /// results replaced the list. A page appended below or a refresh leaves it as it is.
     /// `fetchMore` pages with it, so a page always pairs with the query its cursor came from.
     private(set) var itemsQuery: String?
+    /// The `q` the newest full load fetches, so the Search key can tell it is already running.
+    private var loadQuery: String?
+    /// The field changed over a failed refresh's retained list: it stays on screen until the next
+    /// first page lands or fails, and is not a loaded answer an undone keystroke can return to.
+    private var keepsFailedList = false
 
     /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
     /// must keep the list visible, not blank it. `items` is only ever reassigned on a *successful*
@@ -132,12 +149,14 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private(set) var searchTask: Task<Void, Never>?
 
     init(type: ListType, catalog: any CatalogClient, filter: any FilterStore, pageSize: Int = 20,
-         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         announce: @escaping @MainActor (String) -> Void = postAnnouncement) {
         self.type = type
         self.catalog = catalog
         self.filter = filter
         self.pageSize = pageSize
         self.sleep = sleep
+        self.announce = announce
     }
 
     func load() async { await performFullLoad(showLoading: true) }
@@ -206,6 +225,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         // later full load happened to succeed (gate B1-I3). Cleared here, where the cancellation
         // actually happens.
         isLoadingMore = false
+        loadQuery = queryParam
         let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
         loadTask = task
         await task.value
@@ -215,12 +235,18 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     }
 
     private func fetchFirstPage(showLoading: Bool) async {
+        defer { if !Task.isCancelled { keepsFailedList = false } }
         if showLoading { state = .loading(.initial) }
         let requestFilter = filter.state
         let requestQuery = queryParam
         do {
             let page = try await catalog.content(type: type, cursor: nil, limit: pageSize, filter: requestFilter, query: requestQuery)
             guard !Task.isCancelled else { return }
+            // VoiceOver hears a new query's results replace the list (the view scrolls to the top
+            // on the same change): how many there are.
+            if requestQuery != itemsQuery {
+                announce(Format.localizedFormat("list_footer_status", locale: .current, Int64(page.items.count)))
+            }
             items = page.items
             itemsFilter = requestFilter
             itemsQuery = requestQuery
@@ -240,7 +266,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         defer { if generation == loadGeneration { isLoadingMore = false } }
         do {
             // `itemsQuery`, not `queryParam`: inside the debounce the field already holds newer text,
-            // but `nextCursor` and the list being paged belong to the query that fetched them (A4).
+            // but `nextCursor` and the list being paged belong to the query that fetched them.
             let page = try await catalog.content(type: type, cursor: nextCursor, limit: pageSize, filter: filter.state, query: itemsQuery)
             guard !Task.isCancelled, generation == loadGeneration else { return }
             // Dedupe by id, mirroring `HomeViewModel.fetchMore` (gate B1-minor-6): the grid's
@@ -271,7 +297,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// the unfiltered list), not sent as a too-short string. Interpretation accepted as-is for
     /// these browse tabs: <2 chars means "show the unfiltered list", not "no results" / no fetch.
     /// Whitespace does not count toward the threshold and is never sent (gate wave-2 W8): `"  "`
-    /// used to pass `count >= 2` and go out as `q="  "`. A submitted query (S14) skips the floor.
+    /// used to pass `count >= 2` and go out as `q="  "`. A query sent by the Search key skips the floor.
     private var queryParam: String? { trimmedQuery.count >= (submitted ? 1 : 2) ? trimmedQuery : nil }
 
     /// Set by the Search key, cleared by the next keystroke.

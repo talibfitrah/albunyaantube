@@ -130,6 +130,8 @@ DEAD_PREFIXES = ("filter_length_", "filter_date_", "filter_sort_", "list_", "loc
                  "update_", "available_versions_")
 DEAD_PREFIX_EXCEPTIONS = {
     "list_error_title", "list_error_description",
+    # Final wave (1.0.3): VoiceOver's result count when a new search replaces a list.
+    "list_footer_status",
     "error_title", "error_unknown", "error_state_generic_headline",
 }
 

@@ -11,6 +11,8 @@ struct SearchView: View {
 
     @State private var viewModel: SearchViewModel?
 
+    private static let topAnchor = "search-results-top"
+
     var body: some View {
         VStack(spacing: 0) {
             searchField
@@ -185,9 +187,17 @@ struct SearchView: View {
     // MARK: - Results (§1.5 -- flat, heterogeneous, server order kept, no grouping, no paging)
 
     private func resultsList(_ items: [ContentItem]) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(items) { item in resultRow(item) }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
+                    ForEach(items) { item in resultRow(item) }
+                }
+            }
+            // A new query's results replacing the list open at their top, as the tabs' do; the
+            // same query searched again keeps the place.
+            .onChange(of: viewModel?.shownQuery) { _, _ in
+                proxy.scrollTo(Self.topAnchor, anchor: .top)
             }
         }
     }
