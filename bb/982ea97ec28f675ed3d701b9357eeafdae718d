@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/search/CatalogChanged.java
+  s_dbb6b1f3671904::t_c636368d7da722 14-15,17-27,34,42
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_dbb6b1f3671904::t_2531b49ae97971 6,27,68-72,75-76,86,160-172,174-203
+  s_dbb6b1f3671904::t_d093f325c1d0ee 173
+  s_dbb6b1f3671904::t_6521d5fda86eb2 204
+backend/src/test/java/com/albunyaan/tube/repository/CatalogChangedEventsTest.java
+  s_dbb6b1f3671904::t_ee238e24cb1ce8 153-154,193-194,242,251
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_dbb6b1f3671904::t_952a854c7cc969 98,432,483
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_61e5e2374a5c08 218,706-737
+  s_dbb6b1f3671904::t_8c3280cb06833d 738
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dbb6b1f3671904::t_f00244764970f4 71,101
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_0b6ebb8c4f92db 364
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bb982ea97ec28f675ed3d701b9357eeafdae718d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
