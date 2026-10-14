@@ -1,0 +1,22 @@
+ios/FitrahTube/Features/Lists/ContentListViewModel.swift
+  s_dbb6b1f3671904::t_483358ab8041e2 265
+  s_dbb6b1f3671904::t_0eec4a48c0ce80 109-112,166
+ios/FitrahTubeTests/ContentListViewModelTests.swift
+  s_dbb6b1f3671904::t_a32ab4d645f58d 779-808
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5c7c47fb37d0de05ed6f47e75eb4406f930562f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
