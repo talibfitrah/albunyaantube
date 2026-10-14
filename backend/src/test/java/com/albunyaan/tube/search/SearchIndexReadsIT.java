@@ -10,7 +10,6 @@ import java.util.List;
 import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
-import static org.junit.jupiter.api.Assertions.assertDoesNotThrow;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 
 /** The catalog read against the Firestore emulator: what a real query keeps (F6) and what it skips (F4). */
@@ -23,6 +22,12 @@ class SearchIndexReadsIT extends BaseIntegrationTest {
         firestore.collection(collection).document(id).set(fields).get(10, TimeUnit.SECONDS);
     }
 
+    /** The production path (N4): the reconcile queues replaceCatalog on the index's single writer thread; wait for it. */
+    private void rebuild() throws Exception {
+        searchIndex.reconcile();
+        searchIndex.awaitWrites();
+    }
+
     private List<String> channelIds(String query) throws Exception {
         return searchIndex.search(query, "CHANNEL", true, 10, null).items().stream().map(ContentItemDto::getId).toList();
     }
@@ -33,7 +38,7 @@ class SearchIndexReadsIT extends BaseIntegrationTest {
         put("channels", "no-created-at", Map.of("youtubeId", "UCnocreatedat00000000001", "name", "Noorcreated Lectures",
                 "status", "APPROVED"));
 
-        searchIndex.replaceCatalog();
+        rebuild();
 
         assertEquals(List.of("UCnocreatedat00000000001"), channelIds("noorcreated"));
     }
@@ -46,7 +51,7 @@ class SearchIndexReadsIT extends BaseIntegrationTest {
         put("channels", "bad", Map.of("youtubeId", "UCmalformed0000000000001", "name", "Malformed Channel",
                 "status", "APPROVED", "createdAt", Timestamp.now(), "excludedItems", "not a map"));
 
-        assertDoesNotThrow(searchIndex::replaceCatalog);
+        rebuild();
 
         assertEquals(List.of("UCwellformed000000000001"), channelIds("wellformed"));
     }

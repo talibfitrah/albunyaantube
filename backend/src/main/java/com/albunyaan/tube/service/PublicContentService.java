@@ -1110,17 +1110,6 @@ public class PublicContentService {
 
     private YouTubeIdentifier parseYouTubeUrl(String url) {
         try {
-            // Video: youtube.com/shorts/XXX, /live/XXX, /embed/XXX
-            for (String path : new String[]{"/shorts/", "/live/", "/embed/"}) {
-                int at = url.indexOf(path);
-                if (at != -1) {
-                    String videoId = extractPathSegment(url, at + path.length());
-                    if (isValidVideoId(videoId)) {
-                        return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
-                    }
-                }
-            }
-
             // Video: youtube.com/watch?v=XXX
             if (url.contains("watch?") || url.contains("watch/?")) {
                 int vIndex = url.indexOf("v=");
@@ -1147,6 +1136,17 @@ public class PublicContentService {
                 String playlistId = extractParamValue(url, listIndex + 5);
                 if (playlistId.startsWith("PL") && playlistId.length() >= 13 && isAlphanumericWithDashUnderscore(playlistId)) {
                     return new YouTubeIdentifier(YouTubeIdentifier.Type.PLAYLIST, playlistId);
+                }
+            }
+
+            // Video: youtube.com/shorts/XXX, /live/XXX, /embed/XXX (after list=: /embed/videoseries?list=PL... is a playlist, N1)
+            for (String path : new String[]{"/shorts/", "/live/", "/embed/"}) {
+                int at = url.indexOf(path);
+                if (at != -1) {
+                    String videoId = extractPathSegment(url, at + path.length());
+                    if (isValidVideoId(videoId)) {
+                        return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
+                    }
                 }
             }
 

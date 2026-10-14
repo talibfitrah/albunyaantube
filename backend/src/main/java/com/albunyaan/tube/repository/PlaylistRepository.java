@@ -111,15 +111,11 @@ public class PlaylistRepository {
             transaction.set(docRef, playlist);
             return playlist;
         });
-        Playlist saved;
         try {
-            saved = committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
-            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("PLAYLIST", playlist.getId()));
-            throw e;
+            return committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
+            events.publishEvent(new CatalogChanged("PLAYLIST", playlist.getId()));
         }
-        events.publishEvent(new CatalogChanged("PLAYLIST", saved.getId()));
-        return saved;
     }
 
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -462,11 +458,9 @@ public class PlaylistRepository {
         });
         try {
             committed.get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
-        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
-            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("PLAYLIST", id));
-            throw e;
+        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
+            events.publishEvent(new CatalogChanged("PLAYLIST", id));
         }
-        events.publishEvent(new CatalogChanged("PLAYLIST", id));
     }
 
     /**

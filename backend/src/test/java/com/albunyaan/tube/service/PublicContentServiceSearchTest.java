@@ -100,6 +100,26 @@ class PublicContentServiceSearchTest {
     }
 
     @Test
+    void anEmbedVideoseriesUrlIsAnsweredAsItsPlaylist() throws Exception {
+        // N1: "videoseries" is 11 valid id characters, so the /embed/ check must not run before list=.
+        String playlistId = "PL" + "a".repeat(14);
+        SearchIndex.Hits byId = new SearchIndex.Hits(items(1), "exact");
+        lenient().when(searchIndex.byId(any(), any())).thenReturn(SearchIndex.Hits.NONE);
+        when(searchIndex.byId(playlistId, null)).thenReturn(byId);
+
+        assertSame(byId, service.search("https://www.youtube.com/embed/videoseries?list=" + playlistId, null, 20));
+    }
+
+    @Test
+    void anEmbedUrlWithAnElevenCharacterIdIsAnsweredAsThatVideo() throws Exception {
+        // N1 guard: moving the /embed/ check below list= must not stop it reading a plain embed URL.
+        SearchIndex.Hits byId = new SearchIndex.Hits(items(1), "exact");
+        when(searchIndex.byId("abcdefghijk", null)).thenReturn(byId);
+
+        assertSame(byId, service.search("https://www.youtube.com/embed/abcdefghijk", null, 20));
+    }
+
+    @Test
     void aYouTubeUrlTheParserCannotReadAnswersNoneAndIsNotSearchedAsText() throws Exception {
         // F11: a pasted /@handle (or any other unread YouTube URL) is never fuzzy-searched as words.
         for (String url : List.of("https://www.youtube.com/@SomeHandle", "https://www.youtube.com/feed/subscriptions",

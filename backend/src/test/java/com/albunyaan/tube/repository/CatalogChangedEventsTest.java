@@ -36,9 +36,10 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.verifyNoMoreInteractions;
 import static org.mockito.Mockito.when;
 
-/** Spec §9.2 + F3: every catalog write publishes a CatalogChanged invalidation (even when its ack fails); display order does not. */
+/** Spec §9.2 + F3: every catalog write publishes a CatalogChanged invalidation (even when its ack fails or a conditional write looks like a miss); display order does not. */
 @ExtendWith(MockitoExtension.class)
 class CatalogChangedEventsTest {
 
@@ -167,8 +168,9 @@ class CatalogChangedEventsTest {
     }
 
     @Test
-    void aConditionalWriteThatMissesPublishesNothing() {
-        // The status check failed inside the transaction: nothing was written, so the index must not hear of it.
+    void aConditionalWriteThatMissesStillPublishesOneInvalidationBecauseARetriedCommitCanLookLikeAMiss() {
+        // N2: Firestore retries a transaction whose commit hit a transient error; the retry can read the
+        // committed status and throw, so a write that landed looks like a miss. The writer's re-read decides.
         doReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("status changed")))
                 .when(firestore).runTransaction(any(Transaction.Function.class));
         Channel channel = new Channel("UCmissTest");
@@ -184,7 +186,11 @@ class CatalogChangedEventsTest {
         assertThrows(ExecutionException.class, () -> playlists().deleteByIdIfStatusIn("p1", Set.of("PENDING")));
         assertThrows(ExecutionException.class, () -> videos().saveIfStatus(video, "PENDING"));
         assertThrows(ExecutionException.class, () -> videos().deleteByIdIfStatusIn("v1", Set.of("PENDING")));
-        verifyNoInteractions(events);
+
+        verify(events, times(2)).publishEvent(new CatalogChanged("CHANNEL", "c1")); // one per miss: save, delete
+        verify(events, times(2)).publishEvent(new CatalogChanged("PLAYLIST", "p1"));
+        verify(events, times(2)).publishEvent(new CatalogChanged("VIDEO", "v1"));
+        verifyNoMoreInteractions(events);
     }
 
     // ---- playlists ----

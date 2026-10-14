@@ -102,15 +102,11 @@ public class VideoRepository {
             transaction.set(docRef, video);
             return video;
         });
-        Video saved;
         try {
-            saved = committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
-            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
-            throw e;
+            return committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
+            events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
         }
-        events.publishEvent(new CatalogChanged("VIDEO", saved.getId()));
-        return saved;
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -463,11 +459,9 @@ public class VideoRepository {
         });
         try {
             committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
-            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("VIDEO", id));
-            throw e;
+        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
+            events.publishEvent(new CatalogChanged("VIDEO", id));
         }
-        events.publishEvent(new CatalogChanged("VIDEO", id));
     }
 
     /**
