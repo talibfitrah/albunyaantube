@@ -70,9 +70,21 @@ struct PlayerStateViewTests {
     }
 
     @Test func errorResolvesADifferentMessageKeyIndependently() {
-        // T2-1: the ladder's generic terminal key, added via EXTRA_KEYS in B3 task 2.
-        let copy = PlayerStateCopy.map(.error(messageKey: "player_error_generic"), isOnline: true, locale: Self.enUS)
-        #expect(copy.message == String(localized: "player_error_generic"))
+        let copy = PlayerStateCopy.map(.error(messageKey: "player_stream_error"), isOnline: true, locale: Self.enUS)
+        #expect(copy.message == String(localized: "player_stream_error"))
+    }
+
+    // MARK: - Transition announcements (`PlayerScreen.transitionAnnouncement`)
+
+    /// Spec §6.6 Transitions: demotion to the progressive rung is audible, and not connectivity-gated
+    /// -- it plays from an already-resolved URL. Nothing else announces from this seam (the state
+    /// card announces its own copy).
+    @Test func onlyTheDemotionToTheProgressiveRungIsAnnouncedByTheScreen() {
+        #expect(PlayerScreen.transitionAnnouncement(for: .rung2Progressive(Self.resolved))
+                == String(localized: "player_announce_standard_quality"))
+        #expect(PlayerScreen.transitionAnnouncement(for: .loading) == nil)
+        #expect(PlayerScreen.transitionAnnouncement(for: .contentUnavailable) == nil)
+        #expect(PlayerScreen.transitionAnnouncement(for: nil) == nil)
     }
 
     @Test func contentUnavailableShowsNotAvailableCopyWithNoRetryAndNoAnnouncement() {

@@ -13,8 +13,8 @@ PLURAL_CATEGORIES = ("zero", "one", "two", "few", "many", "other")
 # R8 / §7: keys that cannot convert mechanically -- refused (reported), not silently dropped.
 # The only three real hazards: %.1f abbreviated-count strings, superseded by CountFormat.kt and
 # already dead on Android (strings-assets.md §4, §7.3).
-# share_app_promo: Android's value says "ad-free" (spec D10 / §12 require dropping it; the embed
-# rung plays YouTube's own player, ads included). Refused here, re-authored under EXTRA_KEYS.
+# share_app_promo: Android's value says "ad-free" (spec D10 / §12 require dropping it). Refused
+# here, re-authored under EXTRA_KEYS.
 REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands", "share_app_promo",
           # Orphaned on iOS (Phase 2 gate, 2026-08-30): no Swift reader. `videoAccessibilityLabel` and
           # `CountFormat`-style formatting replaced them; drop rather than ship dead catalog entries.
@@ -150,8 +150,7 @@ SPECIFIER_OVERRIDES = {
 EXTRA_KEYS = {
     "filter_label_parent_child": "⁨%1$@⁩ › ⁨%2$@⁩",
     # share_app_promo: REFUSED above and re-authored here. Android's value claims "ad-free",
-    # which spec D10 / 12 require dropping and which the embed rung (B3) makes false -- rung 3
-    # plays YouTube's own player, ads included. The nl verb is "haal" (get), not "download": the
+    # which spec D10 / 12 require dropping. The nl verb is "haal" (get), not "download": the
     # ban on that word is stated absolutely and this is the one string outside the offline surface
     # that still rendered it (gstack r1 P2).
     # Adversarial r1 P0-1b: en and nl were re-authored then, ar was missed -- it still opened with
@@ -264,14 +263,6 @@ EXTRA_KEYS = {
         "ar": "عرض أقل",
         "nl": "Minder weergeven",
     },
-    # player_error_generic (B1 placeholder, re-purposed in B3): the terminal copy when the embed
-    # rung's one reload is spent (`EmbedErrorPolicy`). There is no rung below it -- the owner
-    # directive of 2026-08-27 removed every hand-off to YouTube -- so no "yet".
-    "player_error_generic": {
-        "en": "This video can't be played in the app",
-        "ar": "لا يمكن تشغيل هذا الفيديو داخل التطبيق",
-        "nl": "Deze video kan niet in de app worden afgespeeld",
-    },
     # Safe Mode strings (B3 task 1). These WERE Android keys and were deleted from
     # values/strings.xml on 2026-08-25 (commit 2ffde712, "Remove the fake Safe Mode switch") --
     # Android's switch gated nothing, so it went. iOS keeps the setting because ruling 58 gives it
@@ -288,24 +279,6 @@ EXTRA_KEYS = {
         "ar": "إيقاف التشغيل التلقائي",
         "nl": "Schakel automatisch afspelen uit",
     },
-    # Embed rung (B3 tasks 3-4). iOS-only: Android has no IFrame embed player at all (grep of
-    # android/app/src/main: no embed.html, no youtube-nocookie, no IFrame error codes), so there is
-    # no source string to port for any of these.
-    "player_embed_caption": {
-        "en": "Playing in YouTube's player",
-        "ar": "يتم التشغيل في مشغّل يوتيوب",
-        "nl": "Speelt af in de YouTube-speler",
-    },
-    "player_embed_removed": {
-        "en": "This video was removed",
-        "ar": "تمت إزالة هذا الفيديو",
-        "nl": "Deze video is verwijderd",
-    },
-    # No `player_embed_owner_only` / `player_open_in_youtube` / `player_open_in_youtube_confirm`:
-    # owner directive 2026-08-27 bans every redirect and hand-off to YouTube, and naming YouTube as
-    # the place to watch a video the embed refused is that redirect phrased as copy. IFrame errors
-    # 101/150 now land on `player_stream_unavailable` like every other terminal reason.
-    "player_embed_replay": {"en": "Replay", "ar": "إعادة التشغيل", "nl": "Opnieuw afspelen"},
     # player_cooldown_retry (B1 task 9, spec §6.6 `.cooldown` row): "Try again in {relative}" over
     # the live countdown `PlayerStateCopy.cooldownText` formats with `Format.duration`. iOS-only --
     # the persisted escalating cooldown (`ExtractionError.cooldown`) is an iOS-side resolver

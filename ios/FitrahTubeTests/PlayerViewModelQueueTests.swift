@@ -165,22 +165,6 @@ struct PlayerViewModelQueueTests {
         #expect(StreamState.queueEnded != StreamState.idle)
     }
 
-    @Test func anAdvanceLandingOnTheEmbedRungPlaysItInsteadOfSkipping() async {
-        // Cubic #3 = gstack R2: `.embed(Resolved)` is a first-class playable state (its own
-        // `PlayerScreen` branch), but `advance()` gated success on `isPlayable`, which excludes it --
-        // so a playlist member whose ladder legitimately bottomed out on the embed rung was
-        // auto-skipped mid-queue (burning a `consecutiveSkips` slot) though a direct tap played it.
-        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
-        resolver.outcomes["b"] = .embed
-        await vm.open()
-        await vm.playToEnd()
-        #expect(vm.args.videoId == "b")                    // NOT skipped ahead to c
-        guard case .embed = vm.state else { Issue.record("expected .embed, got \(vm.state)"); return }
-        await vm.playToEnd()
-        #expect(vm.args.videoId == "c")                    // the queue continues normally after it
-        #expect(vm.state.isPlayable)
-    }
-
     @Test func aUserTapDuringAGatedAdvancePageFetchWins() async {
         // Cubic #4: `advance()` suspends in `await pageIfNeeded()` and then unconditionally moved
         // the queue -- a `play(at:)` landing during that suspension was overridden by the resumed
@@ -218,7 +202,7 @@ struct PlayerViewModelQueueTests {
     /// Review F1: `advance()` re-checks supersession after `pageIfNeeded()` but not after its OWN
     /// resolve. Traced: advance's resolve for "b" in flight -> the user taps "d" (`play(at:)`
     /// cancels it, sets `.loading`, bumps generation) -> advance resumes, sees `.loading` (not
-    /// playable/embed), enters the skip recursion, `queue.advance()` moves off the user's pick and
+    /// playable), enters the skip recursion, `queue.advance()` moves off the user's pick and
     /// its own resolve supersedes the tap.
     @Test(.timeLimit(.minutes(1))) func aUserTapDuringTheAdvancesOwnResolveWins() async {
         let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"),

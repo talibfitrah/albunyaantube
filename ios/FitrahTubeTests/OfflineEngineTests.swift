@@ -20,7 +20,7 @@ struct OfflineEngineTests {
         // running → failed → queued on retry
         #expect(OfflineStateMachine.transition(from: .running, on: .fail) == .failed)
         #expect(OfflineStateMachine.transition(from: .failed, on: .retry) == .queued)
-        // Resolve can fail before the engine ever starts (Task 4's embed outcome).
+        // Resolve can fail before the engine ever starts (Task 4's no-stream outcome).
         #expect(OfflineStateMachine.transition(from: .queued, on: .fail) == .failed)
         // Cubic R4-7: a gate pause landing between the `.running` transition and `engine.start`
         // leaves a PAUSED row whose resolve then fails. Without this arm `fail()` wrote neither

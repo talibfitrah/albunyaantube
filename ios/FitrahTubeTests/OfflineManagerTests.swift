@@ -242,7 +242,7 @@ struct OfflineManagerTests {
     /// save stamps the channel on the row, and `begin`, `retry` and `sweep` each ask the gate about
     /// it; a row written before V7 (nil) keeps the video-only question.
     @Test func everyGateConsultAsksAboutTheRowsChannel() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         var metadata = Self.metadata
         metadata.channelId = Self.channelId
         await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
@@ -330,15 +330,6 @@ struct OfflineManagerTests {
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.queued.rawValue)
         #expect(await rig.manager.pendingRetryIds == [id])
-    }
-
-    @Test func anEmbedOutcomeFailsNotSaveableWithNoEngineCall() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
-        let id = await save(rig)
-        #expect(rig.engine.starts.isEmpty)
-        let row = try #require(rig.persisted(id: id))
-        #expect(row.status == OfflineStatus.failed.rawValue)
-        #expect(row.errorCode == "NOT_SAVEABLE")
     }
 
     /// Cubic P2: an audio-only save resolves WITHOUT `requiresMuxed`, so it reads the shared
@@ -646,7 +637,7 @@ struct OfflineManagerTests {
     }
 
     @Test func retryRequeuesAFailedRowAndResolvesAgain() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         rig.flags.gate = .allowed   // retry re-consults the per-video gate (gstack P0)
         let id = await save(rig)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
@@ -665,7 +656,7 @@ struct OfflineManagerTests {
     /// partial with it: a failed row has nothing worth keeping, and a revoked gate removes copies.
     @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
     func aRetryWhoseGateRefusesDeletesTheRowAndItsPartial(gate: GateAnswer) async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         let id = await save(rig)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
@@ -690,7 +681,7 @@ struct OfflineManagerTests {
     /// Retry button read as broken. The status and the partial are untouched; the error code
     /// becomes the network one, which is what the row's caption renders.
     @Test func aRetryWithAnUnreachableGateIsRefusedAndTheRowStaysFailed() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         let id = await save(rig)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
         let tmp = rig.directory.appending(path: "\(id).tmp")
@@ -3024,7 +3015,7 @@ struct OfflineManagerTests {
         let audioOnly: Bool
         switch probe.stream {
         case .hls(_, _, let audioOnlyURL, _): audioOnly = audioOnlyURL != nil
-        case .progressive, .embed: audioOnly = false
+        case .progressive: audioOnly = false
         }
         print("[offline-live] probe client=\(probe.client) stream=\(probe.stream) → audioOnly=\(audioOnly)")
 

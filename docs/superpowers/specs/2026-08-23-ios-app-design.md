@@ -60,7 +60,7 @@ ios/
 │   ├── Persistence/            # SwiftData models + stores, SettingsStore (UserDefaults)
 │   ├── Sync/                   # SyncManager port
 │   └── Resources/              # Localizable.xcstrings, Assets.xcassets, LaunchScreen, PrivacyInfo.xcprivacy,
-│                               # GoogleService-Info.plist (placeholder), embed.html
+│                               # GoogleService-Info.plist (placeholder)
 ├── FitrahTubeTests/            # ViewModel + routing tests against AppContainer.fake()
 ├── Packages/
 │   ├── FitrahAPI/              # generated DTOs + client (Sources/FitrahAPI, Sources/FitrahAPIGenerated)
@@ -185,10 +185,10 @@ Brand green is used for text and tints (AA-safe in both modes). Labels on a bran
 
 Implements plan §6.1–6.4, §6.7, §6.13 verbatim. Summary of the contract:
 
-- `actor StreamResolver { func resolve(_ id: String, for purpose: Purpose) async throws -> ResolvedStream }` walks `RemoteConfig.resolverOrder` (`visionosHLS`, `androidItag18`, `embed`; unknown names dropped — *Owner directive 2026-08-27*: `openInYouTube` is no longer a valid entry, see below). One in-flight task per videoId, superseded requests cancelled, ≥500 ms spacing, 300 ms settle debounce, 8 s budget per rung. Branching on `playabilityStatus.status` **and** `reason`: bot-check → rotate `visitorData` (≤1/10 min) and retry once, then back-off; age gate → terminal "not available" state (never rotate); `UNPLAYABLE` → `androidItag18`; `LIVE_STREAM_OFFLINE` → scheduled state. When the catalog item carries `madeForKids`/`embeddable` (§12) rungs known to fail are skipped.
+- `actor StreamResolver { func resolve(_ id: String, for purpose: Purpose) async throws -> ResolvedStream }` walks `RemoteConfig.resolverOrder` (`visionosHLS`, `androidItag18`; unknown names dropped — *Owner directive 2026-10-14*: `embed` is dropped too, no YouTube player of any kind — *Owner directive 2026-08-27*: `openInYouTube` is no longer a valid entry, see below). One in-flight task per videoId, superseded requests cancelled, ≥500 ms spacing, 300 ms settle debounce, 8 s budget per rung. Branching on `playabilityStatus.status` **and** `reason`: bot-check → rotate `visitorData` (≤1/10 min) and retry once, then back-off; age gate → terminal "not available" state (never rotate); `UNPLAYABLE` → `androidItag18`; `LIVE_STREAM_OFFLINE` → scheduled state. When the catalog item carries `madeForKids`/`embeddable` (§12) rungs known to fail are skipped.
 - `SessionStore`: one `visitorData` per client family (VISIONOS for `player`, ANDROID for itag 18, WEB for `browse`) in UserDefaults; contexts byte-identical per call; ephemeral `URLSession` with cookies disabled and fixed headers per client; cooldown on 429/repeated bot checks persisted (1 h → 24 h, port of `CooldownState.kt`).
 - `ManifestCache`: memory-only, TTL `min(config, expires − duration − 600 s, 1 h)`, flushed on `NWPathMonitor` path change; re-resolve on 403/stall (§10).
-- `ResolvedStream`: `.hls(URL, isLive, audioOnlyURL: itag140?, captionTracks)`, `.progressive(URL, label: "360p")`, `.embed(videoId)`; each carries `client`, `userAgent`, `expiresAt`, `resolvedAt`. *(Owner directive 2026-08-27: the `.openInYouTube(URL)` case is removed — no redirect or hand-off to YouTube, ever. Anything past `.embed` resolves to a terminal "not available" state, never a case that opens YouTube.)*
+- `ResolvedStream`: `.hls(URL, isLive, audioOnlyURL: itag140?, captionTracks)`, `.progressive(URL, label: "360p")`; each carries `client`, `userAgent`, `expiresAt`, `resolvedAt`. *(Owner directive 2026-08-27: the `.openInYouTube(URL)` case is removed — no redirect or hand-off to YouTube, ever. Owner directive 2026-10-14: the `.embed(videoId)` case is removed too. Anything past `.progressive` is an error state, never a case that opens or plays YouTube.)*
 - `BrowseClient`: WEB-context `browse` — channel header, Videos via the Videos-tab `richGridRenderer` continuation (the `VLUU…` uploads playlist caps at 200 rows live — measured 2026-08-30), Live/Shorts/Playlists via tab params, About from the header; playlist items via `VL<playlistId>`; continuation paging; exclusions from the backend applied; items pushed to `POST /api/v1/index/streams` (≤50, deduped). Degraded mode when bot-checked: approved playlists (`/api/v1/channels/{id}`) + Atom feed (`https://www.youtube.com/feeds/videos.xml?channel_id=`) + indexed search. `AtomFeedFetcher` with conditional GET (ETag/Last-Modified) ports `AtomChannelFeedFetcher.kt:12-60` for the Me tab.
 - `RemoteConfig`: schema from plan §6.13; bundled default; last-known-good; fetched on launch and `willEnterForeground` with ≥15 min spacing; body ≤64 KiB; `minAppVersion` gate.
 - `CaptionsProvider`: `captionTracks[].baseUrl&fmt=vtt` → cue overlay for auto-generated tracks (manual tracks come through HLS `SUBTITLES` renditions).
@@ -217,14 +217,14 @@ Not ported: `YoutubeClientRotator` (IOS client dead for this app — plan §3), 
 - Live: LIVE badge, seek only within the DVR window, proactive re-resolve before `expire`, stall watchdog 45 s live / 6 s VOD (`PlayerViewModel.kt:1575-1610`).
 - Fullscreen: 9:16 sources fullscreen in portrait, else landscape; auto-enter when opened in landscape on iPhone; zoom hint once (`PlayerFragment.kt:3382-3484`). Compact-height landscape hides metadata.
 - Recovery: `AVPlayerItem.status == .failed` before first frame → next rung; 403 / failed-to-end / stall > 8 s → re-resolve same rung once, `replaceCurrentItem` + seek; budgets retries 3 / re-resolves 2 (`PlayerFragment.kt:1095-1111`); never silently swap a native stream into the embed.
-- States and per-rung UI exactly as plan §6.6 (Loading with thumbnail, "Standard quality (360p)" pill, "Playing in YouTube's player" caption above the frame, embed error strings, terminal "not available" state, VoiceOver announcements). *(Owner directive 2026-08-27: there is no Open-in-YouTube confirmation sheet — that rung is removed.)*
+- States and per-rung UI exactly as plan §6.6 (Loading with thumbnail, "Standard quality (360p)" pill, terminal error / "not available" states, VoiceOver announcements). *(Owner directive 2026-08-27: there is no Open-in-YouTube confirmation sheet — that rung is removed.)*
 - Resume position: session-only (Android persists none — `PlayerFragment.kt:2905-2930`).
 
-**Embed rung**: bundled `embed.html` wrapping the IFrame API (`youtube-nocookie.com`, `playsinline=1`, `rel=0`, `enablejsapi=1`, `origin`, `hl`), `loadHTMLString(_:baseURL:)` so a Referer is sent, navigation-locked (`decidePolicyFor` cancels off-page main-frame navigations, `createWebViewWith` returns nil), one weak `WKScriptMessageHandler`, `onStateChange` verifies `video_id`, end screen covered by a Replay/Back card, reload once on content-process termination then terminal "not available" state, paused on background (plan §6.4 row 3, §6.10). *(Owner directive 2026-08-27: no rung 4 to fall back to.)*
+**Embed rung**: REMOVED by owner directive 2026-10-14 (no YouTube player of any kind); the bundled `embed.html`, the `WKWebView` host and its navigation lock no longer exist.
 
 **Shorts**: single 9:16 `AVPlayer` per item, no swipe-to-next (product decision, `ShortsPlayerFragment.kt:322-330`), repeat-one loop, tap play/pause with indicator, scrub-on-release timebar, rail (favorite, share, audio language, captions, download, channel avatar/handle), kebab (quality cap, report SHORT), portrait lock, stall 6 s → 2 recoveries → skip; feed = content service + channel Shorts tab blend (`ShortsFeedRepository.kt`). Embed rung sized 9:16.
 
-**Safe Mode** (default on): embed navigation lock (always), playlist auto-advance off (plan §6.10). *(Owner directive 2026-08-27: the `openInYouTube` rung this used to remove no longer exists at all, in or out of Safe Mode.)*
+**Safe Mode** (default on): playlist auto-advance off (plan §6.10). *(Owner directive 2026-08-27: the `openInYouTube` rung this used to remove no longer exists at all, in or out of Safe Mode.)*
 
 **Chromecast** (Google Cast SDK, receiver `CC1AD845` as `CastOptionsProvider.kt:36-42`): `GCKUICastButton` in the toolbar, main player only (Android scope). On `sessionDidStart`/`didResume`: re-resolve a **fresh** stream, build `GCKMediaInformation` with the HLS manifest (`application/x-mpegurl`; `video/mp4` for itag 18; `.live` stream type for live; title, channel, thumbnail), `GCKMediaLoadRequestData` with autoplay and the local position; pause the local player; observe the load result and surface "Couldn't play on {device}" on failure (Android swallows it). On `sessionDidEnd`: seek local to the receiver's `approximateStreamPosition` and resume. Mini controller (`GCKUIMiniMediaControlsViewController`) pinned above the tab bar while a session is active. Known ceiling, documented in the About → Help text: the stream URL is bound to the phone's public IP, so casting works only when phone and Chromecast share an IPv4 NAT address (IPv6 networks and cellular will fail with the error above). Cast SDK is not loaded at all when `GCKCastContext` cannot be created.
 
@@ -292,7 +292,7 @@ The 403 on `/.well-known/*` observed until 2026-09-02 was the backend's own Spri
 |---|---|---|
 | 0 | `ios/` scaffold: project.yml, app target, three packages, `AppContainer` + fakes, design tokens + components, xcconfigs, Cast fetch script, Firebase plist build phase, Swift DTO codegen, CI-able `xcodebuild test` | builds + tests on iPhone and iPad simulators |
 | 1 | Catalog: splash, onboarding, shell, Home, Channels, Playlists, Videos, Search, Categories/Subcategories, Featured, filter, local Favorites, Settings (all rows, five real settings), About (+ developer dialog), i18n/RTL/iPad | every screen verified on 3 simulators × 2 languages |
-| 2 | `InnerTubeKit`, player, Shorts, channel/playlist detail, report, share + metadata publish, deep/universal links, remote config, Safe Mode | engine tests; manual playback of lecture, kids, live, age-gated, embed-only samples |
+| 2 | `InnerTubeKit`, player, Shorts, channel/playlist detail, report, share + metadata publish, deep/universal links, remote config, Safe Mode | engine tests; manual playback of lecture, kids, live, age-gated samples |
 | 3 | `DownloadKit`, Downloads screen, Cast, AirPlay | engine tests; simulator download/offline play; Cast verified on the user's network |
 | 4 | Accounts: auth, verification, bootstrap, Me, profile + deletion, sync, submissions, suggest, import | tests against fakes; end-to-end once Firebase plist exists |
 | 5 | Backend additions (§12) — parallel with 1–2 | `./gradlew test` |
@@ -318,7 +318,7 @@ Each phase ends with the 9-stage review pipeline from `AGENTS.md` and one PR int
 
 | Risk | Mitigation |
 |---|---|
-| App Store 5.2.2/5.2.3 on native playback and on Downloads | Plan §9; embed fallback always works; Downloads is the user's accepted risk (D3). |
+| App Store 5.2.2/5.2.3 on native playback and on Downloads | Plan §9; Downloads is the user's accepted risk (D3). |
 | VISIONOS enforcement arrives (android_vr precedent) | Remote-config reorder same day; minter on a branch (plan §6.12, §11). |
 | `AVAssetDownloadTask` may reject YouTube's HLS (unverified) | Spike in phase 3 day 1; fallback is itag 18 + itag 140 progressive downloads for every tier (360p ceiling) — stated in the picker. |
 | Cast fails off IPv4-NAT networks | Error surfaced; documented ceiling; AirPlay mirroring is the reliable TV path. |

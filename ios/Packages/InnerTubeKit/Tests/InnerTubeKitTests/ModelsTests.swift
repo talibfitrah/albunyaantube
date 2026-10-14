@@ -6,7 +6,7 @@ import Testing
     @Test func resolvedIsExpiredWhenExpiresAtInPast() {
         let now = Date(timeIntervalSince1970: 1000)
         let past = Resolved(
-            stream: .embed(videoId: "abc123def45"),
+            stream: .progressive(url: URL(string: "https://example.com/v.mp4")!, label: "360p"),
             client: .visionos,
             userAgent: "ua",
             resolvedAt: Date(timeIntervalSince1970: 0),
@@ -15,7 +15,7 @@ import Testing
         #expect(past.isExpired(now: now))
 
         let atBoundary = Resolved(
-            stream: .embed(videoId: "abc123def45"),
+            stream: .progressive(url: URL(string: "https://example.com/v.mp4")!, label: "360p"),
             client: .visionos,
             userAgent: "ua",
             resolvedAt: Date(timeIntervalSince1970: 0),
@@ -24,7 +24,7 @@ import Testing
         #expect(atBoundary.isExpired(now: now))  // exactly-equal counts as expired (<=)
 
         let noExpiry = Resolved(
-            stream: .embed(videoId: "abc123def45"),
+            stream: .progressive(url: URL(string: "https://example.com/v.mp4")!, label: "360p"),
             client: .visionos,
             userAgent: "ua",
             resolvedAt: Date(timeIntervalSince1970: 0),
@@ -33,7 +33,7 @@ import Testing
         #expect(!noExpiry.isExpired(now: now))
 
         let future = Resolved(
-            stream: .embed(videoId: "abc123def45"),
+            stream: .progressive(url: URL(string: "https://example.com/v.mp4")!, label: "360p"),
             client: .visionos,
             userAgent: "ua",
             resolvedAt: Date(timeIntervalSince1970: 0),

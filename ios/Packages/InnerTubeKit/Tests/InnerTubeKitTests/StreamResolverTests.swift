@@ -288,9 +288,10 @@ import Testing
 
     // MARK: - d4) fallback rungs are neither cached nor counted as a clean fetch
 
-    @Test func embedFallbackIsNotCachedAndDoesNotRecordSuccess() async throws {
-        // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed` -- which ships
-        // DARK (not in the bundled default), so this is the published-config shape that enables it.
+    @Test func aPublishedEmbedStrategyIsNeverWalkedAndAnExhaustedLadderCachesNothing() async throws {
+        // Both player rungs answer UNPLAYABLE. The published config of builds 1.0.0 / 1.0.2 listed
+        // `embed` as a third rung (a YouTube IFrame player); owner directive 2026-10-14 removed it,
+        // so the ladder ends at rung 2 and the walk fails honestly instead of resolving an embed.
         let clock = ManualClock()
         let configStore = configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"])
         let cache = ManifestCache(remoteConfig: configStore)
@@ -299,16 +300,18 @@ import Testing
         await session.recordBotCheck()
         clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
 
-        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .embed = resolved.stream else { Issue.record("expected .embed, got \(resolved.stream)"); return }
+        await expectThrows(.allRungsFailed) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
 
+        #expect(transport.callCount == 2)   // one POST per native rung, then nothing
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
-        #expect(await session.loadCooldown().tripCount == 1)
+        #expect(await session.loadCooldown().tripCount == 1)   // a failed walk is not a clean fetch
     }
 
-    /// B3 embed ruling (2026-08-27): the bundled default is visionosHLS -> androidItag18 and then
-    /// TERMINAL. Both rungs answering UNPLAYABLE must surface as `allRungsFailed` (which
-    /// `PlayerViewModel.map` renders as the generic player error), never silently resolve to `embed`.
+    /// The bundled default is visionosHLS -> androidItag18 and then TERMINAL. Both rungs answering
+    /// UNPLAYABLE must surface as `allRungsFailed` (which `PlayerViewModel.map` renders as the
+    /// generic, retryable player error).
     @Test func defaultLadderIsTerminalAfterAndroidItag18() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, _) = makeResolver(transport: transport)
@@ -456,7 +459,7 @@ import Testing
 
     @Test func resolverAdvancesPastRungWhoseClientWasSanitizedAwayForMismatchedClientName() async throws {
         let badConfig = RemoteConfig(
-            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "embed"],
+            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "androidItag18"],
             manifestCacheSeconds: 3600,
             clients: [
                 "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101)
@@ -468,14 +471,14 @@ import Testing
         #expect(await configStore.current().clients["visionos"] == nil)  // sanitized away at load
 
         // Never called: the "visionos" client is gone, so `runPlayerRung` never reaches
-        // `PlayerRequestBuilder.build` — the rung advances straight to `embed`, the last rung there
-        // is (the YouTube hand-off rung was removed by owner directive 2026-08-27).
+        // `PlayerRequestBuilder.build` — the rung advances, and so does android (no context was
+        // persisted for it). The ladder then ends (no rung 3, no YouTube hand-off or player), so
+        // the walk fails honestly with no POST sent.
         let transport = RecordingTransport([])
         let (resolver, _) = makeResolver(transport: transport, configStore: configStore)
 
-        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .embed = resolved.stream else {
-            Issue.record("expected .embed (advanced past the sanitized rung), got \(resolved.stream)"); return
+        await expectThrows(.allRungsFailed) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(transport.callCount == 0)
     }
@@ -791,17 +794,12 @@ import Testing
         guard case .hls = playback.stream else { Issue.record("a cast locked out playback: \(playback.stream)"); return }
     }
 
-    /// Review F2: under `requiresMuxed` the embed floor is unusable by construction (the caller
-    /// maps `.embed` to terminal NOT_SAVEABLE), so "resolving" it dressed a bot-checked walk as a
-    /// clean success — no trip recorded, no cooldown armed, N queued video saves burned N×2 POSTs
-    /// with every row mislabeled. The rung must advance instead: the walk fails overall and the
-    /// walk-end path records its one trip.
-    @Test func aBotCheckedMuxedWalkAdvancesPastEmbedAndRecordsTheTrip() async throws {
+    /// Review F2: a bot-checked muxed walk fails overall, so the walk-end path records its one trip
+    /// (N queued video saves must not each burn N×2 POSTs and leave the session looking healthy).
+    @Test func aBotCheckedMuxedWalkRecordsTheTrip() async throws {
         let clock = ManualClock()
         let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
-        let (resolver, session) = makeResolver(
-            transport: transport, clock: clock,
-            configStore: configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"]))
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
         await session.setVisitorData("v1", for: .android)   // genuine bot check, not a bootstrap
 
         await expectThrows(.botCheck) {

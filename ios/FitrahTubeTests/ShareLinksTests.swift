@@ -44,7 +44,7 @@ struct ShareLinksTests {
 
     @Test func thePromoLineNeverSaysAdFree() {
         // Global Constraints + spec D10/12: Android's share_app_promo is "Get FitrahTube for ad-free
-        // Islamic content!" and the embed rung plays YouTube's ads, so the claim is false in-app.
+        // Islamic content!", which the iOS share text must not carry.
         for loc in ["en", "ar", "nl"] {
             let body = ShareLinks.message(for: .video("a"), title: "T", locale: .init(identifier: loc))
             #expect(body.localizedCaseInsensitiveContains("ad-free") == false, Comment(rawValue: loc))

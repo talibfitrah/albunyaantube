@@ -23,7 +23,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
 
     /// `liveHLS` is `hls` with `isLive` set -- the only thing that separates a live rung 1 from a
     /// VOD one, and what the cast hand-back's seek has to refuse (R7-18).
-    enum Outcome { case hls, liveHLS, progressive, embed, failure(ExtractionError) }
+    enum Outcome { case hls, liveHLS, progressive, failure(ExtractionError) }
 
     private let holdsUntilReleased: Bool
     private let lock = NSLock()
@@ -159,9 +159,6 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         case .progressive:
             return Resolved(stream: .progressive(url: nonResolvingURL, label: "360p"), client: .android,
                             userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt)
-        case .embed:
-            return Resolved(stream: .embed(videoId: videoId), client: .web,
-                            userAgent: "", resolvedAt: Date(), expiresAt: nil)
         case .failure(let error):
             throw error
         }

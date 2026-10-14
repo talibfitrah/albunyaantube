@@ -52,24 +52,22 @@ struct ShortsScreen: View {
             model = vm
             await vm.open()
         }
-        .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+        .rungAnnouncements(state: model?.state)
     }
 
-    /// Which surface a state renders. Pure so the routing is testable without a live view: an online
-    /// `.embed` MUST reach `EmbedRungView` -- `PlayerStateCopy.map` `preconditionFailure`s on it
-    /// (C1, fix round 2). Same three-way split as `PlayerScreen.stateView`.
-    enum Branch: Equatable { case player, embed, status }
-    static func branch(for state: StreamState, isOnline: Bool) -> Branch {
+    /// Which surface a state renders. Pure so the routing is testable without a live view. Same
+    /// two-way split as `PlayerScreen.stateView`.
+    enum Branch: Equatable { case player, status }
+    static func branch(for state: StreamState) -> Branch {
         switch state {
         case .ready, .rung2Progressive: .player
-        case .embed where isOnline: .embed
         default: .status
         }
     }
 
     @ViewBuilder
     private func stage(_ state: StreamState, model: PlayerViewModel) -> some View {
-        switch Self.branch(for: state, isOnline: container.network.isOnline) {
+        switch Self.branch(for: state) {
         // ONE branch for both playable rungs -- Global Constraints, and the same identity rule
         // PlayerScreen.stateView carries. Rung-specific chrome differs INSIDE it.
         case .player:
@@ -95,13 +93,6 @@ struct ShortsScreen: View {
                 .overlay { ShortsOverlay(model: model, args: args) }
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        // Rung 3, mirroring PlayerScreen: its own surface, no AVPlayer. CF-B3-1: 9:16 is the ONE
-        // parameter that differs. `safeAreaPadding` keeps the caption clear of the Back/kebab row.
-        case .embed:
-            if case .embed(let resolved) = state {
-                EmbedRungView(resolved: resolved, model: model, args: args, aspectRatio: 9.0 / 16.0)
-                    .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
-            }
         case .status:
             // Task 4: on the black surface, with the dark palette's text -- the card used to paint
             // the app's light `Color.background` over the stage.

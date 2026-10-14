@@ -273,12 +273,6 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// Auto-start is gated on the Background play setting so a user who turned background playback
     /// OFF cannot get a floating video window by backgrounding (ruling 34); the stock PiP button in
     /// the transport stays available either way.
-    ///
-    /// B3 task 4 (the answer): the embed rung has no `AVPlayer` and no `AVPlayerViewController` at
-    /// all (`streamURL` returns nil for `.embed`, so this host is never mounted on that branch), and
-    /// `EmbedRungView` sets `allowsPictureInPictureMediaPlayback = false` on its `WKWebView`. There
-    /// is therefore no PiP affordance on rung 3 whatsoever -- which is what spec §6.6's rung-3 row
-    /// asks for and what YouTube API Services policy III.I.9 requires of embed content.
     static func configurePictureInPicture(_ controller: AVPlayerViewController, backgroundPlay: Bool) {
         controller.allowsPictureInPicturePlayback = true
         controller.canStartPictureInPictureAutomaticallyFromInline = backgroundPlay
@@ -503,11 +497,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
                         case .readyToPlay:
                             self.watchdog.armed = true
                             #if DEBUG
-                            // B5 Task 4 live rig (`-fitrah-player-seek-near-end`, same shape as B3's
-                            // `-fitrah-embed-seek-to-end`): the FIRST ready item of the process jumps
-                            // to 5 s before its end, so a real end-of-item / auto-advance is reachable
-                            // without sitting through a whole lecture. Once per process, so the
-                            // advanced-to video plays from 0 -- that is the thing under test.
+                            // B5 Task 4 live rig (`-fitrah-player-seek-near-end`): the FIRST ready item
+                            // of the process jumps to 5 s before its end, so a real end-of-item /
+                            // auto-advance is reachable without sitting through a whole lecture. Once
+                            // per process, so the advanced-to video plays from 0 -- that is the thing
+                            // under test.
                             if !Self.debugSeekNearEndConsumed,
                                LaunchArguments.debug.contains("-fitrah-player-seek-near-end"),
                                item.duration.seconds.isFinite, item.duration.seconds > 5 {
@@ -692,11 +686,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
                        pausedForCast: Bool = false, airPlayFellBack: Bool = false) -> AVPlayer? {
-        guard let resolved = state.resolved,
-              let url = streamURL(resolved.stream, audioOnly: audioOnly) else {
+        guard let resolved = state.resolved else {
             existing?.pause()
             return nil
         }
+        let url = streamURL(resolved.stream, audioOnly: audioOnly)
         // I7 (B1 final review): reuse the live item only while it can still play. An
         // `AVPlayerItem` that reached `.failed` never recovers, so handing it back on a same-URL
         // re-resolve (exactly what manual Retry and the recovery ladder do) froze the player on a
@@ -795,7 +789,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     /// Not private: `PlayerHostTests` pins the audio-only selection directly.
-    static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL? {
+    static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL {
         switch stream {
         case .hls(let url, _, let audioOnlyURL, _):
             // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
@@ -805,8 +799,6 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return audioOnly ? (audioOnlyURL ?? url) : url
         case .progressive(let url, _):
             return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
-        case .embed:
-            return nil // B3
         }
     }
 }

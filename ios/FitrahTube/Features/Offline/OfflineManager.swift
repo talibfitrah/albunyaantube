@@ -56,7 +56,7 @@ nonisolated protocol OfflineSaving: Sendable {
 /// returns a `Sendable` snapshot — after any engine event the row is RE-READ before deciding
 /// (SwiftData drops writes made into the wrong context silently).
 actor OfflineManager: OfflineSaving {
-    /// `DownloadErrorCode.kt:12-39` minus the FFmpeg codes, plus `NOT_SAVEABLE` (embed outcome).
+    /// `DownloadErrorCode.kt:12-39` minus the FFmpeg codes, plus `NOT_SAVEABLE`.
     nonisolated enum ErrorCode: String, Sendable {
         case http403 = "HTTP_403", http429 = "HTTP_429", network = "NETWORK", noStream = "NO_STREAM"
         case invalidInput = "INVALID_INPUT", unknown = "UNKNOWN", notSaveable = "NOT_SAVEABLE"
@@ -906,7 +906,6 @@ actor OfflineManager: OfflineSaving {
         // past this line, and that resolve spent the intent.
         if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
-            if case .embed = resolved.stream { await fail(row.id, .notSaveable); return }
             // An audio-only save resolves without `requiresMuxed`, so this answer may be
             // the shared `ManifestCache`'s — and a player fallback walk caches `.progressive`
             // (nil `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would
@@ -956,7 +955,7 @@ actor OfflineManager: OfflineSaving {
         switch (stream, audioOnly) {
         case (.hls(_, _, let audioOnlyURL, _), true): return audioOnlyURL
         case (.progressive(let url, _), false): return url
-        case (.hls, false), (.progressive, true), (.embed, _): return nil
+        case (.hls, false), (.progressive, true): return nil
         }
     }
 

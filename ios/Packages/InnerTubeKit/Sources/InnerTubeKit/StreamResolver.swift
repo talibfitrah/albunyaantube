@@ -197,23 +197,16 @@ public actor StreamResolver {
         throw lastError
     }
 
-    /// Only `.hls`/`.progressive` are a real fetch: they carry URLs with a TTL worth caching, and
-    /// they are the only outcome that proves the session is healthy. Caching `embed` would pin a
-    /// user on the fallback for the full TTL after a transient bot check clears, and counting it as
-    /// a clean fetch would fake a healthy session while the ladder bottomed out.
+    /// A resolved stream is a real fetch: it carries a URL with a TTL worth caching and proves the
+    /// session is healthy.
     private func succeed(_ resolved: Resolved, videoId: String, requiresMuxed: Bool) async -> Resolved {
-        switch resolved.stream {
-        case .hls, .progressive:
-            // A muxed walk's result must never land under the plain videoId key: the cache is
-            // shape-blind, and the player's next resolve would degrade to this 360p progressive.
-            // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
-            if !requiresMuxed {
-                await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
-            }
-            await sessionStore.recordSuccess()
-        case .embed:
-            break
+        // A muxed walk's result must never land under the plain videoId key: the cache is
+        // shape-blind, and the player's next resolve would degrade to this 360p progressive.
+        // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
+        if !requiresMuxed {
+            await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
         }
+        await sessionStore.recordSuccess()
         return resolved
     }
 
@@ -228,16 +221,6 @@ public actor StreamResolver {
             return try await runPlayerRung(family: .visionos, videoId: videoId, config: config, expectHLS: true, canRotate: true)
         case "androidItag18":
             return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
-        case "embed":
-            // The floor of the ladder. There is no rung below it: owner directive 2026-08-27 bans
-            // every redirect or hand-off to YouTube, so a video `embed` cannot play is a terminal
-            // `ExtractionError`, never an escape hatch out of the app. `RemoteConfig` drops an
-            // `openInYouTube` entry from a published config for the same reason.
-            // A muxed-required walk advances instead (review F2): the caller maps `.embed` to
-            // terminal NOT_SAVEABLE, so "resolving" here would dress a bot-checked walk as a
-            // clean success and skip the walk-end trip recording.
-            if requiresMuxed { return .advance }
-            return .resolved(makeEmbed(videoId))
         default:
             return .advance
         }
@@ -393,10 +376,6 @@ public actor StreamResolver {
     }
 
     // MARK: - result builders
-
-    private func makeEmbed(_ videoId: String) -> Resolved {
-        Resolved(stream: .embed(videoId: videoId), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
-    }
 
     private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {
         streaming.expiresInSeconds.map { now.addingTimeInterval(TimeInterval($0)) }

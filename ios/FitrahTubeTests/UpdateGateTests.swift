@@ -8,7 +8,7 @@ import Testing
 /// testable without a running scene.
 struct UpdateGateTests {
     private func config(min: String) -> RemoteConfig {
-        RemoteConfig(schemaVersion: 1, minAppVersion: min, resolverOrder: ["embed"],
+        RemoteConfig(schemaVersion: 1, minAppVersion: min, resolverOrder: ["visionosHLS"],
                      manifestCacheSeconds: 0, clients: [:])
     }
 

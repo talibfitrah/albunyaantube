@@ -209,12 +209,10 @@ struct PlayerScreen: View {
             guard !Task.isCancelled else { return }
             saveGate = answer
         }
-        // Task 9 + B3 task 4: the two announcements `PlayerStateView` can't make itself, since
-        // neither `.rung2Progressive` nor `.embed` mounts it (Task 7's identity note keeps both
-        // playable rungs in the switch case below; `.embed` has its own branch). ONE site for both
-        // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
-        // transition, so entering `.embed` announces exactly once.
-        .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+        // Task 9: the announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
+        // mounts the player (Task 7's identity note keeps both playable rungs in the switch case
+        // below). `.onChange` fires only on a real transition, so entering it announces exactly once.
+        .rungAnnouncements(state: model?.state)
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
@@ -236,8 +234,8 @@ struct PlayerScreen: View {
     }
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
-    /// `PlayerScreenEmbedTests` can pin the offline case that `.onChange` can't be asked about.
-    static func transitionAnnouncement(for state: StreamState?, isOnline: Bool) -> String? {
+    /// `PlayerStateViewTests` can pin it: `.onChange` can't be asked.
+    static func transitionAnnouncement(for state: StreamState?) -> String? {
         switch state {
         case .rung2Progressive:
             // The announcement is a sentence about what just happened
@@ -245,16 +243,6 @@ struct PlayerScreen: View {
             // standing label ("Standard quality (360p)"). Reading the pill's noun phrase out as an
             // event was the wrong register -- two different strings, deliberately.
             return String(localized: "player_announce_standard_quality")
-        case .embed:
-            // Spec §6.6 Transitions: a native->embed demotion is NEVER silent. The caption above the
-            // frame is the visible half; this is the audible one, and it is the same sentence
-            // ("Playing in YouTube's player") rather than a second string, because the caption
-            // already IS a statement of what just happened.
-            //
-            // ONLINE only. Offline, `.embed` never mounts `EmbedRungView` at all
-            // -- the branch below routes it to the offline card -- so this announced a player that
-            // is not on screen, over a card that says the opposite.
-            return isOnline ? String(localized: "player_embed_caption") : nil
         default:
             return nil
         }
@@ -413,22 +401,6 @@ struct PlayerScreen: View {
             }   // GeometryReader
             .ignoresSafeArea(edges: fullscreen ? .all : [])
             .transientBanner(Bindable(model).banner)
-        // B3 task 4: rung 3 gets its OWN branch -- legitimately, because it is a different playback
-        // surface with no `AVPlayer` to preserve across a transition, which is the only thing the
-        // shared branch above exists to protect. It never mounts `PlayerHostView`.
-        case .embed(let resolved):
-            // Offline gate, same rule the `.idle`/`.loading`/`.error` states already follow: a
-            // `WKWebView` pointed at `youtube-nocookie.com` with no network renders
-            // a black frame under a caption claiming something is playing. One offline surface with
-            // a Retry, not a lie plus a spinner. `PlayerStateCopy.map` answers the offline copy for
-            // `.embed` and `preconditionFailure`s for it online, where this branch owns the screen.
-            if container.network.isOnline {
-                EmbedRungView(resolved: resolved, model: model, args: model.args)
-            } else {
-                PlayerStateView(state: state, isOnline: false, thumbnailURL: model.args.thumbnailURL) {
-                    Task { await model.retry() }
-                }
-            }
         // Task 9: every non-playable state (`.idle`/`.loading`/`.error`/`.contentUnavailable`/
         // `.cooldown`/`.recoveryExhausted`) shares ONE `PlayerStateView` mount -- see that type's
         // doc comment for why one shared view identity (not a case per state) is what makes the
@@ -512,7 +484,7 @@ struct PlayerScreen: View {
 
     /// The audio-only toggle (ruling 34, spec §10). Offered only while the resolved stream really
     /// carries an itag 140 rendition (`PlayerViewModel.audioOnlyAvailable`) -- rung 2's muxed
-    /// progressive has no separate audio, and neither does `.embed`/live.
+    /// progressive has no separate audio, and neither does live.
     /// `.accessibilityAddTraits(.isSelected)`, not an `accessibilityValue`: no existing string key
     /// carries generic on/off wording (the favorite button uses two DISTINCT labels because it
     /// changes meaning; this one does not), and B2 adds no new keys. The selected trait is what
@@ -631,9 +603,6 @@ struct PlayerScreen: View {
         if LaunchArguments.debug.contains("-fitrah-fake-player-cooldown") {
             return FixtureCooldownResolver()
         }
-        if LaunchArguments.debug.contains("-fitrah-fake-player-embed") {
-            return FixtureEmbedResolver()
-        }
         if LaunchArguments.debug.contains("-fitrah-fake-player") {
             return FixturePlayerResolver()
         }
@@ -741,17 +710,6 @@ private struct FixtureCooldownResolver: StreamResolving {
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
-    }
-}
-
-/// B3 task 2 screenshot rig: rung 3, the ladder's floor. `.embed` needs no network and no bundled
-/// asset -- the video id is the whole stream.
-private struct FixtureEmbedResolver: StreamResolving {
-    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
-        Resolved(stream: .embed(videoId: videoId), client: .web,
-                 userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
 }
 

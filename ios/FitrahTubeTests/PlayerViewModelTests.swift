@@ -13,7 +13,6 @@ struct PlayerViewModelTests {
 
     private static let hls = resolved(.hls(url: URL(string: "https://example.com/a.m3u8")!, isLive: false, audioOnlyURL: nil, captionTracks: []))
     private static let progressive = resolved(.progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"))
-    private static let embed = resolved(.embed(videoId: "abcdefghijk"))
 
     /// `Self.hls` carries `expiresAt: nil`, which `shouldPreemptivelyReResolve` reads as "never
     /// expires" -- the silent-refresh test below needs a stream that actually does expire.
@@ -83,46 +82,17 @@ struct PlayerViewModelTests {
         #expect(vm.state == .rung2Progressive(Self.progressive))
     }
 
-    @Test func embedMapsToTheEmbedState() async {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]))
-        await vm.open()
-        #expect(vm.state == .embed(Self.embed))
-    }
-
-    /// OWNER DIRECTIVE 2026-08-27: there is no hand-off rung, in EITHER Safe Mode setting. The
-    /// ladder's floor is the embed, and the embed is what Safe Mode must keep -- it is the rung that
-    /// holds a child inside the app. (The resolver can no longer even emit a hand-off: the enum case
-    /// is gone, which is what makes this test's `for` loop exhaustive rather than illustrative.)
-    @Test func theLadderNeverProducesAHandOffInEitherSafeModeState() async {
-        for safeMode in [false, true] {
-            let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]), safeMode: safeMode)
-            await vm.open()
-            #expect(vm.state == .embed(Self.embed), "safeMode: \(safeMode)")
-        }
-    }
-
-    @Test func aSilentRefreshNeverSwapsAPlayingStreamIntoTheEmbed() async {
+    @Test func aSilentRefreshNeverReplacesAPlayingStreamWithAFailure() async {
         // CF-B2-3 + plan §6.6: `reResolveIfExpiring` shows the user nothing, so it must not be able to
         // change the playback SURFACE. The near-expiry rung-1 stream keeps playing; reactive recovery
         // (which never passes `silent:`) owns the demotion, loudly, once the stream actually fails.
         let expiring = Self.expiringHLS()
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(expiring), .success(Self.embed)]),
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(expiring), .failure(ExtractionError.allRungsFailed)]),
                                safeMode: false)
         await vm.open()
         #expect(vm.state == .ready(expiring))
         await vm.reResolveIfExpiring(now: .distantFuture)   // well past `expiresAt - margin`, so it fires
-        #expect(vm.state == .ready(expiring))               // embed result dropped; rung 1 still playing
-    }
-
-    @Test func embedActionsMapOntoTerminalStates() {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: []), safeMode: false)
-        vm.applyEmbedAction(.fail(messageKey: "player_embed_removed"))
-        #expect(vm.state == .error(messageKey: "player_embed_removed"))
-        vm.applyEmbedAction(.fail(messageKey: "player_stream_unavailable"))
-        #expect(vm.state == .error(messageKey: "player_stream_unavailable"))
-        // CF-B3-10: terminal embed errors land on `.unplayable` (no Retry), never on `.error`.
-        vm.applyEmbedAction(.unplayable(messageKey: "player_embed_removed"))
-        #expect(vm.state == .unplayable(messageKey: "player_embed_removed"))
+        #expect(vm.state == .ready(expiring))               // failure dropped; rung 1 still playing
     }
 
     @Test func unavailableMapsToContentUnavailable() async {

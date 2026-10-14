@@ -5,8 +5,7 @@ import Testing
 @Suite struct RemoteConfigTests {
     @Test func bundledDefaultDecodesWithConfirmedClientTable() {
         let config = RemoteConfig.bundledDefault
-        // B3 embed ruling (2026-08-27): the embed rung ships DARK. The bundled default is exactly the
-        // two native rungs; `embed` stays a known strategy so a PUBLISHED config can turn it on.
+        // The bundled default is exactly the two native rungs; there is no third.
         #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
         #expect(config.schemaVersion == 1)
         #expect(config.minAppVersion == "1.0.0")
@@ -36,7 +35,7 @@ import Testing
     @Test func refreshDropsAPublishedOpenInYouTubeRung() async {
         let body = Data(
             """
-            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","openInYouTube","embed"],"manifestCacheSeconds":3600,"clients":{}}
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","openInYouTube","androidItag18"],"manifestCacheSeconds":3600,"clients":{}}
             """.utf8)
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
@@ -44,12 +43,14 @@ import Testing
         let store = RemoteConfigStore(
             transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
         await store.refresh()
-        #expect(await store.current().resolverOrder == ["visionosHLS", "embed"])
+        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18"])
     }
 
-    /// The other half of "ship dark": `embed` is not in the bundled default, but `sanitized(_:)`
-    /// must still KEEP it, or the emergency lever (enable the rung from a published config) is gone.
-    @Test func refreshKeepsAPublishedEmbedRung() async {
+    /// OWNER DIRECTIVE 2026-10-14: no YouTube player of any kind. Builds 1.0.0 / 1.0.2 were served a
+    /// published config that listed `embed` as a third rung; `embed` is no longer a known strategy,
+    /// so `sanitized(_:)` must drop it exactly as it drops `openInYouTube` -- the published file can
+    /// never turn a YouTube player back on.
+    @Test func refreshDropsAPublishedEmbedStrategy() async {
         let body = Data(
             """
             {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","androidItag18","embed"],"manifestCacheSeconds":3600,"clients":{}}
@@ -60,7 +61,7 @@ import Testing
         let store = RemoteConfigStore(
             transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
         await store.refresh()
-        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18", "embed"])
+        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18"])
     }
 
     @Test func refreshDedupesAndCapsResolverOrderAndClampsANegativeCacheTTL() async {
@@ -69,7 +70,7 @@ import Testing
         // every cache entry's expiry, silently disabling the manifest cache). Dedupe preserves first
         // occurrence order, the ladder is capped at 8 rungs, and the TTL floor is 0 (0 = no cache is
         // a legitimate published choice; negative is not).
-        let repeated = Array(repeating: "\"visionosHLS\",\"embed\"", count: 6).joined(separator: ",")
+        let repeated = Array(repeating: "\"visionosHLS\",\"androidItag18\"", count: 6).joined(separator: ",")
         let body = Data(
             """
             {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":[\(repeated)],"manifestCacheSeconds":-5,"clients":{}}
@@ -81,14 +82,14 @@ import Testing
             transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
         await store.refresh()
         let config = await store.current()
-        #expect(config.resolverOrder == ["visionosHLS", "embed"])
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
         #expect(config.manifestCacheSeconds == 0)
     }
 
     @Test func refreshDropsUnknownResolverStrategy() async {
         let body = Data(
             """
-            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","magic","embed"],"manifestCacheSeconds":3600,"clients":{}}
+            {"schemaVersion":1,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS","magic","androidItag18"],"manifestCacheSeconds":3600,"clients":{}}
             """.utf8)
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: body))
@@ -97,7 +98,7 @@ import Testing
             transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
         await store.refresh()
         let config = await store.current()
-        #expect(config.resolverOrder == ["visionosHLS", "embed"])
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
     }
 
     /// CF-G-13: a published order that sanitizes to EMPTY (all-unknown, or literally `[]`) must not
@@ -122,13 +123,13 @@ import Testing
     @Test func oversizedFetchIsRejectedKeepingLastGood() async {
         let goodBody = Data(
             """
-            {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
+            {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":60,"clients":{}}
             """.utf8)
         // Well-formed (fully decodable) RemoteConfig padded past 64 KiB via one client's
         // oversized userAgent — NOT non-JSON garbage. Garbage would fail to decode regardless of
         // check ordering, so it can't catch a "decode before size check" regression; this can.
         let oversizedConfig = RemoteConfig(
-            schemaVersion: 3, minAppVersion: "1.0.0", resolverOrder: ["embed"], manifestCacheSeconds: 60,
+            schemaVersion: 3, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS"], manifestCacheSeconds: 60,
             clients: [
                 "padding": ClientContext(
                     clientName: "PADDING", clientVersion: "1", clientNameId: 1,
@@ -157,11 +158,11 @@ import Testing
     @Test func aNon200ResponseWithADecodableBodyKeepsLastGood() async {
         let goodBody = Data(
             """
-            {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
+            {"schemaVersion":2,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":60,"clients":{}}
             """.utf8)
         let errorBody = Data(
             """
-            {"schemaVersion":3,"minAppVersion":"1.0.0","resolverOrder":["embed"],"manifestCacheSeconds":60,"clients":{}}
+            {"schemaVersion":3,"minAppVersion":"1.0.0","resolverOrder":["visionosHLS"],"manifestCacheSeconds":60,"clients":{}}
             """.utf8)
         let transport = FixtureTransport(routes: [
             .init(match: { _ in true }, response: .init(status: 500, headers: [:], body: errorBody))
@@ -220,9 +221,10 @@ import Testing
             transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(try Data(contentsOf: URL(filePath: path))),
             url: URL(string: "https://example.invalid/none")!)
         let config = await store.current()
-        // Published for App Review (Phase 6 plan §9): embed must stay LAST -- YouTube's player is
-        // the fallback, never the first rung. The BUNDLED default stays two rungs.
-        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "embed"])
+        // The published ladder is the two native rungs, same as the BUNDLED default. It lost its
+        // `embed` third rung to owner directive 2026-10-14 (no YouTube player), and `sanitized`
+        // would drop the entry even if it came back.
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
         #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }

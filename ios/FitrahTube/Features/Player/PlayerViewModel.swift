@@ -119,14 +119,6 @@ extension StreamState {
         return isLive
     }
 
-    /// Cubic #3 (= gstack R2): `.embed` is a successful playback surface for auto-advance purposes
-    /// even though it is deliberately NOT `isPlayable` -- it has no `AVPlayer` to preserve, is never
-    /// cached and never counts as a healthy fetch (`StreamResolver.succeed`), which is why it stays
-    /// out of `resolved`/`isPlayable` rather than being folded in.
-    var isEmbedRung: Bool {
-        if case .embed = self { return true }
-        return false
-    }
 }
 
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
@@ -422,16 +414,7 @@ extension StreamState {
         // `.loading` as a failed advance, burned a skip walking `queue.advance()` off the user's
         // pick, and its recursive resolve superseded the tap's.
         guard stillCurrent else { return }
-        // `.embed` counts as a successful advance (Cubic #3): the video shows in PlayerScreen's
-        // embed branch and a direct tap would have played it -- skipping it burnt a
-        // `consecutiveSkips` slot on a playable item. Backgrounded, the same hop stops the queue
-        // instead (traced, not guessed): the state change dismantles `PlayerHostView`, whose
-        // teardown runs `BackgroundPlaybackController.detach()` (audio session released, and
-        // `NowPlayingSnapshot.make` already returns nil for `.embed` per CF-B2-9, clearing the lock
-        // screen), and the embed's WKWebView cannot autoplay without the foreground -- so playback
-        // ends silently at the embed item with the queue position preserved for the return to
-        // foreground. That is the existing background pause semantics, not a skip.
-        if state.isPlayable || state.isEmbedRung {
+        if state.isPlayable {
             consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
             await prefetchUpcoming()
             await pageIfNeeded()
@@ -643,9 +626,8 @@ extension StreamState {
     /// resolved URL is bound to the phone's IP either way, so a fresh walk buys the receiver
     /// nothing; only genuine expiry does.
     ///
-    /// `nil` = nothing castable (the embed rung, or a refusal with no usable stream behind it) --
-    /// the caller surfaces that as the same "Couldn't play on {device}" a receiver's own refusal
-    /// produces.
+    /// `nil` = nothing castable (a refusal with no usable stream behind it) -- the caller surfaces
+    /// that as the same "Couldn't play on {device}" a receiver's own refusal produces.
     ///
     /// Only the muxed itag-18 MP4 is castable (`CastMedia.make`: a receiver cannot play the rung-1
     /// manifest). So a manifest on screen is never reused: the cast walks the muxed rung itself.
@@ -658,8 +640,7 @@ extension StreamState {
     /// `.cast` purpose: a bot check on this walk fails the cast only (the existing banner) and never
     /// records InnerTubeKit's GLOBAL cooldown -- from the usual `.hls` the phone never tried the
     /// android rung, so a trip here would lock out its WORKING rung-1 playback for 1-24 h. The
-    /// offline save's identical walk (`.prefetch`) still records it. Nothing is walked from the
-    /// embed rung, where the phone's own walk already saw the android rung fail. NOT skipped for
+    /// offline save's identical walk (`.prefetch`) still records it. NOT skipped for
     /// `state.isLive`: that flag reads `isLiveContent` for an ENDED
     /// broadcast -- nhaGO__rxHQ resolves `.hls(isLive: true)`, yet its itag-18 walk played on a real
     /// Chromecast (2026-09-27).
@@ -669,7 +650,6 @@ extension StreamState {
         // the outgoing video's stream. Joining the walk this player is already making is free.
         await resolveTask?.value
         if let media = currentCastStream(now: now).flatMap({ CastMedia.make(resolved: $0, args: args) }) { return media }
-        if case .embed = state { return nil }
         do {
             let resolved = try await resolver.resolve(args.videoId, purpose: .cast, kind: .player,
                                                       sourceChannelId: args.channelId, forceRefresh: false,
@@ -921,9 +901,8 @@ extension StreamState {
         guard attempt == castAttempts, args.videoId == videoId,
               cast.stillCasting(videoId, owner: castOwner) else { return }
         guard let media else {
-            // Nothing castable: the embed rung (never castable -- the no-hand-off directive), a
-            // resolve that did not come back, or a near-expiry URL that could not outlive
-            // what is left to play. Same outcome for the user as a receiver refusing the load, so
+            // Nothing castable: a resolve that did not come back, or a near-expiry URL that could
+            // not outlive what is left to play. Same outcome for the user as a receiver refusing the load, so
             // it gets the same banner rather than copy of its own.
             cast.reportLoadFailure(claim: CastClaim(videoId: videoId, owner: castOwner))
             return
@@ -1055,7 +1034,7 @@ extension StreamState {
         // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
         // because by then the stream has actually stopped working.
         if silent, !result.isPlayable { return }
-        // Together, always: `.unplayable`/`.error`/`.contentUnavailable` results move it too --
+        // Together, always: `.error`/`.contentUnavailable` results move it too --
         // the state on screen is now THIS video's, whatever it says.
         resolvedVideoId = videoId
         state = result
@@ -1070,23 +1049,6 @@ extension StreamState {
             return .ready(resolved)
         case .progressive:
             return .rung2Progressive(resolved)
-        case .embed:
-            // The floor of the ladder. Safe Mode deliberately does NOT suppress this rung: it keeps
-            // playback inside the app, which is the thing Safe Mode exists to preserve.
-            return .embed(resolved)
-        }
-    }
-
-    /// Task 4's bridge from an IFrame error to a `StreamState`. Split from `EmbedErrorPolicy`
-    /// (which is pure) so the policy stays a truth table.
-    func applyEmbedAction(_ action: EmbedErrorAction) {
-        switch action {
-        case .reloadOnce:
-            break                       // the view reloads its own web view; the state does not move
-        case .fail(let messageKey):
-            state = .error(messageKey: messageKey)
-        case .unplayable(let messageKey):
-            state = .unplayable(messageKey: messageKey)
         }
     }
 
