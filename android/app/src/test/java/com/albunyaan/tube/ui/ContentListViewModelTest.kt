@@ -391,7 +391,7 @@ class ContentListViewModelTest {
         fakeService.gates[1] = CompletableDeferred() // the search hangs until released
         val vm = createViewModel()
         advanceUntilIdle()
-        vm.setSearchQuery("ab"); advanceUntilIdle() // debounce passed, the search fetch is in flight
+        vm.setSearchQuery("ab"); advanceUntilIdle() // the search fetch is in flight
         val refreshing = ContentListViewModel.ContentState.Loading(ContentListViewModel.LoadingType.REFRESH, listOf(createVideo("1")))
         assertEquals(refreshing, vm.content.value)
 

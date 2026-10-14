@@ -94,7 +94,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 override fun onQueryTextSubmit(query: String?): Boolean {
                     query?.let {
                         if (it.isNotBlank()) {
-                            performSearch(it) // now: it replaces the pending typing debounce
+                            performSearch(it)
                             saveToHistory(it)
                         }
                     }

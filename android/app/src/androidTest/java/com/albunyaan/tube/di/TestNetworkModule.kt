@@ -49,7 +49,7 @@ import javax.inject.Singleton
 )
 object TestNetworkModule {
 
-    /** Shared so a test can script search answers; reset it in @After. */
+    /** Shared so a test can script search and content answers; call resetSearch / resetContent in @After. */
     val fakeContentApi = FakeContentApi()
 
     @Provides
