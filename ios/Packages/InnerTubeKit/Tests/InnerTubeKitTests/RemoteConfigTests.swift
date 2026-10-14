@@ -220,9 +220,9 @@ import Testing
             transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(try Data(contentsOf: URL(filePath: path))),
             url: URL(string: "https://example.invalid/none")!)
         let config = await store.current()
-        // Published for App Review (Phase 6 plan §9): embed must stay LAST -- YouTube's player is
-        // the fallback, never the first rung. The BUNDLED default stays two rungs.
-        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "embed"])
+        // Owner directive 2026-10-14: never a YouTube player (no embed rung) -- the published
+        // ladder matches the BUNDLED default's two direct-stream rungs.
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
         #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }
