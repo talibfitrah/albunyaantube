@@ -1,0 +1,89 @@
+# Concept map for the search "related" tier (spec 2026-10-13 §4.5).
+# One group per line, comma-separated variants; '#' starts a comment.
+# Seeded once from TagEnrichmentService.TRANSLATION_DICT; that map stays as is (spec §12 Q6).
+quran, Qur'an, Qur'aan, Quraan, Qoran, Kuran, Qouran, القرآن, قرآن, Koran, Koraan
+recitation, tilawah, tilaawah, tilawa, tilaawa, تلاوة, recitatie
+surah, sura, soorah, suurah, سورة, soera, soerah
+ayah, aya, ayat, aayah, aayat, آية, آيات, vers, Koranvers
+juz, juz', joez, juzz, juzu, جزء, djuz, djoez
+tajweed, tajwid, tajwied, tajwead, tajuid, tadsjwied, تجويد
+hifdh, hifz, hifth, hifdz, hifzh, hifaz, memorization, memorisation, حفظ, memorisatie
+tafsir, tafseer, tafsier, tafsiir, تفسير, exegese, uitleg
+mushaf, mus-haf, moshaf, moeshaf, مصحف, Koranexemplaar
+qari, qaari, qari', qarie, قارئ, reciteerder
+hadith, hadeeth, hadieth, hadiths, ahadith, ahaadith, حديث, أحاديث, overlevering, hadies
+sunnah, sunna, sunneh, soennah, soenna, soenneh, سنة, السنة النبوية
+sahih, saheeh, sahieh, shahih, صحيح, authentic, authentiek
+bukhari, Bukhary, Bukhaari, Boukhari, البخاري, Boechari, Boekharie, Boekhari
+nawawi, An-Nawawi, Nawawie, Nawawy, An-Nawawie, النووي
+aqeedah, aqeeda, aqidah, aqida, akidah, akieda, aqiedah, aqieda, creed, عقيدة, geloofsleer
+tawheed, tawhid, tauheed, tauhid, tawhied, tauhied, taohied, monotheism, توحيد, monotheisme
+iman, imaan, eemaan, iemaan, faith, إيمان, geloof
+qadr, qadar, kadr, kadar, qadaa, القدر, goddelijk besluit, voorbeschikking
+fiqh, fiqah, fikeh, fikh, fiqih, jurisprudence, فقه, jurisprudentie
+salah, salat, salaah, salaat, sholat, shalat, solaat, namaz, prayer, صلاة, gebed
+sawm, saum, siyam, siyaam, saom, sjaum, fasting, صيام, صوم, vasten
+zakat, zakaat, zakaah, zakah, zakaaat, زكاة
+hajj, haj, hadj, hadjdj, hadsch, pilgrimage, حج, bedevaart
+umrah, umra, oemrah, oemra, عمرة
+wudu, wudhu, wudoo, wudhoo, wudoe, ablution, وضوء, woedoe, woedhoe
+halal, halaal, helal, حلال
+haram, haraam, حرام
+fatwa, fatwaa, fatawa, fatwah, فتوى, فتاوى
+shariah, sharia, shari'ah, shariyah, shariaa, sjaria, syariah, Islamic law, شريعة, islamitisch recht
+seerah, sirah, siera, sierah, siira, seera, biography, سيرة, biografie
+prophet, prophet Muhammad, Muhammed, Mohammad, Mohammed, النبي, الرسول, محمد, Profeet, profeet Mohammed
+sahaba, sahabah, sahaaba, sahaabah, sahabi, companions, الصحابة, metgezellen
+hijrah, hijra, hegira, hidjra, hidjrah, hidjre, migration, الهجرة
+makkah, Makka, Mecca, Mekkah, مكة, Mekka
+madinah, Madina, Medina, Medinah, المدينة
+islam, Islaam, al-Islam, إسلام, الإسلام
+muslim, Muslimah, Moslem, مسلم, moslim, moslima
+allah, Allaah, الله
+dua, du'a, du'aa, duaa, doea, doe'a, supplication, دعاء, smeekbede
+dhikr, zikr, thikr, dikr, zikir, dzikr, dikir, remembrance, ذكر, gedenking
+khutbah, khutba, kutba, kutbah, khotba, khotbah, choetba, sermon, خطبة, preek, vrijdagpreek
+halaqah, halaqa, halaka, halakah, study circle, حلقة, studiekring
+dawah, da'wah, daawa, dakwah, da'wa, daawah, invitation to Islam, دعوة, uitnodiging tot Islam
+nasheed, nashied, nashid, naseed, anasheed, anashied, anaasheed, نشيد, أناشيد
+masjid, masjed, masdjid, mesjid, mosque, مسجد, moskee
+ramadan, Ramadhaan, Ramadhan, Ramadaan, Ramadaane, Ramzan, رمضان
+shahada, shahadah, shahaadah, sjahada, شهادة, geloofsbelijdenis
+eid, Eid al-Fitr, Eid al-Adha, Ied, Ied al-Fitr, Ied al-Adha, عيد, عيد الفطر, عيد الأضحى
+ruqyah, ruqya, roqya, rukya, roqia, ruqia, رقية, الرقية الشرعية
+adhkar, athkar, azkar, adzkaar, adkaar, أذكار
+arabic, al-Arabiyyah, العربية, Arabisch
+ilm, 'ilm, ielm, knowledge, علم, kennis
+ulama, ulema, oelama, oelema, scholars, علماء, geleerden
+sheikh, shaykh, shaikh, sheik, sjiekh, sjeikh, شيخ
+ustadh, ustaadh, ustaz, ustad, أستاذ
+revert, convert, new Muslim, مسلم جديد, bekeerling, nieuwe moslim
+family, أسرة, gezin, familie
+children, kids, أطفال, kinderen
+youth, teens, شباب, jeugd, tieners
+andalusia, Al-Andalus, الأندلس, Andalusie
+caliphate, khilafah, khilaafah, khilafa, chilafaat, خلافة, kalifaat
+golden_age, golden age, العصر الذهبي, gouden eeuw
+tawakkul, tawakul, tawakkol, tawakoel, reliance on Allah, توكل, vertrouwen op Allah
+sabr, sabar, sabir, patience, صبر, geduld
+shukr, syukur, shukur, sjoekr, gratitude, شكر, dankbaarheid
+taqwa, takwa, taqwaa, takwaa, God-consciousness, تقوى, godvrezendheid
+tawbah, tawba, taubah, tauba, tobah, toebah, repentance, توبة, berouw
+ikhlas, ikhlaas, ichlaas, ikhlash, sincerity, إخلاص
+al-fatiha, Al-Fatihah, Al-Faatiha, Al-Fateha, Al-Faticha, الفاتحة, De Opening
+al-baqarah, Al-Baqara, Al-Bakara, Al-Bakarah, البقرة, De Koe
+al-imran, Aal-Imran, Ali-Imraan, Aal-i-Imraan, آل عمران
+yasin, Ya-Sin, Yaseen, Yaasin, Yaasien, يس
+ar-rahman, Ar-Rahmaan, Al-Rahman, الرحمن, De Barmhartige
+al-mulk, Al-Moelk, الملك, De Heerschappij
+al-kahf, Al-Kahfi, Al-Kahaf, الكهف, De Grot
+al-ikhlas, Al-Ikhlaas, Al-Ichlaas, الإخلاص
+al-falaq, Al-Falak, الفلق
+an-nas, An-Naas, الناس
+juz-amma, Juz Amma, Juz' Amma, Juzz Amma, Joez Amma, جزء عم, Djuz Amma, Djoez Amma
+al-waaqiah, Al-Waqiah, Al-Waaqi'ah, Al-Vakiah, الواقعة
+bismillah, Bismillaah, Bism Allah, Bismillahi, بسم الله
+alhamdulillah, Al-hamdulillah, Alhamdulillaah, الحمد لله
+subhanallah, Subhan Allah, SubhaanAllaah, سبحان الله
+allahuakbar, Allahu Akbar, Allaahu Akbar, الله أكبر
+inshaallah, Insha'Allah, InshAllah, Insjallah, إن شاء الله
