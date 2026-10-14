@@ -1,0 +1,23 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerDescriptionsTest.kt
+  s_dbb6b1f3671904::t_a22ff023c53eb9 245-246,276-281,290
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerDescriptions.kt
+  s_dbb6b1f3671904::t_a3db3d9d8620fa 61-64,67,71,88
+android/app/src/androidTest/java/com/albunyaan/tube/ui/NoYouTubeLinksScreensTest.kt
+  s_dbb6b1f3671904::t_cf780e592ef8a3 99-100,103
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f64dd7a82a38e3bed19a8f9ea8e0d6a192e8dfeb",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
