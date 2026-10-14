@@ -1,4 +1,9 @@
 {
+  "1.0.3": {
+    "en": "Smarter search: forgives typos, shows related results when nothing matches, and updates smoothly as you type.",
+    "ar": "بحث أذكى: يتسامح مع الأخطاء الإملائية، ويعرض نتائج قريبة عند عدم التطابق، ويتحدّث بسلاسة أثناء الكتابة.",
+    "nl": "Slimmer zoeken: vergeeft typfouten, toont verwante resultaten als niets past en werkt soepel bij met typen."
+  },
   "1.0.2": {
     "en": "Sign-up profiles save again after verifying your email; sign-in screens are centred.",
     "ar": "يُحفظ ملف التسجيل مجددًا بعد تأكيد بريدك الإلكتروني؛ شاشات الدخول أصبحت في المنتصف.",
