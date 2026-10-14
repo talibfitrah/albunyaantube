@@ -1008,7 +1008,7 @@ public class PublicContentService {
      * id) is still searched as text (ruling F6).
      */
     public SearchIndex.Hits search(String query, String type, int limit) throws IOException {
-        String q = query == null ? "" : query.trim();
+        String q = query.trim(); // `/search` binds q as a required parameter: never null
         if (q.length() > MAX_QUERY_LENGTH) q = q.substring(0, MAX_QUERY_LENGTH);
         String docType = SearchIndex.docType(type);
         YouTubeIdentifier identifier = parseYouTubeIdentifier(q);
@@ -1032,7 +1032,7 @@ public class PublicContentService {
                                     String length, String date, String q)
             throws ExecutionException, InterruptedException, TimeoutException, IOException {
         String docType = SearchIndex.docType(type);
-        if (docType == null || q == null || q.trim().length() < 2) return null;
+        if (docType == null || q.length() < 2) return null; // the controller passes q trimmed and non-empty
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
         boolean videoFilters = "VIDEO".equals(docType)
                 && ((length != null && !length.isBlank()) || (date != null && !date.isBlank()));

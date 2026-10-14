@@ -408,7 +408,7 @@ public class SearchIndex {
         awaitReady();
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
-        if (tokens.isEmpty() || want <= 0) return Hits.NONE;
+        if (tokens.isEmpty()) return Hits.NONE;
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String match = "none";
@@ -603,7 +603,7 @@ public class SearchIndex {
         doc.add(new TextField(field + "_stem", value, Field.Store.NO));
     }
 
-    /** Moved from PublicContentService#streamToDto. A stream shown as a stream has no Video document, so no upload date. */
+    /** A stream shown as a stream has no Video document, so no upload date. */
     static ContentItemDto streamDto(SearchableStream s) {
         return ContentItemDto.video(s.getStreamId(), s.getTitle(), null,
                 s.getDurationSeconds() != null ? s.getDurationSeconds().intValue() : 0,
