@@ -505,6 +505,14 @@ public class VideoRepository {
     }
 
     /**
+     * Every video document, uncapped and unordered, for the search index (spec §2.3: 1,020 documents
+     * exceed findAll()'s 1,000 default cap) — and not filtered by an orderBy field being present.
+     */
+    public List<Video> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
      * Find all videos ordered by createdAt ascending (oldest first) with limit.
      * Used by admin Content Library when sort=oldest is requested.
      *
