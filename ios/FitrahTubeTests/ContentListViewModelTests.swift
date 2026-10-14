@@ -576,6 +576,31 @@ struct ContentListViewModelTests {
         #expect(shownIDs(vm) == echoIDs("ab"))
     }
 
+    /// A4 parity: a load-more that fires inside the 300 ms debounce pages the list on screen, so it
+    /// asks with that list's query -- never the newer text, whose page would land under a query it
+    /// was not fetched for (and carry the old query's cursor).
+    @Test func aLoadMoreDuringTheDebouncePagesTheShownQuery() async {
+        let debounce = Gate()
+        let pages = [CursorPage(items: items(count: 20, prefix: "p0"), nextCursor: "1"),
+                     CursorPage(items: items(count: 20, prefix: "p1"), nextCursor: nil)]
+        let client = RecordingCatalogClient(pages: pages)
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { _ in await debounce.block() }
+        await vm.load() // the plain list, with a next page
+
+        vm.query = "ab"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        await vm.loadMore() // inside the debounce window
+
+        let calls = await client.calls
+        #expect(calls.count == 2)
+        #expect(calls[1].cursor == "1")
+        #expect(calls[1].query == nil) // the shown list's query, not "ab"
+
+        await debounce.release()
+        await typed?.value
+    }
+
     /// S14 (RULINGS #22 parity): the keyboard's Search key searches at once -- it neither waits for
     /// a pending debounce nor applies the 2-character floor -- and the debounce it overtook never
     /// fetches a second time.

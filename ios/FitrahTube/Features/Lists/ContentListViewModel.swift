@@ -88,6 +88,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     private var itemsFilter: FilterState?
     /// Readable by `ContentListView`, which scrolls to the top when it changes: a new query's
     /// results replaced the list (A7). A page appended below or a refresh leaves it as it is.
+    /// `fetchMore` pages with it, so a page always pairs with the query its cursor came from.
     private(set) var itemsQuery: String?
 
     /// Fix round 1, finding #1 (`content-lists.md:256,278-280`): a terminal load/refresh failure
@@ -238,7 +239,9 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
         // newest load-more: a superseded one returning late must not unlock a live guard (W2).
         defer { if generation == loadGeneration { isLoadingMore = false } }
         do {
-            let page = try await catalog.content(type: type, cursor: nextCursor, limit: pageSize, filter: filter.state, query: queryParam)
+            // `itemsQuery`, not `queryParam`: inside the debounce the field already holds newer text,
+            // but `nextCursor` and the list being paged belong to the query that fetched them (A4).
+            let page = try await catalog.content(type: type, cursor: nextCursor, limit: pageSize, filter: filter.state, query: itemsQuery)
             guard !Task.isCancelled, generation == loadGeneration else { return }
             // Dedupe by id, mirroring `HomeViewModel.fetchMore` (gate B1-minor-6): the grid's
             // `ForEach(..., id: \.element.id)` is over blindly appended pages, so a cursor overlap
