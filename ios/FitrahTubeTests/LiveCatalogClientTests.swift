@@ -117,8 +117,22 @@ struct LiveCatalogClientTests {
         ]
         """#.utf8)
         let (sut, transport) = makeClient(responseBody: json)
-        let items = try await sut.search(query: "quran", type: nil, limit: 50)
-        #expect(items.map(\.id) == ["ch1", "p1", "v1"])
+        let result = try await sut.search(query: "quran", type: nil, limit: 50)
+        #expect(result.items.map(\.id) == ["ch1", "p1", "v1"])
         #expect(transport.lastRequest?.path == "/v1/search?q=quran&limit=50")
+    }
+
+    @Test func searchReadsTheMatchHeaderAndDefaultsToExact() async throws {
+        let json = Data(#"[{"id":"v1","type":"VIDEO","title":"Some Video"}]"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+
+        transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "approximate"]
+        #expect(try await sut.search(query: "zakit", type: nil, limit: 50).match == .approximate)
+
+        transport.extraHeaders = [:]
+        #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
+
+        transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "something-new"]
+        #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
     }
 }

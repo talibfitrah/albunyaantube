@@ -116,7 +116,7 @@ import Foundation
         lastSearchedQuery = q
         state = .loading
         do {
-            let results = try await catalog.search(query: q, type: nil, limit: Self.pageSize)
+            let results = try await catalog.search(query: q, type: nil, limit: Self.pageSize).items
             guard !Task.isCancelled else { return }
             state = results.isEmpty ? .noResults : .results(results)
         } catch {

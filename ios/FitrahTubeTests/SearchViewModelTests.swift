@@ -23,11 +23,13 @@ struct SearchViewModelTests {
         struct Boom: Error {}
 
         private let results: [ContentItem]
+        private let match: SearchMatch
         private let shouldThrow: Bool
         private(set) var calls: [Call] = []
 
-        init(results: [ContentItem] = [], shouldThrow: Bool = false) {
+        init(results: [ContentItem] = [], match: SearchMatch = .exact, shouldThrow: Bool = false) {
             self.results = results
+            self.match = match
             self.shouldThrow = shouldThrow
         }
 
@@ -38,10 +40,10 @@ struct SearchViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] {
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
             calls.append(Call(query: query, type: type, limit: limit))
             if shouldThrow { throw Boom() }
-            return results
+            return SearchResult(items: results, match: match)
         }
     }
 
@@ -61,11 +63,11 @@ struct SearchViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] {
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
             calls.append(query)
             callCount += 1
             if callCount == 1 { throw Boom() }
-            return results
+            return SearchResult(items: results)
         }
     }
 

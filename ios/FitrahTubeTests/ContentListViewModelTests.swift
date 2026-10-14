@@ -30,7 +30,7 @@ struct ContentListViewModelTests {
             guard pages.indices.contains(index) else { return CursorPage(items: [], nextCursor: nil) }
             return pages[index]
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `content()` call succeeds; every call after that throws -- for pagination-error
@@ -56,7 +56,7 @@ struct ContentListViewModelTests {
             if callCount >= recoverAfter { return CursorPage(items: [], nextCursor: nil) }
             throw Boom()
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `content()` call resolves immediately; every later call suspends on `gate`.
@@ -79,7 +79,7 @@ struct ContentListViewModelTests {
             if callCount > 1 { await gate.block() }
             return page
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The Nth `content()` call suspends on `gates[N]` (1-based); every other call resolves at
@@ -104,7 +104,7 @@ struct ContentListViewModelTests {
             if let gate = gates[callCount] { await gate.block() }
             return page
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     // MARK: - Tests

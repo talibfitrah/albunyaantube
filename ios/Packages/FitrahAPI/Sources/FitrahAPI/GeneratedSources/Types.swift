@@ -875,6 +875,10 @@ public enum Components {
             public var displayOrder: Swift.Int?
             /// - Remark: Generated from `#/components/schemas/Video/videoType`.
             public var videoType: Components.Schemas.VideoType?
+            /// Whether this video may be saved for offline playback. Every approved video is saveable unless an admin explicitly set this to false (owner ruling 2026-09-27). GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may carry the raw stored flag, where null means never toggled. Clients MUST treat null/absent as true — only an explicit false blocks saving.
+            ///
+            /// - Remark: Generated from `#/components/schemas/Video/offlineAllowed`.
+            public var offlineAllowed: Swift.Bool?
             /// Creates a new `Video`.
             ///
             /// - Parameters:
@@ -899,6 +903,7 @@ public enum Components {
             ///   - updatedAt:
             ///   - displayOrder: Integer sort order. Lower values appear first. Null until explicitly set.
             ///   - videoType:
+            ///   - offlineAllowed: Whether this video may be saved for offline playback. Every approved video is saveable unless an admin explicitly set this to false (owner ruling 2026-09-27). GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may carry the raw stored flag, where null means never toggled. Clients MUST treat null/absent as true — only an explicit false blocks saving.
             public init(
                 id: Swift.String,
                 youtubeId: Swift.String,
@@ -920,7 +925,8 @@ public enum Components {
                 createdAt: Foundation.Date? = nil,
                 updatedAt: Foundation.Date? = nil,
                 displayOrder: Swift.Int? = nil,
-                videoType: Components.Schemas.VideoType? = nil
+                videoType: Components.Schemas.VideoType? = nil,
+                offlineAllowed: Swift.Bool? = nil
             ) {
                 self.id = id
                 self.youtubeId = youtubeId
@@ -943,6 +949,7 @@ public enum Components {
                 self.updatedAt = updatedAt
                 self.displayOrder = displayOrder
                 self.videoType = videoType
+                self.offlineAllowed = offlineAllowed
             }
             public enum CodingKeys: String, CodingKey {
                 case id
@@ -966,6 +973,7 @@ public enum Components {
                 case updatedAt
                 case displayOrder
                 case videoType
+                case offlineAllowed
             }
         }
         /// Items to exclude from a channel (videos, playlists, etc.)
@@ -1452,6 +1460,25 @@ public enum Operations {
         }
         @frozen public enum Output: Sendable, Hashable {
             public struct Ok: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// Set only when `q` is present: the match tier of the first item —
+                    /// exact, approximate, related or none. Clients read a missing or
+                    /// unknown value as exact.
+                    ///
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/headers/X-Search-Match`.
+                    public var xSearchMatch: Swift.String?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - xSearchMatch: Set only when `q` is present: the match tier of the first item —
+                    public init(xSearchMatch: Swift.String? = nil) {
+                        self.xSearchMatch = xSearchMatch
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetPublicContent.Output.Ok.Headers
                 /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/content`.
                 @frozen public enum Body: Sendable, Hashable {
                     /// - Remark: Generated from `#/paths/v1/content/GET/responses/200/content/json`.
@@ -1520,8 +1547,13 @@ public enum Operations {
                 /// Creates a new `Ok`.
                 ///
                 /// - Parameters:
+                ///   - headers: Received HTTP response headers
                 ///   - body: Received HTTP response body
-                public init(body: Operations.GetPublicContent.Output.Ok.Body) {
+                public init(
+                    headers: Operations.GetPublicContent.Output.Ok.Headers = .init(),
+                    body: Operations.GetPublicContent.Output.Ok.Body
+                ) {
+                    self.headers = headers
                     self.body = body
                 }
             }
@@ -2497,6 +2529,24 @@ public enum Operations {
         }
         @frozen public enum Output: Sendable, Hashable {
             public struct Ok: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// The match tier of the first item — exact, approximate, related
+                    /// or none. Clients read a missing or unknown value as exact.
+                    ///
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/headers/X-Search-Match`.
+                    public var xSearchMatch: Swift.String?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - xSearchMatch: The match tier of the first item — exact, approximate, related
+                    public init(xSearchMatch: Swift.String? = nil) {
+                        self.xSearchMatch = xSearchMatch
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.SearchPublicContent.Output.Ok.Headers
                 /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/content`.
                 @frozen public enum Body: Sendable, Hashable {
                     /// - Remark: Generated from `#/paths/v1/search/GET/responses/200/content/application\/json`.
@@ -2519,8 +2569,13 @@ public enum Operations {
                 /// Creates a new `Ok`.
                 ///
                 /// - Parameters:
+                ///   - headers: Received HTTP response headers
                 ///   - body: Received HTTP response body
-                public init(body: Operations.SearchPublicContent.Output.Ok.Body) {
+                public init(
+                    headers: Operations.SearchPublicContent.Output.Ok.Headers = .init(),
+                    body: Operations.SearchPublicContent.Output.Ok.Body
+                ) {
+                    self.headers = headers
                     self.body = body
                 }
             }

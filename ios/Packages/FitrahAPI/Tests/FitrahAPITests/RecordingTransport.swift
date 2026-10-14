@@ -9,6 +9,7 @@ nonisolated final class RecordingTransport: ClientTransport, @unchecked Sendable
     private(set) var lastBaseURL: URL?
     var status: HTTPResponse.Status = .ok
     var responseBody: Data = Data("[]".utf8)
+    var extraHeaders: HTTPFields = [:]
 
     init() {}
 
@@ -17,6 +18,7 @@ nonisolated final class RecordingTransport: ClientTransport, @unchecked Sendable
         lastBaseURL = baseURL
         var response = HTTPResponse(status: status)
         response.headerFields[.contentType] = "application/json"
+        response.headerFields.append(contentsOf: extraHeaders)
         return (response, HTTPBody(responseBody))
     }
 }

@@ -47,11 +47,12 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         return CursorPage(items: items, nextCursor: output.value1.pageInfo?.nextCursor)
     }
 
-    func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] {
+    func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult {
         let typeParam = type.flatMap { Operations.SearchPublicContent.Input.Query._TypePayload(rawValue: $0.rawValue) }
         let input = Operations.SearchPublicContent.Input(query: .init(q: query, _type: typeParam, limit: limit))
-        let dtos = try await client.searchPublicContent(input).ok.body.json
-        return dtos.map(Self.mapContentItem)
+        let ok = try await client.searchPublicContent(input).ok
+        return SearchResult(items: try ok.body.json.map(Self.mapContentItem),
+                            match: SearchMatch(header: ok.headers.xSearchMatch))
     }
 
     /// `dto._type`'s three cases (video/channel/playlist) map 1:1 onto `ContentType`. The switch

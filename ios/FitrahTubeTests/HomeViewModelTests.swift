@@ -28,7 +28,7 @@ struct HomeViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// Succeeds once (for the initial `load()`), then throws on every later call -- for testing
@@ -49,7 +49,7 @@ struct HomeViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `home()` call returns immediately (for `load()`'s setup); every call after that
@@ -75,7 +75,7 @@ struct HomeViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// Every call fails -- for the "nothing on screen yet" terminal-error path.
@@ -88,7 +88,7 @@ struct HomeViewModelTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     // MARK: - Tests

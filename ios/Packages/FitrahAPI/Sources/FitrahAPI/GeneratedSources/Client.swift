@@ -148,6 +148,11 @@ public struct Client: APIProtocol {
             deserializer: { response, responseBody in
                 switch response.status.code {
                 case 200:
+                    let headers: Operations.GetPublicContent.Output.Ok.Headers = .init(xSearchMatch: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "X-Search-Match",
+                        as: Swift.String.self
+                    ))
                     let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
                     let body: Operations.GetPublicContent.Output.Ok.Body
                     let chosenContentType = try converter.bestContentType(
@@ -168,7 +173,10 @@ public struct Client: APIProtocol {
                     default:
                         preconditionFailure("bestContentType chose an invalid content type.")
                     }
-                    return .ok(.init(body: body))
+                    return .ok(.init(
+                        headers: headers,
+                        body: body
+                    ))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,
@@ -634,6 +642,11 @@ public struct Client: APIProtocol {
             deserializer: { response, responseBody in
                 switch response.status.code {
                 case 200:
+                    let headers: Operations.SearchPublicContent.Output.Ok.Headers = .init(xSearchMatch: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "X-Search-Match",
+                        as: Swift.String.self
+                    ))
                     let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
                     let body: Operations.SearchPublicContent.Output.Ok.Body
                     let chosenContentType = try converter.bestContentType(
@@ -654,7 +667,10 @@ public struct Client: APIProtocol {
                     default:
                         preconditionFailure("bestContentType chose an invalid content type.")
                     }
-                    return .ok(.init(body: body))
+                    return .ok(.init(
+                        headers: headers,
+                        body: body
+                    ))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,

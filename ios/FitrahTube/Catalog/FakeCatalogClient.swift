@@ -65,7 +65,7 @@ nonisolated struct FakeCatalogClient: CatalogClient {
         page(cursor, from: contentPages)
     }
 
-    func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { searchResultsStore }
+    func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: searchResultsStore) }
 
     private func page<Item: Sendable & Hashable>(_ cursor: String?, from pages: [CursorPage<Item>]) -> CursorPage<Item> {
         let index = cursor.flatMap(Int.init) ?? 0
