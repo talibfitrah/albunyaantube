@@ -141,9 +141,10 @@ func attributedDescription(_ raw: String) -> AttributedString {
 }
 
 /// The match's text as written, with `http://` in front of a bare domain (`example.org/b`), the
-/// same scheme the detector adds, so the rule still judges the written host.
+/// same scheme the detector adds, so the rule still judges the written host. Only a LEADING scheme
+/// counts: `example.org/r?to=https://foo.com` is bare.
 private func asWritten(_ text: Substring) -> String {
-    text.contains("://") ? String(text) : "http://" + text
+    text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*:", options: .regularExpression) == nil ? "http://" + text : String(text)
 }
 
 /// The ONE link rule, the same as Android's `PlayerDescriptions.isOpenableLink` (keep the two in
@@ -151,11 +152,11 @@ private func asWritten(_ text: Substring) -> String {
 /// 2026-10-14: the app never hands users to YouTube. A link that fails stays visible as text:
 /// 1. no `\`, whitespace (anywhere: no trim), control character or soft hyphen;
 /// 2. scheme `http` or `https`;
-/// 3. a host that is ASCII as Foundation gives it. `URL(string:)` converts a non-ASCII host with
-///    IDNA (UTS 46, as a browser does: `ｙｏｕｔｕｂｅ.com` is `youtube.com`, `bücher.de` is
-///    `xn--bcher-kva.de`) and refuses an unassigned code point (nil). The host is read
-///    percent-decoded (`%79outube.com` is youtube.com); a decoded host that is not plain ASCII
-///    fails closed;
+/// 3. a host that is LDH (`a-z`, `0-9`, `.`, `-`) or an IPv6 literal as Foundation gives it.
+///    `URL(string:)` converts a non-ASCII host with IDNA (UTS 46, as a browser does:
+///    `ｙｏｕｔｕｂｅ.com` is `youtube.com`, `bücher.de` is `xn--bcher-kva.de`) and refuses an
+///    unassigned code point (nil). The host is read percent-decoded (`%79outube.com` is
+///    youtube.com); anything else left in it (non-ASCII, `@`, `%`, `_`) fails closed;
 /// 4. not `yt.be` or under it, no label starting with `youtube`, no label equal to `youtu` or
 ///    `withyoutube`: every YouTube domain, country domain, subdomain and redirecting marketing
 ///    domain. The accepted cost: an unrelated `youtuber.com` is text too.
@@ -166,14 +167,17 @@ func isOpenableLink(_ link: String) -> Bool {
     guard !link.unicodeScalars.contains(where: refused),
           let url = URL(string: link),
           let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
-          let host = url.host(percentEncoded: false),
-          host.unicodeScalars.allSatisfy({ $0.isASCII && !refused($0) })
+          let host = url.host(percentEncoded: false)?.lowercased(),
+          host.allSatisfy(ldh.contains) || (host.contains(":") && host.allSatisfy(ipv6.contains))
     else { return false }
-    let labels = host.lowercased().split(separator: ".")   // drops the empty label a trailing dot leaves
+    let labels = host.split(separator: ".")   // drops the empty label a trailing dot leaves
     let domain = labels.joined(separator: ".")
     guard !labels.isEmpty, domain != "yt.be", !domain.hasSuffix(".yt.be") else { return false }
     return !labels.contains { $0.hasPrefix("youtube") || $0 == "youtu" || $0 == "withyoutube" }
 }
+
+private let ldh = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+private let ipv6 = Set("0123456789abcdef:.")   // `[::1]` comes back from Foundation as `::1`
 
 #if DEBUG
 #Preview {

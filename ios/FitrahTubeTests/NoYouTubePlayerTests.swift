@@ -62,9 +62,12 @@ struct NoYouTubePlayerTests {
             offenders += Self.offenders(in: text, at: relative)
         }
 
-        // A scan that found nothing to read would pass for the wrong reason (the same net as
-        // `LocalizationTests`' `referenced.count > 200`).
-        #expect(scanned.count > 200, "only \(scanned.count) text files scanned -- the source tree was not found")
+        // A scan that missed a root would pass for the wrong reason, so every root must contribute
+        // (a renamed `Sources` makes the enumerator nil, which is skipped above).
+        for root in ["FitrahTube/", "Packages/FitrahAPI/Sources/", "Packages/InnerTubeKit/Sources/"] {
+            let contributed = scanned.contains { $0.hasPrefix(root) }
+            #expect(contributed, "nothing scanned under ios/\(root) -- the root was not found")
+        }
         let scannedProjectYML = scanned.contains("project.yml")
         #expect(scannedProjectYML, "ios/project.yml was not scanned")
         #expect(offenders.isEmpty, "a YouTube player is back in the app: \(offenders.sorted())")

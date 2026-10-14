@@ -39,11 +39,12 @@ struct PlayerToolbarTests {
     /// The rule also runs on the text as written, not only on the detector's normalised URL: the
     /// detector drops a soft hyphen, so `match.url` alone passes it. A bare domain is judged with the
     /// `http://` the detector adds, so `example.org/b` stays a link and `ｙｏｕｔｕｂｅ.com/x` does not.
+    /// A bare domain whose query carries a URL is still bare: only a LEADING scheme counts.
     @Test func theTextAsWrittenMustPassTheLinkRuleToo() {
-        let raw = "See https://ex\u{AD}ample.org/a and example.org/b and ｙｏｕｔｕｂｅ.com/x here."
+        let raw = "See https://ex\u{AD}ample.org/a and example.org/b and ｙｏｕｔｕｂｅ.com/x and example.org/r?to=https://foo.com here."
         let result = attributedDescription(raw)
         #expect(String(result.characters) == raw)
-        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org/b"])
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org/b", "http://example.org/r?to=https://foo.com"])
     }
 
     // MARK: - isOpenableLink (the vectors shared with Android's PlayerDescriptionsTest)
@@ -88,6 +89,16 @@ struct PlayerToolbarTests {
         " https://example.org/a",
         "\u{A0}https://example.org/a",
         "https://example.org/a ",
+        "https://www.youtube-nocookie.com/embed/x",
+        "https://youtube.com.example.org/",   // the accepted cost: a youtube label anywhere
+        "https:///a",
+        // The host-character check: these decode to a non-ASCII host a browser maps to youtube.com.
+        "https://%EF%BD%99outube.com/a",
+        "https://you%E2%80%8Btube.com/",
+        // A host must be LDH or an IP literal: a fullwidth `％40` parses to `example.org@youtube.com`.
+        "https://example.org\u{FF05}40youtube.com/",
+        // Trailing-dot stripping: `yt.be.` is `yt.be`.
+        "https://yt.be./x",
     ])
     func theLinkRuleKeepsThisAsText(_ link: String) {
         #expect(!isOpenableLink(link), "\(link.debugDescription) must stay text")

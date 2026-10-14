@@ -212,12 +212,10 @@ import Testing
     /// `refresh()` swallows a decode failure and `current()` falls back to the bundled default, so
     /// the app looks fine and the runbook's "remote config first" rows quietly do nothing. Seeding
     /// lastGood is what runs the private `sanitized` (`RemoteConfig.swift:110-117`) without exposing
-    /// it. Gated on `IOS_REMOTE_CONFIG_PATH` (set by `ios/scripts/test.sh`) AND the file existing, so
-    /// a checkout without the file skips rather than fails.
-    @Test(.enabled(if: publishedConfigPath != nil))
-    func thePublishedRepoRootConfigSurvivesSanitizing() async throws {
-        let path = try #require(publishedConfigPath)
-        let data = try Data(contentsOf: URL(filePath: path))
+    /// it. Runs everywhere (a plain `swift test` too), and a missing file FAILS rather than skips:
+    /// for installed 1.0.0 / 1.0.2 builds that file is the only guard against `embed`.
+    @Test func thePublishedRepoRootConfigSurvivesSanitizing() async throws {
+        let data = try Data(contentsOf: publishedConfigURL)
         // I1, checked RAW before the sanitizer hides it: installed 1.0.0 / 1.0.2 builds still know
         // `embed` and would show YouTube's player if the published file listed it.
         let raw = try JSONDecoder().decode(RemoteConfig.self, from: data)
@@ -290,9 +288,17 @@ import Testing
     }
 }
 
-/// `IOS_REMOTE_CONFIG_PATH` when it names an existing file, else nil (the test above skips).
-private let publishedConfigPath: String? = ProcessInfo.processInfo.environment["IOS_REMOTE_CONFIG_PATH"]
-    .flatMap { FileManager.default.fileExists(atPath: $0) ? $0 : nil }
+/// `IOS_REMOTE_CONFIG_PATH` (set by `ios/scripts/test.sh`), else the repo root found from this file.
+private let publishedConfigURL: URL = ProcessInfo.processInfo.environment["IOS_REMOTE_CONFIG_PATH"]
+    .map { URL(filePath: $0) }
+    ?? URL(filePath: #filePath)        // …/ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/RemoteConfigTests.swift
+        .deletingLastPathComponent()   // …/InnerTubeKitTests
+        .deletingLastPathComponent()   // …/Tests
+        .deletingLastPathComponent()   // …/InnerTubeKit
+        .deletingLastPathComponent()   // …/Packages
+        .deletingLastPathComponent()   // …/ios
+        .deletingLastPathComponent()   // repo root
+        .appending(path: "ios-remote-config.json")
 
 private func keyValueStoreWithLastGood(_ data: Data) -> InMemoryKeyValueStore {
     let store = InMemoryKeyValueStore()
