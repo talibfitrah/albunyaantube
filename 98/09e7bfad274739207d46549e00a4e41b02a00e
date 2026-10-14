@@ -1,0 +1,46 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_dbb6b1f3671904::t_a15726cc7d1a60 281-288
+  s_dbb6b1f3671904::t_61ac69bc14a0be 280
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_dbb6b1f3671904::t_3ca465ab439cdd 7,71-79,82-85,148-150
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-botcheck-ar.json
+  s_dbb6b1f3671904::t_e9011edbb85d17 1-9
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-geo-android.json
+  s_dbb6b1f3671904::t_8ef49080db5d1b 1-23
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-geo-visionos.json
+  s_dbb6b1f3671904::t_42187290d6db90 1-9
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-members-only-android-ar.json
+  s_dbb6b1f3671904::t_0e91fe85210e12 1-88
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-members-only-android.json
+  s_dbb6b1f3671904::t_cd0f95186f34e5 1-88
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-members-only-visionos.json
+  s_dbb6b1f3671904::t_92473e394a33ec 1-72
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-private-android.json
+  s_dbb6b1f3671904::t_d7b0789e6e94b0 1-29
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-private-visionos-ar.json
+  s_dbb6b1f3671904::t_a45d538e2cb26a 1-12
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-private-visionos.json
+  s_dbb6b1f3671904::t_daf3a963edff46 1-12
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-removed-visionos-ar.json
+  s_dbb6b1f3671904::t_97df2f8da1dbc4 1-9
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/PlayerResponseParserTests.swift
+  s_dbb6b1f3671904::t_fabcdf155ad440 31-61
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_dbb6b1f3671904::t_1ae95cbbc76495 96-101,199-252,351,353-355,364,373-375,380
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9809e7bfad274739207d46549e00a4e41b02a00e",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
