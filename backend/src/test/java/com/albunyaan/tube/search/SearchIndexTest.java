@@ -1,5 +1,8 @@
 package com.albunyaan.tube.search;
 
+import ch.qos.logback.classic.Level;
+import ch.qos.logback.classic.spi.ILoggingEvent;
+import ch.qos.logback.core.read.ListAppender;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -13,10 +16,12 @@ import com.albunyaan.tube.repository.VideoRepository;
 import com.google.cloud.Timestamp;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.store.ByteBuffersDirectory;
+import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
+import org.slf4j.LoggerFactory;
 
 import java.nio.file.Files;
 import java.nio.file.Path;
@@ -25,8 +30,10 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.function.Consumer;
 import java.util.stream.Collectors;
@@ -181,9 +188,24 @@ class SearchIndexTest {
         return ids(index.search(query, null, false, 50, null));
     }
 
+    private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
+    private final ch.qos.logback.classic.Logger indexLog =
+            (ch.qos.logback.classic.Logger) LoggerFactory.getLogger(SearchIndex.class);
+
     @BeforeEach
     void setUp() throws Exception {
+        logs.start();
+        indexLog.addAppender(logs);
         index = started(newIndex(channels(), playlists(), videos(), streams(), 5_000));
+    }
+
+    @AfterEach
+    void detachLogs() {
+        indexLog.detachAppender(logs);
+    }
+
+    private List<ILoggingEvent> logged(Level level) {
+        return new ArrayList<>(logs.list).stream().filter(e -> e.getLevel() == level).toList();
     }
 
     // ---- §9.1 ladder ---------------------------------------------------------------------------
@@ -363,6 +385,25 @@ class SearchIndexTest {
         assertEquals(Set.of(), left);
     }
 
+    @Test
+    void closingAnIndexWhoseCatalogAndEventsAdmitNothingStillDeletesTheDirectory() throws Exception {
+        // Empty block + delete term (Lucene asserts under -ea when such an index is rolled back).
+        newIndex(List.of(), List.of(), List.of(), List.of(), 5_000).close(); // only for its empty-catalog mocks
+        Set<Path> before = indexDirectories();
+        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo));
+        for (int i = 0; i < 5; i++) {
+            Channel pending = with(channel("UCpending" + i, "Pending " + i), c -> c.setStatus("PENDING"));
+            fresh.onCatalogChanged(new CatalogChanged("CHANNEL", pending.getId(), pending));
+        }
+        fresh.awaitWrites();
+
+        assertDoesNotThrow(fresh::close);
+
+        Set<Path> left = indexDirectories();
+        left.removeAll(before);
+        assertEquals(Set.of(), left, "no index directory is left behind");
+    }
+
     private static Set<Path> indexDirectories() throws Exception {
         try (Stream<Path> paths = Files.list(Path.of(System.getProperty("java.io.tmpdir")))) {
             return paths.filter(p -> p.getFileName().toString().startsWith("fitrahtube-search-"))
@@ -407,5 +448,178 @@ class SearchIndexTest {
         assertEquals("approximate", hits.match());
         assertEquals("yt-all", ids(hits).get(0));
         assertEquals(20, hits.items().size(), "tier 3 (related) filled the rest of the list");
+    }
+
+    // ---- freshness (spec §5.2, §5.3) -----------------------------------------------------------
+
+    @Test
+    void anApprovedChannelEventMakesItFindable() throws Exception {
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCsaadi", channel("UCsaadi", "Tafsir As-Saadi")));
+        index.awaitWrites();
+        assertEquals("UCsaadi", ids("saadi").get(0));
+    }
+
+    @Test
+    void aKeywordsUpdateChangesWhatMatches() throws Exception {
+        assertTrue(ids("khushoo").isEmpty());
+        Video updated = with(video("vPrayerKey", "Prayer is the Key", null), v -> v.setKeywords(List.of("khushoo")));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-vPrayerKey", updated));
+        index.awaitWrites();
+        assertEquals("vPrayerKey", ids("khushoo").get(0));
+    }
+
+    @Test
+    void aDeleteRemovesTheDocumentAndHidesItsStreams() throws Exception {
+        assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", false, 10, null)));
+        when(channelRepo.findById("doc-UCalafasy")).thenReturn(Optional.empty());
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", null));
+        index.awaitWrites();
+        assertFalse(ids("alafa").contains("UCalafasy"));
+        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty());
+    }
+
+    @Test
+    void rejectingASourceHidesItsStreamsBeforeRemoveSourceRuns() throws Exception {
+        Channel rejected = with(channel("UChalal", "Halal Kitchen"), c -> c.setStatus("REJECTED"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UChalal", rejected));
+        index.awaitWrites();
+        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+        assertFalse(ids("kitchen").contains("UChalal"), "the rejected channel's own document is gone too");
+    }
+
+    @Test
+    void excludingAVideoFromItsChannelHidesItsStream() throws Exception {
+        // Closes the pre-existing gap (spec §4.2): exclusions never touched searchable_streams.
+        Channel kitchen = with(channel("UChalal", "Halal Kitchen"),
+                c -> c.getExcludedItems().setVideos(List.of("halal-excluded", "halal-ok")));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UChalal", kitchen));
+        index.awaitWrites();
+        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+    }
+
+    @Test
+    void savingAnAdmittedChannelAgainKeepsItsStreamsVisible() throws Exception {
+        // The source key is removed before the shared admit() re-adds it, never after (B3 hand-off).
+        Channel renamed = channel("UChalal", "Halal Kitchen Renamed");
+        renamed.getExcludedItems().setVideos(List.of("halal-excluded"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UChalal", renamed));
+        index.awaitWrites();
+        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", false, 10, null)));
+        assertEquals("UChalal", ids("renamed").get(0));
+    }
+
+    @Test
+    void aPlaylistEventIsIndexedByItsOwnType() throws Exception {
+        index.onCatalogChanged(new CatalogChanged("PLAYLIST", "doc-PLseerah", playlist("PLseerah", "Seerah of the Prophet")));
+        index.awaitWrites();
+        assertEquals(List.of("PLseerah"), ids(index.search("seerah", "PLAYLIST", true, 10, null)));
+    }
+
+    @Test
+    void deletingAVideoDocumentRemovesIt() throws Exception {
+        assertTrue(ids("prayer").contains("vPrayerKey"));
+        when(videoRepo.findById("doc-vPrayerKey")).thenReturn(Optional.empty());
+        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-vPrayerKey", null));
+        index.awaitWrites();
+        assertFalse(ids("prayer").contains("vPrayerKey"));
+    }
+
+    @Test
+    void aFailedRereadIsLoggedWithItsCauseAndLeavesTheIndexAlone() throws Exception {
+        when(channelRepo.findById("doc-UCzakir")).thenThrow(new ExecutionException("firestore down", new RuntimeException("cause")));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", null));
+        index.awaitWrites();
+        assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getThrowableProxy() != null
+                && ExecutionException.class.getName().equals(e.getThrowableProxy().getClassName())));
+        assertEquals("UCzakir", ids("zakit").stream().findFirst().orElse("<empty>"));
+    }
+
+    @Test
+    void streamHooksAddMergeAndRemove() throws Exception {
+        SearchableStream fresh = stream("fresh-1", "Fresh Seerah Lesson");
+        index.upsertStreams(List.of(fresh), "channel:UChalal");
+        index.awaitWrites();
+        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+
+        index.upsertStreams(List.of(fresh), "channel:UCalafasy");  // a second source merges in
+        index.removeSource("channel:UChalal");                    // one source left: still shown
+        index.awaitWrites();
+        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+
+        index.removeSource("channel:UCalafasy");                  // none left: deleted
+        index.awaitWrites();
+        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+
+        index.upsertStreams(List.of(fresh), "channel:UCquranTv");
+        index.removeStream("fresh-1");                            // archived video
+        index.awaitWrites();
+        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+    }
+
+    // ---- build and swap hardening (B3 review) --------------------------------------------------
+
+    @Test
+    void aCatalogSwapThatFailsKeepsTheLastGoodCatalog() throws Exception {
+        // A youtubeId past Lucene's 32766-byte term limit makes the add throw AFTER the old catalog was deleted.
+        when(videoRepo.findAllUnordered()).thenReturn(List.of(video("x".repeat(40_000), "Poisoned", null)));
+        assertThrows(IllegalArgumentException.class, () -> index.replaceCatalog());
+
+        // Any later refresh would expose whatever the failed swap left pending.
+        index.upsertStreams(List.of(stream("after", "After The Swap", "channel:UChalal")), "channel:UChalal");
+        index.awaitWrites();
+        assertEquals("UCzakir", ids("zakit").stream().findFirst().orElse("<empty>"), "the last good catalog is still served");
+    }
+
+    @Test
+    void aCatalogThatBecomesEmptyIsSwappedOut() throws Exception {
+        when(channelRepo.findByStatus("APPROVED")).thenReturn(List.of());
+        when(playlistRepo.findByStatus("APPROVED")).thenReturn(List.of());
+        when(videoRepo.findAllUnordered()).thenReturn(List.of());
+        index.replaceCatalog();
+        assertTrue(ids("zakir").isEmpty());
+        assertTrue(ids("quran").isEmpty());
+    }
+
+    @Test
+    void shuttingDownDuringTheFirstBuildLogsNoErrorAndSchedulesNoRetry() throws Exception {
+        SearchIndex building = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        CountDownLatch inFirestore = new CountDownLatch(1);
+        when(channelRepo.findByStatus("APPROVED")).thenAnswer(inv -> {
+            inFirestore.countDown();
+            new CountDownLatch(1).await(); // until close() interrupts the writer thread
+            return List.of();
+        });
+        building.onReady();
+        assertTrue(inFirestore.await(10, TimeUnit.SECONDS));
+
+        building.close();
+
+        assertEquals(List.of(), logged(Level.ERROR).stream().map(ILoggingEvent::getFormattedMessage).toList());
+    }
+
+    @Test
+    void anErrorInTheFirstBuildIsLoggedWithItsStackTrace() throws Exception {
+        SearchIndex failing = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        when(channelRepo.findByStatus("APPROVED")).thenThrow(new NoClassDefFoundError("boom"));
+        try {
+            failing.onReady();
+            failing.awaitWrites();
+            assertTrue(logged(Level.ERROR).stream().anyMatch(e -> e.getThrowableProxy() != null
+                    && NoClassDefFoundError.class.getName().equals(e.getThrowableProxy().getClassName())));
+        } finally {
+            failing.close();
+        }
+    }
+
+    @Test
+    void awaitWritesDoesNotWaitForARetryScheduledForLater() throws Exception {
+        SearchIndex unreachable = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        when(channelRepo.findByStatus("APPROVED")).thenThrow(new ExecutionException("firestore down", new RuntimeException()));
+        try {
+            unreachable.onReady(); // fails, then schedules its retry 30 s out
+            assertTimeoutPreemptively(Duration.ofSeconds(5), () -> unreachable.awaitWrites());
+        } finally {
+            unreachable.close();
+        }
     }
 }

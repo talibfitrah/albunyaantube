@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -45,10 +47,13 @@ public class ChannelRepository {
     private static final String COLLECTION_NAME = "channels";
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public ChannelRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public ChannelRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                             ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -71,6 +76,7 @@ public class ChannelRepository {
                 .set(channel);
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("CHANNEL", channel.getId(), channel));
         return channel;
     }
 
@@ -88,7 +94,7 @@ public class ChannelRepository {
         channel.setExcludedItems(channel.getExcludedItems());
 
         DocumentReference docRef = getCollection().document(channel.getId());
-        return firestore.runTransaction(transaction -> {
+        Channel saved = firestore.runTransaction(transaction -> {
             DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + channel.getId());
@@ -102,6 +108,8 @@ public class ChannelRepository {
             transaction.set(docRef, channel);
             return channel;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("CHANNEL", saved.getId(), saved));
+        return saved;
     }
 
     public Optional<Channel> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -318,6 +326,7 @@ public class ChannelRepository {
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
     }
 
     /**
@@ -346,6 +355,7 @@ public class ChannelRepository {
             transaction.delete(docRef);
             return null;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
     }
 
     /**
@@ -368,6 +378,7 @@ public class ChannelRepository {
         fields.put("updatedAt", com.google.cloud.Timestamp.now());
         getCollection().document(id).update(fields)
                 .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
     }
 
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {

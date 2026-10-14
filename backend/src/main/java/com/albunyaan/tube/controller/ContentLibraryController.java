@@ -8,6 +8,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
@@ -20,6 +21,7 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.WriteBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -65,6 +67,7 @@ public class ContentLibraryController {
     private final TagEnrichmentService tagEnrichmentService;
     private final ImportGraduationService importGraduationService;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher events;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -76,7 +79,8 @@ public class ContentLibraryController {
             SortOrderService sortOrderService,
             TagEnrichmentService tagEnrichmentService,
             ImportGraduationService importGraduationService,
-            UserRepository userRepository
+            UserRepository userRepository,
+            ApplicationEventPublisher events
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -88,6 +92,7 @@ public class ContentLibraryController {
         this.tagEnrichmentService = tagEnrichmentService;
         this.importGraduationService = importGraduationService;
         this.userRepository = userRepository;
+        this.events = events;
     }
 
     /**
@@ -1063,6 +1068,7 @@ public class ContentLibraryController {
                     writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
                     successCount += validatedItems.size();
                     log.debug("Batch committed successfully: {} items with status={}", validatedItems.size(), newStatus);
+                    publishCatalogChanged(validatedItems);
 
                     graduateImporters(validatedItems, youtubeIdByKey, newStatus);
 
@@ -1135,6 +1141,7 @@ public class ContentLibraryController {
                     writeBatch.commit().get();
                     successCount += itemsToDelete.size();
                     log.debug("Batch delete committed successfully: {} items", itemsToDelete.size());
+                    publishCatalogChanged(itemsToDelete);
 
                     // Deleted content has to leave people's lists, the same way archived content
                     // does. Without this the registry entry is gone while every phone holding it
@@ -1153,6 +1160,13 @@ public class ContentLibraryController {
         }
 
         return new BulkActionResponse(successCount, errors, failedKeys);
+    }
+
+    /** These two WriteBatch paths bypass the repositories, so they tell the search index themselves (spec §5.2). */
+    private void publishCatalogChanged(List<BulkActionItem> committed) {
+        for (BulkActionItem item : committed) {
+            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id, null));
+        }
     }
 
     /**

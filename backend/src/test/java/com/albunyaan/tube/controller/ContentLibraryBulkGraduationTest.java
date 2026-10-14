@@ -5,6 +5,7 @@ import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
@@ -24,6 +25,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -38,6 +40,7 @@ import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -65,6 +68,7 @@ class ContentLibraryBulkGraduationTest {
     @Mock private TagEnrichmentService tagEnrichmentService;
     @Mock private ImportGraduationService graduationService;
     @Mock private com.albunyaan.tube.repository.UserRepository userRepository;
+    @Mock private ApplicationEventPublisher events;
 
     @InjectMocks private ContentLibraryController controller;
 
@@ -238,5 +242,44 @@ class ContentLibraryBulkGraduationTest {
 
         verify(graduationService).onApprovedAll(YouTubeContentType.VIDEO, Set.of("yt-v1", "yt-v2", "yt-v3"));
         verify(graduationService, times(1)).onApprovedAll(any(), any());
+    }
+
+    @Test
+    void bulkApprove_publishesOneCatalogEventPerCommittedItem() throws Exception {
+        stubManyVideos("v1", "v2", "v3");
+
+        controller.bulkApprove(requestFor("video", "v1", "v2", "v3"));
+
+        for (String id : List.of("v1", "v2", "v3")) {
+            verify(events).publishEvent(new CatalogChanged("VIDEO", id, null));
+        }
+    }
+
+    @Test
+    void bulkApprove_publishesNothingForAnItemThatWasNeverFound() throws Exception {
+        stubFirestore("playlists", "pl-missing", "PLmissing", false);
+
+        controller.bulkApprove(request("playlist", "pl-missing"));
+
+        verifyNoInteractions(events);
+    }
+
+    @Test
+    void bulkReject_publishesAChannelEventInTheIndexsTypeSpelling() throws Exception {
+        stubFirestore("channels", "ch-1", "UC_rejected", true);
+
+        controller.bulkReject(request("channel", "ch-1"));
+
+        verify(events).publishEvent(new CatalogChanged("CHANNEL", "ch-1", null));
+    }
+
+    @Test
+    void bulkApprove_publishesNothingWhenTheBatchFailsToCommit() throws Exception {
+        WriteBatch batch = stubFirestoreReturningBatch("videos", "vid-1", "yt-1");
+        when(batch.commit()).thenReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("firestore down")));
+
+        controller.bulkApprove(request("video", "vid-1"));
+
+        verifyNoInteractions(events);
     }
 }

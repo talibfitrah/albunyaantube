@@ -47,15 +47,19 @@ import java.io.IOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
+import java.util.Arrays;
 import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashSet;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
 import java.util.Set;
 import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.Delayed;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
@@ -168,7 +172,9 @@ public class SearchIndex {
     private void buildCatalog(long retryMs) {
         try {
             replaceCatalog();
-        } catch (Exception e) {
+        } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (executor.isShutdown()) return; // close() interrupted us: not a failure, and no retry
             log.error("search index build failed; retrying in {} s", retryMs / 1000, e);
             executor.schedule(() -> buildCatalog(Math.min(retryMs * 2, MAX_RETRY_MS)), retryMs, TimeUnit.MILLISECONDS);
             return;
@@ -191,6 +197,8 @@ public class SearchIndex {
             }
             searchers.maybeRefreshBlocking();
         } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            if (executor.isShutdown()) return;
             log.error("search index stream page after {} failed; retrying in {} s", afterId, retryMs / 1000, e);
             executor.schedule(() -> loadStreams(afterId, loaded, Math.min(retryMs * 2, MAX_RETRY_MS)),
                     retryMs, TimeUnit.MILLISECONDS);
@@ -223,8 +231,7 @@ public class SearchIndex {
         for (Playlist p : ps) if (admit(p, sources, ids, docs)) playlistDocs++;
         for (Video v : vs) admit(v, sources, ids, docs);
         int videoDocs = docs.size() - channelDocs - playlistDocs;
-        writer.deleteDocuments(new Term("source", "CATALOG"));
-        writer.addDocuments(docs);
+        replace(new Term("source", "CATALOG"), docs); // one atomic block: a failed add keeps the old catalog
         admittedSources = sources;
         videoIds = ids;
         searchers.maybeRefreshBlocking();
@@ -243,6 +250,118 @@ public class SearchIndex {
                 log.warn("search index reconcile failed; keeping the last good index", e);
             }
         });
+    }
+
+    // ---- freshness (spec §5.2, §5.3) -----------------------------------------------------------
+
+    @EventListener
+    public void onCatalogChanged(CatalogChanged event) {
+        submit("catalog " + event.type() + " " + event.docId(), () -> applyCatalogChange(event));
+    }
+
+    private void applyCatalogChange(CatalogChanged event) throws Exception {
+        Object entity = event.entity() != null ? event.entity() : reload(event.type(), event.docId());
+        Term key = new Term("key", event.type() + ":" + event.docId());
+        // The old source key goes first: admit() may register the same one again, and must not lose it.
+        String oldId = storedValues(key.text(), "id").stream().findFirst().orElse(null);
+        if (oldId != null && !"VIDEO".equals(event.type())) {
+            admittedSources.remove(event.type().toLowerCase(Locale.ROOT) + ":" + oldId);
+        }
+        List<Document> docs = new ArrayList<>();
+        admit(entity, admittedSources, videoIds, docs); // a deleted Video's id stays in videoIds until the next reconcile: its stream stays hidden (fail closed)
+        replace(key, docs);
+    }
+
+    /** Swaps the documents matching `term` for `docs` in one step. An empty block must not reach updateDocuments: it breaks rollback. */
+    private void replace(Term term, List<Document> docs) throws IOException {
+        if (docs.isEmpty()) {
+            writer.deleteDocuments(term);
+        } else {
+            writer.updateDocuments(term, docs);
+        }
+    }
+
+    private Object reload(String type, String docId) throws Exception {
+        return switch (type) {
+            case "CHANNEL" -> channels.findById(docId).orElse(null);
+            case "PLAYLIST" -> playlists.findById(docId).orElse(null);
+            default -> videos.findById(docId).orElse(null);
+        };
+    }
+
+    /** After StreamIndexService upserted these streams for `sourceKey`; merges with stored source keys. */
+    public void upsertStreams(List<SearchableStream> written, String sourceKey) {
+        if (written.isEmpty()) return;
+        submit("upsertStreams " + sourceKey, () -> {
+            for (SearchableStream s : written) {
+                Set<String> keys = new LinkedHashSet<>(storedValues("STREAM:" + s.getStreamId(), "sourceKey"));
+                keys.add(sourceKey);
+                writer.updateDocument(streamKey(s.getStreamId()), streamDoc(streamDto(s), keys));
+            }
+        });
+    }
+
+    /** After StreamIndexService.removeSource: drop the key from every stream; delete streams left with none. */
+    public void removeSource(String sourceKey) {
+        submit("removeSource " + sourceKey, () -> {
+            IndexSearcher searcher = searchers.acquire();
+            try {
+                Query query = new TermQuery(new Term("sourceKey", sourceKey));
+                StoredFields fields = searcher.storedFields();
+                for (ScoreDoc hit : searcher.search(query, Math.max(1, searcher.count(query))).scoreDocs) {
+                    Document doc = fields.document(hit.doc);
+                    Set<String> keys = new LinkedHashSet<>(Arrays.asList(doc.getValues("sourceKey")));
+                    keys.remove(sourceKey);
+                    Term key = streamKey(doc.get("id"));
+                    if (keys.isEmpty()) {
+                        writer.deleteDocuments(key);
+                    } else {
+                        writer.updateDocument(key, streamDoc(JSON.readValue(doc.get("dto"), ContentItemDto.class), keys));
+                    }
+                }
+            } finally {
+                searchers.release(searcher);
+            }
+        });
+    }
+
+    /** After StreamIndexService.markStreamArchived. */
+    public void removeStream(String streamId) {
+        submit("removeStream " + streamId, () -> writer.deleteDocuments(streamKey(streamId)));
+    }
+
+    /** Stored values of `field` on the document with `key` (as of the last refresh), or none. */
+    private List<String> storedValues(String key, String field) throws IOException {
+        IndexSearcher searcher = searchers.acquire();
+        try {
+            TopDocs top = searcher.search(new TermQuery(new Term("key", key)), 1);
+            return top.scoreDocs.length == 0 ? List.of()
+                    : Arrays.asList(searcher.storedFields().document(top.scoreDocs[0].doc).getValues(field));
+        } finally {
+            searchers.release(searcher);
+        }
+    }
+
+    /** Every mutation runs here, one at a time, then refreshes. Failures only log: Firestore already committed (spec §7). */
+    private void submit(String what, WriterTask task) {
+        try {
+            executor.execute(() -> {
+                try {
+                    task.run();
+                    searchers.maybeRefreshBlocking();
+                } catch (Exception e) {
+                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                    if (!executor.isShutdown()) log.warn("search index update failed ({})", what, e);
+                }
+            });
+        } catch (RejectedExecutionException e) {
+            log.warn("search index update dropped ({}): writer stopped", what, e);
+        }
+    }
+
+    @FunctionalInterface
+    private interface WriterTask {
+        void run() throws Exception;
     }
 
     // ---- search (spec §4.4) --------------------------------------------------------------------
@@ -477,11 +596,12 @@ public class SearchIndex {
 
     /**
      * Tests only: runs every queued writer task, including tasks those tasks queue in turn, and waits
-     * out a task still running when the queue drains (Ruling F1).
+     * out a task still running when the queue drains (Ruling F1). A retry scheduled for later is not waited for.
      */
     void awaitWrites() throws Exception {
         do {
             executor.submit(() -> { }).get(10, TimeUnit.SECONDS);
-        } while (!executor.getQueue().isEmpty() || executor.getActiveCount() > 0);
+        } while (executor.getQueue().stream().anyMatch(t -> ((Delayed) t).getDelay(TimeUnit.NANOSECONDS) <= 0)
+                || executor.getActiveCount() > 0);
     }
 }

@@ -6,6 +6,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.google.api.core.ApiFutures;
 import com.google.cloud.firestore.CollectionReference;
@@ -20,6 +21,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -31,6 +33,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 /**
@@ -57,6 +60,7 @@ class ContentLibraryDeleteReachesDevicesTest {
     @Mock private com.albunyaan.tube.service.TagEnrichmentService tagEnrichmentService;
     @Mock private ImportGraduationService importGraduationService;
     @Mock private UserRepository userRepository;
+    @Mock private ApplicationEventPublisher events;
 
     @InjectMocks
     private ContentLibraryController controller;
@@ -110,5 +114,25 @@ class ContentLibraryDeleteReachesDevicesTest {
         controller.bulkDelete(request("video", "missing"));
 
         verify(importGraduationService, never()).onRejectedAll(any(), any());
+    }
+
+    @Test
+    void bulkDeletePublishesACatalogEvent() throws Exception {
+        stubDeletableVideo("vid-1", "yt-vid-1");
+
+        controller.bulkDelete(request("video", "vid-1"));
+
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1", null));
+    }
+
+    @Test
+    void anItemThatWasNotThereDeletesAndPublishesNothing() throws Exception {
+        SecurityContextHolder.getContext().setAuthentication(
+                new UsernamePasswordAuthenticationToken("admin@test", null, List.of()));
+        when(videoRepository.findById("missing")).thenReturn(Optional.empty());
+
+        controller.bulkDelete(request("video", "missing"));
+
+        verifyNoInteractions(events);
     }
 }

@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -50,10 +52,13 @@ public class PlaylistRepository {
 
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public PlaylistRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public PlaylistRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                              ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -73,6 +78,7 @@ public class PlaylistRepository {
                 .set(playlist);
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("PLAYLIST", playlist.getId(), playlist));
         return playlist;
     }
 
@@ -88,7 +94,7 @@ public class PlaylistRepository {
         playlist.touch();
 
         DocumentReference docRef = getCollection().document(playlist.getId());
-        return firestore.runTransaction(transaction -> {
+        Playlist saved = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Playlist not found: " + playlist.getId());
@@ -102,6 +108,8 @@ public class PlaylistRepository {
             transaction.set(docRef, playlist);
             return playlist;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("PLAYLIST", saved.getId(), saved));
+        return saved;
     }
 
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -339,6 +347,7 @@ public class PlaylistRepository {
                         "thumbnailUrl", thumbnailUrl,
                         "updatedAt", com.google.cloud.Timestamp.now())
                 .get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("PLAYLIST", id, null));
     }
 
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -433,6 +442,7 @@ public class PlaylistRepository {
     public void deleteById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("PLAYLIST", id, null));
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -457,6 +467,7 @@ public class PlaylistRepository {
             transaction.delete(docRef);
             return null;
         }).get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("PLAYLIST", id, null));
     }
 
     /**

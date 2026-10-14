@@ -25,13 +25,14 @@ class StreamIndexServiceTest {
     @Mock private SearchableStreamRepository streamRepository;
     @Mock private ChannelRepository channelRepository;
     @Mock private PlaylistRepository playlistRepository;
+    @Mock private com.albunyaan.tube.search.SearchIndex searchIndex;
     private SearchTokenizer tokenizer;
     private StreamIndexService service;
 
     @BeforeEach
     void setUp() {
         tokenizer = new SearchTokenizer();
-        service = new StreamIndexService(streamRepository, channelRepository, playlistRepository, tokenizer);
+        service = new StreamIndexService(streamRepository, channelRepository, playlistRepository, tokenizer, searchIndex);
     }
 
     @Test
@@ -143,6 +144,56 @@ class StreamIndexServiceTest {
 
         verify(streamRepository).removeSource("aaa11111111", "channel:UC123");
         verify(streamRepository).removeSource("bbb22222222", "channel:UC123");
+    }
+
+    @Test
+    void indexFromChannel_hooksTheWrittenStreamsIntoTheSearchIndex() throws Exception {
+        Channel ch = new Channel("UC123");
+        ch.setStatus("APPROVED");
+        ch.setName("Test Channel");
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.of(ch));
+
+        service.indexFromChannel("UC123", List.of(makeItem("abc12345678", "Test Video")));
+
+        verify(searchIndex).upsertStreams(
+                argThat(written -> written.size() == 1 && "abc12345678".equals(written.get(0).getStreamId())),
+                eq("channel:UC123"));
+    }
+
+    @Test
+    void indexFromPlaylist_hooksTheWrittenStreamsIntoTheSearchIndex() throws Exception {
+        Playlist pl = new Playlist("PL123");
+        pl.setStatus("APPROVED");
+        when(playlistRepository.findByYoutubeId("PL123")).thenReturn(Optional.of(pl));
+        StreamItemDto item = makeItem("abc12345678", "Test Video");
+        item.setChannelId("UC" + "a".repeat(22));
+        item.setUploaderName("Uploader");
+
+        service.indexFromPlaylist("PL123", List.of(item, makeItem("nochannel123", "Skipped: no channel id")));
+
+        verify(searchIndex).upsertStreams(
+                argThat(written -> written.size() == 1 && "abc12345678".equals(written.get(0).getStreamId())),
+                eq("playlist:PL123"));
+    }
+
+    @Test
+    void indexFromChannel_leavesTheSearchIndexAloneForAnUnapprovedChannel() throws Exception {
+        when(channelRepository.findByYoutubeId("UC123")).thenReturn(Optional.empty());
+
+        service.indexFromChannel("UC123", List.of(makeItem("abc12345678", "Test Video")));
+
+        verifyNoInteractions(searchIndex);
+    }
+
+    @Test
+    void removeSourceAndArchive_hookTheSearchIndex() throws Exception {
+        when(streamRepository.findBySourceKey("channel:UC123", 500)).thenReturn(List.of());
+
+        service.removeSource("CHANNEL", "UC123");
+        service.markStreamArchived("abc12345678");
+
+        verify(searchIndex).removeSource("channel:UC123");
+        verify(searchIndex).removeStream("abc12345678");
     }
 
     private StreamItemDto makeItem(String id, String name) {

@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -41,10 +43,13 @@ public class VideoRepository {
     private static final String COLLECTION_NAME = "videos";
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public VideoRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public VideoRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                           ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -64,6 +69,7 @@ public class VideoRepository {
                 .set(video);
 
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("VIDEO", video.getId(), video));
         return video;
     }
 
@@ -79,7 +85,7 @@ public class VideoRepository {
         video.touch();
 
         DocumentReference docRef = getCollection().document(video.getId());
-        return firestore.runTransaction(transaction -> {
+        Video saved = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Video not found: " + video.getId());
@@ -93,6 +99,8 @@ public class VideoRepository {
             transaction.set(docRef, video);
             return video;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("VIDEO", saved.getId(), saved));
+        return saved;
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -448,6 +456,7 @@ public class VideoRepository {
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
         result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("VIDEO", id, null));
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -472,6 +481,7 @@ public class VideoRepository {
             transaction.delete(docRef);
             return null;
         }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        events.publishEvent(new CatalogChanged("VIDEO", id, null));
     }
 
     /**
