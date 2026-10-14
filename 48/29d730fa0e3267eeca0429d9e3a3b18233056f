@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/search/SearchTextTest.java
+  s_dbb6b1f3671904::t_ebfb88abd66315 3-9,12-22,25-28,30-32,36,38-39,108-281
+backend/src/main/java/com/albunyaan/tube/search/SearchText.java
+  s_dbb6b1f3671904::t_fff1c02800cc4e 25,38,52-58,145,161,170-171,205,207
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4829d730fa0e3267eeca0429d9e3a3b18233056f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
