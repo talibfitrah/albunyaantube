@@ -226,12 +226,18 @@ import Testing
     }
 
     /// Private is terminal on the FIRST rung that says so: no rotation burned, no trip recorded.
-    @Test func aPrivateVideoIsUnavailableWithoutTouchingTheSession() async throws {
-        let transport = RecordingTransport([try fixtureResponse("player-private-visionos")])
+    /// All three captures, en and ar. The sub-label is `terminalError`'s English match on `reason`
+    /// ("This video is private" -> `.private`, the others -> `.unavailable`); both are terminal and
+    /// the app maps both onto "not available", so only the text-free facts are pinned alongside it.
+    @Test(arguments: [("player-private-visionos", ExtractionError.unavailable(videoId: "xc7keR2piUM")),
+                      ("player-private-visionos-ar", ExtractionError.unavailable(videoId: "xc7keR2piUM")),
+                      ("player-private-android", ExtractionError.private)])
+    func aPrivateVideoIsUnavailableWithoutTouchingTheSession(fixture: String, expected: ExtractionError) async throws {
+        let transport = RecordingTransport([try fixtureResponse(fixture)])
         let (resolver, session) = makeResolver(transport: transport)
         await session.setVisitorData("v1", for: .visionos)
 
-        await expectThrows(.unavailable(videoId: Self.videoId)) {
+        await expectThrows(expected) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(transport.callCount == 1)

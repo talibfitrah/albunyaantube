@@ -74,7 +74,7 @@ public struct PlayerResponseParser: Sendable {
             // ("Please sign in" / "يرجى تسجيل الدخول"), so only the structure can decide. Terminal:
             // the source gated it -- read as a bot check it rotated the session and could trip the
             // app-wide cooldown.
-            if wire.playabilityStatus.messages?.isEmpty == false {
+            if wire.playabilityStatus.messages?.isNonEmpty == true {
                 return .unavailable(reason: reason)
             }
             return .botCheck
@@ -147,7 +147,32 @@ public struct PlayerResponseParser: Sendable {
             var desktopLegacyAgeGateReason: Int?
             /// Present on a private video's LOGIN_REQUIRED, absent from every bot check (live probe
             /// 2026-10-14) -- the locale-independent private marker.
-            var messages: [String]?
+            var messages: Messages?
+
+            /// Only "present and non-empty, in any shape" matters (spec R7, ruling 2026-10-14): a bot
+            /// check never carries `messages`, so an unexpected shape read as absent would turn a private
+            /// video into a bot check. Never throws, because a failed decode would drop the whole
+            /// response, which on an OK body is an outage. A number or bool counts as absent (never seen).
+            struct Messages: Decodable {
+                let isNonEmpty: Bool
+                init(from decoder: Decoder) {
+                    if let array = try? decoder.unkeyedContainer() {
+                        isNonEmpty = !array.isAtEnd
+                    } else if let object = try? decoder.container(keyedBy: AnyKey.self) {
+                        isNonEmpty = !object.allKeys.isEmpty
+                    } else if let string = try? decoder.singleValueContainer().decode(String.self) {
+                        isNonEmpty = !string.isEmpty
+                    } else {
+                        isNonEmpty = false
+                    }
+                }
+                private struct AnyKey: CodingKey {
+                    let stringValue: String
+                    var intValue: Int? { nil }
+                    init?(stringValue: String) { self.stringValue = stringValue }
+                    init?(intValue: Int) { nil }
+                }
+            }
         }
         struct Format: Decodable {
             var itag: Int?
