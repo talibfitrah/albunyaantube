@@ -1,0 +1,28 @@
+ios/FitrahTubeUITests/ScreenshotTests.swift
+  s_dbb6b1f3671904::t_8547d1a1914148 2814-2819,2849-2850
+ios/scripts/screenshots.sh
+  s_dbb6b1f3671904::t_09413efa4d27a3 465-470,472-486
+ios/FitrahTube/Features/Player/PlayerToolbar.swift
+  s_dbb6b1f3671904::t_8547d1a1914148 76
+ios/FitrahTubeTests/PlayerToolbarTests.swift
+  s_dbb6b1f3671904::t_014d9e6a4297e2 243
+  s_dbb6b1f3671904::t_869fe28249f0a2 234-242,244-246
+ios/FitrahTube/DesignSystem/Tokens.swift
+  s_dbb6b1f3671904::t_8547d1a1914148 218-223
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da3f69d86a3b3a26ae6fde3bdef8077b4879e109",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
