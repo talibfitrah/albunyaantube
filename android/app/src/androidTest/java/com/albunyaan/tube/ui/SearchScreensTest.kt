@@ -42,7 +42,6 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import javax.inject.Inject
 import java.util.concurrent.CountDownLatch
-import java.util.concurrent.TimeUnit
 
 /**
  * Spec §6 on the real SearchFragment: a newer search shows the thin progress bar over the old results,

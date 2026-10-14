@@ -5,7 +5,6 @@ import com.albunyaan.tube.data.filters.PublishedDate
 import com.albunyaan.tube.data.filters.SortOption
 import com.albunyaan.tube.data.filters.VideoLength
 import com.albunyaan.tube.data.model.Category
-import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
