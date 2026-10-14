@@ -122,7 +122,18 @@ class ContentLibraryDeleteReachesDevicesTest {
 
         controller.bulkDelete(request("video", "vid-1"));
 
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1", null));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
+    }
+
+    @Test
+    void aBulkDeleteWhoseCommitAckFailsStillPublishesACatalogEvent() throws Exception {
+        // The delete may have committed before the ack was lost: the index re-reads and decides (F3).
+        stubDeletableVideo("vid-1", "yt-vid-1");
+        when(firestore.batch().commit()).thenReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("firestore down")));
+
+        controller.bulkDelete(request("video", "vid-1"));
+
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
     }
 
     @Test

@@ -251,7 +251,7 @@ class ContentLibraryBulkGraduationTest {
         controller.bulkApprove(requestFor("video", "v1", "v2", "v3"));
 
         for (String id : List.of("v1", "v2", "v3")) {
-            verify(events).publishEvent(new CatalogChanged("VIDEO", id, null));
+            verify(events).publishEvent(new CatalogChanged("VIDEO", id));
         }
     }
 
@@ -270,16 +270,17 @@ class ContentLibraryBulkGraduationTest {
 
         controller.bulkReject(request("channel", "ch-1"));
 
-        verify(events).publishEvent(new CatalogChanged("CHANNEL", "ch-1", null));
+        verify(events).publishEvent(new CatalogChanged("CHANNEL", "ch-1"));
     }
 
     @Test
-    void bulkApprove_publishesNothingWhenTheBatchFailsToCommit() throws Exception {
+    void bulkApprove_stillPublishesWhenTheCommitAckFails() throws Exception {
+        // The batch may have committed before the ack was lost: the index re-reads each item and decides (F3).
         WriteBatch batch = stubFirestoreReturningBatch("videos", "vid-1", "yt-1");
         when(batch.commit()).thenReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("firestore down")));
 
         controller.bulkApprove(request("video", "vid-1"));
 
-        verifyNoInteractions(events);
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
     }
 }

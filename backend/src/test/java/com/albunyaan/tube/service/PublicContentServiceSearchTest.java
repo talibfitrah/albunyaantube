@@ -89,6 +89,29 @@ class PublicContentServiceSearchTest {
     }
 
     @Test
+    void shortsLiveAndEmbedUrlsAreAnsweredById() throws Exception {
+        SearchIndex.Hits byId = new SearchIndex.Hits(items(1), "exact");
+        when(searchIndex.byId("abcdefghijk", null)).thenReturn(byId);
+        for (String url : List.of("https://www.youtube.com/shorts/abcdefghijk", "https://youtube.com/live/abcdefghijk?feature=share",
+                "https://www.youtube.com/embed/abcdefghijk")) {
+            assertSame(byId, service.search(url, null, 20), url);
+        }
+        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+    }
+
+    @Test
+    void aYouTubeUrlTheParserCannotReadAnswersNoneAndIsNotSearchedAsText() throws Exception {
+        // F11: a pasted /@handle (or any other unread YouTube URL) is never fuzzy-searched as words.
+        for (String url : List.of("https://www.youtube.com/@SomeHandle", "https://www.youtube.com/feed/subscriptions",
+                "https://youtu.be/")) {
+            SearchIndex.Hits hits = service.search(url, null, 20);
+            assertEquals("none", hits.match(), url);
+            assertTrue(hits.items().isEmpty(), url);
+        }
+        verifyNoInteractions(searchIndex);
+    }
+
+    @Test
     void aBareChannelIdThatMissesAnswersNoneAndIsNotSearchedAsText() throws Exception {
         // Only a bare 11-character token can be an ordinary word; a 24-character UC… token cannot.
         String channelId = "UC" + "a".repeat(22);
@@ -96,6 +119,30 @@ class PublicContentServiceSearchTest {
 
         assertEquals("none", service.search(channelId, null, 20).match());
         verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+    }
+
+    @Test
+    void anUnknownTypeAnswersNoneInsteadOfEveryType() throws Exception {
+        // F10 / Codex P3: /search validates nothing, and the legacy search answered [] for any type but ALL/CHANNELS/PLAYLISTS/VIDEOS.
+        lenient().when(searchIndex.search(any(), any(), anyBoolean(), anyInt(), any()))
+                .thenReturn(new SearchIndex.Hits(items(1), "exact"));
+        lenient().when(searchIndex.byId(any(), any())).thenReturn(new SearchIndex.Hits(items(1), "exact"));
+        for (String type : List.of("VIDEO", "FOO", "HOME", "", "https://youtu.be/abcdefghijk")) {
+            for (String q : List.of("quran", "https://youtu.be/abcdefghijk")) {
+                SearchIndex.Hits hits = service.search(q, type, 20);
+                assertEquals("none", hits.match(), type + " / " + q);
+                assertTrue(hits.items().isEmpty(), type + " / " + q);
+            }
+        }
+        verifyNoInteractions(searchIndex);
+    }
+
+    @Test
+    void allAndNoTypeStillSearchEveryType() throws Exception {
+        SearchIndex.Hits text = new SearchIndex.Hits(items(1), "exact");
+        when(searchIndex.search("quran", null, false, 20, null)).thenReturn(text);
+        assertSame(text, service.search("quran", null, 20));
+        assertSame(text, service.search("quran", "all", 20));
     }
 
     @Test
@@ -127,11 +174,51 @@ class PublicContentServiceSearchTest {
         assertNull(second.page().getPageInfo().getNextCursor());
     }
 
+    private static String cursor(String offset) {
+        return Base64.getEncoder().encodeToString(offset.getBytes());
+    }
+
+    @Test
+    void aCursorPastTheCapAnswersAnEmptyPageWithoutSearching() throws Exception {
+        // F2 / stage 4 H1: a crafted offset made the index re-run the query once per 10 hits, or overflowed.
+        lenient().when(searchIndex.search(any(), any(), anyBoolean(), anyInt(), any()))
+                .thenReturn(new SearchIndex.Hits(items(25), "exact"));
+        for (String offset : List.of("1001", "2000000000", String.valueOf(Integer.MAX_VALUE), "3000000000")) {
+            PublicContentService.SearchPage page = assertDoesNotThrow(
+                    () -> service.searchContent("CHANNELS", cursor(offset), 20, null, null, null, "quran"), offset);
+            assertTrue(page.page().getData().isEmpty(), offset);
+            assertNull(page.page().getPageInfo().getNextCursor(), offset);
+        }
+        verify(searchIndex, never()).search(any(), any(), anyBoolean(), anyInt(), any());
+    }
+
+    @Test
+    void theLastCursorUnderTheCapStillSearches() throws Exception {
+        when(searchIndex.search("quran", "CHANNEL", true, 1021, null)).thenReturn(new SearchIndex.Hits(items(1005), "exact"));
+
+        PublicContentService.SearchPage page = service.searchContent("CHANNELS", cursor("1000"), 20, null, null, null, "quran");
+
+        assertEquals(List.of("v1000", "v1001", "v1002", "v1003", "v1004"),
+                page.page().getData().stream().map(ContentItemDto::getId).toList());
+        assertNull(page.page().getPageInfo().getNextCursor());
+    }
+
     @Test
     void inTabSearchDoesNotApplyToHomeOrToOneCharacter() throws Exception {
         assertNull(service.searchContent("HOME", null, 20, null, null, null, "quran"));
         assertNull(service.searchContent("CHANNELS", null, 20, null, null, null, "q"));
         verifyNoInteractions(searchIndex);
+    }
+
+    @Test
+    void aFilteredInTabSearchChecksReadinessBeforeReadingFirestore() throws Exception {
+        // F12: during the boot window each filtered keystroke paid the membership reads, then answered 503 anyway.
+        doThrow(new SearchIndex.NotReadyException()).when(searchIndex).awaitReady();
+
+        assertThrows(SearchIndex.NotReadyException.class,
+                () -> service.searchContent("VIDEOS", null, 20, "some-category", "SHORT", null, "quran"));
+
+        verifyNoInteractions(channelRepository, playlistRepository, videoRepository, categoryRepository, orderRepository);
     }
 
     @Test

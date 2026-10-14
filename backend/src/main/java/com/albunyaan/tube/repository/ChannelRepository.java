@@ -75,8 +75,11 @@ public class ChannelRepository {
                 .document(channel.getId())
                 .set(channel);
 
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("CHANNEL", channel.getId(), channel));
+        try {
+            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
+            events.publishEvent(new CatalogChanged("CHANNEL", channel.getId()));
+        }
         return channel;
     }
 
@@ -94,7 +97,7 @@ public class ChannelRepository {
         channel.setExcludedItems(channel.getExcludedItems());
 
         DocumentReference docRef = getCollection().document(channel.getId());
-        Channel saved = firestore.runTransaction(transaction -> {
+        ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
             DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + channel.getId());
@@ -107,8 +110,15 @@ public class ChannelRepository {
             }
             transaction.set(docRef, channel);
             return channel;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("CHANNEL", saved.getId(), saved));
+        });
+        Channel saved;
+        try {
+            saved = committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
+            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("CHANNEL", channel.getId()));
+            throw e;
+        }
+        events.publishEvent(new CatalogChanged("CHANNEL", saved.getId()));
         return saved;
     }
 
@@ -191,6 +201,16 @@ public class ChannelRepository {
             }
         }
         return out;
+    }
+
+    /**
+     * Every document with `status`, raw and unordered, for the search index: no orderBy, so a document
+     * without `createdAt` is not dropped (F6); the index maps each one itself, skipping one it cannot (F4).
+     */
+    public List<QueryDocumentSnapshot> findByStatusUnordered(String status)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("status", status).get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**
@@ -325,8 +345,11 @@ public class ChannelRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
+        try {
+            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
+            events.publishEvent(new CatalogChanged("CHANNEL", id));
+        }
     }
 
     /**
@@ -341,7 +364,7 @@ public class ChannelRepository {
             throw new IllegalArgumentException("id and non-empty expectedStatuses required");
         }
         DocumentReference docRef = getCollection().document(id);
-        firestore.runTransaction(transaction -> {
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
             DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + id);
@@ -354,8 +377,14 @@ public class ChannelRepository {
             }
             transaction.delete(docRef);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
+        });
+        try {
+            committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
+            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("CHANNEL", id));
+            throw e;
+        }
+        events.publishEvent(new CatalogChanged("CHANNEL", id));
     }
 
     /**
@@ -376,9 +405,12 @@ public class ChannelRepository {
             fields.put("subscribers", subscribers);
         }
         fields.put("updatedAt", com.google.cloud.Timestamp.now());
-        getCollection().document(id).update(fields)
-                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("CHANNEL", id, null));
+        try {
+            getCollection().document(id).update(fields)
+                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
+            events.publishEvent(new CatalogChanged("CHANNEL", id));
+        }
     }
 
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {

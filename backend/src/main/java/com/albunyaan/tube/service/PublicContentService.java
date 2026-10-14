@@ -94,11 +94,10 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort + '-q' + (#q == null ? '' : #q)",
-               condition = "#q == null || #q.isBlank()")
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
-            String category, String length, String date, String sort, String q
+            String category, String length, String date, String sort
     ) throws ExecutionException, InterruptedException, TimeoutException {
 
         // Null-safe: default to HOME if type is null or blank
@@ -129,7 +128,7 @@ public class PublicContentService {
                     // Category specified: use admin-defined sort order with offset pagination.
                     // Over-fetch by 1 to reliably detect whether a next page exists,
                     // avoiding phantom cursors when total items are an exact multiple of limit.
-                    int offset = decodeCursorOffset(cursor);
+                    int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
                     items = getCategoryContentItems(allCategoryIds, limit + 1, offset);
                     boolean hasNext = items.size() > limit;
                     if (hasNext) {
@@ -1011,7 +1010,9 @@ public class PublicContentService {
         String q = query.trim(); // `/search` binds q as a required parameter: never null
         if (q.length() > MAX_QUERY_LENGTH) q = q.substring(0, MAX_QUERY_LENGTH);
         String docType = SearchIndex.docType(type);
+        if (docType == null && type != null && !"ALL".equalsIgnoreCase(type)) return SearchIndex.Hits.NONE; // unknown type, as the legacy search (F10)
         YouTubeIdentifier identifier = parseYouTubeIdentifier(q);
+        if (identifier == null && isYouTubeUrl(q)) return SearchIndex.Hits.NONE; // e.g. /@handle: never searched as words (F11)
         if (identifier != null) {
             SearchIndex.Hits byId = searchIndex.byId(identifier.id, docType);
             boolean bareToken = identifier.type == YouTubeIdentifier.Type.VIDEO && identifier.id.equals(q);
@@ -1033,6 +1034,11 @@ public class PublicContentService {
             throws ExecutionException, InterruptedException, TimeoutException, IOException {
         String docType = SearchIndex.docType(type);
         if (docType == null || q.length() < 2) return null; // the controller passes q trimmed and non-empty
+        long offset = decodeCursorOffset(cursor);
+        if (offset > MAX_SEARCH_FETCH) { // no tab pages past its catalog; a crafted offset must cost nothing (F2)
+            return new SearchPage(new CursorPageDto<>(List.of(), null), "none");
+        }
+        searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
         boolean videoFilters = "VIDEO".equals(docType)
                 && ((length != null && !length.isBlank()) || (date != null && !date.isBlank()));
@@ -1047,11 +1053,11 @@ public class PublicContentService {
             };
             allowedIds = members.stream().map(ContentItemDto::getId).collect(Collectors.toSet());
         }
-        int offset = decodeCursorOffset(cursor);
-        SearchIndex.Hits hits = searchIndex.search(q, docType, true, offset + limit + 1, allowedIds);
+        long end = offset + limit; // long: never overflows (F2)
+        SearchIndex.Hits hits = searchIndex.search(q, docType, true, Math.toIntExact(end + 1), allowedIds);
         List<ContentItemDto> all = hits.items();
-        List<ContentItemDto> page = all.subList(Math.min(offset, all.size()), Math.min(offset + limit, all.size()));
-        String next = all.size() > offset + limit ? encodeCursor(offset + limit) : null;
+        List<ContentItemDto> page = all.subList((int) Math.min(offset, all.size()), (int) Math.min(end, all.size()));
+        String next = all.size() > end ? encodeCursor((int) end) : null;
         return new SearchPage(new CursorPageDto<>(page, next), hits.match());
     }
 
@@ -1074,8 +1080,8 @@ public class PublicContentService {
     /**
      * Parse a query string to extract YouTube identifiers.
      * Supports:
-     * - Video: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/v/XXX
-     * - Channel: youtube.com/channel/UCXXX, youtube.com/@handle
+     * - Video: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/shorts|live|embed/XXX
+     * - Channel: youtube.com/channel/UCXXX (a /@handle cannot be resolved here: search answers none)
      * - Playlist: youtube.com/playlist?list=PLXXX
      * - Direct IDs: 11-char video IDs, UCxxxx channel IDs, PLxxxx playlist IDs
      *
@@ -1090,7 +1096,7 @@ public class PublicContentService {
         String trimmed = query.trim();
 
         // Check for URL patterns
-        if (trimmed.contains("youtube.com") || trimmed.contains("youtu.be")) {
+        if (isYouTubeUrl(trimmed)) {
             return parseYouTubeUrl(trimmed);
         }
 
@@ -1098,8 +1104,23 @@ public class PublicContentService {
         return parseDirectId(trimmed);
     }
 
+    private static boolean isYouTubeUrl(String query) {
+        return query.contains("youtube.com") || query.contains("youtu.be");
+    }
+
     private YouTubeIdentifier parseYouTubeUrl(String url) {
         try {
+            // Video: youtube.com/shorts/XXX, /live/XXX, /embed/XXX
+            for (String path : new String[]{"/shorts/", "/live/", "/embed/"}) {
+                int at = url.indexOf(path);
+                if (at != -1) {
+                    String videoId = extractPathSegment(url, at + path.length());
+                    if (isValidVideoId(videoId)) {
+                        return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
+                    }
+                }
+            }
+
             // Video: youtube.com/watch?v=XXX
             if (url.contains("watch?") || url.contains("watch/?")) {
                 int vIndex = url.indexOf("v=");
@@ -1354,11 +1375,11 @@ public class PublicContentService {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
 
-    private int decodeCursorOffset(String cursor) {
+    private long decodeCursorOffset(String cursor) {
         if (cursor == null || cursor.isEmpty()) return 0;
         try {
             String decoded = new String(Base64.getDecoder().decode(cursor));
-            return Math.max(0, Integer.parseInt(decoded));
+            return Math.max(0, Long.parseLong(decoded));
         } catch (Exception e) {
             log.warn("Invalid content cursor: {}", cursor);
             return 0;

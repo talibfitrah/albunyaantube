@@ -14,9 +14,11 @@ import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.VisibilityPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
+import com.google.cloud.firestore.QueryDocumentSnapshot;
 import jakarta.annotation.PreDestroy;
 import org.apache.lucene.document.Document;
 import org.apache.lucene.document.Field;
+import org.apache.lucene.document.SortedDocValuesField;
 import org.apache.lucene.document.StoredField;
 import org.apache.lucene.document.StringField;
 import org.apache.lucene.document.TextField;
@@ -31,10 +33,13 @@ import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
 import org.apache.lucene.search.SearcherManager;
+import org.apache.lucene.search.Sort;
+import org.apache.lucene.search.SortField;
 import org.apache.lucene.search.TermQuery;
 import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
+import org.apache.lucene.util.BytesRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -44,6 +49,7 @@ import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.util.ArrayList;
@@ -63,6 +69,8 @@ import java.util.concurrent.Delayed;
 import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
 /**
@@ -77,6 +85,8 @@ public class SearchIndex {
     static final int MIN_CONFIDENT_HITS = 3;
     static final int STREAM_PAGE = 500;
     private static final String[] TIER_NAMES = {"", "exact", "approximate", "related"};
+    /** Relevance, then `key`: tied hits keep one order across page fetches even when a save re-appends one (F9). */
+    private static final Sort RELEVANCE = new Sort(SortField.FIELD_SCORE, new SortField("key", SortField.Type.STRING));
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
     private static final ObjectMapper JSON = new ObjectMapper();
@@ -110,6 +120,9 @@ public class SearchIndex {
     });
     private volatile long buildStartedAt;
     private volatile String catalogCounts = "";
+    private final AtomicBoolean tragicLogged = new AtomicBoolean();
+    /** Delays of the re-read retries after a failed one (F3); tests shorten them. */
+    long[] rereadRetryMs = {2_000, 10_000, 60_000};
 
     // Query-time stream visibility (spec §4.2). Replaced or mutated only on the writer thread.
     /** Admitted channel/playlist source keys ("channel:UC…") -> the video ids that source excludes. */
@@ -140,7 +153,7 @@ public class SearchIndex {
     /** Context close: stop the writer thread, drop the uncommitted index and delete its directory. */
     @PreDestroy
     void close() {
-        Path path = dir instanceof FSDirectory fs ? fs.getDirectory() : null; // unreadable once dir is closed
+        Path path = path(); // unreadable once dir is closed
         executor.shutdownNow();
         try {
             executor.awaitTermination(5, TimeUnit.SECONDS);
@@ -155,6 +168,11 @@ public class SearchIndex {
         } finally { // whatever failed above, the temp directory must not outlive the context
             if (path != null) delete(path);
         }
+    }
+
+    /** The index directory on disk; null for an in-memory index. */
+    Path path() {
+        return dir instanceof FSDirectory fs ? fs.getDirectory() : null;
     }
 
     private static void delete(Path path) {
@@ -180,43 +198,57 @@ public class SearchIndex {
         } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             if (executor.isShutdown()) return; // close() interrupted us: not a failure, and no retry
+            logIfTragic();
             log.error("search index build failed; retrying in {} s", retryMs / 1000, e);
             executor.schedule(() -> buildCatalog(Math.min(retryMs * 2, MAX_RETRY_MS)), retryMs, TimeUnit.MILLISECONDS);
             return;
         }
         ready.countDown();
-        executor.execute(() -> loadStreams(null, 0, FIRST_RETRY_MS));
+        executor.execute(() -> loadStreams(null, 0, 0, FIRST_RETRY_MS));
     }
 
     /**
      * Stream half: one page of 500 per writer task, so catalog events interleave with the ≈46k-document
      * load instead of queuing behind it (spec §5.7). Until it finishes, results hold catalog items only.
      */
-    private void loadStreams(String afterId, int loaded, long retryMs) {
-        List<SearchableStream> page;
+    private void loadStreams(String afterId, int loaded, int skipped, long retryMs) {
+        List<QueryDocumentSnapshot> page;
+        int skippedHere = 0;
         try {
             page = streams.findVisiblePage(afterId, STREAM_PAGE);
-            for (SearchableStream s : page) {
-                if (s.getStreamId() == null || s.getTitle() == null) continue;
-                writer.updateDocument(streamKey(s.getStreamId()), streamDoc(streamDto(s), s.getSourceKeys()));
+            for (QueryDocumentSnapshot d : page) {
+                SearchableStream s;
+                Document doc;
+                try { // one document that cannot be mapped or indexed must not stop the load (F4)
+                    s = d.toObject(SearchableStream.class);
+                    if (s.getStreamId() == null || s.getTitle() == null) continue;
+                    doc = streamDoc(streamDto(s), s.getSourceKeys());
+                } catch (Exception e) {
+                    skippedHere++;
+                    log.warn("search index skipped stream {}", d.getId(), e);
+                    continue;
+                }
+                writer.updateDocument(streamKey(s.getStreamId()), doc);
             }
             searchers.maybeRefreshBlocking();
-        } catch (Exception e) {
+        } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future (F5)
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             if (executor.isShutdown()) return;
+            logIfTragic();
             log.error("search index stream page after {} failed; retrying in {} s", afterId, retryMs / 1000, e);
-            executor.schedule(() -> loadStreams(afterId, loaded, Math.min(retryMs * 2, MAX_RETRY_MS)),
+            executor.schedule(() -> loadStreams(afterId, loaded, skipped, Math.min(retryMs * 2, MAX_RETRY_MS)),
                     retryMs, TimeUnit.MILLISECONDS);
             return;
         }
         int total = loaded + page.size();
+        int totalSkipped = skipped + skippedHere;
         if (page.size() == STREAM_PAGE) {
-            String last = page.get(page.size() - 1).getStreamId();
-            executor.execute(() -> loadStreams(last, total, FIRST_RETRY_MS));
+            String last = page.get(page.size() - 1).getId();
+            executor.execute(() -> loadStreams(last, total, totalSkipped, FIRST_RETRY_MS));
         } else {
             // Spec §5.1 step 3: the line that measures the real counts and size after each deploy.
-            log.info("search index built: {} streams={} bytes={} ms={}",
-                    catalogCounts, total, bytes(), System.currentTimeMillis() - buildStartedAt);
+            log.info("search index built: {} streams={} skippedStreams={} bytes={} ms={}",
+                    catalogCounts, total, totalSkipped, bytes(), System.currentTimeMillis() - buildStartedAt);
         }
     }
 
@@ -225,24 +257,37 @@ public class SearchIndex {
      * document is built before the old ones are deleted, so a failure leaves the last good catalog.
      */
     void replaceCatalog() throws Exception {
-        List<Channel> cs = channels.findByStatus("APPROVED");
-        List<Playlist> ps = playlists.findByStatus("APPROVED");
-        List<Video> vs = videos.findAllUnordered();
         Map<String, Set<String>> sources = new ConcurrentHashMap<>();
         Set<String> ids = ConcurrentHashMap.newKeySet();
         List<Document> docs = new ArrayList<>();
-        int channelDocs = 0, playlistDocs = 0;
-        for (Channel c : cs) if (admit(c, sources, ids, docs)) channelDocs++;
-        for (Playlist p : ps) if (admit(p, sources, ids, docs)) playlistDocs++;
-        for (Video v : vs) admit(v, sources, ids, docs);
-        int videoDocs = docs.size() - channelDocs - playlistDocs;
+        int[] c = admitEach(channels.findByStatusUnordered("APPROVED"), Channel.class, sources, ids, docs);
+        int[] p = admitEach(playlists.findByStatusUnordered("APPROVED"), Playlist.class, sources, ids, docs);
+        int[] v = admitEach(videos.findAllUnordered(), Video.class, sources, ids, docs);
         replace(new Term("source", "CATALOG"), docs); // one atomic block: a failed add keeps the old catalog
         admittedSources = sources;
         videoIds = ids;
         searchers.maybeRefreshBlocking();
-        catalogCounts = String.format("channels=%d playlists=%d videos=%d blockedVideos=%d",
-                channelDocs, playlistDocs, videoDocs, ids.size() - videoDocs);
+        catalogCounts = String.format("channels=%d playlists=%d videos=%d blockedVideos=%d skipped=%d",
+                c[0], p[0], v[0], v[1], c[2] + p[2] + v[2]);
         log.info("search index catalog: {}", catalogCounts);
+    }
+
+    /**
+     * Admits each document; returns {admitted, not admitted, skipped}. Counting documents, not ids, keeps the
+     * log exact when two share a youtubeId (F8). One that cannot be mapped or indexed is skipped, never failing the build (F4).
+     */
+    private static int[] admitEach(List<QueryDocumentSnapshot> found, Class<?> type, Map<String, Set<String>> sources,
+                                   Set<String> ids, List<Document> docs) {
+        int[] counts = new int[3];
+        for (QueryDocumentSnapshot d : found) {
+            try {
+                counts[admit(d.toObject(type), sources, ids, docs) ? 0 : 1]++;
+            } catch (Exception e) {
+                counts[2]++;
+                log.warn("search index skipped {} {}", type.getSimpleName(), d.getId(), e);
+            }
+        }
+        return counts;
     }
 
     /** Safety net (spec §5.4): catalog only; streams have one fully hooked writer and are re-read at boot. */
@@ -251,9 +296,10 @@ public class SearchIndex {
         executor.execute(() -> {
             try {
                 replaceCatalog();
-            } catch (Exception e) {
+            } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future (F5)
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 if (executor.isShutdown()) return;
+                logIfTragic();
                 log.warn("search index reconcile failed; keeping the last good index", e);
             }
         });
@@ -262,45 +308,49 @@ public class SearchIndex {
     // ---- freshness (spec §5.2, §5.3) -----------------------------------------------------------
 
     /**
-     * The entity is the caller's live object: it is turned into Lucene documents here, on the caller's
-     * thread, so later changes to it cannot reach the index (and a save costs no Firestore read, spec §5.6).
-     * An event without an entity (delete, partial update) is re-read by id on the writer thread.
+     * Every event is an invalidation (F3): the writer re-reads the document by id when it applies the
+     * event, so the index converges to Firestore's current state whatever order the events arrive in.
      */
     @EventListener
     public void onCatalogChanged(CatalogChanged event) {
+        reread(event, 0);
+    }
+
+    /** A failed re-read is retried on the writer; after the last retry the item is hidden until the reconcile re-admits it. */
+    private void reread(CatalogChanged event, int retry) {
         String what = "catalog " + event.type() + " " + event.docId();
-        Built snapshot = null;
-        if (event.entity() != null) {
+        submit(what, () -> {
             try {
-                snapshot = build(event.entity());
-            } catch (Throwable e) { // Firestore already committed: the publisher must not see a failure (spec §7)
-                log.warn("search index update dropped ({}): snapshot failed", what, e);
-                return;
+                applyCatalogChange(event, reload(event.type(), event.docId()));
+            } catch (Throwable e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                if (executor.isShutdown()) return;
+                if (retry < rereadRetryMs.length) {
+                    log.warn("search index re-read failed ({}); retrying in {} ms", what, rereadRetryMs[retry], e);
+                    executor.schedule(() -> reread(event, retry + 1), rereadRetryMs[retry], TimeUnit.MILLISECONDS);
+                    return;
+                }
+                log.warn("search index re-read failed ({}); hiding it until the next reconcile", what, e);
+                applyCatalogChange(event, null); // fail closed: never keep showing what may be rejected or deleted
             }
-        }
-        Built built = snapshot;
-        submit(what, () -> applyCatalogChange(event, built != null ? built : build(reload(event.type(), event.docId()))));
+        });
     }
 
-    /** What {@link #admit} produced for one entity, not yet applied to the index or the visibility maps. */
-    private record Built(Map<String, Set<String>> sources, Set<String> videoIds, List<Document> docs) {}
-
-    private static Built build(Object entity) throws IOException {
-        Built built = new Built(new HashMap<>(), new HashSet<>(), new ArrayList<>());
-        admit(entity, built.sources(), built.videoIds(), built.docs());
-        return built;
-    }
-
-    private void applyCatalogChange(CatalogChanged event, Built built) throws Exception {
+    /** Indexes `entity` (null = gone) under the event's key; nothing is applied if building its documents fails. */
+    private void applyCatalogChange(CatalogChanged event, Object entity) throws Exception {
+        Map<String, Set<String>> sources = new HashMap<>();
+        Set<String> ids = new HashSet<>();
+        List<Document> docs = new ArrayList<>();
+        admit(entity, sources, ids, docs);
         Term key = new Term("key", event.type() + ":" + event.docId());
         // The old source key goes first: the new one may be the same key, and must not lose it.
         String oldId = storedValues(key.text(), "id").stream().findFirst().orElse(null);
         if (oldId != null && !"VIDEO".equals(event.type())) {
             admittedSources.remove(event.type().toLowerCase(Locale.ROOT) + ":" + oldId);
         }
-        admittedSources.putAll(built.sources());
-        videoIds.addAll(built.videoIds()); // a deleted Video's id stays in videoIds until the next reconcile: its stream stays hidden (fail closed)
-        replace(key, built.docs());
+        admittedSources.putAll(sources);
+        videoIds.addAll(ids); // a deleted Video's id stays in videoIds until the next reconcile: its stream stays hidden (fail closed)
+        replace(key, docs);
     }
 
     /** Swaps the documents matching `term` for `docs` in one step. An empty block must not reach updateDocuments: it breaks rollback. */
@@ -382,11 +432,21 @@ public class SearchIndex {
                     searchers.maybeRefreshBlocking();
                 } catch (Throwable e) { // an Error would otherwise vanish inside the executor's future
                     if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                    if (!executor.isShutdown()) log.warn("search index update failed ({})", what, e);
+                    if (executor.isShutdown()) return;
+                    logIfTragic();
+                    log.warn("search index update failed ({})", what, e);
                 }
             });
         } catch (RejectedExecutionException e) {
             log.warn("search index update dropped ({}): writer stopped", what, e);
+        }
+    }
+
+    /** A tragic IndexWriter failure never heals: every later write fails and search serves a frozen index. Said once, at ERROR (F7). */
+    private void logIfTragic() {
+        Throwable tragic = writer.getTragicException();
+        if (tragic != null && tragicLogged.compareAndSet(false, true)) {
+            log.error("search index writer hit a tragic failure; search serves the last good index until a restart", tragic);
         }
     }
 
@@ -414,9 +474,18 @@ public class SearchIndex {
         String match = "none";
         IndexSearcher searcher = searchers.acquire();
         try {
+            // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
+            Map<Query, Query> rewritten = new HashMap<>();
+            UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
+                try {
+                    return searcher.rewrite(q);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
             for (int tier = 1; tier <= 3 && out.size() < Math.min(want, MIN_CONFIDENT_HITS); tier++) {
                 boolean wasEmpty = out.isEmpty();
-                collect(searcher, filtered(SearchText.tier(tier, tokens), type, catalogOnly), want, allowedIds, out, seen);
+                collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen);
                 if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
             }
         } finally {
@@ -449,7 +518,8 @@ public class SearchIndex {
         };
     }
 
-    private void awaitReady() {
+    /** Blocks up to the ready wait for the first catalog build; NotReadyException after it (spec §7). */
+    public void awaitReady() {
         try {
             if (ready.await(readyWaitMs, TimeUnit.MILLISECONDS)) return;
         } catch (InterruptedException e) {
@@ -465,13 +535,17 @@ public class SearchIndex {
         return b.build();
     }
 
-    /** Over-fetches 2x and pages with searchAfter until `want` visible, unseen, allowed items are found. */
+    /**
+     * Over-fetches 2x and pages with searchAfter until `want` visible, unseen, allowed items are found. The page
+     * doubles each round, so many hidden hits cost a few query runs, not one per page (M7).
+     */
     private void collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds,
                          List<ContentItemDto> out, Set<String> seen) throws IOException {
         ScoreDoc after = null;
-        while (out.size() < want) {
-            int n = Math.max(10, 2 * (want - out.size()));
-            TopDocs top = after == null ? searcher.search(query, n) : searcher.searchAfter(after, query, n);
+        long n = Math.max(10, 2L * (want - out.size()));
+        for (; out.size() < want; n = Math.min(2 * n, Integer.MAX_VALUE)) {
+            TopDocs top = after == null ? searcher.search(query, (int) n, RELEVANCE)
+                    : searcher.searchAfter(after, query, (int) n, RELEVANCE);
             if (top.scoreDocs.length == 0) return;
             StoredFields fields = searcher.storedFields();
             for (ScoreDoc hit : top.scoreDocs) {
@@ -586,6 +660,7 @@ public class SearchIndex {
                                 List<String> keywords, String channel, ContentItemDto dto) throws IOException {
         Document doc = new Document();
         doc.add(new StringField("key", key, Field.Store.NO));
+        doc.add(new SortedDocValuesField("key", new BytesRef(key))); // the tie-break (F9)
         doc.add(new StringField("id", id, Field.Store.YES));
         doc.add(new StringField("type", type, Field.Store.NO));
         doc.add(new StringField("source", source, Field.Store.YES));
@@ -626,13 +701,14 @@ public class SearchIndex {
     }
 
     /**
-     * Tests only: runs every queued writer task, including tasks those tasks queue in turn, and waits
-     * out a task still running when the queue drains (Ruling F1). A retry scheduled for later is not waited for.
+     * Tests only: runs every queued writer task, including tasks those tasks queue in turn (Ruling F1). The
+     * check runs ON the writer thread, so no task can be between the queue and the worker while it looks.
+     * A retry scheduled for later is not waited for.
      */
     void awaitWrites() throws Exception {
-        do {
-            executor.submit(() -> { }).get(10, TimeUnit.SECONDS);
-        } while (executor.getQueue().stream().anyMatch(t -> ((Delayed) t).getDelay(TimeUnit.NANOSECONDS) <= 0)
-                || executor.getActiveCount() > 0);
+        while (executor.submit(() -> executor.getQueue().stream()
+                .anyMatch(t -> ((Delayed) t).getDelay(TimeUnit.NANOSECONDS) <= 0)).get(10, TimeUnit.SECONDS)) {
+            // another round: the tasks that ran queued more
+        }
     }
 }

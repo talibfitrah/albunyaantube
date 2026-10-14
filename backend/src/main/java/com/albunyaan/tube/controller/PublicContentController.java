@@ -119,7 +119,7 @@ public class PublicContentController {
         }
 
         CursorPageDto<ContentItemDto> page = contentService.getContent(
-                type, cursor, validLimit, category, length, date, sort, normalizedQ
+                type, cursor, validLimit, category, length, date, sort
         );
 
         return ResponseEntity.ok(page);

@@ -36,6 +36,7 @@ import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
 import java.util.ArrayList;
 import java.util.Collections;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashSet;
@@ -43,15 +44,21 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
+import java.util.stream.IntStream;
 
 /** Text analysis and the three-tier query ladder (spec §4.3-§4.5). Stateless; safe from any thread. */
 final class SearchText {
 
     static final int MAX_TOKENS = 10;
+    /** Fuzzy builds an automaton per token and field: none past 20 code points, and only the 4 longest tokens (F1). */
+    static final int MAX_FUZZY_LENGTH = 20, MAX_FUZZY_TOKENS = 4;
 
     // Lucene 9 counts every leaf of the rewritten tree, and a fuzzy query expands to 50 terms on each
-    // of 3 fields. Ten distinct long tokens reach about 10 x (157 + 91) = 2.5k leaves, past the default
-    // 1,024, which would answer 500. Process-wide; this class is loaded before the first query is built.
+    // of 3 fields. Even with fuzzy on 4 tokens (F1), ten long tokens that all have concept groups reach
+    // 1,260 leaves at tier 3 (measured), past the default 1,024, which would answer 500. Process-wide;
+    // this class is loaded before the first query is built.
     static {
         IndexSearcher.setMaxClauseCount(4096);
     }
@@ -161,12 +168,16 @@ final class SearchText {
         return Collections.unmodifiableSet(CONCEPTS.getOrDefault(stem(token), Set.of()));
     }
 
-    /** Tier 1 = exact, 2 = approximate, 3 = related (spec §4.4). `tokens` are BASE tokens. */
-    static Query tier(int tier, List<String> tokens) {
+    /**
+     * Tier 1 = exact, 2 = approximate, 3 = related (spec §4.4). `tokens` are BASE tokens. Each FuzzyQuery passes
+     * through `fuzzy`, which may swap it for its rewrite: SearchIndex builds each automaton once per search (F1).
+     */
+    static Query tier(int tier, List<String> tokens, UnaryOperator<Query> fuzzy) {
+        Set<Integer> chosen = tier >= 2 ? fuzzyTokens(tokens) : Set.of();
         BooleanQuery.Builder query = new BooleanQuery.Builder();
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
-            Query clause = tokenClause(token, i == tokens.size() - 1, tier >= 2);
+            Query clause = tokenClause(token, i == tokens.size() - 1, chosen.contains(i) ? fuzzy : null);
             // A stopword can share a stem with a concept key (له with the Allah group): never expand it.
             if (tier == 3 && !STOPWORDS.contains(token)) clause = withConcepts(clause, token);
             boolean optional = tier == 3 || STOPWORDS.contains(token);
@@ -176,10 +187,23 @@ final class SearchText {
         return query.build();
     }
 
-    /** One token over every field: terms, stems, a prefix if it is the last token, fuzzy from tier 2. */
-    private static Query tokenClause(String token, boolean last, boolean fuzzy) {
+    /** Positions of the tokens that get fuzzy clauses: 4 to 20 code points, the 4 longest (the earlier one on a tie). */
+    private static Set<Integer> fuzzyTokens(List<String> tokens) {
+        return IntStream.range(0, tokens.size()).boxed()
+                .filter(i -> length(tokens.get(i)) >= 4 && length(tokens.get(i)) <= MAX_FUZZY_LENGTH)
+                .sorted(Comparator.comparingInt((Integer i) -> length(tokens.get(i))).reversed())
+                .limit(MAX_FUZZY_TOKENS)
+                .collect(Collectors.toSet());
+    }
+
+    private static int length(String token) {
+        return token.codePointCount(0, token.length());
+    }
+
+    /** One token over every field: terms, stems, a prefix if it is the last token, fuzzy unless `fuzzy` is null. */
+    private static Query tokenClause(String token, boolean last, UnaryOperator<Query> fuzzy) {
         String stem = stem(token);
-        int length = token.codePointCount(0, token.length());
+        int length = length(token);
         int edits = length >= 8 ? 2 : length >= 4 ? 1 : 0;
         BooleanQuery.Builder b = new BooleanQuery.Builder();
         for (int f = 0; f < FIELDS.length; f++) {
@@ -189,8 +213,8 @@ final class SearchText {
             if (last && length >= 2) {
                 b.add(new BoostQuery(new PrefixQuery(new Term(FIELDS[f], token)), half), Occur.SHOULD);
             }
-            if (fuzzy && edits > 0) {
-                b.add(new BoostQuery(new FuzzyQuery(new Term(FIELDS[f], token), edits), half), Occur.SHOULD);
+            if (fuzzy != null && edits > 0) {
+                b.add(new BoostQuery(fuzzy.apply(new FuzzyQuery(new Term(FIELDS[f], token), edits)), half), Occur.SHOULD);
             }
         }
         b.add(new TermQuery(new Term("description", token)), Occur.SHOULD);
@@ -206,7 +230,7 @@ final class SearchText {
         for (List<String> variant : variants) {
             if (variant.equals(self)) continue; // already the token's own clause
             Query expansion = variant.size() == 1
-                    ? tokenClause(variant.get(0), false, false)
+                    ? tokenClause(variant.get(0), false, null)
                     : new BoostQuery(new PhraseQuery("title", variant.toArray(String[]::new)), BOOSTS[0]);
             b.add(new BoostQuery(expansion, 0.5f), Occur.SHOULD);
         }

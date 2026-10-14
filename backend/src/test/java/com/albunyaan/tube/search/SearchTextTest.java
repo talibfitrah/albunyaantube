@@ -92,16 +92,16 @@ class SearchTextTest {
 
     @Test
     void stopwordsAreOptionalAndEveryOtherTokenIsRequired() {
-        BooleanQuery q = (BooleanQuery) SearchText.tier(1, List.of("story", "of", "yusuf"));
+        BooleanQuery q = (BooleanQuery) tier(1, List.of("story", "of", "yusuf"));
         assertEquals(List.of(BooleanClause.Occur.MUST, BooleanClause.Occur.SHOULD, BooleanClause.Occur.MUST),
                 q.clauses().stream().map(BooleanClause::getOccur).toList());
-        BooleanQuery onlyStopwords = (BooleanQuery) SearchText.tier(1, List.of("of", "the"));
+        BooleanQuery onlyStopwords = (BooleanQuery) tier(1, List.of("of", "the"));
         assertEquals(1, onlyStopwords.getMinimumNumberShouldMatch());
     }
 
     @Test
     void theRelatedTierMakesEveryTokenOptional() {
-        BooleanQuery q = (BooleanQuery) SearchText.tier(3, List.of("arabic", "learn"));
+        BooleanQuery q = (BooleanQuery) tier(3, List.of("arabic", "learn"));
         assertTrue(q.clauses().stream().allMatch(c -> c.getOccur() == BooleanClause.Occur.SHOULD));
         assertEquals(1, q.getMinimumNumberShouldMatch());
     }
@@ -138,8 +138,8 @@ class SearchTextTest {
             try (DirectoryReader reader = DirectoryReader.open(directory)) {
                 IndexSearcher searcher = new IndexSearcher(reader);
                 // The neighbours really are reachable, so the fuzzy queries below do expand.
-                assertTrue(searcher.search(SearchText.tier(2, List.of(tokens.get(0))), 10).totalHits.value > 0);
-                searcher.search(SearchText.tier(tier, tokens), 10); // must not throw TooManyNestedClauses
+                assertTrue(searcher.search(tier(2, List.of(tokens.get(0))), 10).totalHits.value > 0);
+                searcher.search(tier(tier, tokens), 10); // must not throw TooManyNestedClauses
             }
         }
     }
@@ -163,10 +163,10 @@ class SearchTextTest {
     void stopwordsAreNotExpandedByTheConceptMap() {
         // Arabic stopwords whose stem collides with a concept key (the Allah and ayah groups).
         for (String stopword : List.of("\u0644\u0647", "\u0627\u064A")) {
-            assertEquals(1, ((BooleanQuery) SearchText.tier(1, List.of(stopword))).getMinimumNumberShouldMatch(),
+            assertEquals(1, ((BooleanQuery) tier(1, List.of(stopword))).getMinimumNumberShouldMatch(),
                     "precondition: stopword");
             assertFalse(SearchText.concepts(stopword).isEmpty(), "precondition: stem collides with a concept key");
-            assertTrue(leaves(SearchText.tier(3, List.of(stopword))).stream().noneMatch(l -> l.underBoost(0.5f)),
+            assertTrue(leaves(tier(3, List.of(stopword))).stream().noneMatch(l -> l.underBoost(0.5f)),
                     "stopword expanded: " + stopword);
         }
     }
@@ -174,7 +174,7 @@ class SearchTextTest {
     @Test
     void relatedTierDoesNotRepeatTheTokensOwnClauseAsAnExpansion() {
         assertTrue(SearchText.concepts("quran").contains(List.of("quran")), "precondition: own variant is in the group");
-        long ownTitleTerms = leaves(SearchText.tier(3, List.of("quran"))).stream()
+        long ownTitleTerms = leaves(tier(3, List.of("quran"))).stream()
                 .filter(l -> l.query() instanceof TermQuery t && t.getTerm().equals(new Term("title", "quran")))
                 .count();
         assertEquals(1, ownTitleTerms);
@@ -188,6 +188,43 @@ class SearchTextTest {
     }
 
     @Test
+    void onlyTheFourLongestTokensOfAtMostTwentyCodePointsGetFuzzy() {
+        // F1: each FuzzyQuery builds an automaton per field; a crafted query (one 128-character token,
+        // ten long tokens) must not buy dozens of them. Lengths: 4, 12, 21, 5, 16, 20, 10, 3.
+        String twenty = "a".repeat(20);
+        List<String> tokens = List.of("abcd", "abcdefghijkl", "b".repeat(21), "abcde", "abcdefghijklmnop", twenty,
+                "abcdefghij", "abc");
+        for (int tier : new int[]{2, 3}) {
+            List<FuzzyQuery> fuzzy = leaves(tier(tier, tokens)).stream()
+                    .filter(l -> l.query() instanceof FuzzyQuery).map(l -> (FuzzyQuery) l.query()).toList();
+            assertEquals(Set.of(twenty, "abcdefghijklmnop", "abcdefghijkl", "abcdefghij"),
+                    fuzzy.stream().map(f -> f.getTerm().text()).collect(java.util.stream.Collectors.toSet()), "tier " + tier);
+            assertEquals(12, fuzzy.size(), "4 tokens x 3 fields, tier " + tier);
+        }
+        assertTrue(leaves(tier(2, List.of("x".repeat(128)))).stream()
+                .noneMatch(l -> l.query() instanceof FuzzyQuery), "no fuzzy past 20 code points");
+    }
+
+    @Test
+    void tiersTwoAndThreeAskForTheSameFuzzyClausesSoOneRewriteServesBoth() {
+        // F1: SearchIndex rewrites each fuzzy clause once per search; that only works if both tiers ask for equal ones.
+        List<String> tokens = List.of("abcdefghijkl", "zakir", "tafsir", "abcdefghijklmn", "abcde");
+        List<Query> asked = new ArrayList<>();
+        java.util.function.UnaryOperator<Query> rewriter = q -> {
+            asked.add(q);
+            return q;
+        };
+        SearchText.tier(2, tokens, rewriter);
+        List<Query> tier2 = List.copyOf(asked);
+        asked.clear();
+        SearchText.tier(3, tokens, rewriter);
+
+        assertEquals(12, tier2.size(), "4 tokens x 3 fields");
+        assertTrue(tier2.stream().allMatch(q -> q instanceof FuzzyQuery));
+        assertEquals(new HashSet<>(tier2), new HashSet<>(asked));
+    }
+
+    @Test
     void queryShapeFollowsTheSpec() {
         // "abc", the Arabic word for prayer with full tashkeel, "abcdefgh"
         List<String> tokens = tokens(BASE,
@@ -195,8 +232,8 @@ class SearchTextTest {
         String arabic = tokens.get(1);
         assertEquals(6, arabic.codePointCount(0, arabic.length()), "precondition: 6 code points once normalised");
 
-        List<Leaf> exact = leaves(SearchText.tier(1, tokens));
-        List<Leaf> approximate = leaves(SearchText.tier(2, tokens));
+        List<Leaf> exact = leaves(tier(1, tokens));
+        List<Leaf> approximate = leaves(tier(2, tokens));
         Map<String, Set<Integer>> editsByToken = new HashMap<>();
         Set<String> fuzzyFields = new HashSet<>();
         for (Leaf leaf : approximate) {
@@ -207,7 +244,7 @@ class SearchTextTest {
         }
         Set<String> lastTokenPrefixes = Set.of("title:abcdefgh", "keywords:abcdefgh", "channel:abcdefgh");
 
-        List<Leaf> related = leaves(SearchText.tier(3, List.of("prophet")));
+        List<Leaf> related = leaves(tier(3, List.of("prophet")));
         List<Leaf> phrases = related.stream().filter(l -> l.query() instanceof PhraseQuery).toList();
         assertAll(
                 // no fuzzy on 3 letters, 1 edit on 6 code points, 2 edits on 8
@@ -234,6 +271,11 @@ class SearchTextTest {
                 () -> assertTrue(phrases.stream().anyMatch(l -> List.of(((PhraseQuery) l.query()).getTerms()).stream()
                         .map(Term::text).toList().equals(List.of("prophet", "muhammad")))),
                 () -> assertTrue(phrases.stream().allMatch(l -> l.underBoost(0.5f)), "phrase escaped the 0.5 boost"));
+    }
+
+    /** The query SearchText builds for `tier`, with every fuzzy clause left as a FuzzyQuery. */
+    private static Query tier(int tier, List<String> tokens) {
+        return SearchText.tier(tier, tokens, q -> q);
     }
 
     private static Set<String> prefixes(List<Leaf> leaves) {

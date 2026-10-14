@@ -68,8 +68,11 @@ public class VideoRepository {
                 .document(video.getId())
                 .set(video);
 
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("VIDEO", video.getId(), video));
+        try {
+            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
+            events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
+        }
         return video;
     }
 
@@ -85,7 +88,7 @@ public class VideoRepository {
         video.touch();
 
         DocumentReference docRef = getCollection().document(video.getId());
-        Video saved = firestore.runTransaction(transaction -> {
+        ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Video not found: " + video.getId());
@@ -98,8 +101,15 @@ public class VideoRepository {
             }
             transaction.set(docRef, video);
             return video;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("VIDEO", saved.getId(), saved));
+        });
+        Video saved;
+        try {
+            saved = committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
+            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
+            throw e;
+        }
+        events.publishEvent(new CatalogChanged("VIDEO", saved.getId()));
         return saved;
     }
 
@@ -422,8 +432,11 @@ public class VideoRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("VIDEO", id, null));
+        try {
+            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
+            events.publishEvent(new CatalogChanged("VIDEO", id));
+        }
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -433,7 +446,7 @@ public class VideoRepository {
             throw new IllegalArgumentException("id and non-empty expectedStatuses required");
         }
         com.google.cloud.firestore.DocumentReference docRef = getCollection().document(id);
-        firestore.runTransaction(transaction -> {
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot =
                     transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
@@ -447,8 +460,14 @@ public class VideoRepository {
             }
             transaction.delete(docRef);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        events.publishEvent(new CatalogChanged("VIDEO", id, null));
+        });
+        try {
+            committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        } catch (Exception e) { // a failed ack may hide a commit; a rejected status check wrote nothing (F3)
+            if (!CatalogChanged.notWritten(e)) events.publishEvent(new CatalogChanged("VIDEO", id));
+            throw e;
+        }
+        events.publishEvent(new CatalogChanged("VIDEO", id));
     }
 
     /**
@@ -482,11 +501,12 @@ public class VideoRepository {
     }
 
     /**
-     * Every video document, uncapped and unordered, for the search index (spec §2.3: 1,020 documents
-     * exceed findAll()'s 1,000 default cap) — and not filtered by an orderBy field being present.
+     * Every video document, raw, uncapped and unordered, for the search index (spec §2.3: 1,020 documents
+     * exceed findAll()'s 1,000 default cap) — and not filtered by an orderBy field being present. The index
+     * maps each one itself, skipping one it cannot (F4).
      */
-    public List<Video> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
-        return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    public List<QueryDocumentSnapshot> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**

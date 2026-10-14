@@ -202,7 +202,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), any(), any(), any(), any(), any()))
+                anyString(), any(), anyInt(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -219,7 +219,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any(), any()))
+                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -236,7 +236,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(50), any(), any(), any(), any(), any()))
+                anyString(), any(), eq(50), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 100, should be capped at 50
@@ -252,7 +252,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(1), any(), any(), any(), any(), any()))
+                anyString(), any(), eq(1), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 0, should be set to 1
@@ -468,13 +468,13 @@ public class PublicContentControllerTest {
                 .andExpect(status().isOk())
                 .andExpect(header().string("X-Search-Match", "exact"));
 
-        verify(contentService, never()).getContent(any(), any(), anyInt(), any(), any(), any(), any(), any());
+        verify(contentService, never()).getContent(any(), any(), anyInt(), any(), any(), any(), any());
     }
 
     @Test
     @DisplayName("GET /api/v1/content?q=<2 chars - plain list, no X-Search-Match header (ruling F14)")
     void testContent_OneCharacterQueryServesThePlainList() throws Exception {
-        when(contentService.getContent(eq("CHANNELS"), any(), anyInt(), any(), any(), any(), any(), eq("z")))
+        when(contentService.getContent(eq("CHANNELS"), any(), anyInt(), any(), any(), any(), any()))
                 .thenReturn(new CursorPageDto<>(List.of(), null));
 
         mockMvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("q", "z"))

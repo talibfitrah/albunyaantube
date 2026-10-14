@@ -1065,10 +1065,13 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit with timeout - all items succeed or all fail
-                    writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                    try {
+                        writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                    } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
+                        publishCatalogChanged(validatedItems);
+                    }
                     successCount += validatedItems.size();
                     log.debug("Batch committed successfully: {} items with status={}", validatedItems.size(), newStatus);
-                    publishCatalogChanged(validatedItems);
 
                     graduateImporters(validatedItems, youtubeIdByKey, newStatus);
 
@@ -1138,10 +1141,13 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit
-                    writeBatch.commit().get();
+                    try {
+                        writeBatch.commit().get();
+                    } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
+                        publishCatalogChanged(itemsToDelete);
+                    }
                     successCount += itemsToDelete.size();
                     log.debug("Batch delete committed successfully: {} items", itemsToDelete.size());
-                    publishCatalogChanged(itemsToDelete);
 
                     // Deleted content has to leave people's lists, the same way archived content
                     // does. Without this the registry entry is gone while every phone holding it
@@ -1163,9 +1169,9 @@ public class ContentLibraryController {
     }
 
     /** These two WriteBatch paths bypass the repositories, so they tell the search index themselves (spec §5.2). */
-    private void publishCatalogChanged(List<BulkActionItem> committed) {
-        for (BulkActionItem item : committed) {
-            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id, null));
+    private void publishCatalogChanged(List<BulkActionItem> written) {
+        for (BulkActionItem item : written) {
+            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id));
         }
     }
 
