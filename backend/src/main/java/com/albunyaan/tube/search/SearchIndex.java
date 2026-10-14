@@ -43,6 +43,7 @@ import org.apache.lucene.util.BytesRef;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.beans.factory.annotation.Value;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
 import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
@@ -123,6 +124,8 @@ public class SearchIndex {
     private final AtomicBoolean tragicLogged = new AtomicBoolean();
     /** Delays of the re-read retries after a failed one (F3); tests shorten them. */
     long[] rereadRetryMs = {2_000, 10_000, 60_000};
+    /** Follow-up re-reads after a failed or timed-out write, which may commit after the first re-read (B2); tests shorten them. */
+    long[] lateCommitRereadMs = {15_000, 60_000};
 
     // Query-time stream visibility (spec §4.2). Replaced or mutated only on the writer thread.
     /** Admitted channel/playlist source keys ("channel:UC…") -> the video ids that source excludes. */
@@ -130,12 +133,17 @@ public class SearchIndex {
     /** youtubeId of every Video document, admitted or not: such an id never shows as a stream. */
     private volatile Set<String> videoIds = ConcurrentHashMap.newKeySet();
 
-    /** A fresh temp directory per Spring context, deleted in {@link #close()} (Ruling F15): MMap'd, off-heap, throwaway. */
+    /**
+     * A fresh temp directory per Spring context, deleted in {@link #close()} (Ruling F15): MMap'd, off-heap, throwaway.
+     * It goes under `search.index.base-dir`, default java.io.tmpdir: a host that ages /tmp can move it out (B4).
+     */
     @Autowired
     public SearchIndex(ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
-                       SearchableStreamRepository streams) throws IOException {
-        this(FSDirectory.open(Files.createTempDirectory("fitrahtube-search-")), channels, playlists, videos, streams,
-                5_000);
+                       SearchableStreamRepository streams, @Value("${search.index.base-dir:}") String baseDir)
+            throws IOException {
+        this(FSDirectory.open(Files.createTempDirectory(Files.createDirectories(
+                        Path.of(baseDir.isEmpty() ? System.getProperty("java.io.tmpdir") : baseDir)), "fitrahtube-search-")),
+                channels, playlists, videos, streams, 5_000);
     }
 
     SearchIndex(Directory dir, ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
@@ -284,6 +292,8 @@ public class SearchIndex {
                 counts[admit(d.toObject(type), sources, ids, docs) ? 0 : 1]++;
             } catch (Exception e) {
                 counts[2]++;
+                // Read raw, an unmappable Video still blocks its stream (B3: fail closed, not open).
+                if (type == Video.class && d.get("youtubeId") instanceof String youtubeId) ids.add(youtubeId);
                 log.warn("search index skipped {} {}", type.getSimpleName(), d.getId(), e);
             }
         }
@@ -310,10 +320,19 @@ public class SearchIndex {
     /**
      * Every event is an invalidation (F3): the writer re-reads the document by id when it applies the
      * event, so the index converges to Firestore's current state whatever order the events arrive in.
+     * A failed or timed-out write may commit after that re-read, so it is read again later (B2).
      */
     @EventListener
     public void onCatalogChanged(CatalogChanged event) {
         reread(event, 0);
+        if (!event.writeFailed()) return;
+        for (long ms : lateCommitRereadMs) {
+            try {
+                executor.schedule(() -> reread(event, 0), ms, TimeUnit.MILLISECONDS);
+            } catch (RejectedExecutionException e) {
+                return; // writer stopped (context closing): nothing left to keep fresh
+            }
+        }
     }
 
     /** A failed re-read is retried on the writer; after the last retry the item is hidden until the reconcile re-admits it. */

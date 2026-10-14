@@ -1065,10 +1065,12 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit with timeout - all items succeed or all fail
+                    boolean committed = false;
                     try {
                         writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                        committed = true;
                     } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
-                        publishCatalogChanged(validatedItems);
+                        publishCatalogChanged(validatedItems, !committed);
                     }
                     successCount += validatedItems.size();
                     log.debug("Batch committed successfully: {} items with status={}", validatedItems.size(), newStatus);
@@ -1141,10 +1143,12 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit
+                    boolean committed = false;
                     try {
                         writeBatch.commit().get();
+                        committed = true;
                     } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
-                        publishCatalogChanged(itemsToDelete);
+                        publishCatalogChanged(itemsToDelete, !committed);
                     }
                     successCount += itemsToDelete.size();
                     log.debug("Batch delete committed successfully: {} items", itemsToDelete.size());
@@ -1169,9 +1173,9 @@ public class ContentLibraryController {
     }
 
     /** These two WriteBatch paths bypass the repositories, so they tell the search index themselves (spec §5.2). */
-    private void publishCatalogChanged(List<BulkActionItem> written) {
+    private void publishCatalogChanged(List<BulkActionItem> written, boolean writeFailed) {
         for (BulkActionItem item : written) {
-            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id));
+            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id, writeFailed));
         }
     }
 

@@ -94,6 +94,7 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
+               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null",
                key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
@@ -427,6 +428,7 @@ public class PublicContentService {
      * @return Paginated home feed
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
+               condition = "T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) != null",
                key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
     public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -495,13 +497,11 @@ public class PublicContentService {
         int startAfterOrder = -1;
         String startAfterId = null;
         if (cursor != null && !cursor.isEmpty()) {
-            try {
-                String decoded = new String(Base64.getDecoder().decode(cursor));
-                // Cursor format: "displayOrder:categoryId"
-                String[] parts = decoded.split(":", 2);
-                startAfterOrder = Integer.parseInt(parts[0]);
-                startAfterId = parts.length > 1 ? parts[1] : null;
-            } catch (Exception e) {
+            HomeCursor parsed = HomeCursor.parse(cursor);
+            if (parsed != null) {
+                startAfterOrder = parsed.order();
+                startAfterId = parsed.id();
+            } else {
                 log.warn("Invalid home feed cursor: {}", cursor);
             }
         }
@@ -1324,48 +1324,49 @@ public class PublicContentService {
         return ContentItemMapper.fromVideo(video);
     }
 
-    /**
-     * Normalize a Base64-encoded cursor to a stable string for use in cache keys.
-     * Handles two cursor formats:
-     * - Home feed: "displayOrder:categoryId" (e.g. "5:abc123") → extracts displayOrder
-     * - Content: plain integer offset (e.g. "10") → parsed directly
-     * Prevents cache pollution: arbitrary/invalid cursors all normalize to "0".
-     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
-     */
-    public static String normalizeCursor(String cursor) {
-        if (cursor == null || cursor.isEmpty()) return "0";
-        try {
-            String decoded = new String(Base64.getDecoder().decode(cursor));
-            if (decoded.contains(":")) {
-                // Home feed cursors: "displayOrder:categoryId"
-                // Include both parts in the key so two categories with the same displayOrder
-                // but different IDs don't collide (e.g. "5:abc" vs "5:xyz").
-                String[] parts = decoded.split(":", 2);
-                int order = Math.max(0, Integer.parseInt(parts[0]));
-                return order + "-" + parts[1].hashCode();
+    /** A /home cursor, "displayOrder:categoryId" (Base64); the page and its cache key both read it here. */
+    private record HomeCursor(int order, String id) {
+        /** Null when malformed. */
+        static HomeCursor parse(String cursor) {
+            try {
+                String[] parts = new String(Base64.getDecoder().decode(cursor)).split(":", 2);
+                return new HomeCursor(Integer.parseInt(parts[0]), parts.length > 1 ? parts[1] : null);
+            } catch (Exception e) {
+                return null;
             }
-            return String.valueOf(Math.max(0, Integer.parseInt(decoded)));
-        } catch (Exception e) {
-            return "0";
         }
     }
 
     /**
-     * Type-aware cache key for cursors. HOME uses numeric offset cursors that should be
-     * normalized to prevent cache pollution. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore
-     * cursors (JSON/Base64) that must be preserved as-is; normalizing them would collapse
-     * different pages into the same cache entry.
+     * Cache-key part of a /home cursor: "0" for the first page, the cursor itself when it parses (standard
+     * Base64 holds no '-', the key's separator), null when malformed. A null key is never cached (the
+     * @Cacheable condition): a key that disagreed with the page's own parse let one crafted cursor cache its
+     * page under a real page's key (B1).
+     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
+     */
+    public static String normalizeCursor(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return "0";
+        return HomeCursor.parse(cursor) != null ? cursor : null;
+    }
+
+    /**
+     * Type-aware cache key for cursors. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore cursors that must be
+     * preserved as-is; normalizing them would collapse different pages into the same cache entry. Every other
+     * type is served as HOME (getContent's switch default) from an offset cursor: its key is the offset the page
+     * reads, or null (never cached) when the cursor is malformed, negative or past the int range (B1).
      *
      * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
      */
     public static String cacheCursorKey(String type, String cursor) {
         if (cursor == null || cursor.isEmpty()) return "0";
         String resolvedType = (type == null || type.isBlank()) ? "HOME" : type.toUpperCase(Locale.ROOT);
-        if ("HOME".equals(resolvedType)) {
-            return normalizeCursor(cursor);
-        }
-        // Opaque cursor for CHANNELS/PLAYLISTS/VIDEOS — return as-is
-        return cursor;
+        return switch (resolvedType) {
+            case "CHANNELS", "PLAYLISTS", "VIDEOS" -> cursor;
+            default -> {
+                long offset = parseCursorOffset(cursor);
+                yield offset >= 0 && offset <= Integer.MAX_VALUE ? String.valueOf(offset) : null;
+            }
+        };
     }
 
     // Membership read for filtered in-tab search (searchContent, spec §4.7).
@@ -1375,15 +1376,22 @@ public class PublicContentService {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
 
-    private long decodeCursorOffset(String cursor) {
+    /** The offset an encodeCursor cursor holds; -1 when malformed or negative. Pages and cache keys both read it. */
+    private static long parseCursorOffset(String cursor) {
         if (cursor == null || cursor.isEmpty()) return 0;
         try {
-            String decoded = new String(Base64.getDecoder().decode(cursor));
-            return Math.max(0, Long.parseLong(decoded));
+            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)));
+            return offset >= 0 ? offset : -1;
         } catch (Exception e) {
-            log.warn("Invalid content cursor: {}", cursor);
-            return 0;
+            return -1;
         }
+    }
+
+    private long decodeCursorOffset(String cursor) {
+        long offset = parseCursorOffset(cursor);
+        if (offset >= 0) return offset;
+        log.warn("Invalid content cursor: {}", cursor);
+        return 0;
     }
 
     /** Supplier that can throw checked exceptions. */

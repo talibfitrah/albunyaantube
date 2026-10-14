@@ -77,11 +77,7 @@ public class PlaylistRepository {
                 .document(playlist.getId())
                 .set(playlist);
 
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("PLAYLIST", playlist.getId()));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
         return playlist;
     }
 
@@ -111,11 +107,7 @@ public class PlaylistRepository {
             transaction.set(docRef, playlist);
             return playlist;
         });
-        try {
-            return committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("PLAYLIST", playlist.getId()));
-        }
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
     }
 
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -359,14 +351,10 @@ public class PlaylistRepository {
      */
     public void updateThumbnailUrl(String id, String thumbnailUrl)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        try {
-            getCollection().document(id).update(
-                            "thumbnailUrl", thumbnailUrl,
-                            "updatedAt", com.google.cloud.Timestamp.now())
-                    .get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("PLAYLIST", id));
-        }
+        CatalogChanged.await(getCollection().document(id).update(
+                        "thumbnailUrl", thumbnailUrl,
+                        "updatedAt", com.google.cloud.Timestamp.now()),
+                timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -427,11 +415,7 @@ public class PlaylistRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("PLAYLIST", id));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -456,11 +440,7 @@ public class PlaylistRepository {
             transaction.delete(docRef);
             return null;
         });
-        try {
-            committed.get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("PLAYLIST", id));
-        }
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     /**

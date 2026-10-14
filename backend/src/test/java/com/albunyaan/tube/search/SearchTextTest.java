@@ -100,10 +100,16 @@ class SearchTextTest {
     }
 
     @Test
-    void theRelatedTierMakesEveryTokenOptional() {
-        BooleanQuery q = (BooleanQuery) tier(3, List.of("arabic", "learn"));
-        assertTrue(q.clauses().stream().allMatch(c -> c.getOccur() == BooleanClause.Occur.SHOULD));
-        assertEquals(1, q.getMinimumNumberShouldMatch());
+    void theRelatedTierNeedsAnyOneWordAndStopwordsOnlyAddScore() {
+        // Ruling (stage 9, B5) amends spec §4.4's flat tier 3 (every token SHOULD, minimumShouldMatch = 1).
+        BooleanQuery q = (BooleanQuery) tier(3, List.of("arabic", "of", "learn"));
+        assertEquals(0, q.getMinimumNumberShouldMatch());
+        assertEquals(List.of(BooleanClause.Occur.SHOULD, BooleanClause.Occur.MUST),
+                q.clauses().stream().map(BooleanClause::getOccur).toList()); // "of", then the words
+        BooleanQuery words = (BooleanQuery) q.clauses().get(1).getQuery();
+        assertEquals(1, words.getMinimumNumberShouldMatch());
+        assertEquals(2, words.clauses().size());
+        assertTrue(words.clauses().stream().allMatch(c -> c.getOccur() == BooleanClause.Occur.SHOULD));
     }
 
     // ---- Fix round 1 -------------------------------------------------------------------------

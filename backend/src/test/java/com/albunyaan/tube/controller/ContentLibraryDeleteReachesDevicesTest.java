@@ -122,7 +122,7 @@ class ContentLibraryDeleteReachesDevicesTest {
 
         controller.bulkDelete(request("video", "vid-1"));
 
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1", false));
     }
 
     @Test
@@ -133,7 +133,7 @@ class ContentLibraryDeleteReachesDevicesTest {
 
         controller.bulkDelete(request("video", "vid-1"));
 
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1", true));
     }
 
     @Test

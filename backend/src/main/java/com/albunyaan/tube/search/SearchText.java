@@ -174,16 +174,23 @@ final class SearchText {
      */
     static Query tier(int tier, List<String> tokens, UnaryOperator<Query> fuzzy) {
         Set<Integer> chosen = tier >= 2 ? fuzzyTokens(tokens) : Set.of();
+        boolean onlyStopwords = STOPWORDS.containsAll(tokens);
         BooleanQuery.Builder query = new BooleanQuery.Builder();
+        // Tier 3 needs any one non-stopword, not all; a stopword only adds score unless the query is all stopwords (B5).
+        BooleanQuery.Builder anyWord = new BooleanQuery.Builder().setMinimumNumberShouldMatch(1);
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
+            boolean stopword = STOPWORDS.contains(token);
             Query clause = tokenClause(token, i == tokens.size() - 1, chosen.contains(i) ? fuzzy : null);
-            // A stopword can share a stem with a concept key (له with the Allah group): never expand it.
-            if (tier == 3 && !STOPWORDS.contains(token)) clause = withConcepts(clause, token);
-            boolean optional = tier == 3 || STOPWORDS.contains(token);
-            query.add(clause, optional ? Occur.SHOULD : Occur.MUST);
+            if (tier == 3 && !stopword) {
+                // A stopword can share a stem with a concept key (له with the Allah group): never expand it.
+                anyWord.add(withConcepts(clause, token), Occur.SHOULD);
+            } else {
+                query.add(clause, tier == 3 || stopword ? Occur.SHOULD : Occur.MUST);
+            }
         }
-        if (tier == 3 || STOPWORDS.containsAll(tokens)) query.setMinimumNumberShouldMatch(1);
+        if (onlyStopwords) query.setMinimumNumberShouldMatch(1);
+        else if (tier == 3) query.add(anyWord.build(), Occur.MUST);
         return query.build();
     }
 

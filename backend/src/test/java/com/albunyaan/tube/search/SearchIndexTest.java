@@ -205,17 +205,17 @@ class SearchIndexTest {
     /** Firestore now holds `c`: its event makes the writer re-read it by id (F3). */
     private void saved(Channel c) throws Exception {
         when(channelRepo.findById(c.getId())).thenReturn(Optional.of(c));
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", c.getId()));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", c.getId(), false));
     }
 
     private void saved(Playlist p) throws Exception {
         when(playlistRepo.findById(p.getId())).thenReturn(Optional.of(p));
-        index.onCatalogChanged(new CatalogChanged("PLAYLIST", p.getId()));
+        index.onCatalogChanged(new CatalogChanged("PLAYLIST", p.getId(), false));
     }
 
     private void saved(Video v) throws Exception {
         when(videoRepo.findById(v.getId())).thenReturn(Optional.of(v));
-        index.onCatalogChanged(new CatalogChanged("VIDEO", v.getId()));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", v.getId(), false));
     }
 
     private static SearchIndex started(SearchIndex index) throws Exception {
@@ -337,6 +337,19 @@ class SearchIndexTest {
     }
 
     @Test
+    void theRelatedTierNeedsAWordNotJustAStopword() throws Exception {
+        // B5 ruling: "of" alone filled the related tier with anything containing it; stopwords now only add score.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(),
+                List.of(video("vStoryTime", "Story Time", null), video("vBookOf", "Book of Knowledge", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits hits = corpus.search("story of xqzv", null, false, 50, null);
+        assertEquals(List.of("vStoryTime"), ids(hits));
+        assertEquals("related", hits.match());
+        // A query made only of stopwords still matches on them.
+        assertEquals(List.of("vBookOf"), ids(corpus.search("of", null, false, 50, null)));
+    }
+
+    @Test
     void nonsenseFindsNothing() throws Exception {
         SearchIndex.Hits hits = index.search("xqzvbnm", null, false, 50, null);
         assertTrue(hits.items().isEmpty());
@@ -367,7 +380,7 @@ class SearchIndexTest {
         List<String> firstPage = ids(paged.search("tied", "CHANNEL", true, 3, null)).subList(0, 2);
 
         when(channelRepo.findById("doc-UCtieA")).thenReturn(Optional.of(tied.get(0))); // saved, unchanged
-        paged.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCtieA"));
+        paged.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCtieA", false));
         paged.awaitWrites();
         List<String> secondPage = ids(paged.search("tied", "CHANNEL", true, 5, null)).subList(2, 4);
 
@@ -449,8 +462,8 @@ class SearchIndexTest {
     @Test
     void eachContextGetsItsOwnIndexDirectoryAndClosingDeletesOnlyThatOne() throws Exception {
         // Ruling F15: two Spring contexts in one JVM must not delete each other's index.
-        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo));
-        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo));
+        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
+        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
         Path firstDir = first.path(), secondDir = second.path();
         assertNotEquals(firstDir, secondDir, "one directory per context");
         assertTrue(Files.isDirectory(firstDir) && Files.isDirectory(secondDir));
@@ -465,14 +478,32 @@ class SearchIndexTest {
     }
 
     @Test
+    void theIndexDirectoryLivesUnderTheConfiguredBaseOrElseTheJavaTempDirectory() throws Exception {
+        // B4: prod ages /tmp (tmpfiles "D /tmp ... 30d"); search.index.base-dir moves the index out of it.
+        Path parent = Files.createTempDirectory("fitrahtube-base-");
+        Path base = parent.resolve("search-index"); // not there yet: created on start
+        SearchIndex configured = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, base.toString());
+        try {
+            assertEquals(base.toRealPath(), configured.path().getParent()); // FSDirectory keeps the real path (macOS /var)
+        } finally { // an FSDirectory index closes once: not via opened
+            configured.close();
+            Files.delete(base);
+            Files.delete(parent);
+        }
+        SearchIndex byDefault = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "");
+        opened.add(byDefault);
+        assertEquals(Path.of(System.getProperty("java.io.tmpdir")).toRealPath(), byDefault.path().getParent());
+    }
+
+    @Test
     void closingAnIndexWhoseCatalogAndEventsAdmitNothingStillDeletesTheDirectory() throws Exception {
         // Empty block + delete term (Lucene asserts under -ea when such an index is rolled back).
         newIndex(List.of(), List.of(), List.of(), List.of(), 5_000); // only for its empty-catalog mocks
-        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo));
+        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
         for (int i = 0; i < 5; i++) {
             Channel pending = with(channel("UCpending" + i, "Pending " + i), c -> c.setStatus("PENDING"));
             when(channelRepo.findById(pending.getId())).thenReturn(Optional.of(pending));
-            fresh.onCatalogChanged(new CatalogChanged("CHANNEL", pending.getId()));
+            fresh.onCatalogChanged(new CatalogChanged("CHANNEL", pending.getId(), false));
         }
         fresh.awaitWrites();
         Path dir = fresh.path();
@@ -543,7 +574,7 @@ class SearchIndexTest {
     void aDeleteRemovesTheDocumentAndHidesItsStreams() throws Exception {
         assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", false, 10, null)));
         when(channelRepo.findById("doc-UCalafasy")).thenReturn(Optional.empty());
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false));
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
         assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty());
@@ -590,7 +621,7 @@ class SearchIndexTest {
     void deletingAVideoDocumentRemovesIt() throws Exception {
         assertTrue(ids("prayer").contains("vPrayerKey"));
         when(videoRepo.findById("doc-vPrayerKey")).thenReturn(Optional.empty());
-        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-vPrayerKey"));
+        index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-vPrayerKey", false));
         index.awaitWrites();
         assertFalse(ids("prayer").contains("vPrayerKey"));
     }
@@ -600,8 +631,8 @@ class SearchIndexTest {
         // Codex P1: the save committed first, but its event reached the writer after the delete's.
         // Both are invalidations: each re-read sees Firestore's current state, deleted.
         when(channelRepo.findById("doc-UCalafasy")).thenReturn(Optional.empty());
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy")); // the delete's event
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy")); // the save's event, late
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false)); // the delete's event
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false)); // the save's event, late
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
         assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty(), "its streams stay hidden");
@@ -611,7 +642,7 @@ class SearchIndexTest {
     void aRereadThatKeepsFailingIsRetriedThenHidesTheItemAndItsStreams() throws Exception {
         index.rereadRetryMs = new long[]{0, 0, 0};
         when(channelRepo.findById("doc-UCalafasy")).thenThrow(new ExecutionException("firestore down", new RuntimeException("cause")));
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false));
         index.awaitWrites();
         verify(channelRepo, times(4)).findById("doc-UCalafasy"); // the read, then 3 retries
         assertFalse(ids("alafa").contains("UCalafasy"), "fails closed");
@@ -626,9 +657,50 @@ class SearchIndexTest {
         when(channelRepo.findById("doc-UCzakir"))
                 .thenThrow(new ExecutionException("blip", new RuntimeException()))
                 .thenReturn(Optional.of(channel("UCzakir", "Dr Zakir Naik Revised")));
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", false));
         index.awaitWrites();
         assertEquals("UCzakir", ids("revised").stream().findFirst().orElse("<empty>"));
+    }
+
+    @Test
+    void aFailedWritesInvalidationIsReadAgainSoACommitThatLandsLateIsSeen() throws Exception {
+        // B2: the ack timed out at 10 s, the re-read still saw the old state, then the reject committed.
+        index.lateCommitRereadMs = new long[]{0, 0}; // the clock: both follow-ups are due now
+        when(channelRepo.findById("doc-UCzakir"))
+                .thenReturn(Optional.of(channel("UCzakir", "Dr Zakir Naik"))) // the commit has not landed yet
+                .thenReturn(Optional.of(with(channel("UCzakir", "Dr Zakir Naik"), c -> c.setStatus("REJECTED"))));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", true));
+        index.awaitWrites();
+        verify(channelRepo, times(3)).findById("doc-UCzakir"); // now, then the two follow-ups
+        assertFalse(ids("zakir").contains("UCzakir"), "the late reject is applied");
+    }
+
+    @Test
+    void aSuccessfulWriteIsReadOnceAndTheFollowUpsWaitFifteenAndSixtySeconds() throws Exception {
+        assertArrayEquals(new long[]{15_000, 60_000}, index.lateCommitRereadMs, "ruling (stage 9)");
+        index.lateCommitRereadMs = new long[]{0, 0};
+        when(channelRepo.findById("doc-UCzakir")).thenReturn(Optional.of(channel("UCzakir", "Dr Zakir Naik")));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", false));
+        index.awaitWrites();
+        verify(channelRepo, times(1)).findById("doc-UCzakir");
+    }
+
+    @Test
+    void aVideoDocumentThatCannotBeMappedStillHidesItsStream() throws Exception {
+        // B3: toObject threw before admit(), so the id never reached videoIds and the stream showed (fail open).
+        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        QueryDocumentSnapshot unmappable = mock(QueryDocumentSnapshot.class, inv -> switch (inv.getMethod().getName()) {
+            case "getId" -> "doc-orphan-lecture";
+            case "toObject" -> throw new RuntimeException("Could not deserialize object");
+            case "get", "getString" -> "youtubeId".equals(inv.getArgument(0)) ? "orphan-lecture" : null;
+            default -> RETURNS_DEFAULTS.answer(inv);
+        });
+        SearchIndex fresh = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        List<QueryDocumentSnapshot> videoDocs = new ArrayList<>(videoRepo.findAllUnordered());
+        videoDocs.add(unmappable);
+        when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
+        started(fresh);
+        assertFalse(ids(fresh.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
     }
 
     @Test
@@ -810,7 +882,7 @@ class SearchIndexTest {
     void anErrorInAWriterTaskIsLoggedWithItsStackTrace() throws Exception {
         // An Error (not an Exception) used to vanish inside the executor's future: no log, no trace.
         when(channelRepo.findById("doc-UCzakir")).thenThrow(new NoClassDefFoundError("boom"));
-        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir"));
+        index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCzakir", false));
         index.awaitWrites();
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getThrowableProxy() != null
                 && NoClassDefFoundError.class.getName().equals(e.getThrowableProxy().getClassName())));

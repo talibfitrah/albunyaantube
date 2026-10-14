@@ -75,11 +75,7 @@ public class ChannelRepository {
                 .document(channel.getId())
                 .set(channel);
 
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("CHANNEL", channel.getId()));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
         return channel;
     }
 
@@ -111,11 +107,7 @@ public class ChannelRepository {
             transaction.set(docRef, channel);
             return channel;
         });
-        try {
-            return committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("CHANNEL", channel.getId()));
-        }
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
     }
 
     public Optional<Channel> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -341,11 +333,7 @@ public class ChannelRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("CHANNEL", id));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "CHANNEL", id);
     }
 
     /**
@@ -374,11 +362,7 @@ public class ChannelRepository {
             transaction.delete(docRef);
             return null;
         });
-        try {
-            committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("CHANNEL", id));
-        }
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", id);
     }
 
     /**
@@ -399,12 +383,8 @@ public class ChannelRepository {
             fields.put("subscribers", subscribers);
         }
         fields.put("updatedAt", com.google.cloud.Timestamp.now());
-        try {
-            getCollection().document(id).update(fields)
-                    .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("CHANNEL", id));
-        }
+        CatalogChanged.await(getCollection().document(id).update(fields), timeoutProperties.getWrite(), events,
+                "CHANNEL", id);
     }
 
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {

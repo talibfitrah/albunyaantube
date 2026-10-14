@@ -68,11 +68,7 @@ public class VideoRepository {
                 .document(video.getId())
                 .set(video);
 
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", video.getId());
         return video;
     }
 
@@ -102,11 +98,7 @@ public class VideoRepository {
             transaction.set(docRef, video);
             return video;
         });
-        try {
-            return committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("VIDEO", video.getId()));
-        }
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId());
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -428,11 +420,7 @@ public class VideoRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        try {
-            result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // a failed ack may hide a committed write: the index re-reads it (F3)
-            events.publishEvent(new CatalogChanged("VIDEO", id));
-        }
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", id);
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -457,11 +445,7 @@ public class VideoRepository {
             transaction.delete(docRef);
             return null;
         });
-        try {
-            committed.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
-        } finally { // every outcome publishes: a retried commit that landed can look like a miss, so the re-read decides (N2)
-            events.publishEvent(new CatalogChanged("VIDEO", id));
-        }
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", id);
     }
 
     /**

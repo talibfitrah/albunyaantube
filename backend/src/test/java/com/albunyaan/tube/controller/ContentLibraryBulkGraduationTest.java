@@ -251,7 +251,7 @@ class ContentLibraryBulkGraduationTest {
         controller.bulkApprove(requestFor("video", "v1", "v2", "v3"));
 
         for (String id : List.of("v1", "v2", "v3")) {
-            verify(events).publishEvent(new CatalogChanged("VIDEO", id));
+            verify(events).publishEvent(new CatalogChanged("VIDEO", id, false));
         }
     }
 
@@ -270,7 +270,7 @@ class ContentLibraryBulkGraduationTest {
 
         controller.bulkReject(request("channel", "ch-1"));
 
-        verify(events).publishEvent(new CatalogChanged("CHANNEL", "ch-1"));
+        verify(events).publishEvent(new CatalogChanged("CHANNEL", "ch-1", false));
     }
 
     @Test
@@ -281,6 +281,6 @@ class ContentLibraryBulkGraduationTest {
 
         controller.bulkApprove(request("video", "vid-1"));
 
-        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1"));
+        verify(events).publishEvent(new CatalogChanged("VIDEO", "vid-1", true));
     }
 }

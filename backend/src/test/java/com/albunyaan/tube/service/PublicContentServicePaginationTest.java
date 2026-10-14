@@ -469,11 +469,10 @@ class PublicContentServicePaginationTest {
     // ============ normalizeCursor tests ============
 
     @Test
-    void normalizeCursor_compoundHomeFeedCursor_includesOrderAndIdHash() {
-        // Home feed cursors use "displayOrder:categoryId" format
+    void normalizeCursor_compoundHomeFeedCursor_isItsOwnKey() {
+        // Home feed cursors use "displayOrder:categoryId" format; the whole cursor keys the page (B1)
         String cursor = java.util.Base64.getEncoder().encodeToString("5:cat-anasheed-uuid".getBytes());
-        String result = PublicContentService.normalizeCursor(cursor);
-        assertTrue(result.startsWith("5-"), "Should start with displayOrder: " + result);
+        assertEquals(cursor, PublicContentService.normalizeCursor(cursor));
     }
 
     @Test
@@ -500,9 +499,9 @@ class PublicContentServicePaginationTest {
     }
 
     @Test
-    void normalizeCursor_plainIntegerCursor_parsesDirectly() {
+    void normalizeCursor_orderWithoutId_isItsOwnKey() {
         String cursor = java.util.Base64.getEncoder().encodeToString("20".getBytes());
-        assertEquals("20", PublicContentService.normalizeCursor(cursor));
+        assertEquals(cursor, PublicContentService.normalizeCursor(cursor));
     }
 
     @Test
@@ -516,21 +515,23 @@ class PublicContentServicePaginationTest {
     }
 
     @Test
-    void normalizeCursor_garbageInput_returnsZero() {
-        assertEquals("0", PublicContentService.normalizeCursor("not-base64-!!!"));
+    void normalizeCursor_garbageInput_isNeverCached() {
+        // null key = the @Cacheable condition skips the cache; "0" was the first page's key (B1)
+        assertNull(PublicContentService.normalizeCursor("not-base64-!!!"));
     }
 
     @Test
-    void normalizeCursor_negativeOffset_clampedToZero() {
-        String cursor = java.util.Base64.getEncoder().encodeToString("-5:cat-id".getBytes());
-        String result = PublicContentService.normalizeCursor(cursor);
-        assertTrue(result.startsWith("0-"), "Negative displayOrder should clamp to 0: " + result);
+    void normalizeCursor_negativeOrder_neverTakesTheKeyOfOrderZero() {
+        // The page reads -5 as -5: clamping only the key to 0 cached it under "0:cat-id"'s key (B1)
+        String negative = java.util.Base64.getEncoder().encodeToString("-5:cat-id".getBytes());
+        String zero = java.util.Base64.getEncoder().encodeToString("0:cat-id".getBytes());
+        assertNotEquals(PublicContentService.normalizeCursor(zero), PublicContentService.normalizeCursor(negative));
     }
 
     @Test
-    void normalizeCursor_negativeSimpleOffset_clampedToZero() {
+    void normalizeCursor_negativeOrderWithoutId_neverTakesTheFirstPageKey() {
         String cursor = java.util.Base64.getEncoder().encodeToString("-3".getBytes());
-        assertEquals("0", PublicContentService.normalizeCursor(cursor));
+        assertNotEquals("0", PublicContentService.normalizeCursor(cursor));
     }
 
     private List<Video> createTestVideos(int count) {
