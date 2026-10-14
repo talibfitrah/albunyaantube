@@ -64,7 +64,8 @@ internal object PlayerDescriptions {
      *    hyphen (a browser drops or rewrites them);
      * 2. scheme `http` or `https`;
      * 3. a host that converts to ASCII (IDNA, as a browser does), so `ｙｏｕｔｕｂｅ.com` cannot pass as another site;
-     *    unassigned code points are refused, since a browser's newer Unicode maps them (`yᵒutube.com`);
+     *    unassigned code points are refused, since a browser's newer Unicode maps them (`yᵒutube.com`); the cost:
+     *    a real site whose name uses a letter added after Unicode 3.2 (`ভবিষ্যৎ.com`) shows as text;
      * 4. not YouTube ([isYouTubeLink]).
      */
     fun isOpenableLink(url: String?): Boolean {

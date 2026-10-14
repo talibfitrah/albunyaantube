@@ -279,6 +279,7 @@ class PlayerDescriptionsTest {
             " https://example.org/a", // the tap path parses the untrimmed URL: it would be a dead link
             "\u00A0https://example.org/a",
             "https://example.org/a ",
+            "https://ভবিষ্যৎ.com/", // accepted cost: a real IDN using a letter added after Unicode 3.2 (U+09CE)
             "",
             null,
         )
