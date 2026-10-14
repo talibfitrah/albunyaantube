@@ -1,0 +1,28 @@
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_dbb6b1f3671904::t_5b6fc2bae64fac 12,15,17,334-369,389,399
+android/app/src/androidTest/java/com/albunyaan/tube/ui/InTabSearchScreensTest.kt
+  s_dbb6b1f3671904::t_3ea313d72f33f1 1-158
+android/app/src/androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt
+  s_dbb6b1f3671904::t_3fa287c5b0b894 116-126,136
+android/app/src/main/java/com/albunyaan/tube/ui/ContentListViewModel.kt
+  s_dbb6b1f3671904::t_e108ce7a592785 11,92-93,95-97,99-102,114
+  s_dbb6b1f3671904::t_1dff0860af4af2 63
+  s_dbb6b1f3671904::t_0a4a195f7e9cbb 98
+  s_dbb6b1f3671904::t_5309e436865014 135-136
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4a43d7d7ffb403e2e7b845021ca738f3e07c3428",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
