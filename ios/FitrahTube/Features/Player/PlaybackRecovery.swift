@@ -82,6 +82,9 @@ enum PlaybackRecovery {
     /// the watchdog, so 6/45 is what ships.)
     static let vodStallThreshold: TimeInterval = 6
     static let liveStallThreshold: TimeInterval = 45
+    /// The period of `PlayerHostView.Coordinator`'s wall-clock sampler, which feeds `StallWatchdog`
+    /// and stamps the error-log floor.
+    static let sampleInterval: TimeInterval = 1
 
     static func decide(event: RecoveryEvent, httpStatus: Int? = nil, state: RecoveryBudget) -> RecoveryAction {
         guard state.retries < RecoveryBudget.maxRetries else { return .exhausted }
@@ -112,13 +115,16 @@ enum PlaybackRecovery {
     }
 
     /// Task 7 fix round 3 (N2): the status of the item's NEWEST error-log event, but only when it is
-    /// dated after `floor` -- the last time the player was seen actually playing. An older event is a
-    /// failure AVFoundation already recovered from (probe 2026-10-14: a variant's segment 401 logged,
-    /// failover to the other variant, then normal playback), and reading it would turn a later,
-    /// unrelated stall into a sticky step-down. `floor == nil`: never seen playing, so every dated
-    /// event is this incident's. An undated event cannot be placed, so it is not trusted.
+    /// dated after the cutoff. `floor` is the last time the player was sampled actually playing; an
+    /// event older than that is taken as one AVFoundation already recovered from (probe 2026-10-14: a
+    /// variant's segment 401 logged, failover to the other variant, then normal playback), and
+    /// reading it would turn a later, unrelated stall into a sticky step-down. Fix round 4 (Minor 1):
+    /// the cutoff runs one `sampleInterval` behind `floor`, because AVFoundation logs on its own
+    /// thread and a tick can still read `.playing` just after a fresh 401. `floor == nil`: never seen
+    /// playing, so every dated event is this incident's. An undated event cannot be placed, so it is
+    /// not trusted.
     static func httpStatus(date: Date?, comment: String?, statusCode: Int, after floor: Date?) -> Int? {
-        guard let date, date > floor ?? .distantPast else { return nil }
+        guard let date, date > floor.map({ $0 - sampleInterval }) ?? .distantPast else { return nil }
         return httpStatus(comment: comment, statusCode: statusCode)
     }
 
@@ -126,13 +132,16 @@ enum PlaybackRecovery {
     /// user" rather than "the user had paused" (I5).
     static let resumeWindow: TimeInterval = 3
 
-    /// Whether recovery's replacement item should play. A stall means AVPlayer still wanted to play
-    /// (the watchdog only counts `.waitingToPlayAtSpecifiedRate`). A failure leaves AVPlayer paused
-    /// (spike 2026-10-14: `timeControlStatus == .paused` after `FailedToPlayToEndTime`), so intent
-    /// comes from when it was last seen wanting to play; `nil` = never sampled, a fresh player the
-    /// builder had just started.
+    /// Whether the coordinator itself must play recovery's replacement item. A stall: no. It never
+    /// pauses the player (the watchdog only counts `.waitingToPlayAtSpecifiedRate`), so the live
+    /// player state decides at swap time (AVPlayer keeps its rate across `replaceCurrentItem`, and the
+    /// builder plays a player that was not paused), and a pause made during the re-resolve holds (fix
+    /// round 3, Minor A). A failure leaves AVPlayer paused (spike 2026-10-14: `timeControlStatus ==
+    /// .paused` after `FailedToPlayToEndTime`), so intent comes from when it was last seen wanting to
+    /// play; `nil` = never sampled, a fresh player the builder had just started.
     static func shouldResume(after event: RecoveryEvent, lastPlayingAt: Date?, now: Date) -> Bool {
-        guard event != .stall, let lastPlayingAt else { return true }
+        guard event != .stall else { return false }
+        guard let lastPlayingAt else { return true }
         return now.timeIntervalSince(lastPlayingAt) <= resumeWindow
     }
 

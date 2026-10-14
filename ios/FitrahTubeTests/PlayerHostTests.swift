@@ -239,6 +239,30 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus != .paused, "a failure after a long wait left the next attempt paused")
     }
 
+    /// Fix round 4 (re-review Minor 2): a stall never pauses the player, so `fire` carries no resume
+    /// intent (`shouldResume(.stall) == false`) and the stall's replacement plays only because the
+    /// swap keeps a WAITING player wanting to play. Measured in this round: AVPlayer keeps `rate` 1
+    /// across `replaceCurrentItem`, so tightening the builder's `wasPlaying` to `== .playing` alone
+    /// changes nothing, but anything in the swap that pauses a waiting player (e.g. that plus an
+    /// `else { pause() }`) fails here and nowhere else. The 6 s watchdog is not waited out; the swap
+    /// is made from the state it fires in (waiting, no resume flag).
+    @Test(.timeLimit(.minutes(1))) func aStallReplacementOnAWaitingPlayerPlays() async throws {
+        let server = try StallingServer(body: Data(), withheldFrom: 0)   // accepts, never answers
+        await server.start()
+        defer { server.stop() }
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+
+        try Self.swap(player, to: server.url, coordinator, model)
+        for _ in 0..<300 where player.timeControlStatus != .waitingToPlayAtSpecifiedRate {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(player.timeControlStatus == .waitingToPlayAtSpecifiedRate, "not a real wait")
+
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)   // no pause: the stall's replacement
+        #expect(player.timeControlStatus != .paused, "a waiting player's stall replacement was built paused")
+    }
+
     /// Fix round 2 (pre-existing P1, same cause as I1): the stall watchdog was fed by the same
     /// item-timeline observer, so a REAL stall never fired `.stall` and recovery waited for
     /// AVFoundation's own timeout. The server hands AVPlayer the clip's metadata (`.readyToPlay`,

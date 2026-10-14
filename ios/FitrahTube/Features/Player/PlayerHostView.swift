@@ -365,12 +365,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// itself can no longer say whether the USER had paused. Per player, not per item.
         /// `private(set)`, not private: the host tests poll for the first stamp (fix round 3, Minor B).
         private(set) var lastPlayingAt: Date?
-        /// When the player was last seen actually PLAYING (`.playing`, not waiting): an error-log event
-        /// older than this is one AVFoundation recovered from, so `fire` does not read it (N2). Nil
-        /// until the first such sample.
+        /// When the player was last sampled actually PLAYING (`.playing`, not waiting). `fire` reads
+        /// an error-log event only if it is newer than one sampler interval before this: a proxy for
+        /// "not one AVFoundation already recovered from" (N2; fix round 4, Minor 1). Nil until the
+        /// first such sample. Per coordinator, yet as good as per item: an item's log holds only its
+        /// own events, all newer than any stamp taken before it was swapped in.
         private(set) var errorLogFloor: Date?
         /// Set by `fire`, spent by the next `observe` of a NEW item on the SAME player: recovery's
-        /// replacement, which plays iff `PlaybackRecovery.shouldResume` said so.
+        /// replacement, which `observe` plays iff `PlaybackRecovery.shouldResume` said so (never for a
+        /// stall: that replacement inherits the live player's state).
         private var resumeOnNextItem = false
 
         /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
@@ -607,7 +610,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 }
             }
             // `.common`, so it keeps ticking while a scroll view tracks a touch.
-            let timer = Timer(timeInterval: 1, repeats: true) { [weak self] _ in
+            let timer = Timer(timeInterval: PlaybackRecovery.sampleInterval, repeats: true) { [weak self] _ in
                 MainActor.assumeIsolated { self?.sample() }
             }
             RunLoop.main.add(timer, forMode: .common)
@@ -657,11 +660,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         private func fire(_ event: RecoveryEvent) {
             guard let model else { return }
-            // A stall never pauses the player, so the builder's live `wasPlaying` at swap time is the
-            // right answer -- and it honours a pause made while the re-resolve was out (fix round 3,
-            // Minor A). Only a failure, which pauses the player, needs the intent carried over.
-            resumeOnNextItem = event != .stall
-                && PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
+            resumeOnNextItem = PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
             // The CDN's answer, when AVFoundation logged one since the player last played (N2).
             let status = observedItem?.errorLog()?.events.last.flatMap {
                 PlaybackRecovery.httpStatus(date: $0.date, comment: $0.errorComment,

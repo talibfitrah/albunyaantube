@@ -127,6 +127,19 @@ struct PlaybackRecoveryTests {
                                             statusCode: -16840, after: lastPlayed) == 401)
     }
 
+    /// Task 7 fix round 4 (re-review Minor 1): AVFoundation logs the 401 on its own thread, and a 1 s
+    /// sampler tick can still read `.playing` a moment after it, stamping the floor past the event.
+    /// The cutoff runs one sampler interval behind the floor, so that fresh 401 still steps down; an
+    /// event a full interval older than the last playing sample is ignored as before.
+    @Test func aFreshErrorLoggedJustBeforeTheLastPlayingSampleStillCounts() {
+        let lastPlayed = Date(timeIntervalSinceReferenceDate: 1_000_000)
+        let comment = "The operation couldn\u{2019}t be completed. (CoreMediaErrorDomain error -16840 - HTTP 401: Unauthorized)"
+        #expect(PlaybackRecovery.httpStatus(date: lastPlayed.addingTimeInterval(-0.5), comment: comment,
+                                            statusCode: -16840, after: lastPlayed) == 401)
+        #expect(PlaybackRecovery.httpStatus(date: lastPlayed.addingTimeInterval(-1), comment: comment,
+                                            statusCode: -16840, after: lastPlayed) == nil)
+    }
+
     /// A player never seen playing has no floor: every dated event is this incident's (the real 401
     /// before the first frame -- the simulator proof's `status=401`).
     @Test func aPlayerThatNeverPlayedReadsEveryDatedEvent() {
@@ -175,8 +188,13 @@ struct PlaybackRecoveryTests {
 
     // MARK: - does recovery's replacement item play? (spec R12; I5 kept)
 
-    @Test func aStallAlwaysResumes() {
-        #expect(PlaybackRecovery.shouldResume(after: .stall, lastPlayingAt: .distantPast, now: Date()))
+    /// Fix round 4 (re-review nit): a stall never pauses the player, so it carries no intent for
+    /// `observe` to replay -- the live player state carries over to the replacement, and a pause made
+    /// during the re-resolve holds (fix round 3, Minor A). Even a fresh stamp, or none at all, says no.
+    @Test func aStallCarriesNoResumeIntent() {
+        let now = Date()
+        #expect(!PlaybackRecovery.shouldResume(after: .stall, lastPlayingAt: now, now: now))
+        #expect(!PlaybackRecovery.shouldResume(after: .stall, lastPlayingAt: nil, now: now))
     }
 
     @Test func aFailureRightAfterPlayingResumes() {
