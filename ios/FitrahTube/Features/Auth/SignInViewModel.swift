@@ -27,6 +27,8 @@ import Observation
     private let auth: any AuthClient
     private let session: AccountSession
     private let account: AccountClient
+    /// The app's `NetworkMonitor`, read at the tap (round 1 / M6).
+    private let isOnline: @MainActor () -> Bool
 
     private(set) var state: UiState
 
@@ -77,7 +79,9 @@ import Observation
         }
     }
 
-    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities) {
+    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities,
+         isOnline: @escaping @MainActor () -> Bool = { true }) {
+        self.isOnline = isOnline
         self.auth = auth
         self.account = account
         self.session = session
@@ -126,6 +130,13 @@ import Observation
         // button off the screen — this is the second defence, for a provider that lost its
         // prerequisite between render and tap.
         guard provider.isAvailable else { return }
+        // Round 1 / M6: offline at the tap, Google's sheet would open on Safari's own offline page
+        // (backing out of it is a silent cancel) and Apple's offline error is undocumented. Say so
+        // now, the wall's existing copy, and open no sheet.
+        guard isOnline() else {
+            fail(.network)
+            return
+        }
         beginLoading()
         dropLiveAccount()
 

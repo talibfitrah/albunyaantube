@@ -11,6 +11,7 @@ import XCTest
 ///     TEST_RUNNER_FITRAH_OFFLINE_CHECKS=1 TEST_RUNNER_FITRAH_LIVE_EMAIL=<test account> \
 ///       TEST_RUNNER_FITRAH_HANG_PORT=<port> TEST_RUNNER_FITRAH_SHOTS_DIR=<dir> \
 ///       xcodebuild test-without-building … -only-testing:FitrahTubeUITests/OfflineDownloadsChecks
+///     xcrun simctl pbcopy <sim> < /dev/null   # always, whatever the run did
 ///
 /// Quit Simulator.app first: its pasteboard sync would copy the password to the Mac's.
 ///
@@ -40,21 +41,28 @@ final class OfflineDownloadsChecks: XCTestCase {
 
     private var environment: [String: String] { ProcessInfo.processInfo.environment }
     private var device: String { UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone" }
-    private var shotsDirectory: URL!
+    private var shotsDirectory: URL?
     private var notes: [String] = []
 
     override func setUpWithError() throws {
         try XCTSkipUnless(environment["FITRAH_OFFLINE_CHECKS"] == "1", "Live offline checks are opt-in: FITRAH_OFFLINE_CHECKS=1")
         continueAfterFailure = false
         XCUIDevice.shared.orientation = .portrait
-        let dir = try XCTUnwrap(environment["FITRAH_SHOTS_DIR"], "set TEST_RUNNER_FITRAH_SHOTS_DIR")
-        shotsDirectory = URL(fileURLWithPath: dir, isDirectory: true)
-        try FileManager.default.createDirectory(at: shotsDirectory, withIntermediateDirectories: true)
+        let dir = URL(fileURLWithPath: try XCTUnwrap(environment["FITRAH_SHOTS_DIR"], "set TEST_RUNNER_FITRAH_SHOTS_DIR"),
+                      isDirectory: true)
+        try FileManager.default.createDirectory(at: dir, withIntermediateDirectories: true)
+        shotsDirectory = dir
     }
 
+    /// The pasteboard FIRST, on every exit: a skip, a failed setUp or any failure before the paste
+    /// would otherwise leave the password the runner put there (round 1 / I2). tearDown runs even
+    /// when setUpWithError threw, so nothing here may assume setUp got as far as the directory.
     override func tearDown() {
-        try? notes.joined(separator: "\n").appending("\n")
-            .write(to: shotsDirectory.appendingPathComponent("ios-fix-\(device)-notes.txt"), atomically: true, encoding: .utf8)
+        UIPasteboard.general.items = []
+        if let shotsDirectory {
+            try? notes.joined(separator: "\n").appending("\n")
+                .write(to: shotsDirectory.appendingPathComponent("ios-fix-\(device)-notes.txt"), atomically: true, encoding: .utf8)
+        }
         super.tearDown()
     }
 
@@ -258,6 +266,7 @@ final class OfflineDownloadsChecks: XCTestCase {
     }
 
     private func shot(_ name: String, _ lang: Lang) {
+        guard let shotsDirectory else { return }
         let file = shotsDirectory.appendingPathComponent("ios-fix-\(device)-\(lang.code)-\(name).png")
         try? XCUIScreen.main.screenshot().pngRepresentation.write(to: file)
     }

@@ -181,9 +181,9 @@ extension View {
     /// `PlayerScreen` and `ShortsScreen` (plan §6.11 "every rung transition announced").
     /// `.onChange` fires only on a real transition, so entering `.rung2Progressive` announces
     /// exactly once.
-    func rungAnnouncements(state: StreamState?, offline: Bool = false) -> some View {
-        onChange(of: state) { _, newValue in
-            if let text = PlayerScreen.transitionAnnouncement(for: newValue, offline: offline) {
+    func rungAnnouncements(model: PlayerViewModel?) -> some View {
+        onChange(of: model?.state) { _, _ in
+            if let text = PlayerScreen.transitionAnnouncement(of: model) {
                 AccessibilityNotification.Announcement(text).post()
             }
         }

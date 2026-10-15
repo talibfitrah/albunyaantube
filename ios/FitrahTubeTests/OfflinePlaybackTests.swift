@@ -168,9 +168,20 @@ struct OfflinePlaybackTests {
         let asset = PlayerHostView.asset(url: url, userAgent: resolved.userAgent)
         #expect(try await asset.load(.isPlayable), "AVFoundation cannot play the saved file")
         #expect(try await asset.load(.duration).seconds > 0)
-        // 1.0.3 R3: the visual rung pill is suppressed offline, and so is its announcement.
-        #expect(PlayerScreen.transitionAnnouncement(for: vm.state, offline: vm.isOfflinePlayback) == nil,
+        // 1.0.3 R3: the visual rung pill is suppressed offline, and so is its announcement — read
+        // off the MODEL, the one value both player screens hand `rungAnnouncements` (round 1 / M3).
+        #expect(PlayerScreen.transitionAnnouncement(of: vm) == nil,
                 "VoiceOver announced 'standard quality' on a saved file")
+    }
+
+    /// Round 1 / M3, the direction that could be wrong: the same rung on an ONLINE model still
+    /// announces, so the offline silence comes from the model's flag and nothing else.
+    @Test func anOnlineDemotionStillAnnouncesThroughTheModel() async {
+        let vm = PlayerViewModel(resolver: RecordingResolver(.progressive), settings: makeSettings(),
+                                 args: PlayerArgs(videoId: Self.lectureVideoId))
+        await vm.open()
+        guard case .rung2Progressive = vm.state else { Issue.record("expected rung 2, got \(vm.state)"); return }
+        #expect(PlayerScreen.transitionAnnouncement(of: vm) == String(localized: "player_announce_standard_quality"))
     }
 
     /// 1.0.3 (found by the live check): a finished save in production's directory records the

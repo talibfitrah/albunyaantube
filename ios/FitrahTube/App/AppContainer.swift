@@ -722,7 +722,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.gateTransport = gateTransport
     }
 
-    static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
+    /// `storeURL`/`protectedDataAvailable` exist so `AppContainerTests` can pin the hand-off to the
+    /// store guard through THIS builder; production takes the defaults.
+    static func live(baseURL: URL = AppConfig.apiBaseURL, storeURL: URL? = nil,
+                     protectedDataAvailable: @escaping () -> Bool = { UIApplication.shared.isProtectedDataAvailable })
+        -> AppContainer {
         let deviceId = DeviceId.persisted()
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: deviceId)
         // Degraded-mode header (plan Task 2 table): the backend's own `Channel` stands in for a
@@ -734,8 +738,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return AppContainer(
             catalog: LiveCatalogClient(client: api),
             // Lazy (the property's note): by the time a store is first used `UIApplicationMain` runs.
-            modelContainer: makeModelContainer(inMemory: false,
-                                               protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable }),
+            modelContainer: makeModelContainer(inMemory: false, storeURL: storeURL,
+                                               protectedDataAvailable: protectedDataAvailable),
             apiBaseURL: baseURL,
             degradedHeader: { try await headers.channel($0) },
             playlistHeader: { try await headers.playlist($0) })
@@ -842,19 +846,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return errno != EPERM && errno != EACCES
     }
 
-    /// 1.0.3 R5 (L1): returns once the store can be read: at once on every launch after the first
-    /// unlock (the store stays readable while the screen is locked). Before it, a background-session
-    /// relaunch waits here and retries on every `protectedDataDidBecomeAvailable`, instead of
-    /// opening a store it cannot read. `isProtectedDataAvailable` is the second way through, so a
-    /// permission error with the device unlocked never parks the downloads.
-    static func waitUntilStoreReadable(
-        isReadable: () -> Bool = { AppContainer.storeIsReadable(AppContainer.liveStoreURL) || UIApplication.shared.isProtectedDataAvailable },
-        center: NotificationCenter = .default
-    ) async {
-        let unlocked = center.notifications(named: UIApplication.protectedDataDidBecomeAvailableNotification)
-        guard !isReadable() else { return }
-        for await _ in unlocked where isReadable() { return }
-    }
+    /// What the scene and the background-session hook wait on before the first store use
+    /// (`StoreReadiness`). Settable so a test can hold a container's hook on a fake answer.
+    var storeReadiness: StoreReadiness = .live
 
     /// Gate A-I1. This runs on the launch path (at the first store use since 1.0.3, the
     /// `modelContainer` note), so its failure mode used to be a `preconditionFailure` -- a permanent
@@ -1018,4 +1012,36 @@ extension EnvironmentValues {
     #else
     @Entry var container: AppContainer = AppContainer.current!
     #endif
+}
+
+/// 1.0.3 R5 (L1), round 1 (I1, M5): whether the on-disk store can be opened now, and the wait for
+/// it. The store's class is the app default ("until first user authentication"), so before the first
+/// unlock after a reboot it cannot be read; a launch there (a background-session event, a scene
+/// connected in the background) must not open it, because the stand-in it would get instead is
+/// empty and stays for the life of the process. Readable = the store file opens
+/// (`AppContainer.storeIsReadable`), or protected data is available — the second way through, so a
+/// permission error on an unlocked device never parks anything.
+@MainActor struct StoreReadiness {
+    var isReadable: () -> Bool
+    var center: NotificationCenter = .default
+
+    static var live: StoreReadiness {
+        StoreReadiness(isReadable: {
+            AppContainer.storeIsReadable(AppContainer.liveStoreURL) || UIApplication.shared.isProtectedDataAvailable
+        })
+    }
+
+    /// At once on every launch after the first unlock (the store stays readable while the screen is
+    /// locked). Before it, re-checks on `protectedDataDidBecomeAvailable` AND on `didBecomeActive`
+    /// (M5): a process suspended across the unlock may never be handed the first, and nobody can
+    /// bring the app to the foreground on a device that has not been unlocked. Both observers are
+    /// registered before the first check, so no wake-up falls between the check and the wait.
+    func wait() async {
+        let (wakes, wake) = AsyncStream<Void>.makeStream()
+        let tokens = [UIApplication.protectedDataDidBecomeAvailableNotification, UIApplication.didBecomeActiveNotification]
+            .map { center.addObserver(forName: $0, object: nil, queue: nil) { _ in wake.yield() } }
+        defer { tokens.forEach { center.removeObserver($0) } }
+        guard !isReadable() else { return }
+        for await _ in wakes where isReadable() { return }
+    }
 }

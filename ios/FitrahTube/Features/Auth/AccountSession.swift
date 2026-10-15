@@ -111,9 +111,11 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// `.signedOut` for a session that survives, so that report must not delete the record.
     private let protectedDataAvailable: @MainActor @Sendable () -> Bool
     /// 1.0.3 R1 (Android R4b parity): how long a launch with a saved record waits for `/me` before
-    /// it routes on that record. Injected only so a test need not sit through it.
+    /// it routes on that record.
     nonisolated static let launchMeBound: Duration = .seconds(3)
-    private let launchBound: Duration
+    /// Sleeps for the bound. Injected (round 1 / M4) so a test holds it on a gate rather than on
+    /// the wall clock of a loaded machine.
+    private let launchSleep: @Sendable (Duration) async -> Void
     /// The account on screen is the offline record, or its last `/me` failed without a verdict:
     /// the one case a reconnect re-asks `/me` for (`AppContainer.connectivityChanged`, as Android).
     private(set) var needsRecheck = false
@@ -195,7 +197,7 @@ nonisolated enum AccountState: Sendable, Equatable {
          sync: (any SyncTriggering)? = nil,
          records: AccountRecordStore? = nil,
          protectedDataAvailable: @escaping @MainActor @Sendable () -> Bool = { true },
-         launchBound: Duration = AccountSession.launchMeBound) {
+         launchSleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.auth = auth
         self.account = account
         self.stores = stores
@@ -208,7 +210,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         self.sync = sync
         self.records = records
         self.protectedDataAvailable = protectedDataAvailable
-        self.launchBound = launchBound
+        self.launchSleep = launchSleep
     }
 
     /// The uid ANY sync trigger may run for, or nil -- the one guard the foreground and
@@ -671,8 +673,8 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// in the meantime is never overwritten.
     private func launchFallback(for uid: String?) -> Task<Void, Never>? {
         guard let uid, state.me == nil, let known = records?.load(uid: uid) else { return nil }
-        return Task { [launchBound] in
-            try? await Task.sleep(for: launchBound)
+        return Task { [launchSleep] in
+            await launchSleep(Self.launchMeBound)
             guard !Task.isCancelled, state == .loading, user?.uid == uid else { return }
             state = .loaded(known)
             needsRecheck = true

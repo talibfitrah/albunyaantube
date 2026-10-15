@@ -71,17 +71,18 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
                      completionHandler: @escaping () -> Void) {
         nonisolated(unsafe) let completionHandler = completionHandler
         ProgressiveEngine.registerBackgroundCompletion(identifier: identifier) { completionHandler() }
-        // Cubic P1: on a background-events relaunch no scene renders, so RootView's `.task` — the
-        // only other builder of the lazy `offlineManager` — never runs. Parking the handler alone
-        // recreates nothing: the queued delegate events are only delivered to a session that
-        // exists, and the delegate is what issues every next chunk and eventually pops the
-        // handler. Touching `offlineManager` through `AppContainer.current` (the container the App
+        // Cubic P1: a background-events relaunch need not render a scene, so RootView's `.task` —
+        // the only other builder of the lazy `offlineManager` — may never run (and when a scene
+        // does connect before the first unlock, `StoreReadinessGate` holds it back). Parking the
+        // handler alone recreates nothing: the queued delegate events are only delivered to a
+        // session that exists, and the delegate is what issues every next chunk and eventually
+        // pops the handler. Touching `offlineManager` through `AppContainer.current` (the container the App
         // set at init — the smallest seam that avoids the closure-registration chicken-and-egg)
         // builds the engine's session and `reattach()` re-binds the rows.
         Task { @MainActor in
             // 1.0.3 R5 (L1): before the first unlock the store cannot be read, and opening it there
-            // leaves this process on an empty stand-in; wait for `protectedDataDidBecomeAvailable`.
-            await AppContainer.waitUntilStoreReadable()
+            // leaves this process on an empty stand-in; wait until it can be (`StoreReadiness`).
+            await AppContainer.current?.storeReadiness.wait()
             await AppContainer.current?.offlineManager.reattach()
         }
     }

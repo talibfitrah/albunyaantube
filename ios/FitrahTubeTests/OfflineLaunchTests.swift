@@ -438,7 +438,8 @@ struct OfflineLaunchTests {
 
     /// A cold start over the SIGNING transport (Firebase's bearer on every request, the 403 envelope
     /// checked), returned at once: the bound tests watch the launch while `/me` is still parked.
-    private func parkedLaunch(_ base: ScriptedTransport, launchBound: Duration = AccountSession.launchMeBound,
+    private func parkedLaunch(_ base: ScriptedTransport,
+                              launchSleep: @escaping @Sendable (Duration) async -> Void = { _ in },
                               auth: FakeAuthClient = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)))
         -> (session: AccountSession, running: Task<Void, Never>) {
         let transport = AuthorizedTransport(
@@ -448,8 +449,14 @@ struct OfflineLaunchTests {
         let session = AccountSession(
             auth: auth, account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil }, records: records,
-            launchBound: launchBound)
+            launchSleep: launchSleep)
         return (session, Task { await session.start() })
+    }
+
+    /// What the launch bound asked to sleep for, in order.
+    private actor DurationLog {
+        private(set) var values: [Duration] = []
+        func append(_ value: Duration) { values.append(value) }
     }
 
     private func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
@@ -458,36 +465,42 @@ struct OfflineLaunchTests {
     }
 
     /// Dead Wi-Fi or a stalled backend: `/me` neither answers nor fails for 15 s (75 s with an
-    /// expired token). The launch routes on the saved record after the 3 s bound instead of
-    /// holding the spinner, and the request keeps running.
-    @Test func aHangingLaunchMeRoutesOnTheSavedRecordWithinThreeSeconds() async {
+    /// expired token). The launch routes on the saved record once the 3 s bound has passed instead
+    /// of holding the spinner, and the request keeps running. Round 1 / M4: the bound's sleep is
+    /// injected and held on a gate, so nothing here depends on the wall clock under the gate's load.
+    @Test func aHangingLaunchMeRoutesOnTheSavedRecordOnceTheBoundPasses() async {
         #expect(AccountSession.launchMeBound == .seconds(3))
         records.save(Self.me(), uid: "fake-uid")
-        let gate = Gate()
-        let base = ScriptedTransport([Self.offline()], park: { _ in await gate.block() })
-        let started = ContinuousClock.now
-        let (session, running) = parkedLaunch(base)
+        let request = Gate(), bound = Gate()
+        let asked = DurationLog()
+        let base = ScriptedTransport([Self.offline()], park: { _ in await request.block() })
+        let (session, running) = parkedLaunch(base, launchSleep: { await asked.append($0); await bound.block() })
         defer { running.cancel() }
 
-        await waitUntil { outcome(session).destination == .main }
-        let elapsed = ContinuousClock.now - started
+        await waitUntil(.seconds(5)) { session.state == .loading }
+        for _ in 0..<500 {
+            if await !asked.values.isEmpty { break }
+            await Task.yield()
+        }
+        #expect(await asked.values == [.seconds(3)], "the launch did not wait out the 3 s bound")
+        #expect(outcome(session).destination == .awaitingAccount, "routed before the bound passed")
 
-        #expect(outcome(session).destination == .main, "still \(session.state) after \(elapsed): the launch waited on /me")
-        // It gave `/me` the whole bound first, and did not wait for the transport's own timeout.
-        #expect(elapsed >= .seconds(3) && elapsed < .seconds(6), "routed after \(elapsed)")
+        await bound.release()
+        await waitUntil { outcome(session).destination == .main }
+
+        #expect(outcome(session).destination == .main, "still \(session.state) after the bound: the launch waited on /me")
         #expect(session.needsRecheck, "a launch on the record must re-ask /me on the next reconnect")
         #expect(base.sent.count == 1, "the bound must not cost a second request")
-        await gate.release()
+        await request.release()
     }
 
     /// No record: nothing to route on, so the launch still waits for `/me` (unchanged).
     @Test func aHangingLaunchMeWithNoRecordStillWaits() async {
         let gate = Gate()
-        let (session, running) = parkedLaunch(ScriptedTransport([Self.offline()], park: { _ in await gate.block() }),
-                                              launchBound: .milliseconds(50))
+        let (session, running) = parkedLaunch(ScriptedTransport([Self.offline()], park: { _ in await gate.block() }))
         defer { running.cancel() }
         await waitUntil { session.state == .loading }
-        try? await Task.sleep(for: .milliseconds(300))   // six bounds' worth
+        for _ in 0..<500 { await Task.yield() }   // the (instant) bound would have fired by now
 
         #expect(outcome(session).destination == .awaitingAccount, "\(session.state)")
         await gate.release()
@@ -501,7 +514,7 @@ struct OfflineLaunchTests {
         let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
         let gate = Gate()
         let (session, running) = parkedLaunch(ScriptedTransport([verdict, verdict], park: { if $0 == 1 { await gate.block() } }),
-                                              launchBound: .milliseconds(100), auth: auth)
+                                              auth: auth)
         defer { running.cancel() }
         await waitUntil { outcome(session).destination == .main }
         #expect(outcome(session).destination == .main, "the precondition: routed on the record before /me landed")
@@ -519,8 +532,7 @@ struct OfflineLaunchTests {
     @Test func aSuccessLandingAfterTheBoundUpdatesTheRecord() async {
         records.save(Self.me("fake-uid", .pendingProfile), uid: "fake-uid")
         let gate = Gate()
-        let (session, running) = parkedLaunch(ScriptedTransport([.json(200, Self.meJSON)], park: { _ in await gate.block() }),
-                                              launchBound: .milliseconds(100))
+        let (session, running) = parkedLaunch(ScriptedTransport([.json(200, Self.meJSON)], park: { _ in await gate.block() }))
         defer { running.cancel() }
         await waitUntil { session.state.me != nil }
         #expect(session.state.me?.status == .pendingProfile, "the precondition: routed on the record before /me landed")

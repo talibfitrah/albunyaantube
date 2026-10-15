@@ -52,7 +52,7 @@ struct ShortsScreen: View {
             model = vm
             await vm.open()
         }
-        .rungAnnouncements(state: model?.state)
+        .rungAnnouncements(model: model)
     }
 
     /// Which surface a state renders. Pure so the routing is testable without a live view. Same

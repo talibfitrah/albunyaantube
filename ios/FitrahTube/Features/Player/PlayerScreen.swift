@@ -209,7 +209,7 @@ struct PlayerScreen: View {
         // Task 9: the announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
         // mounts the player (Task 7's identity note keeps both playable rungs in the switch case
         // below). `.onChange` fires only on a real transition, so entering it announces exactly once.
-        .rungAnnouncements(state: model?.state, offline: args.offlineItemId != nil)
+        .rungAnnouncements(model: model)
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
@@ -245,6 +245,12 @@ struct PlayerScreen: View {
     ///
     /// 1.0.3 R3: never for an `offline` open. A saved file is one rendition the extraction ladder
     /// never walked, so the rung pill is hidden there (`stateView`) and its sentence is silent too.
+    /// What `rungAnnouncements` says for `model`'s current state: the one entry both player screens
+    /// use, so the offline flag cannot be left off at a call site (round 1 / M3).
+    static func transitionAnnouncement(of model: PlayerViewModel?) -> String? {
+        transitionAnnouncement(for: model?.state, offline: model?.isOfflinePlayback ?? false)
+    }
+
     static func transitionAnnouncement(for state: StreamState?, offline: Bool = false) -> String? {
         if offline { return nil }
         switch state {
