@@ -179,7 +179,6 @@
     <string name="content_unavailable_message">هذا المحتوى لم يعد متاحًا. ربما تمت إزالته بواسطة المسؤول أو بواسطة يوتيوب.</string>
     <string name="error_parse">فشل معالجة البيانات. يرجى المحاولة مجدداً.</string>
     <string name="error_parse_title">خطأ في البيانات</string>
-    <string name="error_unknown">حدث خطأ غير متوقع.</string>
     <string name="offline_mode">أنت غير متصل. يتم عرض المحتوى المحفوظ.</string>
     <string name="connectivity_offline_banner">أنت غير متصل بالإنترنت. تحقق من اتصالك.</string>
     <!-- ANDROID-MULTI-01 Issue 3 -->

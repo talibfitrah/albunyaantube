@@ -25,7 +25,7 @@ import kotlin.math.max
  * **Format:**
  * - Video: `{downloadId}.mp4`
  * - Audio: `{downloadId}.m4a`
- * - Temp: `{downloadId}.tmp` (deleted on completion or failure)
+ * - Temp: `{downloadId}.{run}.tmp` (deleted on completion, failure, cancel or delete)
  * - Metadata: `metadata/{downloadId}.meta` (stores completedAtMillis)
  */
 class DownloadStorage(
@@ -70,9 +70,8 @@ class DownloadStorage(
      * A temp file named for one worker [run]: a stopping run's cleanup can then never delete the
      * file a resumed run is writing. [discardStaleTemps] clears what earlier runs left behind.
      */
-    fun createTempFile(downloadId: String, run: String = ""): File {
-        val sanitized = sanitizeId(downloadId)
-        val temp = File(rootDir, if (run.isEmpty()) "$sanitized.tmp" else "$sanitized.$run.tmp")
+    fun createTempFile(downloadId: String, run: String): File {
+        val temp = File(rootDir, "${sanitizeId(downloadId)}.$run.tmp")
         if (temp.exists()) check(temp.delete()) { "Failed to delete stale temp file: ${temp.absolutePath}" }
         temp.parentFile?.mkdirs()
         return temp
@@ -258,6 +257,8 @@ class DownloadStorage(
         // Clean up metadata file
         val metadataFile = metadataFile(downloadId)
         metadataFile.delete()
+        // Cancel and delete land here: drop any partial a dead or stopped worker left behind.
+        discardStaleTemps(downloadId)
     }
 
     /**

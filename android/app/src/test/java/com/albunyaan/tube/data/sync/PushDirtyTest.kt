@@ -1,12 +1,16 @@
 package com.albunyaan.tube.data.sync
 
+import android.database.sqlite.SQLiteException
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
 import com.albunyaan.tube.data.local.AccountBindingEntity
 import com.albunyaan.tube.data.local.AppDatabase
 import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.SubscribedChannel
+import com.albunyaan.tube.data.local.SubscribedChannelDao
 import com.albunyaan.tube.data.sync.dto.*
+import com.squareup.moshi.JsonDataException
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -102,5 +106,61 @@ class PushDirtyTest {
         sm.unbind()
 
         assertTrue(db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    // S7-N4: a 2xx body of the wrong shape makes Moshi throw JsonDataException, a
+    // RuntimeException, out of api.*. It used to escape into a handler-less scope.
+    @Test fun malformedPushBodyIsRetriedLikeTransportAndTheDrainGoesOn() = runTest {
+        db.subscribedChannelDao().upsert(SubscribedChannel("UC4", "u", "n", null, user_id = "uid", dirty = true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.putSubResponse = { _, _ -> throw JsonDataException("Expected a long but was STRING") }
+        api.putFavoriteResponse = { id, req ->
+            Response.success(FavoriteSyncDto(id, false, 999L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+
+        sm.pushDirty("uid")
+        sm.unbind()
+
+        assertTrue("the malformed row stays dirty for the backoff retry",
+            db.subscribedChannelDao().selectDirty("uid").any { it.channelId == "UC4" })
+        assertFalse("the rows after it still push",
+            db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    @Test fun malformedPullBodyNeverThrowsFromBindOrPull() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("uid", 0L, true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.pullResponse = { throw JsonDataException("Expected BEGIN_OBJECT but was STRING") }
+
+        sm.bind("uid")
+        sm.pullAll("uid")
+        sm.unbind()
+
+        assertTrue(db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    @Test fun databaseFailureNeverThrowsFromPush() = runTest {
+        val failingSubs = object : SubscribedChannelDao by db.subscribedChannelDao() {
+            override suspend fun selectDirty(uid: String): List<SubscribedChannel> =
+                throw SQLiteException("disk I/O error")
+        }
+        sm = SyncManager(api, db, failingSubs, db.savedPlaylistDao(),
+                         db.favoriteVideoDao(), db.syncStateDao(), db.accountBindingDao(),
+                         db.playlistVideoLinkDao())
+
+        sm.pushDirty("uid")
+    }
+
+    @Test fun cancellationStillPropagates() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("uid", 0L, true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.pullResponse = { throw CancellationException("pull cancelled") }
+        api.putFavoriteResponse = { _, _ -> throw CancellationException("push cancelled") }
+
+        assertEquals("pull cancelled", runCatching { sm.bind("uid") }.exceptionOrNull()?.message)
+        assertEquals("push cancelled", runCatching { sm.pushDirty("uid") }.exceptionOrNull()?.message)
     }
 }

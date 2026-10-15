@@ -77,7 +77,7 @@ class DownloadRepositoryTest {
                 title = "Persisted Video",
                 thumbnailUrl = "https://example.test/thumb.jpg"
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(1, 2, 3, 4))
             val committedFile = storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -105,7 +105,7 @@ class DownloadRepositoryTest {
                 title = "Active Video",
                 thumbnailUrl = null
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(9, 8, 7, 6))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -138,7 +138,7 @@ class DownloadRepositoryTest {
                     audioOnly = true
                 )
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(5, 4, 3, 2))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -161,7 +161,7 @@ class DownloadRepositoryTest {
                 thumbnailUrl = null,
                 audioOnly = true
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(3, 2, 1))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -202,7 +202,7 @@ class DownloadRepositoryTest {
                 thumbnailUrl = null,
                 audioOnly = false
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(7, 6, 5))
             val committedFile = storage.commit(downloadId, audioOnly = false, tempFile)
             repository.refreshPersistedDownloads()
@@ -226,7 +226,7 @@ class DownloadRepositoryTest {
                 )
             )
             workManager.cancelAllWork().result.get()
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(1, 2, 3))
             storage.commit(downloadId, audioOnly = true, tempFile)
 

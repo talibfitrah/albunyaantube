@@ -25,15 +25,15 @@ class DownloadStorageTest {
     fun ensureSpace_doesNotPruneFiles_noArtificialQuota() {
         // No longer tests quota enforcement since there is no artificial quota
         // Device storage is the natural limit; Android OS handles low storage warnings
-        val firstTemp = storage.createTempFile("first")
+        val firstTemp = storage.createTempFile("first", "run")
         firstTemp.outputStream().use { it.write(ByteArray(600)) }
         storage.commit("first", true, firstTemp)
 
-        val secondTemp = storage.createTempFile("second")
+        val secondTemp = storage.createTempFile("second", "run")
         secondTemp.outputStream().use { it.write(ByteArray(400)) }
         storage.commit("second", true, secondTemp)
 
-        val thirdTemp = storage.createTempFile("third")
+        val thirdTemp = storage.createTempFile("third", "run")
         thirdTemp.outputStream().use { it.write(ByteArray(800)) }
 
         storage.ensureSpace(800) // No-op in current implementation

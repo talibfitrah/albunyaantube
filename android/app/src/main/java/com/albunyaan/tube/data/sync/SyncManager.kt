@@ -16,7 +16,7 @@ import javax.inject.Singleton
 /**
  * Plan D — owns all sync side-effects:
  *  • bind(uid)       — sign-in / account-switch decision matrix
- *  • runMerge(uid)   — additive merge of anon-era rows with server
+ *  • merge (inside bind) — additive merge of anon-era rows with server
  *  • pullAll(uid)    — cursor-based delta pull, per-type
  *  • pushDirty(uid)  — drain dirty=1 rows with exponential backoff
  *  • unbind()        — sign-out: in-memory clear; tables retain user_id
@@ -71,7 +71,26 @@ class SyncManager @Inject constructor(
     // unbind() makes the retry chain strictly bound to the active session.
     @Volatile private var pendingRetry: kotlinx.coroutines.Job? = null
 
-    suspend fun bind(uid: String) = syncMutex.withLock { bindLocked(uid) }
+    suspend fun bind(uid: String) = guarded { bindLocked(uid) }
+
+    /**
+     * S7-N4: bind, pullAll and pushDirty, and so this class's own launches (`pushDirtyAsync`, the
+     * backoff retry) and every caller's scope, run through here. A non-transport failure (Moshi's
+     * JsonDataException on a malformed 2xx body, a SQLiteException) used to escape into a scope
+     * with no handler and kill the process. Now it is logged; the rows stay dirty for the next
+     * trigger. Cancellation still propagates.
+     */
+    private suspend fun guarded(block: suspend () -> Unit) {
+        syncMutex.withLock {
+            try {
+                block()
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                android.util.Log.w("SyncManager", "Sync failed (${e.javaClass.simpleName}) — rows stay dirty", e)
+            }
+        }
+    }
 
     private suspend fun bindLocked(uid: String) {
         val b = binding.get()
@@ -131,8 +150,6 @@ class SyncManager @Inject constructor(
         }
     }
 
-    suspend fun runMerge(uid: String) = syncMutex.withLock { runMergeLocked(uid) }
-
     private suspend fun runMergeLocked(uid: String) {
         // Step 1: tag anon rows
         subs.tagAnonRowsToUid(uid)
@@ -146,7 +163,7 @@ class SyncManager @Inject constructor(
         binding.markMergeDone(uid)
     }
 
-    suspend fun pullAll(uid: String) = syncMutex.withLock { pullAllLocked(uid) }
+    suspend fun pullAll(uid: String) = guarded { pullAllLocked(uid) }
 
     private suspend fun pullAllLocked(uid: String) {
         val cursors = mutableMapOf(
@@ -417,7 +434,7 @@ class SyncManager @Inject constructor(
             importedAt      = r.importedAt,
         )
 
-    suspend fun pushDirty(uid: String) = syncMutex.withLock { pushDirtyLocked(uid) }
+    suspend fun pushDirty(uid: String) = guarded { pushDirtyLocked(uid) }
 
     private suspend fun pushDirtyLocked(uid: String) {
         // Cubic R5 P1 #19 — drain across types is *resilient*, not all-or-nothing.
@@ -580,9 +597,13 @@ class SyncManager @Inject constructor(
         // Network = TRANSIENT_FAILURE, as pullAllLocked already treats it.
         // Letting the IOException escape killed the process from the app
         // scope (no handler) and the dirty row then crash-looped every
-        // offline launch. CancellationException is not an IOException.
-        val resp = try { op() } catch (e: java.io.IOException) {
-            android.util.Log.w("SyncManager", "Push transport failure (${e.javaClass.simpleName}) — retry on backoff")
+        // offline launch. S7-N4: a malformed 2xx body (Moshi's
+        // JsonDataException) takes the same path, so the row stays dirty, the
+        // backoff retries it, and the rest of the drain still pushes.
+        val resp = try { op() } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            android.util.Log.w("SyncManager", "Push failure (${e.javaClass.simpleName}) — retry on backoff")
             return PushOutcome.TRANSIENT_FAILURE
         }
         return when {

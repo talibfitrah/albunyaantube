@@ -208,7 +208,6 @@
     <string name="content_unavailable_message">This content is no longer available. It may have been removed by an admin or by YouTube.</string>
     <string name="error_parse">Failed to process data. Please try again.</string>
     <string name="error_parse_title">Data Error</string>
-    <string name="error_unknown">An unexpected error occurred.</string>
     <string name="offline_mode">You\'re offline. Showing cached content.</string>
     <string name="connectivity_offline_banner">You\'re offline. Check your connection.</string>
     <!-- ANDROID-MULTI-01 Issue 3: update checker / installer strings -->

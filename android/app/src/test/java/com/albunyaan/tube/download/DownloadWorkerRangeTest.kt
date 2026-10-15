@@ -300,6 +300,12 @@ class DownloadWorkerRangeTest {
 
         assertTrue(leftovers.none { it.exists() })
         assertTrue("another download's temp is not this one's", other.exists())
+
+        // S7-N3: cancel and delete go through delete(id, audioOnly), which drops the partials too.
+        val partial = File(dir, "lecture_3.cancelled-run.tmp").apply { writeBytes(byteArrayOf(1)) }
+        storage.delete("lecture_3", audioOnly = true)
+        assertFalse(partial.exists())
+        assertTrue(other.exists())
         other.delete()
     }
 }

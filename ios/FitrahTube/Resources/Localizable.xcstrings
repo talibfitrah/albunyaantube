@@ -5584,28 +5584,6 @@
         }
       }
     },
-    "error_unknown": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "حدث خطأ غير متوقع."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An unexpected error occurred."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Er is een onverwachte fout opgetreden."
-          }
-        }
-      }
-    },
     "favorites_clear_all": {
       "localizations": {
         "ar": {
