@@ -210,6 +210,90 @@ struct AppContainerTests {
         #expect(!container.signedOutMayClearRecord(), "Firebase's stale signed-out would delete the record")
     }
 
+    /// Counts one notification name on one center.
+    @MainActor final class PostCounter {
+        private(set) var count = 0
+        private var token: NSObjectProtocol?
+        init(_ name: Notification.Name, on center: NotificationCenter) {
+            token = center.addObserver(forName: name, object: nil, queue: nil) { [weak self] _ in
+                MainActor.assumeIsolated { self?.count += 1 }
+            }
+        }
+    }
+
+    /// Stage 7 r2 N1: Firebase re-reads its Keychain only on `protectedDataDidBecomeAvailable`, and
+    /// a process suspended across the first unlock may never be handed it (the M5 premise). A wait
+    /// that really blocked posts it ONCE when it ends, before the gate opens, so Firebase restores
+    /// the user instead of leaving the sign-in wall up for the life of the process. Copies of one
+    /// readiness share the once (the scene gate and the background hook can both be waiting).
+    @Test func aWaitThatBlockedAnnouncesTheUnlockOnce() async {
+        let center = NotificationCenter(), flag = ReadableFlag()
+        let readiness = Self.readiness(flag, center)
+        let posts = PostCounter(UIApplication.protectedDataDidBecomeAvailableNotification, on: center)
+        let gate = Task { await readiness.wait() }
+        let hook = Task { await readiness.wait() }
+        for _ in 0..<100 { await Task.yield() }
+        #expect(posts.count == 0, "announced while the store was still locked")
+
+        flag.value = true
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)   // the M5 wake
+        await gate.value
+        await hook.value
+        #expect(posts.count == 1)
+
+        await readiness.wait()   // readable: no block, nothing more to say
+        #expect(posts.count == 1)
+    }
+
+    /// The other direction: a readiness that never blocked (every launch after the first unlock)
+    /// posts nothing, so the extra notification exists only in a process that waited.
+    @Test func aWaitThatNeverBlockedAnnouncesNothing() async {
+        let center = NotificationCenter(), flag = ReadableFlag()
+        flag.value = true
+        let posts = PostCounter(UIApplication.protectedDataDidBecomeAvailableNotification, on: center)
+        await Self.readiness(flag, center).wait()
+        #expect(posts.count == 0)
+    }
+
+    /// Our own observers ignore the extra post: the only one in the app is `StoreReadiness.wait()`'s,
+    /// and it treats the notification as "check again", never as "readable". Another readiness still
+    /// locked on the same center stays parked through the announcement.
+    @Test func anotherWaitStillLockedIgnoresTheAnnouncement() async {
+        let center = NotificationCenter(), unlocked = ReadableFlag(), locked = ReadableFlag()
+        var lockedDone = false
+        let parked = Task {
+            await Self.readiness(locked, center).wait()
+            lockedDone = true
+        }
+        let announcing = Task { await Self.readiness(unlocked, center).wait() }
+        for _ in 0..<100 { await Task.yield() }
+        unlocked.value = true
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await announcing.value
+        for _ in 0..<200 { await Task.yield() }
+        #expect(!lockedDone, "the announcement was taken for a readable store")
+        parked.cancel()
+    }
+
+    /// Stage 7 r2 N2: a prewarm can run `App.init` before the first unlock with no scene and no
+    /// session event, so no wait ever blocks. The live container records it at construction: one
+    /// `open(2)` of the store, refused with a data-protection error, means "started locked", and
+    /// Firebase's first no-user "signed out" in that process must not clear the record.
+    @Test func aContainerBuiltBeforeTheFirstUnlockNeverTrustsFirebasesSignedOut() throws {
+        let locked = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        try Self.writeLocked(Data("locked".utf8), to: locked)
+        defer { _ = Self.unlockedBytes(locked); try? FileManager.default.removeItem(at: locked) }
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("no-store-\(UUID().uuidString)")
+
+        let prewarmed = AppContainer.live(storeURL: locked)
+        #expect(prewarmed.storeReadiness.startedLocked)
+        #expect(!prewarmed.signedOutMayClearRecord(), "a prewarm before the unlock would delete the record")
+
+        let normal = AppContainer.live(storeURL: missing)
+        #expect(!normal.storeReadiness.startedLocked, "a store not created yet is not a locked one")
+        #expect(normal.signedOutMayClearRecord())
+    }
+
     /// Round 1 / I1: the SCENE path. Before the first unlock a scene can connect in the background
     /// (`AccountSession`'s locked-launch arm exists for exactly that), and everything under
     /// `RootView` opens the store. Nothing under the gate may render until the store is readable;

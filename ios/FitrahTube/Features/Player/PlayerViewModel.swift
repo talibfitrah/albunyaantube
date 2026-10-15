@@ -296,6 +296,8 @@ extension StreamState {
     /// call's exit clears only its own.
     private var recoveryToken: UUID?
     private var isRecovering: Bool { recoveryToken != nil }
+    /// This stream already stepped down (stage 7 r2 N3). Reset with the budget.
+    private var steppedDown = false
     /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
     /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
     /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
@@ -605,13 +607,19 @@ extension StreamState {
         switch action {
         case .exhausted:
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
-            // rung, so the budget can run out with nothing ever demoted. Demote the rung on screen
-            // first, so Retry starts at the next rung instead of walking the one that kept failing.
-            let myGeneration = generation
-            await resolver.demote(hostVideoId, failed: resolved.client)
-            guard myGeneration == generation else { return }
+            // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
+            // so Retry starts at the next rung instead of walking the one that kept failing. Not
+            // after a step-down (r2 N3): the resolver keeps ONE demoted rung per video, the stream
+            // on screen is already the fallback, and demoting it would point Retry back at the rung
+            // that was proven bad.
+            if !steppedDown {
+                let myGeneration = generation
+                await resolver.demote(hostVideoId, failed: resolved.client)
+                guard myGeneration == generation else { return }
+            }
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
+            steppedDown = true
             // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
             // make `.stall` step-downs non-sticky if congestion makes that common (R15).
             // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
@@ -1050,6 +1058,7 @@ extension StreamState {
         if resetBudget {
             recoveryBudget = RecoveryBudget()
             recoveryToken = nil
+            steppedDown = false
         }
         if showLoading { state = .loading }
         let task = Task {

@@ -396,7 +396,16 @@ struct PlayerHostTests {
         coordinator.lastVideoId = "fixture-1"
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
                             isLive: false, playToEnd: .none)
-        for _ in 0..<300 where coordinator.lastPlayingAt == nil || coordinator.errorLogFloor == nil {
+        // Stage 7 r2: the clip is 2 s and the sampler ticks once a second on the main run loop. On a
+        // loaded machine (load 65+, round 1) the clip played out before any tick saw `.playing`: no
+        // error-log floor, the player paused at its end, five tests red. Rewind and play again
+        // until a tick has seen it playing, on a 10 s deadline rather than a count of polls.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while coordinator.lastPlayingAt == nil || coordinator.errorLogFloor == nil, ContinuousClock.now < deadline {
+            if player.timeControlStatus == .paused, player.currentItem?.status == .readyToPlay {
+                await player.seek(to: .zero)
+                player.play()
+            }
             try await Task.sleep(for: .milliseconds(10))
         }
         try #require(coordinator.lastPlayingAt != nil, "the wall-clock sampler never stamped a playing player")

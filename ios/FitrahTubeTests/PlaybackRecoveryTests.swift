@@ -522,6 +522,28 @@ struct PlaybackRecoveryTests {
         #expect(await resolver.log == ["resolve", "resolve", "resolve", "resolve", "demote"])
     }
 
+    /// Stage 7 r2 N3: the resolver keeps ONE demoted rung per video. After a step-down the stream on
+    /// screen is the fallback, and demoting it again at exhaustion would point Retry back at the
+    /// rung already proven bad. Only the first demotion stands.
+    @Test @MainActor func exhaustionAfterAStepDownDemotesNothingMore() async {
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.progressive), .success(Self.progressive),
+                                     .success(Self.progressive), .success(Self.progressive)])
+        let vm = makeViewModel(resolver)
+        await vm.open()
+        vm.recordPlaybackProgress()
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)   // rung 1 refused: step down
+        vm.recordPlaybackProgress()
+
+        for _ in 0..<RecoveryBudget.maxRetries - 1 {
+            await vm.handleRecoveryEvent(.playbackError)               // the fallback flakes, plays again
+            vm.recordPlaybackProgress()
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+
+        #expect(vm.state == .recoveryExhausted(Self.progressive))
+        #expect(await resolver.demotions == ["abcdefghijk:visionos"])
+    }
+
     @Test @MainActor func concurrentEventsFromOneFailureSpendOneAttempt() async {
         // I3: a dead stream raises `AVPlayerItemFailedToPlayToEndTime` and `status == .failed`
         // together. Both used to be honoured: two budget slots, two resolves, one of them thrown

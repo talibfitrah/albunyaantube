@@ -2,6 +2,7 @@ import FitrahAPI
 import Foundation
 import InnerTubeKit
 import Testing
+import UIKit
 @testable import FitrahTube
 
 /// Owner 2026-09-24: an offline launch routes on the last `/me` this device saw for the account
@@ -325,6 +326,39 @@ struct OfflineLaunchTests {
         #expect(protection == .completeUntilFirstUserAuthentication)
         #endif
         #expect(try url.resourceValues(forKeys: [.isExcludedFromBackupKey]).isExcludedFromBackup == true)
+    }
+
+    /// Stage 7 r2 N4(b) + N2: through the session the CONTAINER builds and starts. In a process that
+    /// missed the first unlock -- its readiness wait blocked, or the store was locked when the
+    /// container was built (a prewarm) -- Firebase's first no-user `.signedOut` is stale and must
+    /// not clear the record. A prewarmed process also announces the unlock once before the session
+    /// subscribes (N1's post), so Firebase re-reads its Keychain.
+    @Test(arguments: ["waited", "startedLocked"])
+    func theContainersSessionKeepsTheRecordInAProcessThatMissedTheUnlock(_ how: String) async {
+        records.save(Self.me(), uid: "fake-uid")
+        let container = AppContainer.fake(defaults: UserDefaults(suiteName: "OfflineLaunchTests.\(UUID().uuidString)")!,
+                                          auth: FakeAuthClient(state: .signedOut))
+        container.accountRecords = records
+        let center = NotificationCenter(), flag = AppContainerTests.ReadableFlag()
+        container.storeReadiness = StoreReadiness(isReadable: { flag.value }, center: center)
+        if how == "waited" {
+            let waiting = Task { await container.storeReadiness.wait() }
+            for _ in 0..<100 { await Task.yield() }
+            flag.value = true
+            center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+            await waiting.value
+        } else {
+            flag.value = true
+            container.storeReadiness.startedLocked = true
+        }
+        let posts = AppContainerTests.PostCounter(UIApplication.protectedDataDidBecomeAvailableNotification, on: center)
+
+        let running = Task { await container.startSession() }
+        defer { running.cancel() }
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(records.load(uid: "fake-uid") != nil, "\(how): Firebase's stale signed-out deleted the record")
+        if how == "startedLocked" { #expect(posts.count == 1, "the prewarmed process never announced the unlock") }
     }
 
     /// Final round 1: before the first unlock Firebase reports `.signedOut` for a surviving session.

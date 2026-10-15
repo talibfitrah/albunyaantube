@@ -524,19 +524,30 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     /// Stage 3c S3-1: whether Firebase's "signed out" with no user may clear the offline record. Not
     /// while protected data is unavailable (Firebase cannot read its Keychain), and not for the rest
-    /// of a process that had to wait for the first unlock: Firebase read no Keychain at its launch and
-    /// re-reads it only on `protectedDataDidBecomeAvailable`, which such a process may never be handed
-    /// (the M5 premise), so its "signed out" stays stale after the unlock. A signed-in user keeps the
-    /// record, and with it offline access at the next launch.
+    /// of a process that started before the first unlock -- its readiness wait blocked, or (r2 N2, a
+    /// prewarm) the store was locked when this container was built: Firebase read no Keychain at its
+    /// launch and re-reads it only on `protectedDataDidBecomeAvailable`, which such a process may
+    /// never be handed (the M5 premise). `StoreReadiness.announceUnlock` hands it over; until the
+    /// re-read lands, the record survives the stale "signed out".
     func signedOutMayClearRecord() -> Bool {
         UIApplication.shared.isProtectedDataAvailable && !storeReadiness.waitedForUnlock
+            && !storeReadiness.startedLocked
+    }
+
+    /// The ONE `session.start()` (`RootView`). Stage 7 r2 N2: a process this container saw start
+    /// before the first unlock (a prewarm: no wait ever blocked) announces the unlock first, once,
+    /// so Firebase re-reads its Keychain before the session subscribes.
+    func startSession() async {
+        if storeReadiness.startedLocked { storeReadiness.announceUnlock() }
+        await session.start()
     }
 
     /// The offline-launch record (`AccountRecordStore`). A fixture gets none, so no test or preview
     /// routes on a record another one wrote; the screenshot rig's `-fitrah-fake-auth` launches get
     /// one, so a manual offline-launch check (sign in, then relaunch with `-fitrah-fake-offline`)
     /// has a record to read back. No automated test drives it.
-    private(set) lazy var accountRecords: AccountRecordStore? = {
+    /// Settable so a test can drive the container's own session over a record store of its own.
+    lazy var accountRecords: AccountRecordStore? = {
         #if DEBUG
         if isFixture, !LaunchArguments.debug.contains("-fitrah-fake-auth") { return nil }
         #endif
@@ -745,7 +756,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // the generated `getPublicChannel`/`getPublicPlaylist` cannot decode production's
         // Timestamp objects, see `PublicHeaders`.
         let headers = PublicHeaders(baseURL: baseURL, deviceId: deviceId)
-        return AppContainer(
+        let container = AppContainer(
             catalog: LiveCatalogClient(client: api),
             // Lazy (the property's note): by the time a store is first used `UIApplicationMain` runs.
             modelContainer: makeModelContainer(inMemory: false, storeURL: storeURL,
@@ -753,6 +764,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             apiBaseURL: baseURL,
             degradedHeader: { try await headers.channel($0) },
             playlistHeader: { try await headers.playlist($0) })
+        // Stage 7 r2 N2: one `open(2)` of the store, here in `App.init` -- before Core Data has
+        // opened it, so S3-2's lock concern does not apply, and before `UIApplication` exists, so
+        // the file alone answers. Refused with a data-protection error = started before the first
+        // unlock (a prewarm can get here with no scene and no session event, so no wait blocks).
+        container.storeReadiness.startedLocked =
+            !storeIsReadable(storeURL ?? liveStoreURL, protectedDataAvailable: { false })
+        return container
     }
 
     /// Device language/region for InnerTube requests (`hl`/`gl`) -- ruling 19: the engine itself
@@ -1043,8 +1061,29 @@ extension EnvironmentValues {
     /// scene gate's, the background hook's) records into the container's one.
     let waits = WaitRecord()
     var waitedForUnlock: Bool { waits.blocked }
+    /// Stage 7 r2 N2: the store was locked when the live container was built (`AppContainer.live`).
+    var startedLocked: Bool {
+        get { waits.startedLocked }
+        nonmutating set { waits.startedLocked = newValue }
+    }
 
-    @MainActor final class WaitRecord { fileprivate(set) var blocked = false }
+    @MainActor final class WaitRecord {
+        fileprivate(set) var blocked = false
+        fileprivate(set) var startedLocked = false
+        fileprivate(set) var announced = false
+    }
+
+    /// Stage 7 r2 N1: posts `protectedDataDidBecomeAvailable` once per process. Firebase re-reads its
+    /// Keychain only on that notification (`Auth.swift:1690-1697,1735-1750`, 12.19.1), and a process
+    /// suspended across the first unlock, or prewarmed before it, may never be handed it; then the
+    /// sign-in wall stayed up for a signed-in user until a cold launch. Firebase observes it only
+    /// after its own startup Keychain error, so anywhere else this is a no-op, and the app's one
+    /// other observer (`wait()`) takes it as "check again", never as "readable".
+    func announceUnlock() {
+        guard !waits.announced else { return }
+        waits.announced = true
+        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+    }
 
     static var live: StoreReadiness {
         .once {
@@ -1069,13 +1108,23 @@ extension EnvironmentValues {
     /// (M5): a process suspended across the unlock may never be handed the first, and nobody can
     /// bring the app to the foreground on a device that has not been unlocked. Both observers are
     /// registered before the first check, so no wake-up falls between the check and the wait.
+    ///
+    /// A wait that really blocked announces the unlock when it ends (N1), before the gate opens and
+    /// after its own observers are gone.
     func wait() async {
+        guard await blockUntilReadable() else { return }
+        announceUnlock()
+    }
+
+    /// Whether it had to block and the store is now readable (false: readable at once, or cancelled).
+    private func blockUntilReadable() async -> Bool {
         let (wakes, wake) = AsyncStream<Void>.makeStream()
         let tokens = [UIApplication.protectedDataDidBecomeAvailableNotification, UIApplication.didBecomeActiveNotification]
             .map { center.addObserver(forName: $0, object: nil, queue: nil) { _ in wake.yield() } }
         defer { tokens.forEach { center.removeObserver($0) } }
-        guard !isReadable() else { return }
+        guard !isReadable() else { return false }
         waits.blocked = true
-        for await _ in wakes where isReadable() { return }
+        for await _ in wakes where isReadable() { return true }
+        return false
     }
 }

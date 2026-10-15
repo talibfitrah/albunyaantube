@@ -2848,6 +2848,41 @@ struct OfflineManagerTests {
         #expect(resumeData != nil, "\(contentRange): without the token the retry restarts from zero")
     }
 
+    /// Stage 7 r2 O3: a 206 that starts away from the requested offset takes the walk's restart-clean
+    /// arm: the partial goes, so the Retry starts at 0 and self-heals, instead of asking for the same
+    /// misaligned answer on every Retry. Still resumable (the token keeps the URL), still unwritten.
+    @Test func aMisalignedChunkRestartsTheWalkCleanInsteadOfKeepingThePartial() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "misaligned-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)                       // chunk 1 on disk: 5 bytes
+        var components = URLComponents(string: "https://example.invalid/media?itag=140")!
+        components.queryItems?.append(URLQueryItem(name: "cr", value: "bytes 0-4/10"))   // chunk 1 again
+        let (task, side) = await runSideTask(ScriptedRangeURLProtocol.self, url: components.url!, offset: 5, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+
+        #expect(!FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)),
+                "the partial stayed, so every Retry asks the same misaligned offset again")
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("expected the resumable transport failure, got \(failure)")
+            return
+        }
+        #expect(resumeData != nil)
+    }
+
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive
     // formats to ~playback rate — measured 31 KB/s plain vs 11.4 MB/s for a 10 MB Range, 2026-09-01)
 

@@ -186,8 +186,12 @@ struct CaptionsMenu: View {
     /// AVKit's ⋯ > Subtitles selects straight into the item. A language picked there becomes the
     /// pick (replacing an auto-generated one); Off there clears an uploader pick. Our own selections
     /// land here too and change nothing, since they already match `effective`.
-    /// ponytail: Off there while an auto-generated track shows changes nothing (owner-accepted);
-    /// this menu's Off always works.
+    /// ponytail: Off there while an auto-generated track shows changes nothing (owner-accepted), and
+    /// this menu is not on screen in iPad AVKit fullscreen, where the auto-generated cue now shows
+    /// (`PlayerHostView.HostedCaptions`): there it is Done, then this menu's Off (owner-accepted,
+    /// stage 7 r2 N5). iOS has no public API to add an item to AVKit's own menus
+    /// (`transportBarCustomMenuItems` is tvOS-only); an iPad fullscreen of our own with this menu is
+    /// on the 1.0.4 list.
     private static func followItemSelection(_ model: PlayerViewModel) {
         guard let item = model.currentItem, let group = model.legibleGroup else { return }
         if let option = item.currentMediaSelection.selectedMediaOption(in: group) {

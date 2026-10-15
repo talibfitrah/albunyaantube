@@ -256,17 +256,17 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         return Int64(header[header.index(after: slash)...].trimmingCharacters(in: .whitespaces))
     }
 
-    /// Stage 3c S4-1: whether a 206's `Content-Range` fits the chunk asked for -- `bytes a-b/total`
-    /// with `a` the requested offset, `b >= a`, and a total that is `*` (unknown; the walk then fails
-    /// resumably after writing, see `didFinishDownloadingTo`) or a size past `b`. Anything else,
-    /// a missing header included, is network input the walk cannot place, and is never written.
-    nonisolated static func contentRange(_ header: String?, fits offset: Int64) -> Bool {
-        guard let header, header.hasPrefix("bytes "), let slash = header.lastIndex(of: "/") else { return false }
+    /// Stage 3c S4-1: where a 206's `Content-Range` starts, if it names a real span -- `bytes a-b/total`
+    /// with `b >= a` and a total that is `*` (unknown; the walk then fails resumably after writing,
+    /// see `didFinishDownloadingTo`) or a size past `b`. nil for anything else, a missing header
+    /// included: network input the walk cannot place, never written. Whether `a` is the offset this
+    /// chunk asked for is the caller's check (r2 O3: a misaligned start restarts the walk clean).
+    nonisolated static func contentRangeStart(_ header: String?) -> Int64? {
+        guard let header, header.hasPrefix("bytes "), let slash = header.lastIndex(of: "/") else { return nil }
         let span = header[header.index(header.startIndex, offsetBy: 6)..<slash].split(separator: "-", omittingEmptySubsequences: false)
-        guard span.count == 2, let start = Int64(span[0]), let end = Int64(span[1]),
-              start == offset, end >= start else { return false }
+        guard span.count == 2, let start = Int64(span[0]), let end = Int64(span[1]), end >= start else { return nil }
         let total = header[header.index(after: slash)...]
-        return total == "*" || Int64(total).map { $0 > end } == true
+        return total == "*" || Int64(total).map { $0 > end } == true ? start : nil
     }
 
     /// `bytes=10485760-20971519` → 10485760 (the chunk's own start, i.e. the `.tmp` size it appends to).
@@ -341,11 +341,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             return
         }
         let expectedOffset = Self.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
-        // Stage 3c S4-1: a 206 that does not start where this chunk was asked to, or whose total is
-        // no real size past its own end, is never written -- appended, it corrupts the media; a
-        // `/0` or `/-1` total called a 5-byte prefix a saved file. It fails through the resumable
-        // arm instead (the partial untouched, the token kept), as a transport failure would.
-        if status != 200, !Self.contentRange(response?.value(forHTTPHeaderField: "Content-Range"), fits: expectedOffset) {
+        // Stage 3c S4-1: a 206 whose `Content-Range` names no real span (a `/0` or `/-1` total called a
+        // 5-byte prefix a saved file) is never written. It fails through the resumable arm (the
+        // partial untouched, the token kept), as a transport failure would.
+        let rangeStart = Self.contentRangeStart(response?.value(forHTTPHeaderField: "Content-Range"))
+        if status != 200, rangeStart == nil {
             continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
             return
         }
@@ -355,7 +355,10 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // The file and the chunk must agree on the offset in BOTH branches (a stale relaunch
             // task): `partialSize` is 0 with no partial, so a missing file demands a chunk that
             // starts at 0 — otherwise the walk wrote a file beginning mid-stream and completed it.
-            guard status == 200 || partialSize(id) == expectedOffset else {
+            // The server's answer must start there too (stage 3c S4-1): appended elsewhere it corrupts
+            // the media. Restarting clean (r2 O3) lets the Retry self-heal from 0, where keeping the
+            // partial asked the same misaligned offset on every Retry.
+            guard status == 200 || (partialSize(id) == expectedOffset && rangeStart == expectedOffset) else {
                 throw CocoaError(.fileWriteUnknown)   // restart cleanly
             }
             // Adversarial r1 P3-5: `isCurrent` was consulted ONCE at entry and released

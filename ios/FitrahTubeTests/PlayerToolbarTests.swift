@@ -443,6 +443,20 @@ struct PlayerToolbarLayoutTests {
         #expect(width(offline: true) == hidden, "the offline player still rendered a cast slot")
     }
 
+    /// Stage 7 r2 N4(a): the toolbar itself applies `FavoriteAffordance`. Offline args with no
+    /// duration (a row saved before V8) render narrower than the same args with one: no heart.
+    @Test func theOfflineToolbarDropsTheHeartForARowWithNoDuration() {
+        let container = AppContainer.fake(
+            defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
+        func width(durationSeconds: Int?) -> CGFloat {
+            let args = PlayerArgs(videoId: "layout", title: "Layout", channelName: "Channel", durationSeconds: durationSeconds)
+            let toolbar = PlayerToolbar(args: args, saveGate: nil, saveEnabled: true, isOfflinePlayback: true)
+                .environment(\.container, container)
+            return ImageRenderer(content: toolbar).uiImage?.size.width ?? 0
+        }
+        #expect(width(durationSeconds: nil) < width(durationSeconds: 754), "the offline toolbar ignores FavoriteAffordance")
+    }
+
     /// Cubic R2-6 + re-review m3: the cast slot must reach the ≥44 pt touch target the row's other
     /// four slots get from their `Button` — WITHOUT growing the row. Measured on iPhone 17,
     /// 2026-09-02: the shipped slot costs 3.0 pt (its `.frame(minHeight: 44)` against ~41 pt
