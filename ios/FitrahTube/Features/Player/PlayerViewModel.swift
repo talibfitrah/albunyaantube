@@ -21,7 +21,8 @@ protocol StreamResolving: Sendable {
     ///
     /// `requiresHLS` is the same contract for the other save shape (Cubic C2): an audio-only save
     /// needs VISIONOS's itag 140, so the resolver skips the ANDROID rung, wherever a step-down put
-    /// it, with the same cache and single-flight bypass. Only `OfflineManager` passes `true`.
+    /// it, with the same cache and single-flight bypass. Only `OfflineManager` passes `true`, and
+    /// only when its plain walk answered without itag 140 (fix r4 N-1).
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved
@@ -303,12 +304,13 @@ extension StreamState {
     /// call's exit clears only its own.
     private var recoveryToken: UUID?
     private var isRecovering: Bool { recoveryToken != nil }
-    /// The video this player last stepped down (stage 7 r2 N3; R2-1). An id, not a per-stream flag:
-    /// the resolver's demotion lasts the session per video, so Retry must not forget it, and another
-    /// video simply never matches.
+    /// The videos this player has demoted a rung for: a step-down, or an exhaustion's demotion
+    /// (stage 7 r2 N3; R2-1; fix r4 N-5 and Codex N1). Ids, not a per-stream flag: the resolver's
+    /// demotion lasts the session per video, so Retry and a return to the video (a -> b -> a) must
+    /// not forget it, and another video simply never matches.
     /// ponytail: per view model, so leaving the video and opening it again starts unguarded (R2-1
     /// scenario B, one extra Retry). Ask the resolver (`isDemoted`) if that ever matters.
-    private var steppedDownVideoId: String?
+    private var steppedDownVideoIds: Set<String> = []
     /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
     /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
     /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
@@ -620,17 +622,23 @@ extension StreamState {
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
             // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
             // so Retry starts at the next rung instead of walking the one that kept failing. Not
-            // once this video stepped down (r2 N3), Retries since included (R2-1): the resolver keeps
-            // ONE demoted rung per video, the stream on screen is already the fallback, and demoting
-            // it would point Retry back at the rung that was proven bad.
-            if steppedDownVideoId != hostVideoId {
+            // once this video demoted a rung (r2 N3), Retries since included (R2-1), this demotion
+            // too (Codex N1): the resolver keeps ONE demoted rung per video, the stream on screen
+            // is already the fallback, and demoting it would point Retry back at the rung that was
+            // proven bad.
+            if steppedDownVideoIds.insert(hostVideoId).inserted {
                 let myGeneration = generation
                 await resolver.demote(hostVideoId, failed: resolved.client)
                 guard myGeneration == generation else { return }
             }
+            // Codex N2: a proactive refresh still in flight (`reResolveIfExpiring` holds no recovery
+            // token) would land over the Retry card with the rung just demoted. Superseded here,
+            // its result is discarded like any other.
+            generation += 1
+            resolveTask?.cancel()
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
-            steppedDownVideoId = hostVideoId
+            steppedDownVideoIds.insert(hostVideoId)
             // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
             // make `.stall` step-downs non-sticky if congestion makes that common (R15).
             // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an

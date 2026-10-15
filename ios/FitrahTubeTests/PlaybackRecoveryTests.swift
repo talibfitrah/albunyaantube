@@ -575,6 +575,55 @@ struct PlaybackRecoveryTests {
         #expect(await resolver.demotions == ["abcdefghijk:visionos"])
     }
 
+    /// Codex N1 (fix r4): an exhaustion's demotion is a step-down too. Unrecorded, the fallback that
+    /// Retry walked to exhausted in turn and was demoted over the slot, so the next Retry went back
+    /// to the rung that had exhausted first.
+    @Test @MainActor func anExhaustionsDemotionAlsoGuardsTheFallbackAfterRetry() async {
+        let resolver = FakeResolver(Array(repeating: .success(Self.hls), count: 2 * (1 + RecoveryBudget.maxRetries)))
+        let vm = makeViewModel(resolver)
+        await vm.open()
+        for retry in [false, true] {
+            if retry { await vm.retry() }
+            vm.recordPlaybackProgress()
+            for _ in 0..<RecoveryBudget.maxRetries {
+                await vm.handleRecoveryEvent(.playbackError)          // nil status: same rung
+                vm.recordPlaybackProgress()
+            }
+            await vm.handleRecoveryEvent(.playbackError)
+            #expect(vm.state == .recoveryExhausted(Self.hls))
+        }
+        #expect(await resolver.demotions == ["abcdefghijk:visionos"])
+    }
+
+    /// Codex N2 (fix r4): a proactive refresh in flight when recovery exhausts must not land over the
+    /// Retry card with a stream from the rung just demoted.
+    @Test @MainActor func anExhaustionDiscardsAProactiveRefreshInFlight() async {
+        let expiring = Resolved(stream: .hls(url: URL(string: "https://127.0.0.1:9/e.m3u8")!, isLive: false,
+                                             audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "ua", resolvedAt: Date(),
+                                expiresAt: Date().addingTimeInterval(30))
+        let gate = Gate()
+        let budget = RecoveryBudget.maxRetries
+        let resolver = FakeResolver(Array(repeating: .success(expiring), count: 1 + budget) + [.success(Self.freshHLS)],
+                                    gate: gate, gatedCallIndex: 2 + budget)
+        let vm = makeViewModel(resolver)
+        await vm.open()
+        vm.recordPlaybackProgress()
+        for _ in 0..<budget {                                         // the budget is spent, still playing
+            await vm.handleRecoveryEvent(.playbackError)
+            vm.recordPlaybackProgress()
+        }
+        let refreshing = Task { await vm.reResolveIfExpiring() }      // foreground near expiry
+        await gate.waitUntilBlocked()
+
+        await vm.handleRecoveryEvent(.playbackError)                  // fails again: exhausted
+        #expect(vm.state == .recoveryExhausted(expiring))
+        await gate.release()
+        await refreshing.value
+
+        #expect(vm.state == .recoveryExhausted(expiring), "the refresh overwrote the Retry card")
+    }
+
     @Test @MainActor func concurrentEventsFromOneFailureSpendOneAttempt() async {
         // I3: a dead stream raises `AVPlayerItemFailedToPlayToEndTime` and `status == .failed`
         // together. Both used to be honoured: two budget slots, two resolves, one of them thrown

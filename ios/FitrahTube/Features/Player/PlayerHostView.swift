@@ -304,6 +304,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // Cubic A6: the controller has paused the player, but a failure already had, so a
             // replacement built during its re-resolve cannot read this pause off the player. Drop
             // the failure's resume intent instead: a stall's replacement follows the live state.
+            // Headphones out and the remote pause only: an interruption reports no `.pause`, and
+            // its end resumes the replacement when iOS says so (fix r4 N-2).
             coordinator?.dropResumeIntent()
         default:
             return
@@ -426,9 +428,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) weak var failedItem: AVPlayerItem?
         /// Set by `fire`, spent by the next `observe` of a NEW item on the SAME player: recovery's
         /// replacement, which `observe` plays iff `PlaybackRecovery.shouldResume` said so (never for a
-        /// stall: that replacement inherits the live player's state).
-        private var resumeOnNextItem = false
-        /// A pause made while recovery's re-resolve is out (`applyPolicyAction(.pause)`, Cubic A6).
+        /// stall: that replacement inherits the live player's state). `private(set)`: the controller
+        /// tests read it across a route change and an interruption (fix r4 N-2).
+        private(set) var resumeOnNextItem = false
+        /// Headphones out or a remote pause while recovery's re-resolve is out
+        /// (`applyPolicyAction(.pause)`, Cubic A6). Not an interruption (fix r4 N-2).
         func dropResumeIntent() { resumeOnNextItem = false }
 
         /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
@@ -439,6 +443,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             background = BackgroundPlaybackController(backgroundPlay: backgroundPlay)
             path = monitor.currentPath
             super.init()
+            background.resumeIntentPending = { [weak self] in self?.resumeOnNextItem == true }
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
                     self?.path = newPath

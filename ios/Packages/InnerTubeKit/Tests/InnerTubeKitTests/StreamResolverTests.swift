@@ -669,11 +669,8 @@ import Testing
     @Test func anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140() async throws {
         let clock = ManualClock()
         let cache = ManifestCache(remoteConfig: defaultConfigStore())
-        let transport = FixtureTransport(routes: [
-            .init(match: { $0.headers["X-YouTube-Client-Name"] == "3" }, response: androidItag18Response),
-            .init(match: { $0.headers["X-YouTube-Client-Name"] == "101" },
-                  response: try fixtureResponse("player-ok-hls"))
-        ])
+        // Fix r4 N-6(a): recorded, so "ANDROID advances WITHOUT a POST" is pinned, not just the answer.
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport, clock: clock, cache: cache)
         await resolver.demote(Self.videoId, failed: .visionos)
 
@@ -684,6 +681,7 @@ import Testing
             Issue.record("expected .hls, got \(resolved.stream)"); return
         }
         #expect(audioOnlyURL != nil, "the HLS answer lost its itag 140")
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101"])
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil, "the HLS walk wrote the plain key")
     }
 

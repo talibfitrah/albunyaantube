@@ -15,10 +15,15 @@ import UIKit
     /// Defaults to false so a controller nobody has told yet never decides a swap it cannot honour.
     var audioOnlyAvailable = false
     /// `PlayerHostView` performs the swap itself (through the VM's `audioOnly`). Left nil, the swap
-    /// actions only move this controller's own `autoSwappedToAudioOnly` flag. `.pause` reports every
-    /// pause this controller makes, the remote pause command's too (Cubic A6): a player a failure
-    /// already paused cannot show the host one.
+    /// actions only move this controller's own `autoSwappedToAudioOnly` flag. `.pause` reports the
+    /// pauses that end the user's playback, headphones out and the remote pause command (Cubic A6):
+    /// a player a failure already paused cannot show the host one. An interruption's pause is NOT
+    /// reported (fix r4 N-2): its end decides, through `resumeIntentPending` below.
     var onPolicyAction: ((PlaybackPolicyAction) -> Void)?
+    /// True while the host owes recovery's replacement a play (`Coordinator.resumeOnNextItem`): the
+    /// failure already paused the player, so the player alone reads "not playing" at an interruption
+    /// that begins during the re-resolve, and the end of the interruption would never resume it.
+    var resumeIntentPending: (() -> Bool)?
     /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
     /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
     var onWillEnterForeground: (() async -> Void)?
@@ -140,7 +145,7 @@ import UIKit
     private func handleInterruption(type: AVAudioSession.InterruptionType?, optionsRaw: UInt) {
         switch type {
         case .began:
-            wasPlayingBeforeInterruption = player?.timeControlStatus != .paused
+            wasPlayingBeforeInterruption = player?.timeControlStatus != .paused || resumeIntentPending?() == true
             handle(.interruptionBegan)
         case .ended:
             let shouldResume = AVAudioSession.InterruptionOptions(rawValue: optionsRaw).contains(.shouldResume)
@@ -219,6 +224,9 @@ import UIKit
         // flag itself), but the same clearing is the right answer if it ever does.
         case .restoreVideo, .restoreVideoNow: autoSwappedToAudioOnly = false
         }
+        // Fix r4 N-2: the interruption's pause must leave the host's resume intent alone; the
+        // interruption's end (`.resume`, counting that intent) plays recovery's replacement.
+        guard event != .interruptionBegan else { return }
         onPolicyAction?(action)   // Task 3 performs the actual URL swap
     }
 

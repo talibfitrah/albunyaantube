@@ -74,10 +74,11 @@ public actor StreamResolver {
     /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
     ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
     ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
-    /// - Parameter requiresHLS: the audio-only save's walk (Cubic C2), the muxed walk's mirror: the
-    ///   caller needs VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung
-    ///   advances without a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the
-    ///   plain key must not hand the player the HLS it stepped down from. At most one of the two.
+    /// - Parameter requiresHLS: the audio-only save's fallback walk (Cubic C2; fix r4 N-1: only when
+    ///   its plain walk answered without itag 140), the muxed walk's mirror: the caller needs
+    ///   VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung advances without
+    ///   a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the plain key must not
+    ///   hand the player the HLS it stepped down from. At most one of the two.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,
         requiresMuxed: Bool = false, requiresHLS: Bool = false
@@ -89,8 +90,9 @@ public actor StreamResolver {
             // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format and a
             //   cached `.progressive` no itag 140; caching this walk's answer would degrade the
             //   player to 360p on its next resolve, or hand it back the HLS it stepped down from.
-            //   Skipping both read and write means EVERY save POSTs — CF-D-9 exposure accepted;
-            //   the per-walk trip dedupe caps it.
+            //   Skipping both read and write means every such walk POSTs (every video save; an
+            //   audio-only save only past a step-down) — CF-D-9 exposure accepted; the per-walk
+            //   trip dedupe caps it.
             // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
             //   `forceRefresh` through the registry would cancel the user's own playback resolve
             //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also

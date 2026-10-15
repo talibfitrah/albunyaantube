@@ -495,7 +495,9 @@ struct OfflineLaunchTests {
 
     private func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
         let deadline = ContinuousClock.now + timeout
-        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+        while !condition(), ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(10)) } catch { break }   // cancelled: stop (fix r4 N-3)
+        }
     }
 
     /// Dead Wi-Fi or a stalled backend: `/me` neither answers nor fails for 15 s (75 s with an

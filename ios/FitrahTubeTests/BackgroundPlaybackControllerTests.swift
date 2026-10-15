@@ -410,4 +410,59 @@ import UIKit
         #expect(actions.contains(.restoreVideo))
         #expect(hook.entered)   // the deadline fired because the hook was still running, not skipped
     }
+
+    // MARK: - A failure's resume intent across a pause (Cubic A6; fix r4 N-2, N-6(b))
+
+    /// The playing clip on a coordinator whose controller runs the PRODUCTION policy handler (each
+    /// action also handed to `log`). The item then fails under the user: `fire` arms the resume
+    /// intent, and the failure leaves the player paused.
+    private func failedWhilePlaying(log: @escaping (PlaybackPolicyAction) -> Void) async throws
+        -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
+        let (model, player, coordinator) = try await PlayerHostTests.playingHarness()
+        let production = PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)
+        coordinator.background.onPolicyAction = { log($0); production($0) }
+        coordinator.background.attach(player: player)
+        PlayerHostTests.postFailure(on: player)
+        player.pause()
+        #expect(coordinator.resumeOnNextItem, "the failure armed no resume intent")
+        return (model, player, coordinator)
+    }
+
+    /// N-6(b): headphones out during a failure's re-resolve, end to end from the route-change
+    /// notification through `handle` and the production handler. The intent is dropped, so the
+    /// replacement stays paused instead of playing through the speaker.
+    @Test(.timeLimit(.minutes(1))) func headphonesOutDuringAFailuresReResolveKeepTheReplacementPaused() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (model, player, coordinator) = try await failedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: nil, userInfo: [
+            AVAudioSessionRouteChangeReasonKey: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue])
+        try await wait { actions.contains(.pause) }
+        #expect(!coordinator.resumeOnNextItem, "the unplug kept the failure's resume intent")
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the replacement played after the unplug")
+    }
+
+    /// N-2 / Codex N3: a call that starts during a failure's re-resolve. The interruption keeps the
+    /// resume intent and counts it as playing, so when iOS ends it with `.shouldResume` the
+    /// replacement plays.
+    @Test(.timeLimit(.minutes(1))) func aCallDuringAFailuresReResolveResumesTheReplacementAfterIt() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (model, player, coordinator) = try await failedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        let center = NotificationCenter.default
+        center.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+            AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+        center.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+            AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+            AVAudioSessionInterruptionOptionKey: AVAudioSession.InterruptionOptions.shouldResume.rawValue])
+        try await wait { actions.contains(.resume) }
+        #expect(coordinator.resumeOnNextItem, "the interruption dropped the failure's resume intent")
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus != .paused, "the replacement stayed paused after the call")
+    }
 }

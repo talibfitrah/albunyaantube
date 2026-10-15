@@ -220,11 +220,12 @@ struct OfflineManagerTests {
         return rig.persisted(videoId: videoId)?.id ?? "missing"
     }
 
-    /// Bounded poll on a 10 s deadline (the `RecordingResolver.waitUntilCalled` shape).
+    /// Bounded poll on a 10 s deadline (the `RecordingResolver.waitUntilCalled` shape), left at once
+    /// by a cancelled task (fix r4 N-3).
     private func waitUntil(_ condition: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async {
         let deadline = ContinuousClock.now + .seconds(10)
         while !condition(), ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(1))
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
         }
         #expect(condition(), "condition never became true", sourceLocation: sourceLocation)
     }
@@ -278,18 +279,34 @@ struct OfflineManagerTests {
 
     // MARK: - Resolve path
 
-    /// Cubic C2: an audio-only save asks for the HLS shape (`requiresHLS: true`), so a step-down
-    /// that rotated the video's walks to ANDROID's `.progressive` cannot block it (the resolver half
-    /// is `StreamResolverTests.anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140`).
-    @Test func anAudioOnlySaveRequiresHLSAndTheItag140ReachesTheEngine() async throws {
+    /// Fix r4 N-1: an audio-only save takes the plain, cache-first walk, so the common save (the
+    /// player already resolved this video) sends no POST. The HLS walk is only the fallback below.
+    @Test func anAudioOnlySaveTakesThePlainWalkAndTheItag140ReachesTheEngine() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         let id = await save(rig)
         #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch,
-                                             forceRefresh: false, requiresHLS: true)])
+                                             forceRefresh: false)])
         #expect(rig.engine.starts.count == 1)
         #expect(rig.engine.starts.first?.id == id)
         #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
         #expect(rig.engine.starts.first?.userAgent == "UA")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic C2 / fix r4 N-1: after a step-down the plain walk answers ANDROID's `.progressive`, which
+    /// has no itag 140. Only then does the save ask for the HLS shape (`requiresHLS: true`), which a
+    /// step-down cannot block (the resolver half is
+    /// `StreamResolverTests.anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140`).
+    @Test func anAudioOnlySaveAnsweredWithoutItag140AsksForTheHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        let id = await save(rig)
+        #expect(rig.resolver.calls == [
+            .init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false),
+            .init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false,
+                  requiresHLS: true)])
+        #expect(rig.engine.starts.count == 1)
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
@@ -313,8 +330,8 @@ struct OfflineManagerTests {
     /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
     /// a VIDEO save demands the muxed itag 18 from the resolver (`requiresMuxed: true` — the
     /// resolver's ladder skips the HLS rung for it), and the `.progressive` answer reaches the
-    /// engine. An audio-only save asks for the HLS shape instead (it needs visionos's itag-140
-    /// `audioOnlyURL`) — pinned by `anAudioOnlySaveRequiresHLSAndTheItag140ReachesTheEngine`.
+    /// engine. An audio-only save takes the plain walk instead (it needs visionos's itag-140
+    /// `audioOnlyURL`) — pinned by `anAudioOnlySaveTakesThePlainWalkAndTheItag140ReachesTheEngine`.
     @Test func aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig, audioOnly: false)
@@ -352,13 +369,12 @@ struct OfflineManagerTests {
         #expect(await rig.manager.pendingRetryIds == [id])
     }
 
-    /// An audio-only save answered with no itag 140 fails NO_STREAM after ONE resolve. The HLS walk
-    /// skips the shared `ManifestCache` (Cubic C2), so the answer is never a cached shape that a
-    /// forced re-walk could fix (the old Cubic P2 re-resolve), and nothing loops.
-    @Test func anAudioOnlySaveAnsweredWithoutAudioFailsNoStreamAfterOneResolve() async throws {
+    /// The bound: when the HLS walk still yields no itag 140, the row fails NO_STREAM after exactly
+    /// two resolves (the plain walk, then the HLS walk), never a loop.
+    @Test func anAudioOnlySaveWhoseHLSWalkStillLacksAudioFailsNoStream() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig)
-        #expect(rig.resolver.calls.map(\.forceRefresh) == [false])
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
         #expect(rig.engine.starts.isEmpty)
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue)

@@ -356,9 +356,10 @@ struct PlayerHostTests {
     }
 
     /// Cubic A6: a failure has already paused the player, so a pause made while its re-resolve is out
-    /// (headphones unplugged, a call) changed nothing the swap could read, and `fire`'s resume intent
-    /// played the replacement through the speaker. The pause reaches the host through the production
-    /// policy handler and drops the intent: what a stall gets from the live player state.
+    /// (headphones unplugged, the remote pause) changed nothing the swap could read, and `fire`'s
+    /// resume intent played the replacement through the speaker. The pause reaches the host through
+    /// the production policy handler and drops the intent: what a stall gets from the live player
+    /// state. (End to end from the notification: `BackgroundPlaybackControllerTests`, fix r4.)
     @Test(.timeLimit(.minutes(1))) func aPolicyPauseDuringAFailuresReResolveKeepsTheReplacementPaused() async throws {
         let (model, player, coordinator) = try await Self.playingHarness()
         defer { coordinator.stopObserving(); player.pause() }
@@ -387,7 +388,7 @@ struct PlayerHostTests {
     }
 
     /// A URL nothing answers on (the discard port): an item that never produces a frame.
-    private static let unanswered = URL(string: "https://127.0.0.1:9/replacement.m3u8")!
+    static let unanswered = URL(string: "https://127.0.0.1:9/replacement.m3u8")!
 
     private static func fixtureURL() throws -> URL {
         try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
@@ -405,7 +406,7 @@ struct PlayerHostTests {
     /// Fix round 3 (re-review Minor B): polls for the stamps themselves instead of sleeping and hoping
     /// the timer had ticked -- a nil `lastPlayingAt` reads as "resume" and would let the N1 mutation
     /// survive.
-    private static func playingHarness() async throws
+    static func playingHarness() async throws
         -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
         let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: settings(),
                                     args: PlayerArgs(videoId: "fixture-1"))
@@ -436,7 +437,7 @@ struct PlayerHostTests {
     }
 
     /// One same-player item swap the way the host makes it: the builder, then `observe`.
-    private static func swap(_ player: AVPlayer, to url: URL, _ coordinator: PlayerHostView.Coordinator,
+    static func swap(_ player: AVPlayer, to url: URL, _ coordinator: PlayerHostView.Coordinator,
                              _ model: PlayerViewModel) throws {
         _ = PlayerHostView.player(for: progressive(url), replacing: player)
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
@@ -445,7 +446,7 @@ struct PlayerHostTests {
 
     /// What AVFoundation posts when the item dies mid-play. Posted on main to a `.main` observer, it
     /// runs before `post` returns (the N1 test's GREEN depends on exactly that).
-    private static func postFailure(on player: AVPlayer) {
+    static func postFailure(on player: AVPlayer) {
         NotificationCenter.default.post(name: .AVPlayerItemFailedToPlayToEndTime, object: player.currentItem)
     }
 

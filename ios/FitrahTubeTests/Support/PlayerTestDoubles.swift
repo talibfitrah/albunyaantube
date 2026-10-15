@@ -73,6 +73,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         get { lock.withLock { _muxedOutcome } }
         set { lock.withLock { _muxedOutcome = newValue } }
     }
+    /// What a `requiresHLS` walk answers, when set (the audio-only save's fallback walk); nil = `outcome`.
+    private var _hlsOutcome: Outcome?
+    var hlsOutcome: Outcome? {
+        get { lock.withLock { _hlsOutcome } }
+        set { lock.withLock { _hlsOutcome = newValue } }
+    }
     var expiresIn: TimeInterval {
         get { lock.withLock { _expiresIn } }
         set { lock.withLock { _expiresIn = newValue } }
@@ -108,10 +114,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// Suspends until `calls.count >= count`, or fails after a 10 s deadline (2000 polls, ~2 s, ran
     /// out under load). M3 (fix round 1): an unbounded wait turns "the call never came" into a hang
     /// that only the per-test limit ends, with no indication of which expectation was never met.
+    /// A cancelled task's `Task.sleep` throws at once, so the loop exits on it instead of spinning
+    /// to the deadline (fix r4 N-3).
     func waitUntilCalled(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
         let deadline = ContinuousClock.now + .seconds(10)
         while calls.count < count, ContinuousClock.now < deadline {
-            try? await Task.sleep(for: .milliseconds(1))
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
         }
         #expect(calls.count >= count, "resolver was called \(calls.count) times, expected \(count)",
                 sourceLocation: sourceLocation)
@@ -129,6 +137,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                 return .failure(.cooldown(until: Date().addingTimeInterval(30)))
             }
             if requiresMuxed, let _muxedOutcome { return _muxedOutcome }
+            if requiresHLS, let _hlsOutcome { return _hlsOutcome }
             return _outcomes[videoId] ?? _outcome
         }
         // ponytail: a 1 ms poll, same as `waitUntilCalled` above -- a continuation registry would
@@ -140,12 +149,15 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                 return true
             }) { try? await Task.sleep(for: .milliseconds(1)) }
         }
-        // CF-G-15: bounded like `waitUntilCalled` (~2 s), and cancellation-safe -- a cancelled
-        // task's `Task.sleep` throws immediately, so the old unbounded `try?` loop hot-spun.
-        // On cancellation we bail out (the resolver's caller discards a cancelled result anyway).
+        // CF-G-15: bounded like `waitUntilCalled` (a 10 s deadline; fix r4: 2000 polls, ~2 s, ran
+        // out under load while the offline tests' own waits held the release back), and
+        // cancellation-safe -- a cancelled task's `Task.sleep` throws immediately, so the old
+        // unbounded `try?` loop hot-spun. On cancellation we bail out (the resolver's caller
+        // discards a cancelled result anyway).
         if lock.withLock({ _heldIds.contains(videoId) }) {
             var released = false
-            for _ in 0..<2000 {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
                 if lock.withLock({ () -> Bool in
                     if _idPermits[videoId, default: 0] > 0 { _idPermits[videoId]! -= 1; return true }
                     return false

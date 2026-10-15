@@ -848,9 +848,10 @@ actor OfflineManager: OfflineSaving {
     /// next caller would inherit it.
     private func resolveAndStart(_ row: Row, forceRefresh: Bool, attempt: Int) async {
         // The 403 re-resolve's intent has to survive a park: `scheduleRetry` drops the claim, and
-        // the timer's `begin` re-enters here with `forceRefresh: false`. The set carries the intent;
-        // the budget below is spent only once that walk has actually answered. (Both save walks
-        // skip the shared `ManifestCache`, so the walk itself is fresh either way.)
+        // the timer's `begin` re-enters here with `forceRefresh: false`, which would serve an
+        // audio-only save the DEAD URL straight back out of the shared `ManifestCache` (its plain
+        // walk reads it; the video save's muxed walk does not). The set carries the intent; the
+        // budget below is spent only once that walk has actually answered.
         let forceRefresh = forceRefresh || pendingForceRefresh.contains(row.id)
         switch await limiterCheck(row.videoId) {
         case .allowed:
@@ -863,20 +864,29 @@ actor OfflineManager: OfflineSaving {
         case .blocked(_, let retryAfter):
             await scheduleRetry(row.id, attempt, after: retryAfter); await schedule(); return
         }
-        // Both shapes are save walks: a VIDEO save needs the muxed itag 18 (owner ruling 2026-09-01),
-        // an audio-only save VISIONOS's itag-140 `audioOnlyURL`, asked for as the HLS shape so a
-        // session step-down to ANDROID cannot block it (Cubic C2; every approved video is saveable).
+        // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01); an
+        // audio-only save takes the plain, cache-first walk for VISIONOS's itag-140 `audioOnlyURL`,
+        // so the common save (the player resolved this video already) sends no POST (fix r4 N-1).
         let requiresMuxed = !row.audioOnly
         let resolved: Resolved
         do {
             var first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: forceRefresh,
-                                                   requiresMuxed: requiresMuxed, requiresHLS: row.audioOnly)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: false)
             if !forceRefresh, let expiresAt = first.expiresAt,
                expiresAt.timeIntervalSince(now()) < Self.minimumRemainingLifetime {
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: true,
-                                                   requiresMuxed: requiresMuxed, requiresHLS: row.audioOnly)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: false)
+            }
+            // No itag 140 in the plain answer: ANDROID's `.progressive`, cached or fresh, which is
+            // what every plain walk answers after a step-down. Ask once for the HLS shape, which
+            // skips ANDROID and the cache wherever the demotion put it (Cubic C2). One HLS walk at
+            // most: a second answer without itag 140 fails `.noStream` below.
+            if row.audioOnly, Self.sourceURL(first.stream, audioOnly: true) == nil {
+                first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
+                                                   sourceChannelId: nil, forceRefresh: forceRefresh,
+                                                   requiresMuxed: false, requiresHLS: true)
             }
             resolved = first
         } catch ExtractionError.cooldown(let until) {
@@ -906,13 +916,14 @@ actor OfflineManager: OfflineSaving {
         // The forced walk answered AND it is still this attempt's row, so the 403 budget is spent.
         // BELOW the currency guard, not above it: only `forget` clears `pendingForceRefresh`, so a
         // row re-claimed through `pause`/`scheduleRetry`/`release` keeps the intent armed — and a
-        // DISCARDED attempt spending it there would leave the live attempt resolving unforced
-        // against the dead URL, the one thing the intent exists to survive. A discarded attempt
-        // spends nothing. Still bounded: a second 403 needs a walk, a walk needs a resolve that got
-        // past this line, and that resolve spent the intent.
+        // DISCARDED attempt spending it there would leave the live attempt's audio-only plain walk
+        // resolving unforced, straight back to the dead URL in the `ManifestCache`, the one thing
+        // the intent exists to survive. A discarded attempt spends nothing. Still bounded: a
+        // second 403 needs a walk, a walk needs a resolve that got past this line, and that
+        // resolve spent the intent.
         if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
-        // Both save walks skip the shared `ManifestCache`, so a nil here is the source's own answer
-        // (no itag 140, no itag 18), never a cached shape a forced walk could fix.
+        // A nil here is the source's own answer, never a cached shape: an audio-only save's HLS walk
+        // above and a video save's muxed walk both skip the `ManifestCache`.
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
             await fail(row.id, .noStream)
             return

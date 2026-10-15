@@ -261,6 +261,28 @@ struct PlayerViewModelQueueTests {
         #expect(resolver.demotions == ["a:visionos", "b:visionos"])
     }
 
+    /// Fix r4 N-5: one remembered id lost a's guard to b, so a -> b -> a demoted a's fallback at its
+    /// next exhaustion and pointed Retry back at the rung that had 401'd. Every stepped-down video
+    /// keeps its guard.
+    @Test(.timeLimit(.minutes(1))) func theStepDownGuardSurvivesAToBToA() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)   // a steps down
+        await vm.play(at: 1)
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)   // b steps down
+        await vm.play(at: 0)                                             // back to a
+        vm.recordPlaybackProgress()
+        for _ in 0..<RecoveryBudget.maxRetries {
+            await vm.handleRecoveryEvent(.playbackError)                // a's fallback flakes, plays again
+            vm.recordPlaybackProgress()
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+
+        #expect(vm.args.videoId == "a")
+        #expect(!vm.state.isPlayable, "a never reached the Retry card")
+        #expect(resolver.demotions == ["a:visionos", "b:visionos"])
+    }
+
     /// Stage 5 F4: a recovery an Up Next tap superseded can stay suspended on the network for a
     /// long time (a `Task.value` does not end when its awaiter is cancelled). Its claim on the
     /// recovery slot ends with the tap, so the next video's one-shot failure is still recovered.
