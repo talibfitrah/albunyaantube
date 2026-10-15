@@ -88,16 +88,19 @@ internal object SplashRouter {
 
     /**
      * What SplashFragment awaits before routing. Sync starts in [appScope]: it
-     * never gates routing and is not cancelled when the splash goes away.
+     * never gates routing and is not cancelled when the splash goes away. It binds
+     * only while Firebase ([signedInUid]) is still signed in as that account.
      */
     suspend fun launchAccountStatus(
         repo: AccountRepository,
         uid: String,
         appScope: CoroutineScope,
+        signedInUid: () -> String?,
         bindSync: suspend (String) -> Unit,
     ): AccountStatus? {
         val loaded = resolveAccount(repo, uid, appScope) ?: return null
-        appScope.launch { bindSync(loaded.uid) }
+        // A 403 envelope signs Firebase out at once, but clears accountState only later.
+        appScope.launch { if (signedInUid() == loaded.uid) bindSync(loaded.uid) }
         return loaded.status
     }
 

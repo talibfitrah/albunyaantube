@@ -23,6 +23,7 @@ import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
+import com.albunyaan.tube.download.DownloadStatus
 import com.albunyaan.tube.player.ExtractionRateLimiter
 import com.albunyaan.tube.player.PlayerRepository
 import com.albunyaan.tube.player.StreamPrefetchService
@@ -865,9 +866,19 @@ class PlayerViewModel @Inject constructor(
         consecutiveSkips = 0
         queue.clear()
         previousItems.clear()
-
-        val entry = completedDownload(downloadId)
         playingDownloadId = downloadId
+        updateState { it.copy(playingDownload = true) }
+
+        viewModelScope.launch(dispatcher) {
+            // A player restored after process death gets here before the repository's startup
+            // load has listed the files; refreshPersistedDownloads() waits for that load.
+            if (completedDownload(downloadId) == null) downloadRepository.refreshPersistedDownloads()
+            startDownload(downloadId)
+        }
+    }
+
+    private fun startDownload(downloadId: String) {
+        val entry = completedDownload(downloadId)
         currentItem = entry?.let {
             UpNextItem(
                 id = it.request.videoId,
@@ -879,7 +890,7 @@ class PlayerViewModel @Inject constructor(
             )
         }
         applyQueueState()
-        updateState { it.copy(audioOnly = entry?.request?.audioOnly == true, playingDownload = true) }
+        updateState { it.copy(audioOnly = entry?.request?.audioOnly == true) }
         val item = currentItem ?: run {
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
             return
@@ -890,7 +901,7 @@ class PlayerViewModel @Inject constructor(
 
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
-            it.request.id == downloadId && it.status == com.albunyaan.tube.download.DownloadStatus.COMPLETED
+            it.request.id == downloadId && it.status == DownloadStatus.COMPLETED
         }
 
     /** The local-file "resolve": re-reads the entry and file each time, never the network. */
@@ -1935,7 +1946,8 @@ class PlayerViewModel @Inject constructor(
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
         return item?.let { current ->
-            entries.firstOrNull { it.request.videoId == current.streamId }
+            entries.filter { it.request.videoId == current.streamId }
+                .let { m -> m.firstOrNull { it.status == DownloadStatus.COMPLETED } ?: m.firstOrNull() }
         }
     }
 

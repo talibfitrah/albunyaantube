@@ -142,7 +142,9 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
                 val user = firebaseAuth.currentUser
                 if (user == null) null
-                else SplashRouter.launchAccountStatus(accountRepository, user.uid, appScope, syncManager::bind)
+                else SplashRouter.launchAccountStatus(
+                    accountRepository, user.uid, appScope, { firebaseAuth.currentUser?.uid }, syncManager::bind,
+                )
             }
 
             // GitHub update probe — runs in parallel with the splash animation, bounded by

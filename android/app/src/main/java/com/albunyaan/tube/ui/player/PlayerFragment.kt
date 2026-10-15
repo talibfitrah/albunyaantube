@@ -1540,7 +1540,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     "streamId=${ready?.streamId} langCount=$langCount visible=${binding.audioLanguageButton.isVisible}"
                 )
             }
-            // A local file has one quality, is not castable, and has no queue.
+            // A local file has one quality, no known view count, is not castable, and has no queue.
+            binding.videoStats.isVisible = !state.playingDownload
             binding.qualityButton.isVisible = !state.playingDownload
             binding.castButton.isVisible = !state.playingDownload
             binding.upNextHeader.isVisible = !state.playingDownload
@@ -2120,7 +2121,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val currentItem = state.currentItem
         val downloadEntry = state.currentDownload
 
-        // Playing a download's file: there is nothing to download or open.
+        // Playing a download's file there is nothing to download or open, so no button at all.
+        button.isVisible = !state.playingDownload
         if (currentItem == null || state.playingDownload) {
             button.isEnabled = false
             button.setOnClickListener(null)

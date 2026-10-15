@@ -73,12 +73,18 @@ class PlayerViewModelDownloadPlaybackTest {
 
     @After fun tearDown() = Dispatchers.resetMain()
 
-    private fun completed(id: String, videoId: String, file: File, audioOnly: Boolean = false) = DownloadEntry(
+    private fun completed(
+        id: String,
+        videoId: String,
+        file: File,
+        audioOnly: Boolean = false,
+        status: DownloadStatus = DownloadStatus.COMPLETED,
+    ) = DownloadEntry(
         request = DownloadRequest(
             id = id, title = "Request title", videoId = videoId, audioOnly = audioOnly,
             thumbnailUrl = "https://i.example/t.jpg",
         ),
-        status = DownloadStatus.COMPLETED,
+        status = status,
         progress = 100,
         filePath = file.absolutePath,
         metadata = DownloadFileMetadata(
@@ -174,6 +180,38 @@ class PlayerViewModelDownloadPlaybackTest {
         noNetwork()
     }
 
+    @Test fun `a player restored after process death waits for the repository's startup load`() = runTest {
+        // The OS restores PlayerFragment with its downloadId before DefaultDownloadRepository's
+        // init has listed the files; refreshPersistedDownloads() waits for that load.
+        val file = tmp.newFile("v5.mp4")
+        downloads.listedOnRefresh = listOf(completed("d5", "v5", file))
+        val vm = createViewModel()
+
+        vm.loadDownload("d5")
+        advanceUntilIdle()
+
+        val ready = vm.state.value.streamState as StreamState.Ready
+        assertEquals(file.toURI().toString(), ready.selection.audio.url)
+        assertEquals("Lecture", vm.state.value.currentItem?.title)
+        noNetwork()
+    }
+
+    @Test fun `a failed entry listed first does not hide the completed download`() = runTest {
+        val file = tmp.newFile("v6.mp4")
+        downloads.entries.value = listOf(
+            completed("failed", "v6", File(tmp.root, "none.m4a"), audioOnly = true, status = DownloadStatus.FAILED),
+            completed("done", "v6", file),
+        )
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v6")
+        advanceUntilIdle()
+
+        // The streaming player's Download button opens this entry (PlayerFragment.updateDownloadControls).
+        assertEquals("done", vm.state.value.currentDownload?.request?.id)
+        assertEquals(DownloadStatus.COMPLETED, vm.state.value.currentDownload?.status)
+    }
+
     private fun createViewModel() = PlayerViewModel(
         repository = streams,
         downloadRepository = downloads,
@@ -223,7 +261,12 @@ class PlayerViewModelDownloadPlaybackTest {
 
     private class FakeDownloadRepository : DownloadRepository {
         val entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
+        /** What the repository's startup load finds on disk, published only once it completes. */
+        var listedOnRefresh: List<DownloadEntry>? = null
         override val downloads: StateFlow<List<DownloadEntry>> = entries
+        override suspend fun refreshPersistedDownloads() {
+            listedOnRefresh?.let { entries.value = it }
+        }
         override fun enqueue(request: DownloadRequest) {}
         override fun pause(requestId: String) {}
         override fun resume(requestId: String) {}

@@ -182,6 +182,9 @@ class SplashRouterOfflineTest {
 
     // ── Launch must never wait on sync or long on /me (1.0.3, R4) ─────────
 
+    /** Firebase still signed in as the launch uid. */
+    private val signedIn: () -> String? = { "uid-a" }
+
     private fun me(status: String) = AccountMeResponseDto(
         uid = "uid-a", email = "a@b.com", displayName = "A", dateOfBirth = null,
         phoneNumber = null, status = status, role = "user", profileCompletedAt = null,
@@ -194,7 +197,7 @@ class SplashRouterOfflineTest {
         var boundUid: String? = null
 
         val status = withTimeout(1_000) {
-            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) { uid ->
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) { uid ->
                 boundUid = uid
                 awaitCancellation()
             }
@@ -219,7 +222,7 @@ class SplashRouterOfflineTest {
 
         val start = currentTime
         val status = withTimeout(10_000) {
-            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {}
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {}
         }
 
         assertEquals(AccountStatus.ACTIVE, status)
@@ -239,7 +242,7 @@ class SplashRouterOfflineTest {
         whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
         val repo = repoWith(store) { me("pending_profile") }
 
-        val status = SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {}
+        val status = SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {}
 
         assertEquals(AccountStatus.PENDING_PROFILE, status)
         verify(store).write(loaded(AccountStatus.PENDING_PROFILE))
@@ -256,9 +259,24 @@ class SplashRouterOfflineTest {
             auth = auth,
         )
 
-        assertNull(SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope) {})
+        assertNull(SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {})
         verify(store).clear()
         verify(auth).signOut()
+    }
+
+    @Test fun `sync never binds a uid Firebase has already signed out`() = runTest {
+        // A 403 lifecycle envelope signs Firebase out in AccountStatusInterceptor before the
+        // failed /me returns; the Deleted/Blocked observer clears accountState only later.
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        var firebaseUid: String? = "uid-a"
+        val repo = repoWith(store) { firebaseUid = null; throw http(403, signed = true) }
+        var bound = false
+
+        SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, { firebaseUid }) { bound = true }
+        runCurrent()
+
+        assertFalse("bind must not start for a signed-out uid", bound)
     }
 
     @Test fun `429 and 408 are non-terminal and use the record, like 5xx`() {
