@@ -285,8 +285,10 @@ struct PlayerHostTests {
                             isLive: false, playToEnd: .none)
         defer { coordinator.stopObserving(); player.pause() }
 
-        // 6 s of stall (`vodStallThreshold`) plus the first ticks; 12 s is the bound.
-        for _ in 0..<1200 where !resolver.calls.contains(where: { $0.kind == .autoRecovery }) {
+        // 6 s of stall (`vodStallThreshold`) plus the first ticks of a 1 s main-thread timer, which
+        // a loaded machine starves: a 30 s deadline on the call itself, inside the 1 min limit.
+        let deadline = ContinuousClock.now + .seconds(30)
+        while !resolver.calls.contains(where: { $0.kind == .autoRecovery }), ContinuousClock.now < deadline {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(player.currentItem?.status == .readyToPlay)
@@ -353,6 +355,22 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus == .paused, "recovery resumed a video the user had paused")
     }
 
+    /// Cubic A6: a failure has already paused the player, so a pause made while its re-resolve is out
+    /// (headphones unplugged, a call) changed nothing the swap could read, and `fire`'s resume intent
+    /// played the replacement through the speaker. The pause reaches the host through the production
+    /// policy handler and drops the intent: what a stall gets from the live player state.
+    @Test(.timeLimit(.minutes(1))) func aPolicyPauseDuringAFailuresReResolveKeepsTheReplacementPaused() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        Self.postFailure(on: player)                       // dies under the user -> resume intent
+        player.pause()                                     // what the failure does to the player
+
+        PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)(.pause)
+
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the failure's replacement overrode a pause")
+    }
+
     /// Review M1: the resume intent is spent by the ONE replacement it was for. A later same-player
     /// swap (the audio-only toggle, a background restore) after the user paused stays paused.
     @Test(.timeLimit(.minutes(1))) func theResumeIntentIsSpentByTheFirstReplacement() async throws {
@@ -399,9 +417,12 @@ struct PlayerHostTests {
         // Stage 7 r2: the clip is 2 s and the sampler ticks once a second on the main run loop. On a
         // loaded machine (load 65+, round 1) the clip played out before any tick saw `.playing`: no
         // error-log floor, the player paused at its end, five tests red. Rewind and play again
-        // until a tick has seen it playing, on a 10 s deadline rather than a count of polls.
+        // until a tick has seen it playing, on a 10 s deadline rather than a count of polls. Exit
+        // only while it still plays (close R2-3): the clip could end between the last tick and the
+        // check below, which would then fail on a starved main thread.
         let deadline = ContinuousClock.now + .seconds(10)
-        while coordinator.lastPlayingAt == nil || coordinator.errorLogFloor == nil, ContinuousClock.now < deadline {
+        while coordinator.lastPlayingAt == nil || coordinator.errorLogFloor == nil
+                || player.timeControlStatus == .paused, ContinuousClock.now < deadline {
             if player.timeControlStatus == .paused, player.currentItem?.status == .readyToPlay {
                 await player.seek(to: .zero)
                 player.play()
@@ -813,23 +834,30 @@ struct PlayerHostTests {
         coordinator.lastVideoId = "fixture-0"   // the coordinator last built the PREVIOUS video
         coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
 
-        // Playing (the builder called `play()`): >1 s of wall clock past a 1 s seek guarantees at
-        // least one 1 s-interval tick carrying a time >= 1 -- the stale write this test pins.
+        // The seek is a time jump, which fires the observer with a time >= 1 -- the stale write this
+        // test pins. Waited out on the PLAYER's clock, not the wall: half a second of playback past
+        // the seek, however late a loaded machine plays it (`play()`: the 2 s clip may have ended).
         await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
-        try await Task.sleep(for: .milliseconds(1200))
+        player.play()
+        try await Self.settle(player) { $0 >= 1.5 }
         #expect(model.currentTime == 0)
 
         coordinator.lastVideoId = "fixture-1"
         await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
         player.play()
-        try await Task.sleep(for: .milliseconds(1200))
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.currentTime <= 0.5, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
         #expect(model.currentTime > 0.5)
         coordinator.stopObserving()
     }
 
-    /// Polls the live clock until `done` holds (seeks without a completion handler are async).
+    /// Polls the live clock until `done` holds (seeks without a completion handler are async), on a
+    /// 10 s deadline rather than a count of polls.
     private static func settle(_ player: AVPlayer, until done: (Double) -> Bool) async throws {
-        for _ in 0..<400 where !done(player.currentTime().seconds) { try await Task.sleep(for: .milliseconds(5)) }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !done(player.currentTime().seconds), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
     }
 }
 

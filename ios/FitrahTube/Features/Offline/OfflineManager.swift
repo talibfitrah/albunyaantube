@@ -150,10 +150,10 @@ actor OfflineManager: OfflineSaving {
     private var userPausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
-    /// Ids whose next resolve must bypass the manifest cache — the 403 re-resolve's intent, held
-    /// across a limiter park (`scheduleRetry` drops the claim, and the timer's `begin` re-enters
-    /// `resolveAndStart` with `forceRefresh: false`). Moved into `reResolvedAfter403` by the walk
-    /// that actually answers, so a parked re-resolve does not spend the one budget it never used.
+    /// Ids whose next resolve is the 403 re-resolve — its intent, held across a limiter park
+    /// (`scheduleRetry` drops the claim, and the timer's `begin` re-enters `resolveAndStart` with
+    /// `forceRefresh: false`). Moved into `reResolvedAfter403` by the walk that actually answers,
+    /// so a parked re-resolve does not spend the one budget it never used.
     private var pendingForceRefresh: Set<String> = []
     private var lastProgressPersist: [String: Date] = [:]
     /// CF-A-59: whether a save for this owner must be refused — an account being deleted
@@ -618,7 +618,7 @@ actor OfflineManager: OfflineSaving {
                 // a still-`.queued` row is re-entered: a cancelled, deleted, completed or
                 // already-re-claimed row spends no limiter attempt and no resolve (R9-9). `begin`
                 // claims, re-consults the kill-switch and both gates, and `pendingForceRefresh`
-                // carries the cache bypass into its `resolveAndStart`.
+                // carries the re-resolve's intent into its `resolveAndStart`.
                 guard let requeued = await read(id: id), requeued.status == .queued else {
                     // Belt: the claim went at `active.remove(id)` above, so a dropped claim is
                     // followed by a `schedule()` at EVERY exit of this arm. Not a wedge without it —
@@ -842,16 +842,15 @@ actor OfflineManager: OfflineSaving {
         active.contains(id) && attempts[id] == attempt
     }
 
-    /// ENTRY CONTRACT: `attempt` is the CALLER's own live claim — `begin`'s `claim(_:)`, or the same
-    /// attempt on the audio-only re-resolve below. Reading `attempts[row.id]` here instead was safe
-    /// (no suspension separates either caller's `stillCurrent` from its call) but it is the
-    /// adopt-whatever-is-live shape R9-4 named, and the next caller would inherit it.
+    /// ENTRY CONTRACT: `attempt` is the CALLER's own live claim — `begin`'s `claim(_:)`. Reading
+    /// `attempts[row.id]` here instead was safe (no suspension separates the caller's
+    /// `stillCurrent` from its call) but it is the adopt-whatever-is-live shape R9-4 named, and the
+    /// next caller would inherit it.
     private func resolveAndStart(_ row: Row, forceRefresh: Bool, attempt: Int) async {
         // The 403 re-resolve's intent has to survive a park: `scheduleRetry` drops the claim, and
-        // the timer's `begin` re-enters here with `forceRefresh: false`, which would serve an
-        // audio-only save the DEAD URL straight back out of the shared `ManifestCache` and hard-fail
-        // the next 403 as HTTP_403 instead of re-resolving. The set carries the intent; the budget
-        // below is spent only once a forced walk has actually answered.
+        // the timer's `begin` re-enters here with `forceRefresh: false`. The set carries the intent;
+        // the budget below is spent only once that walk has actually answered. (Both save walks
+        // skip the shared `ManifestCache`, so the walk itself is fresh either way.)
         let forceRefresh = forceRefresh || pendingForceRefresh.contains(row.id)
         switch await limiterCheck(row.videoId) {
         case .allowed:
@@ -864,28 +863,30 @@ actor OfflineManager: OfflineSaving {
         case .blocked(_, let retryAfter):
             await scheduleRetry(row.id, attempt, after: retryAfter); await schedule(); return
         }
-        // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01);
-        // an audio-only save stays on the plain walk — it needs visionos's itag-140 `audioOnlyURL`.
+        // Both shapes are save walks: a VIDEO save needs the muxed itag 18 (owner ruling 2026-09-01),
+        // an audio-only save VISIONOS's itag-140 `audioOnlyURL`, asked for as the HLS shape so a
+        // session step-down to ANDROID cannot block it (Cubic C2; every approved video is saveable).
         let requiresMuxed = !row.audioOnly
         let resolved: Resolved
         do {
             var first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: forceRefresh,
-                                                   requiresMuxed: requiresMuxed)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: row.audioOnly)
             if !forceRefresh, let expiresAt = first.expiresAt,
                expiresAt.timeIntervalSince(now()) < Self.minimumRemainingLifetime {
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: true,
-                                                   requiresMuxed: requiresMuxed)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: row.audioOnly)
             }
             resolved = first
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             await scheduleRetry(row.id, attempt, after: .seconds(max(1, until.timeIntervalSince(now())))); return
         } catch ExtractionError.botCheck {
-            // A bot-checked walk (the muxed save-walk's shape — its walk-end trip just
-            // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
-            // carries no date, so park briefly: the retry's own resolve hits the resolver's
+            // A bot-checked save walk is a temporary block, never a failed row. `.botCheck` carries
+            // no date, so park briefly. The walk-end trip arms the persisted cooldown only from the
+            // second consecutive trip (`SessionStore`: the first arms nothing), so the 1 s retry
+            // walks again; a second bot check arms 60 s, and the retry after it hits the resolver's
             // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
             // above with the cooldown's exact end.
             await scheduleRetry(row.id, attempt, after: .seconds(1)); return
@@ -910,17 +911,9 @@ actor OfflineManager: OfflineSaving {
         // spends nothing. Still bounded: a second 403 needs a walk, a walk needs a resolve that got
         // past this line, and that resolve spent the intent.
         if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
+        // Both save walks skip the shared `ManifestCache`, so a nil here is the source's own answer
+        // (no itag 140, no itag 18), never a cached shape a forced walk could fix.
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
-            // An audio-only save resolves without `requiresMuxed`, so this answer may be
-            // the shared `ManifestCache`'s — and a player fallback walk caches `.progressive`
-            // (nil `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would
-            // return `.hls` with itag-140. `!forceRefresh` is exactly "plausibly from cache" (a
-            // forced walk never reads it), so re-resolve once forced — same shape as the
-            // <10-min-expiry refresh above and the 403 re-resolve; forceRefresh bounds it.
-            if row.audioOnly, !forceRefresh {
-                await resolveAndStart(row, forceRefresh: true, attempt: attempt)
-                return
-            }
             await fail(row.id, .noStream)
             return
         }

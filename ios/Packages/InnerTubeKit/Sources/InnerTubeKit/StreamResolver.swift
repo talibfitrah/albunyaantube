@@ -74,26 +74,31 @@ public actor StreamResolver {
     /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
     ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
     ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
+    /// - Parameter requiresHLS: the audio-only save's walk (Cubic C2), the muxed walk's mirror: the
+    ///   caller needs VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung
+    ///   advances without a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the
+    ///   plain key must not hand the player the HLS it stepped down from. At most one of the two.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,
-        requiresMuxed: Bool = false
+        requiresMuxed: Bool = false, requiresHLS: Bool = false
     ) async throws -> Resolved {
         guard Self.isValidVideoId(videoId) else { throw ExtractionError.invalidVideoId }
 
-        if requiresMuxed {
+        if requiresMuxed || requiresHLS {
             // Save-purpose walk, fully outside the shared structures:
-            // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format,
-            //   and caching this walk's `.progressive` would degrade the player to 360p on its
-            //   next resolve. Skipping both read and write means EVERY video save POSTs — CF-D-9
-            //   exposure accepted; the per-walk trip dedupe caps it.
+            // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format and a
+            //   cached `.progressive` no itag 140; caching this walk's answer would degrade the
+            //   player to 360p on its next resolve, or hand it back the HLS it stepped down from.
+            //   Skipping both read and write means EVERY save POSTs — CF-D-9 exposure accepted;
+            //   the per-walk trip dedupe caps it.
             // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
             //   `forceRefresh` through the registry would cancel the user's own playback resolve
             //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also
             //   means two concurrent muxed walks of one id both POST: `OfflineManager` is serial
             //   (one active save), but a save and a cast (`PlayerViewModel.castMedia`) can overlap
             //   -- two android POSTs, accepted, since neither result is cached.
-            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: true,
-                                            recordsBotCheck: purpose != .cast)
+            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: requiresMuxed,
+                                            requiresHLS: requiresHLS, recordsBotCheck: purpose != .cast)
         }
 
         if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {
@@ -110,7 +115,8 @@ public actor StreamResolver {
         nextJobId += 1
         let jobId = nextJobId
         let job = Task<Resolved, Error> { [self] in
-            try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: false)
+            try await performResolve(videoId, sourceChannelId: sourceChannelId,
+                                     requiresMuxed: false, requiresHLS: false)
         }
         inFlight[videoId] = InFlight(id: jobId, task: job)
         defer {
@@ -161,7 +167,8 @@ public actor StreamResolver {
     }
 
     private func performResolve(
-        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, recordsBotCheck: Bool = true
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, requiresHLS: Bool,
+        recordsBotCheck: Bool = true
     ) async throws -> Resolved {
         // Self-gate on the persisted, restart-surviving escalating cooldown (§6.3): if a prior
         // bot-check tripped it, suppress all API traffic until it elapses rather than hammering
@@ -191,7 +198,8 @@ public actor StreamResolver {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
                 // a bot-check rung is POST + (adopt | rotate) + retry POST, which per-POST would allow ~16 s.
                 outcome = try await Self.withTimeout(Self.rungBudget) {
-                    try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
+                    try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed,
+                                           requiresHLS: requiresHLS)
                 }
             } catch let error as ExtractionError where error.terminal {
                 // A source verdict (private, members-only, removed, age gate, ...): the source
@@ -224,7 +232,7 @@ public actor StreamResolver {
             }
             switch outcome {
             case .resolved(let resolved):
-                return await succeed(resolved, videoId: videoId, requiresMuxed: requiresMuxed)
+                return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
             case .advance:
                 continue
             }
@@ -242,11 +250,12 @@ public actor StreamResolver {
 
     /// A resolved stream is a real fetch: it carries a URL with a TTL worth caching and proves the
     /// session is healthy.
-    private func succeed(_ resolved: Resolved, videoId: String, requiresMuxed: Bool) async -> Resolved {
-        // A muxed walk's result must never land under the plain videoId key: the cache is
-        // shape-blind, and the player's next resolve would degrade to this 360p progressive.
+    private func succeed(_ resolved: Resolved, videoId: String, saveWalk: Bool) async -> Resolved {
+        // A save walk's result must never land under the plain videoId key: the cache is
+        // shape-blind, and the player's next resolve would degrade to a muxed walk's 360p
+        // progressive, or get back the HLS an HLS walk fetched past a step-down.
         // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
-        if !requiresMuxed {
+        if !saveWalk {
             await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
         }
         await sessionStore.recordSuccess()
@@ -254,7 +263,7 @@ public actor StreamResolver {
     }
 
     private func runRung(
-        _ strategy: String, videoId: String, config: RemoteConfig, requiresMuxed: Bool
+        _ strategy: String, videoId: String, config: RemoteConfig, requiresMuxed: Bool, requiresHLS: Bool
     ) async throws -> RungResult {
         switch strategy {
         case "visionosHLS":
@@ -263,6 +272,8 @@ public actor StreamResolver {
             if requiresMuxed { return .advance }
             return try await runPlayerRung(family: .visionos, videoId: videoId, config: config, expectHLS: true, canRotate: true)
         case "androidItag18":
+            // The mirror image: an HLS-required walk wants the itag 140 only VISIONOS carries.
+            if requiresHLS { return .advance }
             return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
         default:
             return .advance

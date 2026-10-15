@@ -98,11 +98,12 @@ nonisolated final class FakeOfflineEngine: OfflineEngine, @unchecked Sendable {
 
     /// Bounded, like `RecordingResolver.hold`: a `#require` failing before the release line must
     /// not leave an unstructured task polling at 1 ms for the whole process. Reports rather than
-    /// spinning forever.
+    /// spinning forever. The bound is a 10 s deadline, not 2000 polls (~2 s): parallel suites ran it
+    /// out before the release landed, even at load 3.6 (stage 7 r2).
     static func hold(while held: @Sendable () -> Bool, what: String,
                      sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if !held() { return }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while held(), ContinuousClock.now < deadline {
             do { try await Task.sleep(for: .milliseconds(1)) } catch { return }
         }
         #expect(!held(), "held \(what) was never released", sourceLocation: sourceLocation)

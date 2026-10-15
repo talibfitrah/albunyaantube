@@ -243,6 +243,24 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// R2-1: the step-down guard is the stepped-down VIDEO's, so it survives a Retry but not a change
+    /// of video. The next video that flakes to exhaustion still demotes its own rung.
+    @Test(.timeLimit(.minutes(1))) func theStepDownGuardDoesNotFollowTheQueueToTheNextVideo() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)   // a steps down
+        await vm.play(at: 1)                                             // the user taps "b"
+        vm.recordPlaybackProgress()
+        for _ in 0..<RecoveryBudget.maxRetries {
+            await vm.handleRecoveryEvent(.playbackError)                // b flakes, plays again
+            vm.recordPlaybackProgress()
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+
+        #expect(vm.args.videoId == "b")
+        #expect(resolver.demotions == ["a:visionos", "b:visionos"])
+    }
+
     /// Stage 5 F4: a recovery an Up Next tap superseded can stay suspended on the network for a
     /// long time (a `Task.value` does not end when its awaiter is cancelled). Its claim on the
     /// recovery slot ends with the tap, so the next video's one-shot failure is still recovered.

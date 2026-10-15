@@ -661,6 +661,32 @@ import Testing
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
     }
 
+    /// Cubic C2: an audio-only save needs VISIONOS's itag 140, and after a step-down every plain walk
+    /// for the video answers ANDROID's `.progressive`, which has none: the save failed NO_STREAM for
+    /// the rest of the session. The HLS walk is the muxed walk's mirror -- ANDROID advances wherever
+    /// the demotion put it -- and its manifest never lands under the plain key, where the player's
+    /// next open would get back the HLS it just stepped down from.
+    @Test func anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140() async throws {
+        let clock = ManualClock()
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
+        let transport = FixtureTransport(routes: [
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "3" }, response: androidItag18Response),
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "101" },
+                  response: try fixtureResponse("player-ok-hls"))
+        ])
+        let (resolver, _) = makeResolver(transport: transport, clock: clock, cache: cache)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(
+            Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresHLS: true)
+
+        guard case .hls(_, _, let audioOnlyURL, _) = resolved.stream else {
+            Issue.record("expected .hls, got \(resolved.stream)"); return
+        }
+        #expect(audioOnlyURL != nil, "the HLS answer lost its itag 140")
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil, "the HLS walk wrote the plain key")
+    }
+
     // MARK: - demote x R6: a demoted walk starts at ANDROID, so its refusal is not yet the verdict (F4)
 
     /// Owner rule: a video plays unless the source no longer serves it. VISIONOS was serving this one

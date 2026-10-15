@@ -220,10 +220,10 @@ struct OfflineManagerTests {
         return rig.persisted(videoId: videoId)?.id ?? "missing"
     }
 
-    /// Bounded poll (the `RecordingResolver.waitUntilCalled` shape, ~2 s).
+    /// Bounded poll on a 10 s deadline (the `RecordingResolver.waitUntilCalled` shape).
     private func waitUntil(_ condition: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if condition() { return }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition(), ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(1))
         }
         #expect(condition(), "condition never became true", sourceLocation: sourceLocation)
@@ -278,10 +278,14 @@ struct OfflineManagerTests {
 
     // MARK: - Resolve path
 
-    @Test func aCacheWarmAudioOnlySaveReachesTheEngineWithTheItag140URL() async throws {
+    /// Cubic C2: an audio-only save asks for the HLS shape (`requiresHLS: true`), so a step-down
+    /// that rotated the video's walks to ANDROID's `.progressive` cannot block it (the resolver half
+    /// is `StreamResolverTests.anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140`).
+    @Test func anAudioOnlySaveRequiresHLSAndTheItag140ReachesTheEngine() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         let id = await save(rig)
-        #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false)])
+        #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch,
+                                             forceRefresh: false, requiresHLS: true)])
         #expect(rig.engine.starts.count == 1)
         #expect(rig.engine.starts.first?.id == id)
         #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
@@ -309,8 +313,8 @@ struct OfflineManagerTests {
     /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
     /// a VIDEO save demands the muxed itag 18 from the resolver (`requiresMuxed: true` — the
     /// resolver's ladder skips the HLS rung for it), and the `.progressive` answer reaches the
-    /// engine. An audio-only save keeps `requiresMuxed: false` (it needs visionos's itag-140
-    /// `audioOnlyURL`) — pinned by `aCacheWarmAudioOnlySaveReachesTheEngineWithTheItag140URL`.
+    /// engine. An audio-only save asks for the HLS shape instead (it needs visionos's itag-140
+    /// `audioOnlyURL`) — pinned by `anAudioOnlySaveRequiresHLSAndTheItag140ReachesTheEngine`.
     @Test func aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig, audioOnly: false)
@@ -348,33 +352,13 @@ struct OfflineManagerTests {
         #expect(await rig.manager.pendingRetryIds == [id])
     }
 
-    /// Cubic P2: an audio-only save resolves WITHOUT `requiresMuxed`, so it reads the shared
-    /// `ManifestCache` — which may hold a player fallback walk's `.progressive` (nil
-    /// `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would return
-    /// `.hls` with itag-140. The manager must re-resolve ONCE with `forceRefresh: true` (a
-    /// forced walk never reads the cache) before failing.
-    @Test func anAudioOnlySaveHittingAProgressiveCacheShapeReResolvesForcedAndStarts() async throws {
-        let rig = makeRig(.progressive); defer { rig.cleanUp() }
-        rig.resolver.hold(Self.lectureVideoId)
-        let saveTask = Task { await save(rig) }
-        await rig.resolver.waitUntilCalled(count: 1)   // call 1 captured .progressive (the cache shape)
-        rig.resolver.outcome = .hls                    // what a fresh walk would return
-        rig.resolver.release(id: Self.lectureVideoId)
-        await rig.resolver.waitUntilCalled(count: 2)
-        rig.resolver.release(id: Self.lectureVideoId)
-        let id = await saveTask.value
-        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
-        #expect(rig.engine.starts.count == 1)
-        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
-        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
-    }
-
-    /// Cubic P2, the bound: when the FORCED re-resolve still yields no audio URL, the row fails
-    /// NO_STREAM after exactly two resolves — never a loop.
-    @Test func anAudioOnlySaveWhoseForcedReResolveStillLacksAudioFailsNoStream() async throws {
+    /// An audio-only save answered with no itag 140 fails NO_STREAM after ONE resolve. The HLS walk
+    /// skips the shared `ManifestCache` (Cubic C2), so the answer is never a cached shape that a
+    /// forced re-walk could fix (the old Cubic P2 re-resolve), and nothing loops.
+    @Test func anAudioOnlySaveAnsweredWithoutAudioFailsNoStreamAfterOneResolve() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig)
-        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
+        #expect(rig.resolver.calls.map(\.forceRefresh) == [false])
         #expect(rig.engine.starts.isEmpty)
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue)
@@ -2811,7 +2795,9 @@ struct OfflineManagerTests {
     /// Stage 3c S4-1: `Content-Range` is input from the network. A 206 that does not start at the
     /// requested offset, or whose total is not a real size past its own end, is never written (a
     /// misaligned append corrupts the media; a `/0` or `/-1` total called a 5-byte prefix saved).
-    /// It fails through the walk's resumable arm instead, leaving the partial as it was.
+    /// Each fails resumably, the token kept. A misaligned start (the first argument) also restarts
+    /// the walk clean, deleting the partial (O3, `aMisalignedChunkRestartsTheWalkCleanInsteadOfKeepingThePartial`;
+    /// no partial is staged here); the other four leave the partial as it was.
     @Test(arguments: ["bytes 5-9/10",          // starts away from the requested offset 0
                       "bytes 0-4/0",           // no size at all
                       "bytes 0-4/-1",          // a negative size

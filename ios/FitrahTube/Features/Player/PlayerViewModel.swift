@@ -18,8 +18,13 @@ protocol StreamResolving: Sendable {
     /// `(.hls, false)` nil arm and failed NO_STREAM, with a doc comment as the only guard. This way
     /// round, the compiler is the guard: a resolver that cannot answer the muxed question does not
     /// conform.
+    ///
+    /// `requiresHLS` is the same contract for the other save shape (Cubic C2): an audio-only save
+    /// needs VISIONOS's itag 140, so the resolver skips the ANDROID rung, wherever a step-down put
+    /// it, with the same cache and single-flight bypass. Only `OfflineManager` passes `true`.
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved
 
     /// Recovery's step-down (owner directive 2026-10-14): `failed`'s stream for `videoId` resolved but
     /// would not play, so the next walks for this video resume the ladder at the rung after it
@@ -39,7 +44,7 @@ extension StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         try await resolve(videoId, purpose: purpose, kind: kind, sourceChannelId: sourceChannelId,
-                          forceRefresh: forceRefresh, requiresMuxed: false)
+                          forceRefresh: forceRefresh, requiresMuxed: false, requiresHLS: false)
     }
 }
 
@@ -51,9 +56,10 @@ struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
-                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed)
+                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {
@@ -76,7 +82,8 @@ struct RateLimitedResolver: StreamResolving {
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // Scoped exactly as Android scopes it (`ui/player/PlayerViewModel.kt:1243/1256/1265` are its
         // only three limiter call sites, all force-refreshes). A non-forced resolve may be served
         // straight from `ManifestCache` with no network at all -- gating it would make the 30 s
@@ -98,7 +105,7 @@ struct RateLimitedResolver: StreamResolving {
         }
         let resolved = try await wrapped.resolve(videoId, purpose: purpose, kind: kind,
                                                  sourceChannelId: sourceChannelId, forceRefresh: forceRefresh,
-                                                 requiresMuxed: requiresMuxed)
+                                                 requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
         await rateLimiter.onSuccess(videoId)   // clears the .player exponential backoff (Android :1551)
         return resolved
     }
@@ -296,8 +303,12 @@ extension StreamState {
     /// call's exit clears only its own.
     private var recoveryToken: UUID?
     private var isRecovering: Bool { recoveryToken != nil }
-    /// This stream already stepped down (stage 7 r2 N3). Reset with the budget.
-    private var steppedDown = false
+    /// The video this player last stepped down (stage 7 r2 N3; R2-1). An id, not a per-stream flag:
+    /// the resolver's demotion lasts the session per video, so Retry must not forget it, and another
+    /// video simply never matches.
+    /// ponytail: per view model, so leaving the video and opening it again starts unguarded (R2-1
+    /// scenario B, one extra Retry). Ask the resolver (`isDemoted`) if that ever matters.
+    private var steppedDownVideoId: String?
     /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
     /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
     /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
@@ -609,17 +620,17 @@ extension StreamState {
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
             // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
             // so Retry starts at the next rung instead of walking the one that kept failing. Not
-            // after a step-down (r2 N3): the resolver keeps ONE demoted rung per video, the stream
-            // on screen is already the fallback, and demoting it would point Retry back at the rung
-            // that was proven bad.
-            if !steppedDown {
+            // once this video stepped down (r2 N3), Retries since included (R2-1): the resolver keeps
+            // ONE demoted rung per video, the stream on screen is already the fallback, and demoting
+            // it would point Retry back at the rung that was proven bad.
+            if steppedDownVideoId != hostVideoId {
                 let myGeneration = generation
                 await resolver.demote(hostVideoId, failed: resolved.client)
                 guard myGeneration == generation else { return }
             }
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
-            steppedDown = true
+            steppedDownVideoId = hostVideoId
             // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
             // make `.stall` step-downs non-sticky if congestion makes that common (R15).
             // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
@@ -708,7 +719,7 @@ extension StreamState {
         do {
             let resolved = try await resolver.resolve(args.videoId, purpose: .cast, kind: .player,
                                                       sourceChannelId: args.channelId, forceRefresh: false,
-                                                      requiresMuxed: true)
+                                                      requiresMuxed: true, requiresHLS: false)
             return CastMedia.make(resolved: resolved, args: args)
         } catch {
             // The user-visible collapse to one banner is deliberate (a cooldown and a receiver
@@ -1058,7 +1069,6 @@ extension StreamState {
         if resetBudget {
             recoveryBudget = RecoveryBudget()
             recoveryToken = nil
-            steppedDown = false
         }
         if showLoading { state = .loading }
         let task = Task {

@@ -19,6 +19,7 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool
         /// Defaulted so the many pre-save-walk call assertions stay as written (they all mean false).
         var requiresMuxed: Bool = false
+        var requiresHLS: Bool = false
     }
 
     /// `liveHLS` is `hls` with `isLive` set -- the only thing that separates a live rung 1 from a
@@ -104,12 +105,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// Lets one held resolve of `id` proceed.
     func release(id: String) { lock.withLock { _idPermits[id, default: 0] += 1 } }
 
-    /// Suspends until `calls.count >= count`, or fails after ~2 s. M3 (fix round 1): an unbounded
-    /// wait turns "the call never came" into a hang that only the per-test limit ends, with no
-    /// indication of which expectation was never met.
+    /// Suspends until `calls.count >= count`, or fails after a 10 s deadline (2000 polls, ~2 s, ran
+    /// out under load). M3 (fix round 1): an unbounded wait turns "the call never came" into a hang
+    /// that only the per-test limit ends, with no indication of which expectation was never met.
     func waitUntilCalled(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if calls.count >= count { return }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while calls.count < count, ContinuousClock.now < deadline {
             try? await Task.sleep(for: .milliseconds(1))
         }
         #expect(calls.count >= count, "resolver was called \(calls.count) times, expected \(count)",
@@ -117,12 +118,13 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // Captured HERE, not after the hold: a test that scripts a second answer while this call is
         // still held is describing the NEXT call's outcome, not retroactively this one's.
         let outcome = lock.withLock { () -> Outcome in
             _calls.append(Call(videoId: videoId, kind: kind, purpose: purpose,
-                               forceRefresh: forceRefresh, requiresMuxed: requiresMuxed))
+                               forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS))
             if kind == .prefetch, _prefetchRefusals.contains(videoId) {
                 return .failure(.cooldown(until: Date().addingTimeInterval(30)))
             }

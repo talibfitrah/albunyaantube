@@ -657,7 +657,7 @@ struct PlayerScreen: View {
 private struct FixtureHLSPlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -675,7 +675,7 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
 private struct FixtureAudioOnlyResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
@@ -694,7 +694,7 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
 private struct FixturePlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // B5: `-fitrah-fake-player-queue-dead`'s unplayable ids.
         if videoId.hasPrefix("dead-") { throw ExtractionError.unavailable(videoId: videoId) }
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
@@ -712,7 +712,7 @@ private struct FixturePlayerResolver: StreamResolving {
 private struct FixtureErrorResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.transport("fixture error")
     }
 
@@ -724,7 +724,7 @@ private struct FixtureErrorResolver: StreamResolving {
 private struct FixtureUnavailableResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.unavailable(videoId: videoId)
     }
 
@@ -736,7 +736,7 @@ private struct FixtureUnavailableResolver: StreamResolving {
 private struct FixtureCooldownResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
 
@@ -759,7 +759,7 @@ private actor FixtureLadderResolver: StreamResolving {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard demoted else {
             if forceRefresh { throw ExtractionError.transport("rung 1 re-resolved after its 401") }
             return Resolved(stream: .hls(url: rung1, isLive: false, audioOnlyURL: nil, captionTracks: []),

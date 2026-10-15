@@ -1017,7 +1017,7 @@ nonisolated struct ParkedOfflineEngine: OfflineEngine {
 nonisolated struct ParkedStreamResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(86_400))
     }
 

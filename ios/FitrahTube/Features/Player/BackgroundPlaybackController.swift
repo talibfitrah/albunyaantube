@@ -15,7 +15,9 @@ import UIKit
     /// Defaults to false so a controller nobody has told yet never decides a swap it cannot honour.
     var audioOnlyAvailable = false
     /// `PlayerHostView` performs the swap itself (through the VM's `audioOnly`). Left nil, the swap
-    /// actions only move this controller's own `autoSwappedToAudioOnly` flag.
+    /// actions only move this controller's own `autoSwappedToAudioOnly` flag. `.pause` reports every
+    /// pause this controller makes, the remote pause command's too (Cubic A6): a player a failure
+    /// already paused cannot show the host one.
     var onPolicyAction: ((PlaybackPolicyAction) -> Void)?
     /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
     /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
@@ -319,7 +321,9 @@ import UIKit
         // command that already has one.
         Self.transportCommands.forEach { $0.removeTarget(nil) }
         _ = center.playCommand.addTarget { [weak self] _ in self?.act { $0.play() } ?? .commandFailed }
-        _ = center.pauseCommand.addTarget { [weak self] _ in self?.act { $0.pause() } ?? .commandFailed }
+        _ = center.pauseCommand.addTarget { [weak self] _ in
+            self?.act { $0.pause(); self?.onPolicyAction?(.pause) } ?? .commandFailed
+        }
         _ = center.togglePlayPauseCommand.addTarget { [weak self] _ in
             self?.act { $0.timeControlStatus == .paused ? $0.play() : $0.pause() } ?? .commandFailed
         }

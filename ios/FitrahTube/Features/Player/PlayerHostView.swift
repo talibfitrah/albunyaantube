@@ -300,6 +300,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // whichever `Resolved` is current when it runs. Nothing is being pulled in the
             // meantime that the user did not ask for: the player is still on the audio rendition.
             model?.audioOnly = false
+        case .pause:
+            // Cubic A6: the controller has paused the player, but a failure already had, so a
+            // replacement built during its re-resolve cannot read this pause off the player. Drop
+            // the failure's resume intent instead: a stall's replacement follows the live state.
+            coordinator?.dropResumeIntent()
         default:
             return
         }
@@ -423,6 +428,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// replacement, which `observe` plays iff `PlaybackRecovery.shouldResume` said so (never for a
         /// stall: that replacement inherits the live player's state).
         private var resumeOnNextItem = false
+        /// A pause made while recovery's re-resolve is out (`applyPolicyAction(.pause)`, Cubic A6).
+        func dropResumeIntent() { resumeOnNextItem = false }
 
         /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
         /// `…DidStopPictureInPicture` knows it owes the deferred detach + player release.

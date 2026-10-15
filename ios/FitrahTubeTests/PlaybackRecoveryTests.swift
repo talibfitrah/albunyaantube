@@ -427,7 +427,7 @@ struct PlaybackRecoveryTests {
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                      sourceChannelId: String?, forceRefresh: Bool,
-                     requiresMuxed: Bool) async throws -> Resolved {
+                     requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             let index = calls.count
             calls.append(forceRefresh)
             log.append("resolve")
@@ -536,6 +536,37 @@ struct PlaybackRecoveryTests {
 
         for _ in 0..<RecoveryBudget.maxRetries - 1 {
             await vm.handleRecoveryEvent(.playbackError)               // the fallback flakes, plays again
+            vm.recordPlaybackProgress()
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+
+        #expect(vm.state == .recoveryExhausted(Self.progressive))
+        #expect(await resolver.demotions == ["abcdefghijk:visionos"])
+    }
+
+    /// R2-1 / Cubic A5: the resolver's demotion lasts the session, per video, so the guard above must
+    /// too. Retry used to reset it, and the fallback's next exhaustion demoted ANDROID over the slot:
+    /// the Retry after that walked straight back to the VISIONOS rung that had 401'd.
+    @Test @MainActor func aRetryKeepsTheStepDownGuardForTheSameVideo() async {
+        let fallbacks = Array(repeating: Result<Resolved, Error>.success(Self.progressive),
+                              count: 2 * RecoveryBudget.maxRetries + 2)
+        let resolver = FakeResolver([.success(Self.hls)] + fallbacks)
+        let vm = makeViewModel(resolver)
+        await vm.open()
+        vm.recordPlaybackProgress()
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)   // rung 1 refused: step down
+        vm.recordPlaybackProgress()
+        for _ in 0..<RecoveryBudget.maxRetries - 1 {
+            await vm.handleRecoveryEvent(.playbackError)               // the fallback flakes, plays again
+            vm.recordPlaybackProgress()
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+        #expect(vm.state == .recoveryExhausted(Self.progressive))
+
+        await vm.retry()                                                // the fallback again, fresh budget
+        vm.recordPlaybackProgress()
+        for _ in 0..<RecoveryBudget.maxRetries {
+            await vm.handleRecoveryEvent(.playbackError)
             vm.recordPlaybackProgress()
         }
         await vm.handleRecoveryEvent(.playbackError)
