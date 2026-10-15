@@ -21,6 +21,7 @@ import org.junit.Test
 import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
+import org.robolectric.shadows.ShadowLog
 import retrofit2.Response
 
 @RunWith(RobolectricTestRunner::class)
@@ -126,6 +127,20 @@ class PushDirtyTest {
             db.subscribedChannelDao().selectDirty("uid").any { it.channelId == "UC4" })
         assertFalse("the rows after it still push",
             db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    // fix 3: the class name alone hid where a failure came from; the log carries the throwable.
+    @Test fun pushFailureLogsTheThrowable() = runTest {
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        val failure = JsonDataException("Expected a long but was STRING")
+        api.putFavoriteResponse = { _, _ -> throw failure }
+
+        sm.pushDirty("uid")
+        sm.unbind()
+
+        assertTrue("the push failure log carries its throwable",
+            ShadowLog.getLogsForTag("SyncManager").any { it.throwable === failure })
     }
 
     @Test fun malformedPullBodyNeverThrowsFromBindOrPull() = runTest {

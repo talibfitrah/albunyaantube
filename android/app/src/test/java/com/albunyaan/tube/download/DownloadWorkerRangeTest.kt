@@ -256,6 +256,78 @@ class DownloadWorkerRangeTest {
         assertFalse(DownloadStorage(context).targetFile("lecture_1", audioOnly = true).exists())
     }
 
+    // fix 3 (Cubic P2): every 206's Content-Range is checked before a byte of it is written.
+
+    @Test
+    fun `a misaligned Content-Range restarts from byte 0 with a fresh URL`() = runTest {
+        var shifted = false
+        answer = { request ->
+            if (!shifted && request.getHeader("Range")!!.startsWith("bytes=$chunk-")) {
+                shifted = true
+                // One byte early: appended, it would shift the rest of the file.
+                val start = chunk.toInt() - 1
+                MockResponse().setResponseCode(206)
+                    .setHeader("Content-Range", "bytes $start-${body.lastIndex}/${body.size}")
+                    .setBody(Buffer().write(body, start, body.size - start))
+            } else googlevideo(request)
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertEquals("bytes=0-${chunk - 1}", gets[2].getHeader("Range"))
+        assertTrue("the restart uses the re-resolved URL", gets[2].path!!.endsWith("n=2"))
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    @Test
+    fun `a 206 that ends past the requested range is refused`() = runTest {
+        answer = {
+            val end = chunk.toInt() // one byte past bytes=0-(chunk-1)
+            MockResponse().setResponseCode(206)
+                .setHeader("Content-Range", "bytes 0-$end/${body.size}")
+                .setBody(Buffer().write(body, 0, end + 1))
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.NETWORK, result.outputData.getString(KEY_ERROR_REASON))
+        assertEquals("refused, not restarted", 1, gets.size)
+        assertFalse(DownloadStorage(context).targetFile("lecture_1", audioOnly = true).exists())
+    }
+
+    @Test
+    fun `a total that changes between chunks is refused, not saved short`() = runTest {
+        answer = { request ->
+            if (request.getHeader("Range")!!.startsWith("bytes=0-")) googlevideo(request)
+            else MockResponse().setResponseCode(206)
+                // A smaller total would make this 100-byte chunk the end of a truncated file.
+                .setHeader("Content-Range", "bytes $chunk-${chunk + 99}/${chunk + 100}")
+                .setBody(Buffer().write(body, chunk.toInt(), 100))
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("a changed total must not save: $result", result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.NETWORK, result.outputData.getString(KEY_ERROR_REASON))
+        assertFalse(DownloadStorage(context).targetFile("lecture_1", audioOnly = true).exists())
+    }
+
+    @Test
+    fun `a 206 without Content-Range is refused before writing`() = runTest {
+        answer = { request -> googlevideo(request).removeHeader("Content-Range") }
+        val progress = CopyOnWriteArrayList<Int>()
+
+        val result = runAudioOnlyDownload { _, data -> progress += data.getInt(KEY_PROGRESS, -1) }
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.NETWORK, result.outputData.getString(KEY_ERROR_REASON))
+        assertEquals(1, gets.size)
+        assertTrue("no byte of it was written: $progress", progress.isEmpty())
+    }
+
     // r2 M1 / stage 5 F3: a quick Pause then Resume.
 
     @Test

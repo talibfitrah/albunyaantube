@@ -457,11 +457,13 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> subs.clearDirty(uid, row.channelId, resp.updatedAt) },
                     on404    = { subs.clearDirty(uid, row.channelId, System.currentTimeMillis()) })
             } else {
-                push({ api.putSubscription(row.channelId, PutSubscriptionRequest(
+                // Built outside push(): a bug here is no transient failure (guarded logs it).
+                val request = PutSubscriptionRequest(
                     channelUrl     = row.channelUrl, name = row.name,
                     avatarUrl      = row.avatarUrl,  subscribedAt = row.subscribedAt,
                     approvalStatus = row.approvalStatus, source = row.source,
-                    importedAt     = row.importedAt)) },
+                    importedAt     = row.importedAt)
+                push({ api.putSubscription(row.channelId, request) },
                     onSuccess = { resp ->
                         // SYNC-ECHO-01 — archive-echo: if server projection
                         // says this row is virtually tombstoned (parent is
@@ -494,12 +496,13 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
                     on404    = { playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis()) })
             } else {
-                push({ api.putPlaylist(row.playlistId, PutPlaylistRequest(
+                val request = PutPlaylistRequest(
                     playlistUrl    = row.playlistUrl,  name         = row.name,
                     thumbnailUrl   = row.thumbnailUrl, uploaderName = row.uploaderName,
                     savedAt        = row.savedAt,
                     approvalStatus = row.approvalStatus, source = row.source,
-                    importedAt     = row.importedAt)) },
+                    importedAt     = row.importedAt)
+                push({ api.putPlaylist(row.playlistId, request) },
                     onSuccess = { resp ->
                         if (resp.deleted) {
                             playlists.applyTombstone(uid, row.playlistId, resp.updatedAt)
@@ -525,12 +528,13 @@ class SyncManager @Inject constructor(
                     onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
                     on404    = { favorites.clearDirty(uid, row.videoId, System.currentTimeMillis()) })
             } else {
-                push({ api.putFavorite(row.videoId, PutFavoriteRequest(
+                val request = PutFavoriteRequest(
                     title           = row.title,           channelName     = row.channelName,
                     thumbnailUrl    = row.thumbnailUrl,    durationSeconds = row.durationSeconds,
                     addedAt         = row.addedAt,
                     approvalStatus  = row.approvalStatus,  source          = row.source,
-                    importedAt      = row.importedAt)) },
+                    importedAt      = row.importedAt)
+                push({ api.putFavorite(row.videoId, request) },
                     onSuccess = { resp ->
                         if (resp.deleted) {
                             favorites.applyTombstone(uid, row.videoId, resp.updatedAt)
@@ -603,7 +607,7 @@ class SyncManager @Inject constructor(
         val resp = try { op() } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            android.util.Log.w("SyncManager", "Push failure (${e.javaClass.simpleName}) — retry on backoff")
+            android.util.Log.w("SyncManager", "Push failure — retry on backoff", e)
             return PushOutcome.TRANSIENT_FAILURE
         }
         return when {

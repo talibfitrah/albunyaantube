@@ -120,9 +120,9 @@ SUBSTITUTION_PLURALS = {"video_views", "live_watching_count", "live_waiting_coun
 # §6 dead keys. filter_length_/filter_date_/filter_sort_/locale_settings_ are safe blanket
 # prefixes (verified via grep: no live key matches them). list_/error_ are NOT safe blanket
 # prefixes -- each cluster is "dead except N keys" per §6, and those survivors
-# (list_error_title/description, error_title/unknown/state_generic_headline) are referenced from
+# (list_error_title/description, error_title/state_generic_headline) are referenced from
 # ChannelsFragmentNew.kt, PlaylistsFragmentNew.kt, VideosFragmentNew.kt, SearchFragment.kt,
-# DownloadsFragment.kt, PlayerFragment.kt, home_section_error.xml and error_state.xml -- verified
+# home_section_error.xml and error_state.xml -- verified
 # by grepping android/app/src/main/java + res/layout* for R.string./@string/ references. A blanket
 # prefix would silently drop live, phase-1-needed strings.
 DEAD_PREFIXES = ("filter_length_", "filter_date_", "filter_sort_", "list_", "locale_settings_", "error_",
