@@ -1,0 +1,32 @@
+android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerRangeTest.kt
+  s_dbb6b1f3671904::t_d08cf40da028bb 259-330
+android/app/src/main/java/com/albunyaan/tube/data/local/Migrations.kt
+  s_dbb6b1f3671904::t_3813eb156b9100 286-287
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_dbb6b1f3671904::t_15315d682cf5d9 99-101,267-270,275,500-503,521,528,530,545-547,549,551,553-557,598-610
+  s_dbb6b1f3671904::t_eb5f4e4b63593c 548,550,552,611
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dbb6b1f3671904::t_7b7332b43ca40d 610
+  s_dbb6b1f3671904::t_3813eb156b9100 460-461,465-466,499,504-505,531,536-537
+android/app/src/test/java/com/albunyaan/tube/data/sync/PushDirtyTest.kt
+  s_dbb6b1f3671904::t_d08cf40da028bb 24,132-143
+  s_dbb6b1f3671904::t_9e9ac97a775fd9 144-145
+ios/scripts/convert-strings.py
+  s_dbb6b1f3671904::t_3813eb156b9100 123,125
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9936c81b6dc5f2d377a3b39911fe2a3f9a9e1b59",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
