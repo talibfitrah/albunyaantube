@@ -440,7 +440,7 @@ final class ScreenshotTests: XCTestCase {
     func testShortsScreen() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "shorts",
-                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveLectureId],
                             anchor: .button("unused"))
         for locale in Self.locales {
             XCUIDevice.shared.orientation = .portrait
@@ -470,7 +470,7 @@ final class ScreenshotTests: XCTestCase {
     func testShortsKebab() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "shorts-kebab",
-                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveLectureId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
@@ -482,6 +482,64 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "shorts-kebab-open", into: directory)
     }
 
+    /// iOS pipeline stage 7 item 4 (stage 3b F2): auto-generated captions are drawn by the app, not
+    /// AVFoundation, so they must travel into every fullscreen -- the app's own on iPhone (landscape)
+    /// and AVKit's own presentation on iPad, the only fullscreen there. Captions stay OFF until a
+    /// language is picked. A live resolve is the only source of an auto-generated track, so this is
+    /// opt-in with the other live checks (SHORTS_LIVE=1); run it on iPhone and on iPad.
+    func testPlayerLiveAutoCaptionsInEveryFullscreen() throws {
+        try requireShortsLive()
+        let directory = try shotsDirectory()
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("captions-fullscreen-\(device).txt"),
+                                                         atomically: true, encoding: .utf8) }
+        let screen = Screen(key: "player-live-captions", arguments: ["-fitrah-route", "player", Self.liveLectureId],
+                            anchor: .button("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            let cc = app.buttons["player.captionsMenu.button"]
+            XCTAssertTrue(cc.waitForExistence(timeout: 60), "\(locale.key): CC button never appeared (resolve failed?)")
+            let cue = app.staticTexts["player.captionOverlay.text"]
+            XCTAssertFalse(cue.waitForExistence(timeout: 5), "\(locale.key): a cue showed before any pick (captions must start Off)")
+            cc.tap()
+            let auto = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'player.captionsOption.' AND NOT (identifier BEGINSWITH 'player.captionsOption.uploader.') AND identifier != 'player.captionsOption.off'"))
+                .firstMatch
+            XCTAssertTrue(auto.waitForExistence(timeout: 10), "\(locale.key): no auto-generated option")
+            notes.append("\(locale.key): picked \(auto.identifier) '\(auto.label)'")
+            auto.tap()
+            XCTAssertTrue(cue.waitForExistence(timeout: 45), "\(locale.key): no cue inline after the pick")
+            try write(named: "captions-\(device)-\(locale.key)-inline", into: directory)
+
+            if device == "ipad" {
+                let box = app.descendants(matching: .any)["player.videoBox"]
+                let video = box.exists ? box : app.windows.firstMatch
+                video.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()   // shows AVKit's controls
+                let fullscreen = app.buttons.matching(NSPredicate(
+                    format: "label CONTAINS[c] 'full screen' OR label CONTAINS[c] 'fullscreen' OR identifier CONTAINS[c] 'full'")).firstMatch
+                if !fullscreen.waitForExistence(timeout: 5) {
+                    notes.append("\(locale.key): buttons = " + app.buttons.allElementsBoundByIndex
+                        .map { "[\($0.identifier)|\($0.label)]" }.joined(separator: " "))
+                }
+                XCTAssertTrue(fullscreen.exists, "\(locale.key): AVKit's fullscreen button not found")
+                notes.append("\(locale.key): fullscreen button [\(fullscreen.identifier)|\(fullscreen.label)]")
+                fullscreen.tap()
+            } else {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                settle(app, landscape: true)
+            }
+            Thread.sleep(forTimeInterval: 2)   // the presentation's animation
+            let cueInFullscreen = cue.waitForExistence(timeout: 30)
+            notes.append("\(locale.key): cue in fullscreen=\(cueInFullscreen)\(cueInFullscreen ? " frame=\(cue.frame)" : "") window=\(app.windows.firstMatch.frame)")
+            try write(named: "captions-\(device)-\(locale.key)-fullscreen", into: directory)
+            XCTAssertTrue(cueInFullscreen, "\(locale.key): the auto-generated captions were lost in fullscreen")
+            XCUIDevice.shared.orientation = .portrait
+            app.terminate()
+        }
+    }
+
     // MARK: - Shared fixture ids
 
     /// Live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
@@ -490,7 +548,7 @@ final class ScreenshotTests: XCTestCase {
     /// curated lecture channels this app actually serves:
     ///   - `xc7keR2piUM`  the shared catalog lecture id (`LiveResolveTests.knownGoodVideoId`), 2h21m
     ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach the end without a long seek
-    private static let liveEmbeddableId = "xc7keR2piUM"
+    private static let liveLectureId = "xc7keR2piUM"
     private static let liveShortId = "16QZlP5da1Y"
 
     // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass
@@ -615,7 +673,7 @@ final class ScreenshotTests: XCTestCase {
         Screen(key: "shorts-b4-task4", arguments: arguments, anchor: .button("unused"))
     }
 
-    private static let shortsFixture = ["-fitrah-fake-player", "-fitrah-route", "shorts", liveEmbeddableId]
+    private static let shortsFixture = ["-fitrah-fake-player", "-fitrah-route", "shorts", liveLectureId]
 
     /// Everything the plan's Step 1 matrix can prove from XCUITest on an iPhone: frames (every tap
     /// target >= 44 pt, the 9:16 stage, the rail's edge in ar), the loop (30 s of scrubber samples
@@ -777,7 +835,7 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         // Channel row: absent through the id-only deep link.
-        app = launch(shortsScreen(["-fitrah-fake-player", "-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveEmbeddableId)"]),
+        app = launch(shortsScreen(["-fitrah-fake-player", "-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveLectureId)"]),
                      locale: Self.locales[0], extraArguments: [])
         XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 deeplink: like never appeared")
         XCTAssertFalse(app.buttons["shorts.channelHandle"].exists, "b4t4 deeplink: channel row must be absent without a channel name")
@@ -809,7 +867,7 @@ final class ScreenshotTests: XCTestCase {
         for (flag, name, retry) in [("-fitrah-fake-player-error", "error", true),
                                     ("-fitrah-fake-player-unavailable", "unavailable", false),
                                     ("-fitrah-fake-player-cooldown", "cooldown", false)] {
-            app = launch(shortsScreen([flag, "-fitrah-route", "shorts", Self.liveEmbeddableId]), locale: Self.locales[0], extraArguments: [])
+            app = launch(shortsScreen([flag, "-fitrah-route", "shorts", Self.liveLectureId]), locale: Self.locales[0], extraArguments: [])
             let message = name == "cooldown" ? app.staticTexts["player.state.countdown"] : app.staticTexts["player.state.message"]
             XCTAssertTrue(message.waitForExistence(timeout: 20), "b4t4 \(name): state message never appeared")
             XCTAssertEqual(app.buttons["player.state.retryButton"].exists, retry, "b4t4 \(name): Retry presence should be \(retry)")
@@ -937,7 +995,7 @@ final class ScreenshotTests: XCTestCase {
     func testPlayerLiveCaptionsGlyphAfterShortsGlyph() throws {
         try requireShortsLive()
         let directory = try shotsDirectory()
-        let screen = Screen(key: "player-live-glyph", arguments: ["-fitrah-route", "player", Self.liveEmbeddableId],
+        let screen = Screen(key: "player-live-glyph", arguments: ["-fitrah-route", "player", Self.liveLectureId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         for (name, extra) in [("en", [String]()), ("en-a11y3", Self.accessibility3)] {

@@ -127,11 +127,7 @@ private struct SavedRow: View {
     /// `.rung2Progressive` states — a `.player` push whose `offlineItemId` makes `PlayerScreen`
     /// build its VM over `OfflineResolver` (no network, reduced chrome).
     private func openCompleted() {
-        var args = PlayerArgs(videoId: item.videoId, title: item.title,
-                              channelName: item.channelName,
-                              thumbnailURL: item.thumbnailUrl.flatMap(URL.init))
-        args.offlineItemId = item.id
-        router.push(.player(args))
+        router.push(.player(PlayerArgs(offline: item)))
     }
 
     /// The row's bar is determinate only while bytes are actually moving toward a known total —
@@ -145,6 +141,17 @@ private struct SavedRow: View {
     private var caption: String {
         String(localized: String.LocalizationValue(
             SavedRowText.captionKey(status: status, errorCode: item.errorCode)))
+    }
+}
+
+extension PlayerArgs {
+    /// The offline player's args for a saved row: the `.player` route with `offlineItemId` set,
+    /// carrying the duration and channel name the save stamped (stage 5 F1), so the heart
+    /// favourites a real row rather than a 0:00 one with a blank channel.
+    init(offline item: OfflineItem) {
+        self.init(videoId: item.videoId, title: item.title, channelName: item.channelName,
+                  thumbnailURL: item.thumbnailUrl.flatMap(URL.init), durationSeconds: item.durationSeconds)
+        offlineItemId = item.id
     }
 }
 

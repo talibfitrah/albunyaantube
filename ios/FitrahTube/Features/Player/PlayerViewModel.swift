@@ -84,11 +84,9 @@ struct RateLimitedResolver: StreamResolving {
         // is gated even though it is never forced (B5, reconciliation note 7): a prefetch is the
         // non-forced resolve most likely to hit the network, and it is the one lane the limiter
         // exists to keep behind the interactive one.
-        // Owner directive 2026-10-14: `.autoRecovery` is never gated. Its budget is the player's own
-        // `RecoveryBudget`: 3 recovery resolves per stream, 3 more after its one refund on the first
-        // progress, plus one AirPlay mirror -- at most 7. A refusal here surfaced as a cooldown screen
-        // in the middle of a step-down that would have played (V2Brp_esIVI).
-        if (forceRefresh && kind != .autoRecovery) || kind == .prefetch {
+        // `.autoRecovery` is asked too and always allowed: `ExtractionRateLimiter.check` is the one
+        // place that rule lives (owner directive 2026-10-14).
+        if forceRefresh || kind == .prefetch {
             switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
             case .allowed:
                 break
@@ -291,7 +289,13 @@ extension StreamState {
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
     private var recoveryBudget = RecoveryBudget()
-    private var isRecovering = false
+    /// The recovery in progress, if any. A token rather than a flag (stage 5 F4): a recovery that a
+    /// user action superseded can stay suspended on the network for a long time (`Task.value` does
+    /// not end when its awaiter is cancelled), and the next video's one-shot failure must not be
+    /// dropped behind it. A fresh stream (`resolve(resetBudget: true)`) drops the claim, and the old
+    /// call's exit clears only its own.
+    private var recoveryToken: UUID?
+    private var isRecovering: Bool { recoveryToken != nil }
     /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
     /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
     /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
@@ -579,8 +583,9 @@ extension StreamState {
         // and while an advance's resolve is out `args` already names the NEXT video -- recovering
         // then would force-resolve that one on this lane and supersede the advance.
         guard !isRecovering, resolvedVideoId == args.videoId, let resolved = state.resolved else { return }
-        isRecovering = true
-        defer { isRecovering = false }
+        let token = UUID()
+        recoveryToken = token
+        defer { if recoveryToken == token { recoveryToken = nil } }
         // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
         // an item that failed while an external route was playing it is the plan's IP-binding
         // risk, not a broken stream. Drop external playback so the same re-resolve mirrors from
@@ -599,6 +604,12 @@ extension StreamState {
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
+            // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
+            // rung, so the budget can run out with nothing ever demoted. Demote the rung on screen
+            // first, so Retry starts at the next rung instead of walking the one that kept failing.
+            let myGeneration = generation
+            await resolver.demote(hostVideoId, failed: resolved.client)
+            guard myGeneration == generation else { return }
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
             // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
@@ -1034,8 +1045,12 @@ extension StreamState {
         let myGeneration = generation
         resolveTask?.cancel()
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
-        // one): hand it a full budget. Recovery's own re-resolves must not refill their own budget.
-        if resetBudget { recoveryBudget = RecoveryBudget() }
+        // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
+        // own re-resolves must not refill their own budget.
+        if resetBudget {
+            recoveryBudget = RecoveryBudget()
+            recoveryToken = nil
+        }
         if showLoading { state = .loading }
         let task = Task {
             await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh,

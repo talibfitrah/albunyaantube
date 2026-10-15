@@ -276,6 +276,40 @@ struct PlayerToolbarTests {
     @Test func theOfflinePlayerHidesTheCastSlotEvenWhenCastIsAvailable() {
         #expect(CastAffordance.isVisible(castAvailable: true, isOfflinePlayback: true) == false)
     }
+
+    // MARK: - The offline player's favourite (iOS pipeline stage 5 F1)
+
+    private func savedRow(channelName: String?, durationSeconds: Int?) -> OfflineItem {
+        OfflineItem(videoId: "xc7keR2piUM", title: "Lecture", channelName: channelName, thumbnailUrl: nil,
+                    qualityLabel: "360p", audioOnly: true, durationSeconds: durationSeconds)
+    }
+
+    /// A heart tapped in the offline player favourites the row's own duration and channel, not a
+    /// 0:00 card (or a blank channel the server refuses with 400).
+    @Test func aFavouriteFromTheOfflinePlayerCarriesTheSavedDurationAndChannel() {
+        let row = savedRow(channelName: "Channel", durationSeconds: 754)
+        let args = PlayerArgs(offline: row)
+        #expect(args.offlineItemId == row.id)
+        let store = FakeFavoritesStore()
+
+        _ = FavoriteToggle.perform(item: args.contentItem, wasFavorite: false, store: store)
+
+        #expect(store.toggledItems.first?.durationSeconds == 754)
+        #expect(store.toggledItems.first?.channelTitle == "Channel")
+    }
+
+    /// A row saved before the duration column (or with no channel name) cannot make a valid
+    /// favourite, so the offline player hides the heart for it. Online, nothing changes.
+    @Test func theOfflinePlayerHidesTheHeartForARowThatCannotMakeAValidFavourite() {
+        let full = PlayerArgs(offline: savedRow(channelName: "Channel", durationSeconds: 754))
+        #expect(FavoriteAffordance.isVisible(args: full, isOfflinePlayback: true))
+        for row in [savedRow(channelName: "Channel", durationSeconds: nil),
+                    savedRow(channelName: nil, durationSeconds: 754),
+                    savedRow(channelName: " ", durationSeconds: 754)] {
+            #expect(!FavoriteAffordance.isVisible(args: PlayerArgs(offline: row), isOfflinePlayback: true))
+        }
+        #expect(FavoriteAffordance.isVisible(args: PlayerArgs(videoId: "xc7keR2piUM"), isOfflinePlayback: false))
+    }
 }
 
 /// Minimal `FavoritesStore` fake -- `items`/`clearAll` are unused by `FavoriteToggle`, present
@@ -390,7 +424,10 @@ struct PlayerToolbarLayoutTests {
         let container = AppContainer.fake(
             defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
         func width(offline: Bool) -> CGFloat {
-            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout"),
+            // A duration and a channel, so the offline player keeps its heart (stage 5 F1) and the
+            // cast slot is the only thing that can differ.
+            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout", channelName: "Channel",
+                                                         durationSeconds: 754),
                                         saveGate: nil, saveEnabled: true, isOfflinePlayback: offline)
                 .environment(\.container, container)
             return ImageRenderer(content: toolbar).uiImage?.size.width ?? 0

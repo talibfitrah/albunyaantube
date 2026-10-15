@@ -62,7 +62,7 @@ struct SignInViewModelTests {
         let model = SignInViewModel(auth: auth, session: session,
                                     account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base,
                                                            deviceId: DeviceId(value: "dev-1")),
-                                    capabilities: Self.allCapabilities)
+                                    capabilities: Self.allCapabilities, isOnline: { true })
         model.email = "other@fitrah.test"
         model.password = "hunter2"
 

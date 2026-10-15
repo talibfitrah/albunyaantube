@@ -240,17 +240,17 @@ struct PlayerScreen: View {
         return await fetch()
     }
 
-    /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
-    /// `PlayerStateViewTests` can pin it: `.onChange` can't be asked.
-    ///
-    /// 1.0.3 R3: never for an `offline` open. A saved file is one rendition the extraction ladder
-    /// never walked, so the rung pill is hidden there (`stateView`) and its sentence is silent too.
     /// What `rungAnnouncements` says for `model`'s current state: the one entry both player screens
     /// use, so the offline flag cannot be left off at a call site (round 1 / M3).
     static func transitionAnnouncement(of model: PlayerViewModel?) -> String? {
         transitionAnnouncement(for: model?.state, offline: model?.isOfflinePlayback ?? false)
     }
 
+    /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
+    /// `PlayerStateViewTests` can pin it: `.onChange` can't be asked.
+    ///
+    /// 1.0.3 R3: never for an `offline` open. A saved file is one rendition the extraction ladder
+    /// never walked, so the rung pill is hidden there (`stateView`) and its sentence is silent too.
     static func transitionAnnouncement(for state: StreamState?, offline: Bool = false) -> String? {
         if offline { return nil }
         switch state {
@@ -281,7 +281,7 @@ struct PlayerScreen: View {
         // dropping the `AVPlayer` whose `currentTime()` is the only thing carrying the position
         // over (`PlayerHostView.player(for:replacing:)`). Sharing the branch keeps one host across
         // the demotion; the rung-specific chrome differs inside it.
-        case .ready(let resolved), .rung2Progressive(let resolved):
+        case .ready, .rung2Progressive:
             let isRung1 = Self.isRung1(state)
             // B5 Task 3 / ruling C: fullscreen is a MODIFIER change on this one tree, never a second
             // `PlayerHostView` placement and never a `.fullScreenCover` -- both would be a second
@@ -307,14 +307,8 @@ struct PlayerScreen: View {
                                 .frame(width: 1, height: 1).allowsHitTesting(false)
                         }
                         #endif
-                        // A mid-play rung-2 demotion empties the tracks and
-                        // hides the captions menu -- but the pick survives (session-only
-                        // state, deliberately), so the overlay used to keep rendering cues with no
-                        // menu left to turn them off. Render only a pick the CURRENT video
-                        // still offers. The resolve's own User-Agent goes on the cue fetch.
-                        if let track = CaptionsMenu.overlayTrack(model) {
-                            CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent)
-                        }
+                        // The auto-generated captions are drawn inside the host itself
+                        // (`PlayerHostView.HostedCaptions`), so they travel into AVKit's fullscreen.
                         VStack(alignment: .trailing, spacing: 8) {
                             // B5 Task 3: FIRST in this same column so it never overlaps the
                             // controls below, which stay available in fullscreen. Ruling 45's first
@@ -602,8 +596,9 @@ struct PlayerScreen: View {
     /// lands on both screens.
     static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
-        // Playback hardening (plan Task 7): rung 1 at a local server that answers HTTP 401, rung 2
-        // the bundled clip -- the step-down proof, with no network beyond localhost.
+        // Playback hardening (plan Task 7): both rungs on `screenshots.sh`'s local server -- rung 1
+        // serves its playlist and two segments, then answers HTTP 401; rung 2 is `rung2/master.m3u8`
+        // (`FixtureLadderResolver`) -- the step-down proof, with no network beyond localhost.
         if let i = LaunchArguments.debug.firstIndex(of: "-fitrah-fake-player-rung1-401"),
            LaunchArguments.debug.indices.contains(i + 1), let url = URL(string: LaunchArguments.debug[i + 1]) {
             return FixtureLadderResolver(rung1: url)

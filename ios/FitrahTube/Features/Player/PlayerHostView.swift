@@ -57,6 +57,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
         applyRecoveryObservers(to: controller, context: context)
+        installCaptionOverlay(in: controller, context: context)
         // Reconciliation note 1 / spec §10 "implemented as an overlay on the content view".
         // The delegate's `shouldRecognizeSimultaneouslyWith` returning true is what keeps plan §6.5's
         // rule true: AVKit's single tap still toggles its controls, because our recognizer neither
@@ -108,6 +109,43 @@ struct PlayerHostView: UIViewControllerRepresentable {
         applyAudioLanguageHandoff(to: controller)
         applyCaptionsHandoff(to: controller)
         applyRecoveryObservers(to: controller, context: context)
+    }
+
+    /// Stage 7 item 4 (stage 3b F2): the auto-generated captions are the app's own drawing, so they
+    /// live in AVKit's `contentOverlayView` -- the layer between the video and AVKit's controls, which
+    /// goes with the controller into AVKit's own fullscreen (the iPad's only one). A SwiftUI sibling
+    /// of this host stayed behind in the inline tree there, and the cues vanished. Never interactive,
+    /// so AVKit's taps still reach its controls. `ShortsScreen` has no AVKit chrome and mounts its own,
+    /// with its own clearance.
+    ///
+    /// Deliberately NOT a child view controller: AVKit moves this overlay into its own fullscreen
+    /// controller, and a child of `AVPlayerViewController` there fails UIKit's hierarchy check
+    /// (`UIViewControllerHierarchyInconsistency`, SIGABRT on the iPad simulator). The coordinator
+    /// keeps the hosting controller alive instead.
+    private func installCaptionOverlay(in controller: AVPlayerViewController, context: Context) {
+        guard presentation == .standard, let overlay = controller.contentOverlayView else { return }
+        let host = UIHostingController(rootView: HostedCaptions(model: model))
+        host.view.backgroundColor = .clear
+        host.view.isUserInteractionEnabled = false
+        host.view.frame = overlay.bounds
+        host.view.autoresizingMask = [.flexibleWidth, .flexibleHeight]
+        overlay.addSubview(host.view)
+        context.coordinator.captionHost = host
+    }
+
+    /// What `contentOverlayView` hosts. It reads the model itself (`@Observable`), so a pick, Off,
+    /// a rung change or audio-only re-renders it without an update pass. A mid-play rung-2 demotion
+    /// empties the tracks and hides the captions menu, but the pick survives (session-only state,
+    /// deliberately), so only a pick the CURRENT video still offers is drawn (`overlayTrack`). The
+    /// resolve's own User-Agent goes on the cue fetch.
+    struct HostedCaptions: View {
+        let model: PlayerViewModel
+
+        var body: some View {
+            if let resolved = model.state.resolved, let track = CaptionsMenu.overlayTrack(model) {
+                CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent)
+            }
+        }
     }
 
     /// B5: whether this pass is still the same video the coordinator last built for. False on an
@@ -320,11 +358,16 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// players, including real stalls from a localhost server (Task 7 fix rounds 2-3).
     @MainActor final class Coordinator: NSObject, AVPlayerViewControllerDelegate, UIGestureRecognizerDelegate {
         private(set) var path: NWPath
+        /// The sampler's "is there a network" input: the path monitor's answer. Settable so a host
+        /// test against a localhost server does not depend on the test machine's own network (N2).
+        lazy var isOnline: () -> Bool = { [unowned self] in self.path.status == .satisfied }
         /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
         /// fullscreen flag, written on every update pass.
         var doubleTap: UITapGestureRecognizer?
         var isFullscreen = false
         var seekFeedbackTask: Task<Void, Never>?
+        /// The auto-generated captions' host in `contentOverlayView` (`installCaptionOverlay`).
+        var captionHost: UIViewController?
         private let monitor = NWPathMonitor()
 
         /// The audio session / background-playback owner (CF-B1-1). Lives here rather than in the
@@ -661,7 +704,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // usable network a recovery's re-resolve fails at once; AVPlayer resumes by itself.
             let tick = watchdog.tick(playbackTime: player.currentTime().seconds, bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
-                                     isLive: isLive, isOnline: path.status == .satisfied, now: Date())
+                                     isLive: isLive, isOnline: isOnline(), now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
             if tick.fire { fire(.stall) }
         }

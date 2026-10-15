@@ -10,7 +10,8 @@ nonisolated enum OfflineStatus: String, CaseIterable, Sendable {
 
 /// `OfflineItem` was declared inside the version that introduced it (`7471ea99`); V5 aliases that
 /// FROZEN shape. V6 (CF-A-50, Task 41) re-declares it below with an owner column, V7 (offline review
-/// P1) with a channel column, and `OfflineItem` at file scope is the V7 type (`FavoriteVideo.swift`).
+/// P1) with a channel column, V8 (iOS pipeline F1) with a duration column, and `OfflineItem` at file
+/// scope is the V8 type (`FavoriteVideo.swift`).
 extension FavoritesSchemaV4 {
     /// One saved copy of one video (Phase 3 Task 3; spec §11 item shape + `resumeData`).
     ///
@@ -176,6 +177,62 @@ extension FavoritesSchemaV7 {
             self.completedAt = completedAt
             self.userId = userId
             self.channelId = channelId
+        }
+    }
+}
+
+/// iOS pipeline stage 5 F1: the V7 shape plus `durationSeconds` — the streaming player's duration,
+/// stamped at save time with the channel name it already carried, so a favourite made from the offline
+/// player is a real row (the backend refuses a blank channel, and a 0 drew "0:00"). Rows written before
+/// V8 migrate with nil, and the offline player hides the heart for them (`FavoriteAffordance`).
+extension FavoritesSchemaV8 {
+    @Model final class OfflineItem {
+        #Unique<OfflineItem>([\.videoId])
+
+        var id: String
+        var videoId: String
+        var title: String
+        var channelName: String?
+        var thumbnailUrl: String?
+        var qualityLabel: String
+        var audioOnly: Bool
+        var status: String
+        var bytesWritten: Int64
+        var totalBytes: Int64?
+        var errorCode: String?
+        var localPath: String?
+        var resumeData: Data?
+        var createdAt: Date
+        var completedAt: Date?
+        var userId: String = ""
+        var channelId: String? = nil
+        /// The PROPERTY initializer is the migration default, as `channelId`'s is at V7.
+        var durationSeconds: Int? = nil
+
+        init(videoId: String, title: String, channelName: String?, thumbnailUrl: String?,
+             qualityLabel: String, audioOnly: Bool, id: String = UUID().uuidString,
+             status: String = OfflineStatus.queued.rawValue, bytesWritten: Int64 = 0,
+             totalBytes: Int64? = nil, errorCode: String? = nil, localPath: String? = nil,
+             resumeData: Data? = nil, createdAt: Date = Date(), completedAt: Date? = nil,
+             userId: String = "", channelId: String? = nil, durationSeconds: Int? = nil) {
+            self.videoId = videoId
+            self.title = title
+            self.channelName = channelName
+            self.thumbnailUrl = thumbnailUrl
+            self.qualityLabel = qualityLabel
+            self.audioOnly = audioOnly
+            self.id = id
+            self.status = status
+            self.bytesWritten = bytesWritten
+            self.totalBytes = totalBytes
+            self.errorCode = errorCode
+            self.localPath = localPath
+            self.resumeData = resumeData
+            self.createdAt = createdAt
+            self.completedAt = completedAt
+            self.userId = userId
+            self.channelId = channelId
+            self.durationSeconds = durationSeconds
         }
     }
 }

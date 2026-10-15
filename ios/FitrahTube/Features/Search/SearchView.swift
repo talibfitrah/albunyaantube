@@ -93,7 +93,7 @@ struct SearchView: View {
                 EmptyStateView(
                     systemImage: "magnifyingglass",
                     title: String(localized: "search_no_results"),
-                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.lastSearchedQuery)
+                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.shownQuery ?? "")
                 )
             case .error:
                 // RULINGS #23: Android has no retry button on search error; this one does.
@@ -119,13 +119,10 @@ struct SearchView: View {
         .frame(maxWidth: .infinity, maxHeight: .infinity)
     }
 
-    /// Spec §6: the list stays while a newer search loads; this says one is running. It lives in the
-    /// navigation bar, not in the content, so starting or ending a search never moves or covers the
-    /// list (owner: smooth typing). Only meaningful over results -- a stale `isSearching` is ignored.
-    private var showsSearchingIndicator: Bool {
-        guard let viewModel, viewModel.isSearching, case .results = viewModel.state else { return false }
-        return true
-    }
+    /// Spec §6: the answer on screen stays while a newer search loads; this says one is running. It
+    /// lives in the navigation bar, not in the content, so starting or ending a search never moves or
+    /// covers the list (owner: smooth typing).
+    private var showsSearchingIndicator: Bool { viewModel?.isSearching == true }
 
     /// Spec §6: shown when the best match was approximate or related (`X-Search-Match`).
     private var closestResultsNote: some View {

@@ -53,15 +53,47 @@ struct AppContainerTests {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
         let bytes = Data("a locked store, unreadable here".utf8)
-        try bytes.write(to: url)
+        try Self.writeLocked(bytes, to: url)
         defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
 
         let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url, protectedDataAvailable: { false })
 
-        #expect((try? Data(contentsOf: url)) == bytes, "the store was deleted while protected data was unavailable")
+        #expect(Self.unlockedBytes(url) == bytes, "the store was deleted while protected data was unavailable")
         // Fail soft: this launch runs on a usable stand-in, never a trap.
         let inMemory = container.configurations.allSatisfy { $0.isStoredInMemoryOnly }
         #expect(inMemory, "the fallback reopened the on-disk store")
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+    }
+
+    /// The simulator has no Data Protection, so a store the device has not unlocked yet is stood in
+    /// for by one whose `open(2)` is refused the same way (`EACCES` for a file with no permissions;
+    /// a locked one answers `EPERM`).
+    private static func writeLocked(_ bytes: Data, to url: URL) throws {
+        try bytes.write(to: url)
+        try FileManager.default.setAttributes([.posixPermissions: 0], ofItemAtPath: url.path)
+    }
+
+    private static func unlockedBytes(_ url: URL) -> Data? {
+        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: url.path)
+        return try? Data(contentsOf: url)
+    }
+
+    /// Stage 5 P2: ONE definition of "unreadable" for the store guard and the readiness gate. On an
+    /// unlocked device the gate lets a refused store through, and the guard used to call the same
+    /// store unreadable: an in-memory stand-in on every launch, nothing persisted, nothing repaired.
+    /// With protected data available a store that will not open is corrupt, and is rebuilt.
+    @Test func anUnlockedDeviceRebuildsAStoreItCannotOpen() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        try Self.writeLocked(Data("not a store".utf8), to: url)
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+
+        let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url, protectedDataAvailable: { true })
+
+        #expect(container.configurations.allSatisfy { !$0.isStoredInMemoryOnly }, "the guard parked the store in memory")
         let context = ModelContext(container)
         context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
         try context.save()
@@ -137,7 +169,45 @@ struct AppContainerTests {
         flag.value = true
         await Self.readiness(flag, NotificationCenter()).wait()
         let missing = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("no-store-\(UUID().uuidString)")
-        #expect(AppContainer.storeIsReadable(missing), "a store not created yet is no reason to wait")
+        #expect(AppContainer.storeIsReadable(missing, protectedDataAvailable: { false }), "a store not created yet is no reason to wait")
+    }
+
+    /// Stage 3c S3-2: the App body builds the gate on every pass (scene phase, connectivity), and
+    /// the live check opened the SQLite file each time. Readable once is readable for the life of
+    /// the process, so the check is asked until it first says yes and never after.
+    @Test func theReadinessCheckStopsAskingOnceTheStoreIsReadable() {
+        let flag = ReadableFlag()
+        var probes = 0
+        let readiness = StoreReadiness.once { probes += 1; return flag.value }
+        #expect(!readiness.isReadable())
+        #expect(!readiness.isReadable())
+        flag.value = true
+        #expect(readiness.isReadable())
+        #expect(probes == 3)
+
+        flag.value = false
+        #expect(readiness.isReadable(), "readable once is readable for good")
+        #expect(probes == 3, "the store was probed again after it was readable")
+    }
+
+    /// Stage 3c S3-1: a process that had to wait for the first unlock started Firebase before its
+    /// Keychain could be read, and Firebase re-reads it only on `protectedDataDidBecomeAvailable`,
+    /// which such a process may never be handed (the M5 premise). Its first "signed out" is stale
+    /// even once protected data is available, so the session must not clear the offline record on
+    /// it. A process that never waited keeps the rule as it was.
+    @Test func aProcessThatWaitedForTheFirstUnlockKeepsTheRecordOnFirebasesSignedOut() async {
+        let container = AppContainer.fake()
+        let center = NotificationCenter(), flag = ReadableFlag()
+        container.storeReadiness = Self.readiness(flag, center)
+        #expect(container.signedOutMayClearRecord(), "a process that never waited trusts Firebase")
+
+        let waiting = Task { await container.storeReadiness.wait() }
+        for _ in 0..<100 { await Task.yield() }
+        flag.value = true
+        center.post(name: UIApplication.didBecomeActiveNotification, object: nil)
+        await waiting.value
+
+        #expect(!container.signedOutMayClearRecord(), "Firebase's stale signed-out would delete the record")
     }
 
     /// Round 1 / I1: the SCENE path. Before the first unlock a scene can connect in the background
@@ -162,7 +232,10 @@ struct AppContainerTests {
 
         flag.value = true
         center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
-        for _ in 0..<100 where !probe.appeared { try await Task.sleep(for: .milliseconds(20)) }
+        // Stage 3c S3-4: a deadline (`OfflineLaunchTests.waitUntil`'s 10 s), not 100 fixed polls: a
+        // hosted render can take longer than 2 s on a loaded machine with nothing wrong.
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !probe.appeared, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(20)) }
         #expect(probe.appeared, "the content never rendered once the store was readable")
     }
 
@@ -200,13 +273,13 @@ struct AppContainerTests {
         let url = URL(fileURLWithPath: NSTemporaryDirectory())
             .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
         let bytes = Data("a locked store, unreadable here".utf8)
-        try bytes.write(to: url)
+        try Self.writeLocked(bytes, to: url)
         defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
 
         let container = AppContainer.live(storeURL: url, protectedDataAvailable: { false })
         _ = container.offlineStore   // the first store use opens it
 
-        #expect((try? Data(contentsOf: url)) == bytes, "the live container deleted a store it could not read")
+        #expect(Self.unlockedBytes(url) == bytes, "the live container deleted a store it could not read")
     }
 
     /// Cubic P1: a background-events relaunch calls the AppDelegate hook and renders NO scene, so

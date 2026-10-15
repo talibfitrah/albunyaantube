@@ -256,6 +256,19 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         return Int64(header[header.index(after: slash)...].trimmingCharacters(in: .whitespaces))
     }
 
+    /// Stage 3c S4-1: whether a 206's `Content-Range` fits the chunk asked for -- `bytes a-b/total`
+    /// with `a` the requested offset, `b >= a`, and a total that is `*` (unknown; the walk then fails
+    /// resumably after writing, see `didFinishDownloadingTo`) or a size past `b`. Anything else,
+    /// a missing header included, is network input the walk cannot place, and is never written.
+    nonisolated static func contentRange(_ header: String?, fits offset: Int64) -> Bool {
+        guard let header, header.hasPrefix("bytes "), let slash = header.lastIndex(of: "/") else { return false }
+        let span = header[header.index(header.startIndex, offsetBy: 6)..<slash].split(separator: "-", omittingEmptySubsequences: false)
+        guard span.count == 2, let start = Int64(span[0]), let end = Int64(span[1]),
+              start == offset, end >= start else { return false }
+        let total = header[header.index(after: slash)...]
+        return total == "*" || Int64(total).map { $0 > end } == true
+    }
+
     /// `bytes=10485760-20971519` → 10485760 (the chunk's own start, i.e. the `.tmp` size it appends to).
     nonisolated static func offset(fromRangeHeader header: String?) -> Int64 {
         guard let header, let equals = header.firstIndex(of: "="),
@@ -328,6 +341,14 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             return
         }
         let expectedOffset = Self.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
+        // Stage 3c S4-1: a 206 that does not start where this chunk was asked to, or whose total is
+        // no real size past its own end, is never written -- appended, it corrupts the media; a
+        // `/0` or `/-1` total called a 5-byte prefix a saved file. It fails through the resumable
+        // arm instead (the partial untouched, the token kept), as a transport failure would.
+        if status != 200, !Self.contentRange(response?.value(forHTTPHeaderField: "Content-Range"), fits: expectedOffset) {
+            continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
+            return
+        }
         do {
             try OfflineManager.prepareDirectory(directory)
             let partial = partialURL(id)
@@ -364,9 +385,9 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // so this is "says nothing", not "did nothing".
             guard isCurrent(id, generation) else { return }
             continuation.yield(.progress(id: id, bytesWritten: written, totalBytes: total))
-            // No parseable total (missing `Content-Range`, or `bytes 0-x/*` from a proxy or CDN
-            // edge that strips the length): the walk cannot know it is done, and calling a 10 MB
-            // partial `.finished` renames it to the final file and shows the row as saved. Fail
+            // No parseable total (`bytes 0-x/*` from a proxy or CDN edge that strips the length; a
+            // missing `Content-Range` never gets here): the walk cannot know it is done, and calling
+            // a 10 MB partial `.finished` renames it to the final file and shows the row as saved. Fail
             // with the resume token instead — the `.tmp` stays, so a retry continues from it.
             guard let total else {
                 continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))

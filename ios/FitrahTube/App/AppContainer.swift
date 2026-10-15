@@ -520,7 +520,17 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    // path, so the deletion needs no wiring of its own.
                                                    sync: sync,
                                                    records: accountRecords,
-                                                   protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+                                                   protectedDataAvailable: { [weak self] in self?.signedOutMayClearRecord() ?? false })
+
+    /// Stage 3c S3-1: whether Firebase's "signed out" with no user may clear the offline record. Not
+    /// while protected data is unavailable (Firebase cannot read its Keychain), and not for the rest
+    /// of a process that had to wait for the first unlock: Firebase read no Keychain at its launch and
+    /// re-reads it only on `protectedDataDidBecomeAvailable`, which such a process may never be handed
+    /// (the M5 premise), so its "signed out" stays stale after the unlock. A signed-in user keeps the
+    /// record, and with it offline access at the next launch.
+    func signedOutMayClearRecord() -> Bool {
+        UIApplication.shared.isProtectedDataAvailable && !storeReadiness.waitedForUnlock
+    }
 
     /// The offline-launch record (`AccountRecordStore`). A fixture gets none, so no test or preview
     /// routes on a record another one wrote; the screenshot rig's `-fitrah-fake-auth` launches get
@@ -834,13 +844,19 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
 
     /// The on-disk store `makeModelContainer(inMemory: false)` opens.
     static var liveStoreURL: URL {
-        ModelConfiguration(schema: Schema(versionedSchema: FavoritesSchemaV7.self), isStoredInMemoryOnly: false).url
+        ModelConfiguration(schema: Schema(versionedSchema: FavoritesSchemaV8.self), isStoredInMemoryOnly: false).url
     }
 
-    /// 1.0.3 R5 (L1): whether the store file can be opened now. Its class is the app default,
+    /// 1.0.3 R5 (L1): whether the store can be read now -- the ONE definition the readiness gate and
+    /// the store guard in `makeModelContainer` share (stage 5 P2). Its class is the app default,
     /// "until first user authentication": before the first unlock after a reboot, `open(2)` refuses it
-    /// with a permission error, which is not corruption. A store not created yet is no reason to wait.
-    nonisolated static func storeIsReadable(_ url: URL) -> Bool {
+    /// with a permission error, which is not corruption. Protected data available is the other way
+    /// through, so a permission error on an unlocked device never parks anything and a store that
+    /// will not open there is treated as corrupt. Asked first, so on an unlocked device (every normal
+    /// launch) the file is never opened here (stage 3c S3-2). A store not created yet is no reason to
+    /// wait.
+    nonisolated static func storeIsReadable(_ url: URL, protectedDataAvailable: () -> Bool) -> Bool {
+        if protectedDataAvailable() { return true }
         let fd = open(url.path, O_RDONLY)
         if fd >= 0 { close(fd); return true }
         return errno != EPERM && errno != EACCES
@@ -862,7 +878,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// 1.0.3 R5 (L1), see the deletion below.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil,
                                    protectedDataAvailable: () -> Bool = { true }) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV7.self)
+        let schema = Schema(versionedSchema: FavoritesSchemaV8.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {
@@ -882,9 +898,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             // first unlock after a reboot its data-protection class keeps it shut (Core Data:
             // SQLITE_AUTH), and a launch there (a background-session event, say) used to
             // delete the Saved library, favorites and subscriptions as if corrupt. Fail soft: the
-            // in-memory stand-in below, the store untouched for the next launch.
-            let unreadable = !protectedDataAvailable() || !storeIsReadable(configuration.url)
-            if !inMemory, !unreadable {
+            // in-memory stand-in below, the store untouched for the next launch. "Unreadable" is
+            // the readiness gate's own definition (stage 5 P2), so the two never disagree.
+            if !inMemory, storeIsReadable(configuration.url, protectedDataAvailable: protectedDataAvailable) {
                 // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
                 // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
                 // suffixing the database *filename*, so the wrongly-named deletes left the real
@@ -1018,16 +1034,33 @@ extension EnvironmentValues {
 /// it. The store's class is the app default ("until first user authentication"), so before the first
 /// unlock after a reboot it cannot be read; a launch there (a background-session event, a scene
 /// connected in the background) must not open it, because the stand-in it would get instead is
-/// empty and stays for the life of the process. Readable = the store file opens
-/// (`AppContainer.storeIsReadable`), or protected data is available — the second way through, so a
-/// permission error on an unlocked device never parks anything.
+/// empty and stays for the life of the process. Readable = `AppContainer.storeIsReadable`.
 @MainActor struct StoreReadiness {
     var isReadable: () -> Bool
     var center: NotificationCenter = .default
+    /// Stage 3c S3-1: whether a `wait()` here had to block -- this process started before the first
+    /// unlock (`AppContainer.signedOutMayClearRecord`). A reference, so every copy of this value (the
+    /// scene gate's, the background hook's) records into the container's one.
+    let waits = WaitRecord()
+    var waitedForUnlock: Bool { waits.blocked }
+
+    @MainActor final class WaitRecord { fileprivate(set) var blocked = false }
 
     static var live: StoreReadiness {
-        StoreReadiness(isReadable: {
-            AppContainer.storeIsReadable(AppContainer.liveStoreURL) || UIApplication.shared.isProtectedDataAvailable
+        .once {
+            AppContainer.storeIsReadable(AppContainer.liveStoreURL,
+                                         protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+        }
+    }
+
+    /// Stage 3c S3-2: the App body builds the scene gate on every pass (scene phase, connectivity),
+    /// and each built one asks. Readable once is readable for the life of the process (the store's
+    /// class never locks again), so `check` is asked until it first says yes and never after.
+    static func once(_ check: @escaping () -> Bool) -> StoreReadiness {
+        var readable = false
+        return StoreReadiness(isReadable: {
+            readable = readable || check()
+            return readable
         })
     }
 
@@ -1042,6 +1075,7 @@ extension EnvironmentValues {
             .map { center.addObserver(forName: $0, object: nil, queue: nil) { _ in wake.yield() } }
         defer { tokens.forEach { center.removeObserver($0) } }
         guard !isReadable() else { return }
+        waits.blocked = true
         for await _ in wakes where isReadable() { return }
     }
 }

@@ -668,7 +668,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         }
     }
 
-    /// R1's timer: after `launchBound`, a round still loading for `uid` routes on its saved record.
+    /// R1's timer: after `launchMeBound`, a round still loading for `uid` routes on its saved record.
     /// Guarded on the identity and on `.loading`, so a round that answered, failed or was dropped
     /// in the meantime is never overwritten.
     private func launchFallback(for uid: String?) -> Task<Void, Never>? {

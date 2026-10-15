@@ -243,6 +243,26 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Stage 5 F4: a recovery an Up Next tap superseded can stay suspended on the network for a
+    /// long time (a `Task.value` does not end when its awaiter is cancelled). Its claim on the
+    /// recovery slot ends with the tap, so the next video's one-shot failure is still recovered.
+    @Test(.timeLimit(.minutes(1))) func aSupersededRecoveryDoesNotSwallowTheNextVideosFailure() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        let gate = Gate()
+        resolver.demoteGate = gate
+        let recovering = Task { await vm.handleRecoveryEvent(.playbackError, httpStatus: 401) }
+        await gate.waitUntilBlocked()                      // a's recovery hangs inside `demote`
+        await vm.play(at: 1)                               // the user taps "b", which plays
+
+        await vm.handleRecoveryEvent(.playbackError)       // b's item fails once (no status: same rung)
+
+        #expect(resolver.calls.contains { $0.videoId == "b" && $0.kind == .autoRecovery },
+                "b's failure was dropped behind a's superseded recovery")
+        await gate.release()
+        await recovering.value
+    }
+
     /// Final review M1(b): the outgoing item dies while an auto-advance's resolve is out. That
     /// failure belongs to the video `state` still shows, not to the one `args` now names, so
     /// recovery must not force-resolve the NEXT video on the `.autoRecovery` lane and supersede the

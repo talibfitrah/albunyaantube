@@ -501,6 +501,27 @@ struct PlaybackRecoveryTests {
         #expect(await resolver.calls.count == 1 + RecoveryBudget.maxRetries) // the 4th spends no network call
     }
 
+    /// Stage 3b F1: with no CDN status the class rule re-resolves the same rung, and progress
+    /// between failures clears the same-rung allowance, so a stream that keeps failing after it
+    /// plays never stepped down. Exhaustion demotes the rung on screen first, so Retry starts at
+    /// the next rung instead of walking the one that kept failing.
+    @Test @MainActor func exhaustionDemotesTheRungOnScreenBeforeTheRetryCard() async {
+        let resolver = FakeResolver([.success(Self.hls), .success(Self.hls), .success(Self.hls), .success(Self.hls)])
+        let vm = makeViewModel(resolver)
+        await vm.open()
+        vm.recordPlaybackProgress()                           // it played
+
+        for _ in 0..<RecoveryBudget.maxRetries {
+            await vm.handleRecoveryEvent(.playbackError)      // nil status: same rung
+            vm.recordPlaybackProgress()                       // the fresh URL plays a while
+        }
+        await vm.handleRecoveryEvent(.playbackError)
+
+        #expect(vm.state == .recoveryExhausted(Self.hls))
+        #expect(await resolver.demotions == ["abcdefghijk:visionos"])
+        #expect(await resolver.log == ["resolve", "resolve", "resolve", "resolve", "demote"])
+    }
+
     @Test @MainActor func concurrentEventsFromOneFailureSpendOneAttempt() async {
         // I3: a dead stream raises `AVPlayerItemFailedToPlayToEndTime` and `status == .failed`
         // together. Both used to be honoured: two budget slots, two resolves, one of them thrown

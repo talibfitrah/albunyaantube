@@ -79,8 +79,10 @@ import Observation
         }
     }
 
+    /// `isOnline` has no default (stage 3c S3-3): the compiler pins every construction site, so the
+    /// screen cannot drop `NetworkMonitor` and turn M6's offline tap check into "always online".
     init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities,
-         isOnline: @escaping @MainActor () -> Bool = { true }) {
+         isOnline: @escaping @MainActor () -> Bool) {
         self.isOnline = isOnline
         self.auth = auth
         self.account = account

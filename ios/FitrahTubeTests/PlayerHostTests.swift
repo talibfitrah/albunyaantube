@@ -280,6 +280,7 @@ struct PlayerHostTests {
         await model.open()           // a resolved state, so the stall reaches the budget machine
         let player = try #require(PlayerHostView.player(for: Self.progressive(server.url), replacing: nil))
         let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.isOnline = { true }   // the server is localhost: the machine's own network is moot (N2)
         coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
                             isLive: false, playToEnd: .none)
         defer { coordinator.stopObserving(); player.pause() }

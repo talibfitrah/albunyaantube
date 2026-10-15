@@ -55,22 +55,13 @@ struct ShortsScreen: View {
         .rungAnnouncements(model: model)
     }
 
-    /// Which surface a state renders. Pure so the routing is testable without a live view. Same
-    /// two-way split as `PlayerScreen.stateView`.
-    enum Branch: Equatable { case player, status }
-    static func branch(for state: StreamState) -> Branch {
-        switch state {
-        case .ready, .rung2Progressive: .player
-        default: .status
-        }
-    }
-
+    /// Which surface a state renders: the player for both playable rungs, the status card for the
+    /// rest -- `StreamState.isPlayable`, the same two-way split as `PlayerScreen.stateView`.
     @ViewBuilder
     private func stage(_ state: StreamState, model: PlayerViewModel) -> some View {
-        switch Self.branch(for: state) {
         // ONE branch for both playable rungs -- Global Constraints, and the same identity rule
         // PlayerScreen.stateView carries. Rung-specific chrome differs INSIDE it.
-        case .player:
+        if state.isPlayable {
             // `.aspectRatio(.fit)` letterboxes the 9:16 box (iPad: spec §14); `videoGravity =
             // .resizeAspectFill` crops a non-9:16 source INSIDE it (Android resize_mode="zoom").
             // Two different levers, both needed.
@@ -93,7 +84,7 @@ struct ShortsScreen: View {
                 .overlay { ShortsOverlay(model: model, args: args) }
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
-        case .status:
+        } else {
             // Task 4: on the black surface, with the dark palette's text -- the card used to paint
             // the app's light `Color.background` over the stage.
             PlayerStateView(state: state, isOnline: container.network.isOnline,

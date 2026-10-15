@@ -199,7 +199,7 @@ struct ContentListViewModelTests {
         let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
 
-        #expect(vm.state == .loading(.initial))
+        #expect(vm.state == .loading)
         await vm.loadIfNeeded()
         #expect(await client.calls.count == 1)
     }
@@ -745,6 +745,49 @@ struct ContentListViewModelTests {
         await typed?.value
         #expect(vm.itemsQuery == "qu")
         #expect(!vm.isSearching)
+    }
+
+    /// Stage 3a S3-4: the Search key over a failed refresh's retained list keeps that list under
+    /// the spinner, as a keystroke does (and as Android does), instead of blanking it to the
+    /// skeleton.
+    @Test func theSearchKeyAfterAFailedRefreshKeepsTheListOnScreen() async {
+        let search = Gate()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [3: search], failing: [2])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.refresh()
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 5)
+
+        let submitted = Task { await vm.submit() }
+        await search.waitUntilBlocked()
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id), "no skeleton, got \(vm.state)")
+        #expect(vm.isSearching)
+
+        await search.release()
+        await submitted.value
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id))
+        #expect(!vm.isSearching)
+    }
+
+    /// Stage 3a S3-3 (Android parity): emptying the field brings the full list back at once --
+    /// only a typed query waits out the debounce.
+    @Test func emptyingTheFieldReloadsTheFullListWithoutTheDebounce() async {
+        let recorder = SleepRecorder()
+        let client = QueryEchoClient()
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: recorder.record)
+        await vm.load()
+        vm.query = "fiqh"
+        await vm.searchTask?.value
+        #expect(recorder.recorded == [.milliseconds(300)])
+
+        vm.query = ""
+        await vm.searchTask?.value
+
+        #expect(recorder.recorded == [.milliseconds(300)], "the emptied field waited out a debounce")
+        #expect(await client.queries == [nil, "fiqh", nil])
+        #expect(shownIDs(vm) == echoIDs("all"))
     }
 
     /// The list a failed refresh -- or a failed Retry from its banner, which is `load()` -- left is

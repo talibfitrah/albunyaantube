@@ -7,11 +7,15 @@ import XCTest
 /// `-fitrah-firebase-unreachable` for Firebase, `-fitrah-remote-config-url` for the remote config and
 /// `-fitrah-offline` for the reachability banner. Opt-in, so neither gate runs it:
 ///
+///     trap 'xcrun simctl pbcopy <sim> < /dev/null' EXIT   # FIRST: a killed run clears it too
 ///     security find-generic-password -s fitrahtube-test-account -w | tr -d '\n' | xcrun simctl pbcopy <sim>
 ///     TEST_RUNNER_FITRAH_OFFLINE_CHECKS=1 TEST_RUNNER_FITRAH_LIVE_EMAIL=<test account> \
 ///       TEST_RUNNER_FITRAH_HANG_PORT=<port> TEST_RUNNER_FITRAH_SHOTS_DIR=<dir> \
 ///       xcodebuild test-without-building … -only-testing:FitrahTubeUITests/OfflineDownloadsChecks
-///     xcrun simctl pbcopy <sim> < /dev/null   # always, whatever the run did
+///
+/// Run it in one shell (a subshell or a script), so the trap empties the simulator pasteboard on
+/// every exit, a watchdog kill or Ctrl-C included (stage 3c S4-3); `tearDown` cannot run for a
+/// runner that was killed.
 ///
 /// Quit Simulator.app first: its pasteboard sync would copy the password to the Mac's.
 ///

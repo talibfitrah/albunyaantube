@@ -55,9 +55,12 @@ nonisolated final class FirebaseAuthClient: AuthClient {
         guard FirebaseBootstrap.configureIfPossible() else { return nil }
         #if DEBUG
         // 1.0.3 live offline check: Firebase unreachable, as in airplane mode. Sign-in and token
-        // refresh both go to the emulator host, where nothing listens: `networkError` (17020).
+        // refresh both go to the emulator host: `networkError` (17020). A `.invalid` name (RFC 6761)
+        // never resolves, so no byte leaves the process -- emulator mode is plain HTTP, and a
+        // local port another process could bind would receive the session's refresh token in
+        // cleartext (stage 3c S4-2).
         if LaunchArguments.debug.contains("-fitrah-firebase-unreachable") {
-            Auth.auth().useEmulator(withHost: "127.0.0.1", port: 9)
+            Auth.auth().useEmulator(withHost: "firebase.invalid", port: 9)
         }
         #endif
         let broadcaster = AuthStateBroadcaster(

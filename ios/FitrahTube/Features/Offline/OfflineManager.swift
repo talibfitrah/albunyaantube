@@ -14,13 +14,17 @@ nonisolated struct OfflineMetadata: Sendable {
     /// Offline review P1: the channel playback's own check asks about (`PlayerArgs.channelId`),
     /// stamped on the row so `begin`/`retry`/`sweep` ask the gate the Save button's question.
     var channelId: String? = nil
+    /// iOS pipeline stage 5 F1: the streaming player's duration, stamped on the row so the offline
+    /// player's favourite carries it (`PlayerArgs(offline:)`).
+    var durationSeconds: Int? = nil
 }
 
 extension OfflineMetadata {
     /// The Save sheet's metadata, straight from the player's args.
     init(args: PlayerArgs, userId: String) {
         self.init(title: args.title ?? args.videoId, channelName: args.channelName,
-                  thumbnailUrl: args.thumbnailURL?.absoluteString, userId: userId, channelId: args.channelId)
+                  thumbnailUrl: args.thumbnailURL?.absoluteString, userId: userId, channelId: args.channelId,
+                  durationSeconds: args.durationSeconds)
     }
 }
 
@@ -193,7 +197,8 @@ actor OfflineManager: OfflineSaving {
         let owner = metadata.userId
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
-                               createdAt: now(), userId: metadata.userId, channelId: metadata.channelId)
+                               createdAt: now(), userId: metadata.userId, channelId: metadata.channelId,
+                               durationSeconds: metadata.durationSeconds)
         // CF-A-59 + Cubic P3: the refusal, the old-copy read and the upsert are ONE main-actor job.
         // The wipe's id snapshot runs on this executor after the departure marker, so a save either
         // is refused here or landed before the snapshot. And a refused save never touches the old

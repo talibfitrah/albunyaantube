@@ -117,6 +117,11 @@ targets:
         # `CODE_SIGNING_ALLOWED[sdk=iphonesimulator*] = NO` above there is no CodeSign step on
         # either simulator build, so nothing consumes this until a device build is signed.
         CODE_SIGN_ENTITLEMENTS: FitrahTube/FitrahTube.entitlements
+      configs:
+        Release:
+          # Stage 3b F3: the 2 s clip only the `#if DEBUG` fixture resolvers read
+          # (`PlayerScreen.swift`) stays out of the store build; Debug UI tests still bundle it.
+          EXCLUDED_SOURCE_FILE_NAMES: player-fixture.mp4
     info:
       path: FitrahTube/Info.plist
       properties:

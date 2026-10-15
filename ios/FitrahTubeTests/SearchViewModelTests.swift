@@ -454,7 +454,7 @@ struct SearchViewModelTests {
 
     /// Gate cubic-r3 X4: the "no results" message must show the trimmed value the search ran
     /// with, not the raw (padded) field text.
-    @Test func lastSearchedQueryIsTrimmedNotRawFieldText() async {
+    @Test func theNoResultsQueryIsTrimmedNotRawFieldText() async {
         let (history, defaults, suite) = makeHistoryStore()
         defer { defaults.removePersistentDomain(forName: suite) }
         let vm = SearchViewModel(catalog: RecordingCatalogClient(results: []), history: history, sleep: noSleep)
@@ -463,7 +463,7 @@ struct SearchViewModelTests {
         await vm.searchTask?.value
 
         #expect(vm.state == .noResults)
-        #expect(vm.lastSearchedQuery == "quran")
+        #expect(vm.shownQuery == "quran")
     }
 
     @Test func whitespaceOnlyQueryNeverFetches() async {
@@ -550,6 +550,52 @@ struct SearchViewModelTests {
         #expect(vm.state == .error)
         #expect(!vm.isSearching)
         #expect(vm.shownQuery == nil)
+    }
+
+    /// Stage 3a S3-1 / stage 5 F3 (Android parity): "No results" stays on screen under the
+    /// toolbar spinner while the next keystroke's search runs, instead of flashing the full-screen
+    /// "Searching…" view and back on every pause in typing.
+    @Test func noResultsStayOnScreenWhileTheNextSearchLoads() async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let zzzq = Gate()
+        let vm = SearchViewModel(catalog: EchoSearchClient(gates: ["zzzq": zzzq], counts: ["zzz": 0]),
+                                 history: history, sleep: noSleep)
+        vm.query = "zzz"
+        await vm.searchTask?.value
+        #expect(vm.state == .noResults)
+
+        vm.query = "zzzq"
+        let typed = vm.searchTask
+        await zzzq.waitUntilBlocked()
+        #expect(vm.state == .noResults, "the empty state flipped to \(vm.state) mid-search")
+        #expect(vm.isSearching)
+        #expect(vm.shownQuery == "zzz", "the no-results message names what was searched, not what is typed")
+
+        await zzzq.release()
+        await typed?.value
+        guard case .results = vm.state else { Issue.record("expected .results, got \(vm.state)"); return }
+        #expect(!vm.isSearching)
+    }
+
+    /// Stage 3a S3-2 / stage 5 F2 (Android parity): typing back to the query on screen (a
+    /// keystroke undone inside the debounce, a trailing space) fetches nothing, so a flaky
+    /// refetch can never swap a good list for the error card.
+    @Test(arguments: ["undo", "space"])
+    func typingBackToTheShownQueryFetchesNothing(edit: String) async {
+        let (history, defaults, suite) = makeHistoryStore()
+        defer { defaults.removePersistentDomain(forName: suite) }
+        let client = RecordingCatalogClient(results: items(count: 3, prefix: "r"))
+        let vm = SearchViewModel(catalog: client, history: history, sleep: noSleep)
+        vm.query = "quran"
+        await vm.searchTask?.value
+
+        if edit == "undo" { vm.query = "qurans"; vm.query = "quran" } else { vm.query = "quran " }
+        await vm.searchTask?.value
+
+        #expect(await client.calls.map(\.query) == ["quran"])
+        #expect(vm.state == .results(items(count: 3, prefix: "r"), match: .exact))
+        #expect(!vm.isSearching)
     }
 
     /// With nothing on screen there is no list to keep: the full-screen `.loading`, no spinner.

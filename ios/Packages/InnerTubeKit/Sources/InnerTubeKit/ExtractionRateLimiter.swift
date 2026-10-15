@@ -64,8 +64,11 @@ public actor ExtractionRateLimiter {
     var videoRecordCount: Int { records.count }
 
     /// The kinds the limiter gates. `.autoRecovery` is not one: recovery is never gated (owner
-    /// directive 2026-10-14; final review M8 deleted its unreachable lane -- the app's
-    /// `RateLimitedResolver` never asks for it).
+    /// directive 2026-10-14) -- `check` allows it before any bookkeeping, and this is the one place
+    /// that rule lives. Its budget is the player's own `RecoveryBudget`: 3 recovery resolves per
+    /// stream, 3 more after its one refund on the first progress, plus one AirPlay mirror -- at most
+    /// 7. A refusal here surfaced as a cooldown screen in the middle of a step-down that would have
+    /// played (V2Brp_esIVI).
     private enum Lane { case player, prefetch, proactiveTTLRefresh }
 
     public func check(_ videoId: String, kind kindAsked: RequestKind, now: Duration) -> Decision {
@@ -200,7 +203,7 @@ public actor ExtractionRateLimiter {
 
         case .prefetch:
             // Lowest priority: blocked once budget pressure exists, to
-            // preserve room for manual/recovery.
+            // preserve room for the player's own resolves.
             guard attemptsInWindow >= Self.maxAttemptsPerVideo - 1 else { return nil }
             return .blocked(reason: "prefetch blocked (budget reserved)", retryAfter: Self.perVideoWindow)
 

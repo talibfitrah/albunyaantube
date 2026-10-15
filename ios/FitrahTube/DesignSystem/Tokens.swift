@@ -54,7 +54,6 @@ extension Color {
     static let videoCountChip = Color(light: 0xCC275E4B, dark: 0xCC35C491)
     static let errorBackground = Color(light: 0xFFF3E0, dark: 0x3D2A1A)
     static let errorText = Color(light: 0xE65100, dark: 0xFFCC80)
-    static let errorIcon = Color(light: 0xFF6F00, dark: 0xFFB74D)
     static let skeleton = Color(light: 0xE0E0E0, dark: 0x2A2A2A)
     // Fix round 1, finding #5: light `skeletonShimmer` used to equal `background` (both
     // 0xF5F5F5), so the shimmer phase in `SkeletonListView`/`SkeletonGrid` (StateViews.swift)
@@ -143,7 +142,6 @@ enum Radius {
     static let homeThumbnail: CGFloat = 12
     static let thumbnail: CGFloat = 8
     static let chip: CGFloat = 4
-    static let filterChip: CGFloat = 20
     static let dialog: CGFloat = 20
     static let meChip: CGFloat = 28
     static let pill: CGFloat = 999

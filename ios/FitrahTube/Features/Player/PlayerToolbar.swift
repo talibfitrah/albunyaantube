@@ -58,7 +58,9 @@ struct PlayerToolbar: View {
         // via `slotLabel`, so 3, 4 or 5 slots tile the row, instead of `Spacer`s equalising the
         // gaps while every slot kept its own content width.
         HStack(alignment: .top, spacing: 0) {
-            favoriteButton
+            if FavoriteAffordance.isVisible(args: args, isOfflinePlayback: isOfflinePlayback) {
+                favoriteButton
+            }
             ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId),
                       message: Text(args.shareMessage(locale: locale))) {
                 toolbarLabel(systemImage: "square.and.arrow.up", title: String(localized: "player_action_share"))
@@ -285,6 +287,19 @@ extension PlayerArgs {
                     description: description, thumbnailURL: thumbnailURL,
                     durationSeconds: durationSeconds, uploadedDaysAgo: nil, viewCount: viewCount,
                     channelTitle: channelName, subscribers: nil, videoCount: nil, itemCount: nil)
+    }
+}
+
+/// iOS pipeline stage 5 F1 (Android stage 7 item 2 parity): the offline player's heart needs the
+/// duration and channel name the save stamped. A row saved before V8 has no duration, and one saved
+/// from a surface with no channel name has none: its favourite would be a 0:00 card with a blank
+/// channel the backend refuses (400, dropped as permanent). The heart is hidden for those rather than
+/// writing a bad row. Online, nothing changes.
+nonisolated enum FavoriteAffordance {
+    static func isVisible(args: PlayerArgs, isOfflinePlayback: Bool) -> Bool {
+        guard isOfflinePlayback else { return true }
+        let channel = args.channelName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return args.durationSeconds != nil && !channel.isEmpty
     }
 }
 

@@ -239,6 +239,20 @@ struct OfflineManagerTests {
         #expect(OfflineMetadata(args: args, userId: "").channelId == Self.channelId)
     }
 
+    /// iOS pipeline stage 5 F1: the offline player's favourite needs the duration and channel name
+    /// the streaming player had (the backend refuses a blank channel), so the save carries both
+    /// from the player's args onto the row.
+    @Test func theSaveStampsThePlayersDurationAndChannelNameOnTheRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let args = PlayerArgs(videoId: Self.lectureVideoId, title: "Lecture", channelName: "Channel",
+                              durationSeconds: 754)
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true,
+                               metadata: OfflineMetadata(args: args, userId: ""))
+        let row = try #require(rig.persisted(videoId: Self.lectureVideoId))
+        #expect(row.durationSeconds == 754)
+        #expect(row.channelName == "Channel")
+    }
+
     /// Review P1: only the Save button asked about the channel, so a channel pulled after the save
     /// left the copy in place and `begin` still downloaded unfinished rows on Resume/relaunch. The
     /// save stamps the channel on the row, and `begin`, `retry` and `sweep` each ask the gate about
@@ -2778,6 +2792,60 @@ struct OfflineManagerTests {
             return
         }
         #expect(resumeData != nil, "without the token the retry restarts the walk from zero")
+    }
+
+    /// Serves five bytes as a 206 whose `Content-Range` is the request URL's `cr` query item,
+    /// verbatim -- per request, so parallel tests never share a script.
+    nonisolated final class ScriptedRangeURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let header = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "cr" }?.value ?? ""
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": header])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// Stage 3c S4-1: `Content-Range` is input from the network. A 206 that does not start at the
+    /// requested offset, or whose total is not a real size past its own end, is never written (a
+    /// misaligned append corrupts the media; a `/0` or `/-1` total called a 5-byte prefix saved).
+    /// It fails through the walk's resumable arm instead, leaving the partial as it was.
+    @Test(arguments: ["bytes 5-9/10",          // starts away from the requested offset 0
+                      "bytes 0-4/0",           // no size at all
+                      "bytes 0-4/-1",          // a negative size
+                      "bytes 0-4/3",           // a size that ends before the chunk does
+                      ""])                     // no range to check
+    func aChunkWhoseContentRangeDoesNotFitTheRequestIsNeverWritten(contentRange: String) async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "bad-range-\(UUID().uuidString)"
+        var components = URLComponents(string: "https://example.invalid/media?itag=140")!
+        components.queryItems?.append(URLQueryItem(name: "cr", value: contentRange))
+        let (task, side) = await runSideTask(ScriptedRangeURLProtocol.self, url: components.url!, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+
+        #expect(!collector.events.contains { if case .finished = $0 { true } else { false } },
+                "\(contentRange): reported finished")
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path(percentEncoded: false)),
+                "\(contentRange): the chunk was written")
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("\(contentRange): expected the resumable transport failure, got \(failure)")
+            return
+        }
+        #expect(resumeData != nil, "\(contentRange): without the token the retry restarts from zero")
     }
 
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive

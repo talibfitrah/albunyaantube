@@ -14,27 +14,29 @@ import Foundation
 @MainActor @Observable final class SearchViewModel {
     enum State: Equatable { case zero(history: [String]), loading, results([ContentItem], match: SearchMatch), noResults, error }
 
-    /// Only results carry the searching spinner and a shown query, so every way out of them ends
-    /// both: a field cut below 2 characters, history removed or cleared, no results, an error.
+    /// Only an answer on screen (results, or "no results") carries the searching spinner and a
+    /// shown query, so every way out of one ends both: a field cut below 2 characters, history
+    /// removed or cleared, an error. This is the ONE place `isSearching` is cleared on a state
+    /// change (stage 1 B1-4); `performSearch` clears it only for an answer replacing an answer.
     private(set) var state: State {
         didSet {
-            if case .results = state { return }
-            isSearching = false
-            shownQuery = nil
+            switch state {
+            case .results, .noResults: return
+            default:
+                isSearching = false
+                shownQuery = nil
+            }
         }
     }
 
-    /// The trimmed value the most recent search actually ran with -- distinct from `query` (the
-    /// live field text), so "no results" messaging shows what was actually searched instead of
-    /// re-trimming a `query` that may carry padding or have changed since (gate cubic-r3 X4).
-    private(set) var lastSearchedQuery: String = ""
-
-    /// Spec §6: true while a newer search runs with results still on screen -- the view keeps the
-    /// list and shows a small spinner instead of swapping to `.loading`.
+    /// Spec §6: true while a newer search runs with an answer still on screen -- the view keeps it
+    /// and shows a small spinner instead of swapping to `.loading` (stage 5 F3: "No results" too,
+    /// as Android keeps it).
     private(set) var isSearching = false
 
-    /// The trimmed query whose results are on screen, nil when none are. `SearchView` scrolls to the
-    /// top when it changes: a new query's results replaced the list.
+    /// The trimmed query whose answer is on screen, nil when none is. `SearchView` scrolls to the
+    /// top when it changes (a new query's results replaced the list), and the "no results" message
+    /// names it: what was searched, never the field's live text (gate cubic-r3 X4).
     private(set) var shownQuery: String?
 
     /// 300 ms debounce, min 2 chars (`didSet` below); `submit()`/`selectHistory(_:)` bypass both.
@@ -49,6 +51,14 @@ import Foundation
             let trimmed = query.trimmingCharacters(in: .whitespacesAndNewlines)
             guard trimmed.count >= 2 else {
                 state = .zero(history: history.entries) // RULINGS #23: immediate, no stale state
+                return
+            }
+            // Typed back to what is on screen (a keystroke undone inside the debounce, a trailing
+            // space): the cancel above dropped the newer search, and the same rows are not fetched
+            // again -- a flaky refetch would only swap a good list for the error card (stage 5 F2,
+            // Android `SearchViewModel.search`).
+            if trimmed == shownQuery {
+                isSearching = false
                 return
             }
             let task = Task { [sleep] in
@@ -132,20 +142,26 @@ import Foundation
         // so retrying a failed `"  quran  "` ran a *different* search than the one that failed --
         // exactly the request/history mismatch wave-3 D5 set out to remove.
         let q = q.trimmingCharacters(in: .whitespacesAndNewlines)
-        lastSearchedQuery = q
-        // Spec §6: results already on screen stay while the next ones load; `.loading` is for an empty screen.
-        if case .results = state { isSearching = true } else { isSearching = false; state = .loading }
+        // Spec §6: an answer already on screen stays while the next one loads; `.loading` is for an
+        // empty screen.
+        switch state {
+        case .results, .noResults: isSearching = true
+        default: state = .loading
+        }
         do {
             let result = try await catalog.search(query: q, type: nil, limit: Self.pageSize)
             guard !Task.isCancelled else { return }
             isSearching = false
             guard !result.items.isEmpty else {
                 state = .noResults
+                shownQuery = q
                 announce(String(localized: "search_no_results"))   // the empty state posts nothing itself
                 return
             }
             let noteWasShown = if case .results(_, let match) = state { match != .exact } else { false }
-            let isNewQuery = q != shownQuery
+            // Results replacing "no results" are a new list even for the same query (a Search-key
+            // resubmit): "no results" keeps its query shown, results never shared it.
+            let isNewQuery = q != shownQuery || state == .noResults
             state = .results(result.items, match: result.match)
             shownQuery = q
             // VoiceOver hears what a sighted user sees change: the closest-results note when it
@@ -156,7 +172,6 @@ import Foundation
             if !spoken.isEmpty { announce(spoken.joined(separator: "\n")) }
         } catch {
             guard !Task.isCancelled else { return }
-            isSearching = false
             state = .error
         }
     }

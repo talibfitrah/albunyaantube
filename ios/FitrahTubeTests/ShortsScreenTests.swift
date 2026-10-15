@@ -28,13 +28,15 @@ struct ShortsScreenTests {
         // in `ShortsScreen.task` (outside the view model) would NOT be caught here.
     }
 
+    /// The Shorts stage routes on `isPlayable` (stage 1 B1-3): the player for both playable rungs,
+    /// the status card for everything else.
     @Test func playableStatesRouteToThePlayerAndEverythingElseToTheStatusCard() {
         let resolved = Resolved(stream: .progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"),
                                 client: .android, userAgent: "", resolvedAt: Date(), expiresAt: nil)
-        #expect(ShortsScreen.branch(for: .ready(resolved)) == .player)
-        #expect(ShortsScreen.branch(for: .rung2Progressive(resolved)) == .player)
-        #expect(ShortsScreen.branch(for: .loading) == .status)
-        #expect(ShortsScreen.branch(for: .error(messageKey: "player_error_message")) == .status)
+        #expect(StreamState.ready(resolved).isPlayable)
+        #expect(StreamState.rung2Progressive(resolved).isPlayable)
+        #expect(!StreamState.loading.isPlayable)
+        #expect(!StreamState.error(messageKey: "player_error_message").isPlayable)
     }
 
     // MARK: - Task 3: chrome

@@ -1,10 +1,5 @@
 import Foundation
 
-/// Android's `ContentState.Loading`'s `LoadingType` (`content-lists.md:246-250`). `.refresh` and
-/// `.pagination` exist for API completeness with the brief's `case loading(LoadKind)`, but this
-/// ViewModel only ever constructs `.loading(.initial)` -- see the file-level note below.
-nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, pagination }
-
 /// Android's `ContentListViewModel` (`content-lists.md:24-400`), one instance per tab
 /// (`ChannelsFragmentNew`/`PlaylistsFragmentNew`/`VideosFragmentNew` share this one class, differing
 /// only by `type`). Follows Task 9's `HomeViewModel` pattern throughout: a `loadTask` for full
@@ -13,21 +8,17 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
 /// `refresh()` never shows a loading state -- it keeps whatever is already on screen while
 /// `.refreshable`'s native spinner is the only visual cue (RULINGS #12 spirit).
 ///
-/// `.loading(.refresh)`/`.loading(.pagination)` are never actually emitted: `.content` here has no
-/// `isLoadingMore` field (unlike `HomeViewModel.State.content`), and `PaginationGuard.shouldAutoLoad`
-/// takes no such flag either -- both are the given brief interfaces verbatim -- so the pagination
-/// spinner and refresh spinner are necessarily View-local UI concerns (`ContentListView`'s own
-/// `@State`), not part of this type. `.loading(.initial)` is the only kind ever set: on `load()`, and
-/// on a debounced query change only when nothing is on screen yet -- otherwise the list stays and
-/// `isSearching` drives a small spinner (spec §6.2, 2026-10-13).
+/// `.loading` is the full-screen first load only: on `load()`, and on a search only when nothing is
+/// on screen yet -- otherwise the list stays and `isSearching` drives a small spinner (spec §6.2,
+/// 2026-10-13). The pagination and refresh spinners are `ContentListView`'s own `@State`.
 @MainActor @Observable final class ContentListViewModel {
     enum State: Equatable {
-        case loading(LoadKind)
+        case loading
         case content(items: [ContentItem], hasMore: Bool, paginationError: Bool, isSearchActive: Bool)
         case error
     }
 
-    private(set) var state: State = .loading(.initial)
+    private(set) var state: State = .loading
 
     /// Bumped on every terminal *and* every pagination failure. `ContentListView` drives both of
     /// its banners off this rather than off a Bool level (gate B1-I1): `refresh()` never passes
@@ -66,8 +57,13 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
             if keepsFailedList, case .error = state {
                 state = .content(items: items, hasMore: hasMore, paginationError: false, isSearchActive: isSearchActive)
             }
+            // An emptied field brings the full list back at once (stage 3a S3-3, Android parity):
+            // only a typed query waits out the debounce.
+            let debounces = !query.isEmpty
             let task = Task { [sleep] in
-                do { try await sleep(.milliseconds(300)) } catch { return }
+                if debounces {
+                    do { try await sleep(.milliseconds(300)) } catch { return }
+                }
                 guard !Task.isCancelled else { return }
                 await self.search()
             }
@@ -173,7 +169,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// content is a no-op. Every other entry point keeps its own path: pull-to-refresh, filter
     /// change, the debounced query, and the error states' own Retry.
     func loadIfNeeded() async {
-        guard case .loading(.initial) = state else { return }
+        guard case .loading = state else { return }
         await load()
     }
 
@@ -212,6 +208,11 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
     /// The debounced keystroke and the Search key share this. A list on screen stays while the next
     /// one loads (spec §6.2); a failure still clears it through `.error` + `lastItems` (gate B1-C2).
     private func search() async {
+        // A failed refresh's list stays under the Search key too, as it does under a keystroke
+        // (`keepsFailedList`), instead of blanking to the skeleton (stage 3a S3-4).
+        if case .error = state, !lastItems.isEmpty {
+            state = .content(items: lastItems, hasMore: hasMore, paginationError: false, isSearchActive: isSearchActive)
+        }
         let keepContent: Bool
         if case .content = state { keepContent = true } else { keepContent = false }
         isSearching = keepContent
@@ -241,7 +242,7 @@ nonisolated enum LoadKind: Sendable, Equatable { case initial, refresh, paginati
 
     private func fetchFirstPage(showLoading: Bool) async {
         defer { if !Task.isCancelled { keepsFailedList = false } }
-        if showLoading { state = .loading(.initial) }
+        if showLoading { state = .loading }
         let requestFilter = filter.state
         let requestQuery = queryParam
         do {
