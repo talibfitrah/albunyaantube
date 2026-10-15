@@ -212,6 +212,37 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals(DownloadStatus.COMPLETED, vm.state.value.currentDownload?.status)
     }
 
+    @Test fun `an active download is not hidden behind an older failed one`() = runTest {
+        // Otherwise the streaming player's Download button stays on the quality picker and a
+        // second tap enqueues a duplicate.
+        for (active in listOf(DownloadStatus.QUEUED, DownloadStatus.RUNNING, DownloadStatus.PAUSED)) {
+            downloads.entries.value = listOf(
+                completed("failed", "v7", File(tmp.root, "none.m4a"), audioOnly = true, status = DownloadStatus.FAILED),
+                completed("active", "v7", File(tmp.root, "partial.mp4"), status = active),
+            )
+            val vm = createViewModel()
+
+            vm.loadVideo(videoId = "v7")
+            advanceUntilIdle()
+
+            assertEquals("$active", "active", vm.state.value.currentDownload?.request?.id)
+        }
+    }
+
+    @Test fun `a completed download still wins over an active one`() = runTest {
+        val file = tmp.newFile("v8.mp4")
+        downloads.entries.value = listOf(
+            completed("active", "v8", File(tmp.root, "partial8.mp4"), status = DownloadStatus.RUNNING),
+            completed("done", "v8", file),
+        )
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v8")
+        advanceUntilIdle()
+
+        assertEquals("done", vm.state.value.currentDownload?.request?.id)
+    }
+
     private fun createViewModel() = PlayerViewModel(
         repository = streams,
         downloadRepository = downloads,

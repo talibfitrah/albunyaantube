@@ -26,7 +26,6 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
 import java.io.IOException
-import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import java.util.concurrent.CancellationException
@@ -488,7 +487,14 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Download file with progress reporting.
+     * Download file in bounded `Range` chunks, with progress reporting.
+     *
+     * googlevideo paces one un-ranged GET of an adaptive format (every audio-only download and
+     * both legs of a Split video) at about 2x bitrate: a 4 MB lecture took 131 s and longer ones
+     * died mid-transfer. A ranged request of the same URL arrives at line rate, so the file is
+     * walked in [RANGE_CHUNK_BYTES] requests, as iOS OfflineEngine and yt-dlp's http_chunk_size
+     * do. The total comes from the first 206's Content-Range, else from the HEAD length. A 200
+     * means the server ignored Range and sent the whole file.
      *
      * @param progressOffset Base progress value (for multi-part downloads)
      * @param progressScale Scale factor for this download's progress (0.0 - 1.0)
@@ -502,43 +508,72 @@ class DownloadWorker @AssistedInject constructor(
         progressOffset: Int = 0,
         progressScale: Float = 1.0f
     ) = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw DownloadHttpException(response.code, "HTTP ${response.code}: ${response.message}")
-            }
-            val body = response.body ?: throw IOException("Empty body")
-            val totalBytes = max(contentLength ?: -1, body.contentLength())
-            val input = body.byteStream()
-            target.outputStream().use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var read: Int
-                var downloaded = 0L
-                var lastProgress = -1
-                while (input.read(buffer).also { read = it } != -1) {
-                    // Throw CancellationException directly so WorkManager reports CANCELLED (not FAILED)
-                    if (isStopped) throw CancellationException("Download cancelled by user")
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    if (totalBytes > 0) {
-                        val rawProgress = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
-                        val scaledProgress = progressOffset + (rawProgress * progressScale).toInt()
-                        if (scaledProgress != lastProgress) {
-                            lastProgress = scaledProgress
-                            setProgress(workDataOf(KEY_PROGRESS to scaledProgress))
-                            setForegroundAsync(notifications.createForegroundInfo(downloadId, title, scaledProgress))
+        target.outputStream().use { output ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var read: Int
+            var total = contentLength ?: -1L
+            var downloaded = 0L
+            var lastProgress = -1
+            var done = false
+            while (!done) {
+                val start = downloaded
+                val request = Request.Builder().url(url)
+                    .header("Range", "bytes=$start-${start + RANGE_CHUNK_BYTES - 1}")
+                    .build()
+                httpClient.newCall(request).execute().use { response ->
+                    // Length unknown and the previous chunk ended exactly at the end of the file.
+                    if (response.code == 416 && total < 0 && start > 0) {
+                        done = true
+                        return@use
+                    }
+                    if (!response.isSuccessful) {
+                        throw DownloadHttpException(response.code, "HTTP ${response.code}: ${response.message}")
+                    }
+                    val body = response.body ?: throw IOException("Empty body")
+                    val ranged = response.code == 206
+                    if (!ranged && start > 0) throw IOException("Server ignored Range after the first chunk")
+                    if (ranged) {
+                        response.header("Content-Range")?.substringAfterLast('/')?.trim()?.toLongOrNull()
+                            ?.let { total = it }
+                    } else if (total < 0) {
+                        total = body.contentLength()
+                    }
+                    val input = body.byteStream()
+                    while (input.read(buffer).also { read = it } != -1) {
+                        // Throw CancellationException directly so WorkManager reports CANCELLED (not FAILED)
+                        if (isStopped) throw CancellationException("Download cancelled by user")
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (total > 0) {
+                            val rawProgress = (downloaded * 100 / total).toInt().coerceIn(0, 100)
+                            val scaledProgress = progressOffset + (rawProgress * progressScale).toInt()
+                            if (scaledProgress != lastProgress) {
+                                lastProgress = scaledProgress
+                                setProgress(workDataOf(KEY_PROGRESS to scaledProgress))
+                                setForegroundAsync(notifications.createForegroundInfo(downloadId, title, scaledProgress))
+                            }
                         }
                     }
+                    val received = downloaded - start
+                    done = when {
+                        !ranged -> true
+                        total >= 0 -> downloaded >= total
+                        else -> received < RANGE_CHUNK_BYTES
+                    }
+                    if (!done && received == 0L) throw IOException("Empty Range chunk at $start of $total")
                 }
-                // Report completion of this segment
-                val finalProgress = progressOffset + (100 * progressScale).toInt()
-                setProgress(workDataOf(KEY_PROGRESS to finalProgress))
             }
+            // Report completion of this segment
+            val finalProgress = progressOffset + (100 * progressScale).toInt()
+            setProgress(workDataOf(KEY_PROGRESS to finalProgress))
         }
     }
 
     companion object {
         private const val TAG = "DownloadWorker"
+
+        /** yt-dlp's googlevideo http_chunk_size; iOS OfflineEngine uses the same 10 MB. */
+        private const val RANGE_CHUNK_BYTES = 10L * 1024 * 1024
 
         /**
          * Redact URL for logging - shows host and path hash only, no query parameters.

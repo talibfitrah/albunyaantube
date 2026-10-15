@@ -1946,8 +1946,15 @@ class PlayerViewModel @Inject constructor(
 
     private fun findDownloadFor(item: UpNextItem?, entries: List<DownloadEntry>): DownloadEntry? {
         return item?.let { current ->
-            entries.filter { it.request.videoId == current.streamId }
-                .let { m -> m.firstOrNull { it.status == DownloadStatus.COMPLETED } ?: m.firstOrNull() }
+            // A saved file first (Download opens it), then one in progress (Download is disabled, so
+            // no duplicate is enqueued), then an old failure or cancellation (Download offers a new one).
+            entries.filter { it.request.videoId == current.streamId }.minByOrNull {
+                when (it.status) {
+                    DownloadStatus.COMPLETED -> 0
+                    DownloadStatus.QUEUED, DownloadStatus.RUNNING, DownloadStatus.PAUSED -> 1
+                    else -> 2
+                }
+            }
         }
     }
 

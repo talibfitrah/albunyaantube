@@ -1512,6 +1512,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     binding.videoStats.text = ""
                     binding.videoDescription.text = getString(R.string.player_no_description)
                 }
+                // An empty name still takes a line: collapse it (always empty for a download).
+                binding.authorName.isVisible = binding.authorName.text.isNotEmpty()
 
                 // Update favorite button UI based on state
                 binding.favoriteIcon.setImageResource(
@@ -2081,8 +2083,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerErrorOverlay.visibility = View.VISIBLE
                 binding.playerErrorTitle.text = getString(R.string.player_error_title)
                 binding.playerErrorMessage.text = getString(streamState.messageRes)
-                binding.playerRetryButton.visibility = View.VISIBLE
-                binding.playerRefreshStreamButton.visibility = View.VISIBLE
+                // A download's Error is a missing file: neither action can bring it back.
+                binding.playerRetryButton.isVisible = !state.playingDownload
+                binding.playerRefreshStreamButton.isVisible = !state.playingDownload
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             StreamState.ContentUnavailable -> {
@@ -2134,11 +2137,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 button.isEnabled = true
                 button.setOnClickListener { openDownload(downloadEntry) }
             }
-            DownloadStatus.RUNNING -> {
-                button.isEnabled = false
-                button.setOnClickListener(null)
-            }
-            DownloadStatus.QUEUED -> {
+            // In progress: a second tap would enqueue a duplicate.
+            DownloadStatus.RUNNING, DownloadStatus.QUEUED, DownloadStatus.PAUSED -> {
                 button.isEnabled = false
                 button.setOnClickListener(null)
             }

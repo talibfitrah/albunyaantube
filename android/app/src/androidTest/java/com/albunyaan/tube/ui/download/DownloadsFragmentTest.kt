@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.download
 import android.content.Context
 import android.os.Bundle
 import androidx.navigation.NavController
+import androidx.navigation.NavOptions
 import androidx.navigation.Navigation
 import androidx.recyclerview.widget.RecyclerView
 import androidx.test.core.app.ActivityScenario
@@ -152,16 +153,6 @@ class DownloadsFragmentTest {
         assertEquals("download-9", nav.args?.getString(PlayerFragment.ARG_DOWNLOAD_ID))
     }
 
-    /** Records the navigation Open asks for, instead of performing it. */
-    private class RecordingNavController(context: Context) : NavController(context) {
-        var destination: Int? = null
-        var args: Bundle? = null
-        override fun navigate(resId: Int, args: Bundle?) {
-            destination = resId
-            this.args = args
-        }
-    }
-
     private class ClickChildViewAction(private val viewId: Int) : ViewAction {
         override fun getConstraints() = isDisplayed()
         override fun getDescription() = "Click child view with id $viewId"
@@ -169,5 +160,17 @@ class DownloadsFragmentTest {
             val target = view.findViewById<View>(viewId)
             target?.performClick()
         }
+    }
+}
+
+/** Records the navigation a screen asks for, instead of performing it. */
+internal class RecordingNavController(context: Context) : NavController(context) {
+    var destination: Int? = null
+    var args: Bundle? = null
+    var navOptions: NavOptions? = null
+    override fun navigate(resId: Int, args: Bundle?, navOptions: NavOptions?) {
+        destination = resId
+        this.args = args
+        this.navOptions = navOptions
     }
 }
