@@ -2724,9 +2724,11 @@ final class ScreenshotTests: XCTestCase {
 
     /// Owner directive 2026-10-14, two halves, en + ar on whichever simulator runs it
     /// (`screenshots.sh` runs iPhone 17 and iPad Pro 13-inch (M5)):
-    /// 1. Rung 1 answered with a REAL HTTP 401 (a localhost server, `FITRAH_RUNG1_401_URL`): the
-    ///    coordinator reads 401 from AVPlayer's error log (`status=401` on the DEBUG route probe), the
-    ///    player steps down to rung 2 and KEEPS PLAYING (`time=` moving), with no error copy and no Retry.
+    /// 1. Rung 1 answered with a REAL HTTP 401 (a localhost server, `FITRAH_RUNG1_401_URL`) on its
+    ///    segments after two good ones -- ready, then a segment 401, the production shape (final review
+    ///    M3): the coordinator reads 401 from AVPlayer's error log (`status=401` on the DEBUG route
+    ///    probe), the player steps down to rung 2 and KEEPS PLAYING, with no error copy and no Retry.
+    ///    Rung 1 serves only 2 s, so `time=` 3 or more can only be rung 2 playing on.
     /// 2. A video the source gates (`-fitrah-fake-player-unavailable` throws the `.unavailable` a
     ///    members-only walk now ends in): the not-available card, no Retry.
     func testPlaybackHardeningStates() throws {
@@ -2746,7 +2748,7 @@ final class ScreenshotTests: XCTestCase {
             wait(for: [saw401], timeout: 20)
             XCTAssertTrue(app.staticTexts["player.rung2Pill"].waitForExistence(timeout: 20),
                           "step-down/\(locale.key): never reached rung 2")
-            let playing = expectation(for: NSPredicate(format: "value MATCHES '.*time=[1-9].*'"), evaluatedWith: probe)
+            let playing = expectation(for: NSPredicate(format: "value MATCHES '.*time=[3-9].*'"), evaluatedWith: probe)
             wait(for: [playing], timeout: 15)
             XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "step-down/\(locale.key): Retry shown")
             XCTAssertFalse(app.staticTexts["player.state.message"].exists, "step-down/\(locale.key): error copy shown")

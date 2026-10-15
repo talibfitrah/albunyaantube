@@ -243,6 +243,27 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Final review M1(b): the outgoing item dies while an auto-advance's resolve is out. That
+    /// failure belongs to the video `state` still shows, not to the one `args` now names, so
+    /// recovery must not force-resolve the NEXT video on the `.autoRecovery` lane and supersede the
+    /// advance (which would skip its prefetch, paging and auto-skip).
+    @Test(.timeLimit(.minutes(1))) func aFailureDuringAnAdvancesResolveDoesNotRecoverTheNextVideo() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
+        await vm.open()
+        resolver.hold("b")
+        let advancing = Task { await vm.playToEnd() }      // -> b, its resolve held
+        await resolver.waitUntilCalled(count: 3)           // open: a(.player), b(.prefetch); then b(.player)
+        let recovering = Task { await vm.handleRecoveryEvent(.playbackError) }   // a's item dies now
+        try? await Task.sleep(for: .milliseconds(50))      // let a wrong recovery reach the resolver
+        resolver.release(id: "b")
+        resolver.release(id: "b")                          // a wrong recovery's own resolve of b, if any
+        await recovering.value
+        await advancing.value
+        #expect(!resolver.calls.contains { $0.kind == .autoRecovery }, "recovered the next video")
+        #expect(vm.args.videoId == "b")
+        #expect(vm.state.isPlayable)
+    }
+
     @Test func autoSkipWalksPastUnplayableItemsAndStopsAfterThree() async {
         // `PlayerViewModel.kt:1349-1366`. Four dead items in a row: skip 1, 2, 3, then STOP on the
         // 4th with the real terminal state so the user sees something instead of a silent walk.

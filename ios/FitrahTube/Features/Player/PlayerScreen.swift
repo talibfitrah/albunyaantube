@@ -742,10 +742,14 @@ private struct FixtureCooldownResolver: StreamResolving {
     func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
-/// Playback hardening (plan Task 7): a two-rung ladder that honours `demote`. Rung 1 is an `.hls`
-/// whose URL a local server answers with HTTP 401 (`screenshots.sh`), so the REAL coordinator reads
-/// a real 401 out of AVPlayer's error log; rung 2 is the bundled clip as `.progressive`. Proves
-/// coordinator -> VM -> `demote` -> forced re-resolve -> replacement item playing.
+/// Playback hardening (plan Task 7; final review M3): a two-rung ladder that honours `demote`, both
+/// rungs on the local server `screenshots.sh` runs. Rung 1 (`.hls`) serves its playlist and two
+/// 1 s segments, then answers HTTP 401 -- the production shape, ready -> segment 401 ->
+/// `.playbackError` -- so the REAL coordinator reads a real 401 out of AVPlayer's error log. Rung 2
+/// (the sibling `rung2/` playlist, all segments served) is tagged `.progressive`, so the rung-2 pill
+/// shows. A forced rung-1 re-resolve THROWS: rung 1 refuses this client for good (V2Brp_esIVI), so a
+/// same-rung retry after a 401 is the wrong answer and must show -- without spec R4's 401 rule the
+/// ladder would otherwise still reach rung 2 one retry later and the proof would stay green.
 private actor FixtureLadderResolver: StreamResolving {
     let rung1: URL
     private var demoted = false
@@ -756,13 +760,13 @@ private actor FixtureLadderResolver: StreamResolving {
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool) async throws -> Resolved {
         guard demoted else {
+            if forceRefresh { throw ExtractionError.transport("rung 1 re-resolved after its 401") }
             return Resolved(stream: .hls(url: rung1, isLive: false, audioOnlyURL: nil, captionTracks: []),
                             client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
         }
-        guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
-            throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
-        }
-        return Resolved(stream: .progressive(url: url, label: "360p"), client: .android,
+        let rung2 = rung1.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("rung2/master.m3u8")
+        return Resolved(stream: .progressive(url: rung2, label: "360p"), client: .android,
                         userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
 

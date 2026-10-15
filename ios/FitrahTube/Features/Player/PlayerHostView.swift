@@ -88,7 +88,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
-                                        airPlayFellBack: model.airPlayFellBack)
+                                        airPlayFellBack: model.airPlayFellBack,
+                                        failedItem: context.coordinator.failedItem)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -371,6 +372,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// first such sample. Per coordinator, yet as good as per item: an item's log holds only its
         /// own events, all newer than any stamp taken before it was swapped in.
         private(set) var errorLogFloor: Date?
+        /// The item the last recovery event fired for (final review M4). An item that failed to play
+        /// to end stays `.readyToPlay`, so `player(for:…, failedItem:)` cannot tell it from a healthy
+        /// one by status; a same-URL re-resolve (every offline open) would get the dead item back.
+        private(set) weak var failedItem: AVPlayerItem?
         /// Set by `fire`, spent by the next `observe` of a NEW item on the SAME player: recovery's
         /// replacement, which `observe` plays iff `PlaybackRecovery.shouldResume` said so (never for a
         /// stall: that replacement inherits the live player's state).
@@ -615,12 +620,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
             RunLoop.main.add(timer, forMode: .common)
             sampleTimer = timer
-            // Stamped here, not left to the sampler: a replacement that never produces a frame never
-            // ticks, and its failure would read rung 1's old stamp as "the user had paused" (review N1).
-            if resumes, self.model?.pausedForCast != true {
-                player.play()
-                lastPlayingAt = Date()
-            }
+            if resumes, self.model?.pausedForCast != true { player.play() }
+            // Stamped here for EVERY new item that is starting -- recovery's resumed replacement (N1)
+            // and an item the builder already started, like an auto-advance's (final review I1) -- not
+            // left to the sampler's first tick a second away: a failure inside that second would read
+            // the previous video's stamp as "the user had paused". `rate` is set synchronously by
+            // `play()` and stays 0 for a user pause and a cast pause.
+            if player.rate != 0 { lastPlayingAt = Date() }
         }
 
         /// M6: `monitor` is private, so teardown goes through here (see
@@ -651,15 +657,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
             if player.timeControlStatus != .paused { lastPlayingAt = Date() }
             if player.timeControlStatus == .playing { errorLogFloor = Date() }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
+            // Final review I2: the path monitor this host already runs for the quality clamp. With no
+            // usable network a recovery's re-resolve fails at once; AVPlayer resumes by itself.
             let tick = watchdog.tick(playbackTime: player.currentTime().seconds, bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
-                                     isLive: isLive, now: Date())
+                                     isLive: isLive, isOnline: path.status == .satisfied, now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
             if tick.fire { fire(.stall) }
         }
 
         private func fire(_ event: RecoveryEvent) {
             guard let model else { return }
+            failedItem = observedItem
             resumeOnNextItem = PlaybackRecovery.shouldResume(after: event, lastPlayingAt: lastPlayingAt, now: Date())
             // The CDN's answer, when AVFoundation logged one since the player last played (N2).
             let status = observedItem?.errorLog()?.events.last.flatMap {
@@ -735,9 +744,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// the latch -- is not the only thing that gets here: a fallback whose forced re-resolve throws
     /// dismantles the host, and Retry then rebuilt the player with AirPlay re-enabled, so the next
     /// 403 found `alreadyFellBack` true and burned the real recovery budget on the dead route.
+    /// Final review M4: `failedItem` is the item recovery last fired for (`Coordinator.failedItem`).
+    /// It is never handed back, whatever its status says.
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
-                       pausedForCast: Bool = false, airPlayFellBack: Bool = false) -> AVPlayer? {
+                       pausedForCast: Bool = false, airPlayFellBack: Bool = false,
+                       failedItem: AVPlayerItem? = nil) -> AVPlayer? {
         guard let resolved = state.resolved else {
             existing?.pause()
             return nil
@@ -752,7 +764,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // either -- a same-URL advance handed the ended item back and the queue stalled one short
         // of its terminus.
         if continuesCurrentVideo, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
-           existing.currentItem?.status != .failed {
+           existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
         let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent))

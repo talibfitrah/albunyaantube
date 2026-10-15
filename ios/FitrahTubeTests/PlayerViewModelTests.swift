@@ -332,6 +332,51 @@ struct PlayerViewModelTests {
         #expect(inner.demotions == ["abcdefghijk:visionos"])
     }
 
+    /// Final review M2: the PRODUCTION forward. An empty `LiveStreamResolver.demote` passed every
+    /// test (the UI rig returns its fixture unwrapped) and would bring F1 back: every step-down
+    /// walking from rung 1 again. A real `StreamResolver` behind it; the transport answers by client.
+    @Test func liveStreamResolverHandsTheStepDownToTheLibrary() async throws {
+        let transport = ClientAnsweringTransport()
+        let keyValueStore = MemoryKV()
+        let clock = SystemClock()
+        let config = RemoteConfigStore(transport: transport, keyValueStore: keyValueStore,
+                                       url: URL(string: "https://example.invalid/remote-config.json")!)
+        let live = LiveStreamResolver(resolver: StreamResolver(
+            transport: transport, remoteConfigStore: config,
+            sessionStore: SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore),
+            cache: ManifestCache(remoteConfig: config), gate: AlwaysAvailable(),
+            monotonicClock: clock, wallClock: clock, locale: InnerTubeLocale(hl: "en", gl: "US"),
+            minPostSpacing: .zero))
+
+        let first = try await live.resolve("V2Brp_esIVI", purpose: .player, kind: .player,
+                                           sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = first.stream else { return #expect(Bool(false), "rung 1 is VISIONOS HLS") }
+        await live.demote("V2Brp_esIVI", failed: .visionos)
+        let second = try await live.resolve("V2Brp_esIVI", purpose: .player, kind: .autoRecovery,
+                                            sourceChannelId: nil, forceRefresh: true)
+
+        guard case .progressive = second.stream else { return #expect(Bool(false), "the step-down went back to rung 1") }
+        #expect(transport.clientNames == ["VISIONOS", "ANDROID"])
+    }
+
+    /// Answers a player POST by the client named in its body: VISIONOS gets an HLS manifest, ANDROID
+    /// itag 18. Synthetic bodies, `127.0.0.1`-free because nothing here is ever played.
+    private final class ClientAnsweringTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var names: [String] = []
+        var clientNames: [String] { lock.withLock { names } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let json = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            let name = ((json?["context"] as? [String: Any])?["client"] as? [String: Any])?["clientName"] as? String
+            lock.withLock { names.append(name ?? "?") }
+            let body = name == "ANDROID"
+                ? #"{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false}}"#
+                : #"{"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/api/manifest/hls_variant/index.m3u8","expiresInSeconds":"21540"},"videoDetails":{"isLive":false}}"#
+            return HTTPResponse(status: 200, headers: [:], body: Data(body.utf8))
+        }
+    }
+
     /// End to end through the production decorator: two step-downs inside 30 s both reach the
     /// resolver and the player keeps playing -- no cooldown screen (V2Brp_esIVI's trace).
     @Test func twoStepDownsInsideThirtySecondsNeverShowACooldown() async {

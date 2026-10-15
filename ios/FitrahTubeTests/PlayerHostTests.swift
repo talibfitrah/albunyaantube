@@ -297,6 +297,48 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus == .paused, "the stall's replacement overrode a pause")
     }
 
+    /// Final review I1: a new video the BUILDER starts (an auto-advance: `continuesCurrentVideo:
+    /// false` on the reused coordinator) was not stamped until the sampler's first tick a second
+    /// later. A rung-1 failure inside that second read the previous video's stamp -- more than 3 s
+    /// old, since that video had ended and paused -- and the step-down's replacement stayed paused.
+    @Test(.timeLimit(.minutes(1))) func aFailureInTheFirstSecondAfterAnAdvanceStillResumes() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        player.pause()                                     // the previous video ended
+        try await Task.sleep(for: .milliseconds(3300))
+
+        // The advance: the builder starts the next video on the same player, before any tick.
+        _ = PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: player,
+                                  continuesCurrentVideo: false)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model,
+                            isLive: false, playToEnd: .none)
+        #expect(player.timeControlStatus != .paused, "the builder starts a different video")
+        Self.postFailure(on: player)                       // rung 1 dies inside its first second
+        player.pause()
+
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)
+        #expect(player.timeControlStatus != .paused, "the step-down's replacement stayed paused")
+    }
+
+    /// Final review M4 (pre-existing I7; new evidence in spec §3 and the 2026-10-15 probe): an item
+    /// that failed to play to end STAYS `.readyToPlay`, so the reuse guard handed a same-URL
+    /// re-resolve -- every offline open resolves the same `file://` URL -- the dead item back: a
+    /// paused player, no error, no Retry. The coordinator names the item recovery fired for, and the
+    /// builder never reuses it.
+    @Test(.timeLimit(.minutes(1))) func aSameURLReResolveAfterAFailureToPlayToEndBuildsANewItem() async throws {
+        let (_, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        let dead = try #require(player.currentItem)
+        Self.postFailure(on: player)
+        #expect(dead.status == .readyToPlay, "the status alone cannot tell")
+
+        let rebuilt = PlayerHostView.player(for: Self.progressive(try Self.fixtureURL()), replacing: player,
+                                            failedItem: coordinator.failedItem)
+
+        #expect(rebuilt === player)
+        #expect(player.currentItem !== dead, "the dead item was handed back")
+    }
+
     /// Review M1 (I5 at the host): a failure while the USER had paused, long after the last time the
     /// player wanted to play, must not start playback on the replacement.
     @Test(.timeLimit(.minutes(1))) func aFailureWhileTheUserPausedLeavesTheReplacementPaused() async throws {

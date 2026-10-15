@@ -216,16 +216,19 @@ struct StallWatchdog: Equatable {
         var fire = false
     }
 
+    /// `isOnline` (final review I2): with no usable network a stall is not ours to fix -- the forced
+    /// re-resolve would fail at once and `.error` would replace the player -- so offline seconds never
+    /// count, and back online AVPlayer gets a full threshold to resume by itself first.
     mutating func tick(playbackTime: TimeInterval, bufferedEnd: TimeInterval, isStalled: Bool,
-                       isLive: Bool, now: Date) -> Tick {
+                       isLive: Bool, isOnline: Bool = true, now: Date) -> Tick {
         var result = Tick()
         if abs(playbackTime - lastPlaybackTime) > 0.1 {
             lastPlaybackTime = playbackTime
             stalledSince = nil
             result.progressed = true
         }
-        guard armed, isStalled else {
-            stalledSince = nil // paused, playing, or not yet ready: nothing accumulates
+        guard armed, isStalled, isOnline else {
+            stalledSince = nil // paused, playing, not yet ready, or offline: nothing accumulates
             lastBufferedEnd = bufferedEnd
             return result
         }

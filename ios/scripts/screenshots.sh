@@ -494,20 +494,42 @@ fi
 # Playback hardening Phase 1 (local-docs/plans/2026-10-14-ios-playback-hardening.md, Task 7): rung 1
 # answered with a REAL HTTP 401 by a localhost server, the step-down to rung 2 still playing, and the
 # not-available card -- en + ar, iPhone and iPad. Same localhost technique as the C task 6 live leg.
+# Final review M3: the production shape. Playlists answer 200; rung 1 serves two 1 s segments and
+# answers 401 for the rest (AVPlayer is READY first, so the failure is `.playbackError`, which steps
+# down only through the 401 rule); rung 2 serves every segment. Synthetic ffmpeg test-pattern media
+# in scripts/fixtures/hardening-hls (no YouTube content).
 HARDENING_OUT="$ROOT/local-docs/screens/playback-hardening"
 HARDENING_PORT="${HARDENING_PORT:-8766}"
 python3 -I -c '
-import http.server, sys
-class Refuse(http.server.BaseHTTPRequestHandler):
-    def do_GET(self):
-        self.send_response(401)
-        self.send_header("Content-Length", "0")
+import http.server, os, sys
+port, media = int(sys.argv[1]), sys.argv[2]
+playlist = ("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+            + "".join("#EXTINF:1.0,\nseg%d.ts\n" % i for i in range(6)) + "#EXT-X-ENDLIST\n").encode()
+class Rig(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, body=b"", kind="text/plain"):
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
         self.end_headers()
-    do_HEAD = do_GET
+        self.wfile.write(body)
+    def do_GET(self):
+        rung, _, name = self.path.lstrip("/").partition("/")
+        if rung not in ("rung1", "rung2") or os.path.basename(name) != name:
+            return self.reply(404)
+        if name == "master.m3u8":
+            return self.reply(200, playlist, "application/vnd.apple.mpegurl")
+        if not (name.startswith("seg") and name.endswith(".ts") and name[3:-3].isdigit()):
+            return self.reply(404)
+        if rung == "rung1" and int(name[3:-3]) >= 2:
+            return self.reply(401)
+        if not os.path.isfile(os.path.join(media, name)):
+            return self.reply(404)
+        with open(os.path.join(media, name), "rb") as segment:
+            self.reply(200, segment.read(), "video/mp2t")
     def log_message(self, *args):
         pass
-http.server.HTTPServer(("127.0.0.1", int(sys.argv[1])), Refuse).serve_forever()
-' "$HARDENING_PORT" &
+http.server.ThreadingHTTPServer(("127.0.0.1", port), Rig).serve_forever()
+' "$HARDENING_PORT" "$ROOT/ios/scripts/fixtures/hardening-hls" &
 HARDENING_SERVER=$!
 # A Ctrl-C or a killed xcodebuild must not leave the 401 server bound to the port (review M3).
 trap 'kill "$HARDENING_SERVER" 2>/dev/null' EXIT

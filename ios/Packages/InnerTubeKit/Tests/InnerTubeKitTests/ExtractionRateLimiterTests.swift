@@ -124,24 +124,18 @@ import Testing
         #expect(decision == .allowed)
     }
 
-    @Test func autoRecoveryReservedBudgetAllowedTwiceThenBlockedAfterPlayerExhausted() async {
+    /// Final review M8 (owner approved, 2026-10-14): the `.autoRecovery` lane is gone. Recovery is
+    /// never gated -- the player's `RecoveryBudget` is its budget, and the app's `RateLimitedResolver`
+    /// never asks -- and it leaves nothing in the ledger that could throttle a later user resolve.
+    @Test func autoRecoveryIsNeverGatedAndRecordsNothing() async {
         let limiter = ExtractionRateLimiter()
-        _ = await limiter.check("abc123def45", kind: .player, now: .seconds(0))
-        await limiter.onSuccess("abc123def45")
-        _ = await limiter.check("abc123def45", kind: .player, now: .seconds(31))
-        await limiter.onSuccess("abc123def45")
-        _ = await limiter.check("abc123def45", kind: .player, now: .seconds(62))
-        await limiter.onSuccess("abc123def45")
-        // Player is now exhausted (3/3 in the 5min window).
-
-        let first = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(93))
-        #expect(first == .allowed, "1st reserved auto-recovery attempt should be allowed")
-
-        let second = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(124))
-        #expect(second == .allowed, "2nd reserved auto-recovery attempt should be allowed")
-
-        let third = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(155))
-        #expect(third == .blocked(reason: "auto-recovery limit (2 per window)", retryAfter: .seconds(145)))
+        for second in 0..<5 {
+            let decision = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(Int64(second)))
+            #expect(decision == .allowed, "recovery attempt \(second) was gated")
+        }
+        #expect(await limiter.videoRecordCount == 0)
+        let player = await limiter.check("abc123def45", kind: .player, now: .seconds(5))
+        #expect(player == .allowed)
     }
 
     @Test func proactiveTTLRefreshDoesNotConsumeSharedPerVideoBudget() async {
@@ -205,15 +199,6 @@ import Testing
         _ = await limiter.check("abc123def45", kind: .proactiveTTLRefresh, now: .zero)
 
         let decision = await limiter.check("abc123def45", kind: .proactiveTTLRefresh, now: .seconds(15))
-
-        #expect(decision == .delayed(.seconds(15), reason: "minimum interval"))
-    }
-
-    @Test func nonFirstAutoRecoveryAttemptWithinMinIntervalIsDelayed() async {
-        let limiter = ExtractionRateLimiter()
-        _ = await limiter.check("abc123def45", kind: .autoRecovery, now: .zero)
-
-        let decision = await limiter.check("abc123def45", kind: .autoRecovery, now: .seconds(15))
 
         #expect(decision == .delayed(.seconds(15), reason: "minimum interval"))
     }

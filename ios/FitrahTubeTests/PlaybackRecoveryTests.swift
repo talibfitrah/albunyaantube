@@ -318,6 +318,35 @@ struct PlaybackRecoveryTests {
         #expect(ticks.allSatisfy { !$0.progressed })
     }
 
+    /// Final review I2: with no usable network a stall is not ours to fix -- the forced re-resolve
+    /// would fail at once (`waitsForConnectivity = false`) and `.error` would replace the player,
+    /// ending a locked-screen listen for good. AVPlayer resumes by itself when the network returns,
+    /// so offline seconds never count toward the threshold.
+    @Test func aStallWithNoNetworkNeverFires() {
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        let ticks = (0..<20).map { second in
+            watchdog.tick(playbackTime: 12, bufferedEnd: 100, isStalled: true, isLive: false, isOnline: false,
+                          now: Self.t0.addingTimeInterval(TimeInterval(second)))
+        }
+        #expect(ticks.allSatisfy { !$0.fire })
+    }
+
+    /// Back online and still stalled: AVPlayer gets a full threshold to resume on its own first.
+    @Test func aStallThatOutlastsTheReconnectFiresAFullThresholdLater() {
+        var watchdog = StallWatchdog(playbackTime: 12)
+        watchdog.armed = true
+        for second in 0..<10 {
+            _ = watchdog.tick(playbackTime: 12, bufferedEnd: 100, isStalled: true, isLive: false, isOnline: false,
+                              now: Self.t0.addingTimeInterval(TimeInterval(second)))
+        }
+        let online = (10..<17).map { second in
+            watchdog.tick(playbackTime: 12, bufferedEnd: 100, isStalled: true, isLive: false, isOnline: true,
+                          now: Self.t0.addingTimeInterval(TimeInterval(second)))
+        }
+        #expect(online.map(\.fire) == [false, false, false, false, false, false, true])
+    }
+
     @Test func progressDuringAStallRestartsTheClock() {
         var watchdog = StallWatchdog(playbackTime: 0)
         watchdog.armed = true
@@ -549,19 +578,10 @@ struct PlaybackRecoveryTests {
 
         #expect(await resolver.demotions == ["abcdefghijk:visionos"])
         #expect(await resolver.calls == [false, true])
-        #expect(vm.state == .rung2Progressive(Self.progressive))
-    }
-
-    /// Task 6 review: the order itself. A re-resolve that ran before `demote` would walk from the rung
-    /// that just failed and hand it straight back.
-    @Test @MainActor func theStepDownDemotesBeforeTheForcedReResolve() async {
-        let resolver = FakeResolver([.success(Self.hls), .success(Self.progressive)])
-        let vm = makeViewModel(resolver)
-        await vm.open()
-
-        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
-
+        // Task 6 review: the order itself, from one shared log -- a re-resolve that ran before
+        // `demote` would walk from the rung that just failed and hand it straight back.
         #expect(await resolver.log == ["resolve", "demote", "resolve"])
+        #expect(vm.state == .rung2Progressive(Self.progressive))
     }
 
     /// Mid-play expiry (403): a fresh URL from the SAME rung, nothing demoted, never `.loading`.

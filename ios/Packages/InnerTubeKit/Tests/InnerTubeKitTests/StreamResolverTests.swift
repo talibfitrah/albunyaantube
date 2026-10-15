@@ -182,9 +182,9 @@ import Testing
         #expect(transport.callCount == 1)
     }
 
-    // MARK: - b) VISIONOS unplayableKids -> ANDROID itag18 -> .progressive("360p")
+    // MARK: - b) a VISIONOS refusal -> ANDROID itag18 -> .progressive("360p")
 
-    @Test func unplayableKidsFallsToAndroidItag18() async throws {
+    @Test func aVisionosRefusalFallsToAndroidItag18() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
         let (resolver, _) = makeResolver(transport: transport)
 

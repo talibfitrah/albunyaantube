@@ -85,8 +85,9 @@ struct RateLimitedResolver: StreamResolving {
         // non-forced resolve most likely to hit the network, and it is the one lane the limiter
         // exists to keep behind the interactive one.
         // Owner directive 2026-10-14: `.autoRecovery` is never gated. Its budget is the player's own
-        // `RecoveryBudget` (at most 3 recovery resolves per stream); a refusal here surfaced as a
-        // cooldown screen in the middle of a step-down that would have played (V2Brp_esIVI).
+        // `RecoveryBudget`: 3 recovery resolves per stream, 3 more after its one refund on the first
+        // progress, plus one AirPlay mirror -- at most 7. A refusal here surfaced as a cooldown screen
+        // in the middle of a step-down that would have played (V2Brp_esIVI).
         if (forceRefresh && kind != .autoRecovery) || kind == .prefetch {
             switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
             case .allowed:
@@ -574,7 +575,10 @@ extension StreamState {
         // `status == .failed` land together on a dead stream. Without this the same incident spends
         // two budget slots and fires two resolves, one of which the generation guard then discards.
         // First event in wins; the rest are the same incident.
-        guard !isRecovering, let resolved = state.resolved else { return }
+        // `resolvedVideoId == args.videoId` (final review M1): the failure is the stream on screen's,
+        // and while an advance's resolve is out `args` already names the NEXT video -- recovering
+        // then would force-resolve that one on this lane and supersede the advance.
+        guard !isRecovering, resolvedVideoId == args.videoId, let resolved = state.resolved else { return }
         isRecovering = true
         defer { isRecovering = false }
         // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
@@ -597,6 +601,8 @@ extension StreamState {
         case .exhausted:
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
+            // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
+            // make `.stall` step-downs non-sticky if congestion makes that common (R15).
             // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
             // advance moves `args` before its own resolve lands.
             let myGeneration = generation
@@ -669,7 +675,7 @@ extension StreamState {
     ///
     /// `.cast` purpose: a bot check on this walk fails the cast only (the existing banner) and never
     /// records InnerTubeKit's GLOBAL cooldown -- from the usual `.hls` the phone never tried the
-    /// android rung, so a trip here would lock out its WORKING rung-1 playback for 1-24 h. The
+    /// android rung, so a trip here would lock out its WORKING rung-1 playback for up to 5 minutes. The
     /// offline save's identical walk (`.prefetch`) still records it. NOT skipped for
     /// `state.isLive`: that flag reads `isLiveContent` for an ENDED
     /// broadcast -- nhaGO__rxHQ resolves `.hls(isLive: true)`, yet its itag-18 walk played on a real
