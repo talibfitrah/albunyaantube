@@ -1,0 +1,21 @@
+ios/FitrahTube/Resources/Localizable.xcstrings
+  s_dbb6b1f3671904::t_f96c7dbb74fac9 7131
+android/app/src/main/res/values-ar/strings_list_states.xml
+  s_dbb6b1f3671904::t_f96c7dbb74fac9 16
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "489d2aeb11e2a502e85a510585ab2e4654065903",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
