@@ -5,6 +5,13 @@ stable release.
 
 ## [Unreleased]
 
+- Search (both apps): forgives typos, shows the closest or related results when nothing matches, and updates smoothly while you type; on iOS, VoiceOver announces the result count.
+- iOS: captions are off by default and turn on only when you pick a language; Off is always in the captions menu, as on Android; iPad fullscreen keeps auto-generated captions (to turn them off there, leave fullscreen and choose Off).
+- iOS: no embedded YouTube player anywhere, and description links never open YouTube (both apps follow one shared link rule).
+- iOS: the player's action row is evenly spaced.
+- Offline (both apps): a signed-in user opens the app and plays downloads with no connection; when the server cannot be reached the app opens on the saved account within about 3 seconds and checks again in the background; a signed-out user sees the sign-in screen with "No internet connection".
+- Android: downloads play inside FitrahTube's own player, even offline (before, Android 11+ showed "No video player found"); audio-only and HD downloads finish much faster instead of stalling (they now download in 10 MB ranges, as on iOS); a failed sync while offline no longer crashes the app; reopening after Android closed the app in the background keeps the signed-in account; cancelled downloads remove their partial files.
+- iOS: saves finish and open again (a file-path bug since 1.0.0 kept every save from completing); a launch before the phone's first unlock keeps the account and the saved library; favourites made from a saved lecture keep its channel and length.
 - iOS: when a video's first stream is refused by the server, playback continues on the standard-quality stream instead of showing an error or a countdown, and that video stays on it for the rest of the session.
 - iOS: members-only, private, region-blocked and removed videos say "not available" with no Retry; every other failure keeps the retryable "There was a problem loading this video" message.
 - iOS: a temporary block from the video source no longer stops all playback for 1–24 hours; the app renews its session and retries at once, and repeated blocks wait at most 5 minutes.
