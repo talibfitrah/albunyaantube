@@ -87,6 +87,14 @@ struct PlayerStateViewTests {
         #expect(PlayerScreen.transitionAnnouncement(for: nil) == nil)
     }
 
+    /// 1.0.3 R3: a saved file is one rendition the extraction ladder never walked, so its open
+    /// says nothing about quality — out loud as on screen (the pill is already hidden offline).
+    @Test func anOfflineOpenAnnouncesNoQuality() {
+        #expect(PlayerScreen.transitionAnnouncement(for: .rung2Progressive(Self.resolved), offline: true) == nil)
+        #expect(PlayerScreen.transitionAnnouncement(for: .rung2Progressive(Self.resolved), offline: false)
+                == String(localized: "player_announce_standard_quality"))
+    }
+
     @Test func contentUnavailableShowsNotAvailableCopyWithNoRetryAndNoAnnouncement() {
         let copy = PlayerStateCopy.map(.contentUnavailable, isOnline: true, locale: Self.enUS)
         #expect(copy.message == String(localized: "player_stream_unavailable"))

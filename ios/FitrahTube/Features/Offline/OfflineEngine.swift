@@ -265,8 +265,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     private func partialURL(_ id: String) -> URL { directory.appending(path: "\(id).tmp") }
 
+    /// `path(percentEncoded: false)`, never `path()`: the app's directory is `Library/Application
+    /// Support/offline`, and an encoded `%20` names no file — the size read 0 after every chunk and
+    /// the walk re-issued chunk one forever (1.0.3).
     private func partialSize(_ id: String) -> Int64 {
-        (try? FileManager.default.attributesOfItem(atPath: partialURL(id).path())[.size] as? Int64) ?? 0
+        (try? FileManager.default.attributesOfItem(atPath: partialURL(id).path(percentEncoded: false))[.size] as? Int64) ?? 0
     }
 
     private static func token(for task: URLSessionTask) -> Data? {
@@ -343,7 +346,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // the `.tmp` a loser can still leave is deleted by the next `start` (CF-D-10).
             guard isCurrent(id, generation) else { return }
             // A 200 means the server ignored the Range and sent the whole body: it replaces.
-            if status == 200 || !FileManager.default.fileExists(atPath: partial.path()) {
+            if status == 200 || !FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)) {
                 try? FileManager.default.removeItem(at: partial)
                 try FileManager.default.moveItem(at: location, to: partial)
             } else {

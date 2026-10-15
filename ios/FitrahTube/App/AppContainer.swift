@@ -73,7 +73,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// latch here, and a fixture container's screens must write to the fixture's suite rather than
     /// the app's real domain — the same reason `fake()` takes a `defaults:` at all.
     let userDefaults: UserDefaults
-    private let modelContainer: ModelContainer
+    /// 1.0.3 R5 (L1): opened on first USE, never while the container is built. `FitrahTubeApp`'s
+    /// `@State` builds this container in `App.init`, which SwiftUI's `App.main()` runs BEFORE
+    /// `UIApplicationMain` (probed: the init's stack has no `UIApplicationMain` frame), i.e. on
+    /// every launch, a background launch before the first unlock included (the download session
+    /// sends launch events) — where the store cannot be read (`makeModelContainer`).
+    private lazy var modelContainer: ModelContainer = openModelContainer()
+    private let openModelContainer: () -> ModelContainer
     private let apiBaseURL: URL
     /// What `offlineGate` sends over. Not private, and not a detail: a fixture container's gate
     /// client must never reach the network, so `AppContainerTests` pins which transport it got.
@@ -681,7 +687,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// generated `Client`); nil in fake containers means the header stays whatever the route carried.
     let playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)?
 
-    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL,
+    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard,
+         modelContainer: @autoclosure @escaping () -> ModelContainer, apiBaseURL: URL,
          browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
          playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
          gateTransport: any HTTPTransport = URLSessionTransport(),
@@ -702,7 +709,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.capabilities = capabilities ?? .current()
         self.catalog = catalog
         self.userDefaults = userDefaults
-        self.modelContainer = modelContainer
+        self.openModelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
         self.injectedSync = sync
@@ -725,7 +732,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // Timestamp objects, see `PublicHeaders`.
         let headers = PublicHeaders(baseURL: baseURL, deviceId: deviceId)
         return AppContainer(
-            catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL,
+            catalog: LiveCatalogClient(client: api),
+            // Lazy (the property's note): by the time a store is first used `UIApplicationMain` runs.
+            modelContainer: makeModelContainer(inMemory: false,
+                                               protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable }),
+            apiBaseURL: baseURL,
             degradedHeader: { try await headers.channel($0) },
             playlistHeader: { try await headers.playlist($0) })
     }
@@ -817,16 +828,46 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     }
     #endif
 
-    /// Gate A-I1. This runs eagerly on the launch path (`live()` is evaluated in `FitrahTubeApp`'s
-    /// `@State` initialiser), so its failure mode used to be a `preconditionFailure` -- a permanent
+    /// The on-disk store `makeModelContainer(inMemory: false)` opens.
+    static var liveStoreURL: URL {
+        ModelConfiguration(schema: Schema(versionedSchema: FavoritesSchemaV7.self), isStoredInMemoryOnly: false).url
+    }
+
+    /// 1.0.3 R5 (L1): whether the store file can be opened now. Its class is the app default,
+    /// "until first user authentication": before the first unlock after a reboot, `open(2)` refuses it
+    /// with a permission error, which is not corruption. A store not created yet is no reason to wait.
+    nonisolated static func storeIsReadable(_ url: URL) -> Bool {
+        let fd = open(url.path, O_RDONLY)
+        if fd >= 0 { close(fd); return true }
+        return errno != EPERM && errno != EACCES
+    }
+
+    /// 1.0.3 R5 (L1): returns once the store can be read: at once on every launch after the first
+    /// unlock (the store stays readable while the screen is locked). Before it, a background-session
+    /// relaunch waits here and retries on every `protectedDataDidBecomeAvailable`, instead of
+    /// opening a store it cannot read. `isProtectedDataAvailable` is the second way through, so a
+    /// permission error with the device unlocked never parks the downloads.
+    static func waitUntilStoreReadable(
+        isReadable: () -> Bool = { AppContainer.storeIsReadable(AppContainer.liveStoreURL) || UIApplication.shared.isProtectedDataAvailable },
+        center: NotificationCenter = .default
+    ) async {
+        let unlocked = center.notifications(named: UIApplication.protectedDataDidBecomeAvailableNotification)
+        guard !isReadable() else { return }
+        for await _ in unlocked where isReadable() { return }
+    }
+
+    /// Gate A-I1. This runs on the launch path (at the first store use since 1.0.3, the
+    /// `modelContainer` note), so its failure mode used to be a `preconditionFailure` -- a permanent
     /// crash loop on a corrupt or unmigratable store, unrecoverable without delete-and-reinstall.
     /// Recover by recreating instead: the store files are deleted and the container rebuilt once.
     /// Losing local favorites is the accepted cost (phase 4's sync restores them from the server);
     /// losing the whole app is not.
     ///
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
-    /// corrupt file; production always takes the default location.
-    static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
+    /// corrupt file; production always takes the default location. `protectedDataAvailable`:
+    /// 1.0.3 R5 (L1), see the deletion below.
+    static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil,
+                                   protectedDataAvailable: () -> Bool = { true }) -> ModelContainer {
         let schema = Schema(versionedSchema: FavoritesSchemaV7.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
@@ -843,7 +884,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             // own; only a second failure is treated as the corrupt/unmigratable case the deletion
             // below exists for.
             if let recovered = try? build() { return recovered }
-            if !inMemory {
+            // 1.0.3 R5 (L1): NEVER when the store is unreadable rather than corrupt. Before the
+            // first unlock after a reboot its data-protection class keeps it shut (Core Data:
+            // SQLITE_AUTH), and a launch there (a background-session event, say) used to
+            // delete the Saved library, favorites and subscriptions as if corrupt. Fail soft: the
+            // in-memory stand-in below, the store untouched for the next launch.
+            let unreadable = !protectedDataAvailable() || !storeIsReadable(configuration.url)
+            if !inMemory, !unreadable {
                 // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
                 // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
                 // suffixing the database *filename*, so the wrongly-named deletes left the real

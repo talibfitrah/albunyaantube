@@ -41,6 +41,77 @@ struct AppContainerTests {
         }
     }
 
+    // MARK: - 1.0.3 R5 (L1): a store the device has not unlocked yet is never deleted
+
+    /// Before the first unlock after a reboot, a background launch (a download-session event, say)
+    /// cannot open the store: its class is "until first user authentication", and the
+    /// open fails (SQLITE_AUTH). Two failed opens used to DELETE it as if corrupt — the Saved
+    /// library, favorites, subscriptions. The simulator has no Data Protection, so a store that
+    /// cannot open stands in for the locked one, and the seam reports protected data unavailable.
+    @Test func aStoreThatCannotOpenWhileProtectedDataIsUnavailableIsKept() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        let bytes = Data("a locked store, unreadable here".utf8)
+        try bytes.write(to: url)
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+
+        let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url, protectedDataAvailable: { false })
+
+        #expect((try? Data(contentsOf: url)) == bytes, "the store was deleted while protected data was unavailable")
+        // Fail soft: this launch runs on a usable stand-in, never a trap.
+        let inMemory = container.configurations.allSatisfy { $0.isStoredInMemoryOnly }
+        #expect(inMemory, "the fallback reopened the on-disk store")
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+    }
+
+    /// The store opens on first USE, never while the container is built: `FitrahTubeApp` builds it
+    /// on every launch, one before the first unlock included, where an open can only fail.
+    @Test func buildingTheContainerDoesNotOpenTheStore() {
+        var opened = false
+        let container = AppContainer(catalog: FakeCatalogClient(),
+                                     userDefaults: UserDefaults(suiteName: "fitrahtube.lazy-store") ?? .standard,
+                                     modelContainer: { opened = true; return AppContainer.makeModelContainer(inMemory: true) }(),
+                                     apiBaseURL: URL(string: "https://api.fitrah.test/")!,
+                                     gateTransport: FixedStatusTransport(status: 503))
+        #expect(!opened, "the store opened while the container was built")
+        _ = container.offlineStore
+        #expect(opened)
+    }
+
+    /// The retry: a background-session relaunch before the first unlock waits for
+    /// `protectedDataDidBecomeAvailable` until the store is readable, then goes ahead.
+    @Test func theStoreWaitRetriesOnProtectedDataDidBecomeAvailable() async {
+        let center = NotificationCenter()
+        var readable = false
+        var done = false
+        let waiting = Task {
+            await AppContainer.waitUntilStoreReadable(isReadable: { readable }, center: center)
+            done = true
+        }
+        for _ in 0..<100 { await Task.yield() }
+        #expect(!done, "it went ahead while the store was unreadable")
+
+        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        for _ in 0..<100 { await Task.yield() }
+        #expect(!done, "a notification alone is not a readable store")
+
+        readable = true
+        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+        await waiting.value
+        #expect(done)
+    }
+
+    /// The direction that could be wrong: a readable store never waits (every launch after the
+    /// first unlock, locked or not — the store's class stays readable while the screen is locked).
+    @Test func aReadableStoreNeverWaits() async {
+        await AppContainer.waitUntilStoreReadable(isReadable: { true }, center: NotificationCenter())
+        let missing = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("no-store-\(UUID().uuidString)")
+        #expect(AppContainer.storeIsReadable(missing), "a store not created yet is no reason to wait")
+    }
+
     /// Cubic P1: a background-events relaunch calls the AppDelegate hook and renders NO scene, so
     /// RootView's `.task` — the only other builder of `offlineManager` — never runs; without this
     /// wiring the background session/delegate is never recreated, queued delegate events go

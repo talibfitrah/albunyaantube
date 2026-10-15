@@ -1,3 +1,4 @@
+import AuthenticationServices
 import Foundation
 import Testing
 @testable import FitrahTube
@@ -72,6 +73,38 @@ private enum FirebaseCode {
     /// `messageKey` and without a reader is what this catches.
     @Test func theTableIsFourteenCodes() {
         #expect(AuthErrorCode.allCases.count == 14)
+    }
+
+    // MARK: - 1.0.3 R2: a provider leg that failed offline says "No internet connection"
+
+    /// AppAuth's token exchange (the step after Google's web sheet) wraps the URL-loading error:
+    /// `OIDGeneralErrorDomain` -5 with the `NSURLErrorDomain` cause under `NSUnderlyingErrorKey`
+    /// (`OIDErrorUtilities errorWithCode:underlyingError:description:`), which `GIDSignIn` passes on.
+    private static func wrapped(_ domain: String, _ code: Int, _ cause: URLError.Code) -> NSError {
+        NSError(domain: domain, code: code, userInfo: [NSUnderlyingErrorKey: URLError(cause)])
+    }
+
+    @Test func anOfflineGoogleLegIsTheNetworkCode() {
+        #expect(GoogleAuthProvider.failure(for: Self.wrapped("org.openid.appauth.general", -5, .notConnectedToInternet))
+                == .failed(.network))
+        #expect(GoogleAuthProvider.failure(for: URLError(.networkConnectionLost)) == .failed(.network))
+        #expect(GoogleAuthProvider.failure(for: Self.wrapped("org.openid.appauth.general", -5, .timedOut)) == .failed(.network))
+        // Unchanged: a cancel is silent and any other failure keeps Google's own copy.
+        #expect(GoogleAuthProvider.failure(for: NSError(domain: "com.google.GIDSignIn", code: -5)) == .cancelled)
+        #expect(GoogleAuthProvider.failure(for: NSError(domain: "com.google.GIDSignIn", code: -1)) == .failed(.googleSignInFailed))
+        #expect(GoogleAuthProvider.failure(for: Self.wrapped("org.openid.appauth.general", -5, .badServerResponse))
+                == .failed(.googleSignInFailed))
+    }
+
+    @Test func anOfflineAppleLegIsTheNetworkCode() {
+        let domain = ASAuthorizationError.errorDomain
+        #expect(AppleAuthProvider.failure(for: Self.wrapped(domain, ASAuthorizationError.failed.rawValue, .notConnectedToInternet))
+                == .failed(.network))
+        #expect(AppleAuthProvider.failure(for: URLError(.notConnectedToInternet)) == .failed(.network))
+        // Unchanged: a cancel is silent and any other failure keeps Apple's own copy.
+        #expect(AppleAuthProvider.failure(for: NSError(domain: domain, code: ASAuthorizationError.canceled.rawValue)) == .cancelled)
+        #expect(AppleAuthProvider.failure(for: NSError(domain: domain, code: ASAuthorizationError.unknown.rawValue))
+                == .failed(.appleSignInFailed))
     }
 
     /// Every code an auth screen can render must have copy in all three locales — a missing key

@@ -550,7 +550,7 @@ actor OfflineManager: OfflineSaving {
             // Task 7: zero the lying mvhd/mdhd durations of a fragmented save (no-op for a plain
             // itag-18 mp4) — see `FragmentedMP4Durations`. Once, here, so playback needs no fix-up.
             FragmentedMP4Durations.normalize(at: destination)
-            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path())[.size] as? Int64) ?? 0
+            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path(percentEncoded: false))[.size] as? Int64) ?? 0
             let completedAt = now()
             forget(id)
             await write { store in

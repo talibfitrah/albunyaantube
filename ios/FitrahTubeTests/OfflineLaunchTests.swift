@@ -434,6 +434,146 @@ struct OfflineLaunchTests {
         #expect(session.consumeFailureNotice() == nil, "the refused sign-out's notice outlived the real one")
     }
 
+    // MARK: - 1.0.3 R1: a saved record bounds the launch's wait for `/me` (Android R4b parity)
+
+    /// A cold start over the SIGNING transport (Firebase's bearer on every request, the 403 envelope
+    /// checked), returned at once: the bound tests watch the launch while `/me` is still parked.
+    private func parkedLaunch(_ base: ScriptedTransport, launchBound: Duration = AccountSession.launchMeBound,
+                              auth: FakeAuthClient = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser)))
+        -> (session: AccountSession, running: Task<Void, Never>) {
+        let transport = AuthorizedTransport(
+            base: base, apiHost: Self.base.host() ?? "", tokens: auth,
+            onStatusEvent: { _, _ in }, refreshRefusal: { await auth.refreshRefusal(signedFor: $0) },
+            currentUid: { await auth.currentUser()?.uid })
+        let session = AccountSession(
+            auth: auth, account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil }, records: records,
+            launchBound: launchBound)
+        return (session, Task { await session.start() })
+    }
+
+    private func waitUntil(_ timeout: Duration = .seconds(10), _ condition: () -> Bool) async {
+        let deadline = ContinuousClock.now + timeout
+        while !condition(), ContinuousClock.now < deadline { try? await Task.sleep(for: .milliseconds(10)) }
+    }
+
+    /// Dead Wi-Fi or a stalled backend: `/me` neither answers nor fails for 15 s (75 s with an
+    /// expired token). The launch routes on the saved record after the 3 s bound instead of
+    /// holding the spinner, and the request keeps running.
+    @Test func aHangingLaunchMeRoutesOnTheSavedRecordWithinThreeSeconds() async {
+        #expect(AccountSession.launchMeBound == .seconds(3))
+        records.save(Self.me(), uid: "fake-uid")
+        let gate = Gate()
+        let base = ScriptedTransport([Self.offline()], park: { _ in await gate.block() })
+        let started = ContinuousClock.now
+        let (session, running) = parkedLaunch(base)
+        defer { running.cancel() }
+
+        await waitUntil { outcome(session).destination == .main }
+        let elapsed = ContinuousClock.now - started
+
+        #expect(outcome(session).destination == .main, "still \(session.state) after \(elapsed): the launch waited on /me")
+        // It gave `/me` the whole bound first, and did not wait for the transport's own timeout.
+        #expect(elapsed >= .seconds(3) && elapsed < .seconds(6), "routed after \(elapsed)")
+        #expect(session.needsRecheck, "a launch on the record must re-ask /me on the next reconnect")
+        #expect(base.sent.count == 1, "the bound must not cost a second request")
+        await gate.release()
+    }
+
+    /// No record: nothing to route on, so the launch still waits for `/me` (unchanged).
+    @Test func aHangingLaunchMeWithNoRecordStillWaits() async {
+        let gate = Gate()
+        let (session, running) = parkedLaunch(ScriptedTransport([Self.offline()], park: { _ in await gate.block() }),
+                                              launchBound: .milliseconds(50))
+        defer { running.cancel() }
+        await waitUntil { session.state == .loading }
+        try? await Task.sleep(for: .milliseconds(300))   // six bounds' worth
+
+        #expect(outcome(session).destination == .awaitingAccount, "\(session.state)")
+        await gate.release()
+    }
+
+    /// The `/me` the bound stopped waiting for still decides: a signed 401 or the 403 lifecycle
+    /// envelope landing AFTER the launch routed on the record signs the user out, clearing the record.
+    @Test(arguments: [HTTPResponse.json(401, "{}"), .json(403, #"{"code":"ACCOUNT_BLOCKED"}"#)])
+    func aTerminalVerdictLandingAfterTheBoundStillSignsOut(verdict: HTTPResponse) async {
+        records.save(Self.me(), uid: "fake-uid")
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let gate = Gate()
+        let (session, running) = parkedLaunch(ScriptedTransport([verdict, verdict], park: { if $0 == 1 { await gate.block() } }),
+                                              launchBound: .milliseconds(100), auth: auth)
+        defer { running.cancel() }
+        await waitUntil { outcome(session).destination == .main }
+        #expect(outcome(session).destination == .main, "the precondition: routed on the record before /me landed")
+
+        await gate.release()
+        await waitUntil { session.user == nil }
+
+        #expect(session.user == nil, "a late \(verdict.status) kept the session")
+        #expect(await auth.currentUser() == nil, "Firebase still holds a session the server refused")
+        #expect(records.load(uid: "fake-uid") == nil, "the next offline launch would restore it")
+        #expect(outcome(session).destination == .signIn)
+    }
+
+    /// …and a late success replaces the record it routed on.
+    @Test func aSuccessLandingAfterTheBoundUpdatesTheRecord() async {
+        records.save(Self.me("fake-uid", .pendingProfile), uid: "fake-uid")
+        let gate = Gate()
+        let (session, running) = parkedLaunch(ScriptedTransport([.json(200, Self.meJSON)], park: { _ in await gate.block() }),
+                                              launchBound: .milliseconds(100))
+        defer { running.cancel() }
+        await waitUntil { session.state.me != nil }
+        #expect(session.state.me?.status == .pendingProfile, "the precondition: routed on the record before /me landed")
+
+        await gate.release()
+        await waitUntil { session.state.me?.status == .active }
+
+        #expect(session.state.me?.status == .active)
+        #expect(records.load(uid: "fake-uid")?.status == .active, "the late answer never reached the record")
+        #expect(!session.needsRecheck)
+    }
+
+    // MARK: - 1.0.3 R4: offline launch pins
+
+    /// R4 (c): a cold launch through the REAL signing transport whose Firebase mint fails on the
+    /// network (an ID token older than an hour, no connection). Offline, the unsigned send fails
+    /// too; with only Firebase unreachable, the backend answers the unsigned request 401, which is
+    /// about the missing bearer, not the account. Either way the saved record stands.
+    @Test(arguments: [offline(), .json(401, "{}")])
+    func aColdLaunchWhoseMintFailsOnTheNetworkKeepsTheRecord(answer: HTTPResponse) async {
+        records.save(Self.me(), uid: "fake-uid")
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        auth.mintFailsOnNetwork = true
+        let (session, running) = await signedLaunch([answer, answer], auth: auth)
+        defer { running.cancel() }
+
+        #expect(outcome(session).destination == .main, "landed on \(outcome(session)) with \(session.state)")
+        #expect(await auth.currentUser() != nil, "an offline mint failure signed Firebase out")
+        #expect(records.load(uid: "fake-uid") != nil)
+        #expect(session.needsRecheck)
+    }
+
+    /// R4 (d): an offline launch with no record signs out, and a sign-out keeps the library: neither
+    /// the device wipe nor the by-uid row wipe may run on that drop.
+    @Test func anOfflineDropRunsNeitherWipe() async {
+        let auth = FakeAuthClient(state: .signedIn(FakeAuthClient.defaultUser))
+        let session = AccountSession(
+            auth: auth,
+            account: AccountClient(transport: ScriptedTransport([Self.offline()]), baseURL: Self.base,
+                                   deviceId: DeviceId(value: "dev-1")),
+            stores: [], status: AccountStatusCenter(), sleep: { _ in },
+            wipe: { _ in Issue.record("the device wipe ran on an offline drop"); return nil },
+            wipeRows: { _ in Issue.record("the row wipe ran on an offline drop"); return nil },
+            records: records)
+        let running = Task { await session.start() }
+        defer { running.cancel() }
+        await waitUntil { session.user == nil && session.state.isFailed }
+        for _ in 0..<200 { await Task.yield() }
+
+        #expect(outcome(session).destination == .signIn, "the precondition: the offline launch dropped the session")
+        #expect(await auth.currentUser() == nil)
+    }
+
     /// A reconnect with an account `/me` already confirmed sends nothing.
     @Test func aReconnectWithAConfirmedAccountSendsNoMe() async throws {
         let auth = FakeAuthClient(state: .signedOut)

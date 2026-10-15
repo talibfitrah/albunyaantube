@@ -28,7 +28,8 @@ struct OfflineResolver: StreamResolving {
             throw ExtractionError.unavailable(videoId: videoId)
         }
         let localURL = OfflineStorage.fileURL(relativePath: localPath, base: base)
-        guard FileManager.default.fileExists(atPath: localURL.path()) else {
+        // Unencoded: the saved file lives under `Application Support` (1.0.3, `partialSize`'s note).
+        guard FileManager.default.fileExists(atPath: localURL.path(percentEncoded: false)) else {
             throw ExtractionError.unavailable(videoId: videoId)
         }
         let stream: ResolvedStream

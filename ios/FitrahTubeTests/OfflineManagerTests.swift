@@ -2152,6 +2152,54 @@ struct OfflineManagerTests {
         }
     }
 
+    /// Serves the WHOLE file in one 206 (`Content-Range: bytes 0-4/5`): the walk's last chunk.
+    nonisolated final class WholeFileChunkURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes 0-4/5"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// 1.0.3 (found by the live check): the production offline directory is
+    /// `Library/Application Support/offline`, and `URL.path()` percent-encodes its space, so the
+    /// engine's size lookup missed the `.tmp` it had just written, read 0 bytes, and re-issued
+    /// chunk one forever (measured on the simulator: one 679 KB lecture downloaded 1,908 times in
+    /// three minutes, never finished). Every other engine test ran in a temp directory with no space.
+    @Test func theLastChunkFinishesTheWalkInAProductionShapedDirectory() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appending(path: "OfflineEngineSpaces-\(UUID().uuidString)/Application Support", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: base.deletingLastPathComponent()) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FailingURLProtocol.self]   // a next chunk, if issued, fails
+        let directory = OfflineStorage.directoryURL(base: base)
+        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "spaced-\(UUID().uuidString)"
+        let (task, side) = await runSideTask(WholeFileChunkURLProtocol.self,
+                                             url: URL(string: "https://example.invalid/media?itag=18")!, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { event in
+            switch event {
+            case .finished(let finished): finished == id
+            case .failed(let failed, _): failed == id
+            default: false
+            }
+        } }
+
+        #expect(collector.events.contains { if case .finished(let finished) = $0 { finished == id } else { false } },
+                "the walk never finished: \(collector.events)")
+        let tmp = directory.appending(path: "\(id).tmp")
+        #expect((try? Data(contentsOf: tmp))?.count == 5)
+    }
+
     /// Review F4: only `start`/`resume` registered `walks[id]` — a relaunch-re-attached walk
     /// enters through the delegate's `issueChunk` and never did, so a boundary `pause` returned
     /// a nil token and the later resume restarted from zero via `engine.start` (deleting the

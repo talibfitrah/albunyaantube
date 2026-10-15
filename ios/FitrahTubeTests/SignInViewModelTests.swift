@@ -215,17 +215,32 @@ struct SignInViewModelTests {
         #expect(auth.nextError == .passwordResetFailed, "forgotPassword() reached the auth client")
     }
 
-    @Test func aFailedResetSurfacesPasswordResetFailedWhateverTheClientThrew() async {
+    /// Android collapses every reset failure to one code (`SignInViewModel.kt:170`), so the reset
+    /// never says which addresses hold an account. Every failure but the offline one stays that code.
+    @Test(arguments: [AuthErrorCode.unknown, .userNotFound, .tooManyRequests, .invalidEmail])
+    func aFailedResetSurfacesPasswordResetFailed(thrown: AuthErrorCode) async {
         let auth = FakeAuthClient(state: .signedOut)
         let (model, _, _) = make(auth: auth)
+        auth.nextError = thrown
+        model.email = "student@fitrah.test"
+
+        await model.forgotPassword()
+
+        #expect(model.state.error == .passwordResetFailed)
+        #expect(model.state.isLoading == false)
+    }
+
+    /// 1.0.3 R2: offline, the backend is unreachable and Firebase's fallback fails on the network
+    /// too: that says "No internet connection", which reveals nothing about the address.
+    @Test func anOfflineResetSaysNoInternet() async {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, _, _) = make(auth: auth)   // an empty script: the backend is unreachable
         auth.nextError = .network
         model.email = "student@fitrah.test"
 
         await model.forgotPassword()
 
-        // Android collapses every reset failure to one code (`SignInViewModel.kt:170`): the user
-        // can do nothing different about a network error than about a rejected address.
-        #expect(model.state.error == .passwordResetFailed)
+        #expect(model.state.error == .network)
         #expect(model.state.isLoading == false)
     }
 

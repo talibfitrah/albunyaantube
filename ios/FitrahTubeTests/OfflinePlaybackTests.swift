@@ -18,13 +18,15 @@ struct OfflinePlaybackTests {
         let container: ModelContainer
         let base: URL
         var directory: URL { OfflineStorage.directoryURL(base: base) }
-        func cleanUp() { try? FileManager.default.removeItem(at: base) }
+        func cleanUp() { try? FileManager.default.removeItem(at: base.deletingLastPathComponent()) }
     }
 
+    /// The base has production's shape: the app saves under `Library/Application Support`, and
+    /// that SPACE is what `URL.path()` percent-encodes (1.0.3: every saved-file lookup missed).
     private func makeRig() -> Rig {
         let container = AppContainer.makeModelContainer(inMemory: true)
         let base = FileManager.default.temporaryDirectory
-            .appending(path: "OfflinePlaybackTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "OfflinePlaybackTests-\(UUID().uuidString)/Application Support", directoryHint: .isDirectory)
         return Rig(store: OfflineStore(modelContainer: container), container: container, base: base)
     }
 
@@ -139,6 +141,76 @@ struct OfflinePlaybackTests {
         #expect(vm.state == .contentUnavailable)
     }
 
+    /// 1.0.3 R4 (a): a PRESENT saved file — a real clip from the test bundle, as
+    /// `CaptionsProviderTests` uses — opened from Saved through the player's own view model lands
+    /// a playable state on that file, with no queue, and AVFoundation can play it.
+    @Test(arguments: [("two-subtitle-tracks", "mp4", false), ("two-audio-tracks", "m4a", true)])
+    func aPresentSavedFileOpensPlayableThroughThePlayer(fixture: String, ext: String, audioOnly: Bool) async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: ext, audioOnly: audioOnly, writeFile: false)
+        let source = try #require(Bundle(for: RecordingResolver.self).url(forResource: fixture, withExtension: ext))
+        let saved = OfflineStorage.fileURL(relativePath: item.localPath!, base: rig.base)
+        try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
+        try FileManager.default.copyItem(at: source, to: saved)
+        var args = PlayerArgs(videoId: item.videoId)
+        args.offlineItemId = item.id
+        let vm = PlayerViewModel(resolver: OfflineResolver(store: rig.store, itemId: item.id, base: rig.base),
+                                 settings: makeSettings(), args: args)
+
+        await vm.open()
+
+        let resolved = try #require(vm.state.resolved, "the saved file never reached a playable state: \(vm.state)")
+        guard case .progressive(let url, _) = resolved.stream else {
+            Issue.record("expected .progressive, got \(resolved.stream)"); return
+        }
+        #expect(url == saved)
+        #expect(vm.queue.items.isEmpty, "an offline open has no Up Next")
+        let asset = PlayerHostView.asset(url: url, userAgent: resolved.userAgent)
+        #expect(try await asset.load(.isPlayable), "AVFoundation cannot play the saved file")
+        #expect(try await asset.load(.duration).seconds > 0)
+        // 1.0.3 R3: the visual rung pill is suppressed offline, and so is its announcement.
+        #expect(PlayerScreen.transitionAnnouncement(for: vm.state, offline: vm.isOfflinePlayback) == nil,
+                "VoiceOver announced 'standard quality' on a saved file")
+    }
+
+    /// 1.0.3 (found by the live check): a finished save in production's directory records the
+    /// file's real size — the lookup used to miss the spaced path and record 0 bytes.
+    @Test func aFinishInAProductionShapedDirectoryRecordsTheFileSize() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = OfflineItem(videoId: "vid-finish", title: "Lecture", channelName: "Channel", thumbnailUrl: nil,
+                               qualityLabel: "360p", audioOnly: false, status: OfflineStatus.running.rawValue)
+        try rig.store.insert(item)
+        try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
+        try Data(repeating: 7, count: 4_321).write(to: rig.directory.appending(path: "\(item.id).tmp"))
+
+        await makeManager(rig, gate: GateLog()).handle(.finished(id: item.id))
+
+        let row = try #require(rig.store.item(id: item.id))
+        #expect(row.status == OfflineStatus.completed.rawValue)
+        #expect(row.bytesWritten == 4_321, "the finished file's size was read through an encoded path")
+        #expect(row.totalBytes == 4_321)
+    }
+
+    /// 1.0.3 R4 (b): an offline open asks nothing about saving — neither the remote config's
+    /// kill switch nor the backend gate. The online control asks both.
+    @Test func anOfflineOpenAsksNeitherTheKillSwitchNorTheGate() async {
+        var asked: [String] = []
+        var offline = PlayerArgs(videoId: Self.lectureVideoId)
+        offline.offlineItemId = "item-1"
+
+        let none = await PlayerScreen.saveSlot(for: offline,
+                                               downloadsEnabled: { asked.append("remote-config"); return true },
+                                               gate: { asked.append("gate"); return .allowed })
+        #expect(none == nil)
+        #expect(asked.isEmpty, "an offline open asked \(asked)")
+
+        let online = await PlayerScreen.saveSlot(for: PlayerArgs(videoId: Self.lectureVideoId),
+                                                 downloadsEnabled: { asked.append("remote-config"); return true },
+                                                 gate: { asked.append("gate"); return .allowed })
+        #expect(online?.enabled == true && online?.gate == .allowed)
+        #expect(asked == ["remote-config", "gate"])
+    }
+
     @Test func aDeletedRowThrowsUnavailable() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let resolver = OfflineResolver(store: rig.store, itemId: "no-such-row", base: rig.base)
@@ -215,7 +287,7 @@ struct OfflinePlaybackTests {
 
     private func fileExists(_ rig: Rig, _ item: OfflineItem) -> Bool {
         FileManager.default.fileExists(atPath: OfflineStorage.fileURL(relativePath: item.localPath!,
-                                                                      base: rig.base).path())
+                                                                      base: rig.base).path(percentEncoded: false))
     }
 
     @Test func theSweepDeletesARemovedRowFileAndRowTogether() async throws {

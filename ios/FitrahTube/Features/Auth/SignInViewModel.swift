@@ -154,8 +154,9 @@ import Observation
     }
 
     /// Blank or malformed goes nowhere near the network (`SignInViewModel.kt:160-167`), and every
-    /// failure is ONE code: the user can do nothing different about a network error than about a
-    /// rejected address.
+    /// failure is ONE code, so the reset never says which addresses hold an account — except
+    /// offline (1.0.3 R2): Firebase's fallback failing on the network says "No internet
+    /// connection", which says nothing about the address.
     func forgotPassword() async {
         guard !state.isLoading else { return }
         guard EmailShape.isValid(state.email) else {
@@ -167,6 +168,8 @@ import Observation
             try await sendPasswordReset(state.email)
             state.isLoading = false
             state.passwordResetSent = true
+        } catch AuthErrorCode.network {
+            finish(with: .network)
         } catch {
             finish(with: .passwordResetFailed)
         }

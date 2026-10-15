@@ -192,33 +192,40 @@ struct PlayerScreen: View {
             // already hides the button, i.e. the safety was incidental rather than structural.
             saveGate = nil
             saveEnabled = false
-            // Task 7: an offline open performs NO backend fetch — the Save slot (and every other
-            // save affordance) is hidden by the offline flag, so the answer would go unread.
-            if args.offlineItemId != nil { return }
             // Task 5 review fold-in 1: `.task(id:)` cancels the old task on advance but does NOT
-            // prevent its in-flight continuation from resuming — without these guards a stale
+            // prevent its in-flight continuation from resuming — without this guard a stale
             // `.allowed` fetched for video A could land AFTER the reset for video B ran (the
             // gate fetch can take ~15 s against a slow backend), showing Save on a video the
-            // gate never affirmed. Fail-closed means checking before every assignment.
-            let enabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
-            guard !Task.isCancelled else { return }
-            saveEnabled = enabled
-            let answer = await Self.gateAnswer(enabled: enabled) {
-                await Self.offlineGateAnswer(container.offlineGate, for: model?.args ?? args)
-            }
-            guard !Task.isCancelled else { return }
-            saveGate = answer
+            // gate never affirmed. Both halves are assigned together, after it: `SaveAffordance`
+            // reads `saveEnabled` only alongside an `.allowed` gate, so nothing renders between.
+            let slot = await Self.saveSlot(
+                for: args,
+                downloadsEnabled: { await container.innerTube.remoteConfig.current().isDownloadsEnabled },
+                gate: { await Self.offlineGateAnswer(container.offlineGate, for: model?.args ?? args) })
+            guard let slot, !Task.isCancelled else { return }
+            saveEnabled = slot.enabled
+            saveGate = slot.gate
         }
         // Task 9: the announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
         // mounts the player (Task 7's identity note keeps both playable rungs in the switch case
         // below). `.onChange` fires only on a real transition, so entering it announces exactly once.
-        .rungAnnouncements(state: model?.state)
+        .rungAnnouncements(state: model?.state, offline: args.offlineItemId != nil)
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
     /// offers what won't play (offline review P1). Static so `OfflineGateTests` pins the argument.
     static func offlineGateAnswer(_ gate: OfflineGateClient, for args: PlayerArgs) async -> GateAnswer {
         await gate.answer(args.videoId, channelId: args.channelId)
+    }
+
+    /// The Save slot for one open: the kill switch, then the gate (`gateAnswer`). nil for an offline
+    /// open, which asks neither (Task 7; 1.0.3 R4 b): every save affordance is hidden by the offline
+    /// flag, so the answers would go unread. Closure-fed so a test can count what was asked.
+    static func saveSlot(for args: PlayerArgs, downloadsEnabled: () async -> Bool,
+                         gate: () async -> GateAnswer) async -> (enabled: Bool, gate: GateAnswer?)? {
+        guard args.offlineItemId == nil else { return nil }
+        let enabled = await downloadsEnabled()
+        return (enabled, await gateAnswer(enabled: enabled, fetch: gate))
     }
 
     /// The per-video gate answer for the Save slot, or nil when there is no point asking. Static and
@@ -235,7 +242,11 @@ struct PlayerScreen: View {
 
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
     /// `PlayerStateViewTests` can pin it: `.onChange` can't be asked.
-    static func transitionAnnouncement(for state: StreamState?) -> String? {
+    ///
+    /// 1.0.3 R3: never for an `offline` open. A saved file is one rendition the extraction ladder
+    /// never walked, so the rung pill is hidden there (`stateView`) and its sentence is silent too.
+    static func transitionAnnouncement(for state: StreamState?, offline: Bool = false) -> String? {
+        if offline { return nil }
         switch state {
         case .rung2Progressive:
             // The announcement is a sentence about what just happened

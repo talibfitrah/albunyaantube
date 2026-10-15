@@ -4638,28 +4638,6 @@
         }
       }
     },
-    "downloads_file_not_found": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الملف غير موجود: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "File not found: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bestand niet gevonden: %1$@"
-          }
-        }
-      }
-    },
     "downloads_library_title": {
       "localizations": {
         "ar": {
@@ -4678,72 +4656,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Downloads & Bibliotheek"
-          }
-        }
-      }
-    },
-    "downloads_no_file": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم العثور على الملف"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No file found"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen bestand gevonden"
-          }
-        }
-      }
-    },
-    "downloads_no_player": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم العثور على مشغل فيديو"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No video player found"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen videospeler gevonden"
-          }
-        }
-      }
-    },
-    "downloads_open_error": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "خطأ: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Error: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fout: %1$@"
           }
         }
       }

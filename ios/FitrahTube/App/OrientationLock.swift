@@ -79,6 +79,9 @@ final class AppDelegate: NSObject, UIApplicationDelegate {
         // set at init — the smallest seam that avoids the closure-registration chicken-and-egg)
         // builds the engine's session and `reattach()` re-binds the rows.
         Task { @MainActor in
+            // 1.0.3 R5 (L1): before the first unlock the store cannot be read, and opening it there
+            // leaves this process on an empty stand-in; wait for `protectedDataDidBecomeAvailable`.
+            await AppContainer.waitUntilStoreReadable()
             await AppContainer.current?.offlineManager.reattach()
         }
     }
