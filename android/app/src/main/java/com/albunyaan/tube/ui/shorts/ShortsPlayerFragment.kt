@@ -395,7 +395,9 @@ class ShortsPlayerFragment : Fragment(R.layout.fragment_shorts_player) {
                 videoId = item.id,
                 audioOnly = audioOnly,
                 targetHeight = targetHeight,
-                thumbnailUrl = item.thumbnailUrl
+                thumbnailUrl = item.thumbnailUrl,
+                channelName = item.channelName,
+                durationSeconds = item.durationSeconds
             )
             // ANDROID-PLAY-02: see MainActivity.requestNotificationPermissionForDownload.
             (activity as? MainActivity)?.requestNotificationPermissionForDownload()

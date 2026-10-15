@@ -431,7 +431,9 @@ class PlayerViewModel @Inject constructor(
             videoId = item.streamId,
             audioOnly = audioOnly,
             targetHeight = targetHeight,
-            thumbnailUrl = item.thumbnailUrl
+            thumbnailUrl = item.thumbnailUrl,
+            channelName = item.channelName,
+            durationSeconds = item.durationSeconds
         )
         downloadRepository.enqueue(request)
         return true
@@ -883,8 +885,9 @@ class PlayerViewModel @Inject constructor(
             UpNextItem(
                 id = it.request.videoId,
                 title = it.metadata?.title ?: it.request.title,
-                channelName = "",
-                durationSeconds = 0,
+                // Blank for downloads that predate these fields; the fragment then hides Favorite.
+                channelName = it.request.channelName.orEmpty(),
+                durationSeconds = it.request.durationSeconds ?: 0,
                 streamId = it.request.videoId,
                 thumbnailUrl = it.metadata?.thumbnailUrl ?: it.request.thumbnailUrl,
             )

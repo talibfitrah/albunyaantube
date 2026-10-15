@@ -93,7 +93,9 @@ data class PlaylistDownloadItem(
     val videoId: String,
     val title: String,
     val indexInPlaylist: Int,
-    val thumbnailUrl: String? = null
+    val thumbnailUrl: String? = null,
+    val channelName: String? = null,
+    val durationSeconds: Int? = null
 )
 
 class DefaultDownloadRepository(
@@ -212,6 +214,7 @@ class DefaultDownloadRepository(
     private fun restoreActiveDownload(downloadId: String, info: WorkInfo): Boolean {
         val videoId = parseVideoIdFromDownloadId(downloadId)
         val storedMetadata = storage.getExtendedMetadata(downloadId)
+        val storedChannel = storage.getStoredChannel(downloadId)
         val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
         val request = synchronized(entriesLock) {
             val existing = entries.value.firstOrNull { it.request.id == downloadId }?.request
@@ -222,7 +225,9 @@ class DefaultDownloadRepository(
                 audioOnly = existing?.audioOnly ?: storage.isAudioOnlyDownload(downloadId),
                 thumbnailUrl = storedMetadata?.second ?: existing?.thumbnailUrl,
                 playlistId = playlistMetadata?.first ?: existing?.playlistId,
-                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel
+                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel,
+                channelName = storedChannel?.first ?: existing?.channelName,
+                durationSeconds = storedChannel?.second ?: existing?.durationSeconds
             )
         }
 
@@ -261,6 +266,7 @@ class DefaultDownloadRepository(
         val videoId = parseVideoIdFromDownloadId(downloadId)
         val audioOnly = file.name.endsWith(".m4a")
         val storedMetadata = storage.metadataFor(downloadId, audioOnly)
+        val storedChannel = storage.getStoredChannel(downloadId)
         val playlistMetadata = parsePlaylistMetadataFromDownloadId(downloadId)
 
         val request = synchronized(entriesLock) {
@@ -272,7 +278,9 @@ class DefaultDownloadRepository(
                 audioOnly = audioOnly,
                 thumbnailUrl = storedMetadata?.thumbnailUrl ?: existing?.thumbnailUrl,
                 playlistId = playlistMetadata?.first ?: existing?.playlistId,
-                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel
+                playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel,
+                channelName = storedChannel?.first ?: existing?.channelName,
+                durationSeconds = storedChannel?.second ?: existing?.durationSeconds
             )
         }
 
@@ -398,7 +406,10 @@ class DefaultDownloadRepository(
     override fun enqueue(request: DownloadRequest) {
         // Save extended metadata (title, thumbnailUrl) before scheduling
         // This ensures the metadata is available for display after app restart
-        storage.saveExtendedMetadata(request.id, request.title, request.thumbnailUrl, request.audioOnly)
+        storage.saveExtendedMetadata(
+            request.id, request.title, request.thumbnailUrl, request.audioOnly,
+            request.channelName, request.durationSeconds
+        )
 
         val workId = scheduler.schedule(request)
         workIds[request.id] = workId
@@ -549,7 +560,9 @@ class DefaultDownloadRepository(
                 playlistTitle = playlistTitle,
                 playlistQualityLabel = qualityLabel,
                 indexInPlaylist = item.indexInPlaylist,
-                playlistSize = playlistSize
+                playlistSize = playlistSize,
+                channelName = item.channelName,
+                durationSeconds = item.durationSeconds
             )
 
             enqueue(request)

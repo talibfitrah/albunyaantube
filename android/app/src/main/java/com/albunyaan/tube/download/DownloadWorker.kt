@@ -28,6 +28,7 @@ import java.io.File
 import java.io.IOException
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -95,6 +96,9 @@ class DownloadWorker @AssistedInject constructor(
         data class Split(val videoUrl: String, val audioUrl: String) : ResolvedStream()
     }
 
+    /** Names this run's temp files, so a stopping run never deletes a resumed run's. */
+    private val run = UUID.randomUUID().toString()
+
     override suspend fun doWork(): Result {
         val downloadId = inputData.getString(KEY_DOWNLOAD_ID)
             ?: return Result.failure(workDataOf(KEY_ERROR_REASON to DownloadErrorCode.INVALID_INPUT))
@@ -108,6 +112,7 @@ class DownloadWorker @AssistedInject constructor(
         setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
 
         return runCatching {
+            storage.discardStaleTemps(downloadId)
             val finalFile = resolveAndDownload(videoId, audioOnly, targetHeight, downloadId, title)
 
             val mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
@@ -175,7 +180,7 @@ class DownloadWorker @AssistedInject constructor(
         if (contentLength != null) {
             storage.ensureSpace(contentLength)
         }
-        val tempFile = storage.createTempFile(downloadId)
+        val tempFile = storage.createTempFile(downloadId, run)
         try {
             downloadToFile(url, tempFile, downloadId, title, contentLength)
             return storage.commit(downloadId, audioOnly, tempFile)
@@ -193,15 +198,9 @@ class DownloadWorker @AssistedInject constructor(
         downloadId: String,
         title: String
     ): File {
-        // Get temp directory from storage once, then create specific temp files
-        val baseTempFile = storage.createTempFile(downloadId)
-        val tempDir = baseTempFile.parentFile ?: throw IOException("Cannot determine temp directory")
-        baseTempFile.delete()
-
-        val sanitized = storage.sanitizeId(downloadId)
-        val videoTempFile = File(tempDir, "${sanitized}_video.tmp")
-        val audioTempFile = File(tempDir, "${sanitized}_audio.tmp")
-        val mergedTempFile = File(tempDir, "${sanitized}_merged.tmp")
+        val videoTempFile = storage.createTempFile(downloadId, "$run-video")
+        val audioTempFile = storage.createTempFile(downloadId, "$run-audio")
+        val mergedTempFile = storage.createTempFile(downloadId, "$run-merged")
 
         try {
             // Download video stream (50% of progress)
@@ -516,6 +515,7 @@ class DownloadWorker @AssistedInject constructor(
             var lastProgress = -1
             var done = false
             while (!done) {
+                if (isStopped) throw CancellationException("Download cancelled by user")
                 val start = downloaded
                 val request = Request.Builder().url(url)
                     .header("Range", "bytes=$start-${start + RANGE_CHUNK_BYTES - 1}")

@@ -6,7 +6,6 @@ import com.albunyaan.tube.auth.AccountState
 import com.albunyaan.tube.auth.AccountStatus
 import com.albunyaan.tube.auth.AccountStatusEvent
 import com.albunyaan.tube.auth.AuthState
-import com.albunyaan.tube.auth.isTerminalAccountFailure
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
@@ -18,10 +17,10 @@ import kotlinx.coroutines.withTimeoutOrNull
  *
  *   - onboarding not done                              → onboarding (regardless of auth)
  *   - signed-out                                       → sign-in
- *   - signed-in + accountStatus=null (fetch failed)    → sign-in. A non-terminal failure
- *                                                        (anything but a signed 401) routes on the
- *                                                        last /me for that uid instead — see
- *                                                        [accountForRoute]; null means none.
+ *   - signed-in + accountStatus=null (fetch failed)    → sign-in. With a saved record for the
+ *                                                        uid, a non-terminal failure (anything but
+ *                                                        a signed 401) routes on that record — see
+ *                                                        [resolveAccount]; null means none.
  *   - signed-in + ACTIVE                               → main shell
  *   - signed-in + PENDING_PROFILE, password provider
  *     and email unverified                             → email verification (as iOS SplashRouter and
@@ -50,17 +49,6 @@ internal object SplashRouter {
         else -> R.id.action_splash_to_signIn  // BLOCKED, DELETED
     }
 
-    /**
-     * The account to route on. A failed /me falls back to the last one this
-     * device saw for the signed-in uid ([lastKnown]) ONLY when the failure is
-     * non-terminal (see [isTerminalAccountFailure]). A signed 401 is the
-     * server's verdict and must never be overridden by what the device remembers.
-     */
-    fun accountForRoute(
-        fetched: Result<AccountState.Loaded>,
-        lastKnown: () -> AccountState.Loaded?,
-    ): AccountState.Loaded? = fetched.getOrElse { if (it.isTerminalAccountFailure()) null else lastKnown() }
-
     /** Longest the launch waits for /me when a saved record exists for the uid. */
     const val LAUNCH_ME_BUDGET_MS = 3_000L
 
@@ -79,7 +67,7 @@ internal object SplashRouter {
      */
     suspend fun resolveAccount(repo: AccountRepository, uid: String, appScope: CoroutineScope): AccountState.Loaded? {
         if (repo.restoreLastKnown(uid) == null) {
-            return accountForRoute(repo.fetchMe(maxAttempts = 1)) { repo.restoreLastKnown(uid) }
+            return repo.fetchMe(maxAttempts = 1).getOrNull()
         }
         val me = appScope.launch { repo.revalidateRestored() }
         withTimeoutOrNull(LAUNCH_ME_BUDGET_MS) { me.join() }
@@ -102,6 +90,24 @@ internal object SplashRouter {
         // A 403 envelope signs Firebase out at once, but clears accountState only later.
         appScope.launch { if (signedInUid() == loaded.uid) bindSync(loaded.uid) }
         return loaded.status
+    }
+
+    /**
+     * A process-death restore skips the splash, so nothing published the account: favourites
+     * and subscriptions read uid "" and sync never bound. [restoring] is MainActivity's
+     * saved-state restore; a launch that shows the splash leaves this to it. Same work as the
+     * splash ([launchAccountStatus]: saved record, bounded /me, guarded bind), without routing.
+     */
+    fun restoreAccount(
+        restoring: Boolean,
+        repo: AccountRepository,
+        appScope: CoroutineScope,
+        signedInUid: () -> String?,
+        bindSync: suspend (String) -> Unit,
+    ) {
+        if (!restoring || repo.accountState.value != AccountState.NotSignedIn) return
+        val uid = signedInUid() ?: return
+        appScope.launch { launchAccountStatus(repo, uid, appScope, signedInUid, bindSync) }
     }
 
     /** Cold-start equivalent of AccountStatusInterceptor's terminal event. */

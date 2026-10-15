@@ -14,7 +14,10 @@ data class DownloadRequest(
     val playlistTitle: String? = null,
     val playlistQualityLabel: String? = null,
     val indexInPlaylist: Int? = null,
-    val playlistSize: Int? = null
+    val playlistSize: Int? = null,
+    /** Kept for local playback's favourite (the server needs a channel); null on older downloads. */
+    val channelName: String? = null,
+    val durationSeconds: Int? = null
 )
 
 enum class DownloadStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }

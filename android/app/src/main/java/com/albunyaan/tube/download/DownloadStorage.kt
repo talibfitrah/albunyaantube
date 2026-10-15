@@ -66,9 +66,13 @@ class DownloadStorage(
         // Android OS will handle low storage warnings
     }
 
-    fun createTempFile(downloadId: String): File {
+    /**
+     * A temp file named for one worker [run]: a stopping run's cleanup can then never delete the
+     * file a resumed run is writing. [discardStaleTemps] clears what earlier runs left behind.
+     */
+    fun createTempFile(downloadId: String, run: String = ""): File {
         val sanitized = sanitizeId(downloadId)
-        val temp = File(rootDir, "$sanitized.tmp")
+        val temp = File(rootDir, if (run.isEmpty()) "$sanitized.tmp" else "$sanitized.$run.tmp")
         if (temp.exists()) check(temp.delete()) { "Failed to delete stale temp file: ${temp.absolutePath}" }
         temp.parentFile?.mkdirs()
         return temp
@@ -150,13 +154,24 @@ class DownloadStorage(
         downloadId: String,
         title: String,
         thumbnailUrl: String?,
-        audioOnly: Boolean? = null
+        audioOnly: Boolean? = null,
+        channelName: String? = null,
+        durationSeconds: Int? = null
     ) {
         val props = loadMetadataProperties(downloadId)
         props.setProperty(META_KEY_TITLE, title)
         thumbnailUrl?.let { props.setProperty(META_KEY_THUMBNAIL_URL, it) }
         audioOnly?.let { props.setProperty(META_KEY_AUDIO_ONLY, it.toString()) }
+        channelName?.let { props.setProperty(META_KEY_CHANNEL_NAME, it) }
+        durationSeconds?.let { props.setProperty(META_KEY_DURATION_SECONDS, it.toString()) }
         saveMetadataProperties(downloadId, props)
+    }
+
+    /** (channelName, durationSeconds) saved at enqueue; null for downloads that predate them. */
+    fun getStoredChannel(downloadId: String): Pair<String, Int?>? {
+        val props = loadMetadataProperties(downloadId)
+        val channelName = props.getProperty(META_KEY_CHANNEL_NAME) ?: return null
+        return channelName to props.getProperty(META_KEY_DURATION_SECONDS)?.toIntOrNull()
     }
 
     private fun loadMetadataProperties(downloadId: String): Properties {
@@ -214,6 +229,16 @@ class DownloadStorage(
         }
 
         return null
+    }
+
+    /** Deletes this download's temp files from earlier runs (process death, or a run still stopping). */
+    fun discardStaleTemps(downloadId: String) {
+        val sanitized = sanitizeId(downloadId)
+        // Pre-1.0.3 Split names; every other temp of this download starts with "<id>.".
+        val legacy = listOf("_video", "_audio", "_merged").map { "$sanitized$it$TEMP_SUFFIX" }
+        rootDir.listFiles { file ->
+            file.name.endsWith(TEMP_SUFFIX) && (file.name.startsWith("$sanitized.") || file.name in legacy)
+        }?.forEach { it.delete() }
     }
 
     fun discardTemp(tempFile: File) {
@@ -393,5 +418,7 @@ class DownloadStorage(
         private const val META_KEY_TITLE = "title"
         private const val META_KEY_THUMBNAIL_URL = "thumbnailUrl"
         private const val META_KEY_AUDIO_ONLY = "audioOnly"
+        private const val META_KEY_CHANNEL_NAME = "channelName"
+        private const val META_KEY_DURATION_SECONDS = "durationSeconds"
     }
 }

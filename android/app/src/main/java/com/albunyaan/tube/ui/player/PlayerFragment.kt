@@ -1512,7 +1512,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     binding.videoStats.text = ""
                     binding.videoDescription.text = getString(R.string.player_no_description)
                 }
-                // An empty name still takes a line: collapse it (always empty for a download).
+                // An empty name still takes a line: collapse it (empty on downloads that predate it).
                 binding.authorName.isVisible = binding.authorName.text.isNotEmpty()
 
                 // Update favorite button UI based on state
@@ -1547,6 +1547,11 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.qualityButton.isVisible = !state.playingDownload
             binding.castButton.isVisible = !state.playingDownload
             binding.upNextHeader.isVisible = !state.playingDownload
+            // The server rejects a favourite with no channel, and older downloads have none.
+            binding.favoriteButton.isVisible =
+                !state.playingDownload || currentItem?.channelName?.isNotBlank() == true
+            // Audio does nothing on a local file with no video track, or with no file at all.
+            binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
             binding.upNextEmpty.isVisible = state.upNext.isEmpty()
@@ -2083,7 +2088,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerErrorOverlay.visibility = View.VISIBLE
                 binding.playerErrorTitle.text = getString(R.string.player_error_title)
                 binding.playerErrorMessage.text = getString(streamState.messageRes)
-                // A download's Error is a missing file: neither action can bring it back.
+                // A download's Error is a missing or unplayable file: neither action can fix it.
                 binding.playerRetryButton.isVisible = !state.playingDownload
                 binding.playerRefreshStreamButton.isVisible = !state.playingDownload
                 binding.playerRecoveryOverlay.visibility = View.GONE
@@ -2112,7 +2117,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRecoveryOverlay.visibility = View.VISIBLE
                 binding.playerRecoveryProgress.visibility = View.GONE
                 binding.playerRecoveryMessage.text = getString(R.string.player_recovery_exhausted_message)
-                binding.playerRecoveryRetryButton.visibility = View.VISIBLE
+                // A local file has nothing to re-resolve: Retry would only hide this overlay.
+                binding.playerRecoveryRetryButton.isVisible = !state.playingDownload
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerStatus.text = getString(R.string.player_recovery_exhausted)
             }
@@ -2175,6 +2181,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun requestStreamRefreshAndResume(reason: String) {
         val currentItem = viewModel.state.value.currentItem ?: return
         val currentPlayer = player ?: return
+        if (viewModel.state.value.playingDownload) {
+            // A local file has no URL to refresh: its re-read is the same Ready, which lands
+            // (Main.immediate) before the stop below and never re-prepares, leaving a dead,
+            // silent player. Say the file cannot play, as for a missing one; no rate limiter.
+            android.util.Log.w("PlayerFragment", "Local file failed: $reason")
+            currentPlayer.stop()
+            viewModel.setErrorState(R.string.player_stream_unavailable)
+            return
+        }
 
         val resumePosition = currentPlayer.currentPosition.coerceAtLeast(0L)
         val wasPlayWhenReady = currentPlayer.playWhenReady
@@ -3255,12 +3270,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         player.playWhenReady = playWhenReady
         preparedStreamKey = key
         preparedStreamUrl = url
-        preparedIsAdaptive = false
-        preparedAdaptiveType = MediaSourceResult.AdaptiveType.NONE
-        preparedQualityCapHeight = null
-        factorySelectedVideoTrack = null
-        streamPlaybackStartTimeMs = android.os.SystemClock.elapsedRealtime()
-        currentStreamIsLive = false
         cancelStallWatchdog()
         state.currentItem?.let { syncMediaSessionMetadata(it, force = true) }
     }

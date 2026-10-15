@@ -69,7 +69,10 @@ class PlayerDownloadScreenTest {
         TestDownloadModule.fakeRepository.emit(
             listOf(
                 DownloadEntry(
-                    request = DownloadRequest("download-7", "Saved lecture", "lecture_7", audioOnly = false),
+                    request = DownloadRequest(
+                        "download-7", "Saved lecture", "lecture_7", audioOnly = false,
+                        channelName = "Lecturer", durationSeconds = 1800,
+                    ),
                     status = DownloadStatus.COMPLETED,
                     progress = 100,
                     filePath = missing.absolutePath,
@@ -94,6 +97,114 @@ class PlayerDownloadScreenTest {
                 assertFalse("a saved item has no view count", visible(R.id.videoStats))
                 assertFalse(visible(R.id.qualityButton))
                 assertFalse(visible(R.id.castButton))
+                assertEquals("Lecturer", activity.findViewById<TextView>(R.id.authorName).text.toString())
+                assertTrue("a saved lecture with its channel can be favourited", visible(R.id.favoriteButton))
+            }
+        }
+    }
+
+    /** Saved before the channel was kept: the server would reject the favourite (400), so no heart. */
+    @Test
+    fun anOlderDownloadOffersNoFavorite() {
+        openAbsentDownload()
+
+        eventually {
+            scenario!!.onActivity { activity ->
+                assertEquals("Saved lecture", activity.findViewById<TextView>(R.id.videoTitle).text.toString())
+                assertFalse(activity.findViewById<View>(R.id.favoriteButton).isVisible)
+            }
+        }
+    }
+
+    /** No video track to turn off: the Audio toggle would do nothing. */
+    @Test
+    fun anAudioOnlyDownloadHasNoAudioToggle() {
+        val file = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "saved.m4a")
+            .apply { writeBytes(ByteArray(64)) }
+        TestDownloadModule.fakeRepository.emit(
+            listOf(
+                DownloadEntry(
+                    request = DownloadRequest("download-4", "Saved lecture", "lecture_4", audioOnly = true),
+                    status = DownloadStatus.COMPLETED,
+                    progress = 100,
+                    filePath = file.absolutePath,
+                )
+            )
+        )
+        scenario = launchFragmentInHiltContainer<PlayerFragment>(
+            fragmentArgs = Bundle().apply { putString(PlayerFragment.ARG_DOWNLOAD_ID, "download-4") },
+            themeResId = R.style.Theme_Albunyaan,
+        )
+
+        eventually {
+            scenario!!.onActivity { activity ->
+                assertEquals("Saved lecture", activity.findViewById<TextView>(R.id.videoTitle).text.toString())
+                assertFalse(activity.findViewById<View>(R.id.audioButton).isVisible)
+            }
+        }
+        file.delete()
+    }
+
+    /**
+     * A corrupt file used to go through stream "recovery": the identical re-read never
+     * re-prepared, leaving a stopped player with no message. It is unavailable, like a missing one.
+     */
+    @Test
+    fun aCorruptDownloadShowsUnavailableNotADeadPlayer() {
+        val file = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "corrupt.mp4")
+            .apply { writeText("not a video") }
+        TestDownloadModule.fakeRepository.emit(
+            listOf(
+                DownloadEntry(
+                    request = DownloadRequest("download-3", "Saved lecture", "lecture_3", audioOnly = false),
+                    status = DownloadStatus.COMPLETED,
+                    progress = 100,
+                    filePath = file.absolutePath,
+                )
+            )
+        )
+        scenario = launchFragmentInHiltContainer<PlayerFragment>(
+            fragmentArgs = Bundle().apply { putString(PlayerFragment.ARG_DOWNLOAD_ID, "download-3") },
+            themeResId = R.style.Theme_Albunyaan,
+        )
+
+        eventually(timeoutMs = 15_000) {
+            scenario!!.onActivity { activity ->
+                fun visible(id: Int) = activity.findViewById<View>(id).isVisible
+                assertTrue("the corrupt file must say it cannot play", visible(R.id.playerErrorOverlay))
+                assertFalse(visible(R.id.playerRetryButton))
+                assertFalse(visible(R.id.playerRefreshStreamButton))
+                assertFalse(visible(R.id.playerRecoveryOverlay))
+            }
+        }
+        file.delete()
+    }
+
+    /** A paused download is resumed from Downloads; a tap here would enqueue a duplicate. */
+    @Test
+    fun aPausedDownloadDisablesTheDownloadButton() {
+        TestDownloadModule.fakeRepository.emit(
+            listOf(
+                DownloadEntry(
+                    request = DownloadRequest("download-5", "Paused lecture", "lecture_5", audioOnly = false),
+                    status = DownloadStatus.PAUSED,
+                    progress = 40,
+                )
+            )
+        )
+        scenario = launchFragmentInHiltContainer<PlayerFragment>(
+            fragmentArgs = Bundle().apply {
+                putString("videoId", "lecture_5")
+                putString("title", "Paused lecture")
+            },
+            themeResId = R.style.Theme_Albunyaan,
+        )
+
+        eventually {
+            scenario!!.onActivity { activity ->
+                // The title is set in the same state pass as the button, so it is not the empty frame.
+                assertEquals("Paused lecture", activity.findViewById<TextView>(R.id.videoTitle).text.toString())
+                assertFalse(activity.findViewById<View>(R.id.downloadButton).isEnabled)
             }
         }
     }
@@ -120,7 +231,9 @@ class PlayerDownloadScreenTest {
 
         eventually {
             scenario!!.onActivity { activity ->
-                val title = activity.findViewById<View>(R.id.videoTitle)
+                val title = activity.findViewById<TextView>(R.id.videoTitle)
+                // Not the empty frame before the download loads, which also blanks the name.
+                assertEquals("Saved lecture", title.text.toString())
                 val card = activity.findViewById<View>(R.id.descriptionCard)
                 val titleAt = IntArray(2).also(title::getLocationOnScreen)
                 val cardAt = IntArray(2).also(card::getLocationOnScreen)

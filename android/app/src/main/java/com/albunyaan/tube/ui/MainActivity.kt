@@ -19,19 +19,24 @@ import androidx.navigation.fragment.NavHostFragment
 import androidx.navigation.navOptions
 import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
+import com.albunyaan.tube.auth.AccountRepository
 import com.albunyaan.tube.auth.AccountStatusEvent
 import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.data.sync.SyncManager
 import com.albunyaan.tube.databinding.ActivityMainBinding
 import com.albunyaan.tube.download.DownloadNotificationPermission
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.player.PlaybackService
 import com.albunyaan.tube.preferences.SettingsPreferences
 import com.google.android.material.dialog.MaterialAlertDialogBuilder
+import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import javax.inject.Inject
+import javax.inject.Named
 
 /**
  * P3-T2: Main activity with Hilt DI support
@@ -106,6 +111,10 @@ class MainActivity : AppCompatActivity() {
 
         observeAccountStatusEvents()
         observeSignedOut()
+        SplashRouter.restoreAccount(
+            savedInstanceState != null, accountRepository, appScope,
+            { firebaseAuth.currentUser?.uid }, syncManager::bind,
+        )
 
         // Handle back press for nested navigation
         onBackPressedDispatcher.addCallback(this, object : OnBackPressedCallback(true) {
@@ -469,6 +478,12 @@ class MainActivity : AppCompatActivity() {
     /** Plan B (ANDROID-AUTH-01) T6: source of the 403 BLOCKED/DELETED stream from interceptors. */
     @Inject
     lateinit var authRepository: AuthRepository
+
+    // A process-death restore skips the splash: SplashRouter.restoreAccount.
+    @Inject lateinit var accountRepository: AccountRepository
+    @Inject lateinit var firebaseAuth: FirebaseAuth
+    @Inject lateinit var syncManager: SyncManager
+    @Inject @Named("applicationScope") lateinit var appScope: CoroutineScope
 
     override fun onDestroy() {
         // Clean up any pending navigation listener to prevent leaks

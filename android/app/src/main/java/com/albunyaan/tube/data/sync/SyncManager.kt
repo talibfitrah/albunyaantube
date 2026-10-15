@@ -577,7 +577,14 @@ class SyncManager @Inject constructor(
         crossinline onSuccess: suspend (T) -> Unit,
         crossinline on404: suspend () -> Unit,
     ): PushOutcome {
-        val resp = op()
+        // Network = TRANSIENT_FAILURE, as pullAllLocked already treats it.
+        // Letting the IOException escape killed the process from the app
+        // scope (no handler) and the dirty row then crash-looped every
+        // offline launch. CancellationException is not an IOException.
+        val resp = try { op() } catch (e: java.io.IOException) {
+            android.util.Log.w("SyncManager", "Push transport failure (${e.javaClass.simpleName}) — retry on backoff")
+            return PushOutcome.TRANSIENT_FAILURE
+        }
         return when {
             resp.isSuccessful -> {
                 val body = resp.body()

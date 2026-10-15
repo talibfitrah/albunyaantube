@@ -68,6 +68,7 @@ class PlayerViewModelDownloadPlaybackTest {
     private val streams = CountingPlayerRepository()
     private val metadata = CountingExtractorClient()
     private val downloads = FakeDownloadRepository()
+    private val favorites = FakeFavoritesRepository()
 
     @Before fun setUp() = Dispatchers.setMain(testDispatcher)
 
@@ -243,13 +244,43 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals("done", vm.state.value.currentDownload?.request?.id)
     }
 
+    // Stage 1346 C1 / stage 5 F6: a saved lecture used to favourite with a blank channel and
+    // 0:00, which the server rejects (400) and sync then drops without a word.
+    @Test fun `a download keeps the channel and duration the streaming player knows`() = runTest {
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "lec9", title = "Lecture", channelName = "Lecturer", durationSeconds = 1800)
+        advanceUntilIdle()
+
+        vm.downloadCurrent(targetHeight = 360)
+
+        val request = downloads.enqueued.single()
+        assertEquals("Lecturer", request.channelName)
+        assertEquals(1800, request.durationSeconds)
+    }
+
+    @Test fun `a saved lecture favourites with its channel and duration`() = runTest {
+        val file = tmp.newFile("v10.mp4")
+        val entry = completed("d10", "v10", file)
+        downloads.entries.value = listOf(
+            entry.copy(request = entry.request.copy(channelName = "Lecturer", durationSeconds = 1800))
+        )
+        val vm = createViewModel()
+        vm.loadDownload("d10")
+        advanceUntilIdle()
+
+        vm.toggleFavorite()
+        advanceUntilIdle()
+
+        assertEquals(Triple("v10", "Lecturer", 1800), favorites.toggled.single())
+    }
+
     private fun createViewModel() = PlayerViewModel(
         repository = streams,
         downloadRepository = downloads,
         playlistDetailRepository = FakePlaylistDetailRepository(),
         rateLimiter = ExtractionRateLimiter(),
         prefetchService = FakePrefetchService(),
-        favoritesRepository = FakeFavoritesRepository(),
+        favoritesRepository = favorites,
         metricsReporter = FakeExtractorMetricsReporter(),
         playbackMetrics = PlaybackMetricsCollector(),
         mpdRegistry = SyntheticDashMpdRegistry(),
@@ -298,7 +329,8 @@ class PlayerViewModelDownloadPlaybackTest {
         override suspend fun refreshPersistedDownloads() {
             listedOnRefresh?.let { entries.value = it }
         }
-        override fun enqueue(request: DownloadRequest) {}
+        val enqueued = mutableListOf<DownloadRequest>()
+        override fun enqueue(request: DownloadRequest) { enqueued += request }
         override fun pause(requestId: String) {}
         override fun resume(requestId: String) {}
         override fun cancel(requestId: String) {}
@@ -355,10 +387,11 @@ class PlayerViewModelDownloadPlaybackTest {
             thumbnailUrl: String?, durationSeconds: Int,
         ) {}
         override suspend fun removeFavorite(videoId: String) {}
+        val toggled = mutableListOf<Triple<String, String, Int>>()
         override suspend fun toggleFavorite(
             videoId: String, title: String, channelName: String,
             thumbnailUrl: String?, durationSeconds: Int,
-        ): Boolean = false
+        ): Boolean { toggled += Triple(videoId, channelName, durationSeconds); return true }
         override fun getFavoriteCount(): Flow<Int> = flowOf(0)
         override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
         override suspend fun addImportedFavorite(

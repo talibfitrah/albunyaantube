@@ -214,6 +214,30 @@ class DownloadRepositoryTest {
             assertEquals(emptyList<DownloadEntry>(), repository.downloads.value)
         }
 
+    @Test
+    fun `channel and duration given at enqueue survive a restart`() =
+        runTest {
+            val downloadId = "lec_1700000000000"
+            // Never-advanced scopes: no init load or work observer runs inside runTest.
+            repository(TestScope(StandardTestDispatcher(testScheduler))).enqueue(
+                DownloadRequest(
+                    id = downloadId, title = "Lecture", videoId = "lec", audioOnly = true,
+                    channelName = "Lecturer", durationSeconds = 1800
+                )
+            )
+            workManager.cancelAllWork().result.get()
+            val tempFile = storage.createTempFile(downloadId)
+            tempFile.writeBytes(byteArrayOf(1, 2, 3))
+            storage.commit(downloadId, audioOnly = true, tempFile)
+
+            val restarted = repository(TestScope(StandardTestDispatcher(testScheduler)))
+            restarted.refreshPersistedDownloads()
+
+            val request = restarted.downloads.value.single { it.request.id == downloadId }.request
+            assertEquals("Lecturer", request.channelName)
+            assertEquals(1800, request.durationSeconds)
+        }
+
     private fun repository(scope: CoroutineScope): DefaultDownloadRepository =
         DefaultDownloadRepository(
             workManager = workManager,

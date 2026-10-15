@@ -2,7 +2,9 @@ package com.albunyaan.tube.data.sync
 
 import androidx.room.Room
 import androidx.test.core.app.ApplicationProvider
+import com.albunyaan.tube.data.local.AccountBindingEntity
 import com.albunyaan.tube.data.local.AppDatabase
+import com.albunyaan.tube.data.local.FavoriteVideo
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.sync.dto.*
 import kotlinx.coroutines.test.runTest
@@ -72,5 +74,33 @@ class PushDirtyTest {
 
         val r = db.subscribedChannelDao().getById("uid", "UC3")!!
         assertTrue("5xx must leave row dirty for retry", r.dirty)
+    }
+
+    // Stage 5 F1 (P1): a transport failure (offline) used to escape push() as
+    // an IOException into the app scope, which has no handler, so the process
+    // died and the committed dirty row crash-looped every offline launch.
+    @Test fun transportFailureIsTransientAndLeavesRowDirty() = runTest {
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.putFavoriteResponse = { _, _ -> throw java.net.UnknownHostException("offline") }
+
+        sm.pushDirty("uid")
+        sm.unbind() // cancel the backoff retry so it can't outlive the db
+
+        assertTrue("a transport failure must leave the row dirty for retry",
+            db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    @Test fun offlineBindWithDirtyRowDoesNotThrow() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("uid", 0L, true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.pullResponse = { throw java.net.UnknownHostException("offline") }
+        api.putFavoriteResponse = { _, _ -> throw java.net.UnknownHostException("offline") }
+
+        sm.bind("uid")
+        sm.unbind()
+
+        assertTrue(db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
     }
 }
