@@ -1,0 +1,53 @@
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_dbb6b1f3671904::t_858f692c96a572 223-224,228
+  s_dbb6b1f3671904::t_0bcc9996445f40 282-284,288,296-312,333-334,372-374,377
+ios/FitrahTubeTests/PlaybackRecoveryTests.swift
+  s_dbb6b1f3671904::t_e1b93926dd73c7 578-626
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_dbb6b1f3671904::t_82aba5d4ab18e4 672-673,684
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_dbb6b1f3671904::t_efde9dfc569f08 77-81,93-95
+ios/FitrahTubeTests/Support/PlayerTestDoubles.swift
+  s_dbb6b1f3671904::t_6c46fc230c7655 76-81,140
+  s_dbb6b1f3671904::t_858f692c96a572 117-118,122,152-156,159-160
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_dbb6b1f3671904::t_b97ab0554de56e 24-25
+  s_dbb6b1f3671904::t_2d0b87229a9fd0 307-310,313,625-629,634-638,641
+ios/FitrahTubeTests/OfflineLaunchTests.swift
+  s_dbb6b1f3671904::t_1cf71e970161d4 498-500
+ios/FitrahTube/Features/Player/BackgroundPlaybackController.swift
+  s_dbb6b1f3671904::t_0c2429bd0cfe44 18-21,23-26,148,227-229
+ios/FitrahTubeTests/BackgroundPlaybackControllerTests.swift
+  s_dbb6b1f3671904::t_6b77507c6a02f3 413-467
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_dbb6b1f3671904::t_67e933f5fc34c8 359-362
+  s_dbb6b1f3671904::t_5c6824914bc192 391,409,440,449
+ios/FitrahTubeTests/PlayerViewModelQueueTests.swift
+  s_dbb6b1f3671904::t_3805224e4f9de0 282
+  s_dbb6b1f3671904::t_78d3bed062bd01 264-281,283
+  s_dbb6b1f3671904::t_0284fdd7d65513 262-263
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_dbb6b1f3671904::t_86cdf1c339c946 851-854,867-869,875,880,886-889,919-923,925-926
+  s_dbb6b1f3671904::t_8fcabb1ddf5e61 882-885
+  s_dbb6b1f3671904::t_ee80b8094eacd4 881
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_dbb6b1f3671904::t_0c2429bd0cfe44 307-308,434-435,446
+  s_dbb6b1f3671904::t_67e933f5fc34c8 431-432
+  s_dbb6b1f3671904::t_3dc7b4fd856d79 433
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da472f58bdb3fdf2c5c1e571e8f8c07442423da3",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
