@@ -867,23 +867,34 @@ actor OfflineManager: OfflineSaving {
         // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01); an
         // audio-only save takes the plain, cache-first walk for VISIONOS's itag-140 `audioOnlyURL`,
         // so the common save (the player resolved this video already) sends no POST (fix r4 N-1).
+        // Every walk an audio-only save sends to the NETWORK on purpose is the HLS shape instead
+        // (fix r5 N4-4): the 403 retry, the expiry refresh and the fallback below. A forced plain
+        // walk only fetched ANDROID's `.progressive` after a step-down to throw it away, and it
+        // cancelled a player resolve in flight through single-flight on the way.
         let requiresMuxed = !row.audioOnly
         let resolved: Resolved
+        // Whether the walk in flight is the HLS shape: its `.botCheck` fails the row (N4-2, below).
+        var hlsWalk = row.audioOnly && forceRefresh
         do {
             var first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: forceRefresh,
-                                                   requiresMuxed: requiresMuxed, requiresHLS: false)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: hlsWalk)
             if !forceRefresh, let expiresAt = first.expiresAt,
                expiresAt.timeIntervalSince(now()) < Self.minimumRemainingLifetime {
+                hlsWalk = row.audioOnly
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: true,
-                                                   requiresMuxed: requiresMuxed, requiresHLS: false)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: hlsWalk)
             }
             // No itag 140 in the plain answer: ANDROID's `.progressive`, cached or fresh, which is
-            // what every plain walk answers after a step-down. Ask once for the HLS shape, which
-            // skips ANDROID and the cache wherever the demotion put it (Cubic C2). One HLS walk at
-            // most: a second answer without itag 140 fails `.noStream` below.
-            if row.audioOnly, Self.sourceURL(first.stream, audioOnly: true) == nil {
+            // what a plain walk answers after a step-down or when VISIONOS fails at walk time. Ask
+            // once for the HLS shape, which skips ANDROID and the cache wherever the demotion put it
+            // (Cubic C2). One HLS walk at most: a second answer without itag 140 fails `.noStream`.
+            if row.audioOnly, !hlsWalk, Self.sourceURL(first.stream, audioOnly: true) == nil {
+                // A cancel or delete that landed during the plain walk must not still spend this one
+                // (fix r5 N4-3).
+                guard stillCurrent(row.id, attempt) else { return }
+                hlsWalk = true
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: forceRefresh,
                                                    requiresMuxed: false, requiresHLS: true)
@@ -892,13 +903,21 @@ actor OfflineManager: OfflineSaving {
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             await scheduleRetry(row.id, attempt, after: .seconds(max(1, until.timeIntervalSince(now())))); return
+        } catch ExtractionError.botCheck where hlsWalk {
+            // Fix r5 N4-2 (controller ruling, option b): the HLS walk runs exactly when VISIONOS may
+            // be bot-checked for the session. Parking it re-walked every second into the SHARED
+            // cooldown that then refused the player's working ANDROID rung, so it fails the row
+            // with the retryable "try again later" error instead, and the resolver records no trip
+            // for it. Player availability beats auto-retrying a save; the user retries it.
+            guard stillCurrent(row.id, attempt) else { return }
+            await fail(row.id, .http429); return
         } catch ExtractionError.botCheck {
-            // A bot-checked save walk is a temporary block, never a failed row. `.botCheck` carries
-            // no date, so park briefly. The walk-end trip arms the persisted cooldown only from the
-            // second consecutive trip (`SessionStore`: the first arms nothing), so the 1 s retry
-            // walks again; a second bot check arms 60 s, and the retry after it hits the resolver's
-            // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
-            // above with the cooldown's exact end.
+            // A bot-checked plain or muxed save walk is a temporary block, never a failed row.
+            // `.botCheck` carries no date, so park briefly. The walk-end trip arms the persisted
+            // cooldown only from the second consecutive trip (`SessionStore`: the first arms
+            // nothing), so the 1 s retry walks again; a second bot check arms 60 s, and the retry
+            // after it hits the resolver's cooldown self-gate BEFORE any rung or network call and
+            // lands in the `.cooldown` arm above with the cooldown's exact end.
             await scheduleRetry(row.id, attempt, after: .seconds(1)); return
         } catch {
             // An OLD attempt's error landing after a cancel plus a retry re-claimed the

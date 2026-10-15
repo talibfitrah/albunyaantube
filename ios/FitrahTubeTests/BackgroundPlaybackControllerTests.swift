@@ -418,14 +418,38 @@ import UIKit
     /// intent, and the failure leaves the player paused.
     private func failedWhilePlaying(log: @escaping (PlaybackPolicyAction) -> Void) async throws
         -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
-        let (model, player, coordinator) = try await PlayerHostTests.playingHarness()
-        let production = PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)
-        coordinator.background.onPolicyAction = { log($0); production($0) }
-        coordinator.background.attach(player: player)
+        let (model, player, coordinator) = try await attachedWhilePlaying(log: log)
         PlayerHostTests.postFailure(on: player)
         player.pause()
         #expect(coordinator.resumeOnNextItem, "the failure armed no resume intent")
         return (model, player, coordinator)
+    }
+
+    /// The playing clip on a coordinator whose attached controller runs the PRODUCTION policy
+    /// handler (each action also handed to `log`).
+    private func attachedWhilePlaying(log: @escaping (PlaybackPolicyAction) -> Void) async throws
+        -> (model: PlayerViewModel, player: AVPlayer, coordinator: PlayerHostView.Coordinator) {
+        let (model, player, coordinator) = try await PlayerHostTests.playingHarness()
+        let production = PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)
+        coordinator.background.onPolicyAction = { log($0); production($0) }
+        coordinator.background.attach(player: player)
+        return (model, player, coordinator)
+    }
+
+    private static func postInterruptionBegan() {
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+            AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.began.rawValue])
+    }
+
+    private static func postInterruptionEnded(shouldResume: Bool) {
+        NotificationCenter.default.post(name: AVAudioSession.interruptionNotification, object: nil, userInfo: [
+            AVAudioSessionInterruptionTypeKey: AVAudioSession.InterruptionType.ended.rawValue,
+            AVAudioSessionInterruptionOptionKey: shouldResume ? AVAudioSession.InterruptionOptions.shouldResume.rawValue : 0])
+    }
+
+    private static func postUnplug() {
+        NotificationCenter.default.post(name: AVAudioSession.routeChangeNotification, object: nil, userInfo: [
+            AVAudioSessionRouteChangeReasonKey: AVAudioSession.RouteChangeReason.oldDeviceUnavailable.rawValue])
     }
 
     /// N-6(b): headphones out during a failure's re-resolve, end to end from the route-change
@@ -464,5 +488,83 @@ import UIKit
 
         try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
         #expect(player.timeControlStatus != .paused, "the replacement stayed paused after the call")
+    }
+
+    /// Fix r5 N4-1(a): a replacement that lands DURING the interruption is not played then (Siri, an
+    /// alarm, another app's audio); the end's `.resume` plays it, because iOS said `.shouldResume`.
+    @Test(.timeLimit(.minutes(1))) func aReplacementLandingMidInterruptionWaitsForShouldResume() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (model, player, coordinator) = try await failedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        try await wait { coordinator.background.interrupted }
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the replacement played during the interruption")
+
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { actions.contains(.resume) }
+        #expect(player.timeControlStatus != .paused, "the end's .resume did not play the replacement")
+    }
+
+    /// Fix r5 N4-1(b): iOS ended the interruption WITHOUT `.shouldResume` (another app took the audio):
+    /// the end forwards `.pause`, which drops the intent, so a replacement landing afterwards stays paused.
+    @Test(.timeLimit(.minutes(1))) func anInterruptionEndedWithoutShouldResumeKeepsTheReplacementPaused() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (model, player, coordinator) = try await failedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        try await wait { coordinator.background.interrupted }
+        Self.postInterruptionEnded(shouldResume: false)
+        try await wait { actions.contains(.pause) }
+        #expect(!coordinator.resumeOnNextItem, "the end without .shouldResume kept the resume intent")
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the replacement played against iOS's answer")
+    }
+
+    /// Fix r5 N4-1(c): headphones out DURING the call. The call's end must not resume through the
+    /// speaker (the harm Cubic A6 fixed), whatever `.shouldResume` says.
+    @Test(.timeLimit(.minutes(1))) func anUnplugDuringACallKeepsTheReplacementPausedAfterIt() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (model, player, coordinator) = try await failedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        try await wait { coordinator.background.interrupted }
+        Self.postUnplug()
+        try await wait { actions.contains(.pause) }
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { !coordinator.background.interrupted }
+        #expect(!actions.contains(.resume), "the call's end resumed after the unplug")
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus == .paused, "the replacement played through the speaker")
+    }
+
+    /// Fix r5 N4-1, the missing end: iOS does not promise `.ended` (Apple: treat the user's Play as
+    /// one). Once the player is seen playing again, recovery's replacement may resume again, or every
+    /// later failure would wait for a tap.
+    @Test(.timeLimit(.minutes(1))) func aPlayAfterAnInterruptionThatNeverEndedLetsRecoveryResume() async throws {
+        let (model, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        try await wait { coordinator.background.interrupted }
+        let deadline = ContinuousClock.now + .seconds(10)   // the user plays; no end ever comes
+        while coordinator.background.interrupted, ContinuousClock.now < deadline {
+            if player.timeControlStatus == .paused, player.currentItem?.status == .readyToPlay {
+                await player.seek(to: .zero)
+                player.play()
+            }
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(!coordinator.background.interrupted, "a playing player never cleared the interruption")
+        PlayerHostTests.postFailure(on: player)
+        player.pause()
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus != .paused, "recovery's replacement stayed paused for good")
     }
 }

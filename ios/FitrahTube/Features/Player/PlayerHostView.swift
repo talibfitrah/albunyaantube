@@ -304,8 +304,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // Cubic A6: the controller has paused the player, but a failure already had, so a
             // replacement built during its re-resolve cannot read this pause off the player. Drop
             // the failure's resume intent instead: a stall's replacement follows the live state.
-            // Headphones out and the remote pause only: an interruption reports no `.pause`, and
-            // its end resumes the replacement when iOS says so (fix r4 N-2).
+            // Headphones out, the remote pause, and an interruption iOS ends without `.shouldResume`
+            // (fix r5 N4-1); an interruption's begin reports no `.pause`, and its end resumes the
+            // replacement when iOS says so (fix r4 N-2).
             coordinator?.dropResumeIntent()
         default:
             return
@@ -431,8 +432,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// stall: that replacement inherits the live player's state). `private(set)`: the controller
         /// tests read it across a route change and an interruption (fix r4 N-2).
         private(set) var resumeOnNextItem = false
-        /// Headphones out or a remote pause while recovery's re-resolve is out
-        /// (`applyPolicyAction(.pause)`, Cubic A6). Not an interruption (fix r4 N-2).
+        /// Headphones out, a remote pause, or an interruption's end without `.shouldResume` while
+        /// recovery's re-resolve is out (`applyPolicyAction(.pause)`, Cubic A6; fix r5 N4-1). Not an
+        /// interruption's begin (fix r4 N-2).
         func dropResumeIntent() { resumeOnNextItem = false }
 
         /// Set when `dismantleUIViewController` ran while a PiP window was still playing, so
@@ -675,7 +677,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
             RunLoop.main.add(timer, forMode: .common)
             sampleTimer = timer
-            if resumes, self.model?.pausedForCast != true { player.play() }
+            // Fix r5 N4-1: never during an interruption; its end's `.resume` plays this item.
+            if resumes, self.model?.pausedForCast != true, !background.interrupted { player.play() }
             // Stamped here for EVERY new item that is starting -- recovery's resumed replacement (N1)
             // and an item the builder already started, like an auto-advance's (final review I1) -- not
             // left to the sampler's first tick a second away: a failure inside that second would read
@@ -710,7 +713,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private func sample() {
             guard let item = observedItem, let player = observedPlayer else { return }
             if player.timeControlStatus != .paused { lastPlayingAt = Date() }
-            if player.timeControlStatus == .playing { errorLogFloor = Date() }
+            if player.timeControlStatus == .playing {
+                errorLogFloor = Date()
+                background.interrupted = false   // playing again: whatever interruption it had is over (N4-1)
+            }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
             // Final review I2: the path monitor this host already runs for the quality clamp. With no
             // usable network a recovery's re-resolve fails at once; AVPlayer resumes by itself.

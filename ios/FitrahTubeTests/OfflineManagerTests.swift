@@ -381,6 +381,67 @@ struct OfflineManagerTests {
         #expect(row.errorCode == "NO_STREAM")
     }
 
+    /// Fix r5 N4-2 (controller ruling, option b): a bot check on the audio-only HLS fallback fails the
+    /// row with the retryable "try again later" error instead of parking it, so no 1 s re-walk feeds
+    /// the shared cooldown (the resolver records no trip for it either:
+    /// `StreamResolverTests.aBotCheckedHLSWalkNeverArmsTheCooldown`). A Retry starts it over.
+    @Test func aBotCheckedHLSFallbackFailsTheRowRetryablyInsteadOfParking() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .failure(.botCheck)
+        let id = await save(rig)
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue)
+        #expect(row.errorCode == "HTTP_429")
+        #expect(await rig.manager.pendingRetryIds.isEmpty, "a parked row walks again in 1 s and trips again")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Fix r5 N4-3: a cancel that lands while the plain walk is out must not still spend the HLS walk.
+    @Test func aCancelDuringThePlainWalkSpendsNoHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        rig.resolver.hold(Self.lectureVideoId)
+        let saving = Task { await save(rig) }
+        await rig.resolver.waitUntilCalled(count: 1)                 // the plain walk is out
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+        await rig.manager.cancel(id)
+        rig.resolver.release(id: Self.lectureVideoId)
+        rig.resolver.release(id: Self.lectureVideoId)                // a wrong HLS walk's own hold, if any
+        _ = await saving.value
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false], "the cancelled save still sent the HLS walk")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Fix r5 N4-4: after a step-down, an audio-only save's FORCED walk (the 403 retry) goes straight
+    /// to the HLS shape. A forced plain walk only fetched ANDROID's `.progressive` to throw it away
+    /// (and cancelled a player resolve in flight through single-flight on the way).
+    @Test func aSteppedDownAudioOnly403RetryAsksForTheHLSWalkDirectly() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        let id = await save(rig)
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true, true])
+        #expect(rig.resolver.calls.last?.forceRefresh == true)
+        #expect(rig.engine.starts.count == 2)
+        #expect(rig.engine.starts.last?.url.absoluteString == "https://r1/a140")
+    }
+
+    /// Fix r5 N4-4, the expiry half: a cached ANDROID manifest about to expire is not refreshed with a
+    /// forced plain walk first; the HLS walk is fresh by construction.
+    @Test func aSteppedDownAudioOnlySaveSkipsTheExpiryRefreshForTheHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        rig.flags.now = Date().addingTimeInterval(3300)               // 300 s left on the cached answer
+        _ = await save(rig)
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
+    }
+
     @Test func anExpiryUnderTenMinutesForcesExactlyOneRefreshBeforeTheEngine() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         // RecordingResolver answers expiresAt = now + 3600; a clock 3300 s ahead leaves 300 s.
@@ -2792,6 +2853,80 @@ struct OfflineManagerTests {
             return
         }
         #expect(resumeData != nil, "without the token the retry restarts the walk from zero")
+    }
+
+    /// Fix r5 N4-5: a 206 that carries no bytes leaves the `.tmp` where it was, and the walk asked for
+    /// the same range again, at once, for as long as the server kept answering empty. The second
+    /// empty answer in a row fails resumably instead (the partial and the token kept).
+    @Test func twoEmptyChunksInARowFailResumablyInsteadOfLooping() async throws {
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineEmpty206")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "empty-206-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)                           // 5 of 10 bytes on disk
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+
+        for _ in 0..<2 {                                                    // the same range, empty twice
+            let (task, side) = await runSideTask(TenByteFileURLProtocol.self, url: url, offset: 5, description: id)
+            let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+            try Data().write(to: location)
+            defer { try? FileManager.default.removeItem(at: location) }
+            engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        }
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+        await engine.cancel(id: id)                                         // the hanging re-request, if any
+
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("expected the resumable transport failure, got \(failure)"); return
+        }
+        #expect(resumeData != nil, "without the token the retry restarts from zero")
+        #expect((try? Data(contentsOf: partial))?.count == 5, "the partial is the resume point")
+    }
+
+    /// Serves an empty 200: the server ignored the `Range` and answered "the whole file" with nothing.
+    nonisolated final class EmptyWholeFileURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// Fix r5 N4-5: a 200 replaces the partial with its body, so an EMPTY 200 became a 0-byte `.tmp`
+    /// whose total (`written`) it had just met: `.finished`, and the row showed a 0-byte file as saved.
+    /// It fails resumably instead, before touching the partial.
+    @Test func anEmptyWholeFileAnswerFailsInsteadOfSavingZeroBytes() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "empty-200-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+        let (task, side) = await runSideTask(EmptyWholeFileURLProtocol.self, url: url, offset: 5, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data().write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { event in
+            switch event { case .failed, .finished: true; default: false }
+        } }
+
+        #expect(!collector.events.contains { if case .finished = $0 { true } else { false } },
+                "an empty answer was saved as a 0-byte file")
+        #expect(collector.events.contains { if case .failed(_, .network(let token)) = $0 { token != nil } else { false } })
+        #expect((try? Data(contentsOf: partial))?.count == 5, "the empty answer replaced the partial")
     }
 
     /// Serves five bytes as a 206 whose `Content-Range` is the request URL's `cr` query item,

@@ -70,15 +70,20 @@ public actor StreamResolver {
 
     /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16), for caller-side
     ///   rate-limiter lane coordination (`ExtractionRateLimiter`). It alters resolver behaviour in
-    ///   ONE place: a `.cast` muxed walk never records the global bot-check cooldown (`Purpose.cast`).
+    ///   ONE place: a `.cast` muxed walk never records the global bot-check cooldown (`Purpose.cast`),
+    ///   and neither does any `requiresHLS` walk (below).
     /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
     ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
     ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
-    /// - Parameter requiresHLS: the audio-only save's fallback walk (Cubic C2; fix r4 N-1: only when
-    ///   its plain walk answered without itag 140), the muxed walk's mirror: the caller needs
-    ///   VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung advances without
-    ///   a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the plain key must not
-    ///   hand the player the HLS it stepped down from. At most one of the two.
+    /// - Parameter requiresHLS: the audio-only save's network walk (Cubic C2; fix r4 N-1, r5 N4-4: when
+    ///   its plain walk answered without itag 140 -- after a step-down, or with VISIONOS failing at
+    ///   walk time -- and for every walk the save must force), the muxed walk's mirror: the caller
+    ///   needs VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung advances
+    ///   without a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the plain key
+    ///   must not hand the player the HLS it stepped down from. At most one of the two. It never
+    ///   records a bot-check trip (fix r5 N4-2, controller ruling): it runs exactly when VISIONOS may
+    ///   be bot-checked for the session, and its trips fed the SHARED cooldown that then refused the
+    ///   player's working ANDROID rung. The save fails instead, and the user retries it.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,
         requiresMuxed: Bool = false, requiresHLS: Bool = false
@@ -91,8 +96,9 @@ public actor StreamResolver {
             //   cached `.progressive` no itag 140; caching this walk's answer would degrade the
             //   player to 360p on its next resolve, or hand it back the HLS it stepped down from.
             //   Skipping both read and write means every such walk POSTs (every video save; an
-            //   audio-only save only past a step-down) — CF-D-9 exposure accepted; the per-walk
-            //   trip dedupe caps it.
+            //   audio-only save whose plain answer lacks itag 140, or that must force a walk) —
+            //   CF-D-9 exposure accepted; the per-walk trip dedupe caps it, and an HLS walk records
+            //   no trip at all (N4-2).
             // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
             //   `forceRefresh` through the registry would cancel the user's own playback resolve
             //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also
@@ -100,7 +106,8 @@ public actor StreamResolver {
             //   (one active save), but a save and a cast (`PlayerViewModel.castMedia`) can overlap
             //   -- two android POSTs, accepted, since neither result is cached.
             return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: requiresMuxed,
-                                            requiresHLS: requiresHLS, recordsBotCheck: purpose != .cast)
+                                            requiresHLS: requiresHLS,
+                                            recordsBotCheck: purpose != .cast && !requiresHLS)
         }
 
         if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {

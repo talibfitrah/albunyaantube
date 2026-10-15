@@ -21,8 +21,10 @@ protocol StreamResolving: Sendable {
     ///
     /// `requiresHLS` is the same contract for the other save shape (Cubic C2): an audio-only save
     /// needs VISIONOS's itag 140, so the resolver skips the ANDROID rung, wherever a step-down put
-    /// it, with the same cache and single-flight bypass. Only `OfflineManager` passes `true`, and
-    /// only when its plain walk answered without itag 140 (fix r4 N-1).
+    /// it, with the same cache and single-flight bypass, and it never records a bot-check trip (fix
+    /// r5 N4-2). Only `OfflineManager` passes `true`: when its plain walk answered without itag 140
+    /// (after a step-down, or with VISIONOS failing at walk time; fix r4 N-1), and for every walk the
+    /// save must force (fix r5 N4-4).
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved

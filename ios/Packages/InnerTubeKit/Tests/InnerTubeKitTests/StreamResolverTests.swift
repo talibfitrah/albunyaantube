@@ -685,6 +685,33 @@ import Testing
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil, "the HLS walk wrote the plain key")
     }
 
+    /// Fix r5 N4-2 (controller ruling, option b): the audio-only save's HLS fallback runs exactly when
+    /// VISIONOS may be bot-checked for the session (ANDROID answered the plain walk), and a trip from
+    /// it fed the SHARED cooldown that then refused the player's working ANDROID rung. It records no
+    /// trip, however often it fails; the player resolve right after still plays.
+    @Test func aBotCheckedHLSWalkNeverArmsTheCooldown() async throws {
+        let clock = ManualClock()
+        let transport = FixtureTransport(routes: [
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "101" },
+                  response: try fixtureResponse("player-botcheck")),
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "3" }, response: androidItag18Response)
+        ])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)   // a genuine bot check, not a bootstrap
+
+        for _ in 0..<2 {
+            await expectThrows(.botCheck) {
+                _ = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil,
+                                               forceRefresh: false, requiresHLS: true)
+            }
+        }
+
+        #expect(await session.loadCooldown().tripCount == 0)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+        let playback = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = playback.stream else { Issue.record("expected .progressive, got \(playback.stream)"); return }
+    }
+
     // MARK: - demote x R6: a demoted walk starts at ANDROID, so its refusal is not yet the verdict (F4)
 
     /// Owner rule: a video plays unless the source no longer serves it. VISIONOS was serving this one

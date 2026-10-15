@@ -94,6 +94,8 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// ponytail: one Int per id per session, never cleared — clearing would reissue a live
     /// generation to an older task.
     private var generations: [String: Int] = [:]
+    /// Consecutive empty 2xx answers per id in the live walk (fix r5 N4-5); a new walk starts at 0.
+    private var emptyAnswers: [String: Int] = [:]
 
     init(directory: URL, configuration: URLSessionConfiguration) {
         let (stream, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
@@ -181,6 +183,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     private func bumpLocked(_ id: String) -> Int {
         let next = (generations[id] ?? generationBase) + 1
         generations[id] = next
+        emptyAnswers[id] = nil
         return next
     }
 
@@ -281,8 +284,11 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// `path(percentEncoded: false)`, never `path()`: the app's directory is `Library/Application
     /// Support/offline`, and an encoded `%20` names no file — the size read 0 after every chunk and
     /// the walk re-issued chunk one forever (1.0.3).
-    private func partialSize(_ id: String) -> Int64 {
-        (try? FileManager.default.attributesOfItem(atPath: partialURL(id).path(percentEncoded: false))[.size] as? Int64) ?? 0
+    private func partialSize(_ id: String) -> Int64 { Self.fileSize(partialURL(id)) }
+
+    /// 0 for a missing or unreadable file too.
+    nonisolated static func fileSize(_ url: URL) -> Int64 {
+        (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size] as? Int64) ?? 0
     }
 
     private static func token(for task: URLSessionTask) -> Data? {
@@ -369,6 +375,20 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // pause/cancel in the app on it — so this NARROWS the window rather than closing it;
             // the `.tmp` a loser can still leave is deleted by the next `start` (CF-D-10).
             guard isCurrent(id, generation) else { return }
+            // Fix r5 N4-5: a 2xx with an empty body adds nothing. An empty 200 replaced the partial
+            // with zero bytes and "finished" a 0-byte file; an empty 206 left the partial where it
+            // was, so the walk asked the same range again, at once, for as long as the server kept
+            // answering empty. Both fail resumably instead, the partial and the token kept: a 200
+            // at once, a 206 on the second empty answer in a row.
+            let empty = Self.fileSize(location) == 0
+            let emptyStreak = stateLock.withLock { () -> Int in
+                emptyAnswers[id] = empty ? emptyAnswers[id, default: 0] + 1 : 0
+                return emptyAnswers[id]!
+            }
+            if empty, status == 200 || emptyStreak >= 2 {
+                continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
+                return
+            }
             // A 200 means the server ignored the Range and sent the whole body: it replaces.
             if status == 200 || !FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)) {
                 try? FileManager.default.removeItem(at: partial)
