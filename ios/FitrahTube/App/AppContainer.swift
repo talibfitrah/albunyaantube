@@ -73,7 +73,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// latch here, and a fixture container's screens must write to the fixture's suite rather than
     /// the app's real domain — the same reason `fake()` takes a `defaults:` at all.
     let userDefaults: UserDefaults
-    private let modelContainer: ModelContainer
+    /// 1.0.3 R5 (L1): opened on first USE, never while the container is built. `FitrahTubeApp`'s
+    /// `@State` builds this container in `App.init`, which SwiftUI's `App.main()` runs BEFORE
+    /// `UIApplicationMain` (probed: the init's stack has no `UIApplicationMain` frame), i.e. on
+    /// every launch, a background launch before the first unlock included (the download session
+    /// sends launch events) — where the store cannot be read (`makeModelContainer`).
+    private lazy var modelContainer: ModelContainer = openModelContainer()
+    private let openModelContainer: () -> ModelContainer
     private let apiBaseURL: URL
     /// What `offlineGate` sends over. Not private, and not a detail: a fixture container's gate
     /// client must never reach the network, so `AppContainerTests` pins which transport it got.
@@ -514,13 +520,34 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
                                                    // path, so the deletion needs no wiring of its own.
                                                    sync: sync,
                                                    records: accountRecords,
-                                                   protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+                                                   protectedDataAvailable: { [weak self] in self?.signedOutMayClearRecord() ?? false })
+
+    /// Stage 3c S3-1: whether Firebase's "signed out" with no user may clear the offline record. Not
+    /// while protected data is unavailable (Firebase cannot read its Keychain), and not for the rest
+    /// of a process that started before the first unlock -- its readiness wait blocked, or (r2 N2, a
+    /// prewarm) the store was locked when this container was built: Firebase read no Keychain at its
+    /// launch and re-reads it only on `protectedDataDidBecomeAvailable`, which such a process may
+    /// never be handed (the M5 premise). `StoreReadiness.announceUnlock` hands it over; until the
+    /// re-read lands, the record survives the stale "signed out".
+    func signedOutMayClearRecord() -> Bool {
+        UIApplication.shared.isProtectedDataAvailable && !storeReadiness.waitedForUnlock
+            && !storeReadiness.startedLocked
+    }
+
+    /// The ONE `session.start()` (`RootView`). Stage 7 r2 N2: a process this container saw start
+    /// before the first unlock (a prewarm: no wait ever blocked) announces the unlock first, once,
+    /// so Firebase re-reads its Keychain before the session subscribes.
+    func startSession() async {
+        if storeReadiness.startedLocked { storeReadiness.announceUnlock() }
+        await session.start()
+    }
 
     /// The offline-launch record (`AccountRecordStore`). A fixture gets none, so no test or preview
     /// routes on a record another one wrote; the screenshot rig's `-fitrah-fake-auth` launches get
     /// one, so a manual offline-launch check (sign in, then relaunch with `-fitrah-fake-offline`)
     /// has a record to read back. No automated test drives it.
-    private(set) lazy var accountRecords: AccountRecordStore? = {
+    /// Settable so a test can drive the container's own session over a record store of its own.
+    lazy var accountRecords: AccountRecordStore? = {
         #if DEBUG
         if isFixture, !LaunchArguments.debug.contains("-fitrah-fake-auth") { return nil }
         #endif
@@ -681,7 +708,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// generated `Client`); nil in fake containers means the header stays whatever the route carried.
     let playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)?
 
-    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard, modelContainer: ModelContainer, apiBaseURL: URL,
+    init(catalog: any CatalogClient, userDefaults: UserDefaults = .standard,
+         modelContainer: @autoclosure @escaping () -> ModelContainer, apiBaseURL: URL,
          browse: (any BrowseSource)? = nil, degradedHeader: (@Sendable (String) async throws -> ChannelHeader)? = nil,
          playlistHeader: (@Sendable (String) async throws -> PlaylistHeader)? = nil,
          gateTransport: any HTTPTransport = URLSessionTransport(),
@@ -702,7 +730,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.capabilities = capabilities ?? .current()
         self.catalog = catalog
         self.userDefaults = userDefaults
-        self.modelContainer = modelContainer
+        self.openModelContainer = modelContainer
         self.apiBaseURL = apiBaseURL
         self.injectedBrowse = browse
         self.injectedSync = sync
@@ -715,7 +743,11 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         self.gateTransport = gateTransport
     }
 
-    static func live(baseURL: URL = AppConfig.apiBaseURL) -> AppContainer {
+    /// `storeURL`/`protectedDataAvailable` exist so `AppContainerTests` can pin the hand-off to the
+    /// store guard through THIS builder; production takes the defaults.
+    static func live(baseURL: URL = AppConfig.apiBaseURL, storeURL: URL? = nil,
+                     protectedDataAvailable: @escaping () -> Bool = { UIApplication.shared.isProtectedDataAvailable })
+        -> AppContainer {
         let deviceId = DeviceId.persisted()
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: deviceId)
         // Degraded-mode header (plan Task 2 table): the backend's own `Channel` stands in for a
@@ -724,10 +756,21 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         // the generated `getPublicChannel`/`getPublicPlaylist` cannot decode production's
         // Timestamp objects, see `PublicHeaders`.
         let headers = PublicHeaders(baseURL: baseURL, deviceId: deviceId)
-        return AppContainer(
-            catalog: LiveCatalogClient(client: api), modelContainer: makeModelContainer(inMemory: false), apiBaseURL: baseURL,
+        let container = AppContainer(
+            catalog: LiveCatalogClient(client: api),
+            // Lazy (the property's note): by the time a store is first used `UIApplicationMain` runs.
+            modelContainer: makeModelContainer(inMemory: false, storeURL: storeURL,
+                                               protectedDataAvailable: protectedDataAvailable),
+            apiBaseURL: baseURL,
             degradedHeader: { try await headers.channel($0) },
             playlistHeader: { try await headers.playlist($0) })
+        // Stage 7 r2 N2: one `open(2)` of the store, here in `App.init` -- before Core Data has
+        // opened it, so S3-2's lock concern does not apply, and before `UIApplication` exists, so
+        // the file alone answers. Refused with a data-protection error = started before the first
+        // unlock (a prewarm can get here with no scene and no session event, so no wait blocks).
+        container.storeReadiness.startedLocked =
+            !storeIsReadable(storeURL ?? liveStoreURL, protectedDataAvailable: { false })
+        return container
     }
 
     /// Device language/region for InnerTube requests (`hl`/`gl`) -- ruling 19: the engine itself
@@ -817,17 +860,43 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     }
     #endif
 
-    /// Gate A-I1. This runs eagerly on the launch path (`live()` is evaluated in `FitrahTubeApp`'s
-    /// `@State` initialiser), so its failure mode used to be a `preconditionFailure` -- a permanent
+    /// The on-disk store `makeModelContainer(inMemory: false)` opens.
+    static var liveStoreURL: URL {
+        ModelConfiguration(schema: Schema(versionedSchema: FavoritesSchemaV8.self), isStoredInMemoryOnly: false).url
+    }
+
+    /// 1.0.3 R5 (L1): whether the store can be read now -- the ONE definition the readiness gate and
+    /// the store guard in `makeModelContainer` share (stage 5 P2). Its class is the app default,
+    /// "until first user authentication": before the first unlock after a reboot, `open(2)` refuses it
+    /// with a permission error, which is not corruption. Protected data available is the other way
+    /// through, so a permission error on an unlocked device never parks anything and a store that
+    /// will not open there is treated as corrupt. Asked first, so on an unlocked device (every normal
+    /// launch) the file is never opened here (stage 3c S3-2). A store not created yet is no reason to
+    /// wait.
+    nonisolated static func storeIsReadable(_ url: URL, protectedDataAvailable: () -> Bool) -> Bool {
+        if protectedDataAvailable() { return true }
+        let fd = open(url.path, O_RDONLY)
+        if fd >= 0 { close(fd); return true }
+        return errno != EPERM && errno != EACCES
+    }
+
+    /// What the scene and the background-session hook wait on before the first store use
+    /// (`StoreReadiness`). Settable so a test can hold a container's hook on a fake answer.
+    var storeReadiness: StoreReadiness = .live
+
+    /// Gate A-I1. This runs on the launch path (at the first store use since 1.0.3, the
+    /// `modelContainer` note), so its failure mode used to be a `preconditionFailure` -- a permanent
     /// crash loop on a corrupt or unmigratable store, unrecoverable without delete-and-reinstall.
     /// Recover by recreating instead: the store files are deleted and the container rebuilt once.
     /// Losing local favorites is the accepted cost (phase 4's sync restores them from the server);
     /// losing the whole app is not.
     ///
     /// `storeURL` exists so `AppContainerTests` can point the recovery path at a deliberately
-    /// corrupt file; production always takes the default location.
-    static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil) -> ModelContainer {
-        let schema = Schema(versionedSchema: FavoritesSchemaV7.self)
+    /// corrupt file; production always takes the default location. `protectedDataAvailable`:
+    /// 1.0.3 R5 (L1), see the deletion below.
+    static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil,
+                                   protectedDataAvailable: () -> Bool = { true }) -> ModelContainer {
+        let schema = Schema(versionedSchema: FavoritesSchemaV8.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
         func build() throws -> ModelContainer {
@@ -843,7 +912,13 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             // own; only a second failure is treated as the corrupt/unmigratable case the deletion
             // below exists for.
             if let recovered = try? build() { return recovered }
-            if !inMemory {
+            // 1.0.3 R5 (L1): NEVER when the store is unreadable rather than corrupt. Before the
+            // first unlock after a reboot its data-protection class keeps it shut (Core Data:
+            // SQLITE_AUTH), and a launch there (a background-session event, say) used to
+            // delete the Saved library, favorites and subscriptions as if corrupt. Fail soft: the
+            // in-memory stand-in below, the store untouched for the next launch. "Unreadable" is
+            // the readiness gate's own definition (stage 5 P2), so the two never disagree.
+            if !inMemory, storeIsReadable(configuration.url, protectedDataAvailable: protectedDataAvailable) {
                 // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
                 // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
                 // suffixing the database *filename*, so the wrongly-named deletes left the real
@@ -942,9 +1017,11 @@ nonisolated struct ParkedOfflineEngine: OfflineEngine {
 nonisolated struct ParkedStreamResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(86_400))
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// `-fitrah-fake-report <status>`: one canned status for every request, no network. Also the fake
@@ -969,4 +1046,85 @@ extension EnvironmentValues {
     #else
     @Entry var container: AppContainer = AppContainer.current!
     #endif
+}
+
+/// 1.0.3 R5 (L1), round 1 (I1, M5): whether the on-disk store can be opened now, and the wait for
+/// it. The store's class is the app default ("until first user authentication"), so before the first
+/// unlock after a reboot it cannot be read; a launch there (a background-session event, a scene
+/// connected in the background) must not open it, because the stand-in it would get instead is
+/// empty and stays for the life of the process. Readable = `AppContainer.storeIsReadable`.
+@MainActor struct StoreReadiness {
+    var isReadable: () -> Bool
+    var center: NotificationCenter = .default
+    /// Stage 3c S3-1: whether a `wait()` here had to block -- this process started before the first
+    /// unlock (`AppContainer.signedOutMayClearRecord`). A reference, so every copy of this value (the
+    /// scene gate's, the background hook's) records into the container's one.
+    let waits = WaitRecord()
+    var waitedForUnlock: Bool { waits.blocked }
+    /// Stage 7 r2 N2: the store was locked when the live container was built (`AppContainer.live`).
+    var startedLocked: Bool {
+        get { waits.startedLocked }
+        nonmutating set { waits.startedLocked = newValue }
+    }
+
+    @MainActor final class WaitRecord {
+        fileprivate(set) var blocked = false
+        fileprivate(set) var startedLocked = false
+        fileprivate(set) var announced = false
+    }
+
+    /// Stage 7 r2 N1: posts `protectedDataDidBecomeAvailable` once per process. Firebase re-reads its
+    /// Keychain only on that notification (`Auth.swift:1690-1697,1735-1750`, 12.19.1), and a process
+    /// suspended across the first unlock, or prewarmed before it, may never be handed it; then the
+    /// sign-in wall stayed up for a signed-in user until a cold launch. Firebase observes it only
+    /// after its own startup Keychain error, so anywhere else this is a no-op, and the app's one
+    /// other observer (`wait()`) takes it as "check again", never as "readable".
+    func announceUnlock() {
+        guard !waits.announced else { return }
+        waits.announced = true
+        center.post(name: UIApplication.protectedDataDidBecomeAvailableNotification, object: nil)
+    }
+
+    static var live: StoreReadiness {
+        .once {
+            AppContainer.storeIsReadable(AppContainer.liveStoreURL,
+                                         protectedDataAvailable: { UIApplication.shared.isProtectedDataAvailable })
+        }
+    }
+
+    /// Stage 3c S3-2: the App body builds the scene gate on every pass (scene phase, connectivity),
+    /// and each built one asks. Readable once is readable for the life of the process (the store's
+    /// class never locks again), so `check` is asked until it first says yes and never after.
+    static func once(_ check: @escaping () -> Bool) -> StoreReadiness {
+        var readable = false
+        return StoreReadiness(isReadable: {
+            readable = readable || check()
+            return readable
+        })
+    }
+
+    /// At once on every launch after the first unlock (the store stays readable while the screen is
+    /// locked). Before it, re-checks on `protectedDataDidBecomeAvailable` AND on `didBecomeActive`
+    /// (M5): a process suspended across the unlock may never be handed the first, and nobody can
+    /// bring the app to the foreground on a device that has not been unlocked. Both observers are
+    /// registered before the first check, so no wake-up falls between the check and the wait.
+    ///
+    /// A wait that really blocked announces the unlock when it ends (N1), before the gate opens and
+    /// after its own observers are gone.
+    func wait() async {
+        guard await blockUntilReadable() else { return }
+        announceUnlock()
+    }
+
+    /// Whether it had to block and the store is now readable (false: readable at once, or cancelled).
+    private func blockUntilReadable() async -> Bool {
+        let (wakes, wake) = AsyncStream<Void>.makeStream()
+        let tokens = [UIApplication.protectedDataDidBecomeAvailableNotification, UIApplication.didBecomeActiveNotification]
+            .map { center.addObserver(forName: $0, object: nil, queue: nil) { _ in wake.yield() } }
+        defer { tokens.forEach { center.removeObserver($0) } }
+        guard !isReadable() else { return false }
+        waits.blocked = true
+        for await _ in wakes where isReadable() { return true }
+        return false
+    }
 }

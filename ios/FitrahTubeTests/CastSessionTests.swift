@@ -885,20 +885,6 @@ struct CastSessionTests {
         #expect(vm.pausedForCast == false)
     }
 
-    /// The other direction: a refusal with nothing castable behind it still surfaces. The embed
-    /// rung has no stream URL at all (no YouTube hand-off, ever), so there is nothing to fall back
-    /// to and the banner is the honest answer.
-    @Test func aRefusedCastResolveWithNothingCastableStillFails() async {
-        let resolver = RecordingResolver(.embed)
-        let vm = makeCastModel(resolver)
-        await vm.open()
-        #expect(await vm.castMedia() == nil)
-        // Cubic P1: the phone's walk only reaches `.embed` once the android rung has failed, and a
-        // cast walk that re-POSTs it and fails again records a GLOBAL bot-check cooldown (1-24 h,
-        // every playback). Nothing is walked from the embed rung.
-        #expect(resolver.calls.count == 1)
-    }
-
     /// A manifest on screen and a refused muxed walk: nothing castable, so nil and the banner --
     /// never the manifest, which the receiver cannot play.
     @Test func aManifestOnScreenWithARefusedMuxedWalkCastsNothing() async {
@@ -1359,7 +1345,7 @@ struct CastSessionTests {
 
     /// Cubic R6-4: the failure belongs to ONE video, and only that video's stamp is its to clear.
     /// Screen A casts and goes off-screen (stamp released, receiver still playing A); screen B
-    /// mounts on an embed rung, `startCast` finds nothing castable and reports the failure.
+    /// mounts with nothing castable, `startCast` finds nothing and reports the failure.
     /// Clearing `loadedClaim` unconditionally erased A's presence on the receiver, so A returning
     /// re-resolved and reloaded it at the phone's stale position — and the hand-back then handed
     /// back a position the receiver never had.

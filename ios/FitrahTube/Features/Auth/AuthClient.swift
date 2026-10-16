@@ -61,6 +61,23 @@ nonisolated enum AuthErrorCode: String, Error, Sendable, Equatable, CaseIterable
         }
     }
 
+    /// 1.0.3 R2: a provider leg (Google's token exchange, Apple's authorization) that failed because
+    /// the device is offline. Their SDKs wrap the URL-loading error rather than raise their own
+    /// network code (AppAuth: `OIDGeneralErrorDomain` -5 with the cause under
+    /// `NSUnderlyingErrorKey`), so the chain is walked. Firebase's own leg already says `.network`
+    /// (17020, `init(firebaseCode:)`).
+    nonisolated static func isOffline(_ error: any Error) -> Bool {
+        let offline: Set<URLError.Code> = [.notConnectedToInternet, .networkConnectionLost, .cannotFindHost,
+                                           .cannotConnectToHost, .timedOut, .dnsLookupFailed,
+                                           .internationalRoamingOff, .dataNotAllowed, .callIsActive]
+        var next: NSError? = error as NSError
+        while let error = next {
+            if error.domain == NSURLErrorDomain, offline.contains(URLError.Code(rawValue: error.code)) { return true }
+            next = error.userInfo[NSUnderlyingErrorKey] as? NSError
+        }
+        return false
+    }
+
     var messageKey: String {
         switch self {
         case .invalidEmail: "auth_error_invalid_email"

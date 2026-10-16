@@ -93,6 +93,12 @@ import Testing
         return HTTPResponse(status: 200, headers: [:], body: body)
     }
 
+    /// ANDROID's answer for a live stream: OK, but no muxed format to take.
+    private var androidOKWithoutItag18: HTTPResponse {
+        HTTPResponse(status: 200, headers: [:], body: Data(
+            #"{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[]},"videoDetails":{"isLive":true}}"#.utf8))
+    }
+
     // MARK: - builder
 
     private func makeResolver(
@@ -176,9 +182,9 @@ import Testing
         #expect(transport.callCount == 1)
     }
 
-    // MARK: - b) VISIONOS unplayableKids -> ANDROID itag18 -> .progressive("360p")
+    // MARK: - b) a VISIONOS refusal -> ANDROID itag18 -> .progressive("360p")
 
-    @Test func unplayableKidsFallsToAndroidItag18() async throws {
+    @Test func aVisionosRefusalFallsToAndroidItag18() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
         let (resolver, _) = makeResolver(transport: transport)
 
@@ -188,6 +194,66 @@ import Testing
         }
         #expect(label == "360p")
         #expect(transport.callCount == 2)
+    }
+
+    // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
+
+    /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,
+    /// then ANDROID -- which serves made-for-kids -- refuses too. The source's verdict: "not
+    /// available", never the retryable error, and no bot-check trip. The ar pair is Review Focus 1.
+    @Test(arguments: [("player-members-only-visionos", "player-members-only-android"),
+                      ("player-members-only-visionos", "player-members-only-android-ar"),
+                      ("player-geo-visionos", "player-geo-android")])
+    func anAndroidRefusalIsTheSourcesVerdict(visionos: String, android: String) async throws {
+        let transport = RecordingTransport([try fixtureResponse(visionos), try fixtureResponse(android)])
+        let (resolver, session) = makeResolver(transport: transport)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 2)
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// A VISIONOS refusal alone decides nothing -- here the geo-locked shape, which is identical to
+    /// the kids one, followed by a working itag 18.
+    @Test func aVisionosRefusalAloneAlwaysWalksOn() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-visionos"), androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+    }
+
+    /// Private is terminal on the FIRST rung that says so: no rotation burned, no trip recorded.
+    /// All three captures, en and ar. The sub-label is `terminalError`'s English match on `reason`
+    /// ("This video is private" -> `.private`, the others -> `.unavailable`); both are terminal and
+    /// the app maps both onto "not available", so only the text-free facts are pinned alongside it.
+    @Test(arguments: [("player-private-visionos", ExtractionError.unavailable(videoId: "xc7keR2piUM")),
+                      ("player-private-visionos-ar", ExtractionError.unavailable(videoId: "xc7keR2piUM")),
+                      ("player-private-android", ExtractionError.private)])
+    func aPrivateVideoIsUnavailableWithoutTouchingTheSession(fixture: String, expected: ExtractionError) async throws {
+        let transport = RecordingTransport([try fixtureResponse(fixture)])
+        let (resolver, session) = makeResolver(transport: transport)
+        await session.setVisitorData("v1", for: .visionos)
+
+        await expectThrows(expected) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 1)
+        #expect(await session.visitorData(for: .visionos) == "v1")
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Nothing at the source said no and nothing played: rung 1 refuses, rung 2 answers OK with no
+    /// muxed format (a live stream). That is OUR dead end -- the retryable `.allRungsFailed`.
+    @Test func ourOwnDeadEndStaysRetryable() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidOKWithoutItag18])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        await expectThrows(.allRungsFailed) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
     }
 
     // MARK: - c) ageGate is terminal, never rotates, and never hands off to YouTube
@@ -207,29 +273,22 @@ import Testing
         #expect(transport.callCount == 1)
     }
 
-    // MARK: - d) botCheck rotates once and retries the same rung, succeeding on retry
+    // MARK: - d) a bot check on a STALE session adopts the fresh visitor and retries once
 
-    @Test func botCheckRotatesAndRetriesSameRung() async throws {
+    /// Live probe 2026-10-14 (spec §3): a bot check answered to a stale token still hands over a
+    /// fresh `responseContext.visitorData`. Adopting it IS the re-bootstrap -- one retry under the
+    /// new session, no tokenless round trip, and the 10-minute rotation slot is left untouched.
+    @Test func aBotCheckOnAStaleSessionAdoptsTheFreshVisitorAndRetriesOnce() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-botcheck"), try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport)
-        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("stale", for: .visionos)
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .hls = resolved.stream else { Issue.record("expected .hls after retry, got \(resolved.stream)"); return }
+        guard case .hls = resolved.stream else { Issue.record("expected .hls after the retry, got \(resolved.stream)"); return }
 
-        #expect(transport.callCount == 2)
-        // The retry must carry a REFRESHED session, not a byte-identical repeat: rotate() dropped
-        // the tripped visitor, so the retry goes out tokenless and YouTube mints a new one.
-        let sent = transport.recorded
-        #expect(sent.count == 2)
-        #expect(sent.first?.headers["X-Goog-Visitor-Id"] == "v1")
-        #expect(sent.last?.headers["X-Goog-Visitor-Id"] == nil)
-        #expect(sent.first?.body != sent.last?.body)
-        // ...and the visitor the successful retry came back with is captured for the next call
-        // (§6.3). Without the `setVisitorData` wiring this is nil and the ladder stays tokenless.
-        let captured = try #require(await session.visitorData(for: .visionos))
-        let expected = try #require(try PlayerResponseParser().parse(fixtureResponse("player-ok-hls").body).visitorData)
-        #expect(captured == expected)
+        let fresh = try #require(try PlayerResponseParser().parse(fixtureResponse("player-botcheck").body).visitorData)
+        #expect(transport.recorded.map { $0.headers["X-Goog-Visitor-Id"] } == ["stale", fresh])
+        #expect(await session.rotate(.visionos) == true)   // rotation slot unburned
     }
 
     // MARK: - d1) a tokenless first call bootstraps its session from the bot-check response
@@ -288,32 +347,35 @@ import Testing
 
     // MARK: - d4) fallback rungs are neither cached nor counted as a clean fetch
 
-    @Test func embedFallbackIsNotCachedAndDoesNotRecordSuccess() async throws {
-        // Both player rungs answer UNPLAYABLE, so the ladder bottoms out on `embed` -- which ships
-        // DARK (not in the bundled default), so this is the published-config shape that enables it.
+    @Test func bothRungsUnplayableIsTheSourcesVerdictEvenIfAPublishedOrderListsEmbed() async throws {
+        // Both player rungs answer UNPLAYABLE. The published config of builds 1.0.0 / 1.0.2 listed
+        // `embed` as a third rung (a YouTube IFrame player); owner directive 2026-10-14 removed it.
+        // The ANDROID rung's UNPLAYABLE is the source's verdict (spec R6), so this is the
+        // not-available outcome, never an embed and never the retryable error.
         let clock = ManualClock()
         let configStore = configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"])
         let cache = ManifestCache(remoteConfig: configStore)
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache, configStore: configStore)
         await session.recordBotCheck()
-        clock.advanceWall(by: .seconds(8 * 24 * 3600))  // past the 7-day clean-streak reset window
 
-        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .embed = resolved.stream else { Issue.record("expected .embed, got \(resolved.stream)"); return }
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
 
+        #expect(transport.callCount == 2)   // one POST per native rung, then nothing
         #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
-        #expect(await session.loadCooldown().tripCount == 1)
+        #expect(await session.loadCooldown().tripCount == 1)   // a failed walk is not a clean fetch
     }
 
-    /// B3 embed ruling (2026-08-27): the bundled default is visionosHLS -> androidItag18 and then
-    /// TERMINAL. Both rungs answering UNPLAYABLE must surface as `allRungsFailed` (which
-    /// `PlayerViewModel.map` renders as the generic player error), never silently resolve to `embed`.
+    /// The bundled default is visionosHLS -> androidItag18 and then TERMINAL. The ANDROID rung's
+    /// UNPLAYABLE is the source's verdict (spec R6), so this is the not-available outcome, never an
+    /// embed and never the retryable error.
     @Test func defaultLadderIsTerminalAfterAndroidItag18() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids")])
         let (resolver, _) = makeResolver(transport: transport)
 
-        await expectThrows(.allRungsFailed) {
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(transport.callCount == 2)   // one POST per native rung, then nothing
@@ -325,7 +387,6 @@ import Testing
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock, cache: cache)
         await session.recordBotCheck()
-        clock.advanceWall(by: .seconds(8 * 24 * 3600))
 
         _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
 
@@ -379,6 +440,28 @@ import Testing
                 try? await Task.sleep(for: .milliseconds(1))
                 attempts += 1
             }
+        }
+    }
+
+    /// First call answers with the response; every later call throws the given error (a network
+    /// that drops after ANDROID's answer, while the wrapped rung is still to be tried).
+    private final class RespondThenFailTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var count = 0
+        private let response: HTTPResponse
+        private let error: Error
+
+        init(_ response: HTTPResponse, thenThrow error: Error) {
+            self.response = response
+            self.error = error
+        }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let ordinal = lock.withLock { count += 1; return count }
+            if ordinal > 1 { throw error }
+            return response
         }
     }
 
@@ -456,28 +539,340 @@ import Testing
 
     @Test func resolverAdvancesPastRungWhoseClientWasSanitizedAwayForMismatchedClientName() async throws {
         let badConfig = RemoteConfig(
-            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "embed"],
+            schemaVersion: 1, minAppVersion: "1.0.0", resolverOrder: ["visionosHLS", "androidItag18"],
             manifestCacheSeconds: 3600,
             clients: [
-                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101)
+                "visionos": ClientContext(clientName: "RENAMED_CLIENT", clientVersion: "1", clientNameId: 101),
+                "android": ClientContext(clientName: "ANDROID", clientVersion: "1", clientNameId: 3),
             ])
         let keyValueStore = InMemoryKeyValueStore()
         keyValueStore.set(RemoteConfigStore.lastGoodKey, try JSONEncoder().encode(badConfig))
         let configStore = RemoteConfigStore(
             transport: NoopTransport(), keyValueStore: keyValueStore, url: URL(string: "https://example.com/config.json")!)
         #expect(await configStore.current().clients["visionos"] == nil)  // sanitized away at load
+        #expect(await configStore.current().clients["android"] != nil)   // the valid one survives
 
-        // Never called: the "visionos" client is gone, so `runPlayerRung` never reaches
-        // `PlayerRequestBuilder.build` — the rung advances straight to `embed`, the last rung there
-        // is (the YouTube hand-off rung was removed by owner directive 2026-08-27).
-        let transport = RecordingTransport([])
+        // Rung 1's client is gone, so `runPlayerRung` never reaches `PlayerRequestBuilder.build` for
+        // it -- no POST, the rung advances. Rung 2 has a valid context, so it is the ONLY POST sent
+        // and it serves: the walk reaches a stream, it does not end in `.allRungsFailed`.
+        let transport = RecordingTransport([androidItag18Response])
         let (resolver, _) = makeResolver(transport: transport, configStore: configStore)
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case .embed = resolved.stream else {
-            Issue.record("expected .embed (advanced past the sanitized rung), got \(resolved.stream)"); return
+
+        guard case .progressive = resolved.stream else {
+            Issue.record("expected .progressive (advanced past the sanitized rung), got \(resolved.stream)"); return
         }
-        #expect(transport.callCount == 0)
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    // MARK: - demote: a step-down resumes the ladder at the NEXT rung (spec §4.1, R2)
+
+    @Test func walkOrderStartsAfterTheFailedRungAndWrapsRound() {
+        let ladder = ["visionosHLS", "androidItag18"]
+        #expect(StreamResolver.walkOrder(ladder, after: nil) == ladder)
+        #expect(StreamResolver.walkOrder(ladder, after: .visionos) == ["androidItag18", "visionosHLS"])
+        #expect(StreamResolver.walkOrder(ladder, after: .android) == ladder)   // nothing below the last rung
+        #expect(StreamResolver.walkOrder(["androidItag18"], after: .visionos) == ["androidItag18"])
+    }
+
+    /// V2Brp_esIVI's shape: VISIONOS failed in the player, so the forced re-resolve asks ANDROID first
+    /// and never re-serves the HLS that would not play.
+    @Test func aDemotedVideoResumesAtTheNextRung() async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    /// Sticky for the session, for THAT video only, and the failing manifest is not served from cache.
+    @Test func theDemotionIsStickyForThatVideoOnly() async throws {
+        let clock = ManualClock()
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls"), androidItag18Response,
+                                            androidItag18Response, try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport, clock: clock, cache: cache)
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        await resolver.demote(Self.videoId, failed: .visionos)
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil)
+
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        clock.advanceWall(by: .seconds(3601))   // past the cached itag 18's TTL: the next open walks again
+        let later = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = later.stream else { Issue.record("expected sticky .progressive, got \(later.stream)"); return }
+        let other = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = other.stream else { Issue.record("another video must start at rung 1: \(other.stream)"); return }
+
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
+    }
+
+    /// Review Focus 2. A live stream has no itag 18: after its rung-1 stream fails, the walk must wrap
+    /// back to VISIONOS as the last resort, not end in an error with nothing left to try.
+    @Test func aDemotedLiveStreamWrapsBackToTheFailedRung() async throws {
+        let transport = RecordingTransport([androidOKWithoutItag18, try fixtureResponse("player-live")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .hls(_, let isLive, _, _) = resolved.stream, isLive else {
+            Issue.record("expected live .hls, got \(resolved.stream)"); return
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+    }
+
+    /// Review F2: `demote` rotates by `family(of:)`, and an unmapped strategy would make it a silent
+    /// no-op. A strategy added to the known set must be given a client here.
+    @Test func everyKnownStrategyMapsToAClientFamily() {
+        for strategy in RemoteConfig.knownResolverStrategies {
+            #expect(StreamResolver.family(of: strategy) != nil, "\(strategy) has no client family: demote would do nothing for it")
+        }
+    }
+
+    /// Review F3. A demotion is per VIDEO, not per lane: a prefetch, a cast's muxed walk and a save's
+    /// muxed walk all start after the failed rung. (A muxed walk skips VISIONOS without a POST either
+    /// way, so those two pin the observable result: one POST, ANDROID's.)
+    @Test func aPrefetchWalkRespectsTheDemotion() async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    @Test(arguments: [Purpose.cast, Purpose.prefetch])
+    func aMuxedWalkRespectsTheDemotion(purpose: Purpose) async throws {
+        let transport = RecordingTransport([androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(
+            Self.videoId, purpose: purpose, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    /// Cubic C2: an audio-only save needs VISIONOS's itag 140, and after a step-down every plain walk
+    /// for the video answers ANDROID's `.progressive`, which has none: the save failed NO_STREAM for
+    /// the rest of the session. The HLS walk is the muxed walk's mirror -- ANDROID advances wherever
+    /// the demotion put it -- and its manifest never lands under the plain key, where the player's
+    /// next open would get back the HLS it just stepped down from.
+    @Test func anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140() async throws {
+        let clock = ManualClock()
+        let cache = ManifestCache(remoteConfig: defaultConfigStore())
+        // Fix r4 N-6(a): recorded, so "ANDROID advances WITHOUT a POST" is pinned, not just the answer.
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport, clock: clock, cache: cache)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(
+            Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresHLS: true)
+
+        guard case .hls(_, _, let audioOnlyURL, _) = resolved.stream else {
+            Issue.record("expected .hls, got \(resolved.stream)"); return
+        }
+        #expect(audioOnlyURL != nil, "the HLS answer lost its itag 140")
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101"])
+        #expect(await cache.get(Self.videoId, now: clock.wallNow) == nil, "the HLS walk wrote the plain key")
+    }
+
+    /// Fix r5 N4-2 (controller ruling, option b): the audio-only save's HLS fallback runs exactly when
+    /// VISIONOS may be bot-checked for the session (ANDROID answered the plain walk), and a trip from
+    /// it fed the SHARED cooldown that then refused the player's working ANDROID rung. It records no
+    /// trip, however often it fails; the player resolve right after still plays.
+    @Test func aBotCheckedHLSWalkNeverArmsTheCooldown() async throws {
+        let clock = ManualClock()
+        let transport = FixtureTransport(routes: [
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "101" },
+                  response: try fixtureResponse("player-botcheck")),
+            .init(match: { $0.headers["X-YouTube-Client-Name"] == "3" }, response: androidItag18Response)
+        ])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)   // a genuine bot check, not a bootstrap
+
+        for _ in 0..<2 {
+            await expectThrows(.botCheck) {
+                _ = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil,
+                                               forceRefresh: false, requiresHLS: true)
+            }
+        }
+
+        #expect(await session.loadCooldown().tripCount == 0)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+        let playback = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = playback.stream else { Issue.record("expected .progressive, got \(playback.stream)"); return }
+    }
+
+    // MARK: - demote x R6: a demoted walk starts at ANDROID, so its refusal is not yet the verdict (F4)
+
+    /// Owner rule: a video plays unless the source no longer serves it. VISIONOS was serving this one
+    /// moments ago, so after a demotion ANDROID's UNPLAYABLE (it opens the walk now) is held as the
+    /// pending verdict while the wrapped VISIONOS rung gets its turn.
+    @Test func aDemotedWalkTriesTheWrappedRungAfterAnAndroidRefusal() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        guard case .hls = resolved.stream else { Issue.record("expected .hls, got \(resolved.stream)"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+    }
+
+    /// If nothing then serves and the wrapped rungs failed WITHOUT a bot check (here VISIONOS refuses
+    /// too), the held verdict stands: "not available", no Retry, no trip.
+    @Test func aDemotedWalkThatEndsWithoutAStreamKeepsTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-geo-visionos")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])   // the wrapped rung was tried
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Also without a bot check: the wrapped VISIONOS rung is skipped (a muxed walk POSTs no HLS rung).
+    @Test func aDemotedMuxedWalkWhoseWrappedRungIsSkippedKeepsTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android")])
+        let (resolver, _) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(
+                Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresMuxed: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
+    }
+
+    /// The refined rule (controller, concern 3): ANDROID's verdict is doubted because VISIONOS was just
+    /// serving this video, so if the wrapped VISIONOS rung then only shows a BOT CHECK, that is OUR
+    /// session problem -- not "not available". The walk ends as any bot-checked walk does: the
+    /// retryable `.botCheck` and ONE recorded trip.
+    @Test func aDemotedWalkWhoseWrappedRungSeesABotCheckIsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.first?.headers["X-YouTube-Client-Name"] == "3")
+        #expect(transport.recorded.contains { $0.headers["X-YouTube-Client-Name"] == "101" })   // the wrapped rung was tried
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    /// Our-side failure rule (Cubic; controller ruling): the held verdict is the SOURCE's word, thrown
+    /// only when nothing on OUR side failed in the walk. VISIONOS was serving this video moments ago,
+    /// so a transport error on the wrapped rung proves nothing about the source: the walk ends as a
+    /// normal failed one -- the retryable last error, no trip (no bot check was seen).
+    @Test func aDemotedWalkWhoseWrappedRungHitsATransportErrorIsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RespondThenFailTransport(
+            try fixtureResponse("player-geo-android"), thenThrow: URLError(.notConnectedToInternet))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        do {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+            Issue.record("expected the wrapped rung's transport error to be thrown")
+        } catch let error as URLError {
+            #expect(error.code == .notConnectedToInternet)
+        } catch {
+            Issue.record("expected URLError(.notConnectedToInternet), got \(error)")
+        }
+        #expect(transport.callCount == 2)   // ANDROID refused, the wrapped rung was tried and failed
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Same rule, for a rung that fails inside the resolver rather than on the wire: a non-2xx answer
+    /// is `.transport("HTTP 503")`. The rung-budget timeout throws `.transport("rung budget exceeded")`
+    /// into the very same generic catch, but its budget is a fixed 8 s (private), so it is not driven here.
+    @Test func aDemotedWalkWhoseWrappedRungAnswers503IsRetryableNotTheSourcesVerdict() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("player-geo-android"), HTTPResponse(status: 503, headers: [:], body: Data())])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.transport("HTTP 503")) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Same rule, from the other end of the ladder: a video demoted after ANDROID walks VISIONOS
+    /// first, and ANDROID's later refusal is held behind VISIONOS's our-side failure -- retryable.
+    @Test func aWalkDemotedAfterAndroidWhoseVisionosFailedOnOurSideIsRetryable() async throws {
+        let transport = FailFirstTransport(error: URLError(.notConnectedToInternet),
+                                           then: try fixtureResponse("player-geo-android"))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .android)
+
+        do {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+            Issue.record("expected VISIONOS's transport error to be thrown")
+        } catch let error as URLError {
+            #expect(error.code == .notConnectedToInternet)
+        } catch {
+            Issue.record("expected URLError(.notConnectedToInternet), got \(error)")
+        }
+        #expect(transport.callCount == 2)   // VISIONOS failed, ANDROID refused
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Cancellation in a demoted walk is cancellation, whatever ANDROID said first: not its held
+    /// refusal, and no trip for its 429 bot check. The walk throws `CancellationError`, which
+    /// `awaitJob` hands an awaiter nobody cancelled as `.cancelled`.
+    @Test(arguments: [false, true])
+    func aCancelledDemotedWalkIsNeitherTheHeldVerdictNorATrip(androidRateLimited: Bool) async throws {
+        let android = androidRateLimited
+            ? HTTPResponse(status: 429, headers: [:], body: Data()) : try fixtureResponse("player-geo-android")
+        let transport = RespondThenFailTransport(android, thenThrow: URLError(.cancelled))
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await expectThrows(.cancelled) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.callCount == 2)   // ANDROID answered, the wrapped rung was cancelled
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// A wrapped rung whose answer will not decode failed on OUR side too: retryable, no verdict.
+    @Test func aDemotedWalkWhoseWrappedRungCannotBeDecodedIsRetryable() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("player-geo-android"), HTTPResponse(status: 200, headers: [:], body: Data("not json".utf8))])
+        let (resolver, session) = makeResolver(transport: transport)
+        await resolver.demote(Self.videoId, failed: .visionos)
+
+        await #expect(throws: DecodingError.self) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// R6 is unchanged for a walk nobody demoted: ANDROID's refusal is the verdict at once, even with
+    /// a rung left (here ANDROID is first in a published order).
+    @Test func anUndemotedAndroidRefusalIsStillTerminalAtOnce() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-geo-android"), try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["androidItag18", "visionosHLS"]))
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3"])
     }
 
     // MARK: - d5b) chained supersede: an awaiter of a superseded awaiter still adopts the final winner
@@ -508,7 +903,7 @@ import Testing
 
     /// Both rungs see the same LOGIN_REQUIRED, so a single walk used to call `recordBotCheck()`
     /// once PER RUNG: one video escalated trip 1 -> trip 2 = a 4 h app-wide persisted cooldown
-    /// in seconds. A walk is one incident; it records one trip (the 1 h tier) — and only because
+    /// in seconds. A walk is one incident; it records one trip (which alone arms nothing, spec R10) — and only because
     /// the walk FAILS overall (owner ruling 2026-09-01: the trip is recorded at walk end, never
     /// mid-walk).
     @Test func aTwoRungWalkAgainstABotCheckedTransportRecordsExactlyOneTrip() async throws {
@@ -521,9 +916,9 @@ import Testing
         await expectThrows(.botCheck) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
-        #expect(transport.callCount == 4)   // per rung: POST + rotate + retry POST
+        #expect(transport.callCount == 4)   // per rung: POST + adopt the fresh visitor + retry POST
         #expect(await session.loadCooldown().tripCount == 1)
-        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)  // the failed walk arms it
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)  // one failed walk arms nothing (spec R10)
     }
 
     // MARK: - d8b) a walk that ends in working playback leaves no armed trip (owner ruling 2026-09-01)
@@ -546,9 +941,83 @@ import Testing
         guard case .progressive = resolved.stream else {
             Issue.record("expected .progressive, got \(resolved.stream)"); return
         }
-        #expect(transport.callCount == 3)   // rung 1: POST + rotate + retry POST; rung 2: one POST
+        #expect(transport.callCount == 3)   // rung 1: POST + adopt + retry POST; rung 2: one POST
         #expect(await session.loadCooldown().tripCount == 0)
         #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+    }
+
+    // MARK: - d8c) a walk that ENDS in a source verdict records no trip (Task 1 review M4)
+
+    /// VISIONOS is bot-checked, then ANDROID answers the source's own verdict (members-only). The
+    /// source answered, so the network path works: whatever rung 1 saw, there is nothing to back
+    /// off from. Only a walk that fails without a source verdict records the trip.
+    @Test func aBotCheckedRungFollowedByASourceVerdictRecordsNoTrip() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([
+            try fixtureResponse("player-botcheck"), try fixtureResponse("player-botcheck"),
+            try fixtureResponse("player-members-only-android"),
+        ])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)   // genuine bot check, not a bootstrap
+
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(transport.callCount == 3)   // rung 1: POST + adopt + retry POST; rung 2: one POST
+        #expect(await session.loadCooldown().tripCount == 0)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)
+    }
+
+    // MARK: - d8c2) every bot check hands over a DIFFERENT token: adoption stays bounded
+
+    /// Real YouTube mints a new `visitorData` on every bot check (the fixtures reuse one). The
+    /// adopt-and-retry must still be ONE retry per rung -- the retry runs with `canRotate: false`,
+    /// so its own fresh token is adopted for the next walk but never chased. Two rungs, two POSTs
+    /// each, both rotation slots untouched, one trip for the walk.
+    @Test func botChecksThatEachCarryANewTokenStillCostOnlyOneRetryPerRung() async throws {
+        let clock = ManualClock()
+        let template = try String(decoding: fixtureResponse("player-botcheck").body, as: UTF8.self)
+        let minted = (0..<12).map { "TOKEN\($0)" }
+        let transport = RecordingTransport(minted.map {
+            HTTPResponse(status: 200, headers: [:],
+                         body: Data(template.replacingOccurrences(of: "CgtGSVhUVVJFXzAwMSiFAA%3D%3D", with: $0).utf8))
+        })
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        await expectThrows(.botCheck) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+
+        #expect(transport.callCount == 4)
+        #expect(transport.recorded.map { $0.headers["X-Goog-Visitor-Id"] } == ["v1", "TOKEN0", "v1", "TOKEN2"])
+        #expect(await session.visitorData(for: .visionos) == "TOKEN1")   // the retry's token is kept, not chased
+        #expect(await session.visitorData(for: .android) == "TOKEN3")
+        #expect(await session.rotate(.visionos) == true)
+        #expect(await session.rotate(.android) == true)
+        #expect(await session.loadCooldown().tripCount == 1)
+    }
+
+    // MARK: - d8d) failed bot-checked walks back off in minutes (spec R10)
+
+    /// The walk-end trip stays for a walk that fails with no source verdict, and the second
+    /// consecutive one arms the first back-off: 60 s, never hours.
+    @Test func twoFailedBotCheckedWalksArmTheSixtySecondBackOff() async throws {
+        let clock = ManualClock()
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
+        await session.setVisitorData("v1", for: .visionos)
+        await session.setVisitorData("v1", for: .android)
+
+        for _ in 0..<2 {
+            await expectThrows(.botCheck) {
+                _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+            }
+        }
+
+        #expect(await session.loadCooldown().tripCount == 2)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == .seconds(60))
     }
 
     // MARK: - d9) an HTTP-level 429/403 routes into the bot-check path (Cubic r3 #4)
@@ -684,7 +1153,8 @@ import Testing
         let clock = ManualClock()
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, session) = makeResolver(transport: transport, clock: clock)
-        await session.recordBotCheck()  // 1st trip -> 1 h cooldown
+        await session.recordBotCheck()
+        await session.recordBotCheck()  // 2nd consecutive trip -> 60 s (spec R10)
 
         do {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
@@ -694,8 +1164,8 @@ import Testing
         }
         #expect(transport.callCount == 0)  // gated before any network
 
-        // Once the 1 h backoff elapses, resolve proceeds and hits the wire.
-        clock.advanceWall(by: .seconds(3600 + 1))
+        // Once the 60 s back-off elapses, resolve proceeds and hits the wire.
+        clock.advanceWall(by: .seconds(60 + 1))
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         guard case .hls = resolved.stream else { Issue.record("expected .hls, got \(resolved.stream)"); return }
         #expect(transport.callCount == 1)
@@ -769,7 +1239,7 @@ import Testing
 
     /// Combined review P2: from the common `.hls` state the phone never tried the android rung, so
     /// a cast's muxed walk POSTs it first -- and a bot check there recorded the GLOBAL cooldown,
-    /// blocking the phone's working rung-1 playback for 1-24 h. A cast walk fails the CAST only;
+    /// blocking the phone's working rung-1 playback for the cooldown. A cast walk fails the CAST only;
     /// the save walk keeps the one trip it has always recorded.
     @Test(arguments: [(Purpose.cast, 0), (Purpose.prefetch, 1)])
     func aBotCheckedMuxedWalkRecordsATripOnlyForASave(purpose: Purpose, trips: Int) async throws {
@@ -791,26 +1261,21 @@ import Testing
         guard case .hls = playback.stream else { Issue.record("a cast locked out playback: \(playback.stream)"); return }
     }
 
-    /// Review F2: under `requiresMuxed` the embed floor is unusable by construction (the caller
-    /// maps `.embed` to terminal NOT_SAVEABLE), so "resolving" it dressed a bot-checked walk as a
-    /// clean success — no trip recorded, no cooldown armed, N queued video saves burned N×2 POSTs
-    /// with every row mislabeled. The rung must advance instead: the walk fails overall and the
-    /// walk-end path records its one trip.
-    @Test func aBotCheckedMuxedWalkAdvancesPastEmbedAndRecordsTheTrip() async throws {
+    /// Review F2: a bot-checked muxed walk fails overall, so the walk-end path records its one trip
+    /// (N queued video saves must not each burn N×2 POSTs and leave the session looking healthy).
+    @Test func aBotCheckedMuxedWalkRecordsTheTrip() async throws {
         let clock = ManualClock()
         let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
-        let (resolver, session) = makeResolver(
-            transport: transport, clock: clock,
-            configStore: configStore(resolverOrder: ["visionosHLS", "androidItag18", "embed"]))
+        let (resolver, session) = makeResolver(transport: transport, clock: clock)
         await session.setVisitorData("v1", for: .android)   // genuine bot check, not a bootstrap
 
         await expectThrows(.botCheck) {
             _ = try await resolver.resolve(Self.videoId, purpose: .prefetch, sourceChannelId: nil,
                                            forceRefresh: false, requiresMuxed: true)
         }
-        #expect(transport.callCount == 2)   // android rung: POST + rotate + retry POST; HLS rung skipped
+        #expect(transport.callCount == 2)   // android rung: POST + adopt + retry POST; HLS rung skipped
         #expect(await session.loadCooldown().tripCount == 1)
-        #expect(await session.cooldownRemaining(now: clock.wallNow) != nil)
+        #expect(await session.cooldownRemaining(now: clock.wallNow) == nil)  // one failed walk arms nothing (spec R10)
     }
 
     /// Serves call 1 only after `release()` (a live player walk held open at the transport);

@@ -85,6 +85,12 @@ public class TombstoneGcScheduler {
             WriteBatch batch = firestore.batch();
             int inBatch = 0;
             for (QueryDocumentSnapshot d : snap.getDocuments()) {
+                // collectionGroup(type) also matches the top-level catalog collection of the same
+                // name (playlists/{id}). Only users/{uid}/{type}/{id} tombstones are ours to purge.
+                var owner = d.getReference().getParent().getParent();
+                if (owner == null || !owner.getParent().getPath().equals("users")) {
+                    continue;
+                }
                 // Re-assert deleted=true via updateTime precondition so a concurrent
                 // upsert that resurrected the row between snapshot and commit aborts
                 // this delete instead of clobbering the live data (cubic R5 P0 GC

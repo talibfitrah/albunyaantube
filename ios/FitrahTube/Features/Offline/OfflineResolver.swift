@@ -23,12 +23,13 @@ struct OfflineResolver: StreamResolving {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard let item = store.item(id: itemId), let localPath = item.localPath else {
             throw ExtractionError.unavailable(videoId: videoId)
         }
         let localURL = OfflineStorage.fileURL(relativePath: localPath, base: base)
-        guard FileManager.default.fileExists(atPath: localURL.path()) else {
+        // Unencoded: the saved file lives under `Application Support` (1.0.3, `partialSize`'s note).
+        guard FileManager.default.fileExists(atPath: localURL.path(percentEncoded: false)) else {
             throw ExtractionError.unavailable(videoId: videoId)
         }
         let stream: ResolvedStream
@@ -47,4 +48,7 @@ struct OfflineResolver: StreamResolving {
         return Resolved(stream: stream, client: .visionos, userAgent: "",
                         resolvedAt: Date(), expiresAt: nil)
     }
+
+    /// One source, the saved file: there is no ladder to step down.
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }

@@ -119,6 +119,9 @@ struct FitrahTubeApp: App {
                 .overlay {
                     if updateRequired { UpdateRequiredView() }
                 }
+                // Round 1 / I1: last, so it holds back everything above — RootView, its `.task`s
+                // and this scene's own — until the store can be read.
+                .modifier(StoreReadinessGate(readiness: container.storeReadiness))
         }
     }
 
@@ -279,14 +282,13 @@ struct FitrahTubeApp: App {
         case "player":
             // Task 8: title/channel/description/views so the metadata-panel screenshot has
             // something real to show -- the plain `videoId`-only args used to leave the whole
-            // panel empty.
+            // panel empty. The YouTube link shows that one stays plain text (`isOpenableLink`).
             router.push(.player(PlayerArgs(
                 videoId: arg(2) ?? "fixture-video",
                 playlistId: arg(3),
                 title: "Understanding Tawakkul: Trusting Allah in Every Situation",
                 channelName: "Sample Channel",
-                description: "A short reminder on tawakkul, with a link for further reading: "
-                    + "https://example.com/tawakkul and a second note after it.",
+                description: "Read more: https://example.com/tawakkul\nSource: https://youtu.be/V2Brp_esIVI",
                 durationSeconds: 754, viewCount: 12_700_000,
                 shuffled: args.contains("-fitrah-shuffled"), targetVideoId: arg(4)
             )))
@@ -524,3 +526,33 @@ nonisolated enum AppStoreLink {
 #if DEBUG
 #Preview("Update required") { UpdateRequiredView() }
 #endif
+
+/// Round 1 / I1: nothing under the scene that can open the store renders until it is readable.
+/// `RootView` opens it on its first body (`outcome` reads the session, which scopes the per-user
+/// stores), and the App's `.task` builds the offline manager over it — so before the first unlock
+/// (a scene connected in the background, which `AccountSession`'s locked-launch arm exists for)
+/// the whole tree waits, showing the launch screen's own look. On every other launch the store is
+/// readable when this is built, so the content is the first frame and nothing changes.
+struct StoreReadinessGate: ViewModifier {
+    let readiness: StoreReadiness
+    @State private var ready: Bool
+
+    init(readiness: StoreReadiness) {
+        self.readiness = readiness
+        _ready = State(initialValue: readiness.isReadable())
+    }
+
+    @ViewBuilder
+    func body(content: Content) -> some View {
+        if ready {
+            content
+        } else {
+            // `UILaunchScreen` is empty: the launch screen IS the app background.
+            Color.background.ignoresSafeArea()
+                .task {
+                    await readiness.wait()
+                    if !Task.isCancelled { ready = true }
+                }
+        }
+    }
+}

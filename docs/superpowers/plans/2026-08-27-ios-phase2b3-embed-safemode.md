@@ -1,5 +1,7 @@
 # Embed Rung, Open-in-YouTube Rung and Safe Mode Implementation Plan (iOS Phase 2, Plan B3)
 
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
+
 > **For agentic workers:** REQUIRED SUB-SKILL: Use superpowers:subagent-driven-development. Steps use checkbox (`- [ ]`) syntax.
 
 **Goal:** Give the player a floor. Today rungs 3 and 4 of the fallback ladder resolve fine and then die in `PlayerViewModel.map` on a placeholder error string — so a video YouTube will not serve natively is simply broken in FitrahTube. B3 builds the two remaining rungs: rung 3 plays the video inside YouTube's own IFrame player in a navigation-locked `WKWebView`, rung 4 offers a confirmation sheet that hands off to the YouTube app. Safe Mode — shipped as a Settings switch in Phase 1 and reading nothing since — gets its first real effect: it removes rung 4 from the ladder, and leaves B5 the hook for playlist auto-advance.
@@ -40,6 +42,8 @@
 ---
 
 ## Global Constraints
+
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
 
 Implementers inherit nothing from earlier plans. All of the following are binding:
 
@@ -916,6 +920,8 @@ The repo has no signing identity (`DEVELOPMENT_TEAM: $(FITRAH_TEAM_ID)` is unset
 ---
 
 ## Out of scope for B3 (later sub-plans, or deliberate deferrals)
+
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
 
 - **Playlist auto-advance itself.** Ruling 58's headline effect lands in **B5** (Up Next / queue), which reads `PlayerViewModel.safeMode` — the hook this plan creates and uses. B3 adds no queue.
 - **Shorts on the embed rung** (plan §6.8: "on the embed rung size the `WKWebView` 9:16 and keep the navigation lock") — **B4**. `EmbedRungView` hard-codes `aspectRatio(16/9)`; B4 parameterises it. Nothing else about the rung changes.

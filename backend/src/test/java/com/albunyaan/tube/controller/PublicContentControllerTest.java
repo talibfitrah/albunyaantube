@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.dto.ChannelDetailsDto;
+import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.exception.GlobalExceptionHandler;
@@ -8,6 +9,7 @@ import com.albunyaan.tube.exception.ContentGoneException;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.BeforeEach;
@@ -22,8 +24,11 @@ import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Collections;
+import java.util.List;
 
 import static org.mockito.ArgumentMatchers.*;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
@@ -197,7 +202,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), any(), any(), any(), any(), any()))
+                anyString(), any(), anyInt(), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -214,7 +219,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any(), any()))
+                anyString(), any(), anyInt(), eq("islamic-lectures"), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then
@@ -231,7 +236,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(50), any(), any(), any(), any(), any()))
+                anyString(), any(), eq(50), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 100, should be capped at 50
@@ -247,7 +252,7 @@ public class PublicContentControllerTest {
         // Given
         CursorPageDto page = new CursorPageDto(Collections.emptyList(), null);
         when(contentService.getContent(
-                anyString(), any(), eq(1), any(), any(), any(), any(), any()))
+                anyString(), any(), eq(1), any(), any(), any(), any()))
                 .thenReturn(page);
 
         // When & Then - Request 0, should be set to 1
@@ -360,7 +365,7 @@ public class PublicContentControllerTest {
     void testSearch_Success() throws Exception {
         // Given
         when(contentService.search(anyString(), any(), anyInt()))
-                .thenReturn(Collections.emptyList());
+                .thenReturn(SearchIndex.Hits.NONE);
 
         // When & Then
         mockMvc.perform(get("/api/v1/search")
@@ -375,7 +380,7 @@ public class PublicContentControllerTest {
     void testSearch_EmptyQuery() throws Exception {
         // Given
         when(contentService.search(eq(""), any(), anyInt()))
-                .thenReturn(Collections.emptyList());
+                .thenReturn(SearchIndex.Hits.NONE);
 
         // When & Then
         mockMvc.perform(get("/api/v1/search")
@@ -389,7 +394,7 @@ public class PublicContentControllerTest {
     void testSearch_WithTypeFilter() throws Exception {
         // Given
         when(contentService.search(anyString(), eq("VIDEOS"), anyInt()))
-                .thenReturn(Collections.emptyList());
+                .thenReturn(SearchIndex.Hits.NONE);
 
         // When & Then
         mockMvc.perform(get("/api/v1/search")
@@ -405,7 +410,7 @@ public class PublicContentControllerTest {
     void testSearch_LimitValidation() throws Exception {
         // Given
         when(contentService.search(anyString(), any(), eq(50)))
-                .thenReturn(Collections.emptyList());
+                .thenReturn(SearchIndex.Hits.NONE);
 
         // When & Then - Request 100, should be capped at 50
         mockMvc.perform(get("/api/v1/search")
@@ -413,5 +418,78 @@ public class PublicContentControllerTest {
                         .param("limit", "100")
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/search - X-Search-Match header, body still a bare array of the same keys")
+    void testSearch_SetsMatchHeaderAndKeepsTheArrayBody() throws Exception {
+        ContentItemDto channel = ContentItemDto.channel("UCzakir", "Dr Zakir Naik", null, null, null, null, null, List.of("kw"));
+        when(contentService.search(eq("zakit"), any(), anyInt())).thenReturn(new SearchIndex.Hits(List.of(channel), "approximate"));
+
+        mockMvc.perform(get("/api/v1/search").param("q", "zakit"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Search-Match", "approximate"))
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].id").value("UCzakir"))
+                .andExpect(jsonPath("$[0].type").value("CHANNEL"))
+                .andExpect(jsonPath("$[0].name").value("Dr Zakir Naik"))
+                .andExpect(jsonPath("$[0].keywords").doesNotExist());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/search - 503 + Retry-After while the index builds")
+    void testSearch_NotReadyIs503() throws Exception {
+        when(contentService.search(anyString(), any(), anyInt())).thenThrow(new SearchIndex.NotReadyException());
+
+        mockMvc.perform(get("/api/v1/search").param("q", "quran"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/content?q= - in-tab search sets X-Search-Match")
+    void testContent_InTabSearchSetsMatchHeader() throws Exception {
+        when(contentService.searchContent(eq("CHANNELS"), any(), anyInt(), any(), any(), any(), eq("zakit")))
+                .thenReturn(new PublicContentService.SearchPage(new CursorPageDto<>(List.of(), null), "approximate"));
+
+        mockMvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("q", "zakit"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Search-Match", "approximate"))
+                .andExpect(jsonPath("$.data").isArray());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/content?q= - relevance overrides the tab's sort, which never reaches the plain list")
+    void testContent_InTabSearchIgnoresTheTabSort() throws Exception {
+        when(contentService.searchContent(eq("VIDEOS"), any(), anyInt(), any(), any(), any(), eq("zakit")))
+                .thenReturn(new PublicContentService.SearchPage(new CursorPageDto<>(List.of(), null), "exact"));
+
+        mockMvc.perform(get("/api/v1/content").param("type", "VIDEOS").param("q", "zakit").param("sort", "NEWEST"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Search-Match", "exact"));
+
+        verify(contentService, never()).getContent(any(), any(), anyInt(), any(), any(), any(), any());
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/content?q=<2 chars - plain list, no X-Search-Match header (ruling F14)")
+    void testContent_OneCharacterQueryServesThePlainList() throws Exception {
+        when(contentService.getContent(eq("CHANNELS"), any(), anyInt(), any(), any(), any(), any()))
+                .thenReturn(new CursorPageDto<>(List.of(), null));
+
+        mockMvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("q", "z"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("X-Search-Match"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/content?q= - 503 + Retry-After while the index builds")
+    void testContent_InTabSearchNotReadyIs503() throws Exception {
+        when(contentService.searchContent(any(), any(), anyInt(), any(), any(), any(), anyString()))
+                .thenThrow(new SearchIndex.NotReadyException());
+
+        mockMvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("q", "zakit"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"));
     }
 }

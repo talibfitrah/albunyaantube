@@ -8,6 +8,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
@@ -20,6 +21,7 @@ import com.google.cloud.firestore.Firestore;
 import com.google.cloud.firestore.WriteBatch;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.security.access.prepost.PreAuthorize;
@@ -65,6 +67,7 @@ public class ContentLibraryController {
     private final TagEnrichmentService tagEnrichmentService;
     private final ImportGraduationService importGraduationService;
     private final UserRepository userRepository;
+    private final ApplicationEventPublisher events;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -76,7 +79,8 @@ public class ContentLibraryController {
             SortOrderService sortOrderService,
             TagEnrichmentService tagEnrichmentService,
             ImportGraduationService importGraduationService,
-            UserRepository userRepository
+            UserRepository userRepository,
+            ApplicationEventPublisher events
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -88,6 +92,7 @@ public class ContentLibraryController {
         this.tagEnrichmentService = tagEnrichmentService;
         this.importGraduationService = importGraduationService;
         this.userRepository = userRepository;
+        this.events = events;
     }
 
     /**
@@ -1060,7 +1065,13 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit with timeout - all items succeed or all fail
-                    writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                    boolean committed = false;
+                    try {
+                        writeBatch.commit().get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+                        committed = true;
+                    } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
+                        publishCatalogChanged(validatedItems, !committed);
+                    }
                     successCount += validatedItems.size();
                     log.debug("Batch committed successfully: {} items with status={}", validatedItems.size(), newStatus);
 
@@ -1132,7 +1143,13 @@ public class ContentLibraryController {
                     }
 
                     // Atomic commit
-                    writeBatch.commit().get();
+                    boolean committed = false;
+                    try {
+                        writeBatch.commit().get();
+                        committed = true;
+                    } finally { // a failed ack may hide a committed batch: the index re-reads each item (F3)
+                        publishCatalogChanged(itemsToDelete, !committed);
+                    }
                     successCount += itemsToDelete.size();
                     log.debug("Batch delete committed successfully: {} items", itemsToDelete.size());
 
@@ -1153,6 +1170,13 @@ public class ContentLibraryController {
         }
 
         return new BulkActionResponse(successCount, errors, failedKeys);
+    }
+
+    /** These two WriteBatch paths bypass the repositories, so they tell the search index themselves (spec §5.2). */
+    private void publishCatalogChanged(List<BulkActionItem> written, boolean writeFailed) {
+        for (BulkActionItem item : written) {
+            events.publishEvent(new CatalogChanged(item.type.toUpperCase(Locale.ROOT), item.id, writeFailed));
+        }
     }
 
     /**

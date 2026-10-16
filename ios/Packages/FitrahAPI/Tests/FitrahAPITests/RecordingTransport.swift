@@ -8,15 +8,21 @@ nonisolated final class RecordingTransport: ClientTransport, @unchecked Sendable
     private(set) var lastRequest: HTTPRequest?
     private(set) var lastBaseURL: URL?
     var status: HTTPResponse.Status = .ok
+    /// Answered in order, one per request, before `status` takes over.
+    var statuses: [HTTPResponse.Status] = []
+    private(set) var requestCount = 0
     var responseBody: Data = Data("[]".utf8)
+    var extraHeaders: HTTPFields = [:]
 
     init() {}
 
     func send(_ request: HTTPRequest, body: HTTPBody?, baseURL: URL, operationID: String) async throws -> (HTTPResponse, HTTPBody?) {
         lastRequest = request
         lastBaseURL = baseURL
-        var response = HTTPResponse(status: status)
+        requestCount += 1
+        var response = HTTPResponse(status: statuses.isEmpty ? status : statuses.removeFirst())
         response.headerFields[.contentType] = "application/json"
+        response.headerFields.append(contentsOf: extraHeaders)
         return (response, HTTPBody(responseBody))
     }
 }

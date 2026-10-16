@@ -429,62 +429,6 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "player-recovery-exhausted-state", into: directory)
     }
 
-    /// Plan B3 task 4: rung 3 -- the caption ABOVE the frame (never an overlay on the player, RMF),
-    /// the 16:9 frame, and FitrahTube's toolbar + metadata below it. Every FitrahTube PLAYBACK
-    /// control (quality / captions / audio-language / audio-only / rung-2 pill / PiP) is absent by
-    /// construction: that whole overlay column lives in `PlayerScreen`'s `.ready`/`.rung2Progressive`
-    /// branch, and this is a different branch with no `AVPlayer` at all.
-    ///
-    /// The IFrame itself exposes NOTHING to XCUITest (remote content) and on a machine with no
-    /// network it never loads, so every assertion here anchors on FitrahTube's own identifiers.
-    func testPlayerEmbedRung() throws {
-        let directory = try shotsDirectory()
-        let screen = Screen(key: "player-embed",
-                            // A REAL 11-char id, unlike every other player shot's "fixture-video":
-                            // `EmbedPage.html` refuses anything that fails `^[A-Za-z0-9_-]{11}$`
-                            // (it is a substitution into a `<script>`), and a refusal takes the
-                            // rung straight to the error card with no caption to capture.
-                            arguments: ["-fitrah-fake-player-embed", "-fitrah-route", "player", Self.liveEmbeddableId],
-                            anchor: .button("unused"))
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        let caption = app.staticTexts["player.embedCaption"]
-        XCTAssertTrue(caption.waitForExistence(timeout: 20), "player-embed: caption never appeared")
-        XCTAssertEqual(caption.label, "Playing in YouTube's player")
-        XCTAssertFalse(app.buttons["player.qualityMenu.button"].exists,
-                       "player-embed: the embed rung hides every FitrahTube playback control")
-        XCTAssertFalse(app.buttons["player.audioOnly.button"].exists,
-                       "player-embed: the embed rung hides every FitrahTube playback control")
-        XCTAssertFalse(app.buttons["player.captionsMenu.button"].exists,
-                       "player-embed: the embed rung hides every FitrahTube playback control")
-        XCTAssertFalse(app.staticTexts["player.rung2Pill"].exists,
-                       "player-embed: the rung-2 pill belongs to the native branch")
-        // The toolbar and metadata are NOT playback controls and stay (plan task 4's layout ruling).
-        XCTAssertTrue(app.buttons["player.shareButton"].waitForExistence(timeout: 10),
-                      "player-embed: the toolbar stays below the frame")
-        XCTAssertTrue(app.staticTexts["player.metadata.views"].exists,
-                      "player-embed: the metadata panel stays below the toolbar")
-        try write(named: "player-embed-rung", into: directory)
-    }
-
-    /// Plan B3 task 4: ENDED -> FitrahTube's own opaque Replay/Back cover over the frame, so
-    /// YouTube's end-screen recommendation cards are never visible or tappable. `-fitrah-fake-embed-ended`
-    /// seeds the cover (same `#if DEBUG` launch-arg technique as `-fitrah-fake-player-recovery-exhausted`)
-    /// because driving a real ENDED needs a real IFrame load, a network and a short video.
-    func testPlayerEmbedEnded() throws {
-        let directory = try shotsDirectory()
-        let screen = Screen(key: "player-embed-ended",
-                            arguments: ["-fitrah-fake-player-embed", "-fitrah-fake-embed-ended",
-                                        "-fitrah-route", "player", Self.liveEmbeddableId],
-                            anchor: .button("unused"))
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        let replay = app.buttons["player.embedReplay"]
-        XCTAssertTrue(replay.waitForExistence(timeout: 20), "player-embed-ended: replay never appeared")
-        XCTAssertTrue(app.buttons["player.embedBack"].exists, "player-embed-ended: back never appeared")
-        try write(named: "player-embed-ended-cover", into: directory)
-    }
-
     // MARK: - B4 task 3: Shorts chrome (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md)
 
     /// The Shorts surface with its own chrome: rail, kebab, scrubber, channel row. Anchors only on
@@ -496,7 +440,7 @@ final class ScreenshotTests: XCTestCase {
     func testShortsScreen() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "shorts",
-                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveLectureId],
                             anchor: .button("unused"))
         for locale in Self.locales {
             XCUIDevice.shared.orientation = .portrait
@@ -526,7 +470,7 @@ final class ScreenshotTests: XCTestCase {
     func testShortsKebab() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "shorts-kebab",
-                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveEmbeddableId],
+                            arguments: ["-fitrah-fake-player", "-fitrah-route", "shorts", Self.liveLectureId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
@@ -538,235 +482,74 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "shorts-kebab-open", into: directory)
     }
 
-    // MARK: - B3 task 5: acceptance matrix + the live-YouTube pass
+    /// iOS pipeline stage 7 item 4 (stage 3b F2): auto-generated captions are drawn by the app, not
+    /// AVFoundation, so they must travel into every fullscreen -- the app's own on iPhone (landscape)
+    /// and AVKit's own presentation on iPad, the only fullscreen there. Captions stay OFF until a
+    /// language is picked. A live resolve is the only source of an auto-generated track, so this is
+    /// opt-in with the other live checks (SHORTS_LIVE=1); run it on iPhone and on iPad.
+    func testPlayerLiveAutoCaptionsInEveryFullscreen() throws {
+        try requireShortsLive()
+        let directory = try shotsDirectory()
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        var notes: [String] = []
+        defer { try? notes.joined(separator: "\n").write(to: directory.appendingPathComponent("captions-fullscreen-\(device).txt"),
+                                                         atomically: true, encoding: .utf8) }
+        let screen = Screen(key: "player-live-captions", arguments: ["-fitrah-route", "player", Self.liveLectureId],
+                            anchor: .button("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            let cc = app.buttons["player.captionsMenu.button"]
+            XCTAssertTrue(cc.waitForExistence(timeout: 60), "\(locale.key): CC button never appeared (resolve failed?)")
+            let cue = app.staticTexts["player.captionOverlay.text"]
+            XCTAssertFalse(cue.waitForExistence(timeout: 5), "\(locale.key): a cue showed before any pick (captions must start Off)")
+            cc.tap()
+            let auto = app.buttons.matching(NSPredicate(
+                format: "identifier BEGINSWITH 'player.captionsOption.' AND NOT (identifier BEGINSWITH 'player.captionsOption.uploader.') AND identifier != 'player.captionsOption.off'"))
+                .firstMatch
+            XCTAssertTrue(auto.waitForExistence(timeout: 10), "\(locale.key): no auto-generated option")
+            notes.append("\(locale.key): picked \(auto.identifier) '\(auto.label)'")
+            auto.tap()
+            XCTAssertTrue(cue.waitForExistence(timeout: 45), "\(locale.key): no cue inline after the pick")
+            try write(named: "captions-\(device)-\(locale.key)-inline", into: directory)
 
-    /// The live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
+            if device == "ipad" {
+                let box = app.descendants(matching: .any)["player.videoBox"]
+                let video = box.exists ? box : app.windows.firstMatch
+                video.coordinate(withNormalizedOffset: CGVector(dx: 0.5, dy: 0.3)).tap()   // shows AVKit's controls
+                let fullscreen = app.buttons.matching(NSPredicate(
+                    format: "label CONTAINS[c] 'full screen' OR label CONTAINS[c] 'fullscreen' OR identifier CONTAINS[c] 'full'")).firstMatch
+                if !fullscreen.waitForExistence(timeout: 5) {
+                    notes.append("\(locale.key): buttons = " + app.buttons.allElementsBoundByIndex
+                        .map { "[\($0.identifier)|\($0.label)]" }.joined(separator: " "))
+                }
+                XCTAssertTrue(fullscreen.exists, "\(locale.key): AVKit's fullscreen button not found")
+                notes.append("\(locale.key): fullscreen button [\(fullscreen.identifier)|\(fullscreen.label)]")
+                fullscreen.tap()
+            } else {
+                XCUIDevice.shared.orientation = .landscapeLeft
+                settle(app, landscape: true)
+            }
+            Thread.sleep(forTimeInterval: 2)   // the presentation's animation
+            let cueInFullscreen = cue.waitForExistence(timeout: 30)
+            notes.append("\(locale.key): cue in fullscreen=\(cueInFullscreen)\(cueInFullscreen ? " frame=\(cue.frame)" : "") window=\(app.windows.firstMatch.frame)")
+            try write(named: "captions-\(device)-\(locale.key)-fullscreen", into: directory)
+            XCTAssertTrue(cueInFullscreen, "\(locale.key): the auto-generated captions were lost in fullscreen")
+            XCUIDevice.shared.orientation = .portrait
+            app.terminate()
+        }
+    }
+
+    // MARK: - Shared fixture ids
+
+    /// Live checks load real videos, so the ids are drawn ONLY from the app's approved catalog
     /// (owner directive 2026-08-27: never an arbitrary YouTube video, and never a music video --
     /// this is a Muslim audience app). Both come from the InnerTubeKit browse fixtures, i.e. the
     /// curated lecture channels this app actually serves:
     ///   - `xc7keR2piUM`  the shared catalog lecture id (`LiveResolveTests.knownGoodVideoId`), 2h21m
-    ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach ENDED without a long seek
-    ///   - `aaaaaaaaaaa`  NOT a video at all: a well-formed id that matches nothing, which is how
-    ///                    IFrame error 100 ("removed or private") is provoked without loading
-    ///                    anyone's content.
-    /// There is no live check for IFrame error 101/150: every video in the approved catalog is
-    /// embeddable (all 19 fixture ids probed 2026-08-27, `"playableInEmbed":true`), and reaching
-    /// that code would mean loading a video from outside the catalog. `EmbedPolicyTests` pins the
-    /// 101/150 mapping instead.
-    private static let liveEmbeddableId = "xc7keR2piUM"
+    ///   - `16QZlP5da1Y`  a 52 s catalog clip -- short enough to reach the end without a long seek
+    private static let liveLectureId = "xc7keR2piUM"
     private static let liveShortId = "16QZlP5da1Y"
-    private static let liveRemovedId = "aaaaaaaaaaa"
-
-    /// The live checks talk to youtube.com. They are OFF by default (a red test on a machine with
-    /// no network proves nothing) and run under `EMBED_LIVE=1`, exactly like InnerTubeKit's
-    /// `LiveResolveTests` and its `INNERTUBE_LIVE`. `ios/scripts/screenshots.sh` passes it through
-    /// as `TEST_RUNNER_EMBED_LIVE`.
-    private func requireLive() throws {
-        try XCTSkipUnless(ProcessInfo.processInfo.environment["EMBED_LIVE"] == "1",
-                          "live IFrame checks are opt-in: EMBED_LIVE=1")
-    }
-
-    private func embedScreen(_ videoId: String, extra: [String] = []) -> Screen {
-        Screen(key: "player-embed-live",
-               arguments: ["-fitrah-fake-player-embed"] + extra + ["-fitrah-route", "player", videoId],
-               anchor: .button("unused"))
-    }
-
-    /// Plan §6.4 row 3's floor is "at least 200x200 pt of video". This reads the WKWebView's own
-    /// frame (points, not pixels) rather than trusting the 16:9 aspect ratio to have produced it.
-    private func assertEmbedFrameFloor(_ app: XCUIApplication, _ label: String) {
-        let frame = app.webViews["player.embedFrame"]
-        XCTAssertTrue(frame.waitForExistence(timeout: 20), "\(label): embed frame never appeared")
-        XCTAssertGreaterThanOrEqual(frame.frame.width, 200, "\(label): embed frame narrower than 200 pt")
-        XCTAssertGreaterThanOrEqual(frame.frame.height, 200, "\(label): embed frame shorter than 200 pt")
-    }
-
-    /// iPhone leg of the B3 acceptance matrix: en portrait at Dynamic Type `.accessibility3` (the
-    /// caption wraps, it does not clip) and ar portrait (RTL -- the caption is leading-aligned and
-    /// mirrors; the 16:9 frame does not).
-    func testPlayerEmbedB3Task5IPhone() throws {
-        let directory = try shotsDirectory()
-        let screen = embedScreen(Self.liveEmbeddableId)
-
-        XCUIDevice.shared.orientation = .portrait
-        var app = launch(screen, locale: Self.locales[0], extraArguments: Self.accessibility3)
-        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
-                      "b3-task5 iphone a11y3: caption never appeared")
-        assertEmbedFrameFloor(app, "b3-task5 iphone a11y3")
-        try write(named: "player-embed-iphone-en-a11y3-portrait", into: directory)
-
-        app = launch(screen, locale: Self.locales[1], extraArguments: [])
-        let caption = app.staticTexts["player.embedCaption"]
-        XCTAssertTrue(caption.waitForExistence(timeout: 20), "b3-task5 iphone ar: caption never appeared")
-        XCTAssertEqual(caption.label, "يتم التشغيل في مشغّل يوتيوب",
-                       "b3-task5 iphone ar: the caption must be the Arabic copy, not the key or the en value")
-        assertEmbedFrameFloor(app, "b3-task5 iphone ar")
-        try write(named: "player-embed-iphone-ar-portrait", into: directory)
-    }
-
-    /// iPad leg: portrait and landscape, both over the 200x200 pt floor with the content column
-    /// capped at `Size.playerMaxWidth`.
-    func testPlayerEmbedB3Task5IPad() throws {
-        let directory = try shotsDirectory()
-        let screen = embedScreen(Self.liveEmbeddableId)
-
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
-                      "b3-task5 ipad portrait: caption never appeared")
-        assertEmbedFrameFloor(app, "b3-task5 ipad portrait")
-        try write(named: "player-embed-ipad-en-portrait", into: directory)
-
-        XCUIDevice.shared.orientation = .landscapeLeft
-        settle(app, landscape: true)
-        assertEmbedFrameFloor(app, "b3-task5 ipad landscape")
-        try write(named: "player-embed-ipad-en-landscape", into: directory)
-        XCUIDevice.shared.orientation = .portrait
-    }
-
-    // MARK: - B3 task 5 step 2: live IFrame checks (EMBED_LIVE=1)
-
-    /// The bridge's own record of what the web content process did. `-fitrah-embed-debug-events`
-    /// renders it under the frame (DEBUG only) because a `WKWebView`'s remote content exposes
-    /// nothing else an XCUITest can assert on.
-    private func embedLog(_ app: XCUIApplication) -> String {
-        // `.label` on a missing element THROWS ("no matches found"), so the existence check is not
-        // defensive padding -- the log view only appears once the first event lands, and the first
-        // poll always runs before that.
-        let element = app.staticTexts["player.embedDebugLog"]
-        return element.exists ? element.label : ""
-    }
-
-    private func waitForEmbedLog(_ app: XCUIApplication, containing needle: String,
-                                 timeout: TimeInterval = 45) -> Bool {
-        let deadline = Date().addingTimeInterval(timeout)
-        while Date() < deadline {
-            if embedLog(app).contains(needle) { return true }
-            Thread.sleep(forTimeInterval: 0.5)
-        }
-        return false
-    }
-
-    /// Live 1: a real embeddable video loads, the `origin` player var is accepted (error 153 is the
-    /// "no/!bad Referer" answer and must never appear), and the page AUTOPLAYS off `onReady` --
-    /// state 1 arrives without anyone tapping anything.
-    func testEmbedLivePlaysAndAutoplays() throws {
-        try requireLive()
-        let directory = try shotsDirectory()
-        let app = launch(embedScreen(Self.liveEmbeddableId, extra: ["-fitrah-embed-debug-events"]),
-                         locale: Self.locales[0], extraArguments: [])
-        XCTAssertTrue(app.staticTexts["player.embedCaption"].waitForExistence(timeout: 20),
-                      "live: caption never appeared")
-        XCTAssertTrue(waitForEmbedLog(app, containing: "ready"), "live: onReady never arrived — log: \(embedLog(app))")
-        XCTAssertTrue(waitForEmbedLog(app, containing: "state(1)"),
-                      "live: never autoplayed (no state 1) — log: \(embedLog(app))")
-        let log = embedLog(app)
-        XCTAssertFalse(log.contains("error(153)"), "live: origin rejected (error 153) — log: \(log)")
-        XCTAssertFalse(log.contains("error("), "live: unexpected IFrame error — log: \(log)")
-        print("[EMBED_LIVE] playsAndAutoplays log:\n\(log)")
-        try write(named: "live-embed-playing", into: directory)
-    }
-
-    /// Live 2: every escape the IFrame offers (title, channel avatar, YouTube logo, "Watch on
-    /// YouTube", share, end-screen cards) is a MAIN-FRAME navigation, and the lock cancels every
-    /// one. Asserted from the lock's own verdicts: no main-frame navigation off
-    /// `app.fitrahtube.com` may ever be allowed.
-    func testEmbedLiveNavigationLockCancelsEveryEscape() throws {
-        try requireLive()
-        let directory = try shotsDirectory()
-        let app = launch(embedScreen(Self.liveEmbeddableId, extra: ["-fitrah-embed-debug-events"]),
-                         locale: Self.locales[0], extraArguments: [])
-        XCTAssertTrue(waitForEmbedLog(app, containing: "state(1)"),
-                      "live nav lock: video never started — log: \(embedLog(app))")
-        let frame = app.webViews["player.embedFrame"]
-        XCTAssertTrue(frame.exists, "live nav lock: embed frame never appeared")
-
-        // Reveal the player chrome, then hit each escape in turn: the title bar (title + channel
-        // avatar + "Watch on YouTube"/share at the top of the frame) and the YouTube logo in the
-        // bottom-right of the control bar.
-        let targets: [(String, CGVector)] = [
-            ("center/controls", CGVector(dx: 0.5, dy: 0.5)),
-            ("title", CGVector(dx: 0.25, dy: 0.12)),
-            ("watch-on-youtube/share", CGVector(dx: 0.92, dy: 0.12)),
-            ("channel avatar", CGVector(dx: 0.06, dy: 0.12)),
-            ("youtube logo", CGVector(dx: 0.9, dy: 0.9))
-        ]
-        for (name, offset) in targets {
-            frame.coordinate(withNormalizedOffset: offset).tap()
-            Thread.sleep(forTimeInterval: 1.5)
-            XCTAssertEqual(app.state, .runningForeground, "live nav lock: \(name) backgrounded FitrahTube")
-            XCTAssertTrue(app.staticTexts["player.embedCaption"].exists,
-                          "live nav lock: \(name) left the embed screen")
-        }
-
-        let log = embedLog(app)
-        print("[EMBED_LIVE] navigationLock log:\n\(log)")
-        // Positive half (I3, B3 final review): five escape taps must produce at least one CANCEL
-        // verdict, or the loop below passes vacuously over a log with no main-frame lines at all.
-        XCTAssertTrue(log.contains("CANCEL"), "live nav lock: no escape was ever cancelled — log: \(log)")
-        for line in log.split(separator: "\n").map(String.init) where line.hasPrefix("allow main ") {
-            XCTAssertTrue(line.contains("https://app.fitrahtube.com") || line.contains("about:blank"),
-                          "live nav lock: a main-frame navigation off the bundled page was ALLOWED: \(line)")
-        }
-        try write(named: "live-embed-after-escape-taps", into: directory)
-    }
-
-    /// Live 3: a genuinely short video reaches ENDED, the bridge carries state 0, the cover rises
-    /// over YouTube's end screen, and Replay restarts it (state 1 again after the cover is gone).
-    /// No `-fitrah-fake-embed-ended` here -- that seeds the cover with no IFrame behind it.
-    func testEmbedLiveEndedRaisesCoverAndReplayRestarts() throws {
-        try requireLive()
-        let directory = try shotsDirectory()
-        let app = launch(embedScreen(Self.liveShortId,
-                                     extra: ["-fitrah-embed-debug-events", "-fitrah-embed-seek-to-end"]),
-                         locale: Self.locales[0], extraArguments: [])
-        XCTAssertTrue(waitForEmbedLog(app, containing: "state(0)"),
-                      "live ended: state 0 never arrived — log: \(embedLog(app))")
-        let replay = app.buttons["player.embedReplay"]
-        XCTAssertTrue(replay.waitForExistence(timeout: 15),
-                      "live ended: the cover never rose — log: \(embedLog(app))")
-        XCTAssertTrue(app.buttons["player.embedBack"].exists, "live ended: Back missing from the cover")
-        print("[EMBED_LIVE] ended log:\n\(embedLog(app))")
-        try write(named: "live-embed-ended-cover", into: directory)
-
-        replay.tap()
-        // Replay seeks to 0 and plays: state 1 clears the cover through the bridge, never locally
-        // (M2, Task 4 review). Polled rather than `expectation(for:evaluatedWith:)` -- that API
-        // sends `self` across an isolation boundary, which Swift 6 rejects in this target.
-        let deadline = Date().addingTimeInterval(30)
-        while replay.exists, Date() < deadline { Thread.sleep(forTimeInterval: 0.5) }
-        XCTAssertFalse(replay.exists, "live ended: Replay did not restart playback — log: \(embedLog(app))")
-        print("[EMBED_LIVE] after replay log:\n\(embedLog(app))")
-        try write(named: "live-embed-after-replay", into: directory)
-    }
-
-    /// Live 4: a well-formed but nonexistent id answers 100 -> the removed card. Terminal in both
-    /// Safe Mode states, with no route out of the app in either (owner directive 2026-08-27).
-    func testEmbedLiveRemovedCard() throws {
-        try requireLive()
-        let directory = try shotsDirectory()
-        for (suffix, extra) in [("safemode-on", [String]()), ("safemode-off", ["-safe_mode", "NO"])] {
-            let app = launch(embedScreen(Self.liveRemovedId,
-                                         extra: ["-fitrah-embed-debug-events"] + extra),
-                             locale: Self.locales[0], extraArguments: [])
-            let message = app.staticTexts["player.state.message"]
-            XCTAssertTrue(message.waitForExistence(timeout: 45),
-                          "live removed (\(suffix)): never left the embed — log: \(embedLog(app))")
-            let copy = message.label
-            print("[EMBED_LIVE] removed(\(suffix)) copy=\(copy) log:\n\(embedLog(app))")
-            // The exact code is YouTube's to choose (observed live 2026-08-27: 150, not the 100 the
-            // plan predicted for a nonexistent id), so the assertion is the INVARIANT rather than
-            // the code: whatever it answers, the rung is terminal, silent about YouTube, and has no
-            // Retry that could only fail again.
-            XCTAssertTrue(["This video was removed", "This video is not available for playback."].contains(copy),
-                          "live removed (\(suffix)): unexpected terminal copy \(copy)")
-            XCTAssertFalse(app.buttons["player.state.retryButton"].exists,
-                           "live removed (\(suffix)): a terminal embed error must offer no Retry")
-            XCTAssertEqual(app.buttons.matching(NSPredicate(format: "label CONTAINS 'YouTube'")).count, 0,
-                           "live removed (\(suffix)): no control may route the user out to YouTube")
-            try write(named: "live-embed-removed-\(suffix)", into: directory)
-        }
-    }
 
     // MARK: - B1 task 10: iPad / RTL / Dynamic Type / VoiceOver pass
     // (docs/superpowers/plans/2026-08-24-ios-phase2b1-player-core.md, spec §6.11)
@@ -890,13 +673,13 @@ final class ScreenshotTests: XCTestCase {
         Screen(key: "shorts-b4-task4", arguments: arguments, anchor: .button("unused"))
     }
 
-    private static let shortsFixture = ["-fitrah-fake-player", "-fitrah-route", "shorts", liveEmbeddableId]
+    private static let shortsFixture = ["-fitrah-fake-player", "-fitrah-route", "shorts", liveLectureId]
 
     /// Everything the plan's Step 1 matrix can prove from XCUITest on an iPhone: frames (every tap
     /// target >= 44 pt, the 9:16 stage, the rail's edge in ar), the loop (30 s of scrubber samples
     /// with no stall), the tap indicator, the scrub bar, Like x10 with the audio/CC buttons staying
     /// absent, the kebab, the channel row's presence rule, Back, the edge swipe, the portrait lock,
-    /// Dynamic Type, the embed arm and the three status states. Measurements go to
+    /// Dynamic Type and the three status states. Measurements go to
     /// `b4-task4-measurements.txt` next to the PNGs so the report quotes numbers, not eyeballs.
     func testShortsB4Task4IPhone() throws {
         let directory = try shotsDirectory()
@@ -1052,7 +835,7 @@ final class ScreenshotTests: XCTestCase {
         XCUIDevice.shared.orientation = .portrait
 
         // Channel row: absent through the id-only deep link.
-        app = launch(shortsScreen(["-fitrah-fake-player", "-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveEmbeddableId)"]),
+        app = launch(shortsScreen(["-fitrah-fake-player", "-fitrah-deeplink", "albunyaantube://shorts/\(Self.liveLectureId)"]),
                      locale: Self.locales[0], extraArguments: [])
         XCTAssertTrue(app.buttons["shorts.likeButton"].waitForExistence(timeout: 20), "b4t4 deeplink: like never appeared")
         XCTAssertFalse(app.buttons["shorts.channelHandle"].exists, "b4t4 deeplink: channel row must be absent without a channel name")
@@ -1080,24 +863,11 @@ final class ScreenshotTests: XCTestCase {
         XCTAssertLessThanOrEqual(a11yLike.maxX, a11yWindow.maxX, "b4t4 a11y3: rail pushed off screen")
         try write(named: "shorts-b4t4-iphone-en-a11y3", into: directory)
 
-        // -- Embed arm at 9:16 (`-fitrah-fake-player-embed`): frame ratio, the 200x200 floor, caption above.
-        app = launch(shortsScreen(["-fitrah-fake-player-embed", "-fitrah-route", "shorts", Self.liveEmbeddableId]),
-                     locale: Self.locales[0], extraArguments: [])
-        let caption = app.staticTexts["player.embedCaption"]
-        XCTAssertTrue(caption.waitForExistence(timeout: 20), "b4t4 embed: caption never appeared")
-        assertEmbedFrameFloor(app, "b4t4 embed")
-        let frame = app.webViews["player.embedFrame"].frame
-        notes.append("iphone-en embed frame=\(frame) ratio(h/w)=\(frame.height / frame.width) caption=\(caption.frame)")
-        XCTAssertEqual(frame.height / frame.width, 16.0 / 9.0, accuracy: 0.05, "b4t4 embed: frame is not 9:16")
-        XCTAssertLessThanOrEqual(caption.frame.maxY, frame.minY + 1, "b4t4 embed: caption must sit above the frame")
-        XCTAssertTrue(app.buttons["shorts.back"].exists, "b4t4 embed: Back missing on the embed arm")
-        try write(named: "shorts-b4t4-iphone-en-embed", into: directory)
-
         // -- Status states on the Shorts background: Retry only where it belongs.
         for (flag, name, retry) in [("-fitrah-fake-player-error", "error", true),
                                     ("-fitrah-fake-player-unavailable", "unavailable", false),
                                     ("-fitrah-fake-player-cooldown", "cooldown", false)] {
-            app = launch(shortsScreen([flag, "-fitrah-route", "shorts", Self.liveEmbeddableId]), locale: Self.locales[0], extraArguments: [])
+            app = launch(shortsScreen([flag, "-fitrah-route", "shorts", Self.liveLectureId]), locale: Self.locales[0], extraArguments: [])
             let message = name == "cooldown" ? app.staticTexts["player.state.countdown"] : app.staticTexts["player.state.message"]
             XCTAssertTrue(message.waitForExistence(timeout: 20), "b4t4 \(name): state message never appeared")
             XCTAssertEqual(app.buttons["player.state.retryButton"].exists, retry, "b4t4 \(name): Retry presence should be \(retry)")
@@ -1225,7 +995,7 @@ final class ScreenshotTests: XCTestCase {
     func testPlayerLiveCaptionsGlyphAfterShortsGlyph() throws {
         try requireShortsLive()
         let directory = try shotsDirectory()
-        let screen = Screen(key: "player-live-glyph", arguments: ["-fitrah-route", "player", Self.liveEmbeddableId],
+        let screen = Screen(key: "player-live-glyph", arguments: ["-fitrah-route", "player", Self.liveLectureId],
                             anchor: .button("unused"))
         XCUIDevice.shared.orientation = .portrait
         for (name, extra) in [("en", [String]()), ("en-a11y3", Self.accessibility3)] {
@@ -2773,7 +2543,54 @@ final class ScreenshotTests: XCTestCase {
             let cast = app.buttons["player.castButton"]
             XCTAssertTrue(cast.waitForExistence(timeout: 10),
                           "phase3-player-save-cast/\(locale.key): the cast slot never appeared")
+            assertEvenToolbar(app, label: "phase3-player-save-cast/\(locale.key)",
+                              column: app.otherElements["player.videoBox"],
+                              ids: ["player.favoriteButton", "player.shareButton", "player.reportButton",
+                                    "player.saveButton", "player.castButton"])
             try write(named: "phase3-player-save-cast-\(locale.key)-\(locale.theme)-portrait", into: directory)
+        }
+    }
+
+    /// The action row is N equal columns on one top edge (Android parity,
+    /// `fragment_player.xml` weights): every slot the same width, the same `minY`, each starting
+    /// where its neighbour ends, and — on a tablet — the whole row no wider than the 600 pt cap and
+    /// centred in the player COLUMN. `column` is a full-column-width sibling (the video box), not
+    /// the window: the iPad's navigation rail takes the window's leading 96 pt, so the window's
+    /// midpoint is not the column's. ±1 pt absorbs the rounding of a fractional column width.
+    /// The 600 is `Size.playerActionRowMaxWidth` (this bundle cannot import the app's tokens).
+    /// Wrapping at large Dynamic Type is asserted in `PlayerToolbarLayoutTests`, where a layout
+    /// measurement is exact; an XCUITest cannot see the captions inside the slot buttons.
+    private func assertEvenToolbar(_ app: XCUIApplication, label: String, column: XCUIElement, ids: [String],
+                                   file: StaticString = #filePath, line: UInt = #line) {
+        XCTAssertTrue(column.exists, "\(label): the full-column reference element is missing", file: file, line: line)
+        let slots = ids.map { (id: $0, frame: app.buttons[$0].frame) }
+        let first = slots[0].frame
+        for slot in slots {
+            XCTAssertEqual(slot.frame.width, first.width, accuracy: 1,
+                           "\(label): \(slot.id) is \(slot.frame.width) pt wide, \(slots[0].id) is \(first.width) — uneven columns",
+                           file: file, line: line)
+            XCTAssertEqual(slot.frame.minY, first.minY, accuracy: 1,
+                           "\(label): \(slot.id) starts at y=\(slot.frame.minY), \(slots[0].id) at y=\(first.minY) — uneven top edge",
+                           file: file, line: line)
+        }
+        let ordered = slots.sorted { $0.frame.minX < $1.frame.minX }
+        for (left, right) in zip(ordered, ordered.dropFirst()) {
+            XCTAssertEqual(right.frame.minX, left.frame.maxX, accuracy: 1,
+                           "\(label): \(left.id) -> \(right.id) leave a gap — the columns must tile the row",
+                           file: file, line: line)
+        }
+        let span = ordered.last!.frame.maxX - ordered[0].frame.minX
+        let rowMid = ordered[0].frame.minX + span / 2
+        // A phone's row fills the column minus the padding, so it is centred by construction; the
+        // assertion that can fail is the tablet's cap + centring.
+        XCTAssertEqual(rowMid, column.frame.midX, accuracy: 2,
+                       "\(label): the row (mid \(rowMid)) is not centred in its column (mid \(column.frame.midX))",
+                       file: file, line: line)
+        // `UIDevice`, not `app.windows.firstMatch.frame`: on the 5-slot screen that frame reads
+        // (0, 0, 0, 0), which silently turned the cap check off.
+        if UIDevice.current.userInterfaceIdiom == .pad {
+            XCTAssertEqual(span, 600, accuracy: 1, "\(label): the tablet row is \(span) pt wide, the cap is 600",
+                           file: file, line: line)
         }
     }
 
@@ -2958,6 +2775,54 @@ final class ScreenshotTests: XCTestCase {
             matches = current == previous ? matches + 1 : 0
             previous = current
             Thread.sleep(forTimeInterval: 1.5)
+        }
+    }
+
+    // MARK: - Playback hardening, Phase 1 (local-docs/plans/2026-10-14-ios-playback-hardening.md)
+
+    /// Owner directive 2026-10-14, two halves, en + ar on whichever simulator runs it
+    /// (`screenshots.sh` runs iPhone 17 and iPad Pro 13-inch (M5)):
+    /// 1. Rung 1 answered with a REAL HTTP 401 (a localhost server, `FITRAH_RUNG1_401_URL`) on its
+    ///    segments after two good ones -- ready, then a segment 401, the production shape (final review
+    ///    M3): the coordinator reads 401 from AVPlayer's error log (`status=401` on the DEBUG route
+    ///    probe), the player steps down to rung 2 and KEEPS PLAYING, with no error copy and no Retry.
+    ///    Rung 1 serves only 2 s, so `time=` 3 or more can only be rung 2 playing on.
+    /// 2. A video the source gates (`-fitrah-fake-player-unavailable` throws the `.unavailable` a
+    ///    members-only walk now ends in): the not-available card, no Retry.
+    func testPlaybackHardeningStates() throws {
+        let directory = try shotsDirectory()
+        let rung1 = try XCTUnwrap(ProcessInfo.processInfo.environment["FITRAH_RUNG1_401_URL"],
+                                  "FITRAH_RUNG1_401_URL unset — run via ios/scripts/screenshots.sh")
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let stepDown = Screen(key: "playback-step-down",
+                                  arguments: ["-fitrah-fake-player-rung1-401", rung1, "-fitrah-route-probe", "YES",
+                                              "-fitrah-route", "player", "fixture-video"],
+                                  anchor: .button("unused"))
+            let app = launch(stepDown, locale: locale, extraArguments: [])
+            let probe = app.descendants(matching: .any)["player.debugRoute"]
+            XCTAssertTrue(probe.waitForExistence(timeout: 20), "step-down/\(locale.key): route probe never mounted")
+            let saw401 = expectation(for: NSPredicate(format: "value CONTAINS 'status=401'"), evaluatedWith: probe)
+            wait(for: [saw401], timeout: 20)
+            XCTAssertTrue(app.staticTexts["player.rung2Pill"].waitForExistence(timeout: 20),
+                          "step-down/\(locale.key): never reached rung 2")
+            let playing = expectation(for: NSPredicate(format: "value MATCHES '.*time=[3-9].*'"), evaluatedWith: probe)
+            wait(for: [playing], timeout: 15)
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "step-down/\(locale.key): Retry shown")
+            XCTAssertFalse(app.staticTexts["player.state.message"].exists, "step-down/\(locale.key): error copy shown")
+            try write(named: "step-down-rung2-playing-\(locale.key)", into: directory)
+            app.terminate()
+
+            let gone = Screen(key: "playback-not-available",
+                              arguments: ["-fitrah-fake-player-unavailable", "-fitrah-route", "player", "fixture-video"],
+                              anchor: .button("unused"))
+            let unavailable = launch(gone, locale: locale, extraArguments: [])
+            XCTAssertTrue(unavailable.staticTexts["player.state.message"].waitForExistence(timeout: 20),
+                          "not-available/\(locale.key): message never appeared")
+            XCTAssertFalse(unavailable.buttons["player.state.retryButton"].exists,
+                           "not-available/\(locale.key): must not offer Retry")
+            try write(named: "not-available-\(locale.key)", into: directory)
+            unavailable.terminate()
         }
     }
 

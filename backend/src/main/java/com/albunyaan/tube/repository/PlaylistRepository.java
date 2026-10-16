@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -50,10 +52,13 @@ public class PlaylistRepository {
 
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public PlaylistRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public PlaylistRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                              ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -72,7 +77,7 @@ public class PlaylistRepository {
                 .document(playlist.getId())
                 .set(playlist);
 
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
         return playlist;
     }
 
@@ -88,7 +93,7 @@ public class PlaylistRepository {
         playlist.touch();
 
         DocumentReference docRef = getCollection().document(playlist.getId());
-        return firestore.runTransaction(transaction -> {
+        ApiFuture<Playlist> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get();
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Playlist not found: " + playlist.getId());
@@ -101,7 +106,8 @@ public class PlaylistRepository {
             }
             transaction.set(docRef, playlist);
             return playlist;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
     }
 
     public Optional<Playlist> findById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -141,6 +147,16 @@ public class PlaylistRepository {
             // Don't mask sync reads with archive-lookup errors — fail open
             return false;
         }
+    }
+
+    /**
+     * Every document with `status`, raw and unordered, for the search index: no orderBy, so a document
+     * without `createdAt` is not dropped (F6); the index maps each one itself, skipping one it cannot (F4).
+     */
+    public List<QueryDocumentSnapshot> findByStatusUnordered(String status)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        return getCollection().whereEqualTo("status", status).get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**
@@ -335,10 +351,10 @@ public class PlaylistRepository {
      */
     public void updateThumbnailUrl(String id, String thumbnailUrl)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        getCollection().document(id).update(
+        CatalogChanged.await(getCollection().document(id).update(
                         "thumbnailUrl", thumbnailUrl,
-                        "updatedAt", com.google.cloud.Timestamp.now())
-                .get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
+                        "updatedAt", com.google.cloud.Timestamp.now()),
+                timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     public List<Playlist> findAllByOrderByItemCountDesc() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -358,39 +374,6 @@ public class PlaylistRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    public List<Playlist> searchByTitle(String query) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        // Firestore doesn't support full-text search, so we'll use prefix matching
-        // For production, consider using Algolia or Elasticsearch
-        // Note: Filtering by status removed from query to avoid composite index requirement
-        // Status filtering done in PublicContentService layer
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
-    }
-
-    /**
-     * Search playlists by title prefix with limit (bounded query).
-     * This prevents quota exhaustion for broad search queries.
-     *
-     * @param query Search prefix
-     * @param limit Maximum number of results
-     * @return List of matching playlists
-     */
-    public List<Playlist> searchByTitle(String query, int limit) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
     /**
@@ -432,7 +415,7 @@ public class PlaylistRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -442,7 +425,7 @@ public class PlaylistRepository {
             throw new IllegalArgumentException("id and non-empty expectedStatuses required");
         }
         com.google.cloud.firestore.DocumentReference docRef = getCollection().document(id);
-        firestore.runTransaction(transaction -> {
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot =
                     transaction.get(docRef).get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS);
             if (!snapshot.exists()) {
@@ -456,7 +439,8 @@ public class PlaylistRepository {
             }
             transaction.delete(docRef);
             return null;
-        }).get(timeoutProperties.getWrite(), java.util.concurrent.TimeUnit.SECONDS);
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", id);
     }
 
     /**

@@ -27,6 +27,7 @@ import com.albunyaan.tube.update.UpdateGateway
 import com.google.firebase.auth.EmailAuthProvider
 import com.google.firebase.auth.FirebaseAuth
 import dagger.hilt.android.AndroidEntryPoint
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.async
 import kotlinx.coroutines.delay
@@ -34,6 +35,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withTimeoutOrNull
 import javax.inject.Inject
+import javax.inject.Named
 
 /**
  * Splash screen with phased animations:
@@ -73,6 +75,9 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
     /** Plan D T26: bind is fired in background once uid is confirmed. */
     @Inject lateinit var syncManager: SyncManager
+
+    /** Outlives the splash: launch sync and the bounded launch /me keep running after routing. */
+    @Inject @Named("applicationScope") lateinit var appScope: CoroutineScope
 
     @Inject lateinit var updateGateway: UpdateGateway
 
@@ -128,28 +133,18 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
 
             // Plan C T7: fetch /api/account/me in parallel. If signed out or fetch
             // fails, status is null — SplashRouter treats null as "route to sign-in".
-            // Plan D T26: on success, fire syncManager.bind(uid) in background so
-            // the merge/pull/push cycle starts without blocking the route decision.
+            // With a saved record for the uid the wait for /me is bounded and the
+            // record is the fallback (SplashRouter.resolveAccount). Plan D T26:
+            // syncManager.bind(uid) starts in appScope, never gating the route.
+            // bind is safe offline for a restored account: a failed pull returns
+            // before touching cursors and a failed push leaves rows dirty on
+            // SyncManager's backoff, so it just resumes online.
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
                 val user = firebaseAuth.currentUser
                 if (user == null) null
-                else {
-                    // Cubic R7 P1 — splash uses a 1-attempt budget so it
-                    // doesn't stall on the full retry window. If this one
-                    // attempt fails, SplashRouter routes per the null status
-                    // and the downstream screen retries with the full budget.
-                    // Offline launch: a non-terminal failure routes on the last
-                    // /me this device saw for this uid (SplashRouter.resolveAccount).
-                    val loaded = SplashRouter.resolveAccount(accountRepository, user.uid)
-                    // bind is safe offline for a restored account: a failed pull
-                    // returns before touching cursors and a failed push leaves rows
-                    // dirty on SyncManager's backoff, so it just resumes online.
-                    if (loaded != null) {
-                        // Fire bind in a separate coroutine — don't block routing.
-                        launch { syncManager.bind(loaded.uid) }
-                    }
-                    loaded?.status
-                }
+                else SplashRouter.launchAccountStatus(
+                    accountRepository, user.uid, appScope, { firebaseAuth.currentUser?.uid }, syncManager::bind,
+                )
             }
 
             // GitHub update probe — runs in parallel with the splash animation, bounded by

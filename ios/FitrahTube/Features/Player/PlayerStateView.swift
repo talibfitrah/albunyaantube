@@ -41,12 +41,6 @@ enum PlayerStateCopy {
                 return Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
             }
             return Copy(message: String(localized: String.LocalizationValue(messageKey)), showsRetry: true, announces: true)
-        case .unplayable(let messageKey):
-            // No Retry (ruling 14, and the B3 task 5 live pass that found the Retry): the ladder
-            // that produced this refusal produces it again. Announced, because it is a real change
-            // of state a VoiceOver user otherwise only learns from silence.
-            return Copy(message: String(localized: String.LocalizationValue(messageKey)),
-                        showsRetry: false, announces: true)
         case .contentUnavailable:
             // Ruling 14: one non-retryable "not playable" surface for every terminal reason
             // (age-restricted/geo-blocked/private/removed/unavailable) -- `player_stream_unavailable`
@@ -56,17 +50,6 @@ enum PlayerStateCopy {
             let remaining = until.timeIntervalSince(now)
             return Copy(message: cooldownText(remainingSeconds: max(0, remaining), locale: locale),
                        showsRetry: remaining <= 0, announces: remaining > 0)
-        case .embed:
-            // B3 task 4: the embed rung has its own `PlayerScreen` branch (`EmbedRungView`) and must
-            // never reach this shared state view -- ONLINE. Offline it must: loading a `WKWebView`
-            // with no network paints a black frame under a caption claiming something is playing, so
-            // the `.embed` ENTRY is gated on connectivity and lands on the same single offline
-            // surface `.idle`/`.loading`/`.error` already collapse to (I2, B1 final review).
-            guard isOnline else {
-                return Copy(message: String(localized: "connectivity_offline_banner"), showsRetry: true, announces: false)
-            }
-            preconditionFailure("PlayerStateCopy never maps the online embed rung -- PlayerScreen " +
-                                 "mounts EmbedRungView for it (B3 task 4)")
         case .queueEnded:
             // Ruling 33's terminus. No Retry (nothing to retry -- the queue is finished; Back or a
             // remaining Up Next row is the exit), and it is deliberately OUTSIDE the offline gate
@@ -193,14 +176,14 @@ struct PlayerStateView: View {
 #endif
 
 extension View {
-    /// Task 9 + B3 task 4 + B4 task 3: the two announcements `PlayerStateView` can't make itself,
-    /// since neither `.rung2Progressive` nor `.embed` mounts it. ONE site, applied by both
-    /// `PlayerScreen` and `ShortsScreen` (plan §6.11 "every rung transition announced") --
-    /// `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
-    /// transition, so entering `.embed` announces exactly once.
-    func rungAnnouncements(state: StreamState?, isOnline: Bool) -> some View {
-        onChange(of: state) { _, newValue in
-            if let text = PlayerScreen.transitionAnnouncement(for: newValue, isOnline: isOnline) {
+    /// Task 9 + B4 task 3: the announcement `PlayerStateView` can't make itself, since
+    /// `.rung2Progressive` mounts the player, not that view. ONE site, applied by both
+    /// `PlayerScreen` and `ShortsScreen` (plan §6.11 "every rung transition announced").
+    /// `.onChange` fires only on a real transition, so entering `.rung2Progressive` announces
+    /// exactly once.
+    func rungAnnouncements(model: PlayerViewModel?) -> some View {
+        onChange(of: model?.state) { _, _ in
+            if let text = PlayerScreen.transitionAnnouncement(of: model) {
                 AccessibilityNotification.Announcement(text).post()
             }
         }

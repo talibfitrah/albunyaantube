@@ -94,6 +94,8 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     /// ponytail: one Int per id per session, never cleared — clearing would reissue a live
     /// generation to an older task.
     private var generations: [String: Int] = [:]
+    /// Consecutive empty 2xx answers per id in the live walk (fix r5 N4-5); a new walk starts at 0.
+    private var emptyAnswers: [String: Int] = [:]
 
     init(directory: URL, configuration: URLSessionConfiguration) {
         let (stream, continuation) = AsyncStream.makeStream(of: OfflineDownloadEvent.self)
@@ -181,6 +183,7 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
     private func bumpLocked(_ id: String) -> Int {
         let next = (generations[id] ?? generationBase) + 1
         generations[id] = next
+        emptyAnswers[id] = nil
         return next
     }
 
@@ -256,6 +259,19 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
         return Int64(header[header.index(after: slash)...].trimmingCharacters(in: .whitespaces))
     }
 
+    /// Stage 3c S4-1: where a 206's `Content-Range` starts, if it names a real span -- `bytes a-b/total`
+    /// with `b >= a` and a total that is `*` (unknown; the walk then fails resumably after writing,
+    /// see `didFinishDownloadingTo`) or a size past `b`. nil for anything else, a missing header
+    /// included: network input the walk cannot place, never written. Whether `a` is the offset this
+    /// chunk asked for is the caller's check (r2 O3: a misaligned start restarts the walk clean).
+    nonisolated static func contentRangeStart(_ header: String?) -> Int64? {
+        guard let header, header.hasPrefix("bytes "), let slash = header.lastIndex(of: "/") else { return nil }
+        let span = header[header.index(header.startIndex, offsetBy: 6)..<slash].split(separator: "-", omittingEmptySubsequences: false)
+        guard span.count == 2, let start = Int64(span[0]), let end = Int64(span[1]), end >= start else { return nil }
+        let total = header[header.index(after: slash)...]
+        return total == "*" || Int64(total).map { $0 > end } == true ? start : nil
+    }
+
     /// `bytes=10485760-20971519` → 10485760 (the chunk's own start, i.e. the `.tmp` size it appends to).
     nonisolated static func offset(fromRangeHeader header: String?) -> Int64 {
         guard let header, let equals = header.firstIndex(of: "="),
@@ -265,8 +281,14 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
 
     private func partialURL(_ id: String) -> URL { directory.appending(path: "\(id).tmp") }
 
-    private func partialSize(_ id: String) -> Int64 {
-        (try? FileManager.default.attributesOfItem(atPath: partialURL(id).path())[.size] as? Int64) ?? 0
+    /// `path(percentEncoded: false)`, never `path()`: the app's directory is `Library/Application
+    /// Support/offline`, and an encoded `%20` names no file — the size read 0 after every chunk and
+    /// the walk re-issued chunk one forever (1.0.3).
+    private func partialSize(_ id: String) -> Int64 { Self.fileSize(partialURL(id)) }
+
+    /// 0 for a missing or unreadable file too.
+    nonisolated static func fileSize(_ url: URL) -> Int64 {
+        (try? FileManager.default.attributesOfItem(atPath: url.path(percentEncoded: false))[.size] as? Int64) ?? 0
     }
 
     private static func token(for task: URLSessionTask) -> Data? {
@@ -325,13 +347,24 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             return
         }
         let expectedOffset = Self.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
+        // Stage 3c S4-1: a 206 whose `Content-Range` names no real span (a `/0` or `/-1` total called a
+        // 5-byte prefix a saved file) is never written. It fails through the resumable arm (the
+        // partial untouched, the token kept), as a transport failure would.
+        let rangeStart = Self.contentRangeStart(response?.value(forHTTPHeaderField: "Content-Range"))
+        if status != 200, rangeStart == nil {
+            continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
+            return
+        }
         do {
             try OfflineManager.prepareDirectory(directory)
             let partial = partialURL(id)
             // The file and the chunk must agree on the offset in BOTH branches (a stale relaunch
             // task): `partialSize` is 0 with no partial, so a missing file demands a chunk that
             // starts at 0 — otherwise the walk wrote a file beginning mid-stream and completed it.
-            guard status == 200 || partialSize(id) == expectedOffset else {
+            // The server's answer must start there too (stage 3c S4-1): appended elsewhere it corrupts
+            // the media. Restarting clean (r2 O3) lets the Retry self-heal from 0, where keeping the
+            // partial asked the same misaligned offset on every Retry.
+            guard status == 200 || (partialSize(id) == expectedOffset && rangeStart == expectedOffset) else {
                 throw CocoaError(.fileWriteUnknown)   // restart cleanly
             }
             // Adversarial r1 P3-5: `isCurrent` was consulted ONCE at entry and released
@@ -342,8 +375,22 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // pause/cancel in the app on it — so this NARROWS the window rather than closing it;
             // the `.tmp` a loser can still leave is deleted by the next `start` (CF-D-10).
             guard isCurrent(id, generation) else { return }
+            // Fix r5 N4-5: a 2xx with an empty body adds nothing. An empty 200 replaced the partial
+            // with zero bytes and "finished" a 0-byte file; an empty 206 left the partial where it
+            // was, so the walk asked the same range again, at once, for as long as the server kept
+            // answering empty. Both fail resumably instead, the partial and the token kept: a 200
+            // at once, a 206 on the second empty answer in a row.
+            let empty = Self.fileSize(location) == 0
+            let emptyStreak = stateLock.withLock { () -> Int in
+                emptyAnswers[id] = empty ? emptyAnswers[id, default: 0] + 1 : 0
+                return emptyAnswers[id]!
+            }
+            if empty, status == 200 || emptyStreak >= 2 {
+                continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))
+                return
+            }
             // A 200 means the server ignored the Range and sent the whole body: it replaces.
-            if status == 200 || !FileManager.default.fileExists(atPath: partial.path()) {
+            if status == 200 || !FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)) {
                 try? FileManager.default.removeItem(at: partial)
                 try FileManager.default.moveItem(at: location, to: partial)
             } else {
@@ -361,9 +408,9 @@ nonisolated final class ProgressiveEngine: NSObject, OfflineEngine, URLSessionDo
             // so this is "says nothing", not "did nothing".
             guard isCurrent(id, generation) else { return }
             continuation.yield(.progress(id: id, bytesWritten: written, totalBytes: total))
-            // No parseable total (missing `Content-Range`, or `bytes 0-x/*` from a proxy or CDN
-            // edge that strips the length): the walk cannot know it is done, and calling a 10 MB
-            // partial `.finished` renames it to the final file and shows the row as saved. Fail
+            // No parseable total (`bytes 0-x/*` from a proxy or CDN edge that strips the length; a
+            // missing `Content-Range` never gets here): the walk cannot know it is done, and calling
+            // a 10 MB partial `.finished` renames it to the final file and shows the row as saved. Fail
             // with the resume token instead — the `.tmp` stays, so a retry continues from it.
             guard let total else {
                 continuation.yield(.failed(id: id, failure: .network(resumeData: Self.token(for: downloadTask))))

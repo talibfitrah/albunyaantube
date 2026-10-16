@@ -169,8 +169,10 @@ struct OfflineManagerTests {
         let engine = FakeOfflineEngine()
         let resolver = RecordingResolver(outcome)
         let flags = Flags()
+        // Round 1 / M1: a SPACE in the base, as production's `Library/Application Support` has —
+        // every path lookup a fix-up missed shows here, not only on a device.
         let base = previous?.base ?? FileManager.default.temporaryDirectory
-            .appending(path: "OfflineManagerTests-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "OfflineManagerTests-\(UUID().uuidString) Application Support", directoryHint: .isDirectory)
         let manager = OfflineManager(
             store: store, engine: engine, resolver: resolver,
             limiterCheck: { id in
@@ -218,11 +220,12 @@ struct OfflineManagerTests {
         return rig.persisted(videoId: videoId)?.id ?? "missing"
     }
 
-    /// Bounded poll (the `RecordingResolver.waitUntilCalled` shape, ~2 s).
+    /// Bounded poll on a 10 s deadline (the `RecordingResolver.waitUntilCalled` shape), left at once
+    /// by a cancelled task (fix r4 N-3).
     private func waitUntil(_ condition: () -> Bool, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if condition() { return }
-            try? await Task.sleep(for: .milliseconds(1))
+        let deadline = ContinuousClock.now + .seconds(10)
+        while !condition(), ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
         }
         #expect(condition(), "condition never became true", sourceLocation: sourceLocation)
     }
@@ -237,12 +240,26 @@ struct OfflineManagerTests {
         #expect(OfflineMetadata(args: args, userId: "").channelId == Self.channelId)
     }
 
+    /// iOS pipeline stage 5 F1: the offline player's favourite needs the duration and channel name
+    /// the streaming player had (the backend refuses a blank channel), so the save carries both
+    /// from the player's args onto the row.
+    @Test func theSaveStampsThePlayersDurationAndChannelNameOnTheRow() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let args = PlayerArgs(videoId: Self.lectureVideoId, title: "Lecture", channelName: "Channel",
+                              durationSeconds: 754)
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true,
+                               metadata: OfflineMetadata(args: args, userId: ""))
+        let row = try #require(rig.persisted(videoId: Self.lectureVideoId))
+        #expect(row.durationSeconds == 754)
+        #expect(row.channelName == "Channel")
+    }
+
     /// Review P1: only the Save button asked about the channel, so a channel pulled after the save
     /// left the copy in place and `begin` still downloaded unfinished rows on Resume/relaunch. The
     /// save stamps the channel on the row, and `begin`, `retry` and `sweep` each ask the gate about
     /// it; a row written before V7 (nil) keeps the video-only question.
     @Test func everyGateConsultAsksAboutTheRowsChannel() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         var metadata = Self.metadata
         metadata.channelId = Self.channelId
         await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
@@ -262,14 +279,34 @@ struct OfflineManagerTests {
 
     // MARK: - Resolve path
 
-    @Test func aCacheWarmAudioOnlySaveReachesTheEngineWithTheItag140URL() async throws {
+    /// Fix r4 N-1: an audio-only save takes the plain, cache-first walk, so the common save (the
+    /// player already resolved this video) sends no POST. The HLS walk is only the fallback below.
+    @Test func anAudioOnlySaveTakesThePlainWalkAndTheItag140ReachesTheEngine() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
         let id = await save(rig)
-        #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false)])
+        #expect(rig.resolver.calls == [.init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch,
+                                             forceRefresh: false)])
         #expect(rig.engine.starts.count == 1)
         #expect(rig.engine.starts.first?.id == id)
         #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
         #expect(rig.engine.starts.first?.userAgent == "UA")
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
+    }
+
+    /// Cubic C2 / fix r4 N-1: after a step-down the plain walk answers ANDROID's `.progressive`, which
+    /// has no itag 140. Only then does the save ask for the HLS shape (`requiresHLS: true`), which a
+    /// step-down cannot block (the resolver half is
+    /// `StreamResolverTests.anHLSWalkAfterADemotionSkipsAndroidAndYieldsTheItag140`).
+    @Test func anAudioOnlySaveAnsweredWithoutItag140AsksForTheHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        let id = await save(rig)
+        #expect(rig.resolver.calls == [
+            .init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false),
+            .init(videoId: Self.lectureVideoId, kind: .prefetch, purpose: .prefetch, forceRefresh: false,
+                  requiresHLS: true)])
+        #expect(rig.engine.starts.count == 1)
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
         #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
     }
 
@@ -293,8 +330,8 @@ struct OfflineManagerTests {
     /// Muxed save-walk (owner ruling 2026-09-01, replaces the old "HLS rung → NO_STREAM" pin):
     /// a VIDEO save demands the muxed itag 18 from the resolver (`requiresMuxed: true` — the
     /// resolver's ladder skips the HLS rung for it), and the `.progressive` answer reaches the
-    /// engine. An audio-only save keeps `requiresMuxed: false` (it needs visionos's itag-140
-    /// `audioOnlyURL`) — pinned by `aCacheWarmAudioOnlySaveReachesTheEngineWithTheItag140URL`.
+    /// engine. An audio-only save takes the plain walk instead (it needs visionos's itag-140
+    /// `audioOnlyURL`) — pinned by `anAudioOnlySaveTakesThePlainWalkAndTheItag140ReachesTheEngine`.
     @Test func aVideoSaveRequiresMuxedAndTheProgressiveAnswerReachesTheEngine() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig, audioOnly: false)
@@ -332,46 +369,77 @@ struct OfflineManagerTests {
         #expect(await rig.manager.pendingRetryIds == [id])
     }
 
-    @Test func anEmbedOutcomeFailsNotSaveableWithNoEngineCall() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
-        let id = await save(rig)
-        #expect(rig.engine.starts.isEmpty)
-        let row = try #require(rig.persisted(id: id))
-        #expect(row.status == OfflineStatus.failed.rawValue)
-        #expect(row.errorCode == "NOT_SAVEABLE")
-    }
-
-    /// Cubic P2: an audio-only save resolves WITHOUT `requiresMuxed`, so it reads the shared
-    /// `ManifestCache` — which may hold a player fallback walk's `.progressive` (nil
-    /// `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would return
-    /// `.hls` with itag-140. The manager must re-resolve ONCE with `forceRefresh: true` (a
-    /// forced walk never reads the cache) before failing.
-    @Test func anAudioOnlySaveHittingAProgressiveCacheShapeReResolvesForcedAndStarts() async throws {
-        let rig = makeRig(.progressive); defer { rig.cleanUp() }
-        rig.resolver.hold(Self.lectureVideoId)
-        let saveTask = Task { await save(rig) }
-        await rig.resolver.waitUntilCalled(count: 1)   // call 1 captured .progressive (the cache shape)
-        rig.resolver.outcome = .hls                    // what a fresh walk would return
-        rig.resolver.release(id: Self.lectureVideoId)
-        await rig.resolver.waitUntilCalled(count: 2)
-        rig.resolver.release(id: Self.lectureVideoId)
-        let id = await saveTask.value
-        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
-        #expect(rig.engine.starts.count == 1)
-        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
-        #expect(rig.persisted(id: id)?.status == OfflineStatus.running.rawValue)
-    }
-
-    /// Cubic P2, the bound: when the FORCED re-resolve still yields no audio URL, the row fails
-    /// NO_STREAM after exactly two resolves — never a loop.
-    @Test func anAudioOnlySaveWhoseForcedReResolveStillLacksAudioFailsNoStream() async throws {
+    /// The bound: when the HLS walk still yields no itag 140, the row fails NO_STREAM after exactly
+    /// two resolves (the plain walk, then the HLS walk), never a loop.
+    @Test func anAudioOnlySaveWhoseHLSWalkStillLacksAudioFailsNoStream() async throws {
         let rig = makeRig(.progressive); defer { rig.cleanUp() }
         let id = await save(rig)
-        #expect(rig.resolver.calls.map(\.forceRefresh) == [false, true])
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
         #expect(rig.engine.starts.isEmpty)
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue)
         #expect(row.errorCode == "NO_STREAM")
+    }
+
+    /// Fix r5 N4-2 (controller ruling, option b): a bot check on the audio-only HLS fallback fails the
+    /// row with the retryable "try again later" error instead of parking it, so no 1 s re-walk feeds
+    /// the shared cooldown (the resolver records no trip for it either:
+    /// `StreamResolverTests.aBotCheckedHLSWalkNeverArmsTheCooldown`). A Retry starts it over.
+    @Test func aBotCheckedHLSFallbackFailsTheRowRetryablyInsteadOfParking() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .failure(.botCheck)
+        let id = await save(rig)
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue)
+        #expect(row.errorCode == "HTTP_429")
+        #expect(await rig.manager.pendingRetryIds.isEmpty, "a parked row walks again in 1 s and trips again")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Fix r5 N4-3: a cancel that lands while the plain walk is out must not still spend the HLS walk.
+    @Test func aCancelDuringThePlainWalkSpendsNoHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        rig.resolver.hold(Self.lectureVideoId)
+        let saving = Task { await save(rig) }
+        await rig.resolver.waitUntilCalled(count: 1)                 // the plain walk is out
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+        await rig.manager.cancel(id)
+        rig.resolver.release(id: Self.lectureVideoId)
+        rig.resolver.release(id: Self.lectureVideoId)                // a wrong HLS walk's own hold, if any
+        _ = await saving.value
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false], "the cancelled save still sent the HLS walk")
+        #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Fix r5 N4-4: after a step-down, an audio-only save's FORCED walk (the 403 retry) goes straight
+    /// to the HLS shape. A forced plain walk only fetched ANDROID's `.progressive` to throw it away
+    /// (and cancelled a player resolve in flight through single-flight on the way).
+    @Test func aSteppedDownAudioOnly403RetryAsksForTheHLSWalkDirectly() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        let id = await save(rig)
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        await rig.manager.handle(.failed(id: id, failure: .http(status: 403, resumeData: nil)))
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true, true])
+        #expect(rig.resolver.calls.last?.forceRefresh == true)
+        #expect(rig.engine.starts.count == 2)
+        #expect(rig.engine.starts.last?.url.absoluteString == "https://r1/a140")
+    }
+
+    /// Fix r5 N4-4, the expiry half: a cached ANDROID manifest about to expire is not refreshed with a
+    /// forced plain walk first; the HLS walk is fresh by construction.
+    @Test func aSteppedDownAudioOnlySaveSkipsTheExpiryRefreshForTheHLSWalk() async throws {
+        let rig = makeRig(.progressive); defer { rig.cleanUp() }
+        rig.resolver.hlsOutcome = .hls
+        rig.flags.now = Date().addingTimeInterval(3300)               // 300 s left on the cached answer
+        _ = await save(rig)
+
+        #expect(rig.resolver.calls.map(\.requiresHLS) == [false, true])
+        #expect(rig.engine.starts.first?.url.absoluteString == "https://r1/a140")
     }
 
     @Test func anExpiryUnderTenMinutesForcesExactlyOneRefreshBeforeTheEngine() async throws {
@@ -641,12 +709,12 @@ struct OfflineManagerTests {
 
         #expect(rig.persisted(id: id) == nil, "never a Saved row whose file the cancel already deleted")
         let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
-        #expect(!FileManager.default.fileExists(atPath: file.path()))
-        #expect(!FileManager.default.fileExists(atPath: rig.directory.appending(path: "\(id).tmp").path()))
+        #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: rig.directory.appending(path: "\(id).tmp").path(percentEncoded: false)))
     }
 
     @Test func retryRequeuesAFailedRowAndResolvesAgain() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         rig.flags.gate = .allowed   // retry re-consults the per-video gate (gstack P0)
         let id = await save(rig)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
@@ -665,7 +733,7 @@ struct OfflineManagerTests {
     /// partial with it: a failed row has nothing worth keeping, and a revoked gate removes copies.
     @Test(arguments: [GateAnswer.notAllowed, GateAnswer.gone])
     func aRetryWhoseGateRefusesDeletesTheRowAndItsPartial(gate: GateAnswer) async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         let id = await save(rig)
         #expect(rig.persisted(id: id)?.status == OfflineStatus.failed.rawValue)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
@@ -677,7 +745,7 @@ struct OfflineManagerTests {
         await rig.manager.retry(id)
 
         #expect(rig.persisted(id: id) == nil, "a revoked gate removes the row, not just the start")
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()))
+        #expect(!FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)))
         #expect(rig.engine.starts.isEmpty)
         #expect(rig.resolver.calls.count == 1, "the refused retry never resolved")
     }
@@ -690,7 +758,7 @@ struct OfflineManagerTests {
     /// Retry button read as broken. The status and the partial are untouched; the error code
     /// becomes the network one, which is what the row's caption renders.
     @Test func aRetryWithAnUnreachableGateIsRefusedAndTheRowStaysFailed() async throws {
-        let rig = makeRig(.embed); defer { rig.cleanUp() }
+        let rig = makeRig(.failure(.allRungsFailed)); defer { rig.cleanUp() }
         let id = await save(rig)
         try FileManager.default.createDirectory(at: rig.directory, withIntermediateDirectories: true)
         let tmp = rig.directory.appending(path: "\(id).tmp")
@@ -703,7 +771,7 @@ struct OfflineManagerTests {
         let row = try #require(rig.persisted(id: id))
         #expect(row.status == OfflineStatus.failed.rawValue, "the refusal changes no status")
         #expect(row.errorCode == "NETWORK", "a refused retry must leave the reason on the row")
-        #expect(FileManager.default.fileExists(atPath: tmp.path()))
+        #expect(FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)))
         #expect(rig.engine.starts.isEmpty)
         #expect(rig.resolver.calls.count == 1)
     }
@@ -778,7 +846,7 @@ struct OfflineManagerTests {
         #expect(SavedRowText.captionKey(status: .failed, errorCode: row.errorCode) == "offline_not_saveable")
         #expect(row.resumeData == Data("RD".utf8), "a transient drift that clears must not cost a re-download")
         #expect(await rig.manager.pendingRetryIds.isEmpty, "a refused row waits for the sweep or a Retry, not a timer")
-        #expect(FileManager.default.fileExists(atPath: tmp.path()), "the partial waits for the belted sweep")
+        #expect(FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)), "the partial waits for the belted sweep")
         #expect(rig.engine.starts.isEmpty, "fail-closed still holds: nothing is written")
         #expect(rig.resolver.calls.isEmpty)
     }
@@ -1128,8 +1196,8 @@ struct OfflineManagerTests {
         #expect(row.bytesWritten == 4_321)
         #expect(row.completedAt != nil)
         let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
-        #expect(FileManager.default.fileExists(atPath: file.path()))
-        #expect(!FileManager.default.fileExists(atPath: rig.directory.appending(path: "\(id).tmp").path()))
+        #expect(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: rig.directory.appending(path: "\(id).tmp").path(percentEncoded: false)))
     }
 
     @Test func eventsFromTheEngineStreamReachTheManager() async throws {
@@ -1167,9 +1235,9 @@ struct OfflineManagerTests {
         try Data("x".utf8).write(to: rig.directory.appending(path: "\(id).tmp"))
         await rig.manager.handle(.finished(id: id))
         let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
-        #expect(FileManager.default.fileExists(atPath: file.path()))
+        #expect(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
         await rig.manager.delete(id)
-        #expect(!FileManager.default.fileExists(atPath: file.path()))
+        #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
         #expect(rig.persisted(id: id) == nil)
         #expect(rig.rowCount() == 0)
     }
@@ -1198,7 +1266,7 @@ struct OfflineManagerTests {
 
         #expect(rig.persisted(id: id) == nil)
         #expect(!FileManager.default.fileExists(
-            atPath: OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base).path()),
+            atPath: OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base).path(percentEncoded: false)),
                 "a moved file whose row is gone is unreachable — nothing enumerates the directory")
     }
 
@@ -1213,7 +1281,7 @@ struct OfflineManagerTests {
 
         await rig.manager.delete(id)
 
-        #expect(!FileManager.default.fileExists(atPath: file.path()))
+        #expect(!FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
         #expect(rig.persisted(id: id) == nil)
     }
 
@@ -1225,13 +1293,13 @@ struct OfflineManagerTests {
         try Data("x".utf8).write(to: rig.directory.appending(path: "\(old).tmp"))
         await rig.manager.handle(.finished(id: old))
         let oldFile = OfflineStorage.fileURL(relativePath: "\(old).m4a", base: rig.base)
-        #expect(FileManager.default.fileExists(atPath: oldFile.path()))
+        #expect(FileManager.default.fileExists(atPath: oldFile.path(percentEncoded: false)))
 
         let new = await save(rig, audioOnly: true)
         #expect(new != old)
         #expect(rig.rowCount() == 1)
         #expect(rig.engine.cancels == [old])
-        #expect(!FileManager.default.fileExists(atPath: oldFile.path()))
+        #expect(!FileManager.default.fileExists(atPath: oldFile.path(percentEncoded: false)))
         #expect(rig.engine.starts.map(\.id) == [old, new])
     }
 
@@ -1347,7 +1415,7 @@ struct OfflineManagerTests {
         #expect(row.localPath == "\(item.id).m4a")
         #expect(row.bytesWritten == 2_048)
         let file = OfflineStorage.fileURL(relativePath: "\(item.id).m4a", base: rig.base)
-        #expect(FileManager.default.fileExists(atPath: file.path()))
+        #expect(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
     }
 
     /// Fix-first F1: a re-attached claim must carry an attempt token like `begin`'s. Without it,
@@ -1932,7 +2000,7 @@ struct OfflineManagerTests {
             }
             engine.cancelHeld = []
             for _ in 0..<2000 {
-                if !FileManager.default.fileExists(atPath: tmp.path()) { break }
+                if !FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)) { break }
                 try? await Task.sleep(for: .milliseconds(1))
             }
             flags.wifiOnlyRelease.signal()
@@ -2072,7 +2140,7 @@ struct OfflineManagerTests {
         #expect(row.localPath == "\(id).m4a")
         #expect(row.resumeData == nil)
         let file = OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base)
-        #expect(FileManager.default.fileExists(atPath: file.path()))
+        #expect(FileManager.default.fileExists(atPath: file.path(percentEncoded: false)))
     }
 
     // MARK: - Engine kill switch (finding 3: cancel/pause must hold at a chunk boundary,
@@ -2091,8 +2159,9 @@ struct OfflineManagerTests {
     private func makeStubbedEngine(_ protocolClass: AnyClass = FailingURLProtocol.self,
                                    name: String = "OfflineEngineKillSwitch")
         -> (engine: ProgressiveEngine, directory: URL) {
+        // Round 1 / M1: the base carries production's space too (`makeRig`'s note).
         let base = FileManager.default.temporaryDirectory
-            .appending(path: "\(name)-\(UUID().uuidString)", directoryHint: .isDirectory)
+            .appending(path: "\(name)-\(UUID().uuidString) Application Support", directoryHint: .isDirectory)
         let configuration = URLSessionConfiguration.ephemeral
         configuration.protocolClasses = [protocolClass]
         let directory = OfflineStorage.directoryURL(base: base)
@@ -2121,9 +2190,9 @@ struct OfflineManagerTests {
 
         engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
 
-        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path()),
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path(percentEncoded: false)),
                 "a cancelled walk must not append the straggler chunk")
-        #expect(FileManager.default.fileExists(atPath: location.path()),
+        #expect(FileManager.default.fileExists(atPath: location.path(percentEncoded: false)),
                 "the delegate must bail before consuming the chunk")
     }
 
@@ -2159,6 +2228,93 @@ struct OfflineManagerTests {
             client?.urlProtocol(self, didLoad: Data("chunk".utf8))
             client?.urlProtocolDidFinishLoading(self)
         }
+    }
+
+    /// Serves the WHOLE file in one 206 (`Content-Range: bytes 0-4/5`): the walk's last chunk.
+    nonisolated final class WholeFileChunkURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes 0-4/5"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// 1.0.3 (found by the live check): the production offline directory is
+    /// `Library/Application Support/offline`, and `URL.path()` percent-encodes its space, so the
+    /// engine's size lookup missed the `.tmp` it had just written, read 0 bytes, and re-issued
+    /// chunk one forever (measured on the simulator: one 679 KB lecture downloaded 1,908 times in
+    /// three minutes, never finished). Every other engine test ran in a temp directory with no space.
+    @Test func theLastChunkFinishesTheWalkInAProductionShapedDirectory() async throws {
+        let base = FileManager.default.temporaryDirectory
+            .appending(path: "OfflineEngineSpaces-\(UUID().uuidString)/Application Support", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: base.deletingLastPathComponent()) }
+        let configuration = URLSessionConfiguration.ephemeral
+        configuration.protocolClasses = [FailingURLProtocol.self]   // a next chunk, if issued, fails
+        let directory = OfflineStorage.directoryURL(base: base)
+        let engine = ProgressiveEngine(directory: directory, configuration: configuration)
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "spaced-\(UUID().uuidString)"
+        let (task, side) = await runSideTask(WholeFileChunkURLProtocol.self,
+                                             url: URL(string: "https://example.invalid/media?itag=18")!, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { event in
+            switch event {
+            case .finished(let finished): finished == id
+            case .failed(let failed, _): failed == id
+            default: false
+            }
+        } }
+
+        #expect(collector.events.contains { if case .finished(let finished) = $0 { finished == id } else { false } },
+                "the walk never finished: \(collector.events)")
+        let tmp = directory.appending(path: "\(id).tmp")
+        #expect((try? Data(contentsOf: tmp))?.count == 5)
+    }
+
+    /// Serves five bytes AT the request's own `Range` offset of a TEN-byte file: two chunks.
+    nonisolated final class TenByteFileURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let offset = ProgressiveEngine.offset(fromRangeHeader: request.value(forHTTPHeaderField: "Range"))
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": "bytes \(offset)-\(offset + 4)/10"])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// Round 1 / M1: the APPEND branch (`OfflineEngine`'s `fileExists` on the partial). With the
+    /// encoded path the second chunk found "no partial" in production's directory and REPLACED
+    /// the first chunk's bytes, so a multi-chunk walk never assembled its file.
+    @Test func theSecondChunkAppendsInAProductionShapedDirectory() async throws {
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineAppend")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        #expect(directory.path(percentEncoded: false).contains(" "), "the premise: a production-shaped path")
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "append-\(UUID().uuidString)"
+        let url = URL(string: "https://example.invalid/media?itag=18")!
+
+        for (offset, bytes) in [(Int64(0), "first"), (Int64(5), "secon")] {
+            let (task, side) = await runSideTask(TenByteFileURLProtocol.self, url: url, offset: offset, description: id)
+            let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+            try Data(bytes.utf8).write(to: location)
+            engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        }
+        await waitUntil { collector.events.contains { if case .finished(let finished) = $0 { finished == id } else { false } } }
+        await engine.cancel(id: id)   // the hanging next-chunk task the first chunk issued
+
+        let tmp = directory.appending(path: "\(id).tmp")
+        #expect((try? Data(contentsOf: tmp)).map { String(decoding: $0, as: UTF8.self) } == "firstsecon",
+                "the second chunk replaced the first instead of appending")
     }
 
     /// Review F4: only `start`/`resume` registered `walks[id]` — a relaunch-re-attached walk
@@ -2324,9 +2480,9 @@ struct OfflineManagerTests {
             case .progress(let eventId, _, _), .finished(let eventId), .failed(let eventId, _): return eventId == id
             }
         }, "a superseded walk's chunk must yield nothing at all")
-        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path()),
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path(percentEncoded: false)),
                 "the straggler's bytes must never land in the new walk's partial")
-        #expect(FileManager.default.fileExists(atPath: location.path()),
+        #expect(FileManager.default.fileExists(atPath: location.path(percentEncoded: false)),
                 "the delegate must bail before consuming the chunk")
     }
 
@@ -2410,7 +2566,7 @@ struct OfflineManagerTests {
             }
         }, "a chunk from a walk this launch never issued must yield nothing at all")
         #expect((try? Data(contentsOf: tmp))?.count == 5, "and it must never cost the partial it collided with")
-        #expect(FileManager.default.fileExists(atPath: location.path()),
+        #expect(FileManager.default.fileExists(atPath: location.path(percentEncoded: false)),
                 "the delegate must bail before consuming the chunk")
     }
 
@@ -2434,7 +2590,7 @@ struct OfflineManagerTests {
 
         await engine.start(id: id, url: URL(string: "https://example.invalid/other")!,
                            userAgent: "UA", allowsCellular: true)
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()),
+        #expect(!FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)),
                 "a different stream must never splice onto the old bytes")
     }
 
@@ -2470,14 +2626,14 @@ struct OfflineManagerTests {
         try Data("chunk".utf8).write(to: location)
         defer { try? FileManager.default.removeItem(at: location) }
         let tmp = directory.appending(path: "\(id).tmp")
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()), "the premise: the partial is gone")
+        #expect(!FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)), "the premise: the partial is gone")
 
         engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
 
         await waitUntil { collector.events.contains { if case .failed = $0 { return true }; return false } }
         #expect(!collector.events.contains { if case .progress = $0 { return true }; return false },
                 "a chunk that starts mid-stream must never become the file's first bytes")
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()),
+        #expect(!FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)),
                 "the mismatched chunk must not be left on disk as the partial")
     }
 
@@ -2552,7 +2708,7 @@ struct OfflineManagerTests {
         await waitUntil { collector.events.contains { if case .finished = $0 { return true }; return false } }
         #expect(!collector.events.contains { if case .failed = $0 { return true }; return false },
                 "a complete partial must never be reported as a failure the retry re-issues")
-        #expect(FileManager.default.fileExists(atPath: tmp.path()),
+        #expect(FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)),
                 "the finished bytes stay for the manager to move")
     }
 
@@ -2585,7 +2741,7 @@ struct OfflineManagerTests {
         }
         #expect(status == 416)
         #expect(resumeData == nil, "keeping the token is what made the 416 loop forever")
-        #expect(!FileManager.default.fileExists(atPath: tmp.path()),
+        #expect(!FileManager.default.fileExists(atPath: tmp.path(percentEncoded: false)),
                 "the unusable partial must go, or the restart is not a restart")
     }
 
@@ -2699,6 +2855,171 @@ struct OfflineManagerTests {
         #expect(resumeData != nil, "without the token the retry restarts the walk from zero")
     }
 
+    /// Fix r5 N4-5: a 206 that carries no bytes leaves the `.tmp` where it was, and the walk asked for
+    /// the same range again, at once, for as long as the server kept answering empty. The second
+    /// empty answer in a row fails resumably instead (the partial and the token kept).
+    @Test func twoEmptyChunksInARowFailResumablyInsteadOfLooping() async throws {
+        let (engine, directory) = makeStubbedEngine(HangingURLProtocol.self, name: "OfflineEngineEmpty206")
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "empty-206-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)                           // 5 of 10 bytes on disk
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+
+        for _ in 0..<2 {                                                    // the same range, empty twice
+            let (task, side) = await runSideTask(TenByteFileURLProtocol.self, url: url, offset: 5, description: id)
+            let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+            try Data().write(to: location)
+            defer { try? FileManager.default.removeItem(at: location) }
+            engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        }
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+        await engine.cancel(id: id)                                         // the hanging re-request, if any
+
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("expected the resumable transport failure, got \(failure)"); return
+        }
+        #expect(resumeData != nil, "without the token the retry restarts from zero")
+        #expect((try? Data(contentsOf: partial))?.count == 5, "the partial is the resume point")
+    }
+
+    /// Serves an empty 200: the server ignored the `Range` and answered "the whole file" with nothing.
+    nonisolated final class EmptyWholeFileURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let response = HTTPURLResponse(url: request.url!, statusCode: 200, httpVersion: nil, headerFields: [:])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// Fix r5 N4-5: a 200 replaces the partial with its body, so an EMPTY 200 became a 0-byte `.tmp`
+    /// whose total (`written`) it had just met: `.finished`, and the row showed a 0-byte file as saved.
+    /// It fails resumably instead, before touching the partial.
+    @Test func anEmptyWholeFileAnswerFailsInsteadOfSavingZeroBytes() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "empty-200-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)
+        let url = URL(string: "https://example.invalid/media?itag=140")!
+        let (task, side) = await runSideTask(EmptyWholeFileURLProtocol.self, url: url, offset: 5, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data().write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { event in
+            switch event { case .failed, .finished: true; default: false }
+        } }
+
+        #expect(!collector.events.contains { if case .finished = $0 { true } else { false } },
+                "an empty answer was saved as a 0-byte file")
+        #expect(collector.events.contains { if case .failed(_, .network(let token)) = $0 { token != nil } else { false } })
+        #expect((try? Data(contentsOf: partial))?.count == 5, "the empty answer replaced the partial")
+    }
+
+    /// Serves five bytes as a 206 whose `Content-Range` is the request URL's `cr` query item,
+    /// verbatim -- per request, so parallel tests never share a script.
+    nonisolated final class ScriptedRangeURLProtocol: StubURLProtocol {
+        override func startLoading() {
+            let header = URLComponents(url: request.url!, resolvingAgainstBaseURL: false)?
+                .queryItems?.first { $0.name == "cr" }?.value ?? ""
+            let response = HTTPURLResponse(url: request.url!, statusCode: 206, httpVersion: nil,
+                                           headerFields: ["Content-Range": header])!
+            client?.urlProtocol(self, didReceive: response, cacheStoragePolicy: .notAllowed)
+            client?.urlProtocol(self, didLoad: Data("chunk".utf8))
+            client?.urlProtocolDidFinishLoading(self)
+        }
+    }
+
+    /// Stage 3c S4-1: `Content-Range` is input from the network. A 206 that does not start at the
+    /// requested offset, or whose total is not a real size past its own end, is never written (a
+    /// misaligned append corrupts the media; a `/0` or `/-1` total called a 5-byte prefix saved).
+    /// Each fails resumably, the token kept. A misaligned start (the first argument) also restarts
+    /// the walk clean, deleting the partial (O3, `aMisalignedChunkRestartsTheWalkCleanInsteadOfKeepingThePartial`;
+    /// no partial is staged here); the other four leave the partial as it was.
+    @Test(arguments: ["bytes 5-9/10",          // starts away from the requested offset 0
+                      "bytes 0-4/0",           // no size at all
+                      "bytes 0-4/-1",          // a negative size
+                      "bytes 0-4/3",           // a size that ends before the chunk does
+                      ""])                     // no range to check
+    func aChunkWhoseContentRangeDoesNotFitTheRequestIsNeverWritten(contentRange: String) async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "bad-range-\(UUID().uuidString)"
+        var components = URLComponents(string: "https://example.invalid/media?itag=140")!
+        components.queryItems?.append(URLQueryItem(name: "cr", value: contentRange))
+        let (task, side) = await runSideTask(ScriptedRangeURLProtocol.self, url: components.url!, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+
+        #expect(!collector.events.contains { if case .finished = $0 { true } else { false } },
+                "\(contentRange): reported finished")
+        #expect(!FileManager.default.fileExists(atPath: directory.appending(path: "\(id).tmp").path(percentEncoded: false)),
+                "\(contentRange): the chunk was written")
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("\(contentRange): expected the resumable transport failure, got \(failure)")
+            return
+        }
+        #expect(resumeData != nil, "\(contentRange): without the token the retry restarts from zero")
+    }
+
+    /// Stage 7 r2 O3: a 206 that starts away from the requested offset takes the walk's restart-clean
+    /// arm: the partial goes, so the Retry starts at 0 and self-heals, instead of asking for the same
+    /// misaligned answer on every Retry. Still resumable (the token keeps the URL), still unwritten.
+    @Test func aMisalignedChunkRestartsTheWalkCleanInsteadOfKeepingThePartial() async throws {
+        let (engine, directory) = makeStubbedEngine()
+        defer { try? FileManager.default.removeItem(at: directory.deletingLastPathComponent()) }
+        let collector = EventCollector()
+        let consumer = collector.consume(engine.events)
+        defer { consumer.cancel() }
+        let id = "misaligned-\(UUID().uuidString)"
+        try OfflineManager.prepareDirectory(directory)
+        let partial = directory.appending(path: "\(id).tmp")
+        try Data("first".utf8).write(to: partial)                       // chunk 1 on disk: 5 bytes
+        var components = URLComponents(string: "https://example.invalid/media?itag=140")!
+        components.queryItems?.append(URLQueryItem(name: "cr", value: "bytes 0-4/10"))   // chunk 1 again
+        let (task, side) = await runSideTask(ScriptedRangeURLProtocol.self, url: components.url!, offset: 5, description: id)
+        let location = FileManager.default.temporaryDirectory.appending(path: "chunk-\(UUID().uuidString)")
+        try Data("chunk".utf8).write(to: location)
+        defer { try? FileManager.default.removeItem(at: location) }
+
+        engine.urlSession(side, downloadTask: task, didFinishDownloadingTo: location)
+        await waitUntil { collector.events.contains { if case .failed = $0 { true } else { false } } }
+
+        #expect(!FileManager.default.fileExists(atPath: partial.path(percentEncoded: false)),
+                "the partial stayed, so every Retry asks the same misaligned offset again")
+        let failure = try #require(collector.events.compactMap { event -> OfflineDownloadFailure? in
+            if case .failed(_, let failure) = event { return failure } else { return nil }
+        }.first)
+        guard case .network(let resumeData) = failure else {
+            Issue.record("expected the resumable transport failure, got \(failure)")
+            return
+        }
+        #expect(resumeData != nil)
+    }
+
     // MARK: - Chunked engine arithmetic (googlevideo throttles single long GETs on adaptive
     // formats to ~playback rate — measured 31 KB/s plain vs 11.4 MB/s for a 10 MB Range, 2026-09-01)
 
@@ -2719,7 +3040,7 @@ struct OfflineManagerTests {
 
     @Test func theFirstEngineStartCreatesTheOfflineDirectoryExcludedFromBackup() async throws {
         let rig = makeRig(.hls); defer { rig.cleanUp() }
-        #expect(!FileManager.default.fileExists(atPath: rig.directory.path()))
+        #expect(!FileManager.default.fileExists(atPath: rig.directory.path(percentEncoded: false)))
         _ = await save(rig)
         let values = try rig.directory.resourceValues(forKeys: [.isExcludedFromBackupKey, .isDirectoryKey])
         #expect(values.isDirectory == true)
@@ -2817,7 +3138,7 @@ struct OfflineManagerTests {
         await saving.value
 
         let landed = rig.persisted(videoId: Self.lectureVideoId)
-        let holdersIntact = rig.persisted(id: holdersId) != nil && FileManager.default.fileExists(atPath: file.path())
+        let holdersIntact = rig.persisted(id: holdersId) != nil && FileManager.default.fileExists(atPath: file.path(percentEncoded: false))
         #expect(landed?.userId == "uid-a" || holdersIntact,
                 "the old copy was torn down and the save that did it was refused: the video is gone")
     }
@@ -2856,13 +3177,13 @@ struct OfflineManagerTests {
         rig.flags.gate = .unreachable
         await rig.manager.sweep()
         #expect(rig.persisted(id: expired.id) == nil)
-        #expect(!FileManager.default.fileExists(atPath: expired.file.path()))
+        #expect(!FileManager.default.fileExists(atPath: expired.file.path(percentEncoded: false)))
         #expect(rig.persisted(id: fresh.id) != nil)
 
         rig.flags.gate = .gone
         await rig.manager.sweep()
         #expect(rig.persisted(id: fresh.id) == nil)
-        #expect(!FileManager.default.fileExists(atPath: fresh.file.path()))
+        #expect(!FileManager.default.fileExists(atPath: fresh.file.path(percentEncoded: false)))
     }
 
     /// gstack P1: the sweep walked `.completed` rows only, so a video pulled from the catalog while
@@ -3024,7 +3345,7 @@ struct OfflineManagerTests {
         let audioOnly: Bool
         switch probe.stream {
         case .hls(_, _, let audioOnlyURL, _): audioOnly = audioOnlyURL != nil
-        case .progressive, .embed: audioOnly = false
+        case .progressive: audioOnly = false
         }
         print("[offline-live] probe client=\(probe.client) stream=\(probe.stream) → audioOnly=\(audioOnly)")
 
@@ -3058,7 +3379,7 @@ struct OfflineManagerTests {
         print("[offline-live] row status=\(row.status) error=\(row.errorCode ?? "nil") bytes=\(row.bytesWritten) localPath=\(row.localPath ?? "nil")")
         #expect(row.status == OfflineStatus.completed.rawValue)
         let file = OfflineStorage.fileURL(relativePath: try #require(row.localPath), base: base)
-        let size = (try? FileManager.default.attributesOfItem(atPath: file.path())[.size] as? Int64) ?? 0
+        let size = (try? FileManager.default.attributesOfItem(atPath: file.path(percentEncoded: false))[.size] as? Int64) ?? 0
         #expect(size > 0)
         let asset = AVURLAsset(url: file)
         let (isPlayable, duration) = try await asset.load(.isPlayable, .duration)

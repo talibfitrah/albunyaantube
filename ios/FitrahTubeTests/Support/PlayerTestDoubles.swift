@@ -19,11 +19,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         var videoId: String; var kind: RequestKind; var purpose: Purpose; var forceRefresh: Bool
         /// Defaulted so the many pre-save-walk call assertions stay as written (they all mean false).
         var requiresMuxed: Bool = false
+        var requiresHLS: Bool = false
     }
 
     /// `liveHLS` is `hls` with `isLive` set -- the only thing that separates a live rung 1 from a
     /// VOD one, and what the cast hand-back's seek has to refuse (R7-18).
-    enum Outcome { case hls, liveHLS, progressive, embed, failure(ExtractionError) }
+    enum Outcome { case hls, liveHLS, progressive, failure(ExtractionError) }
 
     private let holdsUntilReleased: Bool
     private let lock = NSLock()
@@ -44,6 +45,23 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// the stream the player already holds UNLESS it is near expiry, and that margin is the only
     /// thing separating "cast what we have" from "walk the network again".
     private var _expiresIn: TimeInterval = 3600
+    /// Per-video `captionTracks` for the `.hls` answer (the caption carry-over test); default none.
+    private var _captionTracks: [String: [CaptionTrack]] = [:]
+    /// `demote` calls in order, as "videoId:family" (playback hardening, spec §4.1).
+    private var _demotions: [String] = []
+    var demotions: [String] { lock.withLock { _demotions } }
+
+    /// Holds every `demote` open until released (a race test's window); nil = return at once.
+    private var _demoteGate: Gate?
+    var demoteGate: Gate? {
+        get { lock.withLock { _demoteGate } }
+        set { lock.withLock { _demoteGate = newValue } }
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        lock.withLock { _demotions.append("\(videoId):\(failed)") }
+        await demoteGate?.block()
+    }
 
     var outcome: Outcome {
         get { lock.withLock { _outcome } }
@@ -55,9 +73,19 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         get { lock.withLock { _muxedOutcome } }
         set { lock.withLock { _muxedOutcome = newValue } }
     }
+    /// What a `requiresHLS` walk answers, when set (the audio-only save's fallback walk); nil = `outcome`.
+    private var _hlsOutcome: Outcome?
+    var hlsOutcome: Outcome? {
+        get { lock.withLock { _hlsOutcome } }
+        set { lock.withLock { _hlsOutcome = newValue } }
+    }
     var expiresIn: TimeInterval {
         get { lock.withLock { _expiresIn } }
         set { lock.withLock { _expiresIn = newValue } }
+    }
+    var captionTracks: [String: [CaptionTrack]] {
+        get { lock.withLock { _captionTracks } }
+        set { lock.withLock { _captionTracks = newValue } }
     }
     var calls: [Call] { lock.withLock { _calls } }
     var outcomes: [String: Outcome] {
@@ -83,29 +111,33 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     /// Lets one held resolve of `id` proceed.
     func release(id: String) { lock.withLock { _idPermits[id, default: 0] += 1 } }
 
-    /// Suspends until `calls.count >= count`, or fails after ~2 s. M3 (fix round 1): an unbounded
-    /// wait turns "the call never came" into a hang that only the per-test limit ends, with no
-    /// indication of which expectation was never met.
+    /// Suspends until `calls.count >= count`, or fails after a 10 s deadline (2000 polls, ~2 s, ran
+    /// out under load). M3 (fix round 1): an unbounded wait turns "the call never came" into a hang
+    /// that only the per-test limit ends, with no indication of which expectation was never met.
+    /// A cancelled task's `Task.sleep` throws at once, so the loop exits on it instead of spinning
+    /// to the deadline (fix r4 N-3).
     func waitUntilCalled(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if calls.count >= count { return }
-            try? await Task.sleep(for: .milliseconds(1))
+        let deadline = ContinuousClock.now + .seconds(10)
+        while calls.count < count, ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
         }
         #expect(calls.count >= count, "resolver was called \(calls.count) times, expected \(count)",
                 sourceLocation: sourceLocation)
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // Captured HERE, not after the hold: a test that scripts a second answer while this call is
         // still held is describing the NEXT call's outcome, not retroactively this one's.
         let outcome = lock.withLock { () -> Outcome in
             _calls.append(Call(videoId: videoId, kind: kind, purpose: purpose,
-                               forceRefresh: forceRefresh, requiresMuxed: requiresMuxed))
+                               forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS))
             if kind == .prefetch, _prefetchRefusals.contains(videoId) {
                 return .failure(.cooldown(until: Date().addingTimeInterval(30)))
             }
             if requiresMuxed, let _muxedOutcome { return _muxedOutcome }
+            if requiresHLS, let _hlsOutcome { return _hlsOutcome }
             return _outcomes[videoId] ?? _outcome
         }
         // ponytail: a 1 ms poll, same as `waitUntilCalled` above -- a continuation registry would
@@ -117,12 +149,15 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                 return true
             }) { try? await Task.sleep(for: .milliseconds(1)) }
         }
-        // CF-G-15: bounded like `waitUntilCalled` (~2 s), and cancellation-safe -- a cancelled
-        // task's `Task.sleep` throws immediately, so the old unbounded `try?` loop hot-spun.
-        // On cancellation we bail out (the resolver's caller discards a cancelled result anyway).
+        // CF-G-15: bounded like `waitUntilCalled` (a 10 s deadline; fix r4: 2000 polls, ~2 s, ran
+        // out under load while the offline tests' own waits held the release back), and
+        // cancellation-safe -- a cancelled task's `Task.sleep` throws immediately, so the old
+        // unbounded `try?` loop hot-spun. On cancellation we bail out (the resolver's caller
+        // discards a cancelled result anyway).
         if lock.withLock({ _heldIds.contains(videoId) }) {
             var released = false
-            for _ in 0..<2000 {
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
                 if lock.withLock({ () -> Bool in
                     if _idPermits[videoId, default: 0] > 0 { _idPermits[videoId]! -= 1; return true }
                     return false
@@ -141,7 +176,8 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         switch outcome {
         case .hls:
             return Resolved(stream: .hls(url: nonResolvingURL, isLive: false,
-                                         audioOnlyURL: URL(string: "https://r1/a140")!, captionTracks: []),
+                                         audioOnlyURL: URL(string: "https://r1/a140")!,
+                                         captionTracks: captionTracks[videoId] ?? []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt)
         case .liveHLS:
@@ -152,9 +188,6 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         case .progressive:
             return Resolved(stream: .progressive(url: nonResolvingURL, label: "360p"), client: .android,
                             userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt)
-        case .embed:
-            return Resolved(stream: .embed(videoId: videoId), client: .web,
-                            userAgent: "", resolvedAt: Date(), expiresAt: nil)
         case .failure(let error):
             throw error
         }

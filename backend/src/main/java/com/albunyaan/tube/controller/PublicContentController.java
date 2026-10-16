@@ -6,14 +6,18 @@ import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.HomeCategoryDto;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
+import java.io.IOException;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -99,15 +103,23 @@ public class PublicContentController {
             @RequestParam(required = false) String date,
             @RequestParam(required = false) String sort,
             @RequestParam(required = false) String q
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException, IOException {
         // Validate and cap limit
         int validLimit = Math.min(Math.max(limit, 1), 50);
         String trimmedQ = (q != null) ? q.trim() : null;
         String normalizedQ = (trimmedQ != null && !trimmedQ.isEmpty())
                 ? trimmedQ.substring(0, Math.min(trimmedQ.length(), 128)) : null;
 
+        if (normalizedQ != null) {
+            PublicContentService.SearchPage hit = contentService.searchContent(
+                    type, cursor, validLimit, category, length, date, normalizedQ);
+            if (hit != null) {
+                return ResponseEntity.ok().header(SearchIndex.MATCH_HEADER, hit.match()).body(hit.page());
+            }
+        }
+
         CursorPageDto<ContentItemDto> page = contentService.getContent(
-                type, cursor, validLimit, category, length, date, sort, normalizedQ
+                type, cursor, validLimit, category, length, date, sort
         );
 
         return ResponseEntity.ok(page);
@@ -175,9 +187,15 @@ public class PublicContentController {
             @RequestParam String q,
             @RequestParam(required = false) String type,
             @RequestParam(required = false, defaultValue = "20") int limit
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    ) throws IOException {
         int validLimit = Math.min(Math.max(limit, 1), 50);
-        return ResponseEntity.ok(contentService.search(q, type, validLimit));
+        SearchIndex.Hits hits = contentService.search(q, type, validLimit);
+        return ResponseEntity.ok().header(SearchIndex.MATCH_HEADER, hits.match()).body(hits.items());
+    }
+
+    /** Spec §7: the first index build has not finished; installed clients show their usual error state. */
+    @ExceptionHandler(SearchIndex.NotReadyException.class)
+    public ResponseEntity<Void> searchNotReady() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5").build();
     }
 }
-

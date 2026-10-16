@@ -137,6 +137,16 @@ paths:
       responses:
         '200':
           description: Content page
+          headers:
+            X-Search-Match:
+              description: |
+                Set only when `q` has 2 or more characters and `type` is CHANNELS,
+                PLAYLISTS or VIDEOS (the request is then a relevance search): the
+                match tier of the first item — exact, approximate, related or none.
+                Otherwise the plain list is returned without this header. Clients
+                read a missing or unknown value as exact.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -149,6 +159,16 @@ paths:
                         type: array
                         items:
                           $ref: '#/components/schemas/ContentItemDto'
+        '503':
+          description: |
+            The search index is still building after a server start. Only a relevance
+            search (`q` of 2 or more characters with `type` CHANNELS, PLAYLISTS or
+            VIDEOS) can answer this. Empty body; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (5)
+              schema:
+                type: integer
 
   /v1/categories:
     get:
@@ -326,6 +346,13 @@ paths:
       responses:
         '200':
           description: Search results
+          headers:
+            X-Search-Match:
+              description: |
+                The match tier of the first item — exact, approximate, related
+                or none. Clients read a missing or unknown value as exact.
+              schema:
+                type: string
           content:
             application/json:
               schema:
@@ -333,6 +360,15 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentItemDto'
                 description: Array of matching content items (not paginated)
+        '503':
+          description: |
+            The search index is still building after a server start. Empty body;
+            retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (5)
+              schema:
+                type: integer
 
   /v1/reports:
     post:

@@ -28,9 +28,22 @@
 
         </androidx.appcompat.widget.Toolbar>
 
+        <!-- Spec §6: a newer search is loading while the previous results stay on screen.
+             INVISIBLE, not GONE: it keeps its 4dp so showing it never shifts the list below. -->
+        <com.google.android.material.progressindicator.LinearProgressIndicator
+            android:id="@+id/searchProgress"
+            android:contentDescription="@string/search_loading"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:indeterminate="true"
+            android:visibility="invisible"
+            app:indicatorColor="@color/primary_green"
+            app:trackColor="@color/surface_variant" />
+
     </com.google.android.material.appbar.AppBarLayout>
 
     <androidx.core.widget.NestedScrollView
+        android:id="@+id/searchScroll"
         android:layout_width="match_parent"
         android:layout_height="match_parent"
         android:paddingBottom="@dimen/bottom_nav_height"
@@ -91,6 +104,20 @@
                     android:nestedScrollingEnabled="false" />
 
             </LinearLayout>
+
+            <!-- Spec §6: shown when the best match was approximate or related (X-Search-Match) -->
+            <TextView
+                android:id="@+id/searchMatchNote"
+                android:accessibilityLiveRegion="polite"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:paddingHorizontal="@dimen/spacing_md"
+                android:paddingVertical="@dimen/spacing_sm"
+                android:text="@string/search_closest_results"
+                android:textAlignment="viewStart"
+                android:textSize="14sp"
+                android:textColor="?android:attr/textColorSecondary"
+                android:visibility="gone" />
 
             <!-- Search Results -->
             <androidx.recyclerview.widget.RecyclerView

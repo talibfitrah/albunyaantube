@@ -57,4 +57,25 @@ class SyncTombstoneGcIT extends BaseIntegrationTest {
         assertTrue(subs.document("live").get().get().exists(),
                 "live row must survive regardless of age");
     }
+
+    @Test
+    void gcNeverPurgesTopLevelCatalogDocs() throws Exception {
+        // collectionGroup("playlists") also matches the top-level catalog collection.
+        Map<String, Object> oldTomb = new HashMap<>();
+        oldTomb.put("deleted", true);
+        oldTomb.put("updatedAt", Timestamp.ofTimeSecondsAndNanos(
+                Instant.now().minusSeconds(91L * 86400L).getEpochSecond(), 0));
+        var catalog = firestore.collection("playlists").document("gc-catalog");
+        catalog.set(oldTomb).get();
+        var userRow = firestore.collection("users").document("gc-uid")
+                .collection("playlists").document("gc-user-tomb");
+        userRow.set(oldTomb).get();
+
+        scheduler.pruneTombstones();
+
+        assertTrue(catalog.get().get().exists(),
+                "top-level catalog doc must never be hard-deleted by the GC");
+        assertFalse(userRow.get().get().exists(),
+                "user-row tombstone of the same age must still be purged");
+    }
 }

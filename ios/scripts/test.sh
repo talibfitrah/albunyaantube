@@ -35,8 +35,8 @@ set -m
 PATH="$HOME/.local/bin:$PATH"
 
 # Plan C: validates the published ios-remote-config.json through the real decoder + sanitizer
-# (RemoteConfigTests.thePublishedRepoRootConfigSurvivesSanitizing). Absent -> the test skips, so a
-# checkout without the file (or before the merge to main) is green.
+# (RemoteConfigTests.thePublishedRepoRootConfigSurvivesSanitizing). The test finds the same file from
+# its own path when this is unset; a missing file fails it.
 export IOS_REMOTE_CONFIG_PATH="$(cd "$(dirname "$0")/../.." && pwd)/ios-remote-config.json"
 
 IPHONE_SIM="${IPHONE_SIM:-iPhone 17}"

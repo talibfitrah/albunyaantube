@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -41,10 +43,13 @@ public class VideoRepository {
     private static final String COLLECTION_NAME = "videos";
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public VideoRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public VideoRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                           ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -63,7 +68,7 @@ public class VideoRepository {
                 .document(video.getId())
                 .set(video);
 
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
         return video;
     }
 
@@ -79,7 +84,7 @@ public class VideoRepository {
         video.touch();
 
         DocumentReference docRef = getCollection().document(video.getId());
-        return firestore.runTransaction(transaction -> {
+        ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Video not found: " + video.getId());
@@ -92,7 +97,8 @@ public class VideoRepository {
             }
             transaction.set(docRef, video);
             return video;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -375,39 +381,6 @@ public class VideoRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
-    public List<Video> searchByTitle(String query) throws ExecutionException, InterruptedException, TimeoutException {
-        // Firestore doesn't support full-text search, so we'll use prefix matching
-        // For production, consider using Algolia or Elasticsearch
-        // Note: Filtering by status removed from query to avoid composite index requirement
-        // Status filtering done in PublicContentService layer
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
-    /**
-     * Search videos by title prefix with limit (bounded query).
-     * This prevents quota exhaustion for broad search queries.
-     *
-     * @param query Search prefix
-     * @param limit Maximum number of results
-     * @return List of matching videos
-     */
-    public List<Video> searchByTitle(String query, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("title")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
-    }
-
     /**
      * Search videos by normalized titleLower field for case-insensitive prefix matching.
      * This is the preferred search method as it supports case-insensitive queries.
@@ -447,7 +420,7 @@ public class VideoRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "VIDEO", id);
     }
 
     /** TOCTOU-safe delete (cubic R3 P1). See ChannelRepository#deleteByIdIfStatusIn. */
@@ -457,7 +430,7 @@ public class VideoRepository {
             throw new IllegalArgumentException("id and non-empty expectedStatuses required");
         }
         com.google.cloud.firestore.DocumentReference docRef = getCollection().document(id);
-        firestore.runTransaction(transaction -> {
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot =
                     transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
@@ -471,7 +444,8 @@ public class VideoRepository {
             }
             transaction.delete(docRef);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", id);
     }
 
     /**
@@ -502,6 +476,15 @@ public class VideoRepository {
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Every video document, raw, uncapped and unordered, for the search index (spec §2.3: 1,020 documents
+     * exceed findAll()'s 1,000 default cap) — and not filtered by an orderBy field being present. The index
+     * maps each one itself, skipping one it cannot (F4).
+     */
+    public List<QueryDocumentSnapshot> findAllUnordered() throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**

@@ -14,7 +14,15 @@ import com.albunyaan.tube.auth.AccountRepositoryImpl
 import com.albunyaan.tube.auth.LastKnownAccountStore
 import com.albunyaan.tube.data.account.AccountService
 import com.albunyaan.tube.data.account.AccountMeResponseDto
+import com.albunyaan.tube.auth.AuthRepository
+import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.test.TestScope
+import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeout
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.any
 import org.mockito.kotlin.doAnswer
 import org.mockito.kotlin.mock
@@ -59,92 +67,6 @@ class SplashRouterOfflineTest {
         hasPasswordProvider = false, isEmailVerified = true,
     )
 
-    @Test fun `offline with a persisted ACTIVE record routes to main with no sign-out`() {
-        val status = SplashRouter.accountForRoute(
-            Result.failure(IOException("offline")), lastKnown = { loaded(AccountStatus.ACTIVE) },
-        )?.status
-
-        assertEquals(AccountStatus.ACTIVE, status)
-        assertEquals(R.id.action_splash_to_main, route(status))
-        // Non-null status: the D12 sign-out (signedIn && status == null) does not fire.
-    }
-
-    @Test fun `offline with a persisted PENDING_PROFILE record routes to bootstrap`() {
-        val status = SplashRouter.accountForRoute(
-            Result.failure(SocketTimeoutException()), lastKnown = { loaded(AccountStatus.PENDING_PROFILE) },
-        )?.status
-
-        assertEquals(R.id.action_splash_to_bootstrap, route(status))
-    }
-
-    @Test fun `offline with a persisted BLOCKED record routes to sign-in with the terminal event`() {
-        val status = SplashRouter.accountForRoute(
-            Result.failure(IOException("offline")), lastKnown = { loaded(AccountStatus.BLOCKED) },
-        )?.status
-
-        assertEquals(R.id.action_splash_to_signIn, route(status))
-        assertEquals(AccountStatusEvent.Blocked, SplashRouter.terminalEvent(signedIn = true, accountStatus = status))
-    }
-
-    @Test fun `a 5xx is non-terminal and uses the record`() {
-        val status = SplashRouter.accountForRoute(
-            Result.failure(http(503)), lastKnown = { loaded(AccountStatus.ACTIVE) },
-        )?.status
-
-        assertEquals(AccountStatus.ACTIVE, status)
-    }
-
-    @Test fun `offline with no record signs out and routes to sign-in`() {
-        val status = SplashRouter.accountForRoute(
-            Result.failure(IOException("offline")), lastKnown = { null },
-        )?.status
-
-        assertNull(status)
-        assertEquals(R.id.action_splash_to_signIn, route(status))
-    }
-
-    @Test fun `a signed 401 ignores the record`() {
-        var read = false
-        val status = SplashRouter.accountForRoute(
-            Result.failure(http(401, signed = true)), lastKnown = { read = true; loaded(AccountStatus.ACTIVE) },
-        )?.status
-
-        assertFalse("record must not be read on a terminal failure", read)
-        assertNull(status)
-    }
-
-    @Test fun `an unsigned 401 after a network mint failure keeps the record`() {
-        // FirebaseAuthInterceptor sends the request unsigned when the token mint
-        // fails (flaky network / timeout); the 401 says nothing about the account.
-        val status = SplashRouter.accountForRoute(
-            Result.failure(http(401, signed = false)), lastKnown = { loaded(AccountStatus.ACTIVE) },
-        )?.status
-
-        assertEquals(AccountStatus.ACTIVE, status)
-    }
-
-    @Test fun `a bare 403 and a 404 keep the record`() {
-        // Bare = no lifecycle envelope (proxy / WAF). The envelope acts through
-        // AccountStatusInterceptor, which signs out before this ever runs.
-        for (code in listOf(403, 404)) {
-            val status = SplashRouter.accountForRoute(
-                Result.failure(http(code, signed = true)), lastKnown = { loaded(AccountStatus.ACTIVE) },
-            )?.status
-            assertEquals("code $code", AccountStatus.ACTIVE, status)
-        }
-    }
-
-    @Test fun `a successful fetch wins over the record`() {
-        var read = false
-        val status = SplashRouter.accountForRoute(
-            Result.success(loaded(AccountStatus.PENDING_PROFILE)),
-            lastKnown = { read = true; loaded(AccountStatus.ACTIVE) },
-        )?.status
-
-        assertFalse(read)
-        assertEquals(AccountStatus.PENDING_PROFILE, status)
-    }
-
     // ── The call SplashFragment actually makes ─────────────────────────────
 
     private fun repoWith(store: LastKnownAccountStore, answer: () -> AccountMeResponseDto) =
@@ -154,31 +76,214 @@ class SplashRouterOfflineTest {
             lastKnown = store,
         )
 
+    /** The status a launch routes on when /me fails with [failure] and [record] is saved for the uid. */
+    private suspend fun TestScope.statusOn(failure: Throwable, record: AccountStatus?): AccountStatus? {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(record?.let(::loaded))
+        return SplashRouter.resolveAccount(repoWith(store) { throw failure }, "uid-a", backgroundScope)?.status
+    }
+
+    @Test fun `offline with a persisted ACTIVE record routes to main with no sign-out`() = runTest {
+        val status = statusOn(IOException("offline"), AccountStatus.ACTIVE)
+
+        assertEquals(AccountStatus.ACTIVE, status)
+        assertEquals(R.id.action_splash_to_main, route(status))
+        // Non-null status: the D12 sign-out (signedIn && status == null) does not fire.
+    }
+
+    @Test fun `offline with a persisted PENDING_PROFILE record routes to bootstrap`() = runTest {
+        assertEquals(R.id.action_splash_to_bootstrap, route(statusOn(SocketTimeoutException(), AccountStatus.PENDING_PROFILE)))
+    }
+
+    @Test fun `offline with a persisted BLOCKED record routes to sign-in with the terminal event`() = runTest {
+        val status = statusOn(IOException("offline"), AccountStatus.BLOCKED)
+
+        assertEquals(R.id.action_splash_to_signIn, route(status))
+        assertEquals(AccountStatusEvent.Blocked, SplashRouter.terminalEvent(signedIn = true, accountStatus = status))
+    }
+
+    @Test fun `offline with no record signs out and routes to sign-in`() = runTest {
+        val status = statusOn(IOException("offline"), record = null)
+
+        assertNull(status)
+        assertEquals(R.id.action_splash_to_signIn, route(status))
+    }
+
+    @Test fun `a signed 401 ignores the record`() = runTest {
+        assertNull(statusOn(http(401, signed = true), AccountStatus.ACTIVE))
+    }
+
+    @Test fun `an unsigned 401 after a network mint failure keeps the record`() = runTest {
+        // FirebaseAuthInterceptor sends the request unsigned when the token mint
+        // fails (flaky network / timeout); the 401 says nothing about the account.
+        assertEquals(AccountStatus.ACTIVE, statusOn(http(401, signed = false), AccountStatus.ACTIVE))
+    }
+
+    @Test fun `5xx, 408, 429, a bare 403 and a 404 keep the record`() = runTest {
+        // Bare = no lifecycle envelope (proxy / WAF). The envelope acts through
+        // AccountStatusInterceptor, which signs out before this ever runs.
+        for (code in listOf(503, 408, 429, 403, 404)) {
+            assertEquals("code $code", AccountStatus.ACTIVE, statusOn(http(code, signed = true), AccountStatus.ACTIVE))
+        }
+    }
+
     @Test fun `resolveAccount offline publishes the persisted record for that uid`() = runTest {
         val store = mock<LastKnownAccountStore>()
         whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
         val repo = repoWith(store) { throw IOException("offline") }
 
-        val account = SplashRouter.resolveAccount(repo, "uid-a")
+        val account = SplashRouter.resolveAccount(repo, "uid-a", backgroundScope)
 
         assertEquals(loaded(AccountStatus.ACTIVE), account)
         assertEquals(loaded(AccountStatus.ACTIVE), repo.accountState.value)
     }
 
-    @Test fun `resolveAccount on a signed 401 never reads the record`() = runTest {
+    @Test fun `resolveAccount with no record on a signed 401 routes to sign-in`() = runTest {
         val store = mock<LastKnownAccountStore>()
         val repo = repoWith(store) { throw http(401, signed = true) }
 
-        assertNull(SplashRouter.resolveAccount(repo, "uid-a"))
-        verify(store, never()).read(any())
+        assertNull(SplashRouter.resolveAccount(repo, "uid-a", backgroundScope))
+        verify(store, never()).write(any())
     }
 
-    @Test fun `429 and 408 are non-terminal and use the record, like 5xx`() {
-        for (code in listOf(408, 429)) {
-            val status = SplashRouter.accountForRoute(
-                Result.failure(http(code)), lastKnown = { loaded(AccountStatus.ACTIVE) },
-            )?.status
-            assertEquals("code $code", AccountStatus.ACTIVE, status)
+    // ── Launch must never wait on sync or long on /me (1.0.3, R4) ─────────
+
+    /** Firebase still signed in as the launch uid. */
+    private val signedIn: () -> String? = { "uid-a" }
+
+    private fun me(status: String) = AccountMeResponseDto(
+        uid = "uid-a", email = "a@b.com", displayName = "A", dateOfBirth = null,
+        phoneNumber = null, status = status, role = "user", profileCompletedAt = null,
+    )
+
+    @Test fun `the launch status does not wait for sync`() = runTest {
+        // A dead backend held the splash for minutes: bind's pull retries ran as a
+        // child of the coroutine routing awaited (SplashFragment.kt:147-150 pre-fix).
+        val repo = repoWith(mock()) { me("active") }
+        var boundUid: String? = null
+
+        val status = withTimeout(1_000) {
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) { uid ->
+                boundUid = uid
+                awaitCancellation()
+            }
         }
+        runCurrent()
+
+        assertEquals(AccountStatus.ACTIVE, status)
+        assertEquals("sync still starts, off the routing path", "uid-a", boundUid)
+    }
+
+    @Test fun `a hanging me with a saved record routes on it within 3 s and a later signed 401 signs out`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val auth = mock<AuthRepository>()
+        val pendingMe = CompletableDeferred<AccountMeResponseDto>()
+        val repo = AccountRepositoryImpl(
+            mock<AccountService>().also { svc -> svc.stub { onBlocking { getMe() } doSuspendableAnswer { pendingMe.await() } } },
+            backoffMs = 0L,
+            lastKnown = store,
+            auth = auth,
+        )
+
+        val start = currentTime
+        val status = withTimeout(10_000) {
+            SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {}
+        }
+
+        assertEquals(AccountStatus.ACTIVE, status)
+        assertTrue("waited ${currentTime - start} ms", currentTime - start <= SplashRouter.LAUNCH_ME_BUDGET_MS)
+
+        // The /me kept running after routing; the server's verdict lands now.
+        pendingMe.completeExceptionally(http(401, signed = true))
+        runCurrent()
+
+        assertEquals(AccountState.NotSignedIn, repo.accountState.value)
+        verify(store).clear()
+        verify(auth).signOut()
+    }
+
+    @Test fun `with a saved record a me that answers within the budget wins`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val repo = repoWith(store) { me("pending_profile") }
+
+        val status = SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {}
+
+        assertEquals(AccountStatus.PENDING_PROFILE, status)
+        verify(store).write(loaded(AccountStatus.PENDING_PROFILE))
+    }
+
+    @Test fun `with a saved record a signed 401 within the budget signs out`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val auth = mock<AuthRepository>()
+        val repo = AccountRepositoryImpl(
+            mock<AccountService>().also { svc -> svc.stub { onBlocking { getMe() } doAnswer { throw http(401, signed = true) } } },
+            backoffMs = 0L,
+            lastKnown = store,
+            auth = auth,
+        )
+
+        assertNull(SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, signedIn) {})
+        verify(store).clear()
+        verify(auth).signOut()
+    }
+
+    @Test fun `sync never binds a uid Firebase has already signed out`() = runTest {
+        // A 403 lifecycle envelope signs Firebase out in AccountStatusInterceptor before the
+        // failed /me returns; the Deleted/Blocked observer clears accountState only later.
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        var firebaseUid: String? = "uid-a"
+        val repo = repoWith(store) { firebaseUid = null; throw http(403, signed = true) }
+        var bound = false
+
+        SplashRouter.launchAccountStatus(repo, "uid-a", backgroundScope, { firebaseUid }) { bound = true }
+        runCurrent()
+
+        assertFalse("bind must not start for a signed-out uid", bound)
+    }
+
+    // ── Process-death restore skips the splash (stage 5 F7, seen on the emulator) ──
+
+    @Test fun `a restore publishes the saved account and binds sync, as the splash would`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val repo = repoWith(store) { throw IOException("offline") }
+        var bound: String? = null
+
+        SplashRouter.restoreAccount(restoring = true, repo, backgroundScope, signedIn) { bound = it }
+        runCurrent()
+
+        assertEquals("favourites and subscriptions read this uid", loaded(AccountStatus.ACTIVE), repo.accountState.value)
+        assertEquals("uid-a", bound)
+    }
+
+    @Test fun `a splash launch or an account already published restores nothing`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val repo = repoWith(store) { me("active") }
+        var binds = 0
+
+        SplashRouter.restoreAccount(restoring = false, repo, backgroundScope, signedIn) { binds++ }
+        runCurrent()
+        assertEquals("the splash does it", AccountState.NotSignedIn, repo.accountState.value)
+
+        repo.restoreLastKnown("uid-a")
+        SplashRouter.restoreAccount(restoring = true, repo, backgroundScope, signedIn) { binds++ }
+        runCurrent()
+        assertEquals(0, binds)
+    }
+
+    @Test fun `a restore after Firebase signed out restores nothing`() = runTest {
+        val store = mock<LastKnownAccountStore>()
+        whenever(store.read("uid-a")).thenReturn(loaded(AccountStatus.ACTIVE))
+        val repo = repoWith(store) { me("active") }
+
+        SplashRouter.restoreAccount(restoring = true, repo, backgroundScope, { null }) { error("no bind") }
+        runCurrent()
+
+        assertEquals(AccountState.NotSignedIn, repo.accountState.value)
     }
 }

@@ -17,8 +17,7 @@ struct ReportSheet: View {
     /// Plan C Task 6 screenshot rig: `-fitrah-report-preselect <n>` opens the sheet with the first
     /// `n` reasons checked (10 = the cap), or `<A,B,…>` raw values (`OTHER` alone: the field showing,
     /// and the live leg's single real report). XCUITest taps on this Form's `Toggle` rows land
-    /// unreliably on the iOS 26 simulator, so the rig seeds the state it needs -- same technique as
-    /// `EmbedRungView`'s `-fitrah-fake-embed-ended`. Empty in Release.
+    /// unreliably on the iOS 26 simulator, so the rig seeds the state it needs. Empty in Release.
     private static func debugPreselected() -> [ReportReason] {
         let args = LaunchArguments.debug
         if let i = args.firstIndex(of: "-fitrah-report-preselect"), args.indices.contains(i + 1) {

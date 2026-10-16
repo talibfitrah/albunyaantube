@@ -1,4 +1,9 @@
 {
+  "1.0.3": {
+    "en": "Downloads now play inside the app, even offline, and finish much faster. Search forgives typos and updates as you type.",
+    "ar": "التنزيلات تعمل الآن داخل التطبيق حتى دون اتصال وتكتمل أسرع بكثير، والبحث يتسامح مع الأخطاء ويتحدّث أثناء الكتابة.",
+    "nl": "Downloads spelen nu ook offline in de app en zijn sneller klaar. Zoeken vergeeft typfouten en toont meteen resultaten."
+  },
   "1.0.2": {
     "en": "Sign-up profiles save again after verifying your email; sign-in screens are centred.",
     "ar": "يُحفظ ملف التسجيل مجددًا بعد تأكيد بريدك الإلكتروني؛ شاشات الدخول أصبحت في المنتصف.",

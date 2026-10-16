@@ -18,6 +18,8 @@
 
 ## What was verified on 2026-09-22
 
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
+
 | # | Fact | State at HEAD | Evidence |
 |---|---|---|---|
 | 1 | Associated-domains entitlement | **DONE** `a21d6b1a` | `ios/FitrahTube/FitrahTube.entitlements:29-32` carries `applinks:app.fitrahtube.com` beside `com.apple.developer.applesignin` |
@@ -40,6 +42,8 @@
 ---
 
 ## Assumptions (state them; stop and ask if one is false)
+
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
 
 1. The App ID `com.albunyaan.tube` has Sign in with Apple enabled in the portal since 2026-09-20 (owner statement, recorded in `FitrahTube.entitlements:10-11`; not verifiable from the repo). **Associated Domains on the same App ID is CONFIRMED** — the 2026-09-22 archive signed with that entitlement without a provisioning error (OWNER-ONLY item 3 is done).
 2. The bundled `GoogleService-Info.plist` exists (gitignored, `.gitignore:210`) and carries `CLIENT_ID` and `BUNDLE_ID`. Its values were not read; `write-local-xcconfig.sh` checks them at run time and prints no value.
@@ -243,6 +247,8 @@ struct UpdateRequiredView: View {
 ---
 
 ## Task 6: Publish the embed rung
+
+> **Superseded 2026-10-14:** no fallback player exists; `embed` must never be published (installed 1.0.0/1.0.2 would show YouTube's player).
 
 **Record (2026-09-22, `7dd85af5`).** Done; the review turned the count pin into an ORDER pin (`embed` last — a count check passed with YouTube's player first). Post-approval decision recorded below.
 

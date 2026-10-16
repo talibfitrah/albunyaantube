@@ -117,8 +117,102 @@ struct LiveCatalogClientTests {
         ]
         """#.utf8)
         let (sut, transport) = makeClient(responseBody: json)
-        let items = try await sut.search(query: "quran", type: nil, limit: 50)
-        #expect(items.map(\.id) == ["ch1", "p1", "v1"])
+        let result = try await sut.search(query: "quran", type: nil, limit: 50)
+        #expect(result.items.map(\.id) == ["ch1", "p1", "v1"])
         #expect(transport.lastRequest?.path == "/v1/search?q=quran&limit=50")
+    }
+
+    // MARK: - 503 + Retry-After while the search index builds (Android's retryOnceWhileIndexBuilds)
+
+    private static let page = Data(#"{"data":[{"id":"v1","type":"VIDEO","title":"Some Video"}],"pageInfo":{"hasNext":false,"nextCursor":null}}"#.utf8)
+    private static let list = Data(#"[{"id":"v1","type":"VIDEO","title":"Some Video"}]"#.utf8)
+
+    /// The two calls the retry covers, each answered from `transport` and reduced to the ids.
+    private static func call(_ search: Bool, _ sut: LiveCatalogClient) async throws -> [String] {
+        search ? try await sut.search(query: "quran", type: nil, limit: 50).items.map(\.id)
+               : try await sut.content(type: .videos, cursor: nil, limit: 20, filter: FilterState(), query: "quran").items.map(\.id)
+    }
+
+    private static func makeRetrying(search: Bool, sleep: @escaping @Sendable (Duration) async throws -> Void)
+        -> (LiveCatalogClient, RecordingTransport) {
+        let transport = RecordingTransport()
+        transport.responseBody = search ? list : page
+        let client = FitrahAPIClient.make(baseURL: URL(string: "https://example.test/")!,
+                                          deviceId: DeviceId(value: "t"), transport: transport)
+        return (LiveCatalogClient(client: client, sleep: sleep), transport)
+    }
+
+    @Test(arguments: [false, true], ["5", "10"])
+    func a503WithRetryAfterIsRetriedOnceAfterThatWait(search: Bool, retryAfter: String) async throws {
+        let sleeps = SleepRecorder()
+        let (sut, transport) = Self.makeRetrying(search: search, sleep: sleeps.record)
+        transport.statuses = [.serviceUnavailable]
+        transport.extraHeaders = [.retryAfter: retryAfter]
+
+        #expect(try await Self.call(search, sut) == ["v1"])
+        #expect(transport.requestCount == 2)
+        #expect(sleeps.recorded == [.seconds(Int(retryAfter)!)])
+    }
+
+    @Test(arguments: [false, true])
+    func aSecond503GoesToTheCaller(search: Bool) async {
+        let sleeps = SleepRecorder()
+        let (sut, transport) = Self.makeRetrying(search: search, sleep: sleeps.record)
+        transport.status = .serviceUnavailable
+        transport.extraHeaders = [.retryAfter: "5"]
+
+        await #expect(throws: (any Error).self) { try await Self.call(search, sut) }
+        #expect(transport.requestCount == 2)
+    }
+
+    /// 500, or 429 even with Retry-After, is a real failure; a 503 with no Retry-After, or one
+    /// longer than 10 s, is not worth holding a keystroke's search for.
+    @Test(arguments: [false, true], [(500, "5"), (429, "5"), (503, nil), (503, "11")] as [(Int, String?)])
+    func neverRetried(search: Bool, answer: (Int, String?)) async {
+        let sleeps = SleepRecorder()
+        let (sut, transport) = Self.makeRetrying(search: search, sleep: sleeps.record)
+        transport.status = HTTPResponse.Status(code: answer.0)
+        transport.extraHeaders = answer.1.map { [.retryAfter: $0] } ?? [:]
+
+        await #expect(throws: (any Error).self) { try await Self.call(search, sut) }
+        #expect(transport.requestCount == 1)
+        #expect(sleeps.recorded.isEmpty)
+    }
+
+    /// The next keystroke cancels the search: the wait ends at once, nothing is sent again.
+    @Test(arguments: [false, true])
+    func theWaitIsCancelledWithTheCaller(search: Bool) async {
+        let (waiting, waitStarted) = AsyncStream<Void>.makeStream()
+        let (sut, transport) = Self.makeRetrying(search: search) { duration in
+            waitStarted.yield()
+            try await Task.sleep(for: duration)
+        }
+        transport.statuses = [.serviceUnavailable]
+        transport.extraHeaders = [.retryAfter: "10"]
+
+        let task = Task {
+            defer { waitStarted.finish() }   // a call that never waits must not hang the test
+            return try await Self.call(search, sut)
+        }
+        var started = waiting.makeAsyncIterator()
+        _ = await started.next()   // the client has started its wait
+        task.cancel()
+
+        await #expect(throws: CancellationError.self) { try await task.value }
+        #expect(transport.requestCount == 1)
+    }
+
+    @Test func searchReadsTheMatchHeaderAndDefaultsToExact() async throws {
+        let json = Data(#"[{"id":"v1","type":"VIDEO","title":"Some Video"}]"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+
+        transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "approximate"]
+        #expect(try await sut.search(query: "zakit", type: nil, limit: 50).match == .approximate)
+
+        transport.extraHeaders = [:]
+        #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
+
+        transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "something-new"]
+        #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
     }
 }

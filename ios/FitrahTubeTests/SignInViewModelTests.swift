@@ -24,7 +24,8 @@ struct SignInViewModelTests {
 
     private func make(auth: FakeAuthClient,
                       responses: [HTTPResponse] = [],
-                      capabilities: SignInCapabilities = allCapabilities)
+                      capabilities: SignInCapabilities = allCapabilities,
+                      isOnline: @escaping @MainActor () -> Bool = { true })
         -> (model: SignInViewModel, transport: ScriptedTransport, session: AccountSession) {
         let transport = ScriptedTransport(responses)
         let session = AccountSession(
@@ -32,7 +33,8 @@ struct SignInViewModelTests {
             account: AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1")),
             stores: [], status: AccountStatusCenter(), sleep: { _ in }, wipe: { _ in nil })
         let account = AccountClient(transport: transport, baseURL: Self.base, deviceId: DeviceId(value: "dev-1"))
-        return (SignInViewModel(auth: auth, session: session, account: account, capabilities: capabilities),
+        return (SignInViewModel(auth: auth, session: session, account: account, capabilities: capabilities,
+                                isOnline: isOnline),
                 transport, session)
     }
 
@@ -60,7 +62,7 @@ struct SignInViewModelTests {
         let model = SignInViewModel(auth: auth, session: session,
                                     account: AccountClient(transport: ScriptedTransport([]), baseURL: Self.base,
                                                            deviceId: DeviceId(value: "dev-1")),
-                                    capabilities: Self.allCapabilities)
+                                    capabilities: Self.allCapabilities, isOnline: { true })
         model.email = "other@fitrah.test"
         model.password = "hunter2"
 
@@ -215,17 +217,52 @@ struct SignInViewModelTests {
         #expect(auth.nextError == .passwordResetFailed, "forgotPassword() reached the auth client")
     }
 
-    @Test func aFailedResetSurfacesPasswordResetFailedWhateverTheClientThrew() async {
+    /// Android collapses every reset failure to one code (`SignInViewModel.kt:170`), so the reset
+    /// never says which addresses hold an account. Every failure but the offline one stays that code.
+    @Test(arguments: [AuthErrorCode.unknown, .userNotFound, .tooManyRequests, .invalidEmail])
+    func aFailedResetSurfacesPasswordResetFailed(thrown: AuthErrorCode) async {
         let auth = FakeAuthClient(state: .signedOut)
         let (model, _, _) = make(auth: auth)
+        auth.nextError = thrown
+        model.email = "student@fitrah.test"
+
+        await model.forgotPassword()
+
+        #expect(model.state.error == .passwordResetFailed)
+        #expect(model.state.isLoading == false)
+    }
+
+    /// 1.0.3 round 1 / M6: offline at the tap, Google's web sheet would open on Safari's own offline
+    /// page (backing out of it is a silent cancel) and Apple's error shape is undocumented. The
+    /// network monitor already knows: say "No internet connection" at once and open no sheet.
+    @Test func anOfflineProviderTapSaysNoInternetAndOpensNoSheet() async {
+        let (model, _, _) = make(auth: FakeAuthClient(state: .signedOut), isOnline: { false })
+        let provider = FakeOAuthProvider()
+
+        await model.signIn(with: provider)
+
+        #expect(provider.presentCount == 0, "the provider sheet opened offline")
+        #expect(model.state.error == .network)
+        #expect(model.errorPresentation?.code == .network)
+        #expect(model.state.isLoading == false)
+
+        // The control: online, the sheet opens as before.
+        let (online, _, _) = make(auth: FakeAuthClient(state: .signedOut), isOnline: { true })
+        await online.signIn(with: provider)
+        #expect(provider.presentCount == 1)
+    }
+
+    /// 1.0.3 R2: offline, the backend is unreachable and Firebase's fallback fails on the network
+    /// too: that says "No internet connection", which reveals nothing about the address.
+    @Test func anOfflineResetSaysNoInternet() async {
+        let auth = FakeAuthClient(state: .signedOut)
+        let (model, _, _) = make(auth: auth)   // an empty script: the backend is unreachable
         auth.nextError = .network
         model.email = "student@fitrah.test"
 
         await model.forgotPassword()
 
-        // Android collapses every reset failure to one code (`SignInViewModel.kt:170`): the user
-        // can do nothing different about a network error than about a rejected address.
-        #expect(model.state.error == .passwordResetFailed)
+        #expect(model.state.error == .network)
         #expect(model.state.isLoading == false)
     }
 

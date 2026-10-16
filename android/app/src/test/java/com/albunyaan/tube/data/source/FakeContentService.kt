@@ -162,11 +162,11 @@ class FakeContentService : ContentService {
         return HomeFeedResult(sections = pageSections, nextCursor = nextCursor, hasMore = hasMore)
     }
 
-    override suspend fun search(query: String, type: String?, limit: Int): List<ContentItem> {
+    override suspend fun search(query: String, type: String?, limit: Int): ContentSearchResult {
         val searchQuery = query.lowercase(java.util.Locale.ROOT)
         val allItems = videos + channels + playlists
 
-        return allItems.filter { item ->
+        return ContentSearchResult(allItems.filter { item ->
             when (item) {
                 is ContentItem.Video -> item.title.lowercase(java.util.Locale.ROOT).contains(searchQuery) ||
                                        item.category.lowercase(java.util.Locale.ROOT).contains(searchQuery)
@@ -175,7 +175,7 @@ class FakeContentService : ContentService {
                 is ContentItem.Playlist -> item.title.lowercase(java.util.Locale.ROOT).contains(searchQuery) ||
                                           item.category.lowercase(java.util.Locale.ROOT).contains(searchQuery)
             }
-        }.take(limit)
+        }.take(limit))
     }
 
     override suspend fun fetchCategories(): List<Category> {

@@ -5,6 +5,7 @@ import android.os.Bundle
 import android.view.View
 import android.widget.Toast
 import androidx.appcompat.widget.SearchView
+import androidx.core.view.isInvisible
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
@@ -14,6 +15,7 @@ import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.model.ContentItem
+import com.albunyaan.tube.data.source.SearchMatch
 import com.albunyaan.tube.databinding.FragmentSearchBinding
 import coil.ImageLoader
 import com.albunyaan.tube.player.PlaybackFeatureFlags
@@ -21,8 +23,6 @@ import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
 import dagger.hilt.android.AndroidEntryPoint
-import kotlinx.coroutines.Job
-import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import javax.inject.Inject
 
@@ -50,7 +50,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
 
     private val viewModel: SearchViewModel by viewModels()
 
-    private var searchJob: Job? = null
     private val searchHistory = mutableListOf<String>()
 
     private val PREFS_NAME = "search_prefs"
@@ -103,26 +102,15 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                 }
 
                 override fun onQueryTextChange(newText: String?): Boolean {
-                    // Debounce search as user types
-                    searchJob?.cancel()
-
-                    if (newText.isNullOrBlank()) {
-                        showSearchHistory()
-                    } else {
-                        searchJob = lifecycleScope.launch {
-                            delay(500) // 500ms debounce
-                            if (newText.length >= 2) {
-                                performSearch(newText)
-                            }
-                        }
-                    }
+                    // The ViewModel debounces and shows the history under 2 characters, so this keystroke drops the
+                    // previous search at once (an old "qu" result never lands under "q") and a recreated view keeps
+                    // what it showed, a submitted 1-character search included.
+                    viewModel.search(newText.orEmpty(), debounceMs = SearchViewModel.TYPING_DEBOUNCE_MS)
                     return true
                 }
             })
         }
-
-        // Show search history initially
-        showSearchHistory()
+        // No clearing here: a recreated view (rotation, back from a result) shows the ViewModel's state as it is.
     }
 
     private fun setupSearchHistory() {
@@ -191,7 +179,9 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                             searchHistorySection.isVisible = false
                             searchResultsList.isVisible = true
                         }
-                        searchResultsAdapter.submitList(state.results)
+                        // A different list opens at its best match; a recreated view (empty adapter) keeps its place.
+                        val replaced = searchResultsAdapter.currentList.let { it.isNotEmpty() && it != state.results }
+                        searchResultsAdapter.submitList(state.results) { if (replaced) binding?.searchScroll?.scrollTo(0, 0) }
                     }
                     is SearchViewModel.SearchState.NoResults -> {
                         binding?.apply {
@@ -209,12 +199,13 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
                         showError(getString(R.string.search_error_generic))
                     }
                 }
+                binding?.searchMatchNote?.isVisible = state is SearchViewModel.SearchState.Success &&
+                    (state.match == SearchMatch.APPROXIMATE || state.match == SearchMatch.RELATED)
             }
         }
-    }
-
-    private fun showSearchHistory() {
-        viewModel.clearResults()
+        viewLifecycleOwner.lifecycleScope.launch {
+            viewModel.isSearching.collect { binding?.searchProgress?.isInvisible = !it }
+        }
     }
 
     private fun loadSearchHistory() {
@@ -227,7 +218,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         }
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
     }
 
     private fun saveToHistory(query: String) {
@@ -256,7 +246,10 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         prefs.edit().putString(KEY_SEARCH_HISTORY, searchHistory.joinToString("|")).apply()
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
+        // A search typed just before still runs, and a posted row tap can land after it started loading: the
+        // history shows only on the history screen (Empty).
+        binding?.searchHistorySection?.isVisible =
+            searchHistory.isNotEmpty() && viewModel.searchResults.value is SearchViewModel.SearchState.Empty
     }
 
     private fun clearHistory() {
@@ -266,7 +259,7 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
         prefs.edit().remove(KEY_SEARCH_HISTORY).apply()
 
         searchHistoryAdapter.submitList(searchHistory.toList())
-        showSearchHistory()
+        binding?.searchHistorySection?.isVisible = searchHistory.isNotEmpty() // a search typed just before still runs
     }
 
     private fun showError(message: String) {
@@ -324,7 +317,6 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     override fun onDestroyView() {
         prefetchController?.detach()
         prefetchController = null
-        searchJob?.cancel()
         binding = null
         super.onDestroyView()
     }

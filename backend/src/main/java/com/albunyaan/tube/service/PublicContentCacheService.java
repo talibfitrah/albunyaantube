@@ -22,7 +22,6 @@ public class PublicContentCacheService {
      *
      * This clears:
      * - public-content: paginated content served to the Android app
-     * - public-content-search: search results served to the Android app
      * - category-tree: category listings (public + admin)
      * - newpipe-search-results: moderator YouTube-search responses (the
      *   {@code alreadyKnown} annotation is baked into the cached value, so
@@ -30,14 +29,12 @@ public class PublicContentCacheService {
      */
     @CacheEvict(value = {
             CacheConfig.CACHE_PUBLIC_CONTENT,
-            CacheConfig.CACHE_PUBLIC_CONTENT_SEARCH,
             CacheConfig.CACHE_CATEGORY_TREE,
             CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS
     }, allEntries = true)
     public void evictPublicContentCaches() {
-        log.debug("Evicted public content caches: {}, {}, {}, {}",
+        log.debug("Evicted public content caches: {}, {}, {}",
                 CacheConfig.CACHE_PUBLIC_CONTENT,
-                CacheConfig.CACHE_PUBLIC_CONTENT_SEARCH,
                 CacheConfig.CACHE_CATEGORY_TREE,
                 CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS);
     }

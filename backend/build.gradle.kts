@@ -80,6 +80,11 @@ dependencies {
     implementation("com.microsoft.graph:microsoft-graph:6.67.0")
     implementation("com.azure:azure-identity:1.18.4")
 
+    // Search (spec 2026-10-13): in-process Lucene index. 9.x because 10.x needs Java 21
+    // and the server runs Java 17.
+    implementation("org.apache.lucene:lucene-core:9.12.3")
+    implementation("org.apache.lucene:lucene-analysis-common:9.12.3")
+
     testImplementation("org.springframework.boot:spring-boot-starter-test")
 
     // Embedded Redis - BACKEND-PERF-01: Enable for testing

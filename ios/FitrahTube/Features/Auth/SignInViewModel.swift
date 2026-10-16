@@ -27,6 +27,8 @@ import Observation
     private let auth: any AuthClient
     private let session: AccountSession
     private let account: AccountClient
+    /// The app's `NetworkMonitor`, read at the tap (round 1 / M6).
+    private let isOnline: @MainActor () -> Bool
 
     private(set) var state: UiState
 
@@ -77,7 +79,11 @@ import Observation
         }
     }
 
-    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities) {
+    /// `isOnline` has no default (stage 3c S3-3): the compiler pins every construction site, so the
+    /// screen cannot drop `NetworkMonitor` and turn M6's offline tap check into "always online".
+    init(auth: any AuthClient, session: AccountSession, account: AccountClient, capabilities: SignInCapabilities,
+         isOnline: @escaping @MainActor () -> Bool) {
+        self.isOnline = isOnline
         self.auth = auth
         self.account = account
         self.session = session
@@ -126,6 +132,13 @@ import Observation
         // button off the screen — this is the second defence, for a provider that lost its
         // prerequisite between render and tap.
         guard provider.isAvailable else { return }
+        // Round 1 / M6: offline at the tap, Google's sheet would open on Safari's own offline page
+        // (backing out of it is a silent cancel) and Apple's offline error is undocumented. Say so
+        // now, the wall's existing copy, and open no sheet.
+        guard isOnline() else {
+            fail(.network)
+            return
+        }
         beginLoading()
         dropLiveAccount()
 
@@ -154,8 +167,9 @@ import Observation
     }
 
     /// Blank or malformed goes nowhere near the network (`SignInViewModel.kt:160-167`), and every
-    /// failure is ONE code: the user can do nothing different about a network error than about a
-    /// rejected address.
+    /// failure is ONE code, so the reset never says which addresses hold an account — except
+    /// offline (1.0.3 R2): Firebase's fallback failing on the network says "No internet
+    /// connection", which says nothing about the address.
     func forgotPassword() async {
         guard !state.isLoading else { return }
         guard EmailShape.isValid(state.email) else {
@@ -167,6 +181,8 @@ import Observation
             try await sendPasswordReset(state.email)
             state.isLoading = false
             state.passwordResetSent = true
+        } catch AuthErrorCode.network {
+            finish(with: .network)
         } catch {
             finish(with: .passwordResetFailed)
         }

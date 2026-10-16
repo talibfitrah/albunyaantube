@@ -208,7 +208,6 @@
     <string name="content_unavailable_message">This content is no longer available. It may have been removed by an admin or by YouTube.</string>
     <string name="error_parse">Failed to process data. Please try again.</string>
     <string name="error_parse_title">Data Error</string>
-    <string name="error_unknown">An unexpected error occurred.</string>
     <string name="offline_mode">You\'re offline. Showing cached content.</string>
     <string name="connectivity_offline_banner">You\'re offline. Check your connection.</string>
     <!-- ANDROID-MULTI-01 Issue 3: update checker / installer strings -->
@@ -500,10 +499,6 @@
     <string name="downloads_storage_used">Storage Used</string>
     <string name="downloads_storage_format">%1$d downloads • %2$s used • %3$s available</string>
     <string name="downloads_storage_calculating">Calculating…</string>
-    <string name="downloads_no_file">No file found</string>
-    <string name="downloads_file_not_found">File not found: %1$s</string>
-    <string name="downloads_open_error">Error: %1$s</string>
-    <string name="downloads_no_player">No video player found</string>
     <string name="library_section_title">Library</string>
     <string name="library_saved">Saved</string>
     <string name="library_saved_count">%1$d videos</string>
@@ -604,6 +599,7 @@
     <string name="search_error">Search failed: %1$s</string>
     <string name="search_error_generic">Search failed. Please try again.</string>
     <string name="search_loading">Searching…</string>
+    <string name="search_closest_results">No exact match — showing closest results</string>
     <string name="error_title">Error</string>
 
     <!-- Home Overflow Menu -->

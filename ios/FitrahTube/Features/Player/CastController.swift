@@ -422,14 +422,14 @@ import SwiftUI
         return reportFailure && !cancelledByUs ? .clearAndReport : .clear
     }
 
-    /// The other way a cast can fail to play: nothing castable to load at all (an embed rung, or a
-    /// resolve that did not come back). Same user-visible outcome as a rejected load, so it gets
+    /// The other way a cast can fail to play: nothing castable to load at all (a resolve that did
+    /// not come back, or a near-expiry URL). Same user-visible outcome as a rejected load, so it gets
     /// the same banner rather than copy of its own -- and, per the copy rule, it says WHAT, never
     /// why.
     ///
     /// `claim` is the load that failed, and only THAT claim is this call's to clear. Screen A casts
-    /// and goes off-screen (stamp released, receiver still playing A); screen B mounts on an embed
-    /// rung, gets no media and lands here — clearing `loadedClaim` unconditionally would erase A's
+    /// and goes off-screen (stamp released, receiver still playing A); screen B mounts, gets no
+    /// media and lands here — clearing `loadedClaim` unconditionally would erase A's
     /// presence on the receiver, so A returning would re-resolve and reload it at the phone's stale
     /// `currentTime` and the hand-back would lose the receiver's position.
     func reportLoadFailure(claim: CastClaim?, position: TimeInterval? = nil) {

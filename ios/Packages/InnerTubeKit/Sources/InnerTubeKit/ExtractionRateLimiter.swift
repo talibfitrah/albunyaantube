@@ -5,7 +5,9 @@ import Foundation
 /// `player/ExtractionRateLimiter.kt` `RequestKind`: `.player` == Android's
 /// `MANUAL` (the exponential-backoff lane), `.autoRecovery` ==
 /// `AUTO_RECOVERY`, `.prefetch` == `PREFETCH`, `.proactiveTTLRefresh` ==
-/// `PROACTIVE_TTL_REFRESH`.
+/// `PROACTIVE_TTL_REFRESH`. Unlike Android, `.autoRecovery` has no limiter lane
+/// here (owner directive 2026-10-14): recovery is never gated, and the player's
+/// `RecoveryBudget` is its budget.
 public enum RequestKind: Sendable {
     case player
     case autoRecovery
@@ -32,12 +34,11 @@ public actor ExtractionRateLimiter {
     private static let maxAttemptsPerVideo = 3
     private static let globalWindow = Duration.seconds(60)
     private static let maxGlobalAttempts = 10
-    private static let autoRecoveryReserved = 2
     private static let proactiveTTLReserved = 2
     private static let maxProactiveGlobalPerMinute = 10
 
     private struct VideoRecord {
-        /// Shared per-video budget: player + autoRecovery + prefetch attempts
+        /// Shared per-video budget: player + prefetch attempts
         /// (proactiveTTLRefresh intentionally does not add here — it must
         /// not starve manual/reactive recovery).
         var attemptTimestamps: [Duration] = []
@@ -45,10 +46,8 @@ public actor ExtractionRateLimiter {
         /// `.player` increments this; `onSuccess` clears it.
         var consecutivePlayerAttempts = 0
         var lastPlayerAttemptTime: Duration?
-        var lastAutoRecoveryAttemptTime: Duration?
         var lastPrefetchAttemptTime: Duration?
         var lastProactiveTTLRefreshAttemptTime: Duration?
-        var autoRecoveryAttemptTimestamps: [Duration] = []
         var proactiveTTLRefreshAttemptTimestamps: [Duration] = []
     }
 
@@ -64,7 +63,22 @@ public actor ExtractionRateLimiter {
     /// Test hook: how many per-video records the ledger currently holds (pruning coverage).
     var videoRecordCount: Int { records.count }
 
-    public func check(_ videoId: String, kind: RequestKind, now: Duration) -> Decision {
+    /// The kinds the limiter gates. `.autoRecovery` is not one: recovery is never gated (owner
+    /// directive 2026-10-14) -- `check` allows it before any bookkeeping, and this is the one place
+    /// that rule lives. Its budget is the player's own `RecoveryBudget`: 3 recovery resolves per
+    /// stream, 3 more after its one refund on the first progress, plus one AirPlay mirror -- at most
+    /// 7. A refusal here surfaced as a cooldown screen in the middle of a step-down that would have
+    /// played (V2Brp_esIVI).
+    private enum Lane { case player, prefetch, proactiveTTLRefresh }
+
+    public func check(_ videoId: String, kind kindAsked: RequestKind, now: Duration) -> Decision {
+        let kind: Lane
+        switch kindAsked {
+        case .player: kind = .player
+        case .prefetch: kind = .prefetch
+        case .proactiveTTLRefresh: kind = .proactiveTTLRefresh
+        case .autoRecovery: return .allowed
+        }
         if let blocked = globalDecision(kind: kind, now: now) {
             return blocked
         }
@@ -79,8 +93,8 @@ public actor ExtractionRateLimiter {
         // that counter is never pruned.
         records = records.filter { _, record in
             guard record.consecutivePlayerAttempts == 0 else { return true }
-            let lastActivity = [record.lastPlayerAttemptTime, record.lastAutoRecoveryAttemptTime,
-                                record.lastPrefetchAttemptTime, record.lastProactiveTTLRefreshAttemptTime]
+            let lastActivity = [record.lastPlayerAttemptTime, record.lastPrefetchAttemptTime,
+                                record.lastProactiveTTLRefreshAttemptTime]
                 .compactMap(\.self).max()
             guard let lastActivity else { return false }
             return now - lastActivity <= Self.perVideoWindow
@@ -88,7 +102,6 @@ public actor ExtractionRateLimiter {
 
         var record = records[videoId] ?? VideoRecord()
         record.attemptTimestamps.removeAll { now - $0 > Self.perVideoWindow }
-        record.autoRecoveryAttemptTimestamps.removeAll { now - $0 > Self.perVideoWindow }
         record.proactiveTTLRefreshAttemptTimestamps.removeAll { now - $0 > Self.perVideoWindow }
 
         if let decision = minIntervalDecision(record: record, kind: kind, now: now) {
@@ -106,10 +119,6 @@ public actor ExtractionRateLimiter {
             record.attemptTimestamps.append(now)
             record.consecutivePlayerAttempts += 1
             record.lastPlayerAttemptTime = now
-        case .autoRecovery:
-            record.attemptTimestamps.append(now)
-            record.lastAutoRecoveryAttemptTime = now
-            record.autoRecoveryAttemptTimestamps.append(now)
         case .prefetch:
             record.attemptTimestamps.append(now)
             record.lastPrefetchAttemptTime = now
@@ -120,8 +129,6 @@ public actor ExtractionRateLimiter {
         records[videoId] = record
 
         switch kind {
-        case .autoRecovery:
-            break // bypasses global accounting entirely
         case .proactiveTTLRefresh:
             globalProactiveTTLRefreshTimestamps.append(now)
         case .player, .prefetch:
@@ -139,13 +146,10 @@ public actor ExtractionRateLimiter {
 
     // MARK: - global lane
 
-    /// `.autoRecovery` bypasses the shared global limit entirely — reactive
-    /// recovery must never be blocked. `.proactiveTTLRefresh` has its own
-    /// ceiling, separate from the shared player/prefetch lane.
-    private func globalDecision(kind: RequestKind, now: Duration) -> Decision? {
+    /// `.proactiveTTLRefresh` has its own ceiling, separate from the shared
+    /// player/prefetch lane.
+    private func globalDecision(kind: Lane, now: Duration) -> Decision? {
         switch kind {
-        case .autoRecovery:
-            return nil
         case .proactiveTTLRefresh:
             globalProactiveTTLRefreshTimestamps.removeAll { now - $0 > Self.globalWindow }
             guard globalProactiveTTLRefreshTimestamps.count >= Self.maxProactiveGlobalPerMinute else { return nil }
@@ -165,13 +169,11 @@ public actor ExtractionRateLimiter {
 
     // MARK: - per-video lane
 
-    /// Minimum interval between same-video-same-kind attempts. The first
-    /// `.autoRecovery` attempt for a video skips this check.
-    private func minIntervalDecision(record: VideoRecord, kind: RequestKind, now: Duration) -> Decision? {
+    /// Minimum interval between same-video-same-kind attempts.
+    private func minIntervalDecision(record: VideoRecord, kind: Lane, now: Duration) -> Decision? {
         let lastAttempt: Duration?
         switch kind {
         case .player: lastAttempt = record.lastPlayerAttemptTime
-        case .autoRecovery: lastAttempt = record.lastAutoRecoveryAttemptTime
         case .prefetch: lastAttempt = record.lastPrefetchAttemptTime
         case .proactiveTTLRefresh: lastAttempt = record.lastProactiveTTLRefreshAttemptTime
         }
@@ -179,28 +181,13 @@ public actor ExtractionRateLimiter {
 
         let sinceLastAttempt = now - lastAttempt
         guard sinceLastAttempt < Self.minExtractionInterval else { return nil }
-
-        if kind == .autoRecovery, record.autoRecoveryAttemptTimestamps.isEmpty {
-            return nil
-        }
         return .delayed(Self.minExtractionInterval - sinceLastAttempt, reason: "minimum interval")
     }
 
-    private func perVideoBudgetDecision(record: VideoRecord, kind: RequestKind, now: Duration) -> Decision? {
+    private func perVideoBudgetDecision(record: VideoRecord, kind: Lane, now: Duration) -> Decision? {
         let attemptsInWindow = record.attemptTimestamps.count
 
         switch kind {
-        case .autoRecovery:
-            // Reserved budget: proceeds even if the shared per-video total is
-            // already exhausted, unless auto-recovery's own reserve AND the
-            // shared total are both exhausted.
-            guard record.autoRecoveryAttemptTimestamps.count >= Self.autoRecoveryReserved else { return nil }
-            guard attemptsInWindow >= Self.maxAttemptsPerVideo else { return nil }
-            return .blocked(
-                reason: "auto-recovery limit (\(Self.autoRecoveryReserved) per window)",
-                retryAfter: retryAfter(for: record.attemptTimestamps, window: Self.perVideoWindow, now: now)
-            )
-
         case .player:
             if attemptsInWindow >= Self.maxAttemptsPerVideo {
                 return .blocked(
@@ -216,7 +203,7 @@ public actor ExtractionRateLimiter {
 
         case .prefetch:
             // Lowest priority: blocked once budget pressure exists, to
-            // preserve room for manual/recovery.
+            // preserve room for the player's own resolves.
             guard attemptsInWindow >= Self.maxAttemptsPerVideo - 1 else { return nil }
             return .blocked(reason: "prefetch blocked (budget reserved)", retryAfter: Self.perVideoWindow)
 

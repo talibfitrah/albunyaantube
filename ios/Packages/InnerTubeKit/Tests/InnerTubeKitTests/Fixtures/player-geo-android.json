@@ -1,0 +1,23 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+  },
+  "playabilityStatus": {
+    "status": "UNPLAYABLE",
+    "reason": "The uploader has not made this video available in your country",
+    "errorScreen": {
+      "playerErrorMessageRenderer": {
+        "reason": {
+          "runs": [
+            {
+              "text": "The uploader has not made this video available in your country"
+            }
+          ]
+        },
+        "icon": {
+          "iconType": "ERROR_OUTLINE"
+        }
+      }
+    }
+  }
+}

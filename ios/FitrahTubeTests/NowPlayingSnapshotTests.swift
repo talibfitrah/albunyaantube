@@ -68,12 +68,6 @@ import Testing
                                         elapsed: 30, duration: 60, rate: 0) == nil)
     }
 
-    /// CF-B2-9: `make` already returns nil for the embed rung; what this pins is that it STAYS nil,
-    /// so leaving rung 1 for the embed cannot leave the previous video's metadata on the lock
-    /// screen. The clearing itself is `PlayerHostView.dismantleUIViewController` -> `detach()` ->
-    /// `removeRemoteCommands()`, which runs because the embed branch never mounts the host --
-    /// nothing in `EmbedRungView` publishes a Now Playing entry of its own (YouTube API Services
-    /// policy III.I.9: no background player for embed content).
     /// CF-G-16: `.recoveryExhausted` means playback has STOPPED for good until a manual retry --
     /// advertising it as playable was masked only because that state dismantles the host, which
     /// clears the dictionary anyway. The snapshot must not lie: nothing playable, nothing made.
@@ -84,14 +78,6 @@ import Testing
         #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "abc", title: "T"),
                                         state: .recoveryExhausted(resolved),
                                         elapsed: 10, duration: 60, rate: 0) == nil)
-    }
-
-    @Test func theEmbedRungAdvertisesNoNowPlayingEntry() {
-        let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
-                                resolvedAt: Date(), expiresAt: nil)
-        #expect(NowPlayingSnapshot.make(args: PlayerArgs(videoId: "xc7keR2piUM"),
-                                        state: .embed(resolved),
-                                        elapsed: 0, duration: 120, rate: 1) == nil)
     }
 
     @Test func remoteCommandsExposePlayPauseAndSeekButNotNextOrPrevious() {

@@ -1,4 +1,5 @@
 import AVFoundation
+import Combine
 import Foundation
 import InnerTubeKit
 
@@ -17,8 +18,23 @@ protocol StreamResolving: Sendable {
     /// `(.hls, false)` nil arm and failed NO_STREAM, with a doc comment as the only guard. This way
     /// round, the compiler is the guard: a resolver that cannot answer the muxed question does not
     /// conform.
+    ///
+    /// `requiresHLS` is the same contract for the other save shape (Cubic C2): an audio-only save
+    /// needs VISIONOS's itag 140, so the resolver skips the ANDROID rung, wherever a step-down put
+    /// it, with the same cache and single-flight bypass, and it never records a bot-check trip (fix
+    /// r5 N4-2). Only `OfflineManager` passes `true`: when its plain walk answered without itag 140
+    /// (after a step-down, or with VISIONOS failing at walk time; fix r4 N-1), and for every walk the
+    /// save must force (fix r5 N4-4).
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved
+
+    /// Recovery's step-down (owner directive 2026-10-14): `failed`'s stream for `videoId` resolved but
+    /// would not play, so the next walks for this video resume the ladder at the rung after it
+    /// (`StreamResolver.demote`). A requirement with NO default, on purpose (the R8-3 rule above): a
+    /// decorator that forgot to forward it would silently send every step-down back to rung 1.
+    /// Resolvers with no ladder (fixtures, the offline resolver, test doubles) implement it empty.
+    func demote(_ videoId: String, failed: ClientFamily) async
 }
 
 extension StreamResolving {
@@ -31,7 +47,7 @@ extension StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool) async throws -> Resolved {
         try await resolve(videoId, purpose: purpose, kind: kind, sourceChannelId: sourceChannelId,
-                          forceRefresh: forceRefresh, requiresMuxed: false)
+                          forceRefresh: forceRefresh, requiresMuxed: false, requiresHLS: false)
     }
 }
 
@@ -43,9 +59,14 @@ struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
-                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed)
+                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        await resolver.demote(videoId, failed: failed)
     }
 }
 
@@ -64,7 +85,8 @@ struct RateLimitedResolver: StreamResolving {
     }
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
-                 sourceChannelId: String?, forceRefresh: Bool, requiresMuxed: Bool) async throws -> Resolved {
+                 sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // Scoped exactly as Android scopes it (`ui/player/PlayerViewModel.kt:1243/1256/1265` are its
         // only three limiter call sites, all force-refreshes). A non-forced resolve may be served
         // straight from `ManifestCache` with no network at all -- gating it would make the 30 s
@@ -72,6 +94,8 @@ struct RateLimitedResolver: StreamResolving {
         // is gated even though it is never forced (B5, reconciliation note 7): a prefetch is the
         // non-forced resolve most likely to hit the network, and it is the one lane the limiter
         // exists to keep behind the interactive one.
+        // `.autoRecovery` is asked too and always allowed: `ExtractionRateLimiter.check` is the one
+        // place that rule lives (owner directive 2026-10-14).
         if forceRefresh || kind == .prefetch {
             switch await rateLimiter.check(videoId, kind: kind, now: clock.now) {
             case .allowed:
@@ -84,9 +108,13 @@ struct RateLimitedResolver: StreamResolving {
         }
         let resolved = try await wrapped.resolve(videoId, purpose: purpose, kind: kind,
                                                  sourceChannelId: sourceChannelId, forceRefresh: forceRefresh,
-                                                 requiresMuxed: requiresMuxed)
+                                                 requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
         await rateLimiter.onSuccess(videoId)   // clears the .player exponential backoff (Android :1551)
         return resolved
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {
+        await wrapped.demote(videoId, failed: failed)
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {
@@ -116,15 +144,6 @@ extension StreamState {
     var isLive: Bool {
         guard let resolved, case .hls(_, let isLive, _, _) = resolved.stream else { return false }
         return isLive
-    }
-
-    /// Cubic #3 (= gstack R2): `.embed` is a successful playback surface for auto-advance purposes
-    /// even though it is deliberately NOT `isPlayable` -- it has no `AVPlayer` to preserve, is never
-    /// cached and never counts as a healthy fetch (`StreamResolver.succeed`), which is why it stays
-    /// out of `resolved`/`isPlayable` rather than being folded in.
-    var isEmbedRung: Bool {
-        if case .embed = self { return true }
-        return false
     }
 }
 
@@ -164,6 +183,9 @@ extension StreamState {
             audioLanguageGroup = nil
             audioLanguageOptions = []
             audioLanguageLoad = Task { await AudioLanguageMenu.load(self) }
+            legibleGroup = nil
+            captionSelectionSync = nil
+            captionsLoad = Task { await CaptionsMenu.load(self) }
         }
     }
 
@@ -180,21 +202,24 @@ extension StreamState {
     /// `currentItem` in `PlayerHostView`'s make/update pair.
     var currentPlayer: AVPlayer?
 
-    /// Task 6 (captions): the toggle's current pick (`nil` = Off). Session-only, like
-    /// `selectedQuality`/`stickyAudioLanguage` -- survives a re-resolve within one player lifetime,
-    /// never persisted.
-    var selectedCaptionTrack: CaptionTrack?
+    /// The captions menu's pick (`CaptionChoice`, nil = Off). Session-only, like `selectedQuality`/
+    /// `stickyAudioLanguage` -- survives a re-resolve and Up Next (`CaptionChoice.resolve`), never
+    /// persisted; a freshly opened player screen starts Off.
+    var captionChoice: CaptionChoice?
+
+    /// `CaptionsMenu.load`'s result for `currentItem`: its legible (HLS SUBTITLES) group -- the
+    /// uploader's tracks. Cleared with the audio group on every new item.
+    var legibleGroup: AVMediaSelectionGroup?
+    /// The load `currentItem`'s `didSet` started, kept so a caller can await it landing.
+    private(set) var captionsLoad: Task<Void, Never>?
+    /// Follows AVKit's own Subtitles menu on `currentItem` (`CaptionsMenu.load`); a new item drops it.
+    @ObservationIgnored var captionSelectionSync: AnyCancellable?
 
     /// Ruling 34: the Settings "Audio only" value SEEDS this per-session toggle (Android's settings
     /// value is written and never read -- player.md §15, defect). Session-only after seeding:
     /// flipping it here never writes back to `SettingsStore`, matching Android's own non-persisted
     /// toggle (player.md §5, "Not persisted; resets with the ViewModel").
     var audioOnly: Bool
-
-    /// Guards the one-time "auto-enable the first track when VoiceOver's closed-captioning
-    /// setting is on" default (spec §10) so it never fights a later manual "Off" pick across
-    /// re-renders of the same session.
-    var captionsAutoEnableApplied = false
 
     private let resolver: any StreamResolving
     private let settings: any SettingsStore
@@ -223,6 +248,9 @@ extension StreamState {
     /// read off `player.upNext.header`'s accessibilityValue. Debug builds only.
     private(set) var playToEndCalls = 0
     private(set) var advanceCalls = 0
+    /// The CDN status the last recovery event carried, for the DEBUG route probe's `status=` -- the
+    /// simulator step-down proof reads the real 401 its local server returned (plan Task 7).
+    private(set) var debugLastRecoveryStatus: Int?
     #endif
 
     /// Ruling 33 / spec §10. Empty in single-video mode; populated from `args.playlistId`.
@@ -271,7 +299,20 @@ extension StreamState {
     private var generation = 0
     private var resolveTask: Task<Void, Never>?
     private var recoveryBudget = RecoveryBudget()
-    private var isRecovering = false
+    /// The recovery in progress, if any. A token rather than a flag (stage 5 F4): a recovery that a
+    /// user action superseded can stay suspended on the network for a long time (`Task.value` does
+    /// not end when its awaiter is cancelled), and the next video's one-shot failure must not be
+    /// dropped behind it. A fresh stream (`resolve(resetBudget: true)`) drops the claim, and the old
+    /// call's exit clears only its own.
+    private var recoveryToken: UUID?
+    private var isRecovering: Bool { recoveryToken != nil }
+    /// The videos this player has demoted a rung for: a step-down, or an exhaustion's demotion
+    /// (stage 7 r2 N3; R2-1; fix r4 N-5 and Codex N1). Ids, not a per-stream flag: the resolver's
+    /// demotion lasts the session per video, so Retry and a return to the video (a -> b -> a) must
+    /// not forget it, and another video simply never matches.
+    /// ponytail: per view model, so leaving the video and opening it again starts unguarded (R2-1
+    /// scenario B, one extra Retry). Ask the resolver (`isDemoted`) if that ever matters.
+    private var steppedDownVideoIds: Set<String> = []
     /// Task 8: this stream already mirrored once out of an AirPlay failure (`AirPlayFallback`).
     /// Per stream, reset in `swapArgs` alongside `videoZoomed`.
     /// ponytail: never re-armed within one video, so re-selecting an AirPlay route after a
@@ -415,16 +456,7 @@ extension StreamState {
         // `.loading` as a failed advance, burned a skip walking `queue.advance()` off the user's
         // pick, and its recursive resolve superseded the tap's.
         guard stillCurrent else { return }
-        // `.embed` counts as a successful advance (Cubic #3): the video shows in PlayerScreen's
-        // embed branch and a direct tap would have played it -- skipping it burnt a
-        // `consecutiveSkips` slot on a playable item. Backgrounded, the same hop stops the queue
-        // instead (traced, not guessed): the state change dismantles `PlayerHostView`, whose
-        // teardown runs `BackgroundPlaybackController.detach()` (audio session released, and
-        // `NowPlayingSnapshot.make` already returns nil for `.embed` per CF-B2-9, clearing the lock
-        // screen), and the embed's WKWebView cannot autoplay without the foreground -- so playback
-        // ends silently at the embed item with the queue position preserved for the return to
-        // foreground. That is the existing background pause semantics, not a skip.
-        if state.isPlayable || state.isEmbedRung {
+        if state.isPlayable {
             consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
             await prefetchUpcoming()
             await pageIfNeeded()
@@ -543,28 +575,34 @@ extension StreamState {
     }
 
     /// Task 7: one recovery incident (`PlayerHostView`'s KVO/notification/stall observers feed this).
-    /// Runs the pure budget machine, then either re-resolves in place or gives up.
+    /// Runs the pure budget machine, then re-resolves in place, steps down, or gives up.
     ///
-    /// **Rung tracking**: there is none, deliberately. `StreamResolver` walks its whole
-    /// `resolverOrder` ladder top-down on every forced resolve and exposes no "start at rung N"
-    /// entry point, so `.reResolveSameRung` and `.stepDownRung` are the *same* network call -- the
-    /// rung is whatever the resolver hands back, read off `Resolved.stream` by `map` (`.hls` = rung
-    /// 1, `.progressive` = rung 2). A rung the resolver can still serve keeps playing; one that has
-    /// started failing at resolve time demotes on its own. The two actions differ only in budget
-    /// accounting (which is exactly what bounds the loop). A VM-side rung index would be a second,
-    /// unenforceable model of the resolver's ladder.
+    /// **Step-down** (owner directive 2026-10-14): `.stepDownRung` tells the resolver the rung on
+    /// screen failed for this video (`StreamResolving.demote`) BEFORE re-resolving, so the walk
+    /// resumes at the next rung -- and stays there for this video for the session. `.reResolveSameRung`
+    /// demotes nothing: a fresh URL from the same rung is the fix for an expired or revoked one.
+    /// `httpStatus` is the CDN's answer from the failed item's error log, when AVFoundation gave one.
+    /// Recovery is never refused by the extraction limiter (`RateLimitedResolver`): `RecoveryBudget`
+    /// is its budget.
     ///
     /// Position is preserved by NOT passing through `.loading`: `PlayerHostView.player(for:replacing:)`
     /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
-    func handleRecoveryEvent(_ event: RecoveryEvent) async {
+    func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil) async {
+        #if DEBUG
+        if let httpStatus { debugLastRecoveryStatus = httpStatus }
+        #endif
         // One failure raises several observers at once -- `AVPlayerItemFailedToPlayToEndTime` and
         // `status == .failed` land together on a dead stream. Without this the same incident spends
         // two budget slots and fires two resolves, one of which the generation guard then discards.
         // First event in wins; the rest are the same incident.
-        guard !isRecovering, let resolved = state.resolved else { return }
-        isRecovering = true
-        defer { isRecovering = false }
+        // `resolvedVideoId == args.videoId` (final review M1): the failure is the stream on screen's,
+        // and while an advance's resolve is out `args` already names the NEXT video -- recovering
+        // then would force-resolve that one on this lane and supersede the advance.
+        guard !isRecovering, resolvedVideoId == args.videoId, let resolved = state.resolved else { return }
+        let token = UUID()
+        recoveryToken = token
+        defer { if recoveryToken == token { recoveryToken = nil } }
         // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
         // an item that failed while an external route was playing it is the plan's IP-binding
         // risk, not a broken stream. Drop external playback so the same re-resolve mirrors from
@@ -579,12 +617,40 @@ extension StreamState {
             await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
             return
         }
-        let action = PlaybackRecovery.decide(event: event, state: recoveryBudget)
+        let action = PlaybackRecovery.decide(event: event, httpStatus: httpStatus, state: recoveryBudget)
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
+            // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
+            // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
+            // so Retry starts at the next rung instead of walking the one that kept failing. Not
+            // once this video demoted a rung (r2 N3), Retries since included (R2-1), this demotion
+            // too (Codex N1): the resolver keeps ONE demoted rung per video, the stream on screen
+            // is already the fallback, and demoting it would point Retry back at the rung that was
+            // proven bad.
+            if steppedDownVideoIds.insert(hostVideoId).inserted {
+                let myGeneration = generation
+                await resolver.demote(hostVideoId, failed: resolved.client)
+                guard myGeneration == generation else { return }
+            }
+            // Codex N2: a proactive refresh still in flight (`reResolveIfExpiring` holds no recovery
+            // token) would land over the Retry card with the rung just demoted. Superseded here,
+            // its result is discarded like any other.
+            generation += 1
+            resolveTask?.cancel()
             state = .recoveryExhausted(resolved)
-        case .reResolveSameRung, .stepDownRung:
+        case .stepDownRung:
+            steppedDownVideoIds.insert(hostVideoId)
+            // ponytail: two stalls without progress (>= 12 s) pin this video to 360p for the session;
+            // make `.stall` step-downs non-sticky if congestion makes that common (R15).
+            // `hostVideoId`, not `args.videoId`: the failed stream is the one on screen, and an
+            // advance moves `args` before its own resolve lands.
+            let myGeneration = generation
+            await resolver.demote(hostVideoId, failed: resolved.client)
+            // `demote` suspends: an advance or Up Next tap that landed meanwhile owns the screen now.
+            guard myGeneration == generation else { return }
+            await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
+        case .reResolveSameRung:
             // `showLoading: false` but NOT `silent:` -- by the time this runs the stream has
             // genuinely stopped working, so a failed re-resolve SHOULD surface as `.error` /
             // `.contentUnavailable` / `.cooldown` rather than leaving a dead player on screen.
@@ -636,9 +702,8 @@ extension StreamState {
     /// resolved URL is bound to the phone's IP either way, so a fresh walk buys the receiver
     /// nothing; only genuine expiry does.
     ///
-    /// `nil` = nothing castable (the embed rung, or a refusal with no usable stream behind it) --
-    /// the caller surfaces that as the same "Couldn't play on {device}" a receiver's own refusal
-    /// produces.
+    /// `nil` = nothing castable (a refusal with no usable stream behind it) -- the caller surfaces
+    /// that as the same "Couldn't play on {device}" a receiver's own refusal produces.
     ///
     /// Only the muxed itag-18 MP4 is castable (`CastMedia.make`: a receiver cannot play the rung-1
     /// manifest). So a manifest on screen is never reused: the cast walks the muxed rung itself.
@@ -650,9 +715,8 @@ extension StreamState {
     ///
     /// `.cast` purpose: a bot check on this walk fails the cast only (the existing banner) and never
     /// records InnerTubeKit's GLOBAL cooldown -- from the usual `.hls` the phone never tried the
-    /// android rung, so a trip here would lock out its WORKING rung-1 playback for 1-24 h. The
-    /// offline save's identical walk (`.prefetch`) still records it. Nothing is walked from the
-    /// embed rung, where the phone's own walk already saw the android rung fail. NOT skipped for
+    /// android rung, so a trip here would lock out its WORKING rung-1 playback for up to 5 minutes. The
+    /// offline save's identical walk (`.prefetch`) still records it. NOT skipped for
     /// `state.isLive`: that flag reads `isLiveContent` for an ENDED
     /// broadcast -- nhaGO__rxHQ resolves `.hls(isLive: true)`, yet its itag-18 walk played on a real
     /// Chromecast (2026-09-27).
@@ -662,11 +726,10 @@ extension StreamState {
         // the outgoing video's stream. Joining the walk this player is already making is free.
         await resolveTask?.value
         if let media = currentCastStream(now: now).flatMap({ CastMedia.make(resolved: $0, args: args) }) { return media }
-        if case .embed = state { return nil }
         do {
             let resolved = try await resolver.resolve(args.videoId, purpose: .cast, kind: .player,
                                                       sourceChannelId: args.channelId, forceRefresh: false,
-                                                      requiresMuxed: true)
+                                                      requiresMuxed: true, requiresHLS: false)
             return CastMedia.make(resolved: resolved, args: args)
         } catch {
             // The user-visible collapse to one banner is deliberate (a cooldown and a receiver
@@ -914,10 +977,9 @@ extension StreamState {
         guard attempt == castAttempts, args.videoId == videoId,
               cast.stillCasting(videoId, owner: castOwner) else { return }
         guard let media else {
-            // Nothing castable: the embed rung (never castable -- the no-hand-off directive), a
-            // resolve that did not come back, or a near-expiry URL that could not outlive
-            // what is left to play. Same outcome for the user as a receiver refusing the load, so
-            // it gets the same banner rather than copy of its own.
+            // Nothing castable: a resolve that did not come back, or a near-expiry URL that could
+            // not outlive what is left to play. Same outcome for the user as a receiver refusing
+            // the load, so it gets the same banner rather than copy of its own.
             cast.reportLoadFailure(claim: CastClaim(videoId: videoId, owner: castOwner))
             return
         }
@@ -1012,8 +1074,12 @@ extension StreamState {
         let myGeneration = generation
         resolveTask?.cancel()
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
-        // one): hand it a full budget. Recovery's own re-resolves must not refill their own budget.
-        if resetBudget { recoveryBudget = RecoveryBudget() }
+        // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
+        // own re-resolves must not refill their own budget.
+        if resetBudget {
+            recoveryBudget = RecoveryBudget()
+            recoveryToken = nil
+        }
         if showLoading { state = .loading }
         let task = Task {
             await self.performResolve(generation: myGeneration, forceRefresh: forceRefresh,
@@ -1048,7 +1114,7 @@ extension StreamState {
         // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
         // because by then the stream has actually stopped working.
         if silent, !result.isPlayable { return }
-        // Together, always: `.unplayable`/`.error`/`.contentUnavailable` results move it too --
+        // Together, always: `.error`/`.contentUnavailable` results move it too --
         // the state on screen is now THIS video's, whatever it says.
         resolvedVideoId = videoId
         state = result
@@ -1063,23 +1129,6 @@ extension StreamState {
             return .ready(resolved)
         case .progressive:
             return .rung2Progressive(resolved)
-        case .embed:
-            // The floor of the ladder. Safe Mode deliberately does NOT suppress this rung: it keeps
-            // playback inside the app, which is the thing Safe Mode exists to preserve.
-            return .embed(resolved)
-        }
-    }
-
-    /// Task 4's bridge from an IFrame error to a `StreamState`. Split from `EmbedErrorPolicy`
-    /// (which is pure) so the policy stays a truth table.
-    func applyEmbedAction(_ action: EmbedErrorAction) {
-        switch action {
-        case .reloadOnce:
-            break                       // the view reloads its own web view; the state does not move
-        case .fail(let messageKey):
-            state = .error(messageKey: messageKey)
-        case .unplayable(let messageKey):
-            state = .unplayable(messageKey: messageKey)
         }
     }
 

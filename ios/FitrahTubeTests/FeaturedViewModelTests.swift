@@ -39,7 +39,7 @@ struct FeaturedViewModelTests {
             contentCalls.append(ContentCall(type: type, cursor: cursor, limit: limit, category: filter.categoryId))
             return contentPages[cursor ?? "first"] ?? CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// `home()` always fails (probe never resolves sections mode); `content()` succeeds once then
@@ -64,7 +64,7 @@ struct FeaturedViewModelTests {
             if contentCallCount == 1 { return firstPage }
             throw Boom()
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// Probe always fails, and the flat fetch itself fails too -- for the terminal `.error` test.
@@ -73,7 +73,7 @@ struct FeaturedViewModelTests {
         func categories() async throws -> [FitrahTube.Category] { [] }
         func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> { throw Boom() }
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> { throw Boom() }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `home()` call resolves immediately (flat-mode fallback via empty sections);
@@ -96,7 +96,7 @@ struct FeaturedViewModelTests {
             if contentCallCount > 1 { await gate.block() }
             return page
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     // MARK: - Probe -> sections vs flat

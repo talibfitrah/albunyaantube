@@ -11,6 +11,8 @@ struct SearchView: View {
 
     @State private var viewModel: SearchViewModel?
 
+    private static let topAnchor = "search-results-top"
+
     var body: some View {
         VStack(spacing: 0) {
             searchField
@@ -19,6 +21,14 @@ struct SearchView: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "search"))
         .navigationBarTitleDisplayMode(.inline)
+        .toolbar {
+            ToolbarItem(placement: .topBarTrailing) {
+                if showsSearchingIndicator {
+                    ProgressView().controlSize(.small).tint(.brand)
+                        .accessibilityLabel(String(localized: "search_loading"))
+                }
+            }
+        }
         .task {
             if viewModel == nil {
                 viewModel = SearchViewModel(catalog: container.catalog, history: container.searchHistory)
@@ -45,7 +55,7 @@ struct SearchView: View {
     }
     #endif
 
-    // MARK: - Search field (§1.2 -- 500 ms debounce/min 2 chars live in the ViewModel; submit here
+    // MARK: - Search field (§1.2 -- 300 ms debounce/min 2 chars live in the ViewModel; submit here
     // bypasses both)
 
     private var queryBinding: Binding<String> {
@@ -74,13 +84,16 @@ struct SearchView: View {
                 }
             case .loading:
                 loadingView
-            case .results(let items):
-                resultsList(items)
+            case .results(let items, let match):
+                VStack(spacing: 0) {
+                    if match != .exact { closestResultsNote }
+                    resultsList(items)
+                }
             case .noResults:
                 EmptyStateView(
                     systemImage: "magnifyingglass",
                     title: String(localized: "search_no_results"),
-                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.lastSearchedQuery)
+                    message: Format.localizedFormat("search_try_different", locale: locale, viewModel.shownQuery ?? "")
                 )
             case .error:
                 // RULINGS #23: Android has no retry button on search error; this one does.
@@ -104,6 +117,21 @@ struct SearchView: View {
         }
         .padding(Spacing.xl(widthClass))
         .frame(maxWidth: .infinity, maxHeight: .infinity)
+    }
+
+    /// Spec §6: the answer on screen stays while a newer search loads; this says one is running. It
+    /// lives in the navigation bar, not in the content, so starting or ending a search never moves or
+    /// covers the list (owner: smooth typing).
+    private var showsSearchingIndicator: Bool { viewModel?.isSearching == true }
+
+    /// Spec §6: shown when the best match was approximate or related (`X-Search-Match`).
+    private var closestResultsNote: some View {
+        Text(String(localized: "search_closest_results"))
+            .font(TypeScale.body(widthClass))
+            .foregroundStyle(Color.textSecondary)
+            .frame(maxWidth: .infinity, alignment: .leading)
+            .padding(.horizontal, Spacing.md(widthClass))
+            .padding(.vertical, Spacing.sm)
     }
 
     // MARK: - History (§1.3)
@@ -156,9 +184,17 @@ struct SearchView: View {
     // MARK: - Results (§1.5 -- flat, heterogeneous, server order kept, no grouping, no paging)
 
     private func resultsList(_ items: [ContentItem]) -> some View {
-        ScrollView {
-            LazyVStack(spacing: 0) {
-                ForEach(items) { item in resultRow(item) }
+        ScrollViewReader { proxy in
+            ScrollView {
+                LazyVStack(spacing: 0) {
+                    Color.clear.frame(height: 0).id(Self.topAnchor)
+                    ForEach(items) { item in resultRow(item) }
+                }
+            }
+            // A new query's results replacing the list open at their top, as the tabs' do; the
+            // same query searched again keeps the place.
+            .onChange(of: viewModel?.shownQuery) { _, _ in
+                proxy.scrollTo(Self.topAnchor, anchor: .top)
             }
         }
     }

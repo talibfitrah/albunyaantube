@@ -20,6 +20,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.mockito.junit.jupiter.MockitoSettings;
 import org.mockito.quality.Strictness;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.security.authentication.UsernamePasswordAuthenticationToken;
 import org.springframework.security.core.context.SecurityContextHolder;
 
@@ -56,6 +57,7 @@ class ContentLibraryMarkPendingTest {
     @Mock private com.albunyaan.tube.service.TagEnrichmentService tagEnrichmentService;
     @Mock private ImportGraduationService importGraduationService;
     @Mock private UserRepository userRepository;
+    @Mock private ApplicationEventPublisher events;
 
     @InjectMocks
     private ContentLibraryController controller;

@@ -3,10 +3,10 @@ import InnerTubeKit
 import SwiftUI
 
 /// The auto-generated captions overlay (spec §10 Captions paragraph; plan §6.5): shows the cue
-/// whose interval contains the current playback time for `track`, nothing otherwise. Manual
-/// tracks (HLS `SUBTITLES` renditions) render through AVKit's own stock subtitle menu -- this view
-/// only exists for the InnerTubeKit-surfaced auto-generated tracks `PlayerScreen`'s captions
-/// toggle picks from.
+/// whose interval contains the current playback time for `track`, nothing otherwise. Uploader
+/// tracks (HLS `SUBTITLES` renditions) are drawn by AVFoundation from the item's legible group --
+/// this view only exists for the InnerTubeKit-surfaced auto-generated tracks. Both are picked in
+/// the one `CaptionsMenu`.
 struct CaptionOverlay: View {
     let model: PlayerViewModel
     let track: CaptionTrack
@@ -51,11 +51,12 @@ struct CaptionOverlay: View {
         let fetched = (try? await CaptionsProvider().cues(for: track, userAgent: userAgent)) ?? []
         // Currentness guard (Task 5's known gap, task-6-brief.md): a re-resolve/item swap while
         // this `await` was in flight must not apply a stale track's cues to the new item. Fix
-        // round 1 F2: also re-check `selectedCaptionTrack == track` -- a rapid A->B track switch
+        // round 1 F2: also re-check the selection is still `track` -- a rapid A->B track switch
         // keeps the same item/player, so the item check alone let A's stale load win the race and
         // overwrite B's overlay (`try?` swallows `CancellationError`, so `.task(id:)`'s
-        // cancellation of the old task isn't a reliable stop on its own).
-        guard item === model.currentItem, model.selectedCaptionTrack == track,
+        // cancellation of the old task isn't a reliable stop on its own). Through the menu's own
+        // rule, so a pick carried over Up Next counts as this video's track.
+        guard item === model.currentItem, CaptionsMenu.overlayTrack(model) == track,
               let player = model.currentPlayer else { return }
         observer.start(player: player) { activeCue = CaptionsProvider.activeCue(fetched, at: $0.seconds) }
     }

@@ -4,6 +4,8 @@ import com.albunyaan.tube.config.CacheConfig;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.search.CatalogChanged;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.api.core.ApiFuture;
 import com.google.cloud.firestore.AggregateQuery;
@@ -45,10 +47,13 @@ public class ChannelRepository {
     private static final String COLLECTION_NAME = "channels";
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final ApplicationEventPublisher events;
 
-    public ChannelRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties) {
+    public ChannelRepository(Firestore firestore, FirestoreTimeoutProperties timeoutProperties,
+                             ApplicationEventPublisher events) {
         this.firestore = firestore;
         this.timeoutProperties = timeoutProperties;
+        this.events = events;
     }
 
     private CollectionReference getCollection() {
@@ -70,7 +75,7 @@ public class ChannelRepository {
                 .document(channel.getId())
                 .set(channel);
 
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
         return channel;
     }
 
@@ -88,7 +93,7 @@ public class ChannelRepository {
         channel.setExcludedItems(channel.getExcludedItems());
 
         DocumentReference docRef = getCollection().document(channel.getId());
-        return firestore.runTransaction(transaction -> {
+        ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
             DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + channel.getId());
@@ -101,7 +106,8 @@ public class ChannelRepository {
             }
             transaction.set(docRef, channel);
             return channel;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
     }
 
     public Optional<Channel> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -183,6 +189,16 @@ public class ChannelRepository {
             }
         }
         return out;
+    }
+
+    /**
+     * Every document with `status`, raw and unordered, for the search index: no orderBy, so a document
+     * without `createdAt` is not dropped (F6); the index maps each one itself, skipping one it cannot (F4).
+     */
+    public List<QueryDocumentSnapshot> findByStatusUnordered(String status)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("status", status).get()
+                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**
@@ -317,7 +333,7 @@ public class ChannelRepository {
 
     public void deleteById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<WriteResult> result = getCollection().document(id).delete();
-        result.get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(result, timeoutProperties.getWrite(), events, "CHANNEL", id);
     }
 
     /**
@@ -332,7 +348,7 @@ public class ChannelRepository {
             throw new IllegalArgumentException("id and non-empty expectedStatuses required");
         }
         DocumentReference docRef = getCollection().document(id);
-        firestore.runTransaction(transaction -> {
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
             DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
             if (!snapshot.exists()) {
                 throw new IllegalArgumentException("Channel not found: " + id);
@@ -345,7 +361,8 @@ public class ChannelRepository {
             }
             transaction.delete(docRef);
             return null;
-        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", id);
     }
 
     /**
@@ -366,8 +383,8 @@ public class ChannelRepository {
             fields.put("subscribers", subscribers);
         }
         fields.put("updatedAt", com.google.cloud.Timestamp.now());
-        getCollection().document(id).update(fields)
-                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+        CatalogChanged.await(getCollection().document(id).update(fields), timeoutProperties.getWrite(), events,
+                "CHANNEL", id);
     }
 
     public List<Channel> findAll() throws ExecutionException, InterruptedException, TimeoutException {
@@ -483,39 +500,6 @@ public class ChannelRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    public List<Channel> searchByName(String query) throws ExecutionException, InterruptedException, TimeoutException {
-        // Firestore doesn't support full-text search, so we'll use prefix matching
-        // For production, consider using Algolia or Elasticsearch
-        // Note: Filtering by status removed from query to avoid composite index requirement
-        // Status filtering done in PublicContentService layer
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("name")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Search channels by name prefix with limit (bounded query).
-     * This prevents quota exhaustion for broad search queries.
-     *
-     * @param query Search prefix
-     * @param limit Maximum number of results
-     * @return List of matching channels
-     */
-    public List<Channel> searchByName(String query, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("name")
-                .startAt(query)
-                .endAt(query + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
     /**

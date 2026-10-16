@@ -50,13 +50,6 @@ struct CastMediaTests {
         #expect(info.metadata?.string(forKey: kGCKMetadataKeyTitle) == "Tafsir of Surah Al-Kahf")
     }
 
-    /// The no-hand-off directive's cast-shaped edge: rung 3 plays inside a `WKWebView` pointed at
-    /// youtube-nocookie.com. There is no stream URL to hand a receiver, and handing it the video id
-    /// would be a YouTube hand-off by another route. Never castable, no fallback, no second rung.
-    @Test func theEmbedRungIsNeverCastable() {
-        #expect(CastMedia.make(resolved: resolved(.embed(videoId: "xc7keR2piUM")), args: args) == nil)
-    }
-
     /// Compliance pin (re-review Minor 1): a receiver fetches `contentURL` over the network, so a
     /// sandbox `file://` URL — what `OfflineResolver` answers with for a saved video — is never
     /// castable. Handing one to a receiver is a guaranteed-doomed load AND points the cast surface

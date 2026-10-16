@@ -58,17 +58,15 @@ public class SearchableStreamRepository {
     }
 
     /**
-     * Search streams by a single token. Caller intersects multiple tokens in memory.
+     * One page of visible stream documents, raw, in document-id order, for the search index's startup load
+     * (spec §5.1); the index maps each one itself, skipping one it cannot (F4). Equality on one field plus
+     * `__name__` order: no composite index needed.
      */
-    public List<SearchableStream> searchByToken(String token, int limit)
+    public List<QueryDocumentSnapshot> findVisiblePage(String afterId, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
-        return getCollection()
-                .whereArrayContains("searchTokens", token)
-                .whereEqualTo("visible", true)
-                .limit(limit)
-                .get()
-                .get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS)
-                .toObjects(SearchableStream.class);
+        Query query = getCollection().whereEqualTo("visible", true).orderBy(FieldPath.documentId()).limit(limit);
+        if (afterId != null) query = query.startAfter(afterId);
+        return query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getDocuments();
     }
 
     /**

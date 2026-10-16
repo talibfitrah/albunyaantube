@@ -170,16 +170,6 @@
             </intent-filter>
         </service>
 
-        <provider
-            android:name="androidx.core.content.FileProvider"
-            android:authorities="${applicationId}.downloads.provider"
-            android:exported="false"
-            android:grantUriPermissions="true">
-            <meta-data
-                android:name="android.support.FILE_PROVIDER_PATHS"
-                android:resource="@xml/downloads_file_paths" />
-        </provider>
-
         <!-- ANDROID-FLAVOR-01: InstallStatusActivity is declared in
              app/src/sideload/AndroidManifest.xml — the class itself only exists in the
              sideload source set. See the uses-permission note at the top of this file. -->

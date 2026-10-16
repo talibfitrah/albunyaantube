@@ -16,7 +16,7 @@ import SwiftData
 /// favorite, subscription and saved playlist gone on upgrade.
 ///
 /// **The rule for the next column** (Part B tasks 23 and 28 both add some): never add a property
-/// to a type an older version still points at. Declare `FavoritesSchemaV7.<Entity>` with the new
+/// to a type an older version still points at. Declare `FavoritesSchemaV9.<Entity>` with the new
 /// column, alias every untouched entity forward, add the lightweight stage, and repoint the live
 /// typealiases at the bottom of this file. `SchemaV5MigrationTests`'
 /// `everyFrozenVersionKeepsItsHistoricalColumnSet` is what turns a retroactive edit red.
@@ -167,23 +167,41 @@ enum FavoritesSchemaV7: VersionedSchema {
     }
 }
 
+/// iOS pipeline stage 5 F1: `OfflineItem` gains `durationSeconds` — the streaming player's duration,
+/// stamped at save time so the offline player's favourite is not a 0:00 row — RE-DECLARED at V8 and
+/// every other entity aliased forward. One optional property with a property-initializer default, so
+/// the stage stays lightweight — `SchemaV5MigrationTests.aV7StoreOnDiskMigratesToV8GivingOfflineItemsNoDuration`.
+enum FavoritesSchemaV8: VersionedSchema {
+    static let versionIdentifier = Schema.Version(8, 0, 0)
+    typealias FavoriteVideo = FavoritesSchemaV1.FavoriteVideo
+    typealias SavedPlaylist = FavoritesSchemaV5.SavedPlaylist
+    typealias SubscribedChannel = FavoritesSchemaV5.SubscribedChannel
+    typealias SyncState = FavoritesSchemaV5.SyncState
+    typealias AccountBinding = FavoritesSchemaV5.AccountBinding
+    static var models: [any PersistentModel.Type] {
+        [FavoriteVideo.self, SavedPlaylist.self, SubscribedChannel.self, OfflineItem.self,
+         SyncState.self, AccountBinding.self]
+    }
+}
+
 /// The LIVE entities: the app, its stores and the sync codec all spell these unqualified, and they
-/// always name the newest version's shapes. Repoint them (and only them) when a V8 lands.
-typealias FavoriteVideo = FavoritesSchemaV7.FavoriteVideo
-typealias SavedPlaylist = FavoritesSchemaV7.SavedPlaylist
-typealias SubscribedChannel = FavoritesSchemaV7.SubscribedChannel
-typealias OfflineItem = FavoritesSchemaV7.OfflineItem
-typealias SyncState = FavoritesSchemaV7.SyncState
-typealias AccountBinding = FavoritesSchemaV7.AccountBinding
+/// always name the newest version's shapes. Repoint them (and only them) when a V9 lands.
+typealias FavoriteVideo = FavoritesSchemaV8.FavoriteVideo
+typealias SavedPlaylist = FavoritesSchemaV8.SavedPlaylist
+typealias SubscribedChannel = FavoritesSchemaV8.SubscribedChannel
+typealias OfflineItem = FavoritesSchemaV8.OfflineItem
+typealias SyncState = FavoritesSchemaV8.SyncState
+typealias AccountBinding = FavoritesSchemaV8.AccountBinding
 
 enum FavoritesMigrationPlan: SchemaMigrationPlan {
-    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self, FavoritesSchemaV6.self, FavoritesSchemaV7.self] }
+    static var schemas: [any VersionedSchema.Type] { [FavoritesSchemaV1.self, FavoritesSchemaV2.self, FavoritesSchemaV3.self, FavoritesSchemaV4.self, FavoritesSchemaV5.self, FavoritesSchemaV6.self, FavoritesSchemaV7.self, FavoritesSchemaV8.self] }
     static var stages: [MigrationStage] {
         [.lightweight(fromVersion: FavoritesSchemaV1.self, toVersion: FavoritesSchemaV2.self),
          .lightweight(fromVersion: FavoritesSchemaV2.self, toVersion: FavoritesSchemaV3.self),
          .lightweight(fromVersion: FavoritesSchemaV3.self, toVersion: FavoritesSchemaV4.self),
          .lightweight(fromVersion: FavoritesSchemaV4.self, toVersion: FavoritesSchemaV5.self),
          .lightweight(fromVersion: FavoritesSchemaV5.self, toVersion: FavoritesSchemaV6.self),
-         .lightweight(fromVersion: FavoritesSchemaV6.self, toVersion: FavoritesSchemaV7.self)]
+         .lightweight(fromVersion: FavoritesSchemaV6.self, toVersion: FavoritesSchemaV7.self),
+         .lightweight(fromVersion: FavoritesSchemaV7.self, toVersion: FavoritesSchemaV8.self)]
     }
 }

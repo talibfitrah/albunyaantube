@@ -10,12 +10,149 @@ struct PlayerToolbarTests {
 
     // MARK: - attributedDescription (PlayerDescriptions.kt allow-list, ported)
 
-    @Test func httpAndHttpsLinksAreKept() {
-        let raw = "Visit http://a.example or https://b.example/x?y=1 for more."
+    @Test func nonYouTubeHttpAndHttpsLinksAreKeptAndYouTubeLinksAreInert() {
+        let raw = "Visit http://a.example or https://b.example/x?y=1, not https://youtu.be/V2Brp_esIVI, for more."
         let result = attributedDescription(raw)
         #expect(String(result.characters) == raw)
         let links = result.runs.compactMap(\.link).map(\.absoluteString)
         #expect(links == ["http://a.example", "https://b.example/x?y=1"])
+    }
+
+    /// Owner directives 2026-08-27 / 2026-10-14: a description never hands the user to YouTube. The
+    /// link stays visible as text; only `https://example.org` is tappable. The two bare ones have no
+    /// scheme in the text: `NSDataDetector` adds `http://` itself.
+    @Test(arguments: [
+        "https://youtu.be/V2Brp_esIVI",
+        "https://www.youtube.com/channel/UC_x5XG1OV2P6uZZ5FSM9Ttw",
+        "https://m.youtube.com/watch?v=V2Brp_esIVI",
+        "https://MUSIC.YOUTUBE.COM/watch?v=V2Brp_esIVI",
+        "youtube.com/watch?v=V2Brp_esIVI",
+        "www.youtu.be/V2Brp_esIVI",
+        // Host-less: a scheme with no `//` is not judged as written, so these lean on `match.url`.
+        "https:youtube.com/watch?v=V2Brp_esIVI",
+        "HTTPS:YOUTU.BE/V2Brp_esIVI",
+    ])
+    func aYouTubeLinkInADescriptionStaysInertText(_ link: String) {
+        let raw = "Watch \(link) and read https://example.org"
+        let result = attributedDescription(raw)
+        #expect(String(result.characters) == raw, "\(link): the text must stay visible")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["https://example.org"], "\(link) must not be tappable")
+    }
+
+    /// The rule also runs on the text as written, not only on the detector's normalised URL: the
+    /// detector drops a soft hyphen, so `match.url` alone passes it. A bare domain is judged with the
+    /// `http://` the detector adds, so `example.org/b` stays a link and `ｙｏｕｔｕｂｅ.com/x` does not.
+    /// A bare domain whose query carries a URL is still bare: only a LEADING scheme counts.
+    @Test func theTextAsWrittenMustPassTheLinkRuleToo() {
+        let raw = "See https://ex\u{AD}ample.org/a and example.org/b and ｙｏｕｔｕｂｅ.com/x and example.org/r?to=https://foo.com here."
+        let result = attributedDescription(raw)
+        #expect(String(result.characters) == raw)
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org/b", "http://example.org/r?to=https://foo.com"])
+    }
+
+    /// A bare `host:port` is bare too: only a leading `scheme://` counts as written, so
+    /// `example.org:8080/x` is judged as `http://example.org:8080/x`, the link the detector made.
+    @Test func aBareHostWithAPortStaysALink() {
+        let result = attributedDescription("Mirror at example.org:8080/x today.")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["http://example.org:8080/x"])
+    }
+
+    // MARK: - isOpenableLink (the vectors shared with Android's PlayerDescriptionsTest)
+
+    @Test(arguments: [
+        "https:youtube.com/watch?v=x",
+        "HTTPS:YOUTU.BE/x",
+        "intent://x#Intent;end",
+        "albunyaantube://video/x",
+        "javascript:alert(1)",
+        "mailto:a@b.c",
+        "https://youtu.be/abc",
+        "https://www.youtube.com/channel/x",
+        "https://m.youtube.com/watch?v=x",
+        "https://MUSIC.YOUTUBE.COM/x",
+        "https://www.youtube.de/x",
+        "https://www.youtube.co.uk/x",
+        "https://youtubekids.com/x",
+        "https://youtube.googleapis.com/x",
+        "https://x@youtube.com/a",
+        "https://%79outube.com/a",
+        "https://YOUTUBE.COM./a",
+        "//youtube.com/a",
+        "https://youtube.com\\@example.org/a",
+        "https://\\youtube.com/a",
+        "https://\u{FF59}\u{FF4F}\u{FF55}\u{FF54}\u{FF55}\u{FF42}\u{FF45}.com/a",   // fullwidth
+        "https://youtube\u{3002}com/a",
+        "https://you\u{AD}tube.com/a",
+        "https://you\ttube.com/",
+        "https://you\ntube.com/",
+        "https://yt.be/x",
+        "https://www.yt.be/x",
+        "https://youtubego.com/",
+        "https://withyoutube.com/",
+        "https://youtubegaming.com/",
+        "http://youtubemusic.com/",
+        "http://youtubetv.com/",
+        "https://youtubeshorts.com/",
+        "https://y\u{1D52}utube.com/a",
+        "https://\u{1F148}\u{1F13E}\u{1F144}\u{1F143}\u{1F144}\u{1F131}\u{1F134}.com/a",
+        "https://you\u{1BCA0}tube.com/a",
+        " https://example.org/a",
+        "\u{A0}https://example.org/a",
+        "https://example.org/a ",
+        "https://www.youtube-nocookie.com/embed/x",
+        "https://youtube.com.example.org/",   // the accepted cost: a youtube label anywhere
+        "https:///a",
+        // The host-character check: these decode to a non-ASCII host a browser maps to youtube.com.
+        "https://%EF%BD%99outube.com/a",
+        "https://you%E2%80%8Btube.com/",
+        // A host must be LDH or an IP literal: a fullwidth `％40` parses to `example.org@youtube.com`.
+        "https://example.org\u{FF05}40youtube.com/",
+        // Trailing-dot stripping: `yt.be.` is `yt.be`.
+        "https://yt.be./x",
+        // Not LDH (accepted cost: no real host has `_`).
+        "https://you_tube.com/",
+    ])
+    func theLinkRuleKeepsThisAsText(_ link: String) {
+        #expect(!isOpenableLink(link), "\(link.debugDescription) must stay text")
+    }
+
+    /// `ভবিষ্যৎ.com`: Android lists it as NOT openable, but only as its accepted cost
+    /// (`java.net.IDN` is Unicode 3.2 and refuses U+09CE). Foundation's IDNA knows the letter and
+    /// converts the host to `xn--d6bbh5a2b7ei.com`, so iOS opens the real site. It is not YouTube
+    /// on either platform.
+    @Test(arguments: [
+        "https://example.org/a",
+        "http://Example.org",
+        "https://youtube.com@example.org/a",
+        "https://\u{645}\u{62B}\u{627}\u{644}.\u{645}\u{635}\u{631}/",   // مثال.مصر
+        "https://bücher.de/",
+        "https://notyoutube.com/x",
+        "https://myyoutube.org/x",
+        "https://notyt.be/x",
+        "https://\u{9AD}\u{9AC}\u{9BF}\u{9B7}\u{9CD}\u{9AF}\u{9CE}.com/",   // ভবিষ্যৎ.com
+        "https://[2001:db8::1]/",   // an IPv6 literal
+    ])
+    func theLinkRuleOpensThis(_ link: String) {
+        #expect(isOpenableLink(link), "\(link.debugDescription) must open")
+    }
+
+    /// The rule's IDNA step is Foundation's: `URL(string:)` converts a non-ASCII host to ASCII
+    /// (UTS 46, as a browser does) and refuses an unassigned code point. Pinned because the rule
+    /// relies on it; were it ever to stop converting, non-ASCII hosts would fail closed. Read with
+    /// `percentEncoded: false`: `host()` gives `b%C3%BCcher.de` on iOS 26.3 but `xn--…` on 18.6.
+    @Test func foundationConvertsHostsToASCIIAndRefusesUnassignedCodePoints() {
+        #expect(URL(string: "https://bücher.de/")?.host(percentEncoded: false) == "xn--bcher-kva.de")
+        #expect(URL(string: "https://\u{FF59}\u{FF4F}\u{FF55}\u{FF54}\u{FF55}\u{FF42}\u{FF45}.com/")?.host(percentEncoded: false) == "youtube.com")
+        #expect(URL(string: "https://you\u{0378}tube.com/") == nil)
+        // The rule's IPv6 branch reads the literal without its brackets.
+        #expect(URL(string: "https://[2001:db8::1]/")?.host(percentEncoded: false) == "2001:db8::1")
+    }
+
+    /// The tap opens a lower-case scheme. Foundation keeps the case as written
+    /// (`NSDataDetector` hands back `Https://…`), so `attributedDescription` lowers it.
+    @Test func aLinkOpensWithItsSchemeLowercased() {
+        let result = attributedDescription("Read Https://example.org/a or HTTP://Example.org today.")
+        #expect(result.runs.compactMap(\.link).map(\.absoluteString) == ["https://example.org/a", "http://Example.org"])
     }
 
     @Test func nonHttpSchemesAreStrippedButTextIsKept() {
@@ -139,6 +276,40 @@ struct PlayerToolbarTests {
     @Test func theOfflinePlayerHidesTheCastSlotEvenWhenCastIsAvailable() {
         #expect(CastAffordance.isVisible(castAvailable: true, isOfflinePlayback: true) == false)
     }
+
+    // MARK: - The offline player's favourite (iOS pipeline stage 5 F1)
+
+    private func savedRow(channelName: String?, durationSeconds: Int?) -> OfflineItem {
+        OfflineItem(videoId: "xc7keR2piUM", title: "Lecture", channelName: channelName, thumbnailUrl: nil,
+                    qualityLabel: "360p", audioOnly: true, durationSeconds: durationSeconds)
+    }
+
+    /// A heart tapped in the offline player favourites the row's own duration and channel, not a
+    /// 0:00 card (or a blank channel the server refuses with 400).
+    @Test func aFavouriteFromTheOfflinePlayerCarriesTheSavedDurationAndChannel() {
+        let row = savedRow(channelName: "Channel", durationSeconds: 754)
+        let args = PlayerArgs(offline: row)
+        #expect(args.offlineItemId == row.id)
+        let store = FakeFavoritesStore()
+
+        _ = FavoriteToggle.perform(item: args.contentItem, wasFavorite: false, store: store)
+
+        #expect(store.toggledItems.first?.durationSeconds == 754)
+        #expect(store.toggledItems.first?.channelTitle == "Channel")
+    }
+
+    /// A row saved before the duration column (or with no channel name) cannot make a valid
+    /// favourite, so the offline player hides the heart for it. Online, nothing changes.
+    @Test func theOfflinePlayerHidesTheHeartForARowThatCannotMakeAValidFavourite() {
+        let full = PlayerArgs(offline: savedRow(channelName: "Channel", durationSeconds: 754))
+        #expect(FavoriteAffordance.isVisible(args: full, isOfflinePlayback: true))
+        for row in [savedRow(channelName: "Channel", durationSeconds: nil),
+                    savedRow(channelName: nil, durationSeconds: 754),
+                    savedRow(channelName: " ", durationSeconds: 754)] {
+            #expect(!FavoriteAffordance.isVisible(args: PlayerArgs(offline: row), isOfflinePlayback: true))
+        }
+        #expect(FavoriteAffordance.isVisible(args: PlayerArgs(videoId: "xc7keR2piUM"), isOfflinePlayback: false))
+    }
 }
 
 /// Minimal `FavoritesStore` fake -- `items`/`clearAll` are unused by `FavoriteToggle`, present
@@ -231,6 +402,19 @@ struct PlayerToolbarLayoutTests {
                 "four-button toolbar no longer fits one row at 320pt: \(narrow3.height) -> \(narrow4.height)")
     }
 
+    /// Action row 1.0.3: the captions wrap inside their equal columns, they are never truncated (no
+    /// `lineLimit` on the slot caption; accessibility Dynamic Type must stay readable). The
+    /// unconstrained ideal size is the SINGLE-line row; at 320 pt the equal columns are narrower than
+    /// the accessibility3 captions, so the row must come out taller by at least a caption line. A
+    /// `lineLimit(1)` or a fixed-height caption would leave the two equal and fail this. An XCUITest
+    /// cannot assert it: the captions are not separate elements inside the slot buttons.
+    @Test func captionsWrapInsteadOfTruncatingAtAccessibilitySizes() {
+        let singleLine = idealSize(gate: .allowed, width: nil)
+        let narrow = idealSize(gate: .allowed, width: 320)
+        #expect(narrow.height > singleLine.height + 20,
+                "captions did not wrap in the 320 pt columns (single-line row \(singleLine.height), narrow row \(narrow.height)) — truncated?")
+    }
+
     /// Task 8 fix round 1 (review Minor 7): the requirement is "the TOOLBAR hides the button", and
     /// asserting `CastAffordance.isVisible`'s truth table alone stays green if someone drops the
     /// guard from the view. Same `ImageRenderer` width discriminator the Save slot uses above; the
@@ -240,7 +424,10 @@ struct PlayerToolbarLayoutTests {
         let container = AppContainer.fake(
             defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
         func width(offline: Bool) -> CGFloat {
-            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout"),
+            // A duration and a channel, so the offline player keeps its heart (stage 5 F1) and the
+            // cast slot is the only thing that can differ.
+            let toolbar = PlayerToolbar(args: PlayerArgs(videoId: "layout", title: "Layout", channelName: "Channel",
+                                                         durationSeconds: 754),
                                         saveGate: nil, saveEnabled: true, isOfflinePlayback: offline)
                 .environment(\.container, container)
             return ImageRenderer(content: toolbar).uiImage?.size.width ?? 0
@@ -254,6 +441,20 @@ struct PlayerToolbarLayoutTests {
         // Task 7's flag still wins: an offline player never offers cast (a sandboxed file no
         // receiver can fetch), even with a live context.
         #expect(width(offline: true) == hidden, "the offline player still rendered a cast slot")
+    }
+
+    /// Stage 7 r2 N4(a): the toolbar itself applies `FavoriteAffordance`. Offline args with no
+    /// duration (a row saved before V8) render narrower than the same args with one: no heart.
+    @Test func theOfflineToolbarDropsTheHeartForARowWithNoDuration() {
+        let container = AppContainer.fake(
+            defaults: UserDefaults(suiteName: "PlayerToolbarLayoutTests.\(UUID().uuidString)")!)
+        func width(durationSeconds: Int?) -> CGFloat {
+            let args = PlayerArgs(videoId: "layout", title: "Layout", channelName: "Channel", durationSeconds: durationSeconds)
+            let toolbar = PlayerToolbar(args: args, saveGate: nil, saveEnabled: true, isOfflinePlayback: true)
+                .environment(\.container, container)
+            return ImageRenderer(content: toolbar).uiImage?.size.width ?? 0
+        }
+        #expect(width(durationSeconds: nil) < width(durationSeconds: 754), "the offline toolbar ignores FavoriteAffordance")
     }
 
     /// Cubic R2-6 + re-review m3: the cast slot must reach the ≥44 pt touch target the row's other

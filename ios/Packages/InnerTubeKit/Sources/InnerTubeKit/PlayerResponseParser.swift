@@ -4,7 +4,7 @@ import Foundation
 /// (`extraction.md` §4, `ios-app-plan.md` §6.2 step 4).
 public enum Playability: Sendable, Equatable {
     case ok(StreamingData)
-    case unplayableKids
+    case unplayable
     case ageGate
     case botCheck
     case liveOffline(startsAt: Date?)
@@ -68,14 +68,21 @@ public struct PlayerResponseParser: Sendable {
             if status == "AGE_CHECK_REQUIRED" || wire.playabilityStatus.desktopLegacyAgeGateReason == 1 {
                 return .ageGate
             }
-            // Caveat (unverified live): a private video may also answer LOGIN_REQUIRED; it would
-            // classify as .botCheck, which is retryable -- the safer failure direction.
+            // Live probe 2026-10-14 (spec §3): a PRIVATE video answers LOGIN_REQUIRED with a
+            // `messages` array on both VISIONOS and ANDROID, in en and ar; the bot check (tokenless
+            // en/ar, stale-token en, `player-botcheck.json`) never carries one. `reason` is localized
+            // ("Please sign in" / "يرجى تسجيل الدخول"), so only the structure can decide. Terminal:
+            // the source gated it -- read as a bot check it rotated the session and could trip the
+            // app-wide cooldown.
+            if wire.playabilityStatus.messages?.isNonEmpty == true {
+                return .unavailable(reason: reason)
+            }
             return .botCheck
         case "UNPLAYABLE":
-            // ponytail: every UNPLAYABLE collapses to `.unplayableKids`, so a private/removed
-            // video walks the ladder instead of terminating. Splitting on `reason` needs real
-            // private/removed specimens to match against — deferred to Plan C.
-            return .unplayableKids
+            // Returned whole. VISIONOS refuses a made-for-kids video and a geo-locked one with the
+            // same `{status, reason}` and a localized reason (live probe 2026-10-14), so nothing in
+            // the body can say which it is: WHO refused decides (`StreamResolver.runPlayerRung`).
+            return .unplayable
         case "LIVE_STREAM_OFFLINE":
             // ponytail: no LIVE_STREAM_OFFLINE probe capture exists to confirm the scheduled-start
             // JSON path, so `startsAt` is always nil for now. Upgrade once a probe fixture exists.
@@ -138,6 +145,34 @@ public struct PlayerResponseParser: Sendable {
             /// Locale-independent age-gate marker (live probe 2026-08-31): present (= 1) on every
             /// age-gated response in en/ar/nl, absent from bot-check and ERROR responses.
             var desktopLegacyAgeGateReason: Int?
+            /// Present on a private video's LOGIN_REQUIRED, absent from every bot check (live probe
+            /// 2026-10-14) -- the locale-independent private marker.
+            var messages: Messages?
+
+            /// Only "present and non-empty, in any shape" matters (spec R7, ruling 2026-10-14): a bot
+            /// check never carries `messages`, so an unexpected shape read as absent would turn a private
+            /// video into a bot check. Never throws, because a failed decode would drop the whole
+            /// response, which on an OK body is an outage. A number or bool counts as absent (never seen).
+            struct Messages: Decodable {
+                let isNonEmpty: Bool
+                init(from decoder: Decoder) {
+                    if let array = try? decoder.unkeyedContainer() {
+                        isNonEmpty = !array.isAtEnd
+                    } else if let object = try? decoder.container(keyedBy: AnyKey.self) {
+                        isNonEmpty = !object.allKeys.isEmpty
+                    } else if let string = try? decoder.singleValueContainer().decode(String.self) {
+                        isNonEmpty = !string.isEmpty
+                    } else {
+                        isNonEmpty = false
+                    }
+                }
+                private struct AnyKey: CodingKey {
+                    let stringValue: String
+                    var intValue: Int? { nil }
+                    init?(stringValue: String) { self.stringValue = stringValue }
+                    init?(intValue: Int) { nil }
+                }
+            }
         }
         struct Format: Decodable {
             var itag: Int?

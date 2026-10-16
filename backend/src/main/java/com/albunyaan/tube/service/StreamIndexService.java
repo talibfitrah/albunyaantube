@@ -7,6 +7,7 @@ import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
+import com.albunyaan.tube.search.SearchIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
@@ -25,15 +26,18 @@ public class StreamIndexService {
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final SearchTokenizer tokenizer;
+    private final SearchIndex searchIndex;
 
     public StreamIndexService(SearchableStreamRepository streamRepository,
                                ChannelRepository channelRepository,
                                PlaylistRepository playlistRepository,
-                               SearchTokenizer tokenizer) {
+                               SearchTokenizer tokenizer,
+                               SearchIndex searchIndex) {
         this.streamRepository = streamRepository;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.tokenizer = tokenizer;
+        this.searchIndex = searchIndex;
     }
 
     /** Finding 3: PERSONAL-visibility sources must not be indexed into public search. */
@@ -60,10 +64,13 @@ public class StreamIndexService {
             Set<String> excludedLive = new HashSet<>(excluded.getLiveStreams());
             String sourceKey = "channel:" + channelYoutubeId;
 
+            List<SearchableStream> written = new ArrayList<>();
             for (StreamItemDto item : items) {
                 if (isChannelExcluded(item.getId(), item.getStreamType(), excludedVideos, excludedShorts, excludedLive)) continue;
-                upsert(item, channelYoutubeId, channel.getName(), sourceKey);
+                SearchableStream stream = upsert(item, channelYoutubeId, channel.getName(), sourceKey);
+                if (stream != null) written.add(stream);
             }
+            searchIndex.upsertStreams(written, sourceKey); // one index task per call (spec §5.3)
         } catch (Exception e) {
             log.warn("indexFromChannel failed for {}: {}", channelYoutubeId, e.getMessage());
         }
@@ -84,6 +91,7 @@ public class StreamIndexService {
             Set<String> excluded = rawExcluded != null ? new HashSet<>(rawExcluded) : Collections.emptySet();
             String sourceKey = "playlist:" + playlistYoutubeId;
 
+            List<SearchableStream> written = new ArrayList<>();
             for (StreamItemDto item : items) {
                 if (excluded.contains(item.getId())) continue;
                 String rawChannelId = item.getChannelId();
@@ -99,8 +107,10 @@ public class StreamIndexService {
                 }
                 String uploaderName = item.getUploaderName();
                 if (uploaderName != null && uploaderName.length() > 200) uploaderName = uploaderName.substring(0, 200);
-                upsert(item, channelId, uploaderName, sourceKey);
+                SearchableStream stream = upsert(item, channelId, uploaderName, sourceKey);
+                if (stream != null) written.add(stream);
             }
+            searchIndex.upsertStreams(written, sourceKey);
         } catch (Exception e) {
             log.warn("indexFromPlaylist failed for {}: {}", playlistYoutubeId, e.getMessage());
         }
@@ -122,6 +132,7 @@ public class StreamIndexService {
                 }
             } while (batch.size() == 500);
             log.info("Removed search index source {} ({} streams)", sourceKey, removed);
+            searchIndex.removeSource(sourceKey);
         } catch (Exception e) {
             log.warn("removeSource failed for {}: {}", sourceKey, e.getMessage());
         }
@@ -136,17 +147,18 @@ public class StreamIndexService {
     public void markStreamArchived(String streamId) {
         try {
             streamRepository.markInvisible(streamId);
+            searchIndex.removeStream(streamId);
             log.info("Stream {} marked invisible (archived)", streamId);
         } catch (Exception e) {
             log.warn("markStreamArchived failed for {}: {}", streamId, e.getMessage());
         }
     }
 
-    private void upsert(StreamItemDto item, String channelId, String channelName, String sourceKey) {
+    private SearchableStream upsert(StreamItemDto item, String channelId, String channelName, String sourceKey) {
         try {
             if (item.getId() == null || item.getName() == null) {
                 log.warn("Skipping stream with null id or name (sourceKey={})", sourceKey);
-                return;
+                return null;
             }
             String titleNorm = tokenizer.normalizeArabic(item.getName().toLowerCase(Locale.ROOT));
             List<String> tokens = tokenizer.tokenize(item.getName(), channelName);
@@ -166,8 +178,10 @@ public class StreamIndexService {
             stream.setVisible(true);
 
             streamRepository.upsert(stream, sourceKey);
+            return stream;
         } catch (Exception e) {
             log.warn("Failed to upsert stream {}: {}", item.getId(), e.getMessage());
+            return null;
         }
     }
 

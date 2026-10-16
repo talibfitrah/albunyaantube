@@ -12,20 +12,20 @@ import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
-import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
-import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
+import com.albunyaan.tube.search.SearchIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
@@ -54,20 +54,13 @@ public class PublicContentService {
 
     private static final Logger log = LoggerFactory.getLogger(PublicContentService.class);
 
-    // Bound for the legacy in-memory channel/playlist scan when the indexed
-    // (nameLower / name / keyword) prefix queries return zero matches.
-    // Keeps the cost bounded on a large library while still recovering
-    // search results for legacy documents missing the nameLower field.
-    private static final int LEGACY_SEARCH_SCAN_LIMIT = 500;
-
     private final ChannelRepository channelRepository;
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final CategoryRepository categoryRepository;
     private final CategoryContentOrderRepository orderRepository;
     private final Executor contentExecutor;
-    private final SearchableStreamRepository searchableStreamRepository;
-    private final SearchTokenizer searchTokenizer;
+    private final SearchIndex searchIndex;
 
     public PublicContentService(
             ChannelRepository channelRepository,
@@ -76,8 +69,7 @@ public class PublicContentService {
             CategoryRepository categoryRepository,
             CategoryContentOrderRepository orderRepository,
             @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor,
-            SearchableStreamRepository searchableStreamRepository,
-            SearchTokenizer searchTokenizer
+            SearchIndex searchIndex
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -85,8 +77,7 @@ public class PublicContentService {
         this.categoryRepository = categoryRepository;
         this.orderRepository = orderRepository;
         this.contentExecutor = contentExecutor;
-        this.searchableStreamRepository = searchableStreamRepository;
-        this.searchTokenizer = searchTokenizer;
+        this.searchIndex = searchIndex;
     }
 
     /**
@@ -103,11 +94,11 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + #category + '-' + #length + '-' + #date + '-' + #sort + '-q' + (#q == null ? '' : #q)",
-               condition = "#q == null || #q.isBlank()")
+               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null",
+               key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + (#category == null ? '' : 'c:' + #category) + '-' + (#length == null ? '' : 'l:' + #length) + '-' + (#date == null ? '' : 'd:' + #date) + '-' + (#sort == null ? '' : 's:' + #sort)")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
-            String category, String length, String date, String sort, String q
+            String category, String length, String date, String sort
     ) throws ExecutionException, InterruptedException, TimeoutException {
 
         // Null-safe: default to HOME if type is null or blank
@@ -123,28 +114,13 @@ public class PublicContentService {
             allCategoryIds = resolveAllCategoryIds(category);
         }
 
-        TextFilter textFilter = new TextFilter(q);
-
         // For content types that support real cursor pagination
         switch (type.toUpperCase(Locale.ROOT)) {
             case "CHANNELS":
-                if (textFilter.isActive()) {
-                    return searchWithOffsetPagination(
-                            getChannels(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
-                }
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
-                if (textFilter.isActive()) {
-                    return searchWithOffsetPagination(
-                            getPlaylists(MAX_SEARCH_FETCH, category, allCategoryIds), textFilter, cursor, limit);
-                }
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
-                if (textFilter.isActive()) {
-                    return searchWithOffsetPagination(
-                            getVideos(MAX_SEARCH_FETCH, category, allCategoryIds, length, date, sort),
-                            textFilter, cursor, limit);
-                }
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
@@ -153,7 +129,7 @@ public class PublicContentService {
                     // Category specified: use admin-defined sort order with offset pagination.
                     // Over-fetch by 1 to reliably detect whether a next page exists,
                     // avoiding phantom cursors when total items are an exact multiple of limit.
-                    int offset = decodeCursorOffset(cursor);
+                    int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
                     items = getCategoryContentItems(allCategoryIds, limit + 1, offset);
                     boolean hasNext = items.size() > limit;
                     if (hasNext) {
@@ -452,7 +428,8 @@ public class PublicContentService {
      * @return Paginated home feed
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + #category")
+               condition = "T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) != null",
+               key = "'home-' + T(com.albunyaan.tube.service.PublicContentService).normalizeCursor(#cursor) + '-' + #categoryLimit + '-' + #contentLimit + '-' + (#category == null ? '' : 'c:' + #category)")
     public CursorPageDto<HomeCategoryDto> getHomeFeed(String cursor, int categoryLimit, int contentLimit, String category)
             throws ExecutionException, InterruptedException, TimeoutException {
 
@@ -503,7 +480,7 @@ public class PublicContentService {
                 if (subcategory != null) {
                     parentCategories.add(subcategory);
                 } else {
-                    // Unknown category ID — return empty without caching garbage
+                    // Unknown category ID — empty; cached under its own "c:" key, never the unfiltered one (X1)
                     return new CursorPageDto<>(List.of(), null);
                 }
             }
@@ -520,13 +497,11 @@ public class PublicContentService {
         int startAfterOrder = -1;
         String startAfterId = null;
         if (cursor != null && !cursor.isEmpty()) {
-            try {
-                String decoded = new String(Base64.getDecoder().decode(cursor));
-                // Cursor format: "displayOrder:categoryId"
-                String[] parts = decoded.split(":", 2);
-                startAfterOrder = Integer.parseInt(parts[0]);
-                startAfterId = parts.length > 1 ? parts[1] : null;
-            } catch (Exception e) {
+            HomeCursor parsed = HomeCursor.parse(cursor);
+            if (parsed != null) {
+                startAfterOrder = parsed.order();
+                startAfterId = parsed.id();
+            } else {
                 log.warn("Invalid home feed cursor: {}", cursor);
             }
         }
@@ -1022,334 +997,68 @@ public class PublicContentService {
         return video;
     }
 
+    /** Same cap as `/content` (PublicContentController); spec §4.4. */
+    private static final int MAX_QUERY_LENGTH = 128;
+
     /**
-     * Search for content by query string.
-     *
-     * Search features:
-     * - Bounded queries with configurable over-fetch to prevent quota spikes
-     * - YouTube URL/ID parsing: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/channel/XXX, etc.
-     * - Case-insensitive substring matching (post-query filtering)
-     * - Caching of search results (short TTL) to reduce Firestore reads during typing
-     *
-     * @param query Search query (text, YouTube URL, or YouTube ID)
-     * @param type Content type filter (null for all types)
-     * @param limit Maximum results to return
-     * @return List of matching content items
+     * Global search (`/api/v1/search`, spec §4.4). A pasted YouTube URL or id is looked up by id first.
+     * A URL or a channel/playlist id that misses answers `none`; only a bare 11-character token falls
+     * through to the text ladder, so an 11-letter word such as "subhanallah" (which parses as a video
+     * id) is still searched as text (ruling F6).
      */
-    @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT_SEARCH,
-               key = "#query == null ? '' : #query.trim().toLowerCase(T(java.util.Locale).ROOT) + '-' + #type + '-' + #limit",
-               condition = "#query != null && #query.trim().length() >= 2")
-    public List<ContentItemDto> search(String query, String type, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        if (query == null || query.trim().isEmpty()) {
-            return new ArrayList<>();
-        }
-        // Normalize query for matching
-        String normalizedQuery = query.trim().toLowerCase(Locale.ROOT);
-
-        // Try to parse as YouTube URL/ID first
-        YouTubeIdentifier identifier = parseYouTubeIdentifier(query);
-
-        List<ContentItemDto> results = new ArrayList<>();
-
+    public SearchIndex.Hits search(String query, String type, int limit) throws IOException {
+        String q = query.trim(); // `/search` binds q as a required parameter: never null
+        if (q.length() > MAX_QUERY_LENGTH) q = q.substring(0, MAX_QUERY_LENGTH);
+        String docType = SearchIndex.docType(type);
+        if (docType == null && type != null && !"ALL".equalsIgnoreCase(type)) return SearchIndex.Hits.NONE; // unknown type, as the legacy search (F10)
+        YouTubeIdentifier identifier = parseYouTubeIdentifier(q);
+        if (identifier == null && isYouTubeUrl(q)) return SearchIndex.Hits.NONE; // e.g. /@handle: never searched as words (F11)
         if (identifier != null) {
-            // Direct lookup by YouTube ID (most efficient)
-            results = searchByYouTubeId(identifier, type, limit);
-        } else if (normalizedQuery.length() >= 2) {
-            // Text-based search with bounded queries
-            results = searchByText(normalizedQuery, type, limit);
+            SearchIndex.Hits byId = searchIndex.byId(identifier.id, docType);
+            boolean bareToken = identifier.type == YouTubeIdentifier.Type.VIDEO && identifier.id.equals(q);
+            if (!byId.items().isEmpty() || !bareToken) return byId;
         }
-        // If query is less than 2 chars and not a YouTube ID, return empty to avoid expensive scans
-
-        return results;
+        return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, false, limit, null);
     }
+
+    /** What `/content?type=X&q=` returns: the page plus the `X-Search-Match` tier. */
+    public record SearchPage(CursorPageDto<ContentItemDto> page, String match) {}
 
     /**
-     * Search by YouTube ID for direct lookups.
-     * This is the most efficient path - single document fetch.
+     * In-tab search (spec §4.7): the ladder over catalog documents of one type, relevance-ordered (the
+     * tab's `sort` is ignored, owner ruling Q4), paged with the existing Base64 offset cursor. Returns
+     * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list.
      */
-    private List<ContentItemDto> searchByYouTubeId(YouTubeIdentifier identifier, String type, int limit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        List<ContentItemDto> results = new ArrayList<>();
-
-        switch (identifier.type) {
-            case CHANNEL:
-                if (type == null || type.equalsIgnoreCase("CHANNELS")) {
-                    channelRepository.findByYoutubeId(identifier.id)
-                            .filter(this::isApproved)
-                            .filter(this::isAvailable)
-                            .map(this::toDto)
-                            .ifPresent(results::add);
-                }
-                break;
-            case PLAYLIST:
-                if (type == null || type.equalsIgnoreCase("PLAYLISTS")) {
-                    playlistRepository.findByYoutubeId(identifier.id)
-                            .filter(this::isApproved)
-                            .filter(this::isAvailable)
-                            .map(this::toDto)
-                            .ifPresent(results::add);
-                }
-                break;
-            case VIDEO:
-                if (type == null || type.equalsIgnoreCase("VIDEOS")) {
-                    videoRepository.findByYoutubeId(identifier.id)
-                            .filter(this::isApproved)
-                            .filter(this::isAvailable)
-                            .map(this::toDto)
-                            .ifPresent(results::add);
-                }
-                break;
+    public SearchPage searchContent(String type, String cursor, int limit, String category,
+                                    String length, String date, String q)
+            throws ExecutionException, InterruptedException, TimeoutException, IOException {
+        String docType = SearchIndex.docType(type);
+        if (docType == null || q.length() < 2) return null; // the controller passes q trimmed and non-empty
+        long offset = decodeCursorOffset(cursor);
+        if (offset > MAX_SEARCH_FETCH) { // no tab pages past its catalog; a crafted offset must cost nothing (F2)
+            return new SearchPage(new CursorPageDto<>(List.of(), null), "none");
         }
-
-        return results;
-    }
-
-    /**
-     * Text-based search across content.
-     * Uses bounded prefix queries with over-fetch, then filters in memory.
-     */
-    private List<ContentItemDto> searchByText(String normalizedQuery, String type, int limit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        List<ContentItemDto> results = new ArrayList<>();
-
-        // Over-fetch factor to account for filtering and improve result quality
-        int overFetchLimit = Math.min(limit * 3, 100);
-
-        if (type == null || type.equalsIgnoreCase("ALL")) {
-            // When searching all types, distribute limit evenly.
-            // Both `null` and the explicit "ALL" string select this branch —
-            // the Android client and the dashboard frontend both pass "ALL"
-            // for the global search bar, but the prior code only matched
-            // null, returning an empty list for any caller that explicitly
-            // asked for everything.
-            int limitPerType = Math.max(1, limit / 3);
-            int overFetchPerType = Math.min(limitPerType * 3, 50);
-
-            results.addAll(searchChannelsByText(normalizedQuery, limitPerType, overFetchPerType));
-            results.addAll(searchPlaylistsByText(normalizedQuery, limitPerType, overFetchPerType));
-
-            int remaining = limit - results.size();
-            if (remaining > 0) {
-                results.addAll(searchVideosByText(normalizedQuery, remaining, Math.min(remaining * 3, 50)));
-            }
-
-            // Add stream results from searchable_streams index
-            try {
-                int streamLimit = Math.max(1, limit / 2);
-                List<ContentItemDto> streamResults = searchStreams(normalizedQuery, streamLimit);
-                Set<String> existingIds = results.stream().map(ContentItemDto::getId).collect(java.util.stream.Collectors.toSet());
-                streamResults.stream().filter(r -> !existingIds.contains(r.getId())).forEach(results::add);
-            } catch (Exception e) {
-                log.warn("Stream search failed, continuing without stream results: {}", e.getMessage());
-            }
-
-            // Cap at requested limit in case distributed fetches returned more
-            if (results.size() > limit) {
-                results = new ArrayList<>(results.subList(0, limit));
-            }
-        } else if (type.equalsIgnoreCase("CHANNELS")) {
-            results.addAll(searchChannelsByText(normalizedQuery, limit, overFetchLimit));
-        } else if (type.equalsIgnoreCase("PLAYLISTS")) {
-            results.addAll(searchPlaylistsByText(normalizedQuery, limit, overFetchLimit));
-        } else if (type.equalsIgnoreCase("VIDEOS")) {
-            int half = Math.max(1, limit / 2);
-            List<ContentItemDto> videoResults = searchVideosByText(normalizedQuery, half, overFetchLimit);
-            results.addAll(videoResults);
-            Set<String> existingIds = videoResults.stream()
-                    .map(ContentItemDto::getId)
-                    .collect(java.util.stream.Collectors.toSet());
-            searchStreams(normalizedQuery, half).stream()
-                    .filter(r -> !existingIds.contains(r.getId()))
-                    .forEach(results::add);
+        searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
+        List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
+        boolean videoFilters = "VIDEO".equals(docType)
+                && ((length != null && !length.isBlank()) || (date != null && !date.isBlank()));
+        Set<String> allowedIds = null;
+        if (allCategoryIds != null || videoFilters) {
+            // ponytail: filtered in-tab search still reads membership from Firestore (up to MAX_SEARCH_FETCH x 2-3
+            // docs, as before); index categoryIds/duration/date if those reads matter (spec §12 Q7).
+            List<ContentItemDto> members = switch (docType) {
+                case "CHANNEL" -> getChannels(MAX_SEARCH_FETCH, category, allCategoryIds);
+                case "PLAYLIST" -> getPlaylists(MAX_SEARCH_FETCH, category, allCategoryIds);
+                default -> getVideos(MAX_SEARCH_FETCH, category, allCategoryIds, length, date, null);
+            };
+            allowedIds = members.stream().map(ContentItemDto::getId).collect(Collectors.toSet());
         }
-
-        return results;
-    }
-
-    private List<ContentItemDto> searchChannelsByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        // Use nameLower field for true case-insensitive prefix search
-        // normalizedQuery is already lowercase, nameLower is auto-maintained by setName()
-        List<Channel> channels = new ArrayList<>(channelRepository.searchByNameLower(normalizedQuery, fetchLimit));
-
-        // Fallback: also query original 'name' field for legacy documents without nameLower
-        // This handles documents created before the nameLower field was added
-        try {
-            List<Channel> legacyResults = channelRepository.searchByName(normalizedQuery, fetchLimit);
-            // Merge results, avoiding duplicates by ID
-            Set<String> existingIds = channels.stream()
-                    .map(Channel::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Channel c : legacyResults) {
-                if (!existingIds.contains(c.getYoutubeId())) {
-                    channels.add(c);
-                }
-            }
-        } catch (Exception e) {
-            // Fallback query failed, proceed with nameLower results only
-            // This is expected if the legacy name index doesn't exist
-        }
-
-        // Keyword-based search: finds channels where any keyword exactly matches the query.
-        // This catches channels whose name doesn't start with the query but have a matching keyword.
-        try {
-            List<Channel> keywordResults = channelRepository.searchByKeyword(normalizedQuery, fetchLimit);
-            Set<String> existingIds = channels.stream()
-                    .map(Channel::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Channel c : keywordResults) {
-                if (!existingIds.contains(c.getYoutubeId())) {
-                    channels.add(c);
-                }
-            }
-        } catch (Exception e) {
-            // Keyword query failed (e.g., index not yet created), proceed with name results only
-        }
-
-        // Filter and return
-        List<ContentItemDto> filtered = channels.stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                // Case-insensitive contains matching on name or keywords
-                .filter(c -> matchesSearchQuery(c.getName(), c.getKeywords(), normalizedQuery))
-                .limit(limit)
-                .map(this::toDto)
-                .collect(Collectors.toList());
-
-        // Legacy-doc fallback: if all three indexed queries (nameLower / name /
-        // keyword) returned nothing useful, scan the library and filter in
-        // memory. Required because legacy channels created before nameLower
-        // existed never get returned by the prefix queries (lowercased query
-        // can't match case-sensitive `name`, and nameLower is missing).
-        // Use findAll() to avoid composite-index requirements; bounded scan.
-        if (filtered.isEmpty()) {
-            try {
-                List<Channel> scanned = channelRepository.findAll(LEGACY_SEARCH_SCAN_LIMIT);
-                log.info("Legacy channel search fallback: scanned {} for query '{}'", scanned.size(), normalizedQuery);
-                filtered = scanned.stream()
-                        .filter(this::isApproved)
-                        .filter(this::isAvailable)
-                        .filter(c -> matchesSearchQuery(c.getName(), c.getKeywords(), normalizedQuery))
-                        .limit(limit)
-                        .map(this::toDto)
-                        .collect(Collectors.toList());
-                log.info("Legacy channel search fallback: matched {} for query '{}'", filtered.size(), normalizedQuery);
-            } catch (Exception e) {
-                log.warn("Legacy in-memory channel search fallback failed: {}", e.getMessage());
-            }
-        }
-        return filtered;
-    }
-
-    private List<ContentItemDto> searchPlaylistsByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        // Use titleLower field for true case-insensitive prefix search
-        // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
-        List<Playlist> playlists = new ArrayList<>(playlistRepository.searchByTitleLower(normalizedQuery, fetchLimit));
-
-        // Fallback: also query original 'title' field for legacy documents without titleLower
-        try {
-            List<Playlist> legacyResults = playlistRepository.searchByTitle(normalizedQuery, fetchLimit);
-            Set<String> existingIds = playlists.stream()
-                    .map(Playlist::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Playlist p : legacyResults) {
-                if (!existingIds.contains(p.getYoutubeId())) {
-                    playlists.add(p);
-                }
-            }
-        } catch (Exception e) {
-            // Fallback query failed, proceed with titleLower results only
-        }
-
-        // Keyword-based search: finds playlists where any keyword exactly matches the query.
-        try {
-            List<Playlist> keywordResults = playlistRepository.searchByKeyword(normalizedQuery, fetchLimit);
-            Set<String> existingIds = playlists.stream()
-                    .map(Playlist::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Playlist p : keywordResults) {
-                if (!existingIds.contains(p.getYoutubeId())) {
-                    playlists.add(p);
-                }
-            }
-        } catch (Exception e) {
-            // Keyword query failed, proceed with title results only
-        }
-
-        return playlists.stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                // Case-insensitive contains matching on title or keywords
-                .filter(p -> matchesSearchQuery(p.getTitle(), p.getKeywords(), normalizedQuery))
-                .limit(limit)
-                .map(this::toDto)
-                .collect(Collectors.toList());
-    }
-
-    private List<ContentItemDto> searchVideosByText(String normalizedQuery, int limit, int fetchLimit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        // Use titleLower field for true case-insensitive prefix search
-        // normalizedQuery is already lowercase, titleLower is auto-maintained by setTitle()
-        List<Video> videos = new ArrayList<>(videoRepository.searchByTitleLower(normalizedQuery, fetchLimit));
-
-        // Fallback: also query original 'title' field for legacy documents without titleLower
-        try {
-            List<Video> legacyResults = videoRepository.searchByTitle(normalizedQuery, fetchLimit);
-            Set<String> existingIds = videos.stream()
-                    .map(Video::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Video v : legacyResults) {
-                if (!existingIds.contains(v.getYoutubeId())) {
-                    videos.add(v);
-                }
-            }
-        } catch (Exception e) {
-            // Fallback query failed, proceed with titleLower results only
-        }
-
-        // Keyword-based search: finds videos where any keyword exactly matches the query.
-        try {
-            List<Video> keywordResults = videoRepository.searchByKeyword(normalizedQuery, fetchLimit);
-            Set<String> existingIds = videos.stream()
-                    .map(Video::getYoutubeId)
-                    .collect(Collectors.toSet());
-            for (Video v : keywordResults) {
-                if (!existingIds.contains(v.getYoutubeId())) {
-                    videos.add(v);
-                }
-            }
-        } catch (Exception e) {
-            // Keyword query failed, proceed with title results only
-        }
-
-        return videos.stream()
-                .filter(this::isApproved)
-                .filter(this::isAvailable)
-                // Case-insensitive contains matching on title or keywords
-                .filter(v -> matchesSearchQuery(v.getTitle(), v.getKeywords(), normalizedQuery))
-                .limit(limit)
-                .map(this::toDto)
-                .collect(Collectors.toList());
-    }
-
-    /**
-     * Check if title or keywords match the search query (case-insensitive contains).
-     */
-    private boolean matchesSearchQuery(String title, List<String> keywords, String normalizedQuery) {
-        // Check title
-        if (title != null && title.toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
-            return true;
-        }
-        // Check keywords
-        if (keywords != null) {
-            for (String keyword : keywords) {
-                if (keyword != null && keyword.toLowerCase(Locale.ROOT).contains(normalizedQuery)) {
-                    return true;
-                }
-            }
-        }
-        return false;
+        long end = offset + limit; // long: never overflows (F2)
+        SearchIndex.Hits hits = searchIndex.search(q, docType, true, Math.toIntExact(end + 1), allowedIds);
+        List<ContentItemDto> all = hits.items();
+        List<ContentItemDto> page = all.subList((int) Math.min(offset, all.size()), (int) Math.min(end, all.size()));
+        String next = all.size() > end ? encodeCursor((int) end) : null;
+        return new SearchPage(new CursorPageDto<>(page, next), hits.match());
     }
 
     // ===================== YouTube URL/ID Parsing =====================
@@ -1371,8 +1080,8 @@ public class PublicContentService {
     /**
      * Parse a query string to extract YouTube identifiers.
      * Supports:
-     * - Video: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/v/XXX
-     * - Channel: youtube.com/channel/UCXXX, youtube.com/@handle
+     * - Video: youtube.com/watch?v=XXX, youtu.be/XXX, youtube.com/shorts|live|embed/XXX
+     * - Channel: youtube.com/channel/UCXXX (a /@handle cannot be resolved here: search answers none)
      * - Playlist: youtube.com/playlist?list=PLXXX
      * - Direct IDs: 11-char video IDs, UCxxxx channel IDs, PLxxxx playlist IDs
      *
@@ -1387,12 +1096,16 @@ public class PublicContentService {
         String trimmed = query.trim();
 
         // Check for URL patterns
-        if (trimmed.contains("youtube.com") || trimmed.contains("youtu.be")) {
+        if (isYouTubeUrl(trimmed)) {
             return parseYouTubeUrl(trimmed);
         }
 
         // Check for direct ID patterns
         return parseDirectId(trimmed);
+    }
+
+    private static boolean isYouTubeUrl(String query) {
+        return query.contains("youtube.com") || query.contains("youtu.be");
     }
 
     private YouTubeIdentifier parseYouTubeUrl(String url) {
@@ -1423,6 +1136,17 @@ public class PublicContentService {
                 String playlistId = extractParamValue(url, listIndex + 5);
                 if (playlistId.startsWith("PL") && playlistId.length() >= 13 && isAlphanumericWithDashUnderscore(playlistId)) {
                     return new YouTubeIdentifier(YouTubeIdentifier.Type.PLAYLIST, playlistId);
+                }
+            }
+
+            // Video: youtube.com/shorts/XXX, /live/XXX, /embed/XXX (after list=: /embed/videoseries?list=PL... is a playlist, N1)
+            for (String path : new String[]{"/shorts/", "/live/", "/embed/"}) {
+                int at = url.indexOf(path);
+                if (at != -1) {
+                    String videoId = extractPathSegment(url, at + path.length());
+                    if (isValidVideoId(videoId)) {
+                        return new YouTubeIdentifier(YouTubeIdentifier.Type.VIDEO, videoId);
+                    }
                 }
             }
 
@@ -1600,77 +1324,74 @@ public class PublicContentService {
         return ContentItemMapper.fromVideo(video);
     }
 
-    /**
-     * Normalize a Base64-encoded cursor to a stable string for use in cache keys.
-     * Handles two cursor formats:
-     * - Home feed: "displayOrder:categoryId" (e.g. "5:abc123") → extracts displayOrder
-     * - Content: plain integer offset (e.g. "10") → parsed directly
-     * Prevents cache pollution: arbitrary/invalid cursors all normalize to "0".
-     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
-     */
-    public static String normalizeCursor(String cursor) {
-        if (cursor == null || cursor.isEmpty()) return "0";
-        try {
-            String decoded = new String(Base64.getDecoder().decode(cursor));
-            if (decoded.contains(":")) {
-                // Home feed cursors: "displayOrder:categoryId"
-                // Include both parts in the key so two categories with the same displayOrder
-                // but different IDs don't collide (e.g. "5:abc" vs "5:xyz").
-                String[] parts = decoded.split(":", 2);
-                int order = Math.max(0, Integer.parseInt(parts[0]));
-                return order + "-" + parts[1].hashCode();
+    /** A /home cursor, "displayOrder:categoryId" (Base64); the page and its cache key both read it here. */
+    private record HomeCursor(int order, String id) {
+        /** Null when malformed. */
+        static HomeCursor parse(String cursor) {
+            try {
+                String[] parts = new String(Base64.getDecoder().decode(cursor)).split(":", 2);
+                return new HomeCursor(Integer.parseInt(parts[0]), parts.length > 1 ? parts[1] : null);
+            } catch (Exception e) {
+                return null;
             }
-            return String.valueOf(Math.max(0, Integer.parseInt(decoded)));
-        } catch (Exception e) {
-            return "0";
         }
     }
 
     /**
-     * Type-aware cache key for cursors. HOME uses numeric offset cursors that should be
-     * normalized to prevent cache pollution. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore
-     * cursors (JSON/Base64) that must be preserved as-is; normalizing them would collapse
-     * different pages into the same cache entry.
+     * Cache-key part of a /home cursor: "0" for the first page, the cursor itself when it parses (standard
+     * Base64 holds no '-', the key's separator), null when malformed. A null key is never cached (the
+     * @Cacheable condition): a key that disagreed with the page's own parse let one crafted cursor cache its
+     * page under a real page's key (B1).
+     * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
+     */
+    public static String normalizeCursor(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return "0";
+        return HomeCursor.parse(cursor) != null ? cursor : null;
+    }
+
+    /**
+     * Type-aware cache key for cursors. CHANNELS/PLAYLISTS/VIDEOS use opaque Firestore cursors that must be
+     * preserved as-is; normalizing them would collapse different pages into the same cache entry. Every other
+     * type is served as HOME (getContent's switch default) from an offset cursor: its key is the offset the page
+     * reads, or null (never cached) when the cursor is malformed, negative or past the int range (B1).
      *
      * Must be public+static so Spring SpEL can reference it in @Cacheable key expressions.
      */
     public static String cacheCursorKey(String type, String cursor) {
         if (cursor == null || cursor.isEmpty()) return "0";
         String resolvedType = (type == null || type.isBlank()) ? "HOME" : type.toUpperCase(Locale.ROOT);
-        if ("HOME".equals(resolvedType)) {
-            return normalizeCursor(cursor);
-        }
-        // Opaque cursor for CHANNELS/PLAYLISTS/VIDEOS — return as-is
-        return cursor;
+        return switch (resolvedType) {
+            case "CHANNELS", "PLAYLISTS", "VIDEOS" -> cursor;
+            default -> {
+                long offset = parseCursorOffset(cursor);
+                yield offset >= 0 && offset <= Integer.MAX_VALUE ? String.valueOf(offset) : null;
+            }
+        };
     }
 
-    // TODO: replace with Firestore full-text index (Algolia/extensions) before collection exceeds ~500 items
+    // Membership read for filtered in-tab search (searchContent, spec §4.7).
     private static final int MAX_SEARCH_FETCH = 1000;
-
-    private CursorPageDto<ContentItemDto> searchWithOffsetPagination(
-            List<ContentItemDto> allItems, TextFilter filter, String cursor, int limit) {
-        List<ContentItemDto> filtered = filter.apply(allItems);
-        int offset = decodeCursorOffset(cursor);
-        int from = Math.min(offset, filtered.size());
-        int to = Math.min(offset + limit, filtered.size());
-        List<ContentItemDto> page = filtered.subList(from, to);
-        boolean hasNext = to < filtered.size();
-        return new CursorPageDto<>(page, hasNext ? encodeCursor(offset + limit) : null);
-    }
 
     private String encodeCursor(int offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
 
-    private int decodeCursorOffset(String cursor) {
+    /** The offset an encodeCursor cursor holds; -1 when malformed or negative. Pages and cache keys both read it. */
+    private static long parseCursorOffset(String cursor) {
         if (cursor == null || cursor.isEmpty()) return 0;
         try {
-            String decoded = new String(Base64.getDecoder().decode(cursor));
-            return Math.max(0, Integer.parseInt(decoded));
+            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)));
+            return offset >= 0 ? offset : -1;
         } catch (Exception e) {
-            log.warn("Invalid content cursor: {}", cursor);
-            return 0;
+            return -1;
         }
+    }
+
+    private long decodeCursorOffset(String cursor) {
+        long offset = parseCursorOffset(cursor);
+        if (offset >= 0) return offset;
+        log.warn("Invalid content cursor: {}", cursor);
+        return 0;
     }
 
     /** Supplier that can throw checked exceptions. */
@@ -1688,123 +1409,5 @@ public class PublicContentService {
                 throw (e instanceof RuntimeException re) ? re : new RuntimeException(e);
             }
         }, contentExecutor);
-    }
-
-    /** Package-visible for unit testing. Tokenized AND-match filter across all content fields. */
-    static class TextFilter {
-        private final String[] tokens;
-
-        TextFilter(String q) {
-            if (q == null || q.trim().isEmpty()) {
-                this.tokens = new String[0];
-            } else {
-                this.tokens = q.trim().toLowerCase(Locale.ROOT).split("\\s+");
-            }
-        }
-
-        boolean isActive() { return tokens.length > 0; }
-
-        boolean matches(ContentItemDto dto) {
-            if (!isActive()) return true;
-            String combined = buildCombined(dto);
-            for (String token : tokens) {
-                if (!combined.contains(token)) return false;
-            }
-            return true;
-        }
-
-        List<ContentItemDto> apply(List<ContentItemDto> items) {
-            if (!isActive()) return items;
-            return items.stream().filter(this::matches).collect(Collectors.toList());
-        }
-
-        private String buildCombined(ContentItemDto dto) {
-            StringBuilder sb = new StringBuilder();
-            appendField(sb, dto.getName());
-            appendField(sb, dto.getTitle());
-            appendField(sb, dto.getDescription());
-            appendField(sb, dto.getChannelTitle());
-            List<String> kws = dto.getKeywords();
-            if (kws != null) {
-                for (String kw : kws) appendField(sb, kw);
-            }
-            return sb.toString().toLowerCase(Locale.ROOT);
-        }
-
-        private void appendField(StringBuilder sb, String field) {
-            if (field != null && !field.isEmpty()) {
-                sb.append(' ').append(field);
-            }
-        }
-    }
-
-    private List<ContentItemDto> searchStreams(String normalizedQuery, int limit)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        List<String> queryTokens = searchTokenizer.tokenize(normalizedQuery, null);
-        if (queryTokens.isEmpty()) return java.util.Collections.emptyList();
-
-        String primaryToken = queryTokens.get(0);
-        List<SearchableStream> candidates =
-                searchableStreamRepository.searchByToken(primaryToken, limit * 4);
-
-        if (queryTokens.size() > 1) {
-            List<String> rest = queryTokens.subList(1, queryTokens.size());
-            candidates = candidates.stream()
-                    .filter(s -> {
-                        Set<String> tSet = new HashSet<>(s.getSearchTokens());
-                        return rest.stream().allMatch(tSet::contains);
-                    })
-                    .collect(java.util.stream.Collectors.toList());
-        }
-
-        candidates.sort((a, b) -> scoreStream(b, normalizedQuery) - scoreStream(a, normalizedQuery));
-
-        // Overfetch to absorb filtering, then batch-check Video documents for archive status.
-        List<SearchableStream> top = candidates.stream()
-                .limit(limit * 2L)
-                .collect(java.util.stream.Collectors.toList());
-
-        if (top.isEmpty()) return java.util.Collections.emptyList();
-
-        // Batch-fetch Video documents; streams with no Video document are NOT filtered
-        // (parent channel/playlist cleanup handles those in separate tasks).
-        Map<String, Video> videoMap = videoRepository.findByYoutubeIds(
-                top.stream().map(SearchableStream::getStreamId).collect(java.util.stream.Collectors.toList())
-        );
-
-        Set<String> blockedIds = videoMap.values().stream()
-                .filter(v -> !isAvailable(v) || !isApproved(v))
-                .map(Video::getYoutubeId)
-                .collect(java.util.stream.Collectors.toSet());
-
-        return top.stream()
-                .filter(s -> !blockedIds.contains(s.getStreamId()))
-                .limit(limit)
-                .map(s -> streamToDto(s, videoMap.get(s.getStreamId())))
-                .collect(java.util.stream.Collectors.toList());
-    }
-
-    private int scoreStream(SearchableStream s, String query) {
-        String norm = s.getTitleNorm() != null ? s.getTitleNorm() : "";
-        if (norm.equals(query)) return 10;
-        if (norm.startsWith(query)) return 7;
-        if (norm.contains(query)) return 5;
-        return 1;
-    }
-
-    private ContentItemDto streamToDto(SearchableStream s, Video video) {
-        return ContentItemDto.video(
-                s.getStreamId(),
-                s.getTitle(),
-                null,
-                s.getDurationSeconds() != null ? s.getDurationSeconds().intValue() : 0,
-                // stream index stores no upload date; use the Video document when there is one, else null (omitted)
-                video != null ? ContentItemMapper.uploadedDaysAgo(video.getUploadedAt()) : null,
-                null,
-                s.getThumbnailUrl(),
-                s.getViewCount(),
-                s.getChannelName(),
-                null
-        );
     }
 }

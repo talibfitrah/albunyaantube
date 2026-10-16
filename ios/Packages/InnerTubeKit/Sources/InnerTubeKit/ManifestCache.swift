@@ -35,6 +35,12 @@ public actor ManifestCache {
         return entry.resolved
     }
 
+    /// `StreamResolver.demote`: the entry was minted by a rung that would not play.
+    func remove(_ videoId: String) {
+        entries.removeValue(forKey: videoId)
+        order.removeAll { $0 == videoId }
+    }
+
     public func put(_ resolved: Resolved, videoId: String, now: Date) async {
         guard !isLive(resolved) else { return }
 

@@ -712,7 +712,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                 videoId = item.videoId,
                 title = item.title,
                 indexInPlaylist = item.position,
-                thumbnailUrl = item.thumbnailUrl
+                thumbnailUrl = item.thumbnailUrl,
+                channelName = item.channelName,
+                durationSeconds = item.durationSeconds
             )
         }
 

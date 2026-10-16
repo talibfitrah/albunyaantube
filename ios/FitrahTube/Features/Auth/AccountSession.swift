@@ -110,6 +110,12 @@ nonisolated enum AccountState: Sendable, Equatable {
     /// relaunch for the download session) Firebase cannot read its Keychain and reports
     /// `.signedOut` for a session that survives, so that report must not delete the record.
     private let protectedDataAvailable: @MainActor @Sendable () -> Bool
+    /// 1.0.3 R1 (Android R4b parity): how long a launch with a saved record waits for `/me` before
+    /// it routes on that record.
+    nonisolated static let launchMeBound: Duration = .seconds(3)
+    /// Sleeps for the bound. Injected (round 1 / M4) so a test holds it on a gate rather than on
+    /// the wall clock of a loaded machine.
+    private let launchSleep: @Sendable (Duration) async -> Void
     /// The account on screen is the offline record, or its last `/me` failed without a verdict:
     /// the one case a reconnect re-asks `/me` for (`AppContainer.connectivityChanged`, as Android).
     private(set) var needsRecheck = false
@@ -190,7 +196,8 @@ nonisolated enum AccountState: Sendable, Equatable {
          providers: [any OAuthSignInProvider] = [],
          sync: (any SyncTriggering)? = nil,
          records: AccountRecordStore? = nil,
-         protectedDataAvailable: @escaping @MainActor @Sendable () -> Bool = { true }) {
+         protectedDataAvailable: @escaping @MainActor @Sendable () -> Bool = { true },
+         launchSleep: @escaping @Sendable (Duration) async -> Void = { try? await Task.sleep(for: $0) }) {
         self.auth = auth
         self.account = account
         self.stores = stores
@@ -203,6 +210,7 @@ nonisolated enum AccountState: Sendable, Equatable {
         self.sync = sync
         self.records = records
         self.protectedDataAvailable = protectedDataAvailable
+        self.launchSleep = launchSleep
     }
 
     /// The uid ANY sync trigger may run for, or nil -- the one guard the foreground and
@@ -549,6 +557,15 @@ nonisolated enum AccountState: Sendable, Equatable {
             lastKnownUid = uid
             seeded = uid
         }
+        // 1.0.3 R1 (Android R4b parity): with nothing on screen and a record saved for this
+        // account, the wait for `/me` is BOUNDED. A network that is up but routes nothing (dead
+        // Wi-Fi, a captive portal, a stalled backend) held the spinner for the transport's 15 s, or
+        // ~75 s behind an expired token. Past the bound the launch routes on the record exactly as
+        // the `.network` arm below does, and this request keeps running: its answer still lands
+        // through the same arms (a success replaces the record, a signed 401 or the 403 envelope
+        // drops the session). No record: unchanged, the launch waits for `/me`.
+        let bound = launchFallback(for: startedFor)
+        defer { bound?.cancel() }
         for attempt in 1...max(1, maxAttempts) {
             do {
                 let me = try await account.me()
@@ -648,6 +665,19 @@ nonisolated enum AccountState: Sendable, Equatable {
                 }
                 return
             }
+        }
+    }
+
+    /// R1's timer: after `launchMeBound`, a round still loading for `uid` routes on its saved record.
+    /// Guarded on the identity and on `.loading`, so a round that answered, failed or was dropped
+    /// in the meantime is never overwritten.
+    private func launchFallback(for uid: String?) -> Task<Void, Never>? {
+        guard let uid, state.me == nil, let known = records?.load(uid: uid) else { return nil }
+        return Task { [launchSleep] in
+            await launchSleep(Self.launchMeBound)
+            guard !Task.isCancelled, state == .loading, user?.uid == uid else { return }
+            state = .loaded(known)
+            needsRecheck = true
         }
     }
 

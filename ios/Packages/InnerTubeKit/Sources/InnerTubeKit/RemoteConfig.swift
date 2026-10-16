@@ -81,12 +81,15 @@ extension RemoteConfig {
     /// Strategy names the bundled resolver ladder actually implements (spec
     /// §6.13: "unknown strategy names are dropped").
     ///
-    /// `openInYouTube` is deliberately ABSENT (owner directive 2026-08-27: the app never redirects
-    /// or hands off to YouTube). Leaving it out of this set is what makes `sanitized(_:)` DROP the
-    /// rung from any published config that still lists it -- the ban survives a remote config the
-    /// app did not author.
+    /// `openInYouTube` (owner directive 2026-08-27: the app never redirects or hands off to
+    /// YouTube) and `embed` (owner directive 2026-10-14: no YouTube player of any kind) are
+    /// deliberately ABSENT. Leaving them out of this set is what makes `sanitized(_:)` DROP the rung
+    /// from any published config that still lists it, and from a persisted last-known-good copy --
+    /// the ban survives a remote config the app did not author. That protects THIS build and later
+    /// ones only: installed 1.0.0 / 1.0.2 builds still list `embed` in their own set, so for them the
+    /// published `ios-remote-config.json` is the only guard (`RemoteConfigTests` checks it raw).
     public static let knownResolverStrategies: Set<String> = [
-        "visionosHLS", "androidItag18", "embed",
+        "visionosHLS", "androidItag18",
     ]
 
     /// Loaded once from the bundled `remote-config-default.json` (Task 1's frozen client table).
@@ -186,7 +189,7 @@ public actor RemoteConfigStore {
     private static func sanitized(_ config: RemoteConfig) -> RemoteConfig {
         var config = config
         // Cubic #10: dedupe (first occurrence wins -- a duplicated rung is a whole extra ladder walk
-        // per resolve) and cap the ladder at 8 rungs (unobservable today with 3 known strategies;
+        // per resolve) and cap the ladder at 8 rungs (unobservable today with 2 known strategies;
         // belt for a future, larger strategy table).
         var seen = Set<String>()
         config.resolverOrder = Array(

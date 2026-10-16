@@ -1,10 +1,18 @@
 package com.albunyaan.tube.di
 
+import com.albunyaan.tube.data.account.AccountService
+import com.albunyaan.tube.data.account.AccountUpdateApi
+import com.albunyaan.tube.data.approvals.ApprovalApi
+import com.albunyaan.tube.data.importflow.ImportApi
+import com.albunyaan.tube.data.search.YouTubeSearchApi
 import com.albunyaan.tube.data.source.api.CategoryResponse
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.data.source.api.DownloadApi
 import com.albunyaan.tube.data.source.api.HomeFeedResponse
+import com.albunyaan.tube.data.source.api.ReportApi
+import com.albunyaan.tube.data.sync.SyncApi
+import com.albunyaan.tube.data.youtube.YouTubeImportApi
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.model.api.models.DownloadCompletedEvent
 import com.albunyaan.tube.data.model.api.models.DownloadFailedEvent
@@ -20,6 +28,7 @@ import dagger.Provides
 import dagger.hilt.components.SingletonComponent
 import dagger.hilt.testing.TestInstallIn
 import okhttp3.OkHttpClient
+import retrofit2.Retrofit
 import javax.inject.Singleton
 
 /**
@@ -39,6 +48,9 @@ import javax.inject.Singleton
     replaces = [NetworkModule::class]
 )
 object TestNetworkModule {
+
+    /** Shared so a test can script search and content answers; call resetSearch / resetContent in @After. */
+    val fakeContentApi = FakeContentApi()
 
     @Provides
     @Singleton
@@ -61,7 +73,7 @@ object TestNetworkModule {
     @Provides
     @Singleton
     fun provideContentApi(): ContentApi {
-        return FakeContentApi()
+        return fakeContentApi
     }
 
     @Provides
@@ -69,6 +81,19 @@ object TestNetworkModule {
     fun provideDownloadApi(): DownloadApi {
         return FakeDownloadApi()
     }
+
+    // The Hilt test graph stopped compiling when these APIs were added to NetworkModule (this module
+    // replaces it). No test here calls them, so they are real Retrofit proxies over an unreachable URL.
+    private val offline: Retrofit = Retrofit.Builder().baseUrl("http://localhost/").build()
+
+    @Provides @Singleton fun provideAccountService(): AccountService = offline.create(AccountService::class.java)
+    @Provides @Singleton fun provideSyncApi(): SyncApi = offline.create(SyncApi::class.java)
+    @Provides @Singleton fun provideApprovalApi(): ApprovalApi = offline.create(ApprovalApi::class.java)
+    @Provides @Singleton fun provideAccountUpdateApi(): AccountUpdateApi = offline.create(AccountUpdateApi::class.java)
+    @Provides @Singleton fun provideYouTubeImportApi(): YouTubeImportApi = offline.create(YouTubeImportApi::class.java)
+    @Provides @Singleton fun provideImportApi(): ImportApi = offline.create(ImportApi::class.java)
+    @Provides @Singleton fun provideReportApi(): ReportApi = offline.create(ReportApi::class.java)
+    @Provides @Singleton fun provideYouTubeSearchApi(): YouTubeSearchApi = offline.create(YouTubeSearchApi::class.java)
 }
 
 /**
@@ -76,6 +101,28 @@ object TestNetworkModule {
  * Tests can use @BindValue to provide custom implementations for specific test cases.
  */
 class FakeContentApi : ContentApi {
+
+    private val noResults: suspend (String) -> retrofit2.Response<List<ContentItemDto>> =
+        { retrofit2.Response.success(emptyList()) }
+
+    /** What /v1/search answers (body plus X-Search-Match); a test sets it and calls [resetSearch] in @After. */
+    @Volatile
+    var onSearch = noResults
+
+    fun resetSearch() {
+        onSearch = noResults
+    }
+
+    private val emptyPage: suspend (String?) -> CursorPage =
+        { CursorPage(data = emptyList(), pageInfo = PageInfo(hasNext = false, nextCursor = null)) }
+
+    /** What /v1/content answers, by its `q`; a test sets it and calls [resetContent] in @After. */
+    @Volatile
+    var onContent = emptyPage
+
+    fun resetContent() {
+        onContent = emptyPage
+    }
 
     override suspend fun fetchContent(
         type: String?,
@@ -86,15 +133,7 @@ class FakeContentApi : ContentApi {
         date: String?,
         sort: String?,
         query: String?
-    ): CursorPage {
-        return CursorPage(
-            data = emptyList(),
-            pageInfo = PageInfo(
-                hasNext = false,
-                nextCursor = null
-            )
-        )
-    }
+    ): CursorPage = onContent(query)
 
     override suspend fun fetchCategories(): List<CategoryResponse> {
         return emptyList()
@@ -104,9 +143,7 @@ class FakeContentApi : ContentApi {
         query: String,
         type: String?,
         limit: Int
-    ): List<ContentItemDto> {
-        return emptyList()
-    }
+    ): retrofit2.Response<List<ContentItemDto>> = onSearch(query)
 
     override suspend fun fetchHomeFeed(
         cursor: String?,

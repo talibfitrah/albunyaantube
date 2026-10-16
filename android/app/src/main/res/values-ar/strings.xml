@@ -179,7 +179,6 @@
     <string name="content_unavailable_message">هذا المحتوى لم يعد متاحًا. ربما تمت إزالته بواسطة المسؤول أو بواسطة يوتيوب.</string>
     <string name="error_parse">فشل معالجة البيانات. يرجى المحاولة مجدداً.</string>
     <string name="error_parse_title">خطأ في البيانات</string>
-    <string name="error_unknown">حدث خطأ غير متوقع.</string>
     <string name="offline_mode">أنت غير متصل. يتم عرض المحتوى المحفوظ.</string>
     <string name="connectivity_offline_banner">أنت غير متصل بالإنترنت. تحقق من اتصالك.</string>
     <!-- ANDROID-MULTI-01 Issue 3 -->
@@ -520,10 +519,6 @@
     <string name="downloads_storage_used">التخزين المستخدم</string>
     <string name="downloads_storage_format">%1$d تنزيل • %2$s مستخدم • %3$s متاح</string>
     <string name="downloads_storage_calculating">جارٍ الحساب…</string>
-    <string name="downloads_no_file">لم يتم العثور على الملف</string>
-    <string name="downloads_file_not_found">الملف غير موجود: %1$s</string>
-    <string name="downloads_open_error">خطأ: %1$s</string>
-    <string name="downloads_no_player">لم يتم العثور على مشغل فيديو</string>
     <string name="library_section_title">المكتبة</string>
     <string name="library_saved">المحفوظات</string>
     <string name="library_saved_count">%1$d فيديو</string>
@@ -616,6 +611,7 @@
     <string name="search_error">فشل البحث: %1$s</string>
     <string name="search_error_generic">فشل البحث. يرجى المحاولة مرة أخرى.</string>
     <string name="search_loading">جارٍ البحث…</string>
+    <string name="search_closest_results">لا يوجد تطابق تام — إليك أقرب النتائج</string>
     <string name="error_title">خطأ</string>
 
     <!-- Home Overflow Menu -->

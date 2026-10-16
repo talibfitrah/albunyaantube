@@ -12,17 +12,9 @@ enum StreamState {
     case ready(Resolved)
     case rung2Progressive(Resolved)
     case error(messageKey: String)
-    /// Terminal with its OWN copy: an embed error no reload can fix (100 removed, 101/150 refused).
-    /// `.contentUnavailable` is the same "no Retry" surface with one fixed message; this keeps the
-    /// distinct reason ruling 14 asks for without handing back a button that can only fail again.
-    case unplayable(messageKey: String)
     case contentUnavailable
     case cooldown(until: Date)
     case recoveryExhausted(Resolved)
-    /// Rung 3 (plan §6.4 row 3): YouTube's own IFrame player in a navigation-locked `WKWebView`.
-    /// A DIFFERENT surface, not a degraded `AVPlayer` -- which is why it is its own state and its
-    /// own `PlayerScreen` branch, and why nothing promotes it back to rung 1/2 automatically.
-    case embed(Resolved)
     /// Ruling 33's terminus, and the reason it is NOT `.idle`: `.idle` is the pre-open value and
     /// `PlayerStateCopy` renders it as "Loading..." with no Retry (`PlayerStateView.swift:28-32`),
     /// so ending a playlist on it is a permanent spinner. This is a real terminal state with real
@@ -31,8 +23,9 @@ enum StreamState {
     /// the user is not looking at the screen is exactly the kind of transition spec 6.6's
     /// "Transitions" row exists for.
     case queueEnded
-    // There is no hand-off state. Owner directive 2026-08-27: the app never redirects or hands off
-    // to YouTube, in any Safe Mode setting -- so the ladder's floor is `.embed`, and everything
+    // There is no hand-off state and no YouTube player state. Owner directives 2026-08-27 and
+    // 2026-10-14: the app never redirects or hands off to YouTube and never plays a YouTube player,
+    // in any Safe Mode setting -- so the ladder's floor is the progressive stream, and everything
     // below it lands on `.error`/`.contentUnavailable` like any other terminal outcome.
 }
 
@@ -46,9 +39,7 @@ extension StreamState: Equatable {
         case (.rung2Progressive(let l), .rung2Progressive(let r)): return l.comparisonKey == r.comparisonKey
         case (.recoveryExhausted(let l), .recoveryExhausted(let r)): return l.comparisonKey == r.comparisonKey
         case (.error(let l), .error(let r)): return l == r
-        case (.unplayable(let l), .unplayable(let r)): return l == r
         case (.cooldown(let l), .cooldown(let r)): return l == r
-        case (.embed(let l), .embed(let r)): return l.comparisonKey == r.comparisonKey
         default: return false
         }
     }
@@ -64,7 +55,6 @@ private extension Resolved {
         switch stream {
         case .hls(let url, let isLive, _, _): streamKey = "hls:\(url.absoluteString):\(isLive)"
         case .progressive(let url, let label): streamKey = "progressive:\(url.absoluteString):\(label)"
-        case .embed(let videoId): streamKey = "embed:\(videoId)"
         }
         return "\(client):\(userAgent):\(resolvedAt.timeIntervalSince1970):\(streamKey)"
     }

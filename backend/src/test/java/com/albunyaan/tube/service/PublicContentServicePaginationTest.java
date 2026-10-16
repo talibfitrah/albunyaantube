@@ -10,7 +10,6 @@ import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
-import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.util.CursorUtils;
 import com.google.cloud.Timestamp;
@@ -50,10 +49,7 @@ class PublicContentServicePaginationTest {
     private com.albunyaan.tube.repository.CategoryContentOrderRepository orderRepository;
 
     @Mock
-    private SearchableStreamRepository searchableStreamRepository;
-
-    @Mock
-    private SearchTokenizer searchTokenizer;
+    private com.albunyaan.tube.search.SearchIndex searchIndex;
 
     private PublicContentService publicContentService;
 
@@ -66,8 +62,7 @@ class PublicContentServicePaginationTest {
                 categoryRepository,
                 orderRepository,
                 Runnable::run,  // Direct executor for synchronous test execution
-                searchableStreamRepository,
-                searchTokenizer
+                searchIndex
         );
     }
 
@@ -85,7 +80,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -107,7 +102,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -130,7 +125,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", null, 5, "islamic", null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -153,7 +148,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "CHANNELS", cursor, 5, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -174,7 +169,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "PLAYLISTS", null, 5, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -197,7 +192,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -218,7 +213,7 @@ class PublicContentServicePaginationTest {
         // Act - apply length filter
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "VIDEOS", null, 5, null, "SHORT", null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -240,7 +235,7 @@ class PublicContentServicePaginationTest {
         // Act
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 6, null, null, null, null
-        , null);
+        );
 
         // Assert
         assertNotNull(response);
@@ -261,10 +256,10 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> firstPage = publicContentService.getContent(
                 "HOME", null, 50, "kids", null, null, null
-        , null);
+        );
         CursorPageDto<ContentItemDto> secondPage = publicContentService.getContent(
                 "HOME", firstPage.getPageInfo().getNextCursor(), 50, "kids", null, null, null
-        , null);
+        );
 
         assertEquals(50, firstPage.getData().size());
         assertNotNull(firstPage.getPageInfo().getNextCursor());
@@ -308,7 +303,7 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 10, "parent", null, null, null
-        , null);
+        );
 
         assertEquals(2, response.getData().size());
         assertEquals("yt-parent", response.getData().get(0).getId());
@@ -338,7 +333,7 @@ class PublicContentServicePaginationTest {
         // Should not throw — negative offset is clamped to 0
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", negativeCursor, 5, "kids", null, null, null
-        , null);
+        );
 
         assertNotNull(response);
         // Should return items starting from offset 0 (clamped)
@@ -362,7 +357,7 @@ class PublicContentServicePaginationTest {
 
         CursorPageDto<ContentItemDto> response = publicContentService.getContent(
                 "HOME", null, 20, "kids", null, null, null
-        , null);
+        );
 
         assertEquals(20, response.getData().size());
         // No phantom next cursor: we over-fetched by 1, got exactly 20, so hasNext=false
@@ -474,11 +469,10 @@ class PublicContentServicePaginationTest {
     // ============ normalizeCursor tests ============
 
     @Test
-    void normalizeCursor_compoundHomeFeedCursor_includesOrderAndIdHash() {
-        // Home feed cursors use "displayOrder:categoryId" format
+    void normalizeCursor_compoundHomeFeedCursor_isItsOwnKey() {
+        // Home feed cursors use "displayOrder:categoryId" format; the whole cursor keys the page (B1)
         String cursor = java.util.Base64.getEncoder().encodeToString("5:cat-anasheed-uuid".getBytes());
-        String result = PublicContentService.normalizeCursor(cursor);
-        assertTrue(result.startsWith("5-"), "Should start with displayOrder: " + result);
+        assertEquals(cursor, PublicContentService.normalizeCursor(cursor));
     }
 
     @Test
@@ -505,9 +499,9 @@ class PublicContentServicePaginationTest {
     }
 
     @Test
-    void normalizeCursor_plainIntegerCursor_parsesDirectly() {
+    void normalizeCursor_orderWithoutId_isItsOwnKey() {
         String cursor = java.util.Base64.getEncoder().encodeToString("20".getBytes());
-        assertEquals("20", PublicContentService.normalizeCursor(cursor));
+        assertEquals(cursor, PublicContentService.normalizeCursor(cursor));
     }
 
     @Test
@@ -521,21 +515,23 @@ class PublicContentServicePaginationTest {
     }
 
     @Test
-    void normalizeCursor_garbageInput_returnsZero() {
-        assertEquals("0", PublicContentService.normalizeCursor("not-base64-!!!"));
+    void normalizeCursor_garbageInput_isNeverCached() {
+        // null key = the @Cacheable condition skips the cache; "0" was the first page's key (B1)
+        assertNull(PublicContentService.normalizeCursor("not-base64-!!!"));
     }
 
     @Test
-    void normalizeCursor_negativeOffset_clampedToZero() {
-        String cursor = java.util.Base64.getEncoder().encodeToString("-5:cat-id".getBytes());
-        String result = PublicContentService.normalizeCursor(cursor);
-        assertTrue(result.startsWith("0-"), "Negative displayOrder should clamp to 0: " + result);
+    void normalizeCursor_negativeOrder_neverTakesTheKeyOfOrderZero() {
+        // The page reads -5 as -5: clamping only the key to 0 cached it under "0:cat-id"'s key (B1)
+        String negative = java.util.Base64.getEncoder().encodeToString("-5:cat-id".getBytes());
+        String zero = java.util.Base64.getEncoder().encodeToString("0:cat-id".getBytes());
+        assertNotEquals(PublicContentService.normalizeCursor(zero), PublicContentService.normalizeCursor(negative));
     }
 
     @Test
-    void normalizeCursor_negativeSimpleOffset_clampedToZero() {
+    void normalizeCursor_negativeOrderWithoutId_neverTakesTheFirstPageKey() {
         String cursor = java.util.Base64.getEncoder().encodeToString("-3".getBytes());
-        assertEquals("0", PublicContentService.normalizeCursor(cursor));
+        assertNotEquals("0", PublicContentService.normalizeCursor(cursor));
     }
 
     private List<Video> createTestVideos(int count) {

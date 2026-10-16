@@ -19,9 +19,9 @@ public struct CaptionTrack: Sendable, Equatable {
 public enum ResolvedStream: Sendable {
     case hls(url: URL, isLive: Bool, audioOnlyURL: URL?, captionTracks: [CaptionTrack])
     case progressive(url: URL, label: String)
-    case embed(videoId: String)
-    // No `openInYouTube` case: owner directive 2026-08-27 bans every redirect and hand-off to
-    // YouTube. The ladder's floor is `embed`; anything below it is a terminal `ExtractionError`.
+    // No `openInYouTube` case (owner directive 2026-08-27: no redirect or hand-off to YouTube) and
+    // no `embed` case (owner directive 2026-10-14: no YouTube player of any kind). The ladder's
+    // floor is the progressive stream; anything below it is an `ExtractionError`.
 }
 
 /// The InnerTube client family a resolve was performed under. The `userAgent`
@@ -102,6 +102,6 @@ public enum Purpose: Sendable {
     case prefetch
     /// A cast's own muxed walk (`requiresMuxed`). Scoped to the cast: a bot check there fails the
     /// cast only and never records the global cooldown -- from the phone's usual `.hls` the android
-    /// rung is untried, and a trip would lock out the phone's WORKING rung-1 playback for 1-24 h.
+    /// rung is untried, and a trip would lock out the phone's WORKING rung-1 playback for up to 5 minutes.
     case cast
 }

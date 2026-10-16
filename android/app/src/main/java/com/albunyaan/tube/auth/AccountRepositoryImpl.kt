@@ -278,9 +278,9 @@ class AccountRepositoryImpl(
      * One /me for a session restored offline; no-op otherwise, and at most one
      * in flight. Triggered on reconnect and on foreground.
      *
-     * The server's verdict wins: a signed 401 signs out and deletes the record,
-     * the same line [com.albunyaan.tube.ui.SplashRouter.accountForRoute] draws at
-     * launch ([isTerminalAccountFailure]). An account blocked or deleted while
+     * The server's verdict wins: a signed 401 ([isTerminalAccountFailure]) signs
+     * out and deletes the record; the launch routes on what this leaves
+     * ([com.albunyaan.tube.ui.SplashRouter.resolveAccount]). An account blocked or deleted while
      * offline is signed out by the Firebase SDK when its token mint fails, or by
      * the 403 envelope. Anything else, or a malformed body, keeps the account.
      */

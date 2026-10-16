@@ -44,16 +44,21 @@ import UIKit
         } catch let failure as OAuthSignInFailure {
             throw failure
         } catch {
-            // The ONE case worth telling apart: the user backed out. `NS_ERROR_ENUM` bridges
-            // `kGIDSignInErrorCodeCanceled` to `GIDSignInError.canceled`, and the domain is checked
-            // too so a `-5` from some other `NSError` can never read as a cancel. Everything else is
-            // one app code — this is the pre-Firebase leg, with no domain worth mapping further.
-            let nsError = error as NSError
-            if nsError.domain == kGIDSignInErrorDomain, nsError.code == GIDSignInError.canceled.rawValue {
-                throw .cancelled
-            }
-            throw .failed(.googleSignInFailed)
+            throw Self.failure(for: error)
         }
+    }
+
+    /// The ONE case worth telling apart: the user backed out. `NS_ERROR_ENUM` bridges
+    /// `kGIDSignInErrorCodeCanceled` to `GIDSignInError.canceled`, and the domain is checked too so
+    /// a `-5` from some other `NSError` can never read as a cancel. Everything else is one app
+    /// code — this is the pre-Firebase leg, with no domain worth mapping further — except offline
+    /// (1.0.3 R2), which says "No internet connection" like every other leg of the wall.
+    nonisolated static func failure(for error: any Error) -> OAuthSignInFailure {
+        let nsError = error as NSError
+        if nsError.domain == kGIDSignInErrorDomain, nsError.code == GIDSignInError.canceled.rawValue {
+            return .cancelled
+        }
+        return .failed(AuthErrorCode.isOffline(error) ? .network : .googleSignInFailed)
     }
 
     /// Stage 4 / I1. `GIDSignIn.sharedInstance.signOut()` clears the SDK's Keychain-persisted

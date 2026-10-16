@@ -114,11 +114,13 @@ nonisolated enum DescriptionTruncation {
 
 /// Android's `PlayerDescriptions.kt` allow-list (`docs/library-guides` reference), ported to
 /// iOS's plain-text `description` field (the FitrahTube backend serves plain text, not YouTube's
-/// raw HTML, so there is no `HtmlCompat.fromHtml` step to port -- only the link-scheme filter).
-/// `NSDataDetector` is the platform's own link finder (ponytail: no hand-rolled URL regex); a
-/// detected match whose scheme isn't http/https is left as plain, non-tappable text -- the text
-/// itself is never altered, only whether a `.link` attribute is attached to it. Free function
-/// (not a method) so `PlayerToolbarTests` can call it directly with no view/environment needed.
+/// raw HTML, so there is no `HtmlCompat.fromHtml` step to port -- only the link filter).
+/// `NSDataDetector` is the platform's own link finder (ponytail: no hand-rolled URL regex). A match
+/// is tappable only when `isOpenableLink` passes BOTH the URL the tap opens (`match.url`, which the
+/// detector normalises: `http://` added to a bare domain, the host decoded and IDNA-mapped) AND the
+/// text as written, so a normalisation cannot launder a link the text itself fails. Anything else
+/// stays plain, non-tappable text -- the text itself is never altered. Free function (not a
+/// method) so `PlayerToolbarTests` can call it directly with no view/environment needed.
 func attributedDescription(_ raw: String) -> AttributedString {
     var attributed = AttributedString(raw)
     guard let detector = try? NSDataDetector(types: NSTextCheckingResult.CheckingType.link.rawValue) else {
@@ -126,14 +128,56 @@ func attributedDescription(_ raw: String) -> AttributedString {
     }
     let nsRaw = raw as NSString
     for match in detector.matches(in: raw, range: NSRange(location: 0, length: nsRaw.length)) {
-        guard let url = match.url, let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https" else { continue }
-        guard let stringRange = Range(match.range, in: raw),
+        // The tap opens a lower-case scheme (Android normalises it too); Foundation keeps `Https` as written.
+        guard let detected = match.url, let scheme = detected.scheme,
+              let url = URL(string: scheme.lowercased() + detected.absoluteString.dropFirst(scheme.count)),
+              let stringRange = Range(match.range, in: raw),
+              isOpenableLink(url.absoluteString), isOpenableLink(asWritten(raw[stringRange])),
               let start = AttributedString.Index(stringRange.lowerBound, within: attributed),
               let end = AttributedString.Index(stringRange.upperBound, within: attributed) else { continue }
         attributed[start..<end].link = url
     }
     return attributed
 }
+
+/// The match's text as written, with `http://` in front of a bare domain (`example.org/b`), the
+/// same scheme the detector adds, so the rule still judges the written host. Only a LEADING
+/// `scheme://` counts: `example.org/r?to=https://foo.com` and `example.org:8080/x` are bare.
+private func asWritten(_ text: Substring) -> String {
+    text.range(of: "^[A-Za-z][A-Za-z0-9+.-]*://", options: .regularExpression) == nil ? "http://" + text : String(text)
+}
+
+/// The ONE link rule, the same as Android's `PlayerDescriptions.isOpenableLink` (keep the two in
+/// step). Owner directives 2026-08-27 and
+/// 2026-10-14: the app never hands users to YouTube. A link that fails stays visible as text:
+/// 1. no `\`, whitespace (anywhere: no trim), control character or soft hyphen;
+/// 2. scheme `http` or `https`;
+/// 3. a host that is LDH (`a-z`, `0-9`, `.`, `-`) or an IPv6 literal as Foundation gives it.
+///    `URL(string:)` converts a non-ASCII host with IDNA (UTS 46, as a browser does:
+///    `ｙｏｕｔｕｂｅ.com` is `youtube.com`, `bücher.de` is `xn--bcher-kva.de`) and refuses an
+///    unassigned code point (nil). The host is read percent-decoded (`%79outube.com` is
+///    youtube.com); anything else left in it (non-ASCII, `@`, `%`, `_`) fails closed;
+/// 4. not `yt.be` or under it, no label starting with `youtube`, no label equal to `youtu` or
+///    `withyoutube`: every YouTube domain, country domain, subdomain and redirecting marketing
+///    domain. The accepted cost: an unrelated `youtuber.com` is text too.
+func isOpenableLink(_ link: String) -> Bool {
+    let refused: (Unicode.Scalar) -> Bool = {
+        $0 == "\\" || $0 == "\u{AD}" || $0.properties.isWhitespace || $0.properties.generalCategory == .control
+    }
+    guard !link.unicodeScalars.contains(where: refused),
+          let url = URL(string: link),
+          let scheme = url.scheme?.lowercased(), scheme == "http" || scheme == "https",
+          let host = url.host(percentEncoded: false)?.lowercased(),
+          host.allSatisfy(ldh.contains) || (host.contains(":") && host.allSatisfy(ipv6.contains))
+    else { return false }
+    let labels = host.split(separator: ".")   // drops the empty label a trailing dot leaves
+    let domain = labels.joined(separator: ".")
+    guard !labels.isEmpty, domain != "yt.be", !domain.hasSuffix(".yt.be") else { return false }
+    return !labels.contains { $0.hasPrefix("youtube") || $0 == "youtu" || $0 == "withyoutube" }
+}
+
+private let ldh = Set("abcdefghijklmnopqrstuvwxyz0123456789.-")
+private let ipv6 = Set("0123456789abcdef:.")   // `[::1]` comes back from Foundation as `::1`
 
 #if DEBUG
 #Preview {

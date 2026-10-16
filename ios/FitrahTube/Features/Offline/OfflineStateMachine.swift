@@ -20,7 +20,7 @@ nonisolated enum OfflineStateMachine {
         case (.queued, .start): .running
         // A queued row's button reads Resume (DownloadsAdapter parity); resuming one starts it.
         case (.queued, .resume): .running
-        // Resolve can fail before the engine ever starts (embed outcome, bad input).
+        // Resolve can fail before the engine ever starts (bad input, no stream).
         case (.queued, .fail): .failed
         case (.running, .pause): .paused
         case (.running, .complete): .completed

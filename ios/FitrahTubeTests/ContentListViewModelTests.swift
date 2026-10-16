@@ -30,7 +30,7 @@ struct ContentListViewModelTests {
             guard pages.indices.contains(index) else { return CursorPage(items: [], nextCursor: nil) }
             return pages[index]
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `content()` call succeeds; every call after that throws -- for pagination-error
@@ -56,7 +56,7 @@ struct ContentListViewModelTests {
             if callCount >= recoverAfter { return CursorPage(items: [], nextCursor: nil) }
             throw Boom()
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The first `content()` call resolves immediately; every later call suspends on `gate`.
@@ -79,20 +79,24 @@ struct ContentListViewModelTests {
             if callCount > 1 { await gate.block() }
             return page
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// The Nth `content()` call suspends on `gates[N]` (1-based); every other call resolves at
     /// once. Lets a test hold two load-mores in flight at the same time, which is what the gate
-    /// wave-2 W2 defer fix is about.
+    /// wave-2 W2 defer fix is about. A call numbered in `failing` throws once its gate opens.
     private actor MultiGateCatalogClient: CatalogClient {
+        struct Boom: Error {}
         private let page: CursorPage<ContentItem>
         private let gates: [Int: Gate]
+        private let failing: Set<Int>
         private(set) var callCount = 0
+        private(set) var queries: [String?] = []
 
-        init(page: CursorPage<ContentItem>, gates: [Int: Gate]) {
+        init(page: CursorPage<ContentItem>, gates: [Int: Gate], failing: Set<Int> = []) {
             self.page = page
             self.gates = gates
+            self.failing = failing
         }
 
         func categories() async throws -> [FitrahTube.Category] { [] }
@@ -101,11 +105,50 @@ struct ContentListViewModelTests {
         }
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             callCount += 1
-            if let gate = gates[callCount] { await gate.block() }
+            queries.append(query)
+            let call = callCount
+            if let gate = gates[call] { await gate.block() }
+            if failing.contains(call) { throw Boom() }
             return page
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
+
+    /// Answers every `content()` with three items named after its `q` (`"all"` when there is none),
+    /// so a test can tell whose answer is on screen. A query in `gates` waits on its gate first; a
+    /// query in `failing` then throws.
+    private actor QueryEchoClient: CatalogClient {
+        struct Boom: Error {}
+        private let gates: [String: Gate]
+        private let failing: Set<String>
+        private(set) var queries: [String?] = []
+
+        init(gates: [String: Gate] = [:], failing: Set<String> = []) {
+            self.gates = gates
+            self.failing = failing
+        }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            queries.append(query)
+            let key = query ?? "all"
+            if let gate = gates[key] { await gate.block() }
+            if failing.contains(key) { throw Boom() }
+            return CursorPage(items: await items(count: 3, prefix: key), nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
+    }
+
+    /// The ids on screen, `[]` unless the state is `.content`.
+    private func shownIDs(_ vm: ContentListViewModel) -> [String] {
+        guard case .content(let shown, _, _, _) = vm.state else { return [] }
+        return shown.map(\.id)
+    }
+
+    private func echoIDs(_ query: String) -> [String] { items(count: 3, prefix: query).map(\.id) }
 
     // MARK: - Tests
 
@@ -156,7 +199,7 @@ struct ContentListViewModelTests {
         let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
 
-        #expect(vm.state == .loading(.initial))
+        #expect(vm.state == .loading)
         await vm.loadIfNeeded()
         #expect(await client.calls.count == 1)
     }
@@ -233,12 +276,14 @@ struct ContentListViewModelTests {
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
 
         await vm.load() // call 1: q == nil (empty query)
+        vm.query = "ab" // call 2: a search on screen (from the plain list, "a" is the request already shown -- S13)
+        await vm.searchTask?.value
         vm.query = "a" // 1 char -- below the ≥2 threshold
         await vm.searchTask?.value
 
         let calls = await client.calls
-        #expect(calls.count == 2)
-        #expect(calls[1].query == nil)
+        #expect(calls.count == 3)
+        #expect(calls[2].query == nil)
         guard case .content(_, _, _, let isSearchActive) = vm.state else { Issue.record("expected .content"); return }
         #expect(isSearchActive == true) // non-empty query still marks search as active, even below the fetch threshold
     }
@@ -272,19 +317,18 @@ struct ContentListViewModelTests {
         #expect(calls[1].query == "abc")
     }
 
+    /// Exactly one 300 ms wait per keystroke (Android A1 parity): the view binds the field straight
+    /// to `query`, so this debounce is the only one.
     @Test func debounceWaitsBeforeFetching() async {
-        actor DurationRecorder { var seen: Duration?; func record(_ d: Duration) { seen = d } }
-        let recorder = DurationRecorder()
+        let recorder = SleepRecorder()
         let client = RecordingCatalogClient(pages: [CursorPage(items: [], nextCursor: nil)])
-        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
-            await recorder.record(duration)
-        }
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: recorder.record)
 
         await vm.load()
         vm.query = "ab"
         await vm.searchTask?.value
 
-        #expect(await recorder.seen == .milliseconds(300))
+        #expect(recorder.recorded == [.milliseconds(300)])
     }
 
     // MARK: - Fix round 1
@@ -382,6 +426,7 @@ struct ContentListViewModelTests {
 
         #expect(vm.state == .error)
         #expect(vm.lastItems.isEmpty)
+        #expect(!vm.isSearching)
     }
 
 
@@ -422,12 +467,14 @@ struct ContentListViewModelTests {
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
 
         await vm.load()
+        vm.query = "ab" // a search on screen (from the plain list, "  " is the request already shown -- S13)
+        await vm.searchTask?.value
         vm.query = "  "
         await vm.searchTask?.value
 
         let calls = await client.calls
-        #expect(calls.count == 2)
-        #expect(calls[1].query == nil)
+        #expect(calls.count == 3)
+        #expect(calls[2].query == nil)
         guard case .content(_, _, _, let isSearchActive) = vm.state else { Issue.record("expected .content"); return }
         #expect(isSearchActive == false)
     }
@@ -460,5 +507,374 @@ struct ContentListViewModelTests {
         await gate.release()
 
         #expect(await loadMore.value == false)
+    }
+
+    // MARK: - Spec §6.2: a query change keeps the list on screen
+
+    @Test func aQueryChangeKeepsTheListOnScreenWhileTheSearchLoads() async {
+        let gate = Gate()
+        let client = GatedCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil), gate: gate)
+        let vm = ContentListViewModel(type: .channels, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+
+        vm.query = "ab"
+        await gate.waitUntilBlocked()
+        guard case .content = vm.state else { Issue.record("the list must stay while the search loads, got \(vm.state)"); return }
+        #expect(vm.isSearching)
+
+        await gate.release()
+        await vm.searchTask?.value
+        #expect(!vm.isSearching)
+    }
+
+    // MARK: - In-tab parity (Android A6, S13, S14)
+
+    /// A6: a keystroke drops the search already in flight at once. Only the debounce timer used to
+    /// be cancelled, so the older fetch ran on and its answer -- or its error -- landed under the
+    /// newer text while that text's own debounce was still pending.
+    @Test(arguments: [false, true])
+    func aKeystrokeDropsTheSearchAlreadyInFlight(olderSearchFails: Bool) async {
+        let fetch = Gate()
+        let debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = QueryEchoClient(gates: ["ab": fetch], failing: olderSearchFails ? ["ab"] : [])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if await sleeps.recorded.count == 2 { await debounce.block() } // holds the newer keystroke's debounce
+        }
+        await vm.load()
+
+        vm.query = "ab"
+        let olderSearch = vm.searchTask
+        await fetch.waitUntilBlocked()
+        vm.query = "abc"
+        await fetch.release()
+        await olderSearch?.value // "ab" has answered while "abc" is still debouncing
+
+        #expect(shownIDs(vm) == echoIDs("all"))
+        #expect(vm.errorToken == 0)
+
+        await debounce.waitUntilBlocked()
+        await debounce.release()
+        await vm.searchTask?.value
+        #expect(shownIDs(vm) == echoIDs("abc"))
+        #expect(!vm.isSearching)
+    }
+
+    /// S13: typing a character and deleting it again lands back on the query whose results are on
+    /// screen (compared trimmed). Nothing reloads, the search in flight is dropped, the spinner stops.
+    @Test func undoingAKeystrokeBackToTheShownQueryDoesNotReload() async {
+        let abc = Gate()
+        let client = QueryEchoClient(gates: ["abc": abc])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        vm.query = "ab"
+        await vm.searchTask?.value
+
+        vm.query = "abc"
+        let typed = vm.searchTask
+        await abc.waitUntilBlocked()
+        #expect(vm.isSearching)
+        vm.query = "ab " // the shown query once trimmed
+        #expect(!vm.isSearching)
+
+        await abc.release()
+        await typed?.value
+        await vm.searchTask?.value
+        #expect(await client.queries == [nil, "ab", "abc"])
+        #expect(shownIDs(vm) == echoIDs("ab"))
+    }
+
+    /// A4 parity: a load-more that fires inside the 300 ms debounce pages the list on screen, so it
+    /// asks with that list's query -- never the newer text, whose page would land under a query it
+    /// was not fetched for (and carry the old query's cursor).
+    @Test func aLoadMoreDuringTheDebouncePagesTheShownQuery() async {
+        let debounce = Gate()
+        let pages = [CursorPage(items: items(count: 20, prefix: "p0"), nextCursor: "1"),
+                     CursorPage(items: items(count: 20, prefix: "p1"), nextCursor: nil)]
+        let client = RecordingCatalogClient(pages: pages)
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { _ in await debounce.block() }
+        await vm.load() // the plain list, with a next page
+
+        vm.query = "ab"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        await vm.loadMore() // inside the debounce window
+
+        let calls = await client.calls
+        #expect(calls.count == 2)
+        #expect(calls[1].cursor == "1")
+        #expect(calls[1].query == nil) // the shown list's query, not "ab"
+        #expect(vm.itemsQuery == nil)  // a page appended below never scrolls the list to the top
+
+        await debounce.release()
+        await typed?.value
+    }
+
+    /// S14 (RULINGS #22 parity): the keyboard's Search key searches at once -- it neither waits for
+    /// a pending debounce nor applies the 2-character floor -- and the debounce it overtook never
+    /// fetches a second time.
+    @Test func theSearchKeySearchesAtOnceEvenBelowTwoCharacters() async {
+        let debounce = Gate()
+        let client = RecordingCatalogClient(pages: [CursorPage(items: items(count: 3, prefix: "a"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { _ in await debounce.block() }
+        await vm.load()
+
+        vm.query = "a"
+        await vm.submit()
+        #expect(await client.calls.map(\.query) == [nil, "a"])
+
+        vm.query = "ab"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        await vm.submit()
+        #expect(await client.calls.map(\.query) == [nil, "a", "ab"])
+
+        await debounce.release()
+        await typed?.value
+        #expect(await client.calls.count == 3)
+    }
+
+    // MARK: - Final wave (Android N7, N2, stage 7 parity; VoiceOver)
+
+    /// A keystroke during a pull-to-refresh cancels the refresh's fetch. When the field still asks
+    /// for the list on screen (one character, a space) nothing used to fetch again, so the refresh
+    /// was silently dropped. Now the debounce reloads it.
+    @Test func aKeystrokeDuringAPullToRefreshStillReloads() async {
+        let refresh = Gate()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [2: refresh])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+
+        let pull = Task { await vm.refresh() }
+        await refresh.waitUntilBlocked()
+        vm.query = "a"
+        await refresh.release()
+        await pull.value
+        await vm.searchTask?.value
+
+        #expect(await client.queries == [nil, nil, nil])
+        #expect(!vm.isSearching)
+    }
+
+    /// Typing and then undoing it during a pull-to-refresh still reloads: the rows on screen stop
+    /// being an answer to return to once a refresh asks for them again (Android's
+    /// `shownQuery = null`), whether the undo lands inside the keystroke's debounce or while the
+    /// redone refresh is in flight.
+    @Test(arguments: ["debounce", "fetch"])
+    func aTypeAndUndoDuringAPullToRefreshStillReloads(undoDuring: String) async throws {
+        let refresh = Gate(), redo = Gate(), debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: undoDuring == "fetch" ? [2: refresh, 3: redo] : [2: refresh])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if undoDuring == "debounce", await sleeps.recorded.count == 1 { await debounce.block() }
+        }
+        await vm.load()
+
+        let pull = Task { await vm.refresh() }
+        await refresh.waitUntilBlocked()
+        vm.query = "a"
+        let typed = try #require(vm.searchTask, "the keystroke dropped the refresh") // else the waits below never end
+        await refresh.release()
+        await pull.value
+        if undoDuring == "fetch" {
+            await redo.waitUntilBlocked()       // the debounce ran: the refresh is being redone
+            #expect(vm.isSearching)
+        } else {
+            await debounce.waitUntilBlocked()   // still inside the keystroke's debounce
+        }
+        vm.query = ""
+        await redo.release()
+        await debounce.release()
+        await typed.value
+        await vm.searchTask?.value
+
+        let expected: [String?] = undoDuring == "fetch" ? [nil, nil, nil, nil] : [nil, nil, nil]
+        #expect(await client.queries == expected, "the refresh was dropped")
+        #expect(!vm.isSearching)
+    }
+
+    /// The Search key on the text already being fetched changes nothing: that fetch is not
+    /// cancelled and sent again.
+    @Test func theSearchKeyDoesNotRestartTheSameSearchInFlight() async {
+        let quran = Gate()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [2: quran])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+
+        vm.query = "quran"
+        let typed = vm.searchTask
+        await quran.waitUntilBlocked()
+        await vm.submit()
+        #expect(await client.queries == [nil, "quran"])
+
+        await quran.release()
+        await typed?.value
+        await vm.searchTask?.value
+        #expect(await client.queries == [nil, "quran"])
+        #expect(vm.itemsQuery == "quran")
+        #expect(!vm.isSearching)
+    }
+
+    /// After a failed pull-to-refresh the list stays on screen (with the banner). Typing used to
+    /// swap it for the full-page error at once and then a skeleton; it now stays under the spinner,
+    /// as it does over `.content`, until the new results replace it.
+    @Test func typingAfterAFailedRefreshKeepsTheListOnScreen() async {
+        let search = Gate()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [3: search], failing: [2])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.refresh()
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 5)
+
+        vm.query = "qu"
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id), "the list must stay, got \(vm.state)")
+
+        let typed = vm.searchTask
+        await search.waitUntilBlocked()
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id), "no skeleton, got \(vm.state)")
+        #expect(vm.isSearching)
+
+        await search.release()
+        await typed?.value
+        #expect(vm.itemsQuery == "qu")
+        #expect(!vm.isSearching)
+    }
+
+    /// Stage 3a S3-4: the Search key over a failed refresh's retained list keeps that list under
+    /// the spinner, as a keystroke does (and as Android does), instead of blanking it to the
+    /// skeleton.
+    @Test func theSearchKeyAfterAFailedRefreshKeepsTheListOnScreen() async {
+        let search = Gate()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [3: search], failing: [2])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.refresh()
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 5)
+
+        let submitted = Task { await vm.submit() }
+        await search.waitUntilBlocked()
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id), "no skeleton, got \(vm.state)")
+        #expect(vm.isSearching)
+
+        await search.release()
+        await submitted.value
+        #expect(shownIDs(vm) == items(count: 5, prefix: "a").map(\.id))
+        #expect(!vm.isSearching)
+    }
+
+    /// Stage 3a S3-3 (Android parity): emptying the field brings the full list back at once --
+    /// only a typed query waits out the debounce.
+    @Test func emptyingTheFieldReloadsTheFullListWithoutTheDebounce() async {
+        let recorder = SleepRecorder()
+        let client = QueryEchoClient()
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: recorder.record)
+        await vm.load()
+        vm.query = "fiqh"
+        await vm.searchTask?.value
+        #expect(recorder.recorded == [.milliseconds(300)])
+
+        vm.query = ""
+        await vm.searchTask?.value
+
+        #expect(recorder.recorded == [.milliseconds(300)], "the emptied field waited out a debounce")
+        #expect(await client.queries == [nil, "fiqh", nil])
+        #expect(shownIDs(vm) == echoIDs("all"))
+    }
+
+    /// The list a failed refresh -- or a failed Retry from its banner, which is `load()` -- left is
+    /// not a loaded answer: a keystroke undone inside its debounce still retries, as it did before
+    /// the list stayed on screen (and as Android does).
+    @Test(arguments: ["refresh", "retry"])
+    func undoingAKeystrokeAfterAFailedRefreshStillRetries(reload: String) async {
+        let debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [:], failing: [2])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if await sleeps.recorded.count == 1 { await debounce.block() } // holds the first keystroke's debounce
+        }
+        await vm.load()
+        if reload == "refresh" { await vm.refresh() } else { await vm.load() }
+        #expect(vm.lastItems.count == 5)
+
+        vm.query = "a"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        vm.query = ""
+        await debounce.release()
+        await typed?.value
+        await vm.searchTask?.value
+
+        #expect(await client.queries == [nil, nil, nil])
+        #expect(!vm.isSearching)
+    }
+
+    /// The same for a Search-key resubmit of the query on screen that fails: its rows stay with the
+    /// banner, and a keystroke undone inside its debounce still retries rather than keeping them.
+    @Test func undoingAKeystrokeAfterAFailedResubmitStillRetries() async {
+        let debounce = Gate()
+        let sleeps = SleepRecorder()
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: nil),
+                                            gates: [:], failing: [3])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore()) { duration in
+            await sleeps.record(duration)
+            if await sleeps.recorded.count == 2 { await debounce.block() } // holds the "abs" keystroke's debounce
+        }
+        await vm.load()
+        vm.query = "ab"
+        await vm.searchTask?.value
+        await vm.submit()                    // the Search key on the query on screen: the refetch fails
+        #expect(vm.state == .error)
+        #expect(vm.lastItems.count == 5)
+
+        vm.query = "abs"
+        let typed = vm.searchTask
+        await debounce.waitUntilBlocked()
+        vm.query = "ab"
+        await debounce.release()
+        await typed?.value
+        await vm.searchTask?.value
+
+        #expect(await client.queries == [nil, "ab", "ab", "ab"])
+        #expect(!vm.isSearching)
+    }
+
+    /// VoiceOver hears a new query's results replace the list: their count, when page 1 lands.
+    /// The first load, a page appended below and a refresh of the same query say nothing.
+    @Test func aNewQuerysFirstPageIsAnnouncedWithItsCount() async {
+        @MainActor final class Spoken { var texts: [String] = [] }
+        let spoken = Spoken()
+        let count = { (n: Int) in Format.localizedFormat("list_footer_status", locale: .current, Int64(n)) }
+        let client = MultiGateCatalogClient(page: CursorPage(items: items(count: 5, prefix: "a"), nextCursor: "1"), gates: [:])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep,
+                                      announce: { spoken.texts.append($0) })
+
+        await vm.load()
+        await vm.refresh()
+        #expect(spoken.texts.isEmpty)
+
+        vm.query = "ab"
+        await vm.searchTask?.value
+        #expect(spoken.texts == [count(5)])
+
+        #expect(await vm.loadMore())         // a next page, fetched and appended below
+        #expect(await client.queries == [nil, nil, "ab", "ab"])
+        vm.query = "ab "                     // the same request: nothing reloads
+        await vm.searchTask?.value
+        #expect(spoken.texts == [count(5)])
+
+        vm.query = ""                        // the full list replaces the results
+        await vm.searchTask?.value
+        #expect(spoken.texts == [count(5), count(5)])
     }
 }

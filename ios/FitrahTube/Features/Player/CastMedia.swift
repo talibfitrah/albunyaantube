@@ -31,11 +31,6 @@ nonisolated enum CastMedia {
             return nil
         case .progressive(let progressiveURL, _):
             url = progressiveURL
-        case .embed:
-            // Owner directive 2026-08-27: no YouTube hand-off, ever. Rung 3 IS YouTube's own
-            // player in a locked WKWebView -- there is no stream URL to hand a receiver, and
-            // handing it the video id would be that hand-off by another route. Never castable.
-            return nil
         }
         // Compliance pin: the receiver fetches `contentURL` over the network,
         // so only an http(s) URL can ever be cast. An offline `PlayerScreen` resolves through

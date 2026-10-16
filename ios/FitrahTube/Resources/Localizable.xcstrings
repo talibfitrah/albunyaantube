@@ -4638,28 +4638,6 @@
         }
       }
     },
-    "downloads_file_not_found": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "الملف غير موجود: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "File not found: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Bestand niet gevonden: %1$@"
-          }
-        }
-      }
-    },
     "downloads_library_title": {
       "localizations": {
         "ar": {
@@ -4678,72 +4656,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Downloads & Bibliotheek"
-          }
-        }
-      }
-    },
-    "downloads_no_file": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم العثور على الملف"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No file found"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen bestand gevonden"
-          }
-        }
-      }
-    },
-    "downloads_no_player": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم العثور على مشغل فيديو"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No video player found"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen videospeler gevonden"
-          }
-        }
-      }
-    },
-    "downloads_open_error": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "خطأ: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Error: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Fout: %1$@"
           }
         }
       }
@@ -5668,28 +5580,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Fout"
-          }
-        }
-      }
-    },
-    "error_unknown": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "حدث خطأ غير متوقع."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "An unexpected error occurred."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Er is een onverwachte fout opgetreden."
           }
         }
       }
@@ -7180,6 +7070,88 @@
           "stringUnit": {
             "state": "translated",
             "value": "Kan inhoud niet laden"
+          }
+        }
+      }
+    },
+    "list_footer_status": {
+      "localizations": {
+        "ar": {
+          "variations": {
+            "plural": {
+              "few": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "عرض %1$lld عناصر"
+                }
+              },
+              "many": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "عرض %1$lld عنصرًا"
+                }
+              },
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "عرض عنصر واحد"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "عرض %1$lld عنصر"
+                }
+              },
+              "two": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "عرض عنصرين"
+                }
+              },
+              "zero": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "لا توجد عناصر"
+                }
+              }
+            }
+          }
+        },
+        "en": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Showing %1$lld item"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "Showing %1$lld items"
+                }
+              }
+            }
+          }
+        },
+        "nl": {
+          "variations": {
+            "plural": {
+              "one": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld item weergegeven"
+                }
+              },
+              "other": {
+                "stringUnit": {
+                  "state": "translated",
+                  "value": "%1$lld items weergegeven"
+                }
+              }
+            }
           }
         }
       }
@@ -11020,94 +10992,6 @@
         }
       }
     },
-    "player_embed_caption": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "يتم التشغيل في مشغّل يوتيوب"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playing in YouTube's player"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speelt af in de YouTube-speler"
-          }
-        }
-      }
-    },
-    "player_embed_removed": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تمت إزالة هذا الفيديو"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This video was removed"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deze video is verwijderd"
-          }
-        }
-      }
-    },
-    "player_embed_replay": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "إعادة التشغيل"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Replay"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Opnieuw afspelen"
-          }
-        }
-      }
-    },
-    "player_error_generic": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا يمكن تشغيل هذا الفيديو داخل التطبيق"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "This video can't be played in the app"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Deze video kan niet in de app worden afgespeeld"
-          }
-        }
-      }
-    },
     "player_error_message": {
       "localizations": {
         "ar": {
@@ -14282,6 +14166,28 @@
           "stringUnit": {
             "state": "translated",
             "value": "Wissen"
+          }
+        }
+      }
+    },
+    "search_closest_results": {
+      "localizations": {
+        "ar": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "لا يوجد تطابق تام — إليك أقرب النتائج"
+          }
+        },
+        "en": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "No exact match — showing closest results"
+          }
+        },
+        "nl": {
+          "stringUnit": {
+            "state": "translated",
+            "value": "Geen exacte overeenkomst — dichtstbijzijnde resultaten"
           }
         }
       }

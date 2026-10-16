@@ -28,16 +28,15 @@ struct ShortsScreenTests {
         // in `ShortsScreen.task` (outside the view model) would NOT be caught here.
     }
 
-    /// C1 (fix round 2): `.embed` online must reach `EmbedRungView`, never `PlayerStateView` --
-    /// `PlayerStateCopy.map` `preconditionFailure`s on an online `.embed`. Offline it is the
-    /// offline card, the same rule `PlayerScreen` follows.
-    @Test func embedRoutesToTheEmbedRungOnlineAndTheStatusCardOffline() {
-        let resolved = Resolved(stream: .embed(videoId: "xc7keR2piUM"), client: .web, userAgent: "",
-                                resolvedAt: Date(), expiresAt: nil)
-        #expect(ShortsScreen.branch(for: .embed(resolved), isOnline: true) == .embed)
-        #expect(ShortsScreen.branch(for: .embed(resolved), isOnline: false) == .status)
-        #expect(ShortsScreen.branch(for: .ready(resolved), isOnline: true) == .player)
-        #expect(ShortsScreen.branch(for: .loading, isOnline: true) == .status)
+    /// The Shorts stage routes on `isPlayable` (stage 1 B1-3): the player for both playable rungs,
+    /// the status card for everything else.
+    @Test func playableStatesRouteToThePlayerAndEverythingElseToTheStatusCard() {
+        let resolved = Resolved(stream: .progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"),
+                                client: .android, userAgent: "", resolvedAt: Date(), expiresAt: nil)
+        #expect(StreamState.ready(resolved).isPlayable)
+        #expect(StreamState.rung2Progressive(resolved).isPlayable)
+        #expect(!StreamState.loading.isPlayable)
+        #expect(!StreamState.error(messageKey: "player_error_message").isPlayable)
     }
 
     // MARK: - Task 3: chrome
@@ -67,14 +66,6 @@ struct ShortsScreenTests {
         #expect(ShortsOverlay.showsChannelRow(channelName: "Ustadh Example"))
         #expect(ShortsOverlay.showsChannelRow(channelName: nil) == false)
         #expect(ShortsOverlay.showsChannelRow(channelName: "   ") == false)
-    }
-
-    @Test func theEmbedRungIsTheOnlyThingThatChangesShapeForShorts() {
-        // CF-B3-1: the aspect ratio is the ONE parameter. Its default keeps every B3 call site 16:9.
-        #expect(EmbedRungView.defaultAspectRatio == 16.0 / 9.0)
-        // The 200x200 pt floor at 9:16, on the narrowest portrait-locked geometry this app supports.
-        #expect(EmbedRungView.fittedSize(container: CGSize(width: 320, height: 568),
-                                         aspectRatio: 9.0 / 16.0).width >= 200)
     }
 
     @Test func captionsMenuIsTheOneCopyBothScreensUse() {

@@ -283,8 +283,8 @@ val MIGRATION_6_7 = object : Migration(6, 7) {
  *
  * All ALTER TABLE ADD COLUMN statements use NOT NULL DEFAULT 0 / '' so that
  * existing rows acquire safe defaults without needing rewrites. Rows whose
- * user_id is '' after this migration are "anon-era" — the bind/runMerge flow
- * in SyncManager tags them with the user's uid and marks them dirty for push.
+ * user_id is '' after this migration are "anon-era" — SyncManager.bind's merge
+ * (runMergeLocked) tags them with the user's uid and marks them dirty for push.
  *
  * Defensive self-heal: CREATE TABLE IF NOT EXISTS mirrors the existing
  * migration style. ALTER TABLE … ADD COLUMN does NOT support IF NOT EXISTS

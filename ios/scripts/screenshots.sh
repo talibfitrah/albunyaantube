@@ -230,88 +230,12 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$TASK10_OUT" xcodebuild test \
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
 # ---------------------------------------------------------------------------------------------
-# Plan B3 (docs/superpowers/plans/2026-08-27-ios-phase2b3-embed-safemode.md): the embed rung, the
-# open-in-YouTube rung and Safe Mode. Same one-block-per-task shape as the B1/B2 blocks above.
-
-# No task-2 block: rung 4 (the "Open in YouTube" hand-off card and its confirmation) was removed
-# outright by owner directive 2026-08-27 -- the app never redirects to YouTube -- so both of its
-# screenshot cases are gone with it.
-
-# Task 4 (rung 3): the caption above the frame with every FitrahTube playback control gone, and the
-# Replay/Back cover over the end screen.
-B3_TASK4_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task4"
-echo "== B3 task 4 embed rung screenshots -> $B3_TASK4_OUT =="
-rm -rf "${B3_TASK4_OUT:?}"
-TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK4_OUT" xcodebuild test \
-    -project FitrahTube.xcodeproj \
-    -scheme FitrahTube \
-    -testPlan FitrahTubeUITests \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedRung \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedEnded \
-    -destination "platform=iOS Simulator,name=iPhone 17" \
-    -derivedDataPath DerivedData \
-    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
-[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
-
-# Task 5 (acceptance matrix): the embed rung at Dynamic Type .accessibility3 and in ar (RTL), then
-# the iPad in both orientations -- each asserting plan §6.4's 200x200 pt floor on the web view's
-# own frame. Both legs share ONE directory, so only the iPhone leg clears it.
-B3_TASK5_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task5"
-echo "== B3 task 5 embed a11y/RTL pass (iPhone) -> $B3_TASK5_OUT =="
-rm -rf "${B3_TASK5_OUT:?}"
-TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK5_OUT" xcodebuild test \
-    -project FitrahTube.xcodeproj \
-    -scheme FitrahTube \
-    -testPlan FitrahTubeUITests \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedB3Task5IPhone \
-    -destination "platform=iOS Simulator,name=iPhone 17" \
-    -derivedDataPath DerivedData \
-    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
-[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
-
-echo "== B3 task 5 embed a11y/RTL pass (iPad) -> $B3_TASK5_OUT =="
-TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_TASK5_OUT" xcodebuild test \
-    -project FitrahTube.xcodeproj \
-    -scheme FitrahTube \
-    -testPlan FitrahTubeUITests \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerEmbedB3Task5IPad \
-    -destination "platform=iOS Simulator,name=iPad Pro 13-inch (M5)" \
-    -derivedDataPath DerivedData \
-    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
-[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
-
-# Task 5 step 2 (live IFrame pass): OPT-IN, because these talk to youtube.com and a machine with no
-# network would fail them for the wrong reason -- the same contract InnerTubeKit's LiveResolveTests
-# has with INNERTUBE_LIVE. Run with:  EMBED_LIVE=1 ios/scripts/screenshots.sh
-if [ "${EMBED_LIVE:-0}" = "1" ]; then
-    B3_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b3-embed-safemode/screenshots/b3-task5-live"
-    echo "== B3 task 5 LIVE IFrame checks -> $B3_LIVE_OUT =="
-    rm -rf "${B3_LIVE_OUT:?}"
-    TEST_RUNNER_FITRAH_SHOTS_DIR="$B3_LIVE_OUT" TEST_RUNNER_EMBED_LIVE=1 xcodebuild test \
-        -project FitrahTube.xcodeproj \
-        -scheme FitrahTube \
-        -testPlan FitrahTubeUITests \
-        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLivePlaysAndAutoplays \
-        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveNavigationLockCancelsEveryEscape \
-        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveEndedRaisesCoverAndReplayRestarts \
-        -only-testing:FitrahTubeUITests/ScreenshotTests/testEmbedLiveRemovedCard \
-        -destination "platform=iOS Simulator,name=iPhone 17" \
-        -derivedDataPath DerivedData \
-        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|EMBED_LIVE|TEST (SUCCEEDED|FAILED)|error:"
-    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-    xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
-fi
-
-# ---------------------------------------------------------------------------------------------
 # Plan B4 (docs/superpowers/plans/2026-08-27-ios-phase2b4-shorts.md): the Shorts surface. One
 # block per leg, each naming its own destination -- the device argument above does NOT scope
 # anything down here.
 
 # Task 3 (chrome) + Task 4 (acceptance matrix): iPhone leg -- en/ar/a11y3, loop, tap, scrub, rail,
-# kebab, Back, edge swipe, portrait lock, embed arm, status states. The iPad leg follows and shares
+# kebab, Back, edge swipe, portrait lock, status states. The iPad leg follows and shares
 # the directory, so only the iPhone leg clears it. Frame measurements land in
 # `b4-task4-*-measurements.txt` beside the PNGs.
 B4_TASK4_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b4-shorts/screenshots/b4-task4"
@@ -342,7 +266,7 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$B4_TASK4_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
-# Task 4 step 2 (live Shorts): OPT-IN, same contract as EMBED_LIVE -- approved-catalog ids only.
+# Task 4 step 2 (live Shorts): OPT-IN (it talks to the live service) -- approved-catalog ids only.
 # Run with:  SHORTS_LIVE=1 ios/scripts/screenshots.sh
 if [ "${SHORTS_LIVE:-0}" = "1" ]; then
     B4_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b4-shorts/screenshots/b4-task4-live"
@@ -390,7 +314,7 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$B5_TASK4_OUT" xcodebuild test \
 [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
 xcrun simctl shutdown "iPad Pro 13-inch (M5)" >/dev/null 2>&1
 
-# Task 4 step 2 (live playlist): OPT-IN, same contract as EMBED_LIVE/SHORTS_LIVE -- the approved
+# Task 4 step 2 (live playlist): OPT-IN, same contract as SHORTS_LIVE -- the approved
 # catalog playlist only. Run with:  B5_LIVE=1 ios/scripts/screenshots.sh
 if [ "${B5_LIVE:-0}" = "1" ]; then
     B5_LIVE_OUT="$ROOT/.superpowers/sdd/2026-08-27-ios-phase2b5-fullscreen-queue/screenshots/b5-task4-live"
@@ -462,21 +386,28 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     xcrun simctl shutdown "$device" >/dev/null 2>&1
 done
 
-# Phase 3 Task 8: the player toolbar with all five slots (favorite / share / report / save / cast),
-# en + ar. Phone only -- the toolbar row is the subject and it is identical on iPad.
+# Phase 3 Task 8 + action row 1.0.3: the player toolbar with all five slots (favorite / share / report
+# / save / cast), en + ar, phone AND iPad. `testPlayerSaveAndCastToolbarPhase3` also asserts the
+# equal-width columns on one top edge, and on a tablet the 600 pt cap + centring in the player column
+# -- that branch runs ONLY on the iPad leg (`UIDevice` idiom), so both legs are needed. FitrahTubeUITests
+# is outside test.sh's gate, so this block is where those assertions run. One `-only-testing:` per
+# invocation (the Plan C scoping trap).
 CAST_OUT="$ROOT/.superpowers/sdd/2026-09-01-ios-phase3-offline-cast/screenshots/phase3-player-save-cast"
-echo "== phase3-player-save-cast (iPhone 17) -> $CAST_OUT =="
-rm -rf "${CAST_OUT:?}"
-TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT" xcodebuild test \
-    -project FitrahTube.xcodeproj \
-    -scheme FitrahTube \
-    -testPlan FitrahTubeUITests \
-    -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerSaveAndCastToolbarPhase3 \
-    -destination "platform=iOS Simulator,name=iPhone 17" \
-    -derivedDataPath DerivedData \
-    2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
-[ "${PIPESTATUS[0]}" -ne 0 ] && status=1
-xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== phase3-player-save-cast ($device) -> $CAST_OUT/$slug =="
+    rm -rf "${CAST_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$CAST_OUT/$slug" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlayerSaveAndCastToolbarPhase3 \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
 
 # Phase 4 Task 19 (docs/superpowers/plans/2026-09-02-ios-phase4-accounts.md): the account screens
 # the R-G matrix cannot reach -- the two splash-router ROOT destinations picked from the fixture
@@ -559,5 +490,65 @@ EOF
     rm -rf "$C_LIVE_SERVE"
     xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 fi
+
+# Playback hardening Phase 1 (local-docs/plans/2026-10-14-ios-playback-hardening.md, Task 7): rung 1
+# answered with a REAL HTTP 401 by a localhost server, the step-down to rung 2 still playing, and the
+# not-available card -- en + ar, iPhone and iPad. Same localhost technique as the C task 6 live leg.
+# Final review M3: the production shape. Playlists answer 200; rung 1 serves two 1 s segments and
+# answers 401 for the rest (AVPlayer is READY first, so the failure is `.playbackError`, which steps
+# down only through the 401 rule); rung 2 serves every segment. Synthetic ffmpeg test-pattern media
+# in scripts/fixtures/hardening-hls (no YouTube content).
+HARDENING_OUT="$ROOT/local-docs/screens/playback-hardening"
+HARDENING_PORT="${HARDENING_PORT:-8766}"
+python3 -I -c '
+import http.server, os, sys
+port, media = int(sys.argv[1]), sys.argv[2]
+playlist = ("#EXTM3U\n#EXT-X-VERSION:3\n#EXT-X-TARGETDURATION:1\n#EXT-X-PLAYLIST-TYPE:VOD\n"
+            + "".join("#EXTINF:1.0,\nseg%d.ts\n" % i for i in range(6)) + "#EXT-X-ENDLIST\n").encode()
+class Rig(http.server.BaseHTTPRequestHandler):
+    def reply(self, status, body=b"", kind="text/plain"):
+        self.send_response(status)
+        self.send_header("Content-Type", kind)
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        self.wfile.write(body)
+    def do_GET(self):
+        rung, _, name = self.path.lstrip("/").partition("/")
+        if rung not in ("rung1", "rung2") or os.path.basename(name) != name:
+            return self.reply(404)
+        if name == "master.m3u8":
+            return self.reply(200, playlist, "application/vnd.apple.mpegurl")
+        if not (name.startswith("seg") and name.endswith(".ts") and name[3:-3].isdigit()):
+            return self.reply(404)
+        if rung == "rung1" and int(name[3:-3]) >= 2:
+            return self.reply(401)
+        if not os.path.isfile(os.path.join(media, name)):
+            return self.reply(404)
+        with open(os.path.join(media, name), "rb") as segment:
+            self.reply(200, segment.read(), "video/mp2t")
+    def log_message(self, *args):
+        pass
+http.server.ThreadingHTTPServer(("127.0.0.1", port), Rig).serve_forever()
+' "$HARDENING_PORT" "$ROOT/ios/scripts/fixtures/hardening-hls" &
+HARDENING_SERVER=$!
+# A Ctrl-C or a killed xcodebuild must not leave the 401 server bound to the port (review M3).
+trap 'kill "$HARDENING_SERVER" 2>/dev/null' EXIT
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== playback hardening: $device -> $HARDENING_OUT/$slug =="
+    rm -rf "${HARDENING_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$HARDENING_OUT/$slug" \
+        TEST_RUNNER_FITRAH_RUNG1_401_URL="http://localhost:$HARDENING_PORT/rung1/master.m3u8" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlaybackHardeningStates \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+kill "$HARDENING_SERVER" 2>/dev/null
 
 exit "$status"

@@ -26,9 +26,9 @@ import dagger.assisted.Assisted
 import dagger.assisted.AssistedInject
 import java.io.File
 import java.io.IOException
-import kotlin.math.max
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import java.util.UUID
 import java.util.concurrent.CancellationException
 import java.util.concurrent.TimeUnit
 import okhttp3.OkHttpClient
@@ -96,6 +96,12 @@ class DownloadWorker @AssistedInject constructor(
         data class Split(val videoUrl: String, val audioUrl: String) : ResolvedStream()
     }
 
+    /** A 206 that starts elsewhere than asked; resolveAndDownload restarts the download from 0. */
+    private class MisalignedRangeException(message: String) : IOException(message)
+
+    /** Names this run's temp files, so a stopping run never deletes a resumed run's. */
+    private val run = UUID.randomUUID().toString()
+
     override suspend fun doWork(): Result {
         val downloadId = inputData.getString(KEY_DOWNLOAD_ID)
             ?: return Result.failure(workDataOf(KEY_ERROR_REASON to DownloadErrorCode.INVALID_INPUT))
@@ -109,6 +115,7 @@ class DownloadWorker @AssistedInject constructor(
         setForegroundAsync(notifications.createForegroundInfo(downloadId, title, 0))
 
         return runCatching {
+            storage.discardStaleTemps(downloadId)
             val finalFile = resolveAndDownload(videoId, audioOnly, targetHeight, downloadId, title)
 
             val mimeType = if (audioOnly) "audio/mp4" else "video/mp4"
@@ -176,7 +183,7 @@ class DownloadWorker @AssistedInject constructor(
         if (contentLength != null) {
             storage.ensureSpace(contentLength)
         }
-        val tempFile = storage.createTempFile(downloadId)
+        val tempFile = storage.createTempFile(downloadId, run)
         try {
             downloadToFile(url, tempFile, downloadId, title, contentLength)
             return storage.commit(downloadId, audioOnly, tempFile)
@@ -194,15 +201,9 @@ class DownloadWorker @AssistedInject constructor(
         downloadId: String,
         title: String
     ): File {
-        // Get temp directory from storage once, then create specific temp files
-        val baseTempFile = storage.createTempFile(downloadId)
-        val tempDir = baseTempFile.parentFile ?: throw IOException("Cannot determine temp directory")
-        baseTempFile.delete()
-
-        val sanitized = storage.sanitizeId(downloadId)
-        val videoTempFile = File(tempDir, "${sanitized}_video.tmp")
-        val audioTempFile = File(tempDir, "${sanitized}_audio.tmp")
-        val mergedTempFile = File(tempDir, "${sanitized}_merged.tmp")
+        val videoTempFile = storage.createTempFile(downloadId, "$run-video")
+        val audioTempFile = storage.createTempFile(downloadId, "$run-audio")
+        val mergedTempFile = storage.createTempFile(downloadId, "$run-merged")
 
         try {
             // Download video stream (50% of progress)
@@ -263,14 +264,15 @@ class DownloadWorker @AssistedInject constructor(
 
         return try {
             executeDownload(resolvedStream, downloadId, title, audioOnly)
-        } catch (e: DownloadHttpException) {
-            if (!e.isForbidden) throw e
-            Log.w(TAG, "Stream URL expired (403) for $videoId, re-resolving")
+        } catch (e: IOException) {
+            // An expired URL (403) or a chunk the server placed elsewhere: restart once from byte 0.
+            if (!(e is DownloadHttpException && e.isForbidden) && e !is MisalignedRangeException) throw e
+            Log.w(TAG, "Restarting $videoId from byte 0 with a re-resolved URL: ${e.message}")
             val freshStream = resolveStream(videoId, audioOnly, targetHeight)
                 ?: throw NoStreamException(
                     videoId = videoId,
                     errorCode = DownloadErrorCode.NO_STREAM,
-                    message = "Failed to re-resolve stream for $videoId after 403"
+                    message = "Failed to re-resolve stream for $videoId after: ${e.message}"
                 )
             executeDownload(freshStream, downloadId, title, audioOnly)
         }
@@ -488,7 +490,17 @@ class DownloadWorker @AssistedInject constructor(
     }
 
     /**
-     * Download file with progress reporting.
+     * Download file in bounded `Range` chunks, with progress reporting.
+     *
+     * googlevideo paces one un-ranged GET of an adaptive format (every audio-only download and
+     * both legs of a Split video) at about 2x bitrate: a 4 MB lecture took 131 s and longer ones
+     * died mid-transfer. A ranged request of the same URL arrives at line rate, so the file is
+     * walked in [RANGE_CHUNK_BYTES] requests, as iOS OfflineEngine and yt-dlp's http_chunk_size
+     * do. The total comes from the first 206's Content-Range, else from the HEAD length. A 200
+     * means the server ignored Range and sent the whole file. Every 206's Content-Range is checked
+     * before its body is written: a start other than the one asked restarts the download from
+     * byte 0 ([MisalignedRangeException]); a missing or unusable header, an end past the request
+     * or a total that changes between chunks fails it.
      *
      * @param progressOffset Base progress value (for multi-part downloads)
      * @param progressScale Scale factor for this download's progress (0.0 - 1.0)
@@ -502,43 +514,100 @@ class DownloadWorker @AssistedInject constructor(
         progressOffset: Int = 0,
         progressScale: Float = 1.0f
     ) = withContext(Dispatchers.IO) {
-        val request = Request.Builder().url(url).build()
-        httpClient.newCall(request).execute().use { response ->
-            if (!response.isSuccessful) {
-                throw DownloadHttpException(response.code, "HTTP ${response.code}: ${response.message}")
-            }
-            val body = response.body ?: throw IOException("Empty body")
-            val totalBytes = max(contentLength ?: -1, body.contentLength())
-            val input = body.byteStream()
-            target.outputStream().use { output ->
-                val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
-                var read: Int
-                var downloaded = 0L
-                var lastProgress = -1
-                while (input.read(buffer).also { read = it } != -1) {
-                    // Throw CancellationException directly so WorkManager reports CANCELLED (not FAILED)
-                    if (isStopped) throw CancellationException("Download cancelled by user")
-                    output.write(buffer, 0, read)
-                    downloaded += read
-                    if (totalBytes > 0) {
-                        val rawProgress = (downloaded * 100 / totalBytes).toInt().coerceIn(0, 100)
-                        val scaledProgress = progressOffset + (rawProgress * progressScale).toInt()
-                        if (scaledProgress != lastProgress) {
-                            lastProgress = scaledProgress
-                            setProgress(workDataOf(KEY_PROGRESS to scaledProgress))
-                            setForegroundAsync(notifications.createForegroundInfo(downloadId, title, scaledProgress))
+        target.outputStream().use { output ->
+            val buffer = ByteArray(DEFAULT_BUFFER_SIZE)
+            var read: Int
+            var total = contentLength ?: -1L
+            var rangeTotal: Long? = null
+            var downloaded = 0L
+            var lastProgress = -1
+            var done = false
+            while (!done) {
+                if (isStopped) throw CancellationException("Download cancelled by user")
+                val start = downloaded
+                val end = start + RANGE_CHUNK_BYTES - 1
+                val request = Request.Builder().url(url)
+                    .header("Range", "bytes=$start-$end")
+                    .build()
+                httpClient.newCall(request).execute().use { response ->
+                    // Length unknown and the previous chunk ended exactly at the end of the file.
+                    if (response.code == 416 && total < 0 && start > 0) {
+                        done = true
+                        return@use
+                    }
+                    if (!response.isSuccessful) {
+                        throw DownloadHttpException(response.code, "HTTP ${response.code}: ${response.message}")
+                    }
+                    val body = response.body ?: throw IOException("Empty body")
+                    val ranged = response.code == 206
+                    if (!ranged && start > 0) throw IOException("Server ignored Range after the first chunk")
+                    if (ranged) {
+                        val (spanStart, spanEnd, spanTotal) = contentRange(response.header("Content-Range"))
+                            ?: throw IOException("206 without a usable Content-Range at $start")
+                        if (spanStart != start) {
+                            throw MisalignedRangeException("Content-Range starts at $spanStart, asked $start")
+                        }
+                        if (spanEnd > end) throw IOException("Content-Range ends at $spanEnd, past the requested $end")
+                        if (spanTotal != null) {
+                            if (rangeTotal != null && spanTotal != rangeTotal) {
+                                throw IOException("Content-Range total changed from $rangeTotal to $spanTotal")
+                            }
+                            rangeTotal = spanTotal
+                            total = spanTotal
+                        }
+                    } else if (total < 0) {
+                        total = body.contentLength()
+                    }
+                    val input = body.byteStream()
+                    while (input.read(buffer).also { read = it } != -1) {
+                        // Throw CancellationException directly so WorkManager reports CANCELLED (not FAILED)
+                        if (isStopped) throw CancellationException("Download cancelled by user")
+                        output.write(buffer, 0, read)
+                        downloaded += read
+                        if (total > 0) {
+                            val rawProgress = (downloaded * 100 / total).toInt().coerceIn(0, 100)
+                            val scaledProgress = progressOffset + (rawProgress * progressScale).toInt()
+                            if (scaledProgress != lastProgress) {
+                                lastProgress = scaledProgress
+                                setProgress(workDataOf(KEY_PROGRESS to scaledProgress))
+                                setForegroundAsync(notifications.createForegroundInfo(downloadId, title, scaledProgress))
+                            }
                         }
                     }
+                    val received = downloaded - start
+                    done = when {
+                        !ranged -> true
+                        total >= 0 -> downloaded >= total
+                        else -> received < RANGE_CHUNK_BYTES
+                    }
+                    if (!done && received == 0L) throw IOException("Empty Range chunk at $start of $total")
                 }
-                // Report completion of this segment
-                val finalProgress = progressOffset + (100 * progressScale).toInt()
-                setProgress(workDataOf(KEY_PROGRESS to finalProgress))
             }
+            // Report completion of this segment
+            val finalProgress = progressOffset + (100 * progressScale).toInt()
+            setProgress(workDataOf(KEY_PROGRESS to finalProgress))
         }
     }
 
     companion object {
         private const val TAG = "DownloadWorker"
+
+        /** yt-dlp's googlevideo http_chunk_size; iOS OfflineEngine uses the same 10 MB. */
+        private const val RANGE_CHUNK_BYTES = 10L * 1024 * 1024
+
+        private val CONTENT_RANGE = Regex("""bytes (\d+)-(\d+)/(\d+|\*)""")
+
+        /**
+         * `bytes a-b/total` → (a, b, total), total null for `*`. Null when the header names no real
+         * span (missing, malformed, b < a, or a total not past b), as iOS contentRangeStart.
+         */
+        private fun contentRange(header: String?): Triple<Long, Long, Long?>? {
+            val (a, b, t) = header?.trim()?.let { CONTENT_RANGE.matchEntire(it) }?.destructured ?: return null
+            val start = a.toLongOrNull() ?: return null
+            val end = b.toLongOrNull()?.takeIf { it >= start } ?: return null
+            val total = if (t == "*") null else (t.toLongOrNull()?.takeIf { it > end } ?: return null)
+            return Triple(start, end, total)
+        }
 
         /**
          * Redact URL for logging - shows host and path hash only, no query parameters.

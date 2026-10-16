@@ -48,28 +48,35 @@ struct PlayerToolbar: View {
     /// Reaches the hosted `GCKUICastButton` so `castSlot`'s own `Button` can replay a tap into it
     /// (cubic R2-6). `@State` so it survives every re-render of this view.
     @State private var castHandle = CastButtonHandle()
+    /// Every slot's icon box: 24 pt at the default size (Android's 24dp action icons), scaling with
+    /// Dynamic Type like the glyph inside it, so all slots share one box at any size and a large
+    /// glyph never spills into its caption.
+    @ScaledMetric(relativeTo: .body) private var iconBox: CGFloat = 24
 
     var body: some View {
-        HStack {
-            favoriteButton
-            Spacer()
+        // Equal columns (Android's `layout_weight="1"` row): each slot fills `maxWidth: .infinity`
+        // via `slotLabel`, so 3, 4 or 5 slots tile the row, instead of `Spacer`s equalising the
+        // gaps while every slot kept its own content width.
+        HStack(alignment: .top, spacing: 0) {
+            if FavoriteAffordance.isVisible(args: args, isOfflinePlayback: isOfflinePlayback) {
+                favoriteButton
+            }
             ShareLink(item: args.shareURL, subject: Text(args.title ?? args.videoId),
                       message: Text(args.shareMessage(locale: locale))) {
                 toolbarLabel(systemImage: "square.and.arrow.up", title: String(localized: "player_action_share"))
             }
             .accessibilityIdentifier("player.shareButton")
-            Spacer()
             reportButton
             if !isOfflinePlayback, saveButtonState != .hidden {
-                Spacer()
                 saveSlot
             }
             if CastAffordance.isVisible(castAvailable: container.castController.castAvailable,
                                         isOfflinePlayback: isOfflinePlayback) {
-                Spacer()
                 castSlot
             }
         }
+        .frame(maxWidth: widthClass == .compact ? nil : Size.playerActionRowMaxWidth)
+        .frame(maxWidth: .infinity)
         .padding(.horizontal, Spacing.md(widthClass))
         .padding(.vertical, Spacing.sm)
         .transientBanner($bannerMessage)
@@ -155,15 +162,11 @@ struct PlayerToolbar: View {
         Button {
             castHandle.tap()
         } label: {
-            VStack(spacing: 4) {
+            slotLabel(title: String(localized: "player_action_cast")) {
                 CastButton(handle: castHandle)
                     .frame(width: 24, height: 24)
                     .accessibilityHidden(true)
-                Text(String(localized: "player_action_cast"))
-                    .font(TypeScale.caption)
             }
-            .foregroundStyle(Color.textPrimary)
-            .frame(minHeight: 44)
         }
         .accessibilityIdentifier("player.castButton")
         .accessibilityLabel(String(localized: "player_action_cast"))
@@ -196,11 +199,7 @@ struct PlayerToolbar: View {
             .accessibilityIdentifier("player.saveButton")
             .accessibilityLabel(String(localized: "offline_save"))
         case .progress:
-            VStack(spacing: 4) {
-                progressRing
-                Text(progressCaption).font(TypeScale.caption)
-            }
-            .foregroundStyle(Color.textPrimary)
+            slotLabel(title: progressCaption) { progressRing }
             .accessibilityElement(children: .ignore)
             .accessibilityIdentifier("player.saveProgress")
             .accessibilityLabel(String(localized: "offline_save"))
@@ -244,11 +243,23 @@ struct PlayerToolbar: View {
     }
 
     private func toolbarLabel(systemImage: String, title: String) -> some View {
+        slotLabel(title: title) { Image(systemName: systemImage) }
+    }
+
+    /// The ONE slot shape (icon + caption) every variant routes through. The icon sits in a fixed
+    /// `iconBox` square, so glyphs of different heights (`square.and.arrow.up` 18 pt vs the 14-15 pt
+    /// heart/flag) no longer push their caption to different y; the caption wraps and centres rather
+    /// than truncating (Dynamic Type); the column is `.infinity` wide, 44 pt minimum, top-aligned.
+    /// The frame and `contentShape` live INSIDE the label so the whole column is the tap target of
+    /// the `Button`/`ShareLink` around it, not just the icon and text.
+    private func slotLabel<Icon: View>(title: String, @ViewBuilder icon: () -> Icon) -> some View {
         VStack(spacing: 4) {
-            Image(systemName: systemImage)
-            Text(title).font(TypeScale.caption)
+            icon().frame(width: iconBox, height: iconBox)
+            Text(title).font(TypeScale.caption).multilineTextAlignment(.center)
         }
         .foregroundStyle(Color.textPrimary)
+        .frame(maxWidth: .infinity, minHeight: 44, alignment: .top)
+        .contentShape(Rectangle())
     }
 }
 
@@ -276,6 +287,19 @@ extension PlayerArgs {
                     description: description, thumbnailURL: thumbnailURL,
                     durationSeconds: durationSeconds, uploadedDaysAgo: nil, viewCount: viewCount,
                     channelTitle: channelName, subscribers: nil, videoCount: nil, itemCount: nil)
+    }
+}
+
+/// iOS pipeline stage 5 F1 (Android stage 7 item 2 parity): the offline player's heart needs the
+/// duration and channel name the save stamped. A row saved before V8 has no duration, and one saved
+/// from a surface with no channel name has none: its favourite would be a 0:00 card with a blank
+/// channel the backend refuses (400, dropped as permanent). The heart is hidden for those rather than
+/// writing a bad row. Online, nothing changes.
+nonisolated enum FavoriteAffordance {
+    static func isVisible(args: PlayerArgs, isOfflinePlayback: Bool) -> Bool {
+        guard isOfflinePlayback else { return true }
+        let channel = args.channelName?.trimmingCharacters(in: .whitespacesAndNewlines) ?? ""
+        return args.durationSeconds != nil && !channel.isEmpty
     }
 }
 

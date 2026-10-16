@@ -14,13 +14,17 @@ nonisolated struct OfflineMetadata: Sendable {
     /// Offline review P1: the channel playback's own check asks about (`PlayerArgs.channelId`),
     /// stamped on the row so `begin`/`retry`/`sweep` ask the gate the Save button's question.
     var channelId: String? = nil
+    /// iOS pipeline stage 5 F1: the streaming player's duration, stamped on the row so the offline
+    /// player's favourite carries it (`PlayerArgs(offline:)`).
+    var durationSeconds: Int? = nil
 }
 
 extension OfflineMetadata {
     /// The Save sheet's metadata, straight from the player's args.
     init(args: PlayerArgs, userId: String) {
         self.init(title: args.title ?? args.videoId, channelName: args.channelName,
-                  thumbnailUrl: args.thumbnailURL?.absoluteString, userId: userId, channelId: args.channelId)
+                  thumbnailUrl: args.thumbnailURL?.absoluteString, userId: userId, channelId: args.channelId,
+                  durationSeconds: args.durationSeconds)
     }
 }
 
@@ -56,7 +60,7 @@ nonisolated protocol OfflineSaving: Sendable {
 /// returns a `Sendable` snapshot — after any engine event the row is RE-READ before deciding
 /// (SwiftData drops writes made into the wrong context silently).
 actor OfflineManager: OfflineSaving {
-    /// `DownloadErrorCode.kt:12-39` minus the FFmpeg codes, plus `NOT_SAVEABLE` (embed outcome).
+    /// `DownloadErrorCode.kt:12-39` minus the FFmpeg codes, plus `NOT_SAVEABLE`.
     nonisolated enum ErrorCode: String, Sendable {
         case http403 = "HTTP_403", http429 = "HTTP_429", network = "NETWORK", noStream = "NO_STREAM"
         case invalidInput = "INVALID_INPUT", unknown = "UNKNOWN", notSaveable = "NOT_SAVEABLE"
@@ -146,10 +150,10 @@ actor OfflineManager: OfflineSaving {
     private var userPausedIds: Set<String> = []
     /// Ids that already spent their one re-resolve on a 403.
     private var reResolvedAfter403: Set<String> = []
-    /// Ids whose next resolve must bypass the manifest cache — the 403 re-resolve's intent, held
-    /// across a limiter park (`scheduleRetry` drops the claim, and the timer's `begin` re-enters
-    /// `resolveAndStart` with `forceRefresh: false`). Moved into `reResolvedAfter403` by the walk
-    /// that actually answers, so a parked re-resolve does not spend the one budget it never used.
+    /// Ids whose next resolve is the 403 re-resolve — its intent, held across a limiter park
+    /// (`scheduleRetry` drops the claim, and the timer's `begin` re-enters `resolveAndStart` with
+    /// `forceRefresh: false`). Moved into `reResolvedAfter403` by the walk that actually answers,
+    /// so a parked re-resolve does not spend the one budget it never used.
     private var pendingForceRefresh: Set<String> = []
     private var lastProgressPersist: [String: Date] = [:]
     /// CF-A-59: whether a save for this owner must be refused — an account being deleted
@@ -193,7 +197,8 @@ actor OfflineManager: OfflineSaving {
         let owner = metadata.userId
         let item = OfflineItem(videoId: videoId, title: metadata.title, channelName: metadata.channelName,
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
-                               createdAt: now(), userId: metadata.userId, channelId: metadata.channelId)
+                               createdAt: now(), userId: metadata.userId, channelId: metadata.channelId,
+                               durationSeconds: metadata.durationSeconds)
         // CF-A-59 + Cubic P3: the refusal, the old-copy read and the upsert are ONE main-actor job.
         // The wipe's id snapshot runs on this executor after the departure marker, so a save either
         // is refused here or landed before the snapshot. And a refused save never touches the old
@@ -550,7 +555,7 @@ actor OfflineManager: OfflineSaving {
             // Task 7: zero the lying mvhd/mdhd durations of a fragmented save (no-op for a plain
             // itag-18 mp4) — see `FragmentedMP4Durations`. Once, here, so playback needs no fix-up.
             FragmentedMP4Durations.normalize(at: destination)
-            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path())[.size] as? Int64) ?? 0
+            let size = (try? FileManager.default.attributesOfItem(atPath: destination.path(percentEncoded: false))[.size] as? Int64) ?? 0
             let completedAt = now()
             forget(id)
             await write { store in
@@ -613,7 +618,7 @@ actor OfflineManager: OfflineSaving {
                 // a still-`.queued` row is re-entered: a cancelled, deleted, completed or
                 // already-re-claimed row spends no limiter attempt and no resolve (R9-9). `begin`
                 // claims, re-consults the kill-switch and both gates, and `pendingForceRefresh`
-                // carries the cache bypass into its `resolveAndStart`.
+                // carries the re-resolve's intent into its `resolveAndStart`.
                 guard let requeued = await read(id: id), requeued.status == .queued else {
                     // Belt: the claim went at `active.remove(id)` above, so a dropped claim is
                     // followed by a `schedule()` at EVERY exit of this arm. Not a wedge without it —
@@ -837,16 +842,16 @@ actor OfflineManager: OfflineSaving {
         active.contains(id) && attempts[id] == attempt
     }
 
-    /// ENTRY CONTRACT: `attempt` is the CALLER's own live claim — `begin`'s `claim(_:)`, or the same
-    /// attempt on the audio-only re-resolve below. Reading `attempts[row.id]` here instead was safe
-    /// (no suspension separates either caller's `stillCurrent` from its call) but it is the
-    /// adopt-whatever-is-live shape R9-4 named, and the next caller would inherit it.
+    /// ENTRY CONTRACT: `attempt` is the CALLER's own live claim — `begin`'s `claim(_:)`. Reading
+    /// `attempts[row.id]` here instead was safe (no suspension separates the caller's
+    /// `stillCurrent` from its call) but it is the adopt-whatever-is-live shape R9-4 named, and the
+    /// next caller would inherit it.
     private func resolveAndStart(_ row: Row, forceRefresh: Bool, attempt: Int) async {
         // The 403 re-resolve's intent has to survive a park: `scheduleRetry` drops the claim, and
         // the timer's `begin` re-enters here with `forceRefresh: false`, which would serve an
-        // audio-only save the DEAD URL straight back out of the shared `ManifestCache` and hard-fail
-        // the next 403 as HTTP_403 instead of re-resolving. The set carries the intent; the budget
-        // below is spent only once a forced walk has actually answered.
+        // audio-only save the DEAD URL straight back out of the shared `ManifestCache` (its plain
+        // walk reads it; the video save's muxed walk does not). The set carries the intent; the
+        // budget below is spent only once that walk has actually answered.
         let forceRefresh = forceRefresh || pendingForceRefresh.contains(row.id)
         switch await limiterCheck(row.videoId) {
         case .allowed:
@@ -859,30 +864,60 @@ actor OfflineManager: OfflineSaving {
         case .blocked(_, let retryAfter):
             await scheduleRetry(row.id, attempt, after: retryAfter); await schedule(); return
         }
-        // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01);
-        // an audio-only save stays on the plain walk — it needs visionos's itag-140 `audioOnlyURL`.
+        // A VIDEO save needs the muxed itag 18 (save-purpose walk, owner ruling 2026-09-01); an
+        // audio-only save takes the plain, cache-first walk for VISIONOS's itag-140 `audioOnlyURL`,
+        // so the common save (the player resolved this video already) sends no POST (fix r4 N-1).
+        // Every walk an audio-only save sends to the NETWORK on purpose is the HLS shape instead
+        // (fix r5 N4-4): the 403 retry, the expiry refresh and the fallback below. A forced plain
+        // walk only fetched ANDROID's `.progressive` after a step-down to throw it away, and it
+        // cancelled a player resolve in flight through single-flight on the way.
         let requiresMuxed = !row.audioOnly
         let resolved: Resolved
+        // Whether the walk in flight is the HLS shape: its `.botCheck` fails the row (N4-2, below).
+        var hlsWalk = row.audioOnly && forceRefresh
         do {
             var first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: forceRefresh,
-                                                   requiresMuxed: requiresMuxed)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: hlsWalk)
             if !forceRefresh, let expiresAt = first.expiresAt,
                expiresAt.timeIntervalSince(now()) < Self.minimumRemainingLifetime {
+                hlsWalk = row.audioOnly
                 first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
                                                    sourceChannelId: nil, forceRefresh: true,
-                                                   requiresMuxed: requiresMuxed)
+                                                   requiresMuxed: requiresMuxed, requiresHLS: hlsWalk)
+            }
+            // No itag 140 in the plain answer: ANDROID's `.progressive`, cached or fresh, which is
+            // what a plain walk answers after a step-down or when VISIONOS fails at walk time. Ask
+            // once for the HLS shape, which skips ANDROID and the cache wherever the demotion put it
+            // (Cubic C2). One HLS walk at most: a second answer without itag 140 fails `.noStream`.
+            if row.audioOnly, !hlsWalk, Self.sourceURL(first.stream, audioOnly: true) == nil {
+                // A cancel or delete that landed during the plain walk must not still spend this one
+                // (fix r5 N4-3).
+                guard stillCurrent(row.id, attempt) else { return }
+                hlsWalk = true
+                first = try await resolver.resolve(row.videoId, purpose: .prefetch, kind: .prefetch,
+                                                   sourceChannelId: nil, forceRefresh: forceRefresh,
+                                                   requiresMuxed: false, requiresHLS: true)
             }
             resolved = first
         } catch ExtractionError.cooldown(let until) {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             await scheduleRetry(row.id, attempt, after: .seconds(max(1, until.timeIntervalSince(now())))); return
+        } catch ExtractionError.botCheck where hlsWalk {
+            // Fix r5 N4-2 (controller ruling, option b): the HLS walk runs when the plain answer lacks
+            // itag 140 or the save must force a walk. Parking it re-walked every second into the SHARED
+            // cooldown that then refused the player's working ANDROID rung, so it fails the row
+            // with the retryable "try again later" error instead, and the resolver records no trip
+            // for it. Player availability beats auto-retrying a save; the user retries it.
+            guard stillCurrent(row.id, attempt) else { return }
+            await fail(row.id, .http429); return
         } catch ExtractionError.botCheck {
-            // A bot-checked walk (the muxed save-walk's shape — its walk-end trip just
-            // armed the persisted cooldown) is a temporary block, never a failed row. `.botCheck`
-            // carries no date, so park briefly: the retry's own resolve hits the resolver's
-            // cooldown self-gate BEFORE any rung or network call and lands in the `.cooldown` arm
-            // above with the cooldown's exact end.
+            // A bot-checked plain or muxed save walk is a temporary block, never a failed row.
+            // `.botCheck` carries no date, so park briefly. The walk-end trip arms the persisted
+            // cooldown only from the second consecutive trip (`SessionStore`: the first arms
+            // nothing), so the 1 s retry walks again; a second bot check arms 60 s, and the retry
+            // after it hits the resolver's cooldown self-gate BEFORE any rung or network call and
+            // lands in the `.cooldown` arm above with the cooldown's exact end.
             await scheduleRetry(row.id, attempt, after: .seconds(1)); return
         } catch {
             // An OLD attempt's error landing after a cancel plus a retry re-claimed the
@@ -900,23 +935,15 @@ actor OfflineManager: OfflineSaving {
         // The forced walk answered AND it is still this attempt's row, so the 403 budget is spent.
         // BELOW the currency guard, not above it: only `forget` clears `pendingForceRefresh`, so a
         // row re-claimed through `pause`/`scheduleRetry`/`release` keeps the intent armed — and a
-        // DISCARDED attempt spending it there would leave the live attempt resolving unforced
-        // against the dead URL, the one thing the intent exists to survive. A discarded attempt
-        // spends nothing. Still bounded: a second 403 needs a walk, a walk needs a resolve that got
-        // past this line, and that resolve spent the intent.
+        // DISCARDED attempt spending it there would leave the live attempt's audio-only plain walk
+        // resolving unforced, straight back to the dead URL in the `ManifestCache`, the one thing
+        // the intent exists to survive. A discarded attempt spends nothing. Still bounded: a
+        // second 403 needs a walk, a walk needs a resolve that got past this line, and that
+        // resolve spent the intent.
         if pendingForceRefresh.remove(row.id) != nil { reResolvedAfter403.insert(row.id) }
+        // A nil here is the source's own answer, never a cached shape: an audio-only save's HLS walk
+        // above and a video save's muxed walk both skip the `ManifestCache`.
         guard let url = Self.sourceURL(resolved.stream, audioOnly: row.audioOnly) else {
-            if case .embed = resolved.stream { await fail(row.id, .notSaveable); return }
-            // An audio-only save resolves without `requiresMuxed`, so this answer may be
-            // the shared `ManifestCache`'s — and a player fallback walk caches `.progressive`
-            // (nil `audioOnlyURL`) for its whole 1 h TTL even though a fresh visionos walk would
-            // return `.hls` with itag-140. `!forceRefresh` is exactly "plausibly from cache" (a
-            // forced walk never reads it), so re-resolve once forced — same shape as the
-            // <10-min-expiry refresh above and the 403 re-resolve; forceRefresh bounds it.
-            if row.audioOnly, !forceRefresh {
-                await resolveAndStart(row, forceRefresh: true, attempt: attempt)
-                return
-            }
             await fail(row.id, .noStream)
             return
         }
@@ -956,7 +983,7 @@ actor OfflineManager: OfflineSaving {
         switch (stream, audioOnly) {
         case (.hls(_, _, let audioOnlyURL, _), true): return audioOnlyURL
         case (.progressive(let url, _), false): return url
-        case (.hls, false), (.progressive, true), (.embed, _): return nil
+        case (.hls, false), (.progressive, true): return nil
         }
     }
 

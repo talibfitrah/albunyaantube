@@ -1,13 +1,10 @@
 package com.albunyaan.tube.ui.download
 
-import android.content.Intent
-import android.net.Uri
 import android.os.Bundle
 import android.text.format.Formatter
 import android.view.View
 import android.widget.TextView
 import android.widget.Toast
-import androidx.core.content.FileProvider
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.Lifecycle
@@ -16,16 +13,15 @@ import androidx.lifecycle.repeatOnLifecycle
 import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.DividerItemDecoration
 import androidx.recyclerview.widget.LinearLayoutManager
-import com.albunyaan.tube.BuildConfig
 import com.albunyaan.tube.R
 import com.albunyaan.tube.databinding.FragmentDownloadsBinding
 import com.albunyaan.tube.data.local.FavoritesRepository
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadStorage
+import com.albunyaan.tube.ui.player.PlayerFragment
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
 import kotlinx.coroutines.launch
-import java.io.File
 import javax.inject.Inject
 
 /**
@@ -170,61 +166,11 @@ class DownloadsFragment : Fragment(R.layout.fragment_downloads) {
         Toast.makeText(requireContext(), messageRes, Toast.LENGTH_SHORT).show()
     }
 
+    /** Plays the download in FitrahTube's own player, from its local file (1.0.3). */
     private fun onOpenClicked(entry: DownloadEntry) {
-        android.util.Log.d("DownloadsFragment", "onOpenClicked called for: ${entry.request.videoId}")
-        val file = viewModel.fileFor(entry) ?: run {
-            android.util.Log.e("DownloadsFragment", "fileFor returned null")
-            Toast.makeText(requireContext(), R.string.downloads_no_file, Toast.LENGTH_SHORT).show()
-            return
-        }
-        android.util.Log.d("DownloadsFragment", "File path: ${file.absolutePath}")
-        if (!file.exists()) {
-            android.util.Log.e("DownloadsFragment", "File does not exist")
-            Toast.makeText(requireContext(), getString(R.string.downloads_file_not_found, file.name), Toast.LENGTH_SHORT).show()
-            return
-        }
-        android.util.Log.d("DownloadsFragment", "File exists, size: ${file.length()} bytes")
-
-        val uri: Uri = FileProvider.getUriForFile(
-            requireContext(),
-            "${BuildConfig.APPLICATION_ID}.downloads.provider",
-            file
+        findNavController().navigate(
+            R.id.action_global_playerFragment,
+            Bundle().apply { putString(PlayerFragment.ARG_DOWNLOAD_ID, entry.request.id) },
         )
-        android.util.Log.d("DownloadsFragment", "FileProvider URI: $uri")
-
-        val mimeType = if (entry.request.audioOnly) "audio/*" else "video/*"
-        val intent = Intent(Intent.ACTION_VIEW).apply {
-            setDataAndType(uri, mimeType)
-            addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION)
-            addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
-        }
-
-        // Grant temporary read permission to all apps that can handle this intent
-        val resolvedActivities = requireContext().packageManager.queryIntentActivities(intent, 0)
-        android.util.Log.d("DownloadsFragment", "Found ${resolvedActivities.size} apps that can handle video")
-        for (resolvedInfo in resolvedActivities) {
-            val packageName = resolvedInfo.activityInfo.packageName
-            android.util.Log.d("DownloadsFragment", "Granting permission to: $packageName")
-            requireContext().grantUriPermission(
-                packageName,
-                uri,
-                Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-        }
-
-        if (resolvedActivities.isNotEmpty()) {
-            android.util.Log.d("DownloadsFragment", "Starting activity with intent")
-            try {
-                startActivity(intent)
-                android.util.Log.d("DownloadsFragment", "Activity started successfully")
-            } catch (e: Exception) {
-                android.util.Log.e("DownloadsFragment", "Failed to start activity", e)
-                val errorMessage = e.localizedMessage ?: getString(R.string.error_unknown)
-                Toast.makeText(requireContext(), getString(R.string.downloads_open_error, errorMessage), Toast.LENGTH_LONG).show()
-            }
-        } else {
-            android.util.Log.e("DownloadsFragment", "No apps found to handle video")
-            Toast.makeText(requireContext(), R.string.downloads_no_player, Toast.LENGTH_SHORT).show()
-        }
     }
 }

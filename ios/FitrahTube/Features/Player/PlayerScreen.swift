@@ -192,35 +192,40 @@ struct PlayerScreen: View {
             // already hides the button, i.e. the safety was incidental rather than structural.
             saveGate = nil
             saveEnabled = false
-            // Task 7: an offline open performs NO backend fetch — the Save slot (and every other
-            // save affordance) is hidden by the offline flag, so the answer would go unread.
-            if args.offlineItemId != nil { return }
             // Task 5 review fold-in 1: `.task(id:)` cancels the old task on advance but does NOT
-            // prevent its in-flight continuation from resuming — without these guards a stale
+            // prevent its in-flight continuation from resuming — without this guard a stale
             // `.allowed` fetched for video A could land AFTER the reset for video B ran (the
             // gate fetch can take ~15 s against a slow backend), showing Save on a video the
-            // gate never affirmed. Fail-closed means checking before every assignment.
-            let enabled = await container.innerTube.remoteConfig.current().isDownloadsEnabled
-            guard !Task.isCancelled else { return }
-            saveEnabled = enabled
-            let answer = await Self.gateAnswer(enabled: enabled) {
-                await Self.offlineGateAnswer(container.offlineGate, for: model?.args ?? args)
-            }
-            guard !Task.isCancelled else { return }
-            saveGate = answer
+            // gate never affirmed. Both halves are assigned together, after it: `SaveAffordance`
+            // reads `saveEnabled` only alongside an `.allowed` gate, so nothing renders between.
+            let slot = await Self.saveSlot(
+                for: args,
+                downloadsEnabled: { await container.innerTube.remoteConfig.current().isDownloadsEnabled },
+                gate: { await Self.offlineGateAnswer(container.offlineGate, for: model?.args ?? args) })
+            guard let slot, !Task.isCancelled else { return }
+            saveEnabled = slot.enabled
+            saveGate = slot.gate
         }
-        // Task 9 + B3 task 4: the two announcements `PlayerStateView` can't make itself, since
-        // neither `.rung2Progressive` nor `.embed` mounts it (Task 7's identity note keeps both
-        // playable rungs in the switch case below; `.embed` has its own branch). ONE site for both
-        // -- `EmbedRungView` deliberately posts nothing of its own. `.onChange` fires only on a real
-        // transition, so entering `.embed` announces exactly once.
-        .rungAnnouncements(state: model?.state, isOnline: container.network.isOnline)
+        // Task 9: the announcement `PlayerStateView` can't make itself, since `.rung2Progressive`
+        // mounts the player (Task 7's identity note keeps both playable rungs in the switch case
+        // below). `.onChange` fires only on a real transition, so entering it announces exactly once.
+        .rungAnnouncements(model: model)
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
     /// offers what won't play (offline review P1). Static so `OfflineGateTests` pins the argument.
     static func offlineGateAnswer(_ gate: OfflineGateClient, for args: PlayerArgs) async -> GateAnswer {
         await gate.answer(args.videoId, channelId: args.channelId)
+    }
+
+    /// The Save slot for one open: the kill switch, then the gate (`gateAnswer`). nil for an offline
+    /// open, which asks neither (Task 7; 1.0.3 R4 b): every save affordance is hidden by the offline
+    /// flag, so the answers would go unread. Closure-fed so a test can count what was asked.
+    static func saveSlot(for args: PlayerArgs, downloadsEnabled: () async -> Bool,
+                         gate: () async -> GateAnswer) async -> (enabled: Bool, gate: GateAnswer?)? {
+        guard args.offlineItemId == nil else { return nil }
+        let enabled = await downloadsEnabled()
+        return (enabled, await gateAnswer(enabled: enabled, fetch: gate))
     }
 
     /// The per-video gate answer for the Save slot, or nil when there is no point asking. Static and
@@ -235,9 +240,19 @@ struct PlayerScreen: View {
         return await fetch()
     }
 
+    /// What `rungAnnouncements` says for `model`'s current state: the one entry both player screens
+    /// use, so the offline flag cannot be left off at a call site (round 1 / M3).
+    static func transitionAnnouncement(of model: PlayerViewModel?) -> String? {
+        transitionAnnouncement(for: model?.state, offline: model?.isOfflinePlayback ?? false)
+    }
+
     /// What a transition INTO `state` says out loud, or nil for silence. Pure, so
-    /// `PlayerScreenEmbedTests` can pin the offline case that `.onChange` can't be asked about.
-    static func transitionAnnouncement(for state: StreamState?, isOnline: Bool) -> String? {
+    /// `PlayerStateViewTests` can pin it: `.onChange` can't be asked.
+    ///
+    /// 1.0.3 R3: never for an `offline` open. A saved file is one rendition the extraction ladder
+    /// never walked, so the rung pill is hidden there (`stateView`) and its sentence is silent too.
+    static func transitionAnnouncement(for state: StreamState?, offline: Bool = false) -> String? {
+        if offline { return nil }
         switch state {
         case .rung2Progressive:
             // The announcement is a sentence about what just happened
@@ -245,16 +260,6 @@ struct PlayerScreen: View {
             // standing label ("Standard quality (360p)"). Reading the pill's noun phrase out as an
             // event was the wrong register -- two different strings, deliberately.
             return String(localized: "player_announce_standard_quality")
-        case .embed:
-            // Spec §6.6 Transitions: a native->embed demotion is NEVER silent. The caption above the
-            // frame is the visible half; this is the audible one, and it is the same sentence
-            // ("Playing in YouTube's player") rather than a second string, because the caption
-            // already IS a statement of what just happened.
-            //
-            // ONLINE only. Offline, `.embed` never mounts `EmbedRungView` at all
-            // -- the branch below routes it to the offline card -- so this announced a player that
-            // is not on screen, over a card that says the opposite.
-            return isOnline ? String(localized: "player_embed_caption") : nil
         default:
             return nil
         }
@@ -276,9 +281,8 @@ struct PlayerScreen: View {
         // dropping the `AVPlayer` whose `currentTime()` is the only thing carrying the position
         // over (`PlayerHostView.player(for:replacing:)`). Sharing the branch keeps one host across
         // the demotion; the rung-specific chrome differs inside it.
-        case .ready(let resolved), .rung2Progressive(let resolved):
+        case .ready, .rung2Progressive:
             let isRung1 = Self.isRung1(state)
-            let tracks = Self.captionTracks(state)
             // B5 Task 3 / ruling C: fullscreen is a MODIFIER change on this one tree, never a second
             // `PlayerHostView` placement and never a `.fullScreenCover` -- both would be a second
             // view identity, which drops the `AVPlayer` (Task 7's note above).
@@ -303,14 +307,8 @@ struct PlayerScreen: View {
                                 .frame(width: 1, height: 1).allowsHitTesting(false)
                         }
                         #endif
-                        // A mid-play rung-2 demotion empties `tracks` and
-                        // hides the captions menu -- but the selection survives (session-only
-                        // state, deliberately), so the overlay used to keep rendering cues with no
-                        // menu left to turn them off. Render only a selection the CURRENT menu
-                        // still offers. The resolve's own User-Agent goes on the cue fetch.
-                        if let selected = Self.activeCaptionTrack(selected: model.selectedCaptionTrack, tracks: tracks) {
-                            CaptionOverlay(model: model, track: selected, userAgent: resolved.userAgent)
-                        }
+                        // The auto-generated captions are drawn inside the host itself
+                        // (`PlayerHostView.HostedCaptions`), so they travel into AVKit's fullscreen.
                         VStack(alignment: .trailing, spacing: 8) {
                             // B5 Task 3: FIRST in this same column so it never overlaps the
                             // controls below, which stay available in fullscreen. Ruling 45's first
@@ -346,7 +344,7 @@ struct PlayerScreen: View {
                                     }
                                 }
                                 AudioLanguageMenu(model: model)
-                                CaptionsMenu(model: model, tracks: tracks)
+                                CaptionsMenu(model: model)
                             }
                             if PlayerViewModel.audioOnlyAvailable(for: state) {
                                 audioOnlyButton(model)
@@ -414,22 +412,6 @@ struct PlayerScreen: View {
             }   // GeometryReader
             .ignoresSafeArea(edges: fullscreen ? .all : [])
             .transientBanner(Bindable(model).banner)
-        // B3 task 4: rung 3 gets its OWN branch -- legitimately, because it is a different playback
-        // surface with no `AVPlayer` to preserve across a transition, which is the only thing the
-        // shared branch above exists to protect. It never mounts `PlayerHostView`.
-        case .embed(let resolved):
-            // Offline gate, same rule the `.idle`/`.loading`/`.error` states already follow: a
-            // `WKWebView` pointed at `youtube-nocookie.com` with no network renders
-            // a black frame under a caption claiming something is playing. One offline surface with
-            // a Retry, not a lie plus a spinner. `PlayerStateCopy.map` answers the offline copy for
-            // `.embed` and `preconditionFailure`s for it online, where this branch owns the screen.
-            if container.network.isOnline {
-                EmbedRungView(resolved: resolved, model: model, args: model.args)
-            } else {
-                PlayerStateView(state: state, isOnline: false, thumbnailURL: model.args.thumbnailURL) {
-                    Task { await model.retry() }
-                }
-            }
         // Task 9: every non-playable state (`.idle`/`.loading`/`.error`/`.contentUnavailable`/
         // `.cooldown`/`.recoveryExhausted`) shares ONE `PlayerStateView` mount -- see that type's
         // doc comment for why one shared view identity (not a case per state) is what makes the
@@ -513,7 +495,7 @@ struct PlayerScreen: View {
 
     /// The audio-only toggle (ruling 34, spec §10). Offered only while the resolved stream really
     /// carries an itag 140 rendition (`PlayerViewModel.audioOnlyAvailable`) -- rung 2's muxed
-    /// progressive has no separate audio, and neither does `.embed`/live.
+    /// progressive has no separate audio, and neither does live.
     /// `.accessibilityAddTraits(.isSelected)`, not an `accessibilityValue`: no existing string key
     /// carries generic on/off wording (the favorite button uses two DISTINCT labels because it
     /// changes meaning; this one does not), and B2 adds no new keys. The selected trait is what
@@ -532,25 +514,15 @@ struct PlayerScreen: View {
         .accessibilityAddTraits(model.audioOnly ? [.isSelected] : [])
     }
 
-    /// Only `.hls` carries `captionTracks` (rung-2 progressive has none), so this doubles as the
-    /// "hide the captions toggle on rung 2" rule. `captionTracks` mixes manual and
-    /// auto-generated (`kind=asr`) tracks -- manual ones already ride AVKit's stock subtitle menu,
-    /// so this menu (and its `tracks.first` auto-enable pick, `CaptionsMenu`) must only ever
-    /// see the auto-generated ones. Not `private`: `CaptionsProviderTests` pins the filter
-    /// directly, same pattern as `PlayerHostView.player(for:replacing:)`.
+    /// The captions menu's AUTO-GENERATED source (`kind=asr`, drawn by `CaptionOverlay`). Only
+    /// `.hls` carries `captionTracks` (rung-2 progressive has none). The uploader's tracks also
+    /// appear in `captionTracks`, but the menu takes those from the item's legible group instead
+    /// (`CaptionsMenu.load`) so AVFoundation draws them -- hence the filter. Not `private`:
+    /// `CaptionsProviderTests` pins the filter directly, same pattern as
+    /// `PlayerHostView.player(for:replacing:)`.
     static func captionTracks(_ state: StreamState) -> [CaptionTrack] {
         guard case .ready(let resolved) = state, case .hls(_, _, _, let tracks) = resolved.stream else { return [] }
         return tracks.filter(\.isAutoGenerated)
-    }
-
-    /// The selected track, but only while the captions menu still lists it. A rung-2
-    /// demotion (or any re-resolve to a stream with different tracks) empties/changes the list
-    /// while `selectedCaptionTrack` -- session state that deliberately survives a re-resolve --
-    /// still points at the old one; rendering that would leave cues on screen with no menu to
-    /// dismiss them. Pure, so `PlayerScreenCaptionsTests` drives it directly.
-    static func activeCaptionTrack(selected: CaptionTrack?, tracks: [CaptionTrack]) -> CaptionTrack? {
-        guard let selected, tracks.contains(selected) else { return nil }
-        return selected
     }
 
     private static func isRung1(_ state: StreamState) -> Bool {
@@ -624,6 +596,13 @@ struct PlayerScreen: View {
     /// lands on both screens.
     static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
+        // Playback hardening (plan Task 7): both rungs on `screenshots.sh`'s local server -- rung 1
+        // serves its playlist and two segments, then answers HTTP 401; rung 2 is `rung2/master.m3u8`
+        // (`FixtureLadderResolver`) -- the step-down proof, with no network beyond localhost.
+        if let i = LaunchArguments.debug.firstIndex(of: "-fitrah-fake-player-rung1-401"),
+           LaunchArguments.debug.indices.contains(i + 1), let url = URL(string: LaunchArguments.debug[i + 1]) {
+            return FixtureLadderResolver(rung1: url)
+        }
         if LaunchArguments.debug.contains("-fitrah-fake-player-audio-only") {
             return FixtureAudioOnlyResolver()
         }
@@ -641,9 +620,6 @@ struct PlayerScreen: View {
         }
         if LaunchArguments.debug.contains("-fitrah-fake-player-cooldown") {
             return FixtureCooldownResolver()
-        }
-        if LaunchArguments.debug.contains("-fitrah-fake-player-embed") {
-            return FixtureEmbedResolver()
         }
         if LaunchArguments.debug.contains("-fitrah-fake-player") {
             return FixturePlayerResolver()
@@ -681,13 +657,15 @@ struct PlayerScreen: View {
 private struct FixtureHLSPlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: nil, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// B2 task 3 screenshot rig: the same bundled fixture as `FixtureHLSPlayerResolver`, but with a
@@ -697,13 +675,15 @@ private struct FixtureHLSPlayerResolver: StreamResolving {
 private struct FixtureAudioOnlyResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
             throw ExtractionError.transport("player-fixture.mp4 missing from the app bundle")
         }
         return Resolved(stream: .hls(url: url, isLive: false, audioOnlyURL: url, captionTracks: []),
                          client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Resolves every video id to `player-fixture.mp4` (`ios/FitrahTube/Resources/`), a 2s local clip
@@ -714,7 +694,7 @@ private struct FixtureAudioOnlyResolver: StreamResolving {
 private struct FixturePlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         // B5: `-fitrah-fake-player-queue-dead`'s unplayable ids.
         if videoId.hasPrefix("dead-") { throw ExtractionError.unavailable(videoId: videoId) }
         guard let url = Bundle.main.url(forResource: "player-fixture", withExtension: "mp4") else {
@@ -723,6 +703,8 @@ private struct FixturePlayerResolver: StreamResolving {
         return Resolved(stream: .progressive(url: url, label: "360p"), client: .visionos,
                          userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.transport` maps to `.error(messageKey: "player_error_message")` --
@@ -730,9 +712,11 @@ private struct FixturePlayerResolver: StreamResolving {
 private struct FixtureErrorResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.transport("fixture error")
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.unavailable` maps to `.contentUnavailable` (ruling 14: one
@@ -740,9 +724,11 @@ private struct FixtureErrorResolver: StreamResolving {
 private struct FixtureUnavailableResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.unavailable(videoId: videoId)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
 /// Task 9 screenshot rig: `.cooldown(until:)` maps straight through to `StreamState.cooldown`.
@@ -750,20 +736,42 @@ private struct FixtureUnavailableResolver: StreamResolving {
 private struct FixtureCooldownResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
         throw ExtractionError.cooldown(until: Date().addingTimeInterval(45))
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
 }
 
-/// B3 task 2 screenshot rig: rung 3, the ladder's floor. `.embed` needs no network and no bundled
-/// asset -- the video id is the whole stream.
-private struct FixtureEmbedResolver: StreamResolving {
+/// Playback hardening (plan Task 7; final review M3): a two-rung ladder that honours `demote`, both
+/// rungs on the local server `screenshots.sh` runs. Rung 1 (`.hls`) serves its playlist and two
+/// 1 s segments, then answers HTTP 401 -- the production shape, ready -> segment 401 ->
+/// `.playbackError` -- so the REAL coordinator reads a real 401 out of AVPlayer's error log. Rung 2
+/// (the sibling `rung2/` playlist, all segments served) is tagged `.progressive`, so the rung-2 pill
+/// shows. A forced rung-1 re-resolve THROWS: rung 1 refuses this client for good (V2Brp_esIVI), so a
+/// same-rung retry after a 401 is the wrong answer and must show -- without spec R4's 401 rule the
+/// ladder would otherwise still reach rung 2 one retry later and the proof would stay green.
+private actor FixtureLadderResolver: StreamResolving {
+    let rung1: URL
+    private var demoted = false
+
+    init(rung1: URL) { self.rung1 = rung1 }
+
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
-                 requiresMuxed: Bool) async throws -> Resolved {
-        Resolved(stream: .embed(videoId: videoId), client: .web,
-                 userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
+        guard demoted else {
+            if forceRefresh { throw ExtractionError.transport("rung 1 re-resolved after its 401") }
+            return Resolved(stream: .hls(url: rung1, isLive: false, audioOnlyURL: nil, captionTracks: []),
+                            client: .visionos, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        }
+        let rung2 = rung1.deletingLastPathComponent().deletingLastPathComponent()
+            .appendingPathComponent("rung2/master.m3u8")
+        return Resolved(stream: .progressive(url: rung2, label: "360p"), client: .android,
+                        userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
     }
+
+    func demote(_ videoId: String, failed: ClientFamily) async { demoted = true }
 }
 
 /// B5 screenshot rig: one page of eight fixture items. With `deadItems`, three ids carry the

@@ -28,13 +28,111 @@ import Testing
         }
     }
 
-    // The real capture (Task 1 probe) is UNPLAYABLE with no streamingData at all — the
-    // androidItag18 fallback comes from a *separate* ANDROID-client request per
-    // ios-app-plan.md §6.2 step 4, out of scope for parsing one response body. `.unplayableKids`
-    // also carries no associated payload, so there is no itag18 URL to assert here.
-    @Test func unplayableKidsFixtureYieldsUnplayableKids() throws {
-        let result = try parser.parse(try loadFixture("player-unplayable-kids")).playability
-        #expect(result == .unplayableKids)
+    // Live captures 2026-10-14 (spec §3). Every UNPLAYABLE comes back whole: VISIONOS refuses a
+    // made-for-kids video and a geo-locked one with the same `{status, reason}` and a localized
+    // reason, so the body cannot say what a refusal means -- the resolver decides by WHICH client
+    // refused (`StreamResolver.runPlayerRung`).
+    @Test(arguments: ["player-unplayable-kids", "player-members-only-visionos", "player-members-only-android",
+                      "player-members-only-android-ar", "player-geo-visionos", "player-geo-android"])
+    func everyUnplayableCaptureYieldsUnplayable(_ name: String) throws {
+        #expect(try parser.parse(loadFixture(name)).playability == .unplayable, "\(name)")
+    }
+
+    /// A private video answers LOGIN_REQUIRED WITH a `messages` array, on both clients and in both
+    /// locales (spec §3). Read as a bot check it rotated the session and could trip the app-wide
+    /// cooldown; it is the source's verdict.
+    @Test(arguments: ["player-private-visionos", "player-private-visionos-ar", "player-private-android"])
+    func aPrivateVideoIsUnavailableNotABotCheck(_ name: String) throws {
+        guard case .unavailable = try parser.parse(loadFixture(name)).playability else {
+            Issue.record("\(name): expected .unavailable"); return
+        }
+    }
+
+    /// The bot check never carries `messages`: the committed capture and a tokenless ar capture of
+    /// catalog video V2Brp_esIVI (Review Focus 1).
+    @Test(arguments: ["player-botcheck", "player-botcheck-ar"])
+    func aBotCheckStaysABotCheck(_ name: String) throws {
+        #expect(try parser.parse(loadFixture(name)).playability == .botCheck, "\(name)")
+    }
+
+    @Test func anArabicRemovedVideoIsUnavailable() throws {
+        guard case .unavailable = try parser.parse(loadFixture("player-removed-visionos-ar")).playability else {
+            Issue.record("expected .unavailable"); return
+        }
+    }
+
+    // MARK: - `messages` is read for presence only (spec R7)
+    //
+    // The parser needs "is `messages` present and non-empty?" and nothing more. The shape of the
+    // elements, or of `messages` itself, is not probed, so no shape may throw away the WHOLE
+    // response -- on an OK body that would be a total outage.
+
+    /// A raw-JSON `messages` value injected into an otherwise minimal player body.
+    private func body(status: String, messages: String, topLevel: String = "") -> Data {
+        Data(#"{"playabilityStatus":{"status":"\#(status)","reason":"x","messages":\#(messages)}\#(topLevel)}"#.utf8)
+    }
+
+    /// Shapes other than an array of strings (none observed live; the field is a YouTube internal).
+    private static let oddMessageShapes = [
+        #"[{"runs":[{"text":"private"}]}]"#,  // array of objects
+        #"{"runs":[{"text":"private"}]}"#,    // object
+        #""private""#,                         // string
+    ]
+
+    @Test func anArrayOfObjectMessagesOnLoginRequiredIsStillPrivate() throws {
+        let result = try parser.parse(body(status: "LOGIN_REQUIRED", messages: #"[{"runs":[{"text":"private"}]}]"#)).playability
+        guard case .unavailable = result else { Issue.record("expected .unavailable, got \(result)"); return }
+    }
+
+    /// Present and non-empty in ANY shape is the private marker (ruling 2026-10-14): a bot check never
+    /// carries `messages` (spec §3, conclusion 5), so reading an unexpected shape as absent would turn a
+    /// private video into a bot check -- the worse failure (rotation burned, cooldown possible).
+    @Test(arguments: [#"{"runs":[{"text":"private"}]}"#, #""This is a private video""#])
+    func aNonEmptyObjectOrStringMessagesOnLoginRequiredIsPrivate(_ messages: String) throws {
+        let result = try parser.parse(body(status: "LOGIN_REQUIRED", messages: messages)).playability
+        guard case .unavailable = result else { Issue.record("\(messages): expected .unavailable, got \(result)"); return }
+    }
+
+    @Test(arguments: PlayerResponseParserTests.oddMessageShapes)
+    func anOddMessagesShapeOnAnOKResponseStillParsesAsOK(_ messages: String) throws {
+        let hls = #","streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/x.m3u8"}"#
+        let result = try parser.parse(body(status: "OK", messages: messages, topLevel: hls)).playability
+        guard case .ok(let streaming) = result else { Issue.record("\(messages): expected .ok, got \(result)"); return }
+        #expect(streaming.hlsManifestURL?.absoluteString == "https://manifest.googlevideo.com/x.m3u8")
+    }
+
+    @Test(arguments: PlayerResponseParserTests.oddMessageShapes)
+    func anOddMessagesShapeOnUnplayableStillYieldsUnplayable(_ messages: String) throws {
+        #expect(try parser.parse(body(status: "UNPLAYABLE", messages: messages)).playability == .unplayable, "\(messages)")
+    }
+
+    /// "Non-empty" half of R7: empty (or null) in any shape is no private marker.
+    @Test(arguments: ["[]", "{}", #""""#, "null"])
+    func anEmptyOrNullMessagesIsStillABotCheck(_ messages: String) throws {
+        #expect(try parser.parse(body(status: "LOGIN_REQUIRED", messages: messages)).playability == .botCheck, "\(messages)")
+    }
+
+    /// The age-gate check runs first (`PlayerResponseParser`): `messages` never turns an age gate private.
+    @Test(arguments: [
+        #"{"playabilityStatus":{"status":"LOGIN_REQUIRED","reason":"x","desktopLegacyAgeGateReason":1,"messages":["m"]}}"#,
+        #"{"playabilityStatus":{"status":"AGE_CHECK_REQUIRED","reason":"x","messages":["m"]}}"#,
+    ])
+    func theAgeGateBeatsMessages(_ json: String) throws {
+        #expect(try parser.parse(Data(json.utf8)).playability == .ageGate, "\(json)")
+    }
+
+    /// `reason` is localized and never read: a private body whose reason SOUNDS like a bot check stays
+    /// private, and the bot-check body whose reason says "private" stays a bot check.
+    @Test(arguments: ["Sign in to confirm you\u{2019}re not a bot", "يُرجى تسجيل الدخول لتأكيد أنّك لست روبوت دردشة"])
+    func aBotCheckSoundingReasonOnAPrivateVideoStaysPrivate(_ reason: String) throws {
+        let result = try parser.parse(fixtureReplacingReason("player-private-visionos", reason: reason)).playability
+        guard case .unavailable = result else { Issue.record("expected .unavailable, got \(result)"); return }
+    }
+
+    @Test(arguments: ["This video is private", "هذا الفيديو خاص"])
+    func aPrivateSoundingReasonOnABotCheckStaysABotCheck(_ reason: String) throws {
+        let body = try fixtureReplacingReason("player-botcheck", reason: reason)
+        #expect(try parser.parse(body).playability == .botCheck)
     }
 
     @Test func ageGatedFixtureYieldsAgeGate() throws {

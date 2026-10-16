@@ -83,17 +83,21 @@ import UIKit
         } catch let failure as OAuthSignInFailure {
             throw failure
         } catch {
-            // The ONE case worth telling apart: dismissing Apple's sheet is the user's own choice,
-            // and an error banner over it is wrong. The domain is checked alongside the code so a
-            // `1001` from another `NSError` can never read as a cancel. Everything else is one app
-            // code — this is the pre-Firebase leg, with no Firebase domain to map.
-            let nsError = error as NSError
-            if nsError.domain == ASAuthorizationError.errorDomain,
-               nsError.code == ASAuthorizationError.canceled.rawValue {
-                throw .cancelled
-            }
-            throw .failed(.appleSignInFailed)
+            throw Self.failure(for: error)
         }
+    }
+
+    /// The ONE case worth telling apart: dismissing Apple's sheet is the user's own choice, and an
+    /// error banner over it is wrong. The domain is checked alongside the code so a `1001` from
+    /// another `NSError` can never read as a cancel. Everything else is one app code — this is the
+    /// pre-Firebase leg, with no Firebase domain to map — except offline (1.0.3 R2), which says "No
+    /// internet connection" like every other leg of the wall.
+    nonisolated static func failure(for error: any Error) -> OAuthSignInFailure {
+        let nsError = error as NSError
+        if nsError.domain == ASAuthorizationError.errorDomain, nsError.code == ASAuthorizationError.canceled.rawValue {
+            return .cancelled
+        }
+        return .failed(AuthErrorCode.isOffline(error) ? .network : .appleSignInFailed)
     }
 
     private func finish(_ result: Result<ASAuthorization, any Error>) {

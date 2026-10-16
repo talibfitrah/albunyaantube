@@ -4,7 +4,8 @@ import Foundation
 /// The live UI test's credential channel (`ScreenshotTests.testDetailCTask6Live`): a JSON file the
 /// runner writes and this deletes the moment it reads it. Every UI-driven way in leaks one of the two:
 /// `typeText` records a TextField's text in the xcresult activity log ("Type 'probe-email@exampl...'",
-/// measured; a SecureTextField is recorded as '<redacted>'), and the pasteboard reaches the Mac's
+/// measured), and a SecureTextField's too (its first 18 characters, measured 2026-10-14 on Xcode
+/// 26.3 — it is NOT redacted); and the pasteboard reaches the Mac's
 /// through Simulator's pasteboard sync. Only the file's PATH travels as a launch argument. The wall
 /// itself stays covered by the fixture UI tests (`01-sign-in`, the Phase 4 account screens).
 nonisolated enum LiveSignInFile {

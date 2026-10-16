@@ -1,0 +1,12 @@
+{
+  "responseContext": {
+    "visitorData": "CgtGSVhUVVJFXzAwMSiFAA%3D%3D"
+  },
+  "playabilityStatus": {
+    "status": "LOGIN_REQUIRED",
+    "reason": "Please sign in",
+    "messages": [
+      "This is a private video. Please sign in to verify that you may see it."
+    ]
+  }
+}

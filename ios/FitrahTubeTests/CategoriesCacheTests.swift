@@ -34,7 +34,7 @@ struct CategoriesCacheTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     private struct FailingCatalogClient: CatalogClient {
@@ -46,7 +46,7 @@ struct CategoriesCacheTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     /// Gate wave-4 V3: `catch is CancellationError` could never fire -- swift-openapi-runtime wraps
@@ -63,7 +63,7 @@ struct CategoriesCacheTests {
         func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
             CursorPage(items: [], nextCursor: nil)
         }
-        func search(query: String, type: ListType?, limit: Int) async throws -> [ContentItem] { [] }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
     @Test func cancellationErrorsAreNotStoredWhateverShapeTheyArriveIn() async {

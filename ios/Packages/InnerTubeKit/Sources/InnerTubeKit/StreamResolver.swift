@@ -36,6 +36,12 @@ public actor StreamResolver {
     /// Monotonic instant of the last `player` POST, for ≥500 ms spacing.
     private var lastPostInstant: Duration?
 
+    /// Recovery step-downs this session (`demote`): videoId -> the client whose stream would not
+    /// play. That video's walks start at the rung AFTER it and try it last.
+    /// ponytail: process-lifetime and unbounded -- one small entry per video that failed in AVPlayer.
+    /// Bound it if a session ever demotes thousands.
+    private var demoted: [String: ClientFamily] = [:]
+
     public init(
         transport: HTTPTransport,
         remoteConfigStore: RemoteConfigStore,
@@ -64,30 +70,44 @@ public actor StreamResolver {
 
     /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16), for caller-side
     ///   rate-limiter lane coordination (`ExtractionRateLimiter`). It alters resolver behaviour in
-    ///   ONE place: a `.cast` muxed walk never records the global bot-check cooldown (`Purpose.cast`).
+    ///   ONE place: a `.cast` muxed walk never records the global bot-check cooldown (`Purpose.cast`),
+    ///   and neither does any `requiresHLS` walk (below).
     /// - Parameter requiresMuxed: save-purpose walk (owner ruling 2026-09-01) — the caller needs a
     ///   single-file muxed stream (itag 18), so the HLS rung advances instead of returning, and the
     ///   walk bypasses both the manifest cache and the single-flight registry (see `resolve` body).
+    /// - Parameter requiresHLS: the audio-only save's network walk (Cubic C2; fix r4 N-1, r5 N4-4: when
+    ///   its plain walk answered without itag 140 -- after a step-down, or with VISIONOS failing at
+    ///   walk time -- and for every walk the save must force), the muxed walk's mirror: the caller
+    ///   needs VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung advances
+    ///   without a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the plain key
+    ///   must not hand the player the HLS it stepped down from. At most one of the two. It never
+    ///   records a bot-check trip (fix r5 N4-2, controller ruling): it runs when the plain answer lacks
+    ///   itag 140 or the save must force a walk, and its trips fed the SHARED cooldown that then refused the
+    ///   player's working ANDROID rung. The save fails instead, and the user retries it.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,
-        requiresMuxed: Bool = false
+        requiresMuxed: Bool = false, requiresHLS: Bool = false
     ) async throws -> Resolved {
         guard Self.isValidVideoId(videoId) else { throw ExtractionError.invalidVideoId }
 
-        if requiresMuxed {
+        if requiresMuxed || requiresHLS {
             // Save-purpose walk, fully outside the shared structures:
-            // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format,
-            //   and caching this walk's `.progressive` would degrade the player to 360p on its
-            //   next resolve. Skipping both read and write means EVERY video save POSTs — CF-D-9
-            //   exposure accepted; the per-walk trip dedupe caps it.
+            // - CACHE (keyed by videoId only, shape-blind): a cached `.hls` has no muxed format and a
+            //   cached `.progressive` no itag 140; caching this walk's answer would degrade the
+            //   player to 360p on its next resolve, or hand it back the HLS it stepped down from.
+            //   Skipping both read and write means every such walk POSTs (every video save; an
+            //   audio-only save whose plain answer lacks itag 140, or that must force a walk) —
+            //   CF-D-9 exposure accepted; the per-walk trip dedupe caps it, and an HLS walk records
+            //   no trip at all (N4-2).
             // - SINGLE-FLIGHT: joining a player walk would adopt the wrong shape, and a
             //   `forceRefresh` through the registry would cancel the user's own playback resolve
             //   (forbidden — a save walk must never cancel any in-flight job). Bypassing also
             //   means two concurrent muxed walks of one id both POST: `OfflineManager` is serial
             //   (one active save), but a save and a cast (`PlayerViewModel.castMedia`) can overlap
             //   -- two android POSTs, accepted, since neither result is cached.
-            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: true,
-                                            recordsBotCheck: purpose != .cast)
+            return try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: requiresMuxed,
+                                            requiresHLS: requiresHLS,
+                                            recordsBotCheck: purpose != .cast && !requiresHLS)
         }
 
         if !forceRefresh, let cached = await cache.get(videoId, now: wallClock.wallNow) {
@@ -104,7 +124,8 @@ public actor StreamResolver {
         nextJobId += 1
         let jobId = nextJobId
         let job = Task<Resolved, Error> { [self] in
-            try await performResolve(videoId, sourceChannelId: sourceChannelId, requiresMuxed: false)
+            try await performResolve(videoId, sourceChannelId: sourceChannelId,
+                                     requiresMuxed: false, requiresHLS: false)
         }
         inFlight[videoId] = InFlight(id: jobId, task: job)
         defer {
@@ -137,6 +158,16 @@ public actor StreamResolver {
         }
     }
 
+    /// The player's step-down (owner directive 2026-10-14): `failed`'s stream resolved but would not
+    /// play -- V2Brp_esIVI's VISIONOS HLS segments answer AVPlayer 401 while ANDROID's itag 18
+    /// plays. Every later walk for this video, this session, resumes the ladder at the NEXT rung
+    /// (`walkOrder`), and the manifest cached from `failed` is dropped so a non-forced open cannot
+    /// hand it back.
+    public func demote(_ videoId: String, failed family: ClientFamily) async {
+        demoted[videoId] = family
+        await cache.remove(videoId)
+    }
+
     // MARK: - the ladder
 
     private enum RungResult: Sendable {
@@ -145,7 +176,8 @@ public actor StreamResolver {
     }
 
     private func performResolve(
-        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, recordsBotCheck: Bool = true
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, requiresHLS: Bool,
+        recordsBotCheck: Bool = true
     ) async throws -> Resolved {
         // Self-gate on the persisted, restart-surviving escalating cooldown (§6.3): if a prior
         // bot-check tripped it, suppress all API traffic until it elapses rather than hammering
@@ -162,18 +194,38 @@ public actor StreamResolver {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
+        // True once any rung failed on OUR side (a bot check, transport error, rung timeout, decode
+        // error: whatever reaches the generic catch). Gates the held verdict below.
+        var sawOurFailure = false
+        // A refusal by ANDROID held back in a demoted walk (F4); see the `AndroidRefusal` catch below.
+        var heldVerdict: ExtractionError?
+        let demotedFamily = demoted[videoId]
 
-        for strategy in config.resolverOrder {
+        for strategy in Self.walkOrder(config.resolverOrder, after: demotedFamily) {
             let outcome: RungResult
             do {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
-                // a bot-check rung is POST + rotate + retry POST, which per-POST would allow ~16 s.
+                // a bot-check rung is POST + (adopt | rotate) + retry POST, which per-POST would allow ~16 s.
                 outcome = try await Self.withTimeout(Self.rungBudget) {
-                    try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed)
+                    try await self.runRung(strategy, videoId: videoId, config: config, requiresMuxed: requiresMuxed,
+                                           requiresHLS: requiresHLS)
                 }
             } catch let error as ExtractionError where error.terminal {
-                if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
+                // A source verdict (private, members-only, removed, age gate, ...): the source
+                // ANSWERED, so the network path works. No trip, even if an earlier rung saw a bot
+                // check (Task 1 review M4); only a walk that fails without a verdict records one.
                 throw error
+            } catch is AndroidRefusal {
+                // The source's own verdict (spec R6), terminal at once -- EXCEPT in a demoted walk,
+                // where it now opens the ladder: VISIONOS served this very video moments ago, so
+                // "the source no longer serves it" is not yet proven (owner rule: a video plays
+                // unless the source no longer serves it). Hold the verdict, try the wrapped rungs,
+                // and throw it if none plays and none failed on our side (see the walk's end). Without
+                // a demotion this is the old terminal throw.
+                let verdict = ExtractionError.unavailable(videoId: videoId)
+                guard demotedFamily != nil else { throw verdict }
+                heldVerdict = verdict
+                continue
             } catch is CancellationError {
                 // A superseded/cancelled job stops here; it must not walk on down the ladder.
                 // No trip either: the superseding walk sees the bot check itself if it's real.
@@ -183,42 +235,44 @@ public actor StreamResolver {
                 // player-lane never-trip. A bot check only NOTES here; the (per-walk single,
                 // review F2a) trip is recorded at walk end, and only when the walk fails overall.
                 if case ExtractionError.botCheck = error { sawBotCheck = true }
+                sawOurFailure = true
                 lastError = error
                 continue
             }
             switch outcome {
             case .resolved(let resolved):
-                return await succeed(resolved, videoId: videoId, requiresMuxed: requiresMuxed)
+                return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
             case .advance:
                 continue
             }
         }
+        // A held source verdict ends the walk like any other: no trip, and not the retryable error --
+        // unless a wrapped rung failed on OUR side. ANDROID's word is doubted in a demoted walk
+        // (VISIONOS just served this video), so a bot check, transport error or rung timeout on the
+        // rung that could have confirmed it proves nothing about the source: the walk ends as any
+        // failed one does (the retryable `lastError`; the trip below only if a bot check was seen).
+        // A wrapped rung that merely advanced (answered, but has nothing to play) leaves the verdict.
+        if let heldVerdict, !sawOurFailure { throw heldVerdict }
         if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }
 
-    /// Only `.hls`/`.progressive` are a real fetch: they carry URLs with a TTL worth caching, and
-    /// they are the only outcome that proves the session is healthy. Caching `embed` would pin a
-    /// user on the fallback for the full TTL after a transient bot check clears, and counting it as
-    /// a clean fetch would fake a healthy session while the ladder bottomed out.
-    private func succeed(_ resolved: Resolved, videoId: String, requiresMuxed: Bool) async -> Resolved {
-        switch resolved.stream {
-        case .hls, .progressive:
-            // A muxed walk's result must never land under the plain videoId key: the cache is
-            // shape-blind, and the player's next resolve would degrade to this 360p progressive.
-            // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
-            if !requiresMuxed {
-                await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
-            }
-            await sessionStore.recordSuccess()
-        case .embed:
-            break
+    /// A resolved stream is a real fetch: it carries a URL with a TTL worth caching and proves the
+    /// session is healthy.
+    private func succeed(_ resolved: Resolved, videoId: String, saveWalk: Bool) async -> Resolved {
+        // A save walk's result must never land under the plain videoId key: the cache is
+        // shape-blind, and the player's next resolve would degrade to a muxed walk's 360p
+        // progressive, or get back the HLS an HLS walk fetched past a step-down.
+        // The fetch still counts as a healthy session (`recordSuccess`) — it is a real one.
+        if !saveWalk {
+            await cache.put(resolved, videoId: videoId, now: wallClock.wallNow)
         }
+        await sessionStore.recordSuccess()
         return resolved
     }
 
     private func runRung(
-        _ strategy: String, videoId: String, config: RemoteConfig, requiresMuxed: Bool
+        _ strategy: String, videoId: String, config: RemoteConfig, requiresMuxed: Bool, requiresHLS: Bool
     ) async throws -> RungResult {
         switch strategy {
         case "visionosHLS":
@@ -227,17 +281,9 @@ public actor StreamResolver {
             if requiresMuxed { return .advance }
             return try await runPlayerRung(family: .visionos, videoId: videoId, config: config, expectHLS: true, canRotate: true)
         case "androidItag18":
+            // The mirror image: an HLS-required walk wants the itag 140 only VISIONOS carries.
+            if requiresHLS { return .advance }
             return try await runPlayerRung(family: .android, videoId: videoId, config: config, expectHLS: false, canRotate: true)
-        case "embed":
-            // The floor of the ladder. There is no rung below it: owner directive 2026-08-27 bans
-            // every redirect or hand-off to YouTube, so a video `embed` cannot play is a terminal
-            // `ExtractionError`, never an escape hatch out of the app. `RemoteConfig` drops an
-            // `openInYouTube` entry from a published config for the same reason.
-            // A muxed-required walk advances instead (review F2): the caller maps `.embed` to
-            // terminal NOT_SAVEABLE, so "resolving" here would dress a bot-checked walk as a
-            // clean success and skip the walk-end trip recording.
-            if requiresMuxed { return .advance }
-            return .resolved(makeEmbed(videoId))
         default:
             return .advance
         }
@@ -294,25 +340,30 @@ public actor StreamResolver {
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
             }
             return .advance
-        case .unplayableKids:
-            return .advance
+        case .unplayable:
+            // VISIONOS refuses made-for-kids AND source-gated videos with the same shape (live probe
+            // 2026-10-14: a kids video and a geo-locked one are both `{status, reason}`, reason
+            // localized), so its refusal decides nothing: walk on. ANDROID serves made-for-kids
+            // (43/43 in the 2026-10-14 spike), so its UNPLAYABLE is the source's own verdict --
+            // members-only (J-AuO9TNt5I), geo-locked -- and the app says "not available", never the
+            // retryable error (owner directive 2026-10-14, spec R6).
+            guard family == .android else { return .advance }
+            throw AndroidRefusal()
         case .ageGate:
             // Terminal, not a hand-off (owner directive 2026-08-27). `ageRestricted` is already one
             // of ruling 14's terminal states and the app maps it onto its single "not playable"
             // surface.
             throw ExtractionError.ageRestricted
         case .botCheck:
-            // Session bootstrap (Appendix A.1 `probe.py`: "a bare request establishes the session;
-            // reuse responseContext.visitorData for everything after"). The very first call under a
-            // family goes out tokenless and YouTube answers with a bot check that *carries* a
-            // freshly-minted `responseContext.visitorData`; adopting it and retrying flips the same
-            // rung to OK+HLS (verified live 2026-08-24 against `xc7keR2piUM`). This is session
-            // establishment, not a rotation — rotating here would clear the token we were just
-            // handed and burn the 10-minute rotation budget on the first play of every launch.
-            // ADOPTION is not slot-limited (only rotation is), so even the post-rotation retry
-            // (`canRotate: false`) keeps a fresh interstitial token for the next walk (CF-G-15) --
-            // discarding it left the family tokenless after every failed rotate-retry.
-            if visitorData == nil, let visitor = parsed.visitorData {
+            // Session (re)bootstrap. A bot-checked response carries a freshly-minted
+            // `responseContext.visitorData` whether the request went out tokenless (a family's first
+            // call; verified live 2026-08-24 on `xc7keR2piUM`) or under a STALE token (live probe
+            // 2026-10-14: a bogus `visitorData` came back with a different, fresh one). Adopting it
+            // discards the old session; ONE retry under it is the recovery (owner directive
+            // 2026-10-14). Adoption is not slot-limited (only rotation is), so even the retry keeps
+            // the fresh token for the next walk (CF-G-15). Rotation below is the fallback for a bot
+            // check that hands over nothing new.
+            if let visitor = parsed.visitorData, visitor != visitorData {
                 await sessionStore.setVisitorData(visitor, for: family)
                 if canRotate {
                     return try await runPlayerRung(
@@ -338,6 +389,10 @@ public actor StreamResolver {
     /// Internal marker for an HTTP 429: routed to `.botCheck` WITHOUT the rotation a 403 gets
     /// (CF-G-15). Never escapes `runPlayerRung`.
     private struct RateLimited: Error {}
+
+    /// Internal marker: ANDROID answered UNPLAYABLE. `performResolve` turns it into the terminal
+    /// `.unavailable` verdict, or holds it in a demoted walk. Never escapes `performResolve`.
+    private struct AndroidRefusal: Error {}
 
     /// Enforces ≥`minPostSpacing` between `player` POSTs, then delegates to the injected
     /// transport. The 8 s budget wraps the whole rung, one level up.
@@ -394,10 +449,6 @@ public actor StreamResolver {
 
     // MARK: - result builders
 
-    private func makeEmbed(_ videoId: String) -> Resolved {
-        Resolved(stream: .embed(videoId: videoId), client: .web, userAgent: "", resolvedAt: wallClock.wallNow, expiresAt: nil)
-    }
-
     private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {
         streaming.expiresInSeconds.map { now.addingTimeInterval(TimeInterval($0)) }
     }
@@ -408,6 +459,24 @@ public actor StreamResolver {
         // ^[a-zA-Z0-9_-]{11} (NewPipeExtractorClient.kt:1045); YouTube IDs are exactly 11.
         let allowed = Set("abcdefghijklmnopqrstuvwxyzABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789_-")
         return id.count == 11 && id.allSatisfy(allowed.contains)
+    }
+
+    /// `ladder` rotated to start at the rung after the one `failed` serves, wrapping round: the failed
+    /// rung is tried LAST, never dropped -- a live stream has no itag 18, so its only rung must stay
+    /// reachable after a step-down. An unknown client, or none, leaves the ladder as it is. A muxed
+    /// walk needs no exception: its VISIONOS rung advances without a POST wherever it sits.
+    static func walkOrder(_ ladder: [String], after failed: ClientFamily?) -> [String] {
+        guard let failed, let index = ladder.firstIndex(where: { family(of: $0) == failed }) else { return ladder }
+        return Array(ladder[(index + 1)...] + ladder[...index])
+    }
+
+    /// The client each known strategy POSTs as (`runRung`).
+    static func family(of strategy: String) -> ClientFamily? {
+        switch strategy {
+        case "visionosHLS": return .visionos
+        case "androidItag18": return .android
+        default: return nil
+        }
     }
 
     private static func seconds(_ duration: Duration) -> TimeInterval {

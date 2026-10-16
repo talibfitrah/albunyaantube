@@ -13,7 +13,6 @@ struct PlayerViewModelTests {
 
     private static let hls = resolved(.hls(url: URL(string: "https://example.com/a.m3u8")!, isLive: false, audioOnlyURL: nil, captionTracks: []))
     private static let progressive = resolved(.progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"))
-    private static let embed = resolved(.embed(videoId: "abcdefghijk"))
 
     /// `Self.hls` carries `expiresAt: nil`, which `shouldPreemptivelyReResolve` reads as "never
     /// expires" -- the silent-refresh test below needs a stream that actually does expire.
@@ -54,7 +53,7 @@ struct PlayerViewModelTests {
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                      sourceChannelId: String?, forceRefresh: Bool,
-                     requiresMuxed: Bool) async throws -> Resolved {
+                     requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             calls.append((purpose, sourceChannelId, forceRefresh))
             // The outcome is picked by *registration* order (this call's index), not removed off a
             // shared queue after the gate -- otherwise a later, ungated call racing past a blocked
@@ -67,6 +66,8 @@ struct PlayerViewModelTests {
             case .failure(let error): throw error
             }
         }
+
+        func demote(_ videoId: String, failed: ClientFamily) async {}
     }
 
     // MARK: - Outcome -> state mapping (player.md §2.2)
@@ -83,46 +84,17 @@ struct PlayerViewModelTests {
         #expect(vm.state == .rung2Progressive(Self.progressive))
     }
 
-    @Test func embedMapsToTheEmbedState() async {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]))
-        await vm.open()
-        #expect(vm.state == .embed(Self.embed))
-    }
-
-    /// OWNER DIRECTIVE 2026-08-27: there is no hand-off rung, in EITHER Safe Mode setting. The
-    /// ladder's floor is the embed, and the embed is what Safe Mode must keep -- it is the rung that
-    /// holds a child inside the app. (The resolver can no longer even emit a hand-off: the enum case
-    /// is gone, which is what makes this test's `for` loop exhaustive rather than illustrative.)
-    @Test func theLadderNeverProducesAHandOffInEitherSafeModeState() async {
-        for safeMode in [false, true] {
-            let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.embed)]), safeMode: safeMode)
-            await vm.open()
-            #expect(vm.state == .embed(Self.embed), "safeMode: \(safeMode)")
-        }
-    }
-
-    @Test func aSilentRefreshNeverSwapsAPlayingStreamIntoTheEmbed() async {
+    @Test func aSilentRefreshNeverReplacesAPlayingStreamWithAFailure() async {
         // CF-B2-3 + plan §6.6: `reResolveIfExpiring` shows the user nothing, so it must not be able to
         // change the playback SURFACE. The near-expiry rung-1 stream keeps playing; reactive recovery
         // (which never passes `silent:`) owns the demotion, loudly, once the stream actually fails.
         let expiring = Self.expiringHLS()
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(expiring), .success(Self.embed)]),
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(expiring), .failure(ExtractionError.allRungsFailed)]),
                                safeMode: false)
         await vm.open()
         #expect(vm.state == .ready(expiring))
         await vm.reResolveIfExpiring(now: .distantFuture)   // well past `expiresAt - margin`, so it fires
-        #expect(vm.state == .ready(expiring))               // embed result dropped; rung 1 still playing
-    }
-
-    @Test func embedActionsMapOntoTerminalStates() {
-        let vm = makeViewModel(resolver: FakeResolver(outcomes: []), safeMode: false)
-        vm.applyEmbedAction(.fail(messageKey: "player_embed_removed"))
-        #expect(vm.state == .error(messageKey: "player_embed_removed"))
-        vm.applyEmbedAction(.fail(messageKey: "player_stream_unavailable"))
-        #expect(vm.state == .error(messageKey: "player_stream_unavailable"))
-        // CF-B3-10: terminal embed errors land on `.unplayable` (no Retry), never on `.error`.
-        vm.applyEmbedAction(.unplayable(messageKey: "player_embed_removed"))
-        #expect(vm.state == .unplayable(messageKey: "player_embed_removed"))
+        #expect(vm.state == .ready(expiring))               // failure dropped; rung 1 still playing
     }
 
     @Test func unavailableMapsToContentUnavailable() async {
@@ -331,6 +303,96 @@ struct PlayerViewModelTests {
 
         await vm.retry()                                    // and the VM's own guard stops the next one dead
         #expect(inner.calls.count == 4)
+    }
+
+    // MARK: - Playback hardening: auto-recovery is never rate limited (owner directive 2026-10-14)
+
+    /// V2Brp_esIVI's trace: the second auto-recovery inside the limiter's 30 s interval was refused and
+    /// shown as a cooldown, in the middle of a step-down that would have played.
+    @Test func autoRecoveryIsNeverRefusedByTheLimiter() async throws {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let limited = RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(), clock: clock)
+        for offset in [0, 5, 10, 15] {   // inside the 30 s interval, and past the lane's reserve of 2
+            clock.now = .seconds(offset)
+            _ = try await limited.resolve("abcdefghijk", purpose: .player, kind: .autoRecovery,
+                                          sourceChannelId: nil, forceRefresh: true)
+        }
+        #expect(inner.calls.map(\.kind) == [.autoRecovery, .autoRecovery, .autoRecovery, .autoRecovery])
+    }
+
+    /// The decorator must hand the step-down on: dropping it sends every recovery back to rung 1.
+    @Test func demoteReachesTheWrappedResolver() async {
+        let inner = RecordingResolver(.hls)
+        let limited = RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                          clock: FixedMonotonicClock(now: .seconds(0)))
+
+        await limited.demote("abcdefghijk", failed: .visionos)
+
+        #expect(inner.demotions == ["abcdefghijk:visionos"])
+    }
+
+    /// Final review M2: the PRODUCTION forward. An empty `LiveStreamResolver.demote` passed every
+    /// test (the UI rig returns its fixture unwrapped) and would bring F1 back: every step-down
+    /// walking from rung 1 again. A real `StreamResolver` behind it; the transport answers by client.
+    @Test func liveStreamResolverHandsTheStepDownToTheLibrary() async throws {
+        let transport = ClientAnsweringTransport()
+        let keyValueStore = MemoryKV()
+        let clock = SystemClock()
+        let config = RemoteConfigStore(transport: transport, keyValueStore: keyValueStore,
+                                       url: URL(string: "https://example.invalid/remote-config.json")!)
+        let live = LiveStreamResolver(resolver: StreamResolver(
+            transport: transport, remoteConfigStore: config,
+            sessionStore: SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore),
+            cache: ManifestCache(remoteConfig: config), gate: AlwaysAvailable(),
+            monotonicClock: clock, wallClock: clock, locale: InnerTubeLocale(hl: "en", gl: "US"),
+            minPostSpacing: .zero))
+
+        let first = try await live.resolve("V2Brp_esIVI", purpose: .player, kind: .player,
+                                           sourceChannelId: nil, forceRefresh: false)
+        guard case .hls = first.stream else { return #expect(Bool(false), "rung 1 is VISIONOS HLS") }
+        await live.demote("V2Brp_esIVI", failed: .visionos)
+        let second = try await live.resolve("V2Brp_esIVI", purpose: .player, kind: .autoRecovery,
+                                            sourceChannelId: nil, forceRefresh: true)
+
+        guard case .progressive = second.stream else { return #expect(Bool(false), "the step-down went back to rung 1") }
+        #expect(transport.clientNames == ["VISIONOS", "ANDROID"])
+    }
+
+    /// Answers a player POST by the client named in its body: VISIONOS gets an HLS manifest, ANDROID
+    /// itag 18. Synthetic bodies, `127.0.0.1`-free because nothing here is ever played.
+    private final class ClientAnsweringTransport: HTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var names: [String] = []
+        var clientNames: [String] { lock.withLock { names } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let json = request.body.flatMap { try? JSONSerialization.jsonObject(with: $0) } as? [String: Any]
+            let name = ((json?["context"] as? [String: Any])?["client"] as? [String: Any])?["clientName"] as? String
+            lock.withLock { names.append(name ?? "?") }
+            let body = name == "ANDROID"
+                ? #"{"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false}}"#
+                : #"{"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/api/manifest/hls_variant/index.m3u8","expiresInSeconds":"21540"},"videoDetails":{"isLive":false}}"#
+            return HTTPResponse(status: 200, headers: [:], body: Data(body.utf8))
+        }
+    }
+
+    /// End to end through the production decorator: two step-downs inside 30 s both reach the
+    /// resolver and the player keeps playing -- no cooldown screen (V2Brp_esIVI's trace).
+    @Test func twoStepDownsInsideThirtySecondsNeverShowACooldown() async {
+        let clock = FixedMonotonicClock(now: .seconds(0))
+        let inner = RecordingResolver(.hls)
+        let vm = makeViewModel(resolver: RateLimitedResolver(wrapping: inner, rateLimiter: ExtractionRateLimiter(),
+                                                             clock: clock))
+        await vm.open()
+
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+        clock.now = .seconds(5)
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 401)
+
+        guard case .ready = vm.state else { return #expect(Bool(false), "expected playback, got \(vm.state)") }
+        #expect(inner.calls.map(\.kind) == [.player, .autoRecovery, .autoRecovery])
+        #expect(inner.demotions == ["abcdefghijk:visionos", "abcdefghijk:visionos"])
     }
 
     @Test func recoveryReResolvesUseTheAutoRecoveryLane() async {

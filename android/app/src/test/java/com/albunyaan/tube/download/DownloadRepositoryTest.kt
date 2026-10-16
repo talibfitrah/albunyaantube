@@ -77,7 +77,7 @@ class DownloadRepositoryTest {
                 title = "Persisted Video",
                 thumbnailUrl = "https://example.test/thumb.jpg"
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(1, 2, 3, 4))
             val committedFile = storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -105,7 +105,7 @@ class DownloadRepositoryTest {
                 title = "Active Video",
                 thumbnailUrl = null
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(9, 8, 7, 6))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -138,7 +138,7 @@ class DownloadRepositoryTest {
                     audioOnly = true
                 )
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(5, 4, 3, 2))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -161,7 +161,7 @@ class DownloadRepositoryTest {
                 thumbnailUrl = null,
                 audioOnly = true
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(3, 2, 1))
             storage.commit(downloadId, audioOnly = false, tempFile)
 
@@ -202,7 +202,7 @@ class DownloadRepositoryTest {
                 thumbnailUrl = null,
                 audioOnly = false
             )
-            val tempFile = storage.createTempFile(downloadId)
+            val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(7, 6, 5))
             val committedFile = storage.commit(downloadId, audioOnly = false, tempFile)
             repository.refreshPersistedDownloads()
@@ -212,6 +212,30 @@ class DownloadRepositoryTest {
             repository.refreshPersistedDownloads()
 
             assertEquals(emptyList<DownloadEntry>(), repository.downloads.value)
+        }
+
+    @Test
+    fun `channel and duration given at enqueue survive a restart`() =
+        runTest {
+            val downloadId = "lec_1700000000000"
+            // Never-advanced scopes: no init load or work observer runs inside runTest.
+            repository(TestScope(StandardTestDispatcher(testScheduler))).enqueue(
+                DownloadRequest(
+                    id = downloadId, title = "Lecture", videoId = "lec", audioOnly = true,
+                    channelName = "Lecturer", durationSeconds = 1800
+                )
+            )
+            workManager.cancelAllWork().result.get()
+            val tempFile = storage.createTempFile(downloadId, "run")
+            tempFile.writeBytes(byteArrayOf(1, 2, 3))
+            storage.commit(downloadId, audioOnly = true, tempFile)
+
+            val restarted = repository(TestScope(StandardTestDispatcher(testScheduler)))
+            restarted.refreshPersistedDownloads()
+
+            val request = restarted.downloads.value.single { it.request.id == downloadId }.request
+            assertEquals("Lecturer", request.channelName)
+            assertEquals(1800, request.durationSeconds)
         }
 
     private fun repository(scope: CoroutineScope): DefaultDownloadRepository =

@@ -61,7 +61,7 @@ struct RootView: View {
             // The ONE `AccountSession.start()`: it owns the auth subscription that re-scopes every
             // per-user store, so it must outlive every screen, which is what makes the root the
             // only correct place for it.
-            .task { await container.session.start() }
+            .task { await container.startSession() }
             // EVERY arrival on the sign-in wall (owner ruling 2026-09-24) — a sign-out from Settings
             // or the Me kebab, a Firebase force sign-out, a terminal verdict, account deletion, the
             // under-13 teardown, a failed `/me` (which signs out), AND a refused sign-out, which
