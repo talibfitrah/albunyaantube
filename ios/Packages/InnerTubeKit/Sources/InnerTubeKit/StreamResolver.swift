@@ -81,8 +81,8 @@ public actor StreamResolver {
     ///   needs VISIONOS's itag 140, which only the HLS answer carries, so the ANDROID rung advances
     ///   without a POST, wherever a step-down put it. Same bypass as `requiresMuxed`: the plain key
     ///   must not hand the player the HLS it stepped down from. At most one of the two. It never
-    ///   records a bot-check trip (fix r5 N4-2, controller ruling): it runs exactly when VISIONOS may
-    ///   be bot-checked for the session, and its trips fed the SHARED cooldown that then refused the
+    ///   records a bot-check trip (fix r5 N4-2, controller ruling): it runs when the plain answer lacks
+    ///   itag 140 or the save must force a walk, and its trips fed the SHARED cooldown that then refused the
     ///   player's working ANDROID rung. The save fails instead, and the user retries it.
     public func resolve(
         _ videoId: String, purpose: Purpose, sourceChannelId: String?, forceRefresh: Bool,

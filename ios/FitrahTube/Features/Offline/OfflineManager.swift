@@ -904,8 +904,8 @@ actor OfflineManager: OfflineSaving {
             // CF-D-9 reverse direction: never a failed row, never a retry into the cooldown.
             await scheduleRetry(row.id, attempt, after: .seconds(max(1, until.timeIntervalSince(now())))); return
         } catch ExtractionError.botCheck where hlsWalk {
-            // Fix r5 N4-2 (controller ruling, option b): the HLS walk runs exactly when VISIONOS may
-            // be bot-checked for the session. Parking it re-walked every second into the SHARED
+            // Fix r5 N4-2 (controller ruling, option b): the HLS walk runs when the plain answer lacks
+            // itag 140 or the save must force a walk. Parking it re-walked every second into the SHARED
             // cooldown that then refused the player's working ANDROID rung, so it fails the row
             // with the retryable "try again later" error instead, and the resolver records no trip
             // for it. Player availability beats auto-retrying a save; the user retries it.
