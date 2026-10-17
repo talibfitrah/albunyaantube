@@ -366,6 +366,8 @@ public class InnerCrawler {
      * Three samples in a row under 512 MiB → capPerSource 2,000 (the newest 2,000 per source) and a rebuild. The corpus
      * keeps everything, so lifting the cap later is a rebuild, never a re-crawl. The check and the set share one monitor
      * hold, so an admin cap set meanwhile is never raised back to 2,000; then, as update(): save, then the rebuild.
+     * Old low samples stay in state.memory, so an admin who lifts the cap while memory is still low sees the next hourly
+     * sample trip it again. Intended: the cap holds until memory recovers.
      */
     private void sampleMemory(long now) {
         if (now - lastMemoryAt < HOUR_MS) return;

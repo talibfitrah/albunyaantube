@@ -106,8 +106,7 @@ class InnerCrawlerTest {
         index = new InnerIndex(tmp.resolve("base").toString(), store, clock);
         index.sleeper = ms -> {};
         index.refreshEveryMs = 0;
-        crawler = new InnerCrawler(store, pacer, fetcher, search, index, categories, channels, clock);
-        crawler.meminfo = tmp.resolve("no-meminfo"); // never the host's /proc/meminfo: R31 tests point it at a fake
+        crawler = newCrawler(fetcher, index);
         logs.start();
         ((Logger) LoggerFactory.getLogger(InnerCrawler.class)).addAppender(logs);
     }
@@ -117,6 +116,13 @@ class InnerCrawlerTest {
         ((Logger) LoggerFactory.getLogger(InnerCrawler.class)).detachAppender(logs);
         index.close();
         assertFalse(savedUnderTheStateMonitor.get(), "ruling 5: no save() while holding the InnerState monitor");
+    }
+
+    /** Every crawler a test builds: never the host's /proc/meminfo (R31 tests point it at a fake). */
+    InnerCrawler newCrawler(UploadsFetcher f, InnerIndex idx) {
+        InnerCrawler c = new InnerCrawler(store, pacer, f, search, idx, categories, channels, clock);
+        c.meminfo = tmp.resolve("no-meminfo");
+        return c;
     }
 
     long step() throws Exception {
@@ -568,7 +574,7 @@ class InnerCrawlerTest {
 
     @Test
     void aKeyRejectedBeforeAnyRequestIsThatSourcesFailureNeverASignal() throws Exception {
-        crawler = new InnerCrawler(store, pacer, new UploadsFetcher(), search, index, categories, channels, clock); // the real rejections
+        crawler = newCrawler(new UploadsFetcher(), index); // the real rejections
         String shortId = "playlist:PLshort", noChannel = "channel:notAChannelId";
         admitted.put(shortId, "NewPipe: list id under 10 chars");
         admitted.put(noChannel, "UploadsFetcher.url: no UC id");
@@ -974,7 +980,7 @@ class InnerCrawlerTest {
         store.save();
         store = new InnerStore(tmp.resolve("inner").toString()); // a restart: the day's count is read back from state.json
         pacer = new CrawlPacer(store, mock(YouTubeThrottler.class), clock);
-        crawler = new InnerCrawler(store, pacer, fetcher, search, index, categories, channels, clock);
+        crawler = newCrawler(fetcher, index);
         assertTrue(step() > 0);
         verifyNoInteractions(fetcher);
         now.set(Instant.parse("2026-10-21T00:00:00Z"));
@@ -1235,7 +1241,7 @@ class InnerCrawlerTest {
     void aLongPauseStillRefreshesTheIndexEveryIdleMs() throws Exception {
         // hand-off 3/6: a pause of hours (or the daily cap's wait) never holds back refreshes, retirement or R31's sample
         InnerIndex idx = mock(InnerIndex.class);
-        crawler = spy(new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock));
+        crawler = spy(newCrawler(fetcher, idx));
         store.state().mode = InnerState.Mode.FIRST_PASS;
         store.state().breaker.pausedUntil = now.get().toEpochMilli() + 5 * CrawlPacer.PAUSE_MS;
         List<Long> waits = new CopyOnWriteArrayList<>();
@@ -1282,7 +1288,7 @@ class InnerCrawlerTest {
         InnerIndex tragic = mock(InnerIndex.class);
         doThrow(new AlreadyClosedException("this IndexWriter is closed")).when(tragic).replaceSource(anyString(), any(), anyList());
         doThrow(new AlreadyClosedException("this IndexWriter is closed")).when(tragic).maybeRefresh();
-        crawler = new InnerCrawler(store, pacer, fetcher, search, tragic, categories, channels, clock);
+        crawler = newCrawler(fetcher, tragic);
         admitted.put(CH, "Dawah Nederland");
         store.state().mode = InnerState.Mode.FULL;
         when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
@@ -1309,7 +1315,7 @@ class InnerCrawlerTest {
     void aShutdownInterruptInsideALuceneWriteIsNeitherASignalNorABackoff() throws Exception {
         // I1: a refresh waiting on the one merge thread gets stop()'s interrupt as Lucene's ThreadInterruptedException
         InnerIndex idx = mock(InnerIndex.class);
-        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        crawler = newCrawler(fetcher, idx);
         doAnswer(inv -> {
             crawler.stop();
             throw new ThreadInterruptedException(new InterruptedException());
@@ -1335,7 +1341,7 @@ class InnerCrawlerTest {
         // I2 / R10: an OutOfMemoryError in the 2-7 min boot rebuild must not leave the crawl dead until a restart
         InnerIndex idx = mock(InnerIndex.class);
         doThrow(new OutOfMemoryError("Java heap space")).when(idx).rebuild(any(), anyInt());
-        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        crawler = newCrawler(fetcher, idx);
         admitted.put(CH, "Dawah Nederland");
         store.state().mode = InnerState.Mode.FIRST_PASS;
         when(fetcher.first(eq(CH), anyString())).thenReturn(batch(1, items("lesson", 0, 1, "x"), false));
@@ -1348,7 +1354,7 @@ class InnerCrawlerTest {
     @Test
     void aRebuildEndedByShutdownIsNoError() throws Exception {
         InnerIndex idx = mock(InnerIndex.class);
-        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        crawler = newCrawler(fetcher, idx);
         doAnswer(inv -> {
             crawler.stop();
             throw new ClosedByInterruptException(); // stop()'s interrupt inside Lucene's I/O
@@ -1506,7 +1512,7 @@ class InnerCrawlerTest {
         when(idx.ready()).thenReturn(true);
         when(idx.docs()).thenThrow(new AlreadyClosedException("this ReferenceManager is closed"));
         when(idx.bytes()).thenThrow(new AlreadyClosedException("this Directory is closed"));
-        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        crawler = newCrawler(fetcher, idx);
         @SuppressWarnings("unchecked") Map<String, Object> racing = (Map<String, Object>) crawler.status().get("index");
         assertEquals(false, racing.get("ready"));
     }
@@ -1604,5 +1610,32 @@ class InnerCrawlerTest {
         verifyNoInteractions(fetcher);
         assertTrue(logs.list.stream().anyMatch(e -> e.getFormattedMessage().startsWith("inner-crawl daily:")
                 && e.getFormattedMessage().contains("memory=488 MiB")), "§10: the daily line carries the metric");
+    }
+
+    // ---- Task 28 fix round 1 -----------------------------------------------------------------------
+
+    @Test
+    void theSampleSubtractsTheIndexBytes() throws Exception {
+        InnerIndex idx = mock(InnerIndex.class);
+        when(idx.bytes()).thenReturn(100L << 20); // 100 MiB
+        crawler = newCrawler(fetcher, idx);
+        meminfo(3_000_000); // 2,929 MiB
+        step();
+        assertEquals(2_929 - 100, store.state().memory.get(0).availableMinusIndexMiB());
+    }
+
+    @Test
+    void aCapAtOrUnderTwoThousandIsNeverTouched() throws Exception {
+        // 1,000 pins `>` against `!=` (it would raise the cap); 2,000 pins it against `>=` (a needless rebuild)
+        for (int cap : new int[] {1_000, 2_000}) {
+            store.state().capPerSource = cap;
+            crawler = spy(newCrawler(fetcher, index));
+            meminfo(500_000);
+            for (int i = 0; i < 3; i++) hour();
+            assertEquals(cap == 1_000 ? 3 : 6, store.state().memory.size(), "three low samples taken");
+            assertEquals(cap, store.state().capPerSource);
+            verify(crawler, never()).requestRebuild();
+        }
+        assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.WARN));
     }
 }
