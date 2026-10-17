@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/exception/GlobalExceptionHandlerStatusTest.java
+  s_dbb6b1f3671904::t_06ff690b23c097 40-54,98-127
+  s_dbb6b1f3671904::t_280bce7e41c714 128
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_dbb6b1f3671904::t_4c914b99357c85 5-6,8,369-370,373-374,376,382-385,393,397-403
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1832eb4bd5f04ae1cd32c1f49afe62ddd778176d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
