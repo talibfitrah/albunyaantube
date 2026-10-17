@@ -387,6 +387,15 @@ struct AppContainerTests {
         #expect(Self.unlockedBytes(url) == bytes, "the live container deleted a store it could not read")
     }
 
+    /// Spec R20: a live container's resolver can ask for HD; a fixture's never does. A nil solver would keep the HD rung
+    /// dark in production and nothing else would notice.
+    @Test func theLiveContainerResolvesHDAndAFixtureNeverDoes() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+        #expect(AppContainer.live(storeURL: url, protectedDataAvailable: { true }).resolver.hasChallengeSolver)
+        #expect(!AppContainer.fake().resolver.hasChallengeSolver)
+    }
+
     /// Cubic P1: a background-events relaunch calls the AppDelegate hook and renders NO scene, so
     /// RootView's `.task` — the only other builder of `offlineManager` — never runs; without this
     /// wiring the background session/delegate is never recreated, queued delegate events go

@@ -16,12 +16,13 @@ import Testing
 /// view that is never shown and never plays video. What is banned is anything that names a YouTube
 /// player, in any letter case: the nocookie player host, the IFrame API script and its legacy
 /// `player_api` alias, the `YT.Player` constructor, an embed URL or `/embed/` path, the embed rung's
-/// view and its bundled page.
+/// view and its bundled page. Playback Phase 2 (spec R37): no on-device JavaScript engine either.
 @Suite(.perTest)
 struct NoYouTubePlayerTests {
     /// Lower case: matched case-insensitively (URL hosts and paths are not case-sensitive).
     private static let banned = [
         "youtube-nocookie", "iframe_api", "player_api", "yt.player", "/embed/", "youtube.com/embed", "embedrung", "embed.html",
+        "javascriptcore", "jscontext",
     ]
 
     /// `YouTubeURLParser` recognises `youtube-nocookie.com` as a host of the links a user PASTES into
@@ -84,6 +85,8 @@ struct NoYouTubePlayerTests {
         "Bundle.main.url(forResource: \"Embed.HTML\", withExtension: nil)",
         "IFRAME_API",
         "https://www.YouTube-NoCookie.com/x",
+        "import JavaScriptCore",
+        "let context = JSContext()",
     ])
     func theMatchCatchesEveryPlayerSpellingInAnyCase(_ planted: String) {
         #expect(!Self.offenders(in: planted, at: "FitrahTube/Planted.swift").isEmpty, "\(planted) must be caught")

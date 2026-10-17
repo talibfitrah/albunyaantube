@@ -653,6 +653,12 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         }
     }
 
+    /// Playback Phase 2 (spec R20): the backend's sts lookup and sig/n solve for the HD upgrade, over the signed
+    /// transport. A fixture container gets none, so its resolver never asks for HD (`AppContainerTests` pins both).
+    private var challengeSolver: (any ChallengeSolving)? {
+        isFixture ? nil : BackendChallengeSolver(transport: authorizedTransport, baseURL: apiBaseURL)
+    }
+
     /// InnerTubeKit composition root (CF-B3/CF-B4, `ios-app-plan.md` §6.1) -- resolves a videoId to
     /// a playable stream via `resolver`. `lazy`, same reasoning as the stores above: building it is
     /// cheap and side-effect-free (no network call happens until something resolves or refreshes).
@@ -660,7 +666,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         keyValueStore: UserDefaultsKeyValueStore(defaults: userDefaults),
         availabilityGate: BackendAvailabilityGate(baseURL: apiBaseURL),
         locale: Self.deviceLocale(),
-        remoteConfigURL: Self.debugRemoteConfigURL ?? AppConfig.innerTubeRemoteConfigURL
+        remoteConfigURL: Self.debugRemoteConfigURL ?? AppConfig.innerTubeRemoteConfigURL,
+        challengeSolver: challengeSolver
     )
     var resolver: StreamResolver { innerTube.resolver }
 
