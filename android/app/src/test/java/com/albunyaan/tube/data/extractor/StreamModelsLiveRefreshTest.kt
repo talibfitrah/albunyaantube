@@ -51,4 +51,13 @@ class StreamModelsLiveRefreshTest {
         assertEquals(0L, streams.timeUntilLiveRefreshMs(elapsed + 7 * 60 * minute))
         assertEquals(21_586_000L - 10 * minute, streams.timeUntilLiveRefreshMs(elapsed))
     }
+
+    @Test fun `the debug override is floored at thirty seconds`() {
+        assertEquals(120_000L, ResolvedStreams.debugLiveRefreshOverrideMs("120000"))
+        assertEquals(30_000L, ResolvedStreams.debugLiveRefreshOverrideMs("120"))   // seconds-for-ms typo
+        assertEquals(30_000L, ResolvedStreams.debugLiveRefreshOverrideMs("0"))
+        assertEquals(30_000L, ResolvedStreams.debugLiveRefreshOverrideMs("-5"))
+        assertNull(ResolvedStreams.debugLiveRefreshOverrideMs(null))
+        assertNull(ResolvedStreams.debugLiveRefreshOverrideMs("soon"))
+    }
 }

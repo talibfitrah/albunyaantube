@@ -424,7 +424,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             // L2/L3 hooks: adb shell settings put global fitrah_live_refresh_ms 120000 (delete it after the leg).
             val resolver = requireContext().contentResolver
             viewModel.debugLiveRefreshOverrideMs =
-                android.provider.Settings.Global.getString(resolver, "fitrah_live_refresh_ms")?.toLongOrNull()
+                ResolvedStreams.debugLiveRefreshOverrideMs(android.provider.Settings.Global.getString(resolver, "fitrah_live_refresh_ms"))
         }
 
         when {

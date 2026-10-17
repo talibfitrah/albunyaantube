@@ -136,6 +136,12 @@ data class ResolvedStreams(
         const val LIVE_REFRESH_FALLBACK_MS = (5 * 60 + 50) * 60 * 1000L
         private val EXPIRE = Regex("/expire/(\\d+)/")
 
+        /**
+         * DEBUG `fitrah_live_refresh_ms`, floored at 30 s: 0, a negative or a seconds typo (`120`) would
+         * otherwise loop a full extraction forever and trip the bot check.
+         */
+        fun debugLiveRefreshOverrideMs(raw: String?): Long? = raw?.toLongOrNull()?.coerceAtLeast(30_000L)
+
         /** Timebase version for urlGeneratedAt timestamps. */
         const val URL_TIMEBASE_VERSION = 1
     }
