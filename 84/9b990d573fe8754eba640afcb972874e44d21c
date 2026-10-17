@@ -1,0 +1,49 @@
+backend/src/test/resources/live-tab/zad-1.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayTest.java
+  s_dbb6b1f3671904::t_ba418e61fbb079 396
+backend/src/main/java/com/albunyaan/tube/service/YouTubeOEmbedClient.java
+  s_dbb6b1f3671904::t_c8aa692cb2c9c9 20
+  s_dbb6b1f3671904::t_45fa0b5f315a81 86-124
+backend/src/main/java/com/albunyaan/tube/service/LiveTabReader.java
+  s_dbb6b1f3671904::t_21a3dd537bb0f5 79,83-84
+  s_dbb6b1f3671904::t_765fed30f5002b 1-52,54-78,80-82,85-97
+  s_dbb6b1f3671904::t_b333aca261d04d 53
+backend/src/main/java/com/albunyaan/tube/service/LiveTabResult.java
+  s_dbb6b1f3671904::t_e7a6b1614b7601 1-37
+backend/src/test/resources/live-tab/control.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/test/resources/live-tab/zad-2.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/test/java/com/albunyaan/tube/service/YouTubeOEmbedClientTest.java
+  s_dbb6b1f3671904::t_5a92ae2cd18c17 76-88
+backend/src/test/resources/live-tab/zad-3.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/test/resources/live-tab/quran.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/test/java/com/albunyaan/tube/service/LiveTabReaderTest.java
+  s_dbb6b1f3671904::t_ca41285763e31e 49-51
+  s_dbb6b1f3671904::t_7107e8b7dd1340 33
+  s_dbb6b1f3671904::t_c61cec9911b2b1 1-32,34-48,52-194
+backend/src/test/resources/live-tab/one4kids.json
+  s_dbb6b1f3671904::t_bd5fdd008fc36a 1
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_dbb6b1f3671904::t_9451487e8d3f60 14,172,177,187,429-442
+  s_dbb6b1f3671904::t_151e903d0dfd65 443
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "849b990d573fe8754eba640afcb972874e44d21c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
