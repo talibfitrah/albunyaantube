@@ -1173,8 +1173,9 @@ public class ChannelOrchestrator {
             return null;
         }
         PlaylistDetailsDto dto = mapToPlaylistDetailsDto(info);
-        // Interactive single add only: when mapping found no usable thumbnail (no items to borrow one
-        // from), ask oEmbed. Batch paths never do, so they stay inside the throttle and breaker.
+        // Admin JSON import only (SimpleImportService, real run and dry run): when mapping found no usable
+        // thumbnail (no items to borrow one from), ask oEmbed. ponytail: one unthrottled request per such
+        // playlist in a file, admin-initiated and rare; the scheduled and bulk paths never call it.
         if (oEmbedClient != null && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
             oEmbedClient.playlistThumbnailUrl(youtubeId).ifPresent(dto::setThumbnailUrl);
         }

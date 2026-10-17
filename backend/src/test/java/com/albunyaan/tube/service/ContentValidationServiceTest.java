@@ -407,6 +407,39 @@ class ContentValidationServiceTest {
         }
 
         @Test
+        @DisplayName("Only broken rows a fetch could heal jump the queue; empty and ERROR rows keep their oldest-first turn")
+        void validatePlaylists_onlyHealableBrokenRowsJumpTheQueue() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            List<Playlist> firestoreOrder = new ArrayList<>();
+            List<String> expectedFill = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                firestoreOrder.add(playlistAt("PLhealthyOld" + i, GOOD_THUMB, base.plusSeconds(i)));
+            }
+            for (int i = 0; i < 11; i++) {
+                Playlist p = playlistAt(String.format("PLcantHeal%02d", i), PLC_THUMB, base.plusSeconds(10 + i));
+                if (i % 2 == 0) {
+                    p.setItemCount(0);                                  // empty: nothing to borrow from
+                } else {
+                    p.setValidationStatus(ValidationStatus.ERROR);      // keeps failing to fetch
+                }
+                firestoreOrder.add(p);
+            }
+            for (int i = 0; i < 10; i++) {
+                firestoreOrder.add(playlistAt("PLhealthyNew" + i, GOOD_THUMB, base.plusSeconds(30 + i)));
+            }
+            firestoreOrder.forEach(p -> expectedFill.add(p.getYoutubeId()));
+            Playlist healable = playlistAt("PLhealable", PLC_THUMB, Instant.now().minus(2, ChronoUnit.DAYS));
+            healable.setItemCount(12);
+            firestoreOrder.add(healable);
+            stubApprovedPlaylists(firestoreOrder);
+
+            List<String> ids = pickedIds(20);
+
+            assertEquals("PLhealable", ids.get(0));
+            assertEquals(expectedFill.subList(0, 19), ids.subList(1, 20), "the rest fill oldest-first");
+        }
+
+        @Test
         @DisplayName("A broken row validated within 24h is still skipped")
         void validatePlaylists_brokenRowRespects24hSkip() throws Exception {
             stubApprovedPlaylists(List.of(

@@ -853,10 +853,13 @@ public class ContentValidationService {
                 ))
                 .collect(Collectors.toList());
 
-        // Broken stored thumbnails jump the queue, capped at half the run so rows that never heal (empty,
-        // always ERROR) cannot starve routine checks and archiving; the rest fill oldest-first.
+        // Broken stored thumbnails a fetch could heal jump the queue, capped at half the run. Known-empty
+        // (itemCount 0: nothing to borrow) and ERROR rows cannot heal, so they keep their oldest-first turn
+        // instead of winning a slot every day; an ERROR row that later validates with items heals then.
         List<Playlist> result = eligible.stream()
-                .filter(p -> ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl()))
+                .filter(p -> ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl())
+                        && !Integer.valueOf(0).equals(p.getItemCount())
+                        && p.getValidationStatus() != ValidationStatus.ERROR)
                 .limit(limit / 2)
                 .collect(Collectors.toCollection(ArrayList::new));
         eligible.stream()
