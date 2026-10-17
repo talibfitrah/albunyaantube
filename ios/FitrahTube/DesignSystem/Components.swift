@@ -51,13 +51,18 @@ struct RemoteImage: View {
     /// 1.0.4 I9: a saved item's own copy of this image (`OfflineStorage.thumbnailName`), read instead
     /// of the network -- so it is there offline.
     var savedCopy: URL?
+    /// Owner issue 3: an SF Symbol drawn on the skeleton once it is clear no picture is coming (no URL, a failed or
+    /// refused load). nil keeps the plain skeleton -- every caller but the playlist ones.
+    var missingSymbol: String?
 
     @State private var image: UIImage?
+    @State private var missing = false
 
-    init(url: URL?, contentMode: ContentMode = .fill, savedCopy: URL? = nil) {
+    init(url: URL?, contentMode: ContentMode = .fill, savedCopy: URL? = nil, missingSymbol: String? = nil) {
         self.url = url
         self.contentMode = contentMode
         self.savedCopy = savedCopy
+        self.missingSymbol = missingSymbol
     }
 
     /// Bounded (gate cso-F4 / A-M6): with neither limit set, decoded bitmaps accumulated until the
@@ -111,7 +116,11 @@ struct RemoteImage: View {
             } else if let image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
-                Color.skeleton
+                Color.skeleton.overlay {
+                    if missing, let missingSymbol {
+                        Image(systemName: missingSymbol).font(.title2).foregroundStyle(Color.textSecondary).accessibilityHidden(true)
+                    }
+                }
             }
         }
         .clipped()
@@ -119,6 +128,7 @@ struct RemoteImage: View {
     }
 
     private func load() async {
+        missing = false // a reused cell or a new URL starts clean
         // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
         if let savedCopy, let cached = Self.cache.object(forKey: savedCopy as NSURL) { image = cached; return }
         if let url, let cached = Self.cache.object(forKey: url as NSURL) {
@@ -133,6 +143,7 @@ struct RemoteImage: View {
         // image the replacement task had already committed for the NEW url.
         guard !Task.isCancelled else { return }
         image = loaded
+        missing = loaded == nil
     }
 
     /// The one image fetch in the app, shared with `BackgroundPlaybackController`'s Now Playing
@@ -159,7 +170,9 @@ struct RemoteImage: View {
                 return copy
             }
         }
-        guard let url, url.scheme?.lowercased() == "https" else { return nil }
+        // Owner issue 3: YouTube's grey "no thumbnail" image is no picture (backend `ThumbnailUrls.isBrokenPlaylistThumbnail`);
+        // checked before the cache, so a copy cached earlier never comes back.
+        guard let url, url.scheme?.lowercased() == "https", !url.path.contains("/img/no_thumbnail") else { return nil }
         if let cached = cache.object(forKey: url as NSURL) {
             if let savedCopy { backfill(cached, to: savedCopy) }
             return cached
@@ -197,10 +210,10 @@ struct RemoteImage: View {
     /// are read, so a declared-oversize length aborts here with nothing downloaded. A chunked or
     /// absent length (`expectedContentLength == -1`) falls through to the loop, which enforces the
     /// same cap against the bytes actually received -- also catching a length header that
-    /// understated the real body. The MIME check refuses non-images before either.
+    /// understated the real body. `isImage` refuses a non-2xx or a non-image before either.
     private static func boundedImageData(from url: URL) async throws -> Data? {
         let (bytes, response) = try await session.bytes(for: URLRequest(url: url))
-        guard (response as? HTTPURLResponse)?.mimeType?.hasPrefix("image/") == true else { return nil }
+        guard isImage(response) else { return nil }
         guard response.expectedContentLength == -1 || response.expectedContentLength <= Int64(maxImageBytes) else { return nil }
         var data = Data()
         for try await byte in bytes {
@@ -208,6 +221,13 @@ struct RemoteImage: View {
             if data.count > maxImageBytes { return nil }
         }
         return data
+    }
+
+    /// Owner issue 3 (b): a 404 or 403 is no picture even when it carries one: i.ytimg answers a missing `/vi/`
+    /// thumbnail with a grey JPEG and a 404, which used to be decoded, cached and shown. Refused before any body byte is read.
+    static func isImage(_ response: URLResponse) -> Bool {
+        guard let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode) && http.mimeType?.hasPrefix("image/") == true
     }
 }
 
@@ -306,7 +326,7 @@ struct MediaCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: item.type == .playlist ? .bottomLeading : .bottomTrailing) {
-                    RemoteImage(url: item.thumbnailURL)
+                    RemoteImage(url: item.thumbnailURL, missingSymbol: item.type == .playlist ? Tab.playlists.symbolName : nil)
                     overlayChip.padding(Spacing.sm)
                 }
                 .frame(width: width, height: width * 9 / 16)
@@ -602,7 +622,7 @@ struct PlaylistRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: 0) {
-                RemoteImage(url: item.thumbnailURL)
+                RemoteImage(url: item.thumbnailURL, missingSymbol: Tab.playlists.symbolName)
                     .frame(width: thumbSize, height: thumbSize)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
                 VStack(alignment: .leading, spacing: Spacing.xs) {

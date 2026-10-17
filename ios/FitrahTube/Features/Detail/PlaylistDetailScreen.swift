@@ -74,7 +74,7 @@ struct PlaylistDetailScreen: View {
         return ZStack {
             RemoteImage(url: url).blur(radius: 20).opacity(0.6)
             Color.heroOverlay
-            RemoteImage(url: url, contentMode: .fit)
+            RemoteImage(url: url, contentMode: .fit, missingSymbol: Tab.playlists.symbolName)
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .frame(maxWidth: Size.playerMaxWidth(widthClass) ?? .infinity)
                 .padding(.top, topInset)
