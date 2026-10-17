@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.NewPipeConfiguration;
 import com.albunyaan.tube.config.ValidationProperties;
+import com.albunyaan.tube.search.CrawlPacer;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
 import okhttp3.Protocol;
@@ -203,7 +204,7 @@ class LiveTabReaderTest {
         }).build();
         NewPipeConfiguration config = new NewPipeConfiguration();
         ReflectionTestUtils.setField(config, "userAgent", "test-agent");
-        NewPipe.init(config.newPipeDownloader(http));
+        NewPipe.init(config.newPipeDownloader(http, mock(CrawlPacer.class)));
     }
 
     @Test

@@ -7,6 +7,7 @@ import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamItemDto;
+import com.albunyaan.tube.search.CrawlPacer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -937,7 +938,7 @@ class ChannelOrchestratorTest {
             }).build();
             NewPipeConfiguration config = new NewPipeConfiguration();
             ReflectionTestUtils.setField(config, "userAgent", "test-agent");
-            return config.newPipeDownloader(http);
+            return config.newPipeDownloader(http, mock(CrawlPacer.class));
         }
 
         @Test
