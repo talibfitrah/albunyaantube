@@ -15,6 +15,7 @@ import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.contains;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -83,5 +84,39 @@ class LiveCategoryServingIT extends BaseIntegrationTest {
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.data[0].items[*].id", contains("it2sunnah01", "it2kids0001")))
                 .andExpect(jsonPath("$.data[0].totalContentCount").value(2));
+    }
+
+    // ---- IT5: the live endpoint the 1.0.4 apps use for switching ----
+
+    @Test
+    void theLiveEndpointServesTheFilteredLivesFromMemory() throws Exception {
+        mvc.perform(get("/api/v1/live/channels/" + KIDS))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", org.hamcrest.Matchers.containsString("max-age=15")))
+                .andExpect(jsonPath("$.channelId").value(KIDS))
+                .andExpect(jsonPath("$.status").value("LIVE"))
+                .andExpect(jsonPath("$.lives[*].id", contains("it2kids0001")));        // R11: the REJECTED doc is gone
+
+        // No Firestore read per call: the answer survives the channel docs disappearing.
+        com.albunyaan.tube.util.FirestoreTestHelper.clearCollections(firestore, "channels");
+        mvc.perform(get("/api/v1/live/channels/" + KIDS)).andExpect(status().isOk());
+    }
+
+    @Test
+    void anOfflineEntryAnswersOfflineWithNoLives() throws Exception {
+        LiveChannelState off = LiveChannelState.unknown(SUNNAH);
+        off.setStatus(LiveChannelState.OFFLINE);
+        live.loadStates(List.of(off, liveState(KIDS, "it2kids0001")));
+        poller.refreshView();
+
+        mvc.perform(get("/api/v1/live/channels/" + SUNNAH))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.status").value("OFFLINE"))
+                .andExpect(jsonPath("$.lives").isEmpty());
+    }
+
+    @Test
+    void aChannelThatIsNoLiveEntryIs404() throws Exception {
+        mvc.perform(get("/api/v1/live/channels/UCnotAnEntry000000000000")).andExpect(status().isNotFound());
     }
 }
