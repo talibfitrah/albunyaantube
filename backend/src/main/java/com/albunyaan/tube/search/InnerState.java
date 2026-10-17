@@ -36,6 +36,7 @@ public class InnerState {
     public ConcurrentHashMap<String, Source> sources = new ConcurrentHashMap<>();
 
     /** The crawler's own breaker (R12, R13): never the shared YouTubeCircuitBreaker. */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Breaker {
         public long intervalMs = 30_000; // CrawlPacer.FIRST_PASS_INTERVAL_MS
         public long pausedUntil;
@@ -49,6 +50,7 @@ public class InnerState {
     public record Memory(long at, long availableMinusIndexMiB) {}
 
     /** One admitted channel's uploads or one admitted playlist (spec §6.3). */
+    @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Source {
         public String hl;
         public long count = -1;

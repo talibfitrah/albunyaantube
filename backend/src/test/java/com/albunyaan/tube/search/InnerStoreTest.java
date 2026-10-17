@@ -9,12 +9,15 @@ import org.junit.jupiter.api.io.TempDir;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.nio.file.FileSystems;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.nio.file.attribute.PosixFilePermissions;
 import java.util.TreeMap;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.junit.jupiter.api.Assumptions.assumeFalse;
+import static org.junit.jupiter.api.Assumptions.assumeTrue;
 
 /** Spec R26: one property, empty = off; R15: state.json is atomic and survives a restart; R25: the STOP file. */
 class InnerStoreTest {
@@ -109,6 +112,8 @@ class InnerStoreTest {
 
     @Test
     void anUnwritableDirTurnsTheFeatureOff() throws IOException {
+        assumeTrue(FileSystems.getDefault().supportedFileAttributeViews().contains("posix"));
+        assumeFalse("root".equals(System.getProperty("user.name")));
         Path dir = Files.createDirectories(tmp.resolve("locked"));
         Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("r-xr-xr-x"));
         try {
@@ -117,5 +122,34 @@ class InnerStoreTest {
         } finally {
             Files.setPosixFilePermissions(dir, PosixFilePermissions.fromString("rwxr-xr-x"));
         }
+    }
+
+    @Test
+    void unknownNestedFieldsFromANewerBuildStillLoad() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("inner"));
+        Files.writeString(dir.resolve("state.json"),
+                "{\"breaker\":{\"intervalMs\":60000,\"future\":1},\"sources\":{\"a\":{\"hl\":\"ar\",\"future\":2}}}");
+        InnerState s = new InnerStore(dir.toString()).state();
+        assertEquals(60_000, s.breaker.intervalMs);
+        assertEquals("ar", s.sources.get("a").hl);
+    }
+
+    @Test
+    void aCorruptStateIsKeptBesideTheNewOne() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("inner"));
+        Files.writeString(dir.resolve("state.json"), "{not json");
+        new InnerStore(dir.toString()).save();
+        assertEquals("{not json", Files.readString(dir.resolve("state.json.corrupt")));
+    }
+
+    @Test
+    void aNullFileOrNullPartsLoadAsDefaults() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("inner"));
+        Files.writeString(dir.resolve("state.json"), "null");
+        assertEquals(InnerState.Mode.OFF, new InnerStore(dir.toString()).state().mode);
+        Files.writeString(dir.resolve("state.json"), "{\"sources\":null,\"breaker\":null}");
+        InnerState s = new InnerStore(dir.toString()).state();
+        assertNotNull(s.sources);
+        assertNotNull(s.breaker);
     }
 }

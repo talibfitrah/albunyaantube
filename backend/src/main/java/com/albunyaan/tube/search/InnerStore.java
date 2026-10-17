@@ -11,6 +11,9 @@ import java.nio.ByteBuffer;
 import java.nio.channels.FileChannel;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.util.ArrayList;
+import java.util.TreeMap;
+import java.util.concurrent.ConcurrentHashMap;
 
 import static java.nio.file.StandardCopyOption.ATOMIC_MOVE;
 import static java.nio.file.StandardCopyOption.REPLACE_EXISTING;
@@ -87,9 +90,22 @@ public class InnerStore {
     private static InnerState load(Path file) {
         if (!Files.exists(file)) return new InnerState();
         try {
-            return JSON.readValue(file.toFile(), InnerState.class);
+            InnerState s = JSON.readValue(file.toFile(), InnerState.class);
+            if (s == null) s = new InnerState(); // a literal `null` file
+            if (s.breaker == null) s.breaker = new InnerState.Breaker();
+            if (s.sources == null) s.sources = new ConcurrentHashMap<>();
+            if (s.signals == null) s.signals = new ArrayList<>();
+            if (s.requestsByDay == null) s.requestsByDay = new TreeMap<>();
+            if (s.memory == null) s.memory = new ArrayList<>();
+            return s;
         } catch (IOException e) {
-            log.error("inner state {} unreadable; starting from the defaults (mode OFF)", file, e);
+            Path kept = file.resolveSibling("state.json.corrupt");
+            try {
+                Files.move(file, kept, REPLACE_EXISTING);
+            } catch (IOException m) {
+                log.error("could not keep corrupt state as {}", kept, m);
+            }
+            log.error("inner state {} unreadable; kept as {}; starting from the defaults (mode OFF)", file, kept, e);
             return new InnerState();
         }
     }
