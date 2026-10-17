@@ -1,0 +1,24 @@
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryGuardIT.java
+  s_dbb6b1f3671904::t_d35255b6ce31b7 1-246
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_dbb6b1f3671904::t_6fc2b73ee308a2 57-59
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_dbb6b1f3671904::t_70e76ec3a843fe 937,992,994
+  s_dbb6b1f3671904::t_ca36c8f050c127 9,70,80-81,91,219-220,284-285,334-336,372-373,551-552,600-601,643-645,680-681,938-944,993,995-997,1040-1046,1103-1107
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "830bb004331a194a1fc8cd2a717cbc808a9bda1e",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
