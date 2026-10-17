@@ -611,6 +611,15 @@ import Testing
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
     }
 
+    @Test func aLiveResolveCarriesIsLiveNow() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-live")])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        #expect(resolved.isLiveNow)
+    }
+
     /// Review Focus 2. A live stream has no itag 18: after its rung-1 stream fails, the walk must wrap
     /// back to VISIONOS as the last resort, not end in an error with nothing left to try.
     @Test func aDemotedLiveStreamWrapsBackToTheFailedRung() async throws {

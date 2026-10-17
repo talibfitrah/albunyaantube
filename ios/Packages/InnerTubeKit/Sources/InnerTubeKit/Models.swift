@@ -65,13 +65,17 @@ public struct Resolved: Sendable {
     public var userAgent: String
     public var resolvedAt: Date
     public var expiresAt: Date?
+    /// Spec §9.1 / RV I11: `videoDetails.isLive == true` on this resolve. The `.hls` case's `isLive` falls back to
+    /// the sticky `isLiveContent`, which is also true for an ended broadcast that can still be extracted.
+    public var isLiveNow: Bool
 
-    public init(stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?) {
+    public init(stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?, isLiveNow: Bool = false) {
         self.stream = stream
         self.client = client
         self.userAgent = userAgent
         self.resolvedAt = resolvedAt
         self.expiresAt = expiresAt
+        self.isLiveNow = isLiveNow
     }
 
     public func isExpired(now: Date) -> Bool {

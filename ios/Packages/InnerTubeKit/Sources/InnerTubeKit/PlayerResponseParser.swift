@@ -18,6 +18,7 @@ public struct StreamingData: Sendable, Equatable {
     public var itag140URL: URL?
     public var expiresInSeconds: Int?
     public var isLive: Bool
+    public var isLiveNow: Bool
     public var captionTracks: [CaptionTrack]
 
     public init(
@@ -26,6 +27,7 @@ public struct StreamingData: Sendable, Equatable {
         itag140URL: URL? = nil,
         expiresInSeconds: Int? = nil,
         isLive: Bool = false,
+        isLiveNow: Bool = false,
         captionTracks: [CaptionTrack] = []
     ) {
         self.hlsManifestURL = hlsManifestURL
@@ -33,6 +35,7 @@ public struct StreamingData: Sendable, Equatable {
         self.itag140URL = itag140URL
         self.expiresInSeconds = expiresInSeconds
         self.isLive = isLive
+        self.isLiveNow = isLiveNow
         self.captionTracks = captionTracks
     }
 }
@@ -104,6 +107,7 @@ public struct PlayerResponseParser: Sendable {
             itag140URL: url(forItag: 140, in: adaptive) ?? url(forItag: 140, in: formats),
             expiresInSeconds: wire.streamingData?.expiresInSeconds.flatMap(Int.init),
             isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
+            isLiveNow: wire.videoDetails?.isLive == true,
             captionTracks: captionTracks(from: wire.captions)
         )
     }

@@ -332,7 +332,8 @@ public actor StreamResolver {
             if expectHLS, let hls = streaming.hlsManifestURL {
                 return .resolved(Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
-                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
+                    isLiveNow: streaming.isLiveNow))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
                 return .resolved(Resolved(

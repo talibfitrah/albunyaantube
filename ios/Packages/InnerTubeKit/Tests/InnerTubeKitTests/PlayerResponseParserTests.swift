@@ -378,6 +378,20 @@ import Testing
         }
     }
 
+    /// Spec §9.1 / RV I11: only `videoDetails.isLive == true` is live NOW. An ended broadcast that can still be
+    /// extracted (pqC-1yfFvu8's shape: `isLive` absent, `isLiveContent` true) keeps the sticky `isLive` but is not live now.
+    @Test func isLiveNowNeedsVideoDetailsIsLive() throws {
+        let ended = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/api/manifest/hls_variant/x.m3u8","expiresInSeconds":"21540"},"videoDetails":{"isLiveContent":true}}"#.utf8)
+        guard case .ok(let endedData) = try parser.parse(ended).playability else { Issue.record("expected .ok"); return }
+        #expect(endedData.isLive)
+        #expect(!endedData.isLiveNow)
+
+        guard case .ok(let liveData) = try parser.parse(try loadFixture("player-live")).playability else {
+            Issue.record("expected .ok"); return
+        }
+        #expect(liveData.isLiveNow)
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)
