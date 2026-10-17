@@ -5,7 +5,7 @@ import com.albunyaan.tube.dto.CategoryDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.dto.HomeCategoryDto;
-import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.dto.PublicDetails;
 import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
@@ -145,7 +145,7 @@ public class PublicContentController {
      */
     @GetMapping("/channels/{channelId}")
     public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return ResponseEntity.ok(contentService.getChannelDetails(channelId));
+        return ResponseEntity.ok(PublicDetails.of(contentService.getChannelDetails(channelId)));
     }
 
     /**
@@ -156,22 +156,18 @@ public class PublicContentController {
      */
     @GetMapping("/playlists/{playlistId}")
     public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return ResponseEntity.ok(contentService.getPlaylistDetails(playlistId));
+        return ResponseEntity.ok(PublicDetails.of(contentService.getPlaylistDetails(playlistId)));
     }
 
     /**
      * Get video details by ID.
      *
      * @param videoId YouTube video ID
-     * @return Video details including metadata and approval status
+     * @return Public video details, including the effective offlineAllowed
      */
     @GetMapping("/videos/{videoId}")
     public ResponseEntity<?> getVideoDetails(@PathVariable String videoId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Video video = contentService.getVideoDetails(videoId);
-        // Serve the EFFECTIVE offline permission, never the raw never-toggled null. A fresh
-        // read that this endpoint never saves back, so the stored flag stays untouched.
-        video.setOfflineAllowed(video.allowsOffline());
-        return ResponseEntity.ok(video);
+        return ResponseEntity.ok(PublicDetails.of(contentService.getVideoDetails(videoId)));
     }
 
     /**

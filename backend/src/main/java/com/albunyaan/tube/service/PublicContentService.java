@@ -914,7 +914,7 @@ public class PublicContentService {
         );
     }
 
-    public Object getChannelDetails(String channelId) throws ExecutionException, InterruptedException, TimeoutException {
+    public Channel getChannelDetails(String channelId) throws ExecutionException, InterruptedException, TimeoutException {
         Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
 
@@ -942,7 +942,7 @@ public class PublicContentService {
         return channel;
     }
 
-    public Object getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, TimeoutException {
+    public Playlist getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, TimeoutException {
         Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
 
