@@ -402,6 +402,52 @@ paths:
               schema:
                 type: integer
 
+  /v1/titles:
+    get:
+      summary: Original titles for video ids (the apps' channel and playlist rows)
+      description: |
+        The titles the server knows for up to 50 video ids: the catalog's, else the one stored for an approved
+        channel or playlist that lists the video. Ids it does not know are left out; clients keep their own
+        title for those. No YouTube request is made.
+      operationId: getVideoTitles
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 50
+            items:
+              type: string
+              pattern: '^[A-Za-z0-9_-]{11}$'
+      responses:
+        '200':
+          description: id -> title, for the ids the server knows
+          headers:
+            Cache-Control:
+              description: public, max-age=3600
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        '400':
+          description: No ids, more than 50, or an id that is not 11 characters of [A-Za-z0-9_-]
+        '503':
+          description: The search index is still building after a server start; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              schema:
+                type: integer
+
   /v1/reports:
     post:
       summary: Submit a content report

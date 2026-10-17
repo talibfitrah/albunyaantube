@@ -65,6 +65,7 @@ import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Locale;
@@ -520,6 +521,9 @@ public class SearchIndex {
         long innerMs = -1;
         int innerHits;
         boolean innerTimedOut;
+        long titlesMs = -1;
+        int titles;
+        boolean titlesTimedOut;
 
         String line(long totalMs, int want, String type) {
             StringBuilder tiers = new StringBuilder();
@@ -530,7 +534,8 @@ public class SearchIndex {
             }
             return "slow search: ms=" + totalMs + " tokens=" + tokens + " want=" + want + " type=" + type
                     + " tiers=" + tiers + " loaded=" + loaded + " hidden=" + hidden
-                    + (innerMs < 0 ? "" : " inner=" + innerMs + "ms:" + innerHits + (innerTimedOut ? ":timeout" : ""));
+                    + (innerMs < 0 ? "" : " inner=" + innerMs + "ms:" + innerHits + (innerTimedOut ? ":timeout" : ""))
+                    + (titlesMs < 0 ? "" : " titles=" + titlesMs + "ms:" + titles + (titlesTimedOut ? ":timeout" : ""));
         }
     }
 
@@ -565,7 +570,8 @@ public class SearchIndex {
      * items and the header stay today's, and every curated tier ≤ 2 hit stays ahead of every inner hit. Never for
      * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Then, on every search while
      * serving, broad ones too, Q17 on the answer. Any failure of the inner work (an inner index closing under it, at a
-     * rebuild swap or shutdown) answers C: it never fails a search.
+     * rebuild swap or shutdown) answers C: it never fails a search. A failure of the Q17 swap alone keeps the merge; the
+     * titles not yet swapped stay stored.
      */
     private Hits withInner(Ladder today, String type, int want, Trace trace) {
         Hits plain = new Hits(today.items(), today.match());
@@ -579,9 +585,12 @@ public class SearchIndex {
                 Set<String> todays = new HashSet<>();
                 for (ContentItemDto item : today.items()) todays.add(item.getId());
                 Hits answer = merged(shared, today, todays, want, trace);
-                // In C only a stored stream names a source; inner hits never share an id with C.
-                originalTitles(shared, answer.items().stream()
-                        .filter(item -> item.getSourceType() != null && todays.contains(item.getId())).toList());
+                try { // In C only a stored stream names a source; inner hits never share an id with C.
+                    originalTitles(shared, answer.items().stream()
+                            .filter(item -> item.getSourceType() != null && todays.contains(item.getId())).toList(), trace);
+                } catch (IOException | RuntimeException e) {
+                    log.warn("inner titles failed ({}); keeping the stored titles", e.getClass().getName()); // the class only: see below
+                }
                 return answer;
             } finally {
                 inner.release(shared);
@@ -686,18 +695,28 @@ public class SearchIndex {
     /**
      * Q17: each stored stream shown takes its inner copy's title, which is in its source's own `hl` (the stored titles came
      * from `hl=en` lists, so they are often machine-translated), and keeps its place. Its own budget, checked before each
-     * lookup: past it (a cold page cache, say) the rest keep their stored titles.
+     * lookup: past it (a cold page cache, say) the rest keep their stored titles. The slow line shows its ms, the titles
+     * it swapped and whether it ran out.
      */
-    private void originalTitles(IndexSearcher shared, List<ContentItemDto> stored) throws IOException {
+    private void originalTitles(IndexSearcher shared, List<ContentItemDto> stored, Trace trace) throws IOException {
         if (stored.isEmpty()) return;
+        long started = System.nanoTime();
         QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
         IndexSearcher searcher = new IndexSearcher(shared.getIndexReader());
         searcher.setTimeout(timeout);
         for (ContentItemDto item : stored) {
-            if (timeout.shouldExit()) return;
+            if (timeout.shouldExit()) {
+                trace.titlesTimedOut = true;
+                break;
+            }
             String title = innerTitle(searcher, item.getId(), item.getSourceType().toLowerCase(Locale.ROOT) + ":" + item.getSourceId());
-            if (title != null) item.setTitle(title);
+            if (title != null) {
+                item.setTitle(title);
+                trace.titles++;
+            }
         }
+        if (searcher.timedOut()) trace.titlesTimedOut = true; // Lucene cut a lookup short
+        trace.titlesMs = (System.nanoTime() - started) / 1_000_000;
     }
 
     /** A video's copies looked at for its inner title; one video is rarely listed by more sources. */
@@ -813,6 +832,59 @@ public class SearchIndex {
             searchers.release(searcher);
         }
         return out.isEmpty() ? Hits.NONE : new Hits(out, "exact");
+    }
+
+    /**
+     * Inner-search Task 24b (owner issue 1): original titles for the ids the apps list on channel and playlist pages,
+     * whose own lists come back machine-translated under hl=en.
+     * - The catalog's first: validators refresh Video.title from StreamInfo.getName(), which NewPipe 0.26.5 reads from
+     *   playerResponse.videoDetails.title.
+     * - Then the inner index's (each source's own hl, R21), while it serves, by the search's own rule ({@link #innerTitle})
+     *   and within the title pass's budget, checked per id: past it (a cold page cache) the rest are unknown ids.
+     * - Never a stored stream's: the apps pushed those from their hl=en lists.
+     * No Firestore read, no YouTube call. The map holds catalog titles, then inner ones, each in request order.
+     */
+    public Map<String, String> titles(Collection<String> ids) throws IOException {
+        awaitReady();
+        Map<String, String> out = new LinkedHashMap<>();
+        IndexSearcher searcher = searchers.acquire();
+        try {
+            StoredFields fields = searcher.storedFields();
+            for (String id : ids) {
+                Query catalogVideo = new BooleanQuery.Builder()
+                        .add(new TermQuery(new Term("id", id)), Occur.FILTER)
+                        .add(new TermQuery(new Term("source", "CATALOG")), Occur.FILTER)
+                        .add(new TermQuery(new Term("type", "VIDEO")), Occur.FILTER)
+                        .build();
+                ScoreDoc[] hit = searcher.search(catalogVideo, 1).scoreDocs;
+                if (hit.length == 0) continue;
+                String title = dto(fields.document(hit[0].doc)).getTitle();
+                if (title != null && !title.isBlank()) out.put(id, title);
+            }
+        } finally {
+            searchers.release(searcher);
+        }
+        if (inner == null || !inner.serving()) return out;
+        try {
+            IndexSearcher shared = inner.acquire();
+            if (shared == null) return out;
+            try {
+                QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
+                IndexSearcher budgeted = new IndexSearcher(shared.getIndexReader());
+                budgeted.setTimeout(timeout);
+                for (String id : ids) {
+                    if (out.containsKey(id)) continue;
+                    if (timeout.shouldExit()) break;
+                    String title = innerTitle(budgeted, id, null);
+                    if (title != null) out.put(id, title);
+                }
+            } finally {
+                inner.release(shared);
+            }
+        } catch (IOException | RuntimeException e) { // AlreadyClosedException included: as /search, never a 500 for the inner index
+            log.warn("titles: inner lookup failed ({}); answering the catalog's", e.getClass().getName()); // the class only
+        }
+        return out;
     }
 
     /** API `type` (CHANNELS/PLAYLISTS/VIDEOS) -> index type; anything else (null, ALL, HOME) -> all types. */

@@ -1038,6 +1038,11 @@ public class PublicContentService {
         return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, limit);
     }
 
+    /** Task 24b: original titles for the apps' channel and playlist rows (SearchIndex.titles); no Firestore read. */
+    public Map<String, String> titles(List<String> ids) throws IOException {
+        return searchIndex.titles(ids);
+    }
+
     /** What `/content?type=X&q=` returns: the page plus the `X-Search-Match` tier. */
     public record SearchPage(CursorPageDto<ContentItemDto> page, String match) {}
 

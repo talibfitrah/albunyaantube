@@ -18,9 +18,12 @@ import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Public API controller for Android app content browsing.
@@ -187,6 +190,26 @@ public class PublicContentController {
         int validLimit = Math.min(Math.max(limit, 1), 50);
         SearchIndex.Hits hits = contentService.search(q, type, validLimit);
         return ResponseEntity.ok().header(SearchIndex.MATCH_HEADER, hits.match()).body(hits.items());
+    }
+
+    /** Task 24b: at most this many distinct ids per /titles request. */
+    static final int MAX_TITLE_IDS = 50;
+    private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+
+    /**
+     * Original titles for the apps' channel and playlist rows (inner-search Task 24b, owner issue 1). The apps list
+     * those pages on the device with hl=en, so YouTube machine-translates Arabic and Dutch titles; one call per page
+     * swaps in the titles the server holds. No YouTube request; ids the server does not know are left out.
+     */
+    @GetMapping("/titles")
+    public ResponseEntity<?> titles(@RequestParam List<String> ids) throws IOException {
+        List<String> unique = List.copyOf(new LinkedHashSet<>(ids));
+        if (unique.isEmpty() || unique.size() > MAX_TITLE_IDS || !unique.stream().allMatch(id -> VIDEO_ID.matcher(id).matches())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ids: 1 to " + MAX_TITLE_IDS + " YouTube video ids"));
+        }
+        // Public and identical for every caller, as the home feed: shared caches may keep it for an hour.
+        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
+                .body(contentService.titles(unique));
     }
 
     /** Spec §7: the first index build has not finished; installed clients show their usual error state. */

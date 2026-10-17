@@ -1161,6 +1161,114 @@ class SearchIndexTest {
         for (String id : expected.split(" ")) assertEquals(offIds.indexOf(id), onIds.indexOf(id), row + ": " + id + " moved");
     }
 
+    /** Task 24 hand-off: the title pass reports ms, titles swapped and a timeout in the slow line; integers only, never the query. */
+    @Test
+    void theTitlePassShowsInTheSlowLine() throws Exception {
+        SearchIndex idx = recitations(originals());
+        idx.slowSearchMs = -1;
+        idx.search("recitation", null, 2); // need = 0: no inner pass, the title pass alone
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:2"), lastSlowLine());
+        idx.newTimeout = ms -> scripted(2, false); // the second lookup finds the budget spent
+        idx.search("recitation", null, 2);
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:1:timeout"), lastSlowLine());
+        assertFalse(lastSlowLine().contains("recitation"), lastSlowLine());
+    }
+
+    /** Task 24 hand-off: a failing title pass keeps the merged inner hits and only skips the swap; its WARN names the class only. */
+    @Test
+    void aTitlePassThatFailsKeepsTheMergedInnerHits() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("live-kahf", ORIGINAL.get("live-kahf"), 600),
+                item("live-yasin", ORIGINAL.get("live-yasin"), 600), item("lesson00001", "Recitation lesson", 600))),
+                Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = recitations(inner);
+        int[] budgets = {0};
+        idx.newTimeout = ms -> {
+            if (budgets[0]++ == 0) return new org.apache.lucene.index.QueryTimeoutImpl(ms); // the inner ladder's
+            throw new IllegalStateException("title pass broke on recitation"); // the title pass's
+        };
+        int refs = refCount(inner);
+        SearchIndex.Hits hits = idx.search("recitation", null, 50);
+        assertEquals(2, budgets[0], "both passes ran");
+        assertEquals("lesson00001", ids(hits).get(2), ids(hits).toString());
+        assertEquals(RECITED, titles(hits).entrySet().stream().filter(e -> e.getKey().startsWith("live-"))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)), "the stored titles stay");
+        List<String> warns = logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertTrue(warns.contains("inner titles failed (java.lang.IllegalStateException); keeping the stored titles"), warns.toString());
+        assertTrue(warns.stream().noneMatch(w -> w.startsWith("inner search failed") || w.contains("recitation")), warns.toString());
+        assertEquals(refs, refCount(inner), "the inner reader is released");
+    }
+
+    // ---- Task 24b: original titles for the apps' channel and playlist rows (owner issue 1) ----------------
+
+    @Test
+    void titlesComeFromTheCatalogThenTheInnerIndexAndNeverFromAStoredStream() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "زبدة النور: الدرس الأول", 600),
+                item("vKahf", "Surah Al-Kahf (inner copy)", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")),
+                List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000, inner));
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf", "lesson00001", "زبدة النور: الدرس الأول"),
+                idx.titles(List.of("vKahf", "lesson00001", "alafasy-live", "lesson99999")),
+                "catalog first, inner next, a stored stream's title never");
+        innerStore.state().serveInner = false;
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), idx.titles(List.of("vKahf", "lesson00001")),
+                "inner titles follow serveInner, which Task 35 opens after its title-language check");
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(null).titles(List.of("vKahf", "lesson00001")));
+    }
+
+    @Test
+    void anInnerTitleFollowsTheSameCurationAsAnInnerHit() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("innerhalal1", "Kept lesson", 600), item("halal-excluded", "Excluded", 600),
+                        item("halal-rejected", "Blocked by its Video document", 600)),
+                "channel:UCrejected", List.of(item("innerrejct1", "From a rejected source", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        assertEquals(Map.of("innerhalal1", "Kept lesson"),
+                idx.titles(List.of("innerhalal1", "halal-excluded", "halal-rejected", "innerrejct1")));
+    }
+
+    /** Hand-off: /titles has the title pass's 40 ms budget, checked per id; past it the rest are unknown ids, not a slow answer. */
+    @Test
+    void titlesStopLookingUpInnerCopiesWhenTheirBudgetEnds() throws Exception {
+        InnerIndex inner = originals();
+        SearchIndex idx = recitations(inner);
+        idx.newTimeout = ms -> scripted(2, false); // the second inner lookup finds the budget spent
+        int refs = refCount(inner);
+        assertEquals(Map.of("live-kahf", ORIGINAL.get("live-kahf")), idx.titles(List.of("live-kahf", "live-yasin")));
+        assertEquals(refs, refCount(inner), "the inner searcher is released");
+    }
+
+    /** As /search: an inner index closing under /titles (rebuild swap, shutdown) answers the catalog's titles, never a 500. */
+    @Test
+    void titlesAnswerTheCatalogsWhenTheInnerIndexClosesUnderThem() throws Exception {
+        Directory empty = new ByteBuffersDirectory();
+        new IndexWriter(empty, new IndexWriterConfig()).close();
+        DirectoryReader reader = DirectoryReader.open(empty);
+        IndexSearcher stale = new IndexSearcher(reader);
+        reader.close(); // after acquire: the next read, and the release, throw AlreadyClosedException
+        InnerStore store = new InnerStore(innerTmp.resolve("closing").toString());
+        for (boolean atAcquire : new boolean[] {true, false}) {
+            InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+                @Override
+                boolean serving() {
+                    return true;
+                }
+
+                @Override
+                IndexSearcher acquire() {
+                    if (atAcquire) throw new AlreadyClosedException("this ReferenceManager is closed");
+                    return stale;
+                }
+            };
+            SearchIndex idx = alafasy(closing);
+            assertEquals(Map.of("vKahf", "Surah Al-Kahf"),
+                    assertDoesNotThrow(() -> idx.titles(List.of("vKahf", "lesson00001"))), "closed at acquire: " + atAcquire);
+        }
+        assertEquals(2, logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter("titles: inner lookup failed (org.apache.lucene.store.AlreadyClosedException); answering the catalog's"::equals)
+                .count());
+    }
+
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------
 
     @Test
