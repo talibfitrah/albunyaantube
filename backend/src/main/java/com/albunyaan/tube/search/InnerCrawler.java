@@ -181,6 +181,95 @@ public class InnerCrawler {
         wakeUp();
     }
 
+    /** PUT /api/admin/inner-search (§9): any subset. */
+    public record Update(InnerState.Mode mode, Boolean serveInner, Boolean streamGate, Boolean backfillHeld,
+                         Integer capPerSource, Boolean resetPace) {}
+
+    /**
+     * Applies an admin change, saves it at once (R15) and wakes the crawler, so it takes effect before its next request.
+     * A cap is set and saved before the rebuild is requested, so the crawler thread's rebuild reads the new cap.
+     */
+    public void update(Update u) {
+        if (u.capPerSource() != null && (u.capPerSource() < 1 || u.capPerSource() > InnerState.MAX_PER_SOURCE)) {
+            throw new IllegalArgumentException("capPerSource must be 1.." + InnerState.MAX_PER_SOURCE);
+        }
+        InnerState s = store.state();
+        // R25 hand-off: FULL before any first page would run the whole initial crawl inside the 1,000/day cap (~17 days)
+        if (u.mode() == InnerState.Mode.FULL && s.mode != InnerState.Mode.FULL
+                && s.sources.values().stream().noneMatch(src -> src.firstPageAt > 0)) {
+            throw new IllegalArgumentException("mode FULL before any first pass: run FIRST_PASS first");
+        }
+        boolean rebuild = false;
+        synchronized (s) {
+            if (u.mode() != null) s.mode = u.mode();
+            if (u.serveInner() != null) s.serveInner = u.serveInner();
+            if (u.streamGate() != null) s.streamGate = u.streamGate();
+            if (u.backfillHeld() != null) {
+                s.backfillHeld = u.backfillHeld();
+                if (!u.backfillHeld()) s.shortLargeRun = 0;
+            }
+            if (u.capPerSource() != null && u.capPerSource() != s.capPerSource) {
+                s.capPerSource = u.capPerSource();
+                rebuild = true; // R31: a rebuild from the corpus, never a re-crawl
+            }
+        }
+        if (Boolean.TRUE.equals(u.resetPace())) pacer.resetPace();
+        store.save();
+        log.info("inner-search settings changed: {}", u);
+        if (rebuild) requestRebuild();
+        else wakeUp();
+    }
+
+    /** GET /api/admin/inner-search (§9). Never the key "status": live-channels' write-path tripwire counts it. */
+    public Map<String, Object> status() {
+        InnerState s = store.state();
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("enabled", store.enabled());
+        out.put("mode", s.mode);
+        out.put("stopFile", store.stopped());
+        out.put("serveInner", s.serveInner);
+        out.put("streamGate", s.streamGate);
+        out.put("backfillHeld", s.backfillHeld);
+        out.put("capPerSource", s.capPerSource);
+        synchronized (s) {
+            Map<String, Object> breaker = new LinkedHashMap<>();
+            breaker.put("intervalMs", s.breaker.intervalMs);
+            breaker.put("pausedUntil", s.breaker.pausedUntil);
+            breaker.put("cleanRequestsAtInterval", s.breaker.cleanRequestsAtInterval);
+            breaker.put("transportPauses", s.breaker.transportPauses);
+            breaker.put("unavailableRun", List.copyOf(s.breaker.unavailableRun));
+            out.put("breaker", breaker);
+            out.put("lastSignal", s.signals.isEmpty() ? null : s.signals.get(s.signals.size() - 1));
+            out.put("signals", List.copyOf(s.signals));
+            TreeMap<String, TreeMap<String, Long>> requests = new TreeMap<>();
+            s.requestsByDay.forEach((day, counts) -> requests.put(day, new TreeMap<>(counts)));
+            out.put("requests", requests); // R37: per UTC day and thread prefix
+            out.put("memory", s.memory.isEmpty() ? null : s.memory.get(s.memory.size() - 1));
+        }
+        Map<String, Integer> counts = counts();
+        out.put("truncatedInFirstPass", counts.remove("truncatedInFirstPass"));
+        out.put("sources", counts);
+        Map<String, Object> idx = new LinkedHashMap<>();
+        boolean ready = index.ready();
+        int docs = 0;
+        long bytes = 0;
+        try {
+            docs = index.docs();
+            bytes = index.bytes();
+        } catch (IOException | AlreadyClosedException e) { // closed at shutdown after ready(): never a 500
+            ready = false;
+            docs = 0;
+        }
+        idx.put("ready", ready);
+        idx.put("docs", docs);
+        idx.put("bytes", bytes);
+        idx.put("rebuildCpuMs", index.rebuildCpuMs());
+        idx.put("rebuildWallMs", index.rebuildWallMs());
+        idx.put("timeouts", index.timeouts());
+        out.put("index", idx);
+        return out;
+    }
+
     private void rebuildIndex() {
         try {
             index.rebuild(search.sources(), store.state().capPerSource);

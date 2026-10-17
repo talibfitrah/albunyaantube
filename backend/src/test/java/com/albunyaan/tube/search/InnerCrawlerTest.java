@@ -1358,4 +1358,111 @@ class InnerCrawlerTest {
         crawler.boot();
         verify(idx, times(1)).rebuild(any(), anyInt()); // M3: stopped before the rebuild: none starts
     }
+
+    // ---- Task 22: admin ---------------------------------------------------------------------------
+
+    @Test
+    void aPutWakesTheWaitingCrawlerAtOnce() throws Exception {
+        Thread waiting = new Thread(() -> {
+            try {
+                crawler.idle(60_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        });
+        waiting.start();
+        crawler.update(new InnerCrawler.Update(InnerState.Mode.FIRST_PASS, null, null, null, null, null));
+        waiting.join(2_000);
+        assertFalse(waiting.isAlive(), "the 60 s wait ended at once");
+        assertEquals(InnerState.Mode.FIRST_PASS, new InnerStore(tmp.resolve("inner").toString()).state().mode, "saved at once");
+    }
+
+    @Test
+    void aCapOutsideOneToTenThousandIsRefused() {
+        assertThrows(IllegalArgumentException.class, () -> crawler.update(new InnerCrawler.Update(null, null, null, null, 0, null)));
+        assertThrows(IllegalArgumentException.class, () -> crawler.update(new InnerCrawler.Update(null, null, null, null, 10_001, null)));
+        assertEquals(10_000, store.state().capPerSource);
+    }
+
+    @Test
+    void aCapChangeRebuildsFromTheCorpusOnTheCrawlerThread() throws Exception {
+        InnerCorpus.write(store.corpusFile(CH), items("lesson", 0, 300, "x"));
+        crawler.boot();
+        crawler.update(new InnerCrawler.Update(null, null, null, null, 100, null));
+        step();
+        assertEquals(100, index.docs());
+        assertEquals(300, corpus(CH).size(), "the corpus keeps everything (R31)");
+    }
+
+    @Test
+    void resetPaceServeInnerStreamGateAndBackfillHeldApply() {
+        pacer.rateSignal("HTTP_429", "x", 429);
+        store.state().backfillHeld = true;
+        store.state().shortLargeRun = 3;
+        crawler.update(new InnerCrawler.Update(null, true, true, false, null, true));
+        assertEquals(15_000, store.state().breaker.intervalMs);
+        assertEquals(0, store.state().breaker.pausedUntil);
+        assertTrue(store.state().serveInner);
+        assertTrue(store.state().streamGate);
+        assertFalse(store.state().backfillHeld);
+        assertEquals(0, store.state().shortLargeRun);
+    }
+
+    @Test
+    void theStatusNamesEverythingTheSpecListsAndNeverTheKeyStatus() throws Exception {
+        admitted.put(CH, "x");
+        crawler.boot();
+        Map<String, Object> status = crawler.status();
+        assertEquals(List.of("enabled", "mode", "stopFile", "serveInner", "streamGate", "backfillHeld", "capPerSource",
+                "breaker", "lastSignal", "signals", "requests", "memory", "truncatedInFirstPass", "sources", "index"),
+                List.copyOf(status.keySet()));
+        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(status).contains("\"status\""));
+        @SuppressWarnings("unchecked") Map<String, Object> idx = (Map<String, Object>) status.get("index");
+        assertEquals(true, idx.get("ready"));
+    }
+
+    @Test
+    void fullBeforeAnyFirstPassIsRefused() {
+        // R25 hand-off: without a first pass the whole initial crawl would run inside the 1,000/day cap (~17 days)
+        IllegalArgumentException e = assertThrows(IllegalArgumentException.class,
+                () -> crawler.update(new InnerCrawler.Update(InnerState.Mode.FULL, true, null, null, null, null)));
+        assertTrue(e.getMessage().contains("run FIRST_PASS first"), e.getMessage());
+        assertEquals(InnerState.Mode.OFF, store.state().mode);
+        assertFalse(store.state().serveInner, "a refused update changes nothing");
+        crawler.source(CH).firstPageAt = now.get().toEpochMilli();
+        crawler.update(new InnerCrawler.Update(InnerState.Mode.FULL, null, null, null, null, null));
+        assertEquals(InnerState.Mode.FULL, store.state().mode, "after a first pass, FULL is allowed");
+    }
+
+    @Test
+    void aCapChangeIsSetAndSavedBeforeTheRebuildIsRequested() {
+        InnerCrawler spied = spy(crawler);
+        AtomicInteger liveCap = new AtomicInteger(), savedCap = new AtomicInteger();
+        doAnswer(inv -> {
+            liveCap.set(store.state().capPerSource);
+            savedCap.set(new InnerStore(tmp.resolve("inner").toString()).state().capPerSource);
+            return inv.callRealMethod();
+        }).when(spied).requestRebuild();
+        spied.update(new InnerCrawler.Update(null, null, null, null, 100, null));
+        verify(spied).requestRebuild();
+        assertEquals(100, liveCap.get(), "the crawler thread's rebuild reads the new cap");
+        assertEquals(100, savedCap.get(), "saved before the rebuild is requested");
+    }
+
+    @Test
+    void theStatusNeverFailsOnAnUnbuiltOrClosedIndex() throws Exception {
+        @SuppressWarnings("unchecked") Map<String, Object> before = (Map<String, Object>) crawler.status().get("index");
+        assertEquals(false, before.get("ready"), "not built yet");
+        crawler.boot();
+        index.close();
+        @SuppressWarnings("unchecked") Map<String, Object> after = (Map<String, Object>) crawler.status().get("index");
+        assertEquals(false, after.get("ready"), "closed at shutdown");
+        InnerIndex idx = mock(InnerIndex.class); // closed between ready() and the reads
+        when(idx.ready()).thenReturn(true);
+        when(idx.docs()).thenThrow(new AlreadyClosedException("this ReferenceManager is closed"));
+        when(idx.bytes()).thenThrow(new AlreadyClosedException("this Directory is closed"));
+        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        @SuppressWarnings("unchecked") Map<String, Object> racing = (Map<String, Object>) crawler.status().get("index");
+        assertEquals(false, racing.get("ready"));
+    }
 }
