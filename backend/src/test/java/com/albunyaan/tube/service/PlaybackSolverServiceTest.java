@@ -32,8 +32,11 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
+import java.util.function.BooleanSupplier;
+import java.util.stream.IntStream;
 import java.util.stream.Stream;
 
 import static org.assertj.core.api.Assertions.assertThat;
@@ -51,6 +54,12 @@ class PlaybackSolverServiceTest {
     private final AtomicReference<String> lastSolveBody = new AtomicReference<>();
     private volatile int solveStatus = 200;
     private volatile long solveDelayMs = 0;
+    private volatile String solveRaw;                                     // non-null: a 200 with this body
+    private volatile CountDownLatch solveGate = new CountDownLatch(0);    // open unless a test holds it
+    private volatile int playerStatus = 200;
+    private volatile String playerReply = "{\"playerId\":\"0229cd64\",\"sts\":20739}";
+    private volatile CountDownLatch playerGate = new CountDownLatch(0);
+    private static final Map<String, Object> PLAYER = Map.of("playerId", "0229cd64", "sts", 20739);
     private final AtomicReference<Instant> now = new AtomicReference<>(Instant.parse("2026-10-17T10:00:00Z"));
     private final Clock clock = new Clock() {
         @Override public ZoneId getZone() { return ZoneOffset.UTC; }
@@ -65,13 +74,15 @@ class PlaybackSolverServiceTest {
     void startSidecar() throws IOException {
         sidecar = HttpServer.create(new InetSocketAddress("127.0.0.1", 0), 0);
         sidecar.setExecutor(Executors.newCachedThreadPool());
-        sidecar.createContext("/player", ex -> { playerHits.incrementAndGet(); reply(ex, 200, "{\"playerId\":\"0229cd64\",\"sts\":20739}"); });
+        sidecar.createContext("/player", ex -> { playerHits.incrementAndGet(); pass(playerGate); reply(ex, playerStatus, playerReply); });
         sidecar.createContext("/solve", ex -> {
             solveHits.incrementAndGet();
             String body = new String(ex.getRequestBody().readAllBytes(), StandardCharsets.UTF_8);
             lastSolveBody.set(body);
+            pass(solveGate);
             try { Thread.sleep(solveDelayMs); } catch (InterruptedException ignored) { }
             if (solveStatus != 200) { reply(ex, solveStatus, "{}"); return; }
+            if (solveRaw != null) { reply(ex, 200, solveRaw); return; }
             Map<String, Object> req = JSON.readValue(body, new TypeReference<>() { });
             reply(ex, 200, JSON.writeValueAsString(Map.of("n", echo(req.get("n")), "s", echo(req.get("s")))));
         });
@@ -79,7 +90,19 @@ class PlaybackSolverServiceTest {
     }
 
     @AfterEach
-    void stopSidecar() { sidecar.stop(0); }
+    void stopSidecar() {
+        solveGate.countDown();
+        playerGate.countDown();
+        sidecar.stop(0);
+    }
+
+    private static void pass(CountDownLatch gate) {
+        try { gate.await(5, TimeUnit.SECONDS); } catch (InterruptedException ignored) { }
+    }
+
+    private static void until(BooleanSupplier done) throws InterruptedException {
+        while (!done.getAsBoolean()) Thread.sleep(1);
+    }
 
     @SuppressWarnings("unchecked")
     private static Map<String, String> echo(Object challenges) {
@@ -108,12 +131,15 @@ class PlaybackSolverServiceTest {
                 Arguments.of("0229cd64", List.of(), List.of()),                   // n needs 1-4
                 Arguments.of("0229cd64", List.of(N, N, N, N, N), List.of()),
                 Arguments.of("0229cd64", List.of("short"), List.of()),            // n is 8-32 chars
+                Arguments.of("0229cd64", List.of("x".repeat(7)), List.of()),
                 Arguments.of("0229cd64", List.of("x".repeat(33)), List.of()),
                 Arguments.of("0229cd64", List.of(N), List.of("S".repeat(63))),    // s is 64-160 chars
                 Arguments.of("0229cd64", List.of(N), List.of("S".repeat(161))),
                 Arguments.of("0229cd64", List.of("QUJDREVGR0hJ SktM"), List.of()),  // a space
+                Arguments.of("0229cd64", List.of(N), List.of("S".repeat(63) + "!")),  // outside the alphabet
                 Arguments.of("0229cd64", List.of(N), Collections.nCopies(65, s)), // s holds 0-64
-                Arguments.of("0229cd64", null, List.of()));
+                Arguments.of("0229cd64", null, List.of()),
+                Arguments.of("0229cd64", List.of(N), null));
     }
 
     @ParameterizedTest
@@ -121,6 +147,31 @@ class PlaybackSolverServiceTest {
     void malformedInputIs400AndNeverReachesTheSidecar(String playerId, List<String> n, List<String> s) {
         assertThat(service(true).solve(playerId, n, s).status()).isEqualTo(400);
         assertThat(solveHits.get()).isZero();
+    }
+
+    static Stream<Arguments> boundaries() {
+        return Stream.of(
+                Arguments.of(List.of("x".repeat(8)), List.of()),
+                Arguments.of(List.of("x".repeat(32)), List.of()),
+                Arguments.of(List.of(N), List.of("S".repeat(64))),
+                Arguments.of(List.of(N), List.of("S".repeat(160))),
+                Arguments.of(List.of(n("A"), n("B"), n("C"), n("D")), List.of()),
+                Arguments.of(List.of(N), IntStream.range(0, 64).mapToObj(PlaybackSolverServiceTest::s).toList()));
+    }
+
+    @ParameterizedTest
+    @MethodSource("boundaries")
+    void theShapeBoundariesAreAccepted(List<String> n, List<String> s) {
+        assertThat(service(true).solve("0229cd64", n, s).status()).isEqualTo(200);
+        assertThat(solveHits.get()).isEqualTo(1);
+    }
+
+    @Test
+    void theCacheIsKeyedByPlayer() {
+        PlaybackSolverService service = service(true);
+        service.solve("0229cd64", List.of(N), List.of(s(1)));
+        service.solve("1234abcd", List.of(N), List.of(s(1)));
+        assertThat(solveHits.get()).isEqualTo(2);
     }
 
     @Test
@@ -153,21 +204,20 @@ class PlaybackSolverServiceTest {
 
     @Test
     void aFullSemaphoreAnswers503With10() throws Exception {
-        solveDelayMs = 500;
+        solveGate = new CountDownLatch(1);                                // the stub holds all 8 until released
         PlaybackSolverService service = service(true);
-        ExecutorService pool = Executors.newFixedThreadPool(9);
-        CountDownLatch go = new CountDownLatch(1);
-        List<Future<PlaybackSolverService.Answer>> answers = new ArrayList<>();
-        for (int i = 0; i < 9; i++) {
+        ExecutorService pool = Executors.newFixedThreadPool(8);
+        List<Future<PlaybackSolverService.Answer>> held = new ArrayList<>();
+        for (int i = 0; i < 8; i++) {
             String challenge = n("C" + i);
-            answers.add(pool.submit(() -> { go.await(); return service.solve("0229cd64", List.of(challenge), List.of()); }));
+            held.add(pool.submit(() -> service.solve("0229cd64", List.of(challenge), List.of())));
         }
-        go.countDown();
-        List<PlaybackSolverService.Answer> done = new ArrayList<>();
-        for (Future<PlaybackSolverService.Answer> a : answers) done.add(a.get());
+        until(() -> solveHits.get() == 8);
+        assertThat(service.solve("0229cd64", List.of(n("C8")), List.of())).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 10));
+        solveGate.countDown();
+        for (Future<PlaybackSolverService.Answer> a : held) a.get();
         pool.shutdown();
-        assertThat(done).filteredOn(a -> a.status() == 503).isNotEmpty().allMatch(a -> a.retryAfter() == 10);
-        assertThat(done).filteredOn(a -> a.status() == 200).hasSizeLessThanOrEqualTo(8);
+        assertThat(solveHits.get()).isEqualTo(8);
     }
 
     @Test
@@ -190,6 +240,72 @@ class PlaybackSolverServiceTest {
         assertThat(playerHits.get()).isEqualTo(2);
     }
 
+    /** Fix round 1: one /player call at a time; the rest get the stale copy, or 503 + 10 when there is none. */
+    @Test
+    void aPlayerRefreshIsSingleFlight() throws Exception {
+        PlaybackSolverService service = service(true);
+        ExecutorService pool = Executors.newSingleThreadExecutor();
+        playerGate = new CountDownLatch(1);
+        Future<PlaybackSolverService.Answer> first = pool.submit(service::player);
+        until(() -> playerHits.get() == 1);
+        for (int i = 0; i < 5; i++) assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 10));
+        playerGate.countDown();
+        assertThat(first.get()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+
+        now.set(now.get().plusSeconds(61));                               // the copy expires; a refresh is in flight
+        playerGate = new CountDownLatch(1);
+        Future<PlaybackSolverService.Answer> second = pool.submit(service::player);
+        until(() -> playerHits.get() == 2);
+        for (int i = 0; i < 5; i++) assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        playerGate.countDown();
+        assertThat(second.get().status()).isEqualTo(200);
+        pool.shutdown();
+        assertThat(playerHits.get()).isEqualTo(2);
+    }
+
+    /** Fix round 1: a warming (503) or hung (timeout) sidecar sees at most one /player call per 10 s. */
+    @ParameterizedTest
+    @ValueSource(booleans = {false, true})
+    void aFailedPlayerRefreshIsRememberedForTenSeconds(boolean hung) {
+        if (hung) playerGate = new CountDownLatch(1); else playerStatus = 503;
+        PlaybackSolverService service = service(true);
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+        now.set(now.get().plusSeconds(9));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+        assertThat(playerHits.get()).isEqualTo(1);
+        playerGate.countDown();
+        playerStatus = 200;
+        now.set(now.get().plusSeconds(1));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        assertThat(playerHits.get()).isEqualTo(2);
+    }
+
+    /** Fix round 1: the 200 body is rebuilt from playerId and sts; anything else from the sidecar is a failure. */
+    @Test
+    void playerAnswersOnlyAValidPlayerIdAndSts() {
+        playerReply = "{\"playerId\":\"0229cd64\",\"sts\":20739,\"held\":[\"0229cd64\"],\"rssMiB\":270}";
+        assertThat(service(true).player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        playerReply = "{\"playerId\":\"../../etc\",\"sts\":20739}";
+        assertThat(service(true).player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+        playerReply = "{\"playerId\":\"0229cd64\"}";
+        assertThat(service(true).player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+    }
+
+    /** Fix round 1: a 409 or 500 for the copied player means the sidecar no longer holds it, so the next /player asks again. */
+    @ParameterizedTest
+    @ValueSource(ints = {409, 500})
+    void aSolveThatFindsTheCopiedPlayerGoneDropsTheCopy(int status) {
+        PlaybackSolverService service = service(true);
+        service.player();
+        solveStatus = status;
+        service.solve("1234abcd", List.of(N), List.of());                  // another player: the copy stays
+        service.player();
+        assertThat(playerHits.get()).isEqualTo(1);
+        service.solve("0229cd64", List.of(N), List.of());                  // the copied player is gone
+        service.player();
+        assertThat(playerHits.get()).isEqualTo(2);
+    }
+
     @Test
     void aSidecarConflictIsPassedThrough() {
         solveStatus = 409;
@@ -206,11 +322,22 @@ class PlaybackSolverServiceTest {
 
     @Test
     void aSidecarSlowerThanOneSecondAnswers503With120() {
-        solveDelayMs = 1500;
+        solveDelayMs = 3000;
         long t0 = System.nanoTime();
         PlaybackSolverService.Answer answer = service(true).solve("0229cd64", List.of(N), List.of());
         assertThat(answer).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
-        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofMillis(1400));
+        assertThat(Duration.ofNanos(System.nanoTime() - t0)).isLessThan(Duration.ofSeconds(2));
+    }
+
+    /** Fix round 1 (nit): a sidecar that answers but not with JSON is logged as that, once an hour, never as unreachable. */
+    @Test
+    void anUnparseableAnswerIsLoggedAsSuchOnceAnHour(CapturedOutput output) {
+        solveRaw = "not json";
+        PlaybackSolverService service = service(true);
+        assertThat(service.solve("0229cd64", List.of(n("P1")), List.of())).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+        assertThat(service.solve("0229cd64", List.of(n("P2")), List.of()).status()).isEqualTo(503);
+        assertThat(output.getAll().split("playback solver answer unparseable", -1).length - 1).isEqualTo(1);
+        assertThat(output.getAll()).doesNotContain("unreachable").doesNotContain(n("P1"));
     }
 
     @Test

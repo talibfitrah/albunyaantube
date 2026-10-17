@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.fasterxml.jackson.core.JsonProcessingException;
 import com.fasterxml.jackson.core.type.TypeReference;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.github.benmanes.caffeine.cache.Cache;
@@ -21,14 +22,16 @@ import java.util.ArrayList;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.ConcurrentHashMap;
 import java.util.concurrent.Semaphore;
+import java.util.concurrent.atomic.AtomicReference;
 import java.util.regex.Pattern;
 
 /**
  * The thin layer between the iOS app and the local challenge solver (spec §4.6, R26-R30): the kill flag, validation
  * tightened to the observed shapes, a 6 h result cache, at most 8 in flight and 20 a second, and the 60 s
- * {@code /player} copy. The {@link DubPotokenService} shape. Logs nothing per request (R21); while the sidecar cannot
- * be reached, one ERROR line an hour (R38).
+ * {@code /player} copy, refreshed single-flight with a failure remembered for 10 s. The {@link DubPotokenService}
+ * shape. Logs nothing per request (R21); while the sidecar cannot be reached, one ERROR line an hour (R38).
  */
 @Service
 public class PlaybackSolverService {
@@ -38,6 +41,7 @@ public class PlaybackSolverService {
     static final Pattern CHALLENGE = Pattern.compile("[A-Za-z0-9_=-]+");
     private static final Duration SIDECAR_TIMEOUT = Duration.ofSeconds(1);
     private static final Duration PLAYER_COPY = Duration.ofSeconds(60);
+    private static final Duration PLAYER_RETRY = Duration.ofSeconds(10);
     private static final int MAX_IN_FLIGHT = 8;
     private static final int MAX_PER_SECOND = 20;
 
@@ -48,6 +52,10 @@ public class PlaybackSolverService {
     }
 
     private record Sidecar(int status, Map<String, Object> json) {}
+
+    private record PlayerCopy(String playerId, int sts, Instant at) {
+        Map<String, Object> body() { return Map.of("playerId", playerId, "sts", sts); }
+    }
 
     private final String url;
     private final HttpClient http;
@@ -62,9 +70,10 @@ public class PlaybackSolverService {
     private Clock clock;
     private long windowSecond = Long.MIN_VALUE;   // guarded by this
     private int windowCount;                      // guarded by this
-    private volatile Map<String, Object> playerCopy;
-    private volatile Instant playerCopiedAt = Instant.EPOCH;
-    private volatile Instant lastUnreachableLog = Instant.EPOCH;
+    private final AtomicReference<PlayerCopy> playerCopy = new AtomicReference<>();
+    private final Semaphore playerRefresh = new Semaphore(1);
+    private volatile Instant playerFailedAt = Instant.EPOCH;
+    private final Map<String, Instant> lastError = new ConcurrentHashMap<>();
 
     @Autowired
     public PlaybackSolverService(@Value("${playback.solver.url:http://127.0.0.1:4417}") String url,
@@ -76,18 +85,45 @@ public class PlaybackSolverService {
         this.http = HttpClient.newBuilder().connectTimeout(SIDECAR_TIMEOUT).build();
     }
 
-    // ponytail: no single-flight, so callers that meet an expired (or warming, uncached) copy each ask Node's cheap
-    // /player; add a lock or a 503 copy if /player traffic ever shows up in Node's CPU.
+    /**
+     * The 60 s copy (M8). One refresh at a time: while it runs, others get the stale copy, or 503 + 10 without one. A
+     * failed refresh drops the copy and is remembered for 10 s, so a warming or hung sidecar sees at most one
+     * {@code /player} call per 10 s.
+     */
     public Answer player() {
         if (!enabled) return Answer.of(503, 120);
+        Answer remembered = rememberedPlayer();
+        if (remembered != null) return remembered;
+        if (!playerRefresh.tryAcquire()) {
+            PlayerCopy stale = playerCopy.get();
+            return stale != null ? Answer.ok(stale.body()) : Answer.of(503, 10);
+        }
+        try {
+            remembered = rememberedPlayer();              // a refresh that finished between the check and the permit
+            if (remembered != null) return remembered;
+            Instant now = clock.instant();
+            Sidecar reply = call(HttpRequest.newBuilder(URI.create(url + "/player")).GET());
+            if (reply.status() == 200 && reply.json().get("playerId") instanceof String id && PLAYER_ID.matcher(id).matches()
+                    && reply.json().get("sts") instanceof Integer sts) {
+                PlayerCopy copy = new PlayerCopy(id, sts, now);
+                playerCopy.set(copy);
+                return Answer.ok(copy.body());
+            }
+            playerCopy.set(null);
+            playerFailedAt = now;
+            return Answer.of(503, 120);
+        } finally {
+            playerRefresh.release();
+        }
+    }
+
+    /** The fresh copy, or a failure inside its 10 s; null when it is time to ask the sidecar. */
+    private Answer rememberedPlayer() {
         Instant now = clock.instant();
-        Map<String, Object> copy = playerCopy;
-        if (copy != null && now.isBefore(playerCopiedAt.plus(PLAYER_COPY))) return Answer.ok(copy);
-        Sidecar reply = call(HttpRequest.newBuilder(URI.create(url + "/player")).GET());
-        if (reply.status() != 200) return Answer.of(503, 120);
-        playerCopy = reply.json();
-        playerCopiedAt = now;
-        return Answer.ok(reply.json());
+        PlayerCopy copy = playerCopy.get();
+        if (copy != null && now.isBefore(copy.at().plus(PLAYER_COPY))) return Answer.ok(copy.body());
+        if (now.isBefore(playerFailedAt.plus(PLAYER_RETRY))) return Answer.of(503, 120);
+        return null;
     }
 
     public Answer solve(String playerId, List<String> n, List<String> s) {
@@ -106,6 +142,9 @@ public class PlaybackSolverService {
                         .POST(HttpRequest.BodyPublishers.ofString(body(playerId, nMissing, sMissing))));
             } finally {
                 inFlight.release();
+            }
+            if (reply.status() == 409 || reply.status() == 500) {   // the sidecar no longer holds that player
+                playerCopy.updateAndGet(copy -> copy != null && copy.playerId().equals(playerId) ? null : copy);
             }
             if (reply.status() == 409) return Answer.of(409, null);
             if (reply.status() != 200) return Answer.of(503, 120);
@@ -161,24 +200,32 @@ public class PlaybackSolverService {
     }
 
     private Sidecar call(HttpRequest.Builder request) {
+        HttpResponse<String> response;
         try {
-            HttpResponse<String> response = http.send(request.timeout(SIDECAR_TIMEOUT).build(), HttpResponse.BodyHandlers.ofString());
-            Map<String, Object> body = response.statusCode() == 200
-                    ? json.readValue(response.body(), new TypeReference<>() { })
-                    : Map.of();
-            return new Sidecar(response.statusCode(), body);
+            response = http.send(request.timeout(SIDECAR_TIMEOUT).build(), HttpResponse.BodyHandlers.ofString());
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
             return new Sidecar(-1, Map.of());
-        } catch (Exception e) {
-            Instant now = clock.instant();
-            if (!now.isBefore(lastUnreachableLog.plus(Duration.ofHours(1)))) {
-                lastUnreachableLog = now;
-                // R38: at most once an hour. The class name only: a parse error's message can quote a body that
-                // holds challenges and answers (R21).
-                log.error("playback solver unreachable at {}: {}", url, e.getClass().getSimpleName());
-            }
+        } catch (Exception e) {                           // refused, reset, or the 1 s timeout
+            errorHourly("unreachable", e);
             return new Sidecar(-1, Map.of());
         }
+        if (response.statusCode() != 200) return new Sidecar(response.statusCode(), Map.of());
+        try {
+            return new Sidecar(200, json.readValue(response.body(), new TypeReference<>() { }));
+        } catch (JsonProcessingException e) {
+            errorHourly("answer unparseable", e);
+            return new Sidecar(-1, Map.of());
+        }
+    }
+
+    /** R38: at most one ERROR line an hour per kind. The class name only: a parse error's message can quote a body that
+     *  holds challenges and answers (R21). */
+    private void errorHourly(String kind, Exception e) {
+        Instant now = clock.instant();
+        Instant last = lastError.get(kind);
+        if (last != null && now.isBefore(last.plus(Duration.ofHours(1)))) return;
+        lastError.put(kind, now);
+        log.error("playback solver {} at {}: {}", kind, url, e.getClass().getSimpleName());
     }
 }
