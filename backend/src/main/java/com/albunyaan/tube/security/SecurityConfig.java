@@ -134,6 +134,8 @@ public class SecurityConfig {
                         // Enumerated explicitly so a future wildcard re-order
                         // can't expose it through the anyRequest() fallback.
                         .requestMatchers(HttpMethod.PUT, "/api/account/profile").authenticated()
+                        // Playback Phase 2 (spec R28): signed, outside /api/v1/** (which the filter skips and permits).
+                        .requestMatchers("/api/playback/**").authenticated()
 
                         // All other requests require authentication
                         .anyRequest().authenticated()
