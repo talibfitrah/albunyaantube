@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+  s_dbb6b1f3671904::t_68946b120bd1ee 108
+backend/src/test/java/com/albunyaan/tube/search/CrawlPacerTest.java
+  s_dbb6b1f3671904::t_266b763b1c7ae1 4,103
+  s_dbb6b1f3671904::t_072d322ab057da 3,26,28,53-54,93-96,98-102,104-109,113-114,121,141-144,295-300
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_c3a7921bd22db1 18
+  s_dbb6b1f3671904::t_69f284948388c8 1-6,8,11-17,19-41,43-61,64-88,92-268,270,273-282,291-304,306-389,391-514
+  s_dbb6b1f3671904::t_0ecceb0e0f2765 390
+  s_dbb6b1f3671904::t_c65d24071e59a5 7,9-10,42,62-63,89-91,269,271-272,283-290,305
+backend/src/test/java/com/albunyaan/tube/config/NewPipeDownloaderPacerTest.java
+  s_dbb6b1f3671904::t_072d322ab057da 83
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_a9ec3a85af150e 1-2,4,7-48,51,53-62,65-76,78-81,84-187,190-191,193-451
+  s_dbb6b1f3671904::t_d7dadd41f97e3e 3,5-6,49-50,52,63-64,77,82-83,188-189,192
+backend/src/main/java/com/albunyaan/tube/search/CrawlPacer.java
+  s_dbb6b1f3671904::t_40bdffe4b65ebd 45-49,88-91,122
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "96b8e93b75d444e99e9c334cefa74ec1806d3b7a",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
