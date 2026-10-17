@@ -86,6 +86,7 @@ public class InnerCrawler {
     private boolean woken; // guarded by wake
     private volatile boolean stopped;
     private volatile boolean rebuildRequested;
+    private boolean refreshFailing; // crawler thread only: a dead writer's stack trace is logged once
     private Thread thread;
     private long lastSaveAt;
     private String lastDailyLog = "";
@@ -146,7 +147,11 @@ public class InnerCrawler {
 
     private void run() {
         try {
-            boot();
+            try {
+                boot();
+            } catch (RuntimeException | Error e) { // R10, as for a step: the crawl goes on without the inner index
+                log.error("inner-index boot rebuild failed", e);
+            }
             while (!stopped) {
                 long ms;
                 try {
@@ -167,7 +172,7 @@ public class InnerCrawler {
         while (!stopped && !search.awaitBuilt(IDLE_MS)) {
             // nothing starts before the main index is built
         }
-        rebuildIndex();
+        if (!stopped) rebuildIndex();
     }
 
     /** R31 / §9: a cap change (admin or the memory trigger) is a rebuild from the corpus, never a re-crawl. */
@@ -196,8 +201,14 @@ public class InnerCrawler {
         }
         try {
             index.maybeRefresh();
-        } catch (IOException | AlreadyClosedException e) { // a tragic writer: the job's own write then fails (§12)
-            log.warn("inner-index refresh failed", e);
+            refreshFailing = false;
+        } catch (IOException | AlreadyClosedException e) { // a dead writer (§12): the next index write fails its job
+            if (refreshFailing) log.warn("inner-index refresh failed again: {}", e.toString());
+            else log.warn("inner-index refresh failed", e);
+            refreshFailing = true;
+        } catch (RuntimeException e) {
+            if (!stopped) throw e;
+            return 0; // stop()'s interrupt inside Lucene (ThreadInterruptedException): not a fault
         }
         InnerState s = store.state();
         housekeeping(now);
@@ -392,7 +403,7 @@ public class InnerCrawler {
             }
         } catch (UncheckedIOException e) { // our own disk write: never a rate signal (§12)
             if (stopped) return; // stop()'s interrupt closed the channel (ClosedByInterruptException): not a failed disk
-            log.error("inner-crawl source={}: corpus write failed; the old data is kept; crawling paused 1 h", key, e);
+            log.error("inner-crawl source={}: {}; crawling paused 1 h", key, e.getMessage(), e);
             long pausedUntil = now + CrawlPacer.PAUSE_MS;
             synchronized (store.state()) {
                 store.state().breaker.pausedUntil = pausedUntil; // a full disk must not burn requests on re-fetches
@@ -400,6 +411,7 @@ public class InnerCrawler {
             backoff(src, pausedUntil); // I-5: its own wait starts when the pause ends, so the pass then moves on
             store.save();
         } catch (ExtractionException | RuntimeException e) { // R33.6: a parse failure, or anything else extraction throws
+            if (stopped) return; // stop()'s interrupt (e.g. Lucene's ThreadInterruptedException): not this source's failure
             if (abortedByPacer(e)) return; // NewPipe wrapped the pacer's abort: as the first catch
             src.failures++;
             src.retryAt = now + RETRY_MS;
@@ -653,12 +665,16 @@ public class InnerCrawler {
         List<InnerCorpus.Item> kept = next.size() > InnerState.MAX_PER_SOURCE ? next.subList(0, InnerState.MAX_PER_SOURCE) : next;
         try {
             InnerCorpus.write(store.corpusFile(key), kept);
+        } catch (IOException e) {
+            throw new UncheckedIOException("corpus write failed; the old corpus is kept", e);
+        }
+        try {
             if (sweep) index.replaceSource(key, name, kept);
             else index.merge(key, name, changed(before, kept), removed(before, kept));
-        } catch (IOException e) {
-            throw new UncheckedIOException(e);
-        } catch (AlreadyClosedException e) { // §12 tragic IndexWriter: the job fails as on a full disk, never a parse signal
-            throw new UncheckedIOException(new IOException("inner-index write failed", e));
+        } catch (IOException | AlreadyClosedException e) { // §12 tragic IndexWriter: the job fails as on a full disk, never a parse signal
+            rebuildRequested = true; // the next step rebuilds from the corpus: one attempt per failed job, so per pause
+            throw new UncheckedIOException("inner-index write failed; the corpus is written; rebuilding the index from it",
+                    new IOException(e));
         }
         source(key).items = kept.size();
     }

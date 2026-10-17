@@ -15,6 +15,7 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
 import org.apache.lucene.store.AlreadyClosedException;
+import org.apache.lucene.util.ThreadInterruptedException;
 import org.mockito.InOrder;
 import org.mockito.stubbing.Answer;
 import org.opentest4j.AssertionFailedError;
@@ -1189,6 +1190,19 @@ class InnerCrawlerTest {
     }
 
     @Test
+    void aCompleteCrawlReplacesTheSourceCutToTheCap() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        crawler.boot();
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 2;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        step();
+        assertEquals(3, corpus(CH).size(), "the corpus keeps everything (R31)");
+        assertEquals(2, index.docs(), "replaceSource cuts to the cap; a merge would add all 3");
+        assertFalse(index.has(CH, id("lesson", 2)));
+    }
+
+    @Test
     void aMergeAddsAndUpdatesWithoutTouchingTheRest() throws Exception {
         admitted.put(CH, "Dawah Nederland");
         crawled(CH, items("lesson", 0, 150, "x"), 150, 2);
@@ -1200,6 +1214,7 @@ class InnerCrawlerTest {
         step();
         assertEquals(151, index.docs());
         assertEquals(List.of(), InnerCrawler.changed(items("lesson", 0, 2, "x"), items("lesson", 0, 2, "x")));
+        assertEquals(2, InnerCrawler.changed(items("lesson", 0, 2, "x"), items("lesson", 0, 2, "y")).size(), "a retitle is a change");
         assertEquals(Set.of(id("lesson", 1)), InnerCrawler.removed(items("lesson", 0, 2, "x"), items("lesson", 0, 1, "x")));
     }
 
@@ -1208,6 +1223,7 @@ class InnerCrawlerTest {
         crawler.boot();
         InnerCorpus.write(store.corpusFile(PL), items("story", 0, 4, "x"));
         crawler.requestRebuild();
+        assertEquals(0, index.docs(), "nothing until the crawler thread's next step");
         assertEquals(InnerCrawler.IDLE_MS, step()); // mode OFF
         assertEquals(4, index.docs());
     }
@@ -1276,17 +1292,70 @@ class InnerCrawlerTest {
         assertTrue(store.state().signals.isEmpty(), "never a PARSE signal");
         assertTrue(store.state().breaker.pausedUntil > now.get().toEpochMilli(), "paused 1 h, as for a full disk");
         assertNotEquals(now.get().toEpochMilli() + InnerCrawler.RETRY_MS, source(CH).retryAt, "not R33.6's 7-day wait");
-        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.ERROR));
+        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.ERROR
+                && e.getFormattedMessage().contains("inner-index write failed; the corpus is written")), "M1: names the part");
+        assertEquals(3, corpus(CH).size());
+        step(); // the next tick rebuilds from the corpus: the index heals once the disk is freed
+        step();
+        verify(tragic, times(1)).rebuild(any(), anyInt()); // one attempt per failed job, so at most one per pause
+        List<ILoggingEvent> refreshes = logs.list.stream()
+                .filter(e -> e.getFormattedMessage().contains("inner-index refresh failed")).toList();
+        assertEquals(3, refreshes.size());
+        assertEquals(1, refreshes.stream().filter(e -> e.getThrowableProxy() != null).count(), "M2: one stack trace, then one line");
+    }
+
+    @Test
+    void aShutdownInterruptInsideALuceneWriteIsNeitherASignalNorABackoff() throws Exception {
+        // I1: a refresh waiting on the one merge thread gets stop()'s interrupt as Lucene's ThreadInterruptedException
+        InnerIndex idx = mock(InnerIndex.class);
+        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        doAnswer(inv -> {
+            crawler.stop();
+            throw new ThreadInterruptedException(new InterruptedException());
+        }).when(idx).replaceSource(anyString(), any(), anyList());
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FULL;
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            return batch(3, items("lesson", 0, 3, "x"), false);
+        });
+        step();
+        assertTrue(store.state().signals.isEmpty(), "no PARSE signal");
+        assertEquals(0, source(CH).retryAt, "no 7-day wait");
+        assertEquals(0, source(CH).failures);
+        assertEquals(0, store.state().breaker.pausedUntil);
+        doThrow(new ThreadInterruptedException(new InterruptedException())).when(idx).maybeRefresh();
+        assertEquals(0, step(), "the same interrupt in the tick's refresh ends the step quietly");
+        assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.ERROR), "no false ERROR");
+    }
+
+    @Test
+    void anErrorInTheBootRebuildNeverEndsTheThread() throws Exception {
+        // I2 / R10: an OutOfMemoryError in the 2-7 min boot rebuild must not leave the crawl dead until a restart
+        InnerIndex idx = mock(InnerIndex.class);
+        doThrow(new OutOfMemoryError("Java heap space")).when(idx).rebuild(any(), anyInt());
+        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(1, items("lesson", 0, 1, "x"), false));
+        crawler.start();
+        verify(fetcher, timeout(10_000)).first(eq(CH), anyString());
+        crawler.stop();
+        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.ERROR && e.getFormattedMessage().contains("boot")));
     }
 
     @Test
     void aRebuildEndedByShutdownIsNoError() throws Exception {
         InnerIndex idx = mock(InnerIndex.class);
-        doThrow(new ClosedByInterruptException()).when(idx).rebuild(any(), anyInt()); // stop()'s interrupt inside Lucene's I/O
         crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
-        crawler.stop();
+        doAnswer(inv -> {
+            crawler.stop();
+            throw new ClosedByInterruptException(); // stop()'s interrupt inside Lucene's I/O
+        }).when(idx).rebuild(any(), anyInt());
         crawler.boot();
         verify(idx).rebuild(any(), anyInt());
         assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.ERROR), "no false ERROR");
+        crawler.boot();
+        verify(idx, times(1)).rebuild(any(), anyInt()); // M3: stopped before the rebuild: none starts
     }
 }

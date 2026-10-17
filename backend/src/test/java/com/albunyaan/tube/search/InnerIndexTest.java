@@ -22,6 +22,7 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Set;
@@ -235,6 +236,21 @@ class InnerIndexTest {
         index.rebuild(Map.of(), 10_000);
         assertFalse(index.ready());
         assertEquals(List.of(), indexDirs());
+    }
+
+    @Test
+    void anErrorMidRebuildKeepsTheOldIndexAndLeavesNoDirectory() throws Exception {
+        corpus(CH, InnerCrawlerTest.items("lesson", 0, 3, "x"));
+        index.rebuild(Map.of(), 10_000);
+        Map<String, String> failing = new HashMap<>() {
+            @Override
+            public String get(Object key) {
+                throw new OutOfMemoryError("Java heap space"); // I2: an Error mid-build, after the writer opened
+            }
+        };
+        assertThrows(OutOfMemoryError.class, () -> index.rebuild(failing, 10_000));
+        assertEquals(3, index.docs(), "the old index keeps serving");
+        assertEquals(1, indexDirs().size(), "the failed build's directory is deleted");
     }
 
     @Test

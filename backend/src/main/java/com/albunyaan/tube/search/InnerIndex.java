@@ -110,7 +110,7 @@ public class InnerIndex {
             // processCpuMs: every thread, so the merge thread too, but also requests and any other work meanwhile
             log.info("inner-index built: docs={} bytes={} cpuMs={} processCpuMs={} wallMs={}", docs, bytes(), rebuildCpuMs,
                     (processCpuNanos() - process0) / 1_000_000, rebuildWallMs);
-        } catch (IOException | InterruptedException | RuntimeException e) {
+        } catch (IOException | InterruptedException | RuntimeException | Error e) { // an OOM too: no writer or directory leaks
             try {
                 if (writer != null) writer.rollback();
                 dir.close();
