@@ -1345,9 +1345,10 @@ public class ChannelOrchestrator {
         dto.setUploaderUrl(playlist.getUploaderUrl());
         dto.setStreamCount(playlist.getStreamCount());
 
-        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
-            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
-        }
+        dto.setThumbnailUrl(ThumbnailUrls.playlistThumbnail(
+                playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()
+                        ? playlist.getThumbnails().get(0).getUrl() : null,
+                playlist.getRelatedItems()));
 
         if (playlist.getRelatedItems() != null) {
             List<StreamItemDto> streamItems = playlist.getRelatedItems().stream()
@@ -1355,19 +1356,6 @@ public class ChannelOrchestrator {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
             dto.setRelatedStreams(streamItems);
-        }
-
-        // A custom-thumbnail playlist's header is a signed /pl_c/ URL that 404s within days (or it is
-        // no_thumbnail.jpg). Use the first video's stable /vi/ image from this same fetch, no extra request.
-        // With no items or an unusable id the broken header stays: the validator's refresh then keeps the
-        // stored value and single add asks oEmbed. Maps here: the validator, bulk import, single add,
-        // report lookup. Admin add-for-approval and edits store the client's URL and rely on the daily heal.
-        if (ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())
-                && dto.getRelatedStreams() != null && !dto.getRelatedStreams().isEmpty()) {
-            String firstVideo = "https://i.ytimg.com/vi/" + dto.getRelatedStreams().get(0).getId() + "/hqdefault.jpg";
-            if (!ThumbnailUrls.isBrokenPlaylistThumbnail(firstVideo)) {
-                dto.setThumbnailUrl(firstVideo);
-            }
         }
 
         return dto;

@@ -6,6 +6,12 @@ import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
+import org.schabi.newpipe.extractor.Image;
+import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
+import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.schabi.newpipe.extractor.stream.StreamType;
+
+import java.util.List;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -37,6 +43,27 @@ class YouTubeGatewayBulkTest {
                 "https://www.youtube.com/playlist?list=PL1");
 
         assertEquals(PreviewErrorCode.PRIVATE_CONTENT, r.errorCode());
+    }
+
+    @Test
+    void playlistPreview_swapsExpiringPlcHeaderForFirstVideoThumbnail() throws Exception {
+        // Registry bulk submit stores this preview thumbnail; the swap itself is covered by
+        // ChannelOrchestratorTest's mapping cases (same ThumbnailUrls.playlistThumbnail helper).
+        String playlistId = "PLlZazEh_c4nScNCvGBn8OEf6ujk-sDUpg";
+        Image header = mock(Image.class);
+        when(header.getUrl()).thenReturn("https://i.ytimg.com/pl_c/" + playlistId
+                + "/studio_square_thumbnail.jpg?sqp=CJzKwdYG-oaymwEICKoDEPABSFqi85f_AwYI0sG4xAY=&rs=AOn4CL");
+        PlaylistInfo info = mock(PlaylistInfo.class);
+        when(info.getThumbnails()).thenReturn(List.of(header));
+        when(info.getRelatedItems()).thenReturn(List.of(
+                new StreamInfoItem(0, "https://www.youtube.com/watch?v=DW-00ckCAPI", "Part 1", StreamType.VIDEO_STREAM)));
+        YouTubeGateway gw = mock(YouTubeGateway.class, CALLS_REAL_METHODS);
+        doReturn(info).when(gw).fetchPlaylistInfo(playlistId);
+
+        var r = gw.fetchByDetectedType(YouTubeContentType.PLAYLIST, playlistId,
+                "https://www.youtube.com/playlist?list=" + playlistId);
+
+        assertEquals("https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg", r.metadata().thumbnailUrl());
     }
 
     @Test

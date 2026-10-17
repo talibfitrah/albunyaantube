@@ -1,6 +1,7 @@
 package com.albunyaan.tube.util;
 
 import org.schabi.newpipe.extractor.Image;
+import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
 import java.util.List;
 import java.util.regex.Pattern;
@@ -78,6 +79,26 @@ public final class ThumbnailUrls {
         // rejects the legacy /vi/{playlistId}/ seeder shape (a 34-char id), which
         // a plain "/vi/" substring check would wrongly accept.
         return !VI_VIDEO_ID.matcher(url).find();
+    }
+
+    /**
+     * The thumbnail to store for a fetched playlist. A custom-thumbnail playlist's header is a signed
+     * {@code /pl_c/} URL that 404s within days (or it is {@code no_thumbnail.jpg}), so a broken or missing
+     * header becomes the first item's stable {@code /vi/{id}/hqdefault.jpg} from the same fetch, no extra
+     * request. With no items or an unusable first id the header is returned unchanged.
+     *
+     * <p>Every NewPipe playlist mapping routes through here: {@code ChannelOrchestrator.mapToPlaylistDetailsDto}
+     * (validator, bulk import, JSON import, report lookup) and {@code YouTubeGateway.mapPlaylist} (registry
+     * bulk submit). Admin add-for-approval / edits and user imports store a client-supplied URL instead and
+     * rely on the daily validator heal once approved.
+     */
+    public static String playlistThumbnail(String header, List<StreamInfoItem> items) {
+        if (!isBrokenPlaylistThumbnail(header) || items == null || items.isEmpty()) {
+            return header;
+        }
+        String firstVideo = "https://i.ytimg.com/vi/"
+                + YouTubeUrlUtils.extractYouTubeId(items.get(0).getUrl()) + "/hqdefault.jpg";
+        return isBrokenPlaylistThumbnail(firstVideo) ? header : firstVideo;
     }
 
     private static boolean isYouTubeImageHost(String url) {
