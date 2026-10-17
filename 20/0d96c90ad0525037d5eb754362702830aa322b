@@ -1,0 +1,26 @@
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_dbb6b1f3671904::t_7af2c83605a535 66-67,69-78
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_dbb6b1f3671904::t_0f799642287b8b 243-278
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_dbb6b1f3671904::t_7af2c83605a535 20-22
+  s_dbb6b1f3671904::t_1804d31be3dcff 16-19
+ios/FitrahTube/Catalog/FakeCatalogClient.swift
+  s_dbb6b1f3671904::t_7af2c83605a535 74
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "200d96c90ad0525037d5eb754362702830aa322b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
