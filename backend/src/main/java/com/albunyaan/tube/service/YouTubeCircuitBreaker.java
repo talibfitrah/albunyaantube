@@ -841,6 +841,16 @@ public class YouTubeCircuitBreaker {
 
     /**
      * Check if exception message indicates rate limiting.
+     *
+     * Sign-in wording is a rate limit ONLY for YouTube's bot check. Every LOGIN_REQUIRED message NewPipe 0.26.5
+     * produces comes from YoutubeStreamExtractor.checkPlayabilityStatus:
+     * - reason with "a bot": SignInConfirmNotBotException ("YouTube probably temporarily blocked anonymous watch
+     *   access with this IP , got error LOGIN_REQUIRED: …"): rate limit, by class name and by "not a bot";
+     * - reason with "inappropriate for some users": AgeRestrictedContentException: a gate, not a rate limit;
+     * - reason with "private": PrivateContentException ("This video is private"): gone, not a rate limit;
+     * - any other reason: Got error LOGIN_REQUIRED: "&lt;reason&gt;" ("Sign in to confirm your age", "Private video",
+     *   "Please sign in…"): not a rate limit.
+     * Channel and playlist ERROR alerts carry YouTube's text as Got error: "&lt;text&gt;"; only "not a bot" counts there.
      */
     private boolean isRateLimitMessage(String message) {
         if (message == null) {
@@ -849,13 +859,10 @@ public class YouTubeCircuitBreaker {
 
         String lowerMessage = message.toLowerCase();
 
-        return lowerMessage.contains("sign in to confirm") ||
-               lowerMessage.contains("not a bot") ||
-               lowerMessage.contains("confirm you're not a bot") ||
+        return lowerMessage.contains("not a bot") ||
                lowerMessage.contains("unusual traffic") ||
                lowerMessage.contains("too many requests") ||
                lowerMessage.contains("rate limit") ||
-               lowerMessage.contains("login_required") ||
                lowerMessage.contains("recaptcha") ||
                lowerMessage.contains("captcha") ||
                lowerMessage.contains("429");

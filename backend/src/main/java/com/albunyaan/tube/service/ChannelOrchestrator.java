@@ -15,8 +15,13 @@ import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
+import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.PaidContentException;
+import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
+import org.schabi.newpipe.extractor.exceptions.YoutubeMusicPremiumContentException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
@@ -32,6 +37,7 @@ import org.springframework.stereotype.Service;
 import java.io.IOException;
 import java.util.*;
 import java.util.concurrent.CompletableFuture;
+import java.util.regex.Pattern;
 import java.util.stream.Collectors;
 
 /**
@@ -55,6 +61,75 @@ public class ChannelOrchestrator {
 
     private static final Logger logger = LoggerFactory.getLogger(ChannelOrchestrator.class);
     private static final int DEFAULT_RESULTS = 20;
+
+    /**
+     * NewPipe 0.26.5's "channel does not exist" messages: "This channel doesn't exist." (InnerTube JSON error 404,
+     * YoutubeChannelHelper) and YouTube's own deleted-channel alert as defaultAlertsCheck words it. A bare HTTP 404
+     * ("Not found ("404 …")") is NOT one: getValidJsonResponseBody checks the 404 before the final URL, so a request
+     * that ended at /oops reads the same. Any other or changed wording falls back to ERROR.
+     */
+    private static final Pattern CHANNEL_NOT_FOUND = Pattern.compile(
+            "This channel doesn[\u2019']t exist\\.|Got error: \"This channel does not exist\\.\"");
+
+    /** Exact ERROR alert YouTube shows for a deleted playlist, as defaultAlertsCheck words it (owner ruling R3). */
+    private static final Pattern PLAYLIST_NOT_FOUND = Pattern.compile("Got error: \"The playlist does not exist\\.\"");
+
+    /**
+     * Playability reasons that name a removal, as YoutubeStreamExtractor.checkPlayabilityStatus words an
+     * unclassified non-OK status: Got error STATUS: "reason". These archive directly.
+     */
+    private static final Pattern VIDEO_REMOVED = Pattern.compile("Got error [A-Z_]+: \"(?:This video is private"
+            + "|Private video"
+            + "|This video has been removed\\b.*|This video is no longer available\\b.*)\"");
+
+    /**
+     * YouTube's short age gate (LOGIN_REQUIRED "Sign in to confirm your age" without "inappropriate for some users"),
+     * which NewPipe 0.26.5 leaves untyped. A stable gate, archived like AgeRestrictedContentException.
+     */
+    private static final Pattern VIDEO_AGE_GATE =
+            Pattern.compile("Got error LOGIN_REQUIRED: \"Sign in to confirm your age\\.?\"");
+
+    /**
+     * Archive a channel only when it is definitively gone. The 1.0.4 branch's LiveTabReader has its own not-found
+     * rule (first request only, and still a bare 404); the two rules must be reconciled when 1.0.4 merges.
+     */
+    static boolean channelGone(ExtractionException e) {
+        return e instanceof AccountTerminatedException
+                || (e instanceof ContentNotAvailableException
+                    && CHANNEL_NOT_FOUND.matcher(String.valueOf(e.getMessage())).matches());
+    }
+
+    /**
+     * Archive a playlist only when its owner's account is terminated or YouTube's exact deleted-playlist alert comes
+     * back. NewPipe 0.26.5's YoutubePlaylistExtractor has no not-found text of its own; every other
+     * ContentNotAvailableException it surfaces is an HTTP 404 from either of its two browse requests (metadata, then
+     * a NewPipe-built continuation), an /oops redirect or another ERROR alert.
+     */
+    static boolean playlistGone(ExtractionException e) {
+        return e instanceof AccountTerminatedException
+                || (e instanceof ContentNotAvailableException
+                    && PLAYLIST_NOT_FOUND.matcher(String.valueOf(e.getMessage())).matches());
+    }
+
+    /**
+     * Archive a video directly only when it is removed, private or terminated, or behind a gate the app cannot pass
+     * (age, including the short "Sign in to confirm your age" gate NewPipe leaves untyped; payment/members; Music
+     * Premium). A geo-block (the server's region only), HTTP 404 (NewPipe cannot say which request got it:
+     * visitor_id, player or next), /oops and every other playability status are ERROR. So is a generic reason
+     * ("Video unavailable", "This video is unavailable", "This video isn't available anymore"): YouTube can keep the
+     * real cause (e.g. a geo-block) in errorScreen.playerErrorMessageRenderer.subreason, which NewPipe's message
+     * omits; an admin archives such a video.
+     */
+    static boolean videoGoneOrGated(ExtractionException e) {
+        return e instanceof AccountTerminatedException
+                || e instanceof PrivateContentException
+                || e instanceof AgeRestrictedContentException
+                || e instanceof PaidContentException
+                || e instanceof YoutubeMusicPremiumContentException
+                || (e instanceof ContentNotAvailableException
+                    && (VIDEO_REMOVED.matcher(String.valueOf(e.getMessage())).matches()
+                        || VIDEO_AGE_GATE.matcher(String.valueOf(e.getMessage())).matches()));
+    }
 
     private final YouTubeGateway gateway;
     private final YouTubeThrottler throttler;
@@ -562,11 +637,9 @@ public class ChannelOrchestrator {
      * Uses SEQUENTIAL processing with throttling to avoid triggering YouTube rate limits.
      * Previous implementation used concurrent requests which caused anti-bot blocks.
      *
-     * Calls NewPipeExtractor directly to catch specific exception types:
-     * - ContentNotAvailableException (and subclasses) = content definitively doesn't exist
-     * - Other ExtractionException with "not found" message = content doesn't exist
-     * - Other ExtractionException = parsing/extraction error, may be transient
-     * - IOException = network error, definitely transient
+     * notFound (the caller archives) ONLY when {@link #channelGone} says the channel is definitively gone. NewPipe
+     * also throws a plain ContentNotAvailableException for any InnerTube JSON error (5xx, 429, 403, 400), any other
+     * ERROR alert and an /oops redirect; those, rate limits, parse errors and IOException are all ERROR (retry later).
      *
      * Rate Limiting Protection:
      * - Checks circuit breaker before processing
@@ -629,25 +702,14 @@ public class ChannelOrchestrator {
                     logger.warn("Channel {} returned null info without exception", channelId);
                     result.addError(channelId, "Null response from YouTube");
                 }
-            } catch (ContentNotAvailableException e) {
-                // This exception and its subclasses definitively mean content doesn't exist:
-                // - AccountTerminatedException
-                // - PrivateContentException
-                // - AgeRestrictedContentException
-                // - GeographicRestrictionException
-                // - PaidContentException
-                logger.info("Channel {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
-                        channelId, e.getMessage(), e.getClass().getSimpleName());
-                result.addNotFound(channelId);
             } catch (ExtractionException e) {
                 // Check if this is a rate limit error (detection only - recording is in gateway)
                 if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
                     logger.error("Channel {} RATE LIMITED: {} ({})",
                             channelId, e.getMessage(), e.getClass().getSimpleName());
                     result.addError(channelId, "Rate limit: " + e.getMessage());
-                } else if (isNotFoundErrorMessage(e.getMessage())) {
-                    // Check if the error message indicates content doesn't exist
-                    logger.info("Channel {} CONFIRMED not available (error message): {} ({})",
+                } else if (channelGone(e)) {
+                    logger.info("Channel {} CONFIRMED not available: {} ({})",
                             channelId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(channelId);
                 } else {
@@ -712,7 +774,7 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate playlists with detailed error categorization.
-     * Distinguishes between content that doesn't exist vs transient errors.
+     * notFound (the caller archives) ONLY when {@link #playlistGone}; everything else is ERROR (retry later).
      *
      * Uses SEQUENTIAL processing with throttling to avoid triggering YouTube rate limits.
      *
@@ -767,18 +829,14 @@ public class ChannelOrchestrator {
                     logger.warn("Playlist {} returned null info without exception", playlistId);
                     result.addError(playlistId, "Null response from YouTube");
                 }
-            } catch (ContentNotAvailableException e) {
-                logger.info("Playlist {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
-                        playlistId, e.getMessage(), e.getClass().getSimpleName());
-                result.addNotFound(playlistId);
             } catch (ExtractionException e) {
                 // Check if this is a rate limit error (detection only - recording is in gateway)
                 if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
                     logger.error("Playlist {} RATE LIMITED: {} ({})",
                             playlistId, e.getMessage(), e.getClass().getSimpleName());
                     result.addError(playlistId, "Rate limit: " + e.getMessage());
-                } else if (isNotFoundErrorMessage(e.getMessage())) {
-                    logger.info("Playlist {} CONFIRMED not available (error message): {} ({})",
+                } else if (playlistGone(e)) {
+                    logger.info("Playlist {} CONFIRMED not available: {} ({})",
                             playlistId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(playlistId);
                 } else {
@@ -841,7 +899,7 @@ public class ChannelOrchestrator {
 
     /**
      * Batch validate videos with detailed error categorization.
-     * Distinguishes between content that doesn't exist vs transient errors.
+     * notFound (the caller archives) ONLY when {@link #videoGoneOrGated}; everything else is ERROR (retry later).
      *
      * Uses SEQUENTIAL processing with throttling to avoid triggering YouTube rate limits.
      *
@@ -896,20 +954,17 @@ public class ChannelOrchestrator {
                     logger.warn("Video {} returned null info without exception", videoId);
                     result.addError(videoId, "Null response from YouTube");
                 }
-            } catch (ContentNotAvailableException e) {
-                logger.info("Video {} CONFIRMED not available (ContentNotAvailableException): {} ({})",
-                        videoId, e.getMessage(), e.getClass().getSimpleName());
-                result.addNotFound(videoId);
             } catch (ExtractionException e) {
-                // Check if this is a rate limit error (detection only - recording is in gateway)
-                if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
+                // Gone or gated first: the short age gate reads like a sign-in rate limit but is a stable gate.
+                if (videoGoneOrGated(e)) {
+                    logger.info("Video {} CONFIRMED not available: {} ({})",
+                            videoId, e.getMessage(), e.getClass().getSimpleName());
+                    result.addNotFound(videoId);
+                } else if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
+                    // Detection only - recording is in gateway
                     logger.error("Video {} RATE LIMITED: {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
                     result.addError(videoId, "Rate limit: " + e.getMessage());
-                } else if (isNotFoundErrorMessage(e.getMessage())) {
-                    logger.info("Video {} CONFIRMED not available (error message): {} ({})",
-                            videoId, e.getMessage(), e.getClass().getSimpleName());
-                    result.addNotFound(videoId);
                 } else {
                     logger.warn("Video {} extraction error (will retry): {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
@@ -931,73 +986,6 @@ public class ChannelOrchestrator {
         logger.info("Video batch validation completed: valid={}, notFound={}, errors={}",
                 result.getValidCount(), result.getNotFoundCount(), result.getErrorCount());
         return result;
-    }
-
-    // ==================== Error Message Classification ====================
-
-    /**
-     * Checks if an error message indicates that content DEFINITIVELY doesn't exist on YouTube.
-     *
-     * CONSERVATIVE: Only return true for messages that unambiguously mean "content is gone forever".
-     * When in doubt, return false to avoid incorrectly archiving valid content.
-     *
-     * YouTube returns specific error messages when content is deleted/unavailable.
-     * NewPipeExtractor may wrap these in ParsingException instead of ContentNotAvailableException.
-     *
-     * Note: ContentNotAvailableException and subclasses are caught separately and handled as notFound.
-     * This method is a fallback for ParsingException with clear "not found" messages.
-     *
-     * @param message The error message to check
-     * @return true if the message UNAMBIGUOUSLY indicates content doesn't exist
-     */
-    private boolean isNotFoundErrorMessage(String message) {
-        if (message == null || message.isBlank()) {
-            return false;
-        }
-        String lowerMessage = message.toLowerCase();
-
-        // Channel-specific definitive "not found" messages
-        if (lowerMessage.contains("this channel does not exist") ||
-            lowerMessage.contains("this channel is no longer available") ||
-            lowerMessage.contains("channel has been terminated")) {
-            logger.debug("Channel not found (message match): {}", message);
-            return true;
-        }
-
-        // Video-specific definitive "not found" messages
-        if (lowerMessage.contains("this video is unavailable") ||
-            lowerMessage.contains("this video has been removed") ||
-            lowerMessage.contains("this video is no longer available") ||
-            lowerMessage.contains("this video isn't available anymore") ||
-            lowerMessage.contains("video has been removed by the uploader") ||
-            lowerMessage.contains("this video is private")) {
-            logger.debug("Video not found (message match): {}", message);
-            return true;
-        }
-
-        // Playlist-specific definitive "not found" messages
-        if (lowerMessage.contains("this playlist does not exist") ||
-            lowerMessage.contains("the playlist does not exist") ||
-            lowerMessage.contains("playlist is private") ||
-            lowerMessage.contains("this playlist is no longer available")) {
-            logger.debug("Playlist not found (message match): {}", message);
-            return true;
-        }
-
-        // Account termination messages (applies to all content types)
-        if (lowerMessage.contains("account associated with this video has been terminated") ||
-            lowerMessage.contains("account has been terminated") ||
-            lowerMessage.contains("channel was terminated")) {
-            logger.debug("Content not found (account terminated): {}", message);
-            return true;
-        }
-
-        // CONSERVATIVE: Do NOT match generic phrases like "does not exist" alone
-        // as they could appear in unrelated error messages
-
-        // Log unmatched messages for analysis (helps identify new patterns)
-        logger.trace("Error message did NOT match 'not found' patterns: {}", message);
-        return false;
     }
 
     // ==================== DTO-First Methods ====================
