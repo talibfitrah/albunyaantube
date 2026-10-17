@@ -1,0 +1,26 @@
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_820acbf4e3d43c 17-18,26,41,43,54,76,102,105-108,116,569,975,1163-1245,1247-1266,1268-1279
+  s_dbb6b1f3671904::t_53d1ea8cb052cd 30,1267,1280-1291
+  s_dbb6b1f3671904::t_86592041f3f526 1246
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_53d1ea8cb052cd 12,81,88,97,103,149,158,199,660-661
+  s_dbb6b1f3671904::t_8dfc9c98f585df 183
+  s_dbb6b1f3671904::t_4e7a9d030ffcf0 469-470
+  s_dbb6b1f3671904::t_fb67c5de22e5ff 165-182,184-189,193-198,200-201,527,569,590,651-653,656-657,666-676
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5401aaf8a4ab8b390e49b70bd66eca6c29ede08c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
