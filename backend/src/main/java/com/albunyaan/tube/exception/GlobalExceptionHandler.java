@@ -4,6 +4,9 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -354,21 +357,39 @@ public class GlobalExceptionHandler {
     }
 
     /**
-     * Handle all other exceptions (500)
+     * Client errors Spring raises itself (ResponseStatusException, MVC 405/404/400...) keep their own
+     * status; malformed JSON is a 400. Everything else is a real 500.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleGenericException(
             Exception ex, WebRequest request) {
-        logger.error("Unexpected error: {}", ex.getMessage(), ex);
+        HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
+        String message = "An unexpected error occurred";
+        if (ex instanceof ErrorResponse er && er.getStatusCode().is4xxClientError()) {
+            status = HttpStatus.valueOf(er.getStatusCode().value());
+            message = ex instanceof ResponseStatusException rse && rse.getReason() != null
+                    ? rse.getReason() : status.getReasonPhrase();
+            logger.warn("Client error {}: {}", status.value(), message);
+        } else if (ex instanceof HttpMessageNotReadableException) {
+            status = HttpStatus.BAD_REQUEST;
+            message = "Malformed request body";
+            logger.warn("Client error 400: {}", message);
+        } else {
+            logger.error("Unexpected error: {}", ex.getMessage(), ex);
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
-        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("error", "Internal Server Error");
-        body.put("message", "An unexpected error occurred");
+        body.put("status", status.value());
+        body.put("error", status.getReasonPhrase());
+        body.put("message", message);
         body.put("path", request.getDescription(false).replace("uri=", ""));
 
-        return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
+        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
+        if (ex instanceof ErrorResponse er) {
+            response.headers(er.getHeaders()); // e.g. Allow on 405
+        }
+        return response.body(body);
     }
 
     // F16: handlers for AccountBlockedException and AccountDeletedException
