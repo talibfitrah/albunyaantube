@@ -118,7 +118,9 @@ data class ResolvedStreams(
      */
     val extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID,
     /** Wall-clock ms when the URLs were minted; with [urlGeneratedAt] it turns `/expire/<t>/` into a monotonic deadline. */
-    val urlGeneratedAtWallMs: Long = System.currentTimeMillis()
+    val urlGeneratedAtWallMs: Long = System.currentTimeMillis(),
+    /** StreamInfo.name = playerResponse.videoDetails.title, the uploader's original (owner issue 1); null for a local file. */
+    val title: String? = null
 ) {
     companion object {
         /**

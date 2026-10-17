@@ -646,7 +646,8 @@ class NewPipeExtractorClient(
             isLive = isLiveStream,
             urlGeneratedAt = generatedAt,
             urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION,
-            extractionClient = extractionClient
+            extractionClient = extractionClient,
+            title = name?.takeIf { it.isNotBlank() },
         )
     }
 

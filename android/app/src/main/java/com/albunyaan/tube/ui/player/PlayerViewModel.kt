@@ -1354,6 +1354,20 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Owner issue 1: the resolved stream's title (StreamInfo.name = videoDetails.title, the uploader's original), never
+     * the list row's hl=en translation. Called BEFORE the Ready emission: the prepare-time MediaSession sync reads
+     * state.currentItem. A live-channel item keeps the backend's title: LiveChannelRecovery's D12 match compares it
+     * with the backend's live-tab titles.
+     */
+    private fun adoptOriginalTitle(resolved: ResolvedStreams) {
+        val title = resolved.title ?: return
+        val current = currentItem ?: return
+        if (current.liveChannelId != null || current.streamId != resolved.streamId || current.title == title) return
+        currentItem = current.copy(title = title)
+        applyQueueState()
+    }
+
     private fun needsMetadataHydration(item: UpNextItem): Boolean {
         return item.title.isBlank() ||
             item.title.equals("Video", ignoreCase = true) ||
@@ -1623,6 +1637,7 @@ class PlayerViewModel @Inject constructor(
                 val selection = tapPrefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    adoptOriginalTitle(tapPrefetched)
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1639,6 +1654,7 @@ class PlayerViewModel @Inject constructor(
                 val selection = prefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
                     publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    adoptOriginalTitle(prefetched)
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1753,6 +1769,7 @@ class PlayerViewModel @Inject constructor(
             // PR5: Signal success to reset backoff state (attempt was already recorded in acquire())
             rateLimiter.onExtractionSuccess(item.streamId)
             publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+            adoptOriginalTitle(resolved)
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
             maybeEnumerateDubs(selection)
 

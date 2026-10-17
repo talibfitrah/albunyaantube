@@ -1,5 +1,6 @@
 package com.albunyaan.tube.ui.player
 
+import androidx.lifecycle.viewModelScope
 import androidx.test.core.app.ApplicationProvider
 import androidx.work.Configuration
 import androidx.work.WorkManager
@@ -13,6 +14,7 @@ import com.albunyaan.tube.data.playlist.PlaylistItem
 import com.albunyaan.tube.data.playlist.PlaylistPage
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -684,6 +686,24 @@ class PlayerViewModelPlaylistPagingTest {
         advanceUntilIdle()
 
         assertEquals("Test Channel", fakeFavoritesRepository.getAllFavorites().first().single().channelName)
+    }
+
+    // Owner issue 1 (a): the player takes videoDetails.title; Up Next rows stay the list's titles (ruling (b) is separate).
+    @Test
+    fun `a playlist start shows the resolved title while Up Next keeps the row titles`() = runTest {
+        val items = (1..3).map { createPlaylistItem(it, "video_$it") }
+        fakePlaylistRepository.setPages(listOf(PlaylistPage(items, null)))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1").copy(title = "Original 1")
+        val viewModel = createViewModel()
+        try {
+            viewModel.loadPlaylist("PL123", startIndexHint = 0)
+            advanceUntilIdle()
+
+            assertEquals("Original 1", viewModel.state.value.currentItem?.title)
+            assertEquals(listOf("Video 2", "Video 3"), viewModel.state.value.upNext.map { it.title })
+        } finally {
+            viewModel.viewModelScope.cancel()
+        }
     }
 
     // =============================================================================
