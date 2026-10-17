@@ -531,8 +531,8 @@ public class SearchIndex {
 
     /**
      * In-tab search (spec §4.7) for one page: catalog only, on the searcher `snapshot` names, so every page of one
-     * search cuts the same ranking. BM25 statistics move whenever any document changes (stream posts share `title`
-     * and `channel`), and re-ranking between page fetches repeated or skipped items (Cubic P3, 1.0.4). An unknown or
+     * search cuts the same ranking. BM25 statistics move whenever any document changes (a catalog save or a stream
+     * removal; all documents share `title` and `channel`), and re-ranking between page fetches repeated or skipped items (Cubic P3, 1.0.4). An unknown or
      * pruned snapshot (-1 for a first page) runs on the current searcher and pins it; the result names the one used.
      */
     public Hits searchPage(String query, String type, int want, Set<String> allowedIds, long snapshot)
