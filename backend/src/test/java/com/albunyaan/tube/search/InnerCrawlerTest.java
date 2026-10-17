@@ -33,6 +33,8 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicReference;
@@ -231,6 +233,20 @@ class InnerCrawlerTest {
     }
 
     @Test
+    void englishLectureTitlesStayEnglishAndDutchTitlesStayDutch() {
+        // I-1: `al` (Al-Kahf) and words both languages use (of, in, is, over, die, door, me, men) never count as Dutch
+        assertEquals("en", InnerCrawler.hl("Tafsir Surah Al-Kahf | Shaykh Saleh Al-Fawzan"));
+        assertEquals("en", InnerCrawler.hl("Sahih Al-Bukhari: Book of Revelation"));
+        assertEquals("en", InnerCrawler.hl("Ruqyah Shariah Full - Surah Al-Baqarah Recitation"));
+        assertEquals("en", InnerCrawler.hl(InnerCrawler.titles(items("aqidah", 1, 100, "Sharh Al-Aqidah Al-Wasitiyyah - Lesson"))));
+        assertEquals("en", InnerCrawler.hl("Men who die in the path of Allah: over the door of Paradise"));
+        assertEquals("nl", InnerCrawler.hl("Lezing over het geloof en de profeten"));
+        assertEquals("nl", InnerCrawler.hl("Wat is de betekenis van tawhied"));
+        assertEquals("nl", InnerCrawler.hl("Koranles voor kinderen deel 3"));
+        assertEquals("nl", InnerCrawler.hl("Tafsir van Surah An-Nas"), "an/as/at are Arabic articles, not English");
+    }
+
+    @Test
     void aSourceMissingFromOneSourcesReadKeepsItsStateAndCorpus() throws Exception {
         admitted.put(CH, "Dawah Nederland");
         store.state().mode = InnerState.Mode.FIRST_PASS;
@@ -346,6 +362,101 @@ class InnerCrawlerTest {
         now.set(now.get().plusMillis(InnerCrawler.RETRY_MS + 1));
         step();
         verify(fetcher, times(2)).first(eq(a), anyString());
+    }
+
+    @Test
+    void aDeletedChannelIsGoneButTheSameAlertOnAPlaylistIsNot() throws Exception {
+        String channelGone = "Got error: \"This channel does not exist.\""; // ChannelOrchestrator.channelGone's exact alert
+        admitted.put(CH, "Dawah Nederland");
+        admitted.put(PL, "Verhalen van de Profeten");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(fetcher.first(anyString(), anyString())).thenThrow(new ContentNotAvailableException(channelGone));
+        step();
+        assertEquals(List.of(CH), store.state().breaker.unavailableRun, "I-2: a channel's uploads are gone with it");
+        assertEquals(0, source(CH).retryAt, "in the run, not in transport backoff");
+        step();
+        assertEquals(List.of(CH), store.state().breaker.unavailableRun, "playlistGone alone rules a playlist");
+        assertTrue(source(PL).retryAt > now.get().toEpochMilli(), "transport backoff");
+    }
+
+    @Test
+    void anErrorInsideAJobBacksOffThatSourceAndStillPropagates() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        admitted.put(PL, "Verhalen van de Profeten");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(fetcher.first(eq(CH), anyString())).thenThrow(new AssertionError("a fault in the parser"));
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(1, items("story", 0, 1, "x"), false));
+        assertThrows(AssertionError.class, this::step, "I-3: R10's run loop still logs it");
+        assertEquals(now.get().toEpochMilli() + CrawlPacer.PAUSE_MS, source(CH).retryAt);
+        assertEquals(0, step(), "the pass moves on");
+        verify(fetcher).first(eq(PL), anyString());
+        assertEquals(InnerCrawler.IDLE_MS, step());
+        verify(fetcher, times(1)).first(eq(CH), anyString());
+    }
+
+    @Test
+    void aSourceBackoffIsSavedAtOnceAndSurvivesARestart() throws Exception {
+        String rejected = "playlist:PLshort";
+        admitted.put(CH, "Dawah Nederland");
+        admitted.put(rejected, "x");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(requestThen(new IOException("timeout")));
+        when(fetcher.first(eq(rejected), anyString())).thenThrow(new IllegalArgumentException("not a crawlable source key"));
+        step();
+        step();
+        InnerState back = new InnerStore(tmp.resolve("inner").toString()).state(); // I-4: no 5-min housekeeping in between
+        assertEquals(source(CH).retryAt, back.sources.get(CH).retryAt);
+        assertTrue(back.sources.get(CH).retryAt > 0);
+        assertEquals(source(rejected).retryAt, back.sources.get(rejected).retryAt);
+        assertTrue(back.sources.get(rejected).retryAt > 0);
+    }
+
+    @Test
+    void aCorpusWriteFailureBacksOffThatSourceSoThePassMovesOnAfterThePause() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        admitted.put(PL, "Verhalen van de Profeten");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        Files.createDirectories(store.corpusFile(CH));
+        Files.writeString(store.corpusFile(CH).resolve("blocker"), "x");
+        when(fetcher.first(anyString(), anyString())).thenReturn(batch(1, items("lesson", 0, 1, "x"), false));
+        step();
+        long pausedUntil = store.state().breaker.pausedUntil;
+        assertTrue(source(CH).retryAt > pausedUntil, "I-5: it waits past the pause");
+        now.set(Instant.ofEpochMilli(pausedUntil));
+        assertEquals(0, step());
+        verify(fetcher).first(eq(PL), anyString());
+        verify(fetcher, times(1)).first(eq(CH), anyString());
+        assertEquals(source(CH).retryAt, new InnerStore(tmp.resolve("inner").toString()).state().sources.get(CH).retryAt);
+    }
+
+    @Test
+    void stopInterruptsAPacerSleepAndReturnsAtOnce() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(search.awaitBuilt(anyLong())).thenReturn(true);
+        CountDownLatch sleeping = new CountDownLatch(1);
+        pacer.sleeper = ms -> {
+            sleeping.countDown();
+            Thread.sleep(ms); // the second request waits the 30 s interval
+        };
+        AtomicReference<String> why = new AtomicReference<>();
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            try {
+                pacer.before(BROWSE);
+            } catch (CrawlPacer.CrawlPausedException e) {
+                why.set(e.getMessage());
+                throw e;
+            }
+            return batch(1, items("lesson", 0, 1, "x"), false);
+        });
+        crawler.start();
+        assertTrue(sleeping.await(10, TimeUnit.SECONDS));
+        long t0 = System.nanoTime();
+        crawler.stop();
+        assertTrue(System.nanoTime() - t0 < 3_000_000_000L, "I-7: stop() ends the sleep instead of waiting out its 5 s join");
+        assertEquals("inner crawl paused: interrupted", why.get());
+        assertEquals(0, source(CH).retryAt, "a shutdown is not this source's failure");
     }
 
     @Test

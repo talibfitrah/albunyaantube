@@ -93,7 +93,7 @@ public class ChannelOrchestrator {
      * Archive a channel only when it is definitively gone. LiveTabReader reuses this rule for its first request (a
      * continuation page is never TERMINATED).
      */
-    static boolean channelGone(ExtractionException e) {
+    public static boolean channelGone(ExtractionException e) {
         return e instanceof AccountTerminatedException
                 || (e instanceof ContentNotAvailableException
                     && CHANNEL_NOT_FOUND.matcher(String.valueOf(e.getMessage())).matches());

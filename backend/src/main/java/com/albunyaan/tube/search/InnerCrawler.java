@@ -50,7 +50,22 @@ public class InnerCrawler {
     // either gets first pages (2 requests each). Refresh on CatalogChanged, or page the query, if that ever matters.
     static final long LIVE_REFRESH_MS = 3_600_000;
     static final int LIVE_CHANNELS_MAX = 500;
-    private static final CharArraySet EN = EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, NL = DutchAnalyzer.getDefaultStopSet();
+    /**
+     * R21's language markers (I-1): stop words that only one of the two languages uses. Dutch is Lucene's Dutch stop set
+     * minus its English one (in, is, of, was) minus English words and Arabic transliteration particles (al, die, door,
+     * over, me, men, had, want, hem); el, an, as and on are not Dutch stop words, so they need no entry. English is
+     * Lucene's English set minus the Dutch one minus the Arabic articles an, as, at (an-Nas, as-Sunnah, at-Tawhid).
+     * Final Dutch (88): aan alles als altijd andere ben bij daar dan dat de der deze dit doch doen dus een eens en er ge
+     * geen geweest haar heb hebben heeft het hier hij hoe hun iemand iets ik ja je kan kon kunnen maar meer met mij mijn
+     * moet na naar niet niets nog nu om omdat onder ons ook op reeds te tegen toch toen tot u uit uw van veel voor waren
+     * wat werd wezen wie wil worden wordt zal ze zelf zich zij zijn zo zonder zou.
+     * Final English (26): a and are be but by for if into it no not on or such that the their then there these they
+     * this to will with.
+     */
+    private static final Set<String> NL = markers(DutchAnalyzer.getDefaultStopSet(), EnglishAnalyzer.ENGLISH_STOP_WORDS_SET,
+            Set.of("al", "die", "door", "over", "me", "men", "had", "want", "hem"));
+    private static final Set<String> EN = markers(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, DutchAnalyzer.getDefaultStopSet(),
+            Set.of("an", "as", "at"));
 
     enum Kind { FIRST_PAGE }
 
@@ -99,7 +114,10 @@ public class InnerCrawler {
     void stop() throws InterruptedException {
         stopped = true;
         wakeUp();
-        if (thread != null) thread.join(5_000);
+        if (thread != null) {
+            thread.interrupt(); // I-7: ends a pacer sleep (CrawlPacer refuses it as "interrupted") or an idle wait at once
+            thread.join(5_000);
+        }
         store.save();
     }
 
@@ -262,6 +280,20 @@ public class InnerCrawler {
         jobStartedAt = now;
         jobRequestsBefore = pacer.today(CrawlPacer.CRAWLER_THREAD);
         pacer.jobStart();
+        boolean ended = false;
+        try {
+            attempt(key, name, src, now);
+            ended = true;
+        } finally {
+            if (!ended) { // I-3: an Error, or a fault inside a handler, still propagates to R10's loop; this source waits
+                backoff(src, now);
+                store.save();
+            }
+        }
+    }
+
+    /** Runs the job and classifies its outcome (§6.6, R3-18, the controller's rulings). */
+    private void attempt(String key, String name, InnerState.Source src, long now) {
         try {
             if (firstPage(key, name, src, now)) succeeded(now);
         } catch (CrawlPacer.CrawlPausedException e) {
@@ -271,13 +303,19 @@ public class InnerCrawler {
         } catch (ContentNotAvailableException e) {
             // NewPipe 0.26.5 throws a plain CNA for InnerTube JSON errors, ERROR alerts, /oops and any 404 (library guide):
             // only the definitive gone answer joins the R33.7 run; any other CNA is transient, so it counts as transport (§6.6).
-            if (ChannelOrchestrator.playlistGone(e)) pacer.unavailable(key);
-            else transport(key, src, now, e);
+            // A channel source is read as its UU… playlist, so its deleted-channel answer is channelGone's (I-2).
+            if (ChannelOrchestrator.playlistGone(e) || (key.startsWith("channel:") && ChannelOrchestrator.channelGone(e))) {
+                pacer.unavailable(key);
+            } else {
+                transport(key, src, now, e);
+            }
         } catch (UncheckedIOException e) { // our own disk write: never a rate signal (§12)
             log.error("inner-crawl source={}: corpus write failed; the old data is kept; crawling paused 1 h", key, e);
+            long pausedUntil = now + CrawlPacer.PAUSE_MS;
             synchronized (store.state()) {
-                store.state().breaker.pausedUntil = now + CrawlPacer.PAUSE_MS; // a full disk must not burn requests on re-fetches
+                store.state().breaker.pausedUntil = pausedUntil; // a full disk must not burn requests on re-fetches
             }
+            backoff(src, pausedUntil); // I-5: its own wait starts when the pause ends, so the pass then moves on
             store.save();
         } catch (ExtractionException | RuntimeException e) { // R33.6: a parse failure, or anything else extraction throws
             if (abortedByPacer(e)) return; // NewPipe wrapped the pacer's abort: as the first catch
@@ -285,10 +323,11 @@ public class InnerCrawler {
             src.retryAt = now + RETRY_MS;
             if (requestsSent() == 0) { // ruling 2: a key UploadsFetcher or NewPipe rejected before any request
                 log.warn("inner-crawl source={}: rejected before any request ({}); retry in 7 d", key, e.toString());
-                return;
+            } else {
+                log.warn("inner-crawl source={}: {}; retry in 7 d", key, e.toString());
+                if (!pacer.signalled()) pacer.rateSignal("PARSE", key, 0);
             }
-            log.warn("inner-crawl source={}: {}; retry in 7 d", key, e.toString());
-            if (!pacer.signalled()) pacer.rateSignal("PARSE", key, 0);
+            store.save(); // I-4: the 7-day wait survives a restart
         } catch (IOException e) { // transport, another 5xx, a timeout
             transport(key, src, now, e);
         }
@@ -299,10 +338,16 @@ public class InnerCrawler {
      * up to 7 d, so one source that keeps failing neither blocks the key-ordered pass nor fills the window by itself.
      */
     private void transport(String key, InnerState.Source src, long now, Exception e) {
-        src.failures++;
-        src.retryAt = now + Math.min(RETRY_MS, CrawlPacer.PAUSE_MS << Math.min(src.failures - 1, 8));
+        backoff(src, now);
         log.warn("inner-crawl source={}: {}; retry in {} min", key, e.toString(), (src.retryAt - now) / 60_000);
         if (!pacer.signalled()) pacer.transportFailure();
+        store.save(); // I-4: the wait survives a restart
+    }
+
+    /** The source waits from `from`: 1 h, doubling per failure in a row, up to 7 d. */
+    private static void backoff(InnerState.Source src, long from) {
+        src.failures++;
+        src.retryAt = from + Math.min(RETRY_MS, CrawlPacer.PAUSE_MS << Math.min(src.failures - 1, 8));
     }
 
     private static boolean abortedByPacer(Throwable e) {
@@ -393,7 +438,7 @@ public class InnerCrawler {
         return store.state().sources.computeIfAbsent(key, k -> new InnerState.Source());
     }
 
-    /** R21: Arabic-script letters > Latin letters → ar; else more Dutch than English stop words → nl; else en. */
+    /** R21: Arabic-script letters > Latin letters → ar; else more Dutch-only than English-only markers (NL, EN) → nl; else en. */
     // ponytail: three languages; per-language detection if the first pass shows a material share of other-language channels.
     static String hl(String text) {
         if (text == null) return "en";
@@ -414,6 +459,15 @@ public class InnerCrawler {
             if (EN.contains(word)) en++;
         }
         return nl > en ? "nl" : "en";
+    }
+
+    private static Set<String> markers(CharArraySet own, CharArraySet other, Set<String> blocked) {
+        Set<String> out = new HashSet<>();
+        for (Object word : own) {
+            String w = new String((char[]) word);
+            if (!other.contains(w) && !blocked.contains(w)) out.add(w);
+        }
+        return Set.copyOf(out);
     }
 
     static String titles(List<InnerCorpus.Item> items) {
