@@ -223,6 +223,18 @@ public class YouTubeGateway {
     }
 
     /**
+     * Every probe-taking call's finally. A success or a recorded failure has already resolved the probe, so this is
+     * a no-op then; only an Error (it skips recordError's catch) still holds it, which would block HALF_OPEN until a
+     * reset or restart.
+     */
+    private void releaseUnresolvedProbe() {
+        if (circuitBreaker != null && circuitBreaker.isProbeRequest()) {
+            circuitBreaker.recordProbeFailure(
+                    new IllegalStateException("probe ended without an outcome (an Error escaped)"));
+        }
+    }
+
+    /**
      * Execute an operation with probe timeout if this is a probe request.
      * Probe requests (during HALF_OPEN state) use a shorter timeout to quickly
      * determine if YouTube is responsive again.
@@ -346,6 +358,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -456,6 +470,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -475,6 +491,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -496,6 +514,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -523,6 +543,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -545,6 +567,8 @@ public class YouTubeGateway {
         } catch (IOException | ExtractionException e) {
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();   // getUrl runs on this thread, outside the probe executor's wrap
         }
     }
 

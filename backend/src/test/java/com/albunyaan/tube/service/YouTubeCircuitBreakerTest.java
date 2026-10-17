@@ -326,6 +326,20 @@ class YouTubeCircuitBreakerTest {
     }
 
     @Test
+    @DisplayName("Reset clears a held probe permit, so the next HALF_OPEN can probe")
+    void resetShouldClearTheProbeHolder() {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe(), "a probe takes the permit and never resolves (e.g. an Error escaped)");
+
+        circuitBreaker.reset();   // the admin's way out of a wedged breaker
+
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);   // the next cooldown expires
+        assertFalse(circuitBreaker.isOpen(), "no probe may be in flight after a reset");
+        assertTrue(circuitBreaker.allowProbe(), "the next probe must be able to take the permit");
+    }
+
+    @Test
     @DisplayName("Non-rate-limit probe failure should clear probe permit and reopen without increasing backoff")
     void nonRateLimitProbeFailureShouldClearProbeAndReopenWithoutIncreasingBackoff() {
         Exception rateLimitError = new RuntimeException("rate limit");

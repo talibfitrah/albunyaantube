@@ -480,6 +480,64 @@ class YouTubeGatewayTest {
             }
         }
 
+        /**
+         * An Error (a NoSuchMethodError after a NewPipe bump, say) skips recordError's catch. The probe must still be
+         * released, or HALF_OPEN blocks every breaker-checked call until a restart. fetchStreamInfo runs the NewPipe
+         * call on the probe executor, which already turns the Error into an IOException.
+         */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"fetchChannelInfo", "fetchTabPage", "getTabPage", "fetchPlaylistInfo",
+                "getPlaylistMoreItems", "fetchStreamInfo"})
+        void aProbeThatThrowsAnError_releasesTheProbe(String method) throws Exception {
+            NoSuchMethodError linkage = new NoSuchMethodError("NewPipe linkage");
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            ChannelTabExtractor tab = mock(ChannelTabExtractor.class);
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            String playlistId = "PLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            Page page = new Page("https://www.youtube.com/youtubei/v1/browse?prettyPrint=false", "token");
+            Executable call;
+            Class<? extends Throwable> expected = NoSuchMethodError.class;
+            try {
+                switch (method) {
+                    case "fetchChannelInfo" -> {
+                        when(youtube.getChannelExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g");
+                    }
+                    case "fetchTabPage" -> {
+                        doThrow(linkage).when(tab).fetchPage();
+                        call = () -> g.fetchTabPage(tab);
+                    }
+                    case "getTabPage" -> {
+                        when(tab.getPage(any())).thenThrow(linkage);
+                        call = () -> g.getTabPage(tab, page);
+                    }
+                    case "fetchPlaylistInfo" -> {
+                        when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchPlaylistInfo(playlistId);
+                    }
+                    case "getPlaylistMoreItems" -> {
+                        when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.getPlaylistMoreItems(playlistId, page);
+                    }
+                    case "fetchStreamInfo" -> {
+                        when(youtube.getStreamExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchStreamInfo("eaOtcUNHDB8");
+                        expected = IOException.class;   // "Probe request failed: …" wraps the Error
+                    }
+                    default -> throw new IllegalArgumentException(method);
+                }
+
+                assertThrows(expected, call);
+                assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
+                assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(), method);
+            } finally {
+                g.shutdown();
+            }
+        }
+
         @Test
         @DisplayName("CLOSED state should not block requests")
         void closedState_doesNotBlockRequests() {

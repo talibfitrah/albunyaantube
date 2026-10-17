@@ -869,6 +869,7 @@ public class YouTubeCircuitBreaker {
     public boolean reset() {
         logger.info("Circuit breaker manually reset");
         state.set(State.CLOSED);
+        probeOwner.set(null);   // a wedged probe must not block the next HALF_OPEN
         openedAt.set(null);
         cooldownUntil.set(null);
         backoffLevel.set(0);
