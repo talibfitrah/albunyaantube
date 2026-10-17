@@ -39,7 +39,8 @@ class PublicContentServiceSearchTest {
     @BeforeEach
     void setUp() {
         service = new PublicContentService(channelRepository, playlistRepository, videoRepository,
-                categoryRepository, orderRepository, Runnable::run, searchIndex);
+                categoryRepository, orderRepository, Runnable::run, searchIndex,
+                mock(LiveCategoryService.class));
     }
 
     private static List<ContentItemDto> items(int n) {

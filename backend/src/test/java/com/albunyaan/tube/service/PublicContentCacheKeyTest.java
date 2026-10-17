@@ -75,7 +75,7 @@ class PublicContentCacheKeyTest {
                                                   VideoRepository videos, CategoryRepository categories) {
             return new PublicContentService(channels, playlists, videos,
                     categories, mock(CategoryContentOrderRepository.class), Runnable::run,
-                    mock(SearchIndex.class));
+                    mock(SearchIndex.class), mock(LiveCategoryService.class));
         }
     }
 

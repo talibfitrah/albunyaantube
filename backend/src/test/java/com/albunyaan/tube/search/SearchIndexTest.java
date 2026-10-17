@@ -15,6 +15,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.PublicContentService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -702,7 +703,8 @@ class SearchIndexTest {
                         video("vInTitle", "Ramadan Night", "Masjid Alpha"), video("vInChannel", "Night Talk", "Ramadan Studio")),
                 List.of(), 5_000));
         PublicContentService service = new PublicContentService(channelRepo, playlistRepo, videoRepo,
-                mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged);
+                mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged,
+                mock(LiveCategoryService.class));
         PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night");
 
         List<SearchableStream> posted = new ArrayList<>();

@@ -276,22 +276,39 @@ class LiveTabReaderTest {
         assertThat(downloader.browseUrls).isEmpty();
     }
 
-    /** RV M6, narrowed: only NewPipe's terminated alert and its two not-found messages hide a channel. */
+    /** RV M6, narrowed to ChannelOrchestrator.channelGone: the terminated alert and the two exact not-found texts. */
     @Test
     void onlyATerminatedAlertOrNotFoundIsTerminatedAndKeepsItsMessage() {
         downloader.respond(200, "{\"alerts\":[{\"alertRenderer\":{\"type\":\"ERROR\",\"text\":{\"simpleText\":"
                 + "\"This account has been terminated for a violation of YouTube's Terms of Service.\"}}}]}", null, false);
         downloader.respond(200, "{\"error\":{\"code\":404,\"message\":\"Requested entity was not found.\","
                 + "\"status\":\"NOT_FOUND\"}}", null, false);
-        downloader.respond(404, "{}", null, false);
+        downloader.respond(200, "{\"alerts\":[{\"alertRenderer\":{\"type\":\"ERROR\",\"text\":{\"simpleText\":"
+                + "\"This channel does not exist.\"}}}]}", null, false);
 
-        for (String expected : new String[] {"has been terminated", "This channel doesn't exist.", "Not found (\"404"}) {
+        for (String expected : new String[] {"has been terminated", "This channel doesn't exist.",
+                "Got error: \"This channel does not exist.\""}) {
             LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
 
             assertThat(r.outcome()).as(expected).isEqualTo(LiveTabResult.Outcome.TERMINATED);
             assertThat(r.error()).contains(expected);
             assertThat(r.requests()).isEqualTo(1);
         }
+    }
+
+    /**
+     * A bare HTTP 404 can be YouTube's /oops page: NewPipe checks the 404 before the final URL, so it says nothing
+     * definitive about the channel (main's channelGone rule). ERROR, never TERMINATED.
+     */
+    @Test
+    void aNotFoundEndingAtOopsIsAnErrorNotTerminated() {
+        downloader.respond(404, "{}", "https://www.youtube.com/oops", false);
+
+        LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
+
+        assertThat(r.outcome()).isEqualTo(LiveTabResult.Outcome.ERROR);
+        assertThat(r.error()).contains("Not found (\"404");
+        assertThat(r.requests()).isEqualTo(1);
     }
 
     /** A JSON 5xx, a plain ERROR alert and an /oops redirect all surface as ContentNotAvailableException: ERROR. */

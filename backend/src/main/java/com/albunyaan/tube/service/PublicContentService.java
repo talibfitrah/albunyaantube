@@ -61,6 +61,7 @@ public class PublicContentService {
     private final CategoryContentOrderRepository orderRepository;
     private final Executor contentExecutor;
     private final SearchIndex searchIndex;
+    private final LiveCategoryService liveCategoryService;
 
     public PublicContentService(
             ChannelRepository channelRepository,
@@ -69,7 +70,8 @@ public class PublicContentService {
             CategoryRepository categoryRepository,
             CategoryContentOrderRepository orderRepository,
             @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor,
-            SearchIndex searchIndex
+            SearchIndex searchIndex,
+            LiveCategoryService liveCategoryService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -78,6 +80,7 @@ public class PublicContentService {
         this.orderRepository = orderRepository;
         this.contentExecutor = contentExecutor;
         this.searchIndex = searchIndex;
+        this.liveCategoryService = liveCategoryService;
     }
 
     /**
@@ -114,8 +117,15 @@ public class PublicContentService {
             allCategoryIds = resolveAllCategoryIds(category);
         }
 
+        // Spec §4.1: a LIVE category's HOME and VIDEOS lists are its expansion; CHANNELS stays the channel cards.
+        String upperType = type.toUpperCase(Locale.ROOT);
+        if (allCategoryIds != null && !"CHANNELS".equals(upperType) && !"PLAYLISTS".equals(upperType)
+                && liveCategoryService.isLive(category)) {
+            return livePage(liveCategoryService.items(category), cursor, limit);
+        }
+
         // For content types that support real cursor pagination
-        switch (type.toUpperCase(Locale.ROOT)) {
+        switch (upperType) {
             case "CHANNELS":
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
@@ -556,10 +566,17 @@ public class PublicContentService {
                     allIds.addAll(children);
                 }
 
-                CompletableFuture<List<ContentItemDto>> itemsFuture =
-                        asyncSupply(() -> getCategoryContentItems(allIds, contentLimit, 0));
-                CompletableFuture<Long> countFuture =
-                        asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
+                CompletableFuture<List<ContentItemDto>> itemsFuture;
+                CompletableFuture<Long> countFuture;
+                if (cat.isLive()) {
+                    // Spec §4.1: the section's totalCount is the expanded count, not the order-row count.
+                    CompletableFuture<List<ContentItemDto>> all = asyncSupply(() -> liveCategoryService.items(cat.getId()));
+                    itemsFuture = all.thenApply(l -> new ArrayList<>(l.subList(0, Math.min(contentLimit, l.size()))));
+                    countFuture = all.thenApply(l -> (long) l.size());
+                } else {
+                    itemsFuture = asyncSupply(() -> getCategoryContentItems(allIds, contentLimit, 0));
+                    countFuture = asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
+                }
                 futures.add(new CategoryFuture(cat, allIds, itemsFuture, countFuture));
             }
 
@@ -1377,6 +1394,20 @@ public class PublicContentService {
     /** `offset`, or `offset:snapshot` for in-tab search (SearchIndex.searchPage). */
     private String encodeCursor(Object offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
+    }
+
+    /**
+     * Offset paging over the whole expanded LIVE list.
+     * ponytail: every page builds the full list; bounded by the 30-entry cap (LIVE_CATEGORY_FULL), page inside
+     * items() if the cap grows.
+     */
+    private CursorPageDto<ContentItemDto> livePage(List<ContentItemDto> all, String cursor, int limit) {
+        int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
+        if (offset >= all.size()) {
+            return new CursorPageDto<>(new ArrayList<>(), null);
+        }
+        int end = Math.min(offset + limit, all.size());
+        return new CursorPageDto<>(new ArrayList<>(all.subList(offset, end)), end < all.size() ? encodeCursor(end) : null);
     }
 
     /** The offset an encodeCursor cursor holds; -1 when malformed or negative. Pages and cache keys both read it. */

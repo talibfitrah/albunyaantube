@@ -3,8 +3,7 @@ package com.albunyaan.tube.service;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
-import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
-import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
+import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
@@ -34,9 +33,6 @@ public class LiveTabReader {
      * consent or bot-check redirect lands on, whose URL NewPipe puts in its "Got HTML document" ParsingException.
      */
     private static final Pattern RATE_LIMITED = Pattern.compile("consent\\.youtube\\.com|google\\.com/sorry");
-
-    /** NewPipe 0.26.5's not-found messages (YoutubeChannelHelper, YoutubeParsingHelper); new wording falls back to ERROR. */
-    private static final Pattern NOT_FOUND = Pattern.compile("This channel doesn't exist\\.|Not found \\(\"404\\b.*");
 
     private final YouTubeGateway gateway;
     private final YouTubeOEmbedClient oEmbed;
@@ -86,8 +82,9 @@ public class LiveTabReader {
     }
 
     /**
-     * D3 and R7: a rate limit first (never a hide); TERMINATED only on the terminated or not-found signals of the
-     * first request (a continuation page's 404 says nothing about the channel); else ERROR.
+     * D3 and R7: a rate limit first (never a hide); TERMINATED only on the first request's definitive signals, the
+     * channel validator's {@link ChannelOrchestrator#channelGone} (a bare HTTP 404 can be YouTube's /oops page, and a
+     * continuation page says nothing about the channel); else ERROR.
      */
     private static LiveTabResult failure(Exception e, int requests) {
         String message = e.getClass().getSimpleName() + ": " + e.getMessage();
@@ -95,8 +92,7 @@ public class LiveTabReader {
         if (e instanceof ReCaptchaException || RATE_LIMITED.matcher(raw).find()) {
             return LiveTabResult.rateLimited(requests, message);
         }
-        if (requests == 1 && (e instanceof AccountTerminatedException
-                || (e instanceof ContentNotAvailableException && NOT_FOUND.matcher(raw).matches()))) {
+        if (requests == 1 && e instanceof ExtractionException ee && ChannelOrchestrator.channelGone(ee)) {
             return LiveTabResult.terminated(requests, message);
         }
         return LiveTabResult.error(requests, message);

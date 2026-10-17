@@ -1,5 +1,7 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.dto.ContentItemMapper;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
@@ -15,6 +17,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -93,6 +96,39 @@ public class LiveCategoryService {
             if (!videoMap.containsKey(v.getId())) ordered.add(v);
         }
         return new Members(ordered);
+    }
+
+    /**
+     * Spec §6: the category's public items. A channel entry expands into one VIDEO per current live (R3; OFFLINE and
+     * UNKNOWN hidden, ERROR and suspect keep their last lives); a link is served as stored (D11) when it carries a
+     * channel id (D13); duplicates keep their first position (D4). Every served id answers 200 or 404 on the public
+     * gate, never 410 (R11): one batched registry lookup per render, chunked by 30.
+     */
+    public List<ContentItemDto> items(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
+        Members m = members(categoryId);
+        Map<String, LiveChannelState> snapshot = live.snapshot();   // one read: the lookup and the filter see the same lives
+        Set<String> liveIds = new LinkedHashSet<>();
+        for (Channel c : m.channels()) {
+            LiveChannelState s = c.getYoutubeId() == null ? null : snapshot.get(c.getYoutubeId());
+            if (s != null && LiveChannelState.LIVE.equals(s.getStatus())) {
+                s.getLives().forEach(l -> liveIds.add(l.getVideoId()));
+            }
+        }
+        Map<String, Video> docs = liveIds.isEmpty() ? Map.of() : videos.findByYoutubeIds(liveIds);
+        List<ContentItemDto> out = new ArrayList<>();
+        Set<String> seen = new HashSet<>();
+        for (Object member : m.ordered()) {
+            if (member instanceof Channel c && servable(c) && c.getYoutubeId() != null) {
+                for (LiveChannelState.Live l : servedLives(c, snapshot.get(c.getYoutubeId()), docs)) {
+                    if (seen.add(l.getVideoId())) {
+                        out.add(ContentItemMapper.fromLive(c, l.getVideoId(), l.getTitle()));
+                    }
+                }
+            } else if (member instanceof Video v && servable(v) && v.getChannelId() != null && seen.add(v.getYoutubeId())) {
+                out.add(ContentItemMapper.fromVideo(v));
+            }
+        }
+        return out;
     }
 
     /** The public filters (PublicContentService.isApproved && isAvailable): APPROVED, public, not UNAVAILABLE/ARCHIVED. */

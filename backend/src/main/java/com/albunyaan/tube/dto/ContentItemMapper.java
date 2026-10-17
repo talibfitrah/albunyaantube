@@ -77,6 +77,14 @@ public final class ContentItemMapper {
         );
     }
 
+    /** Spec §4.1: one current live of a LIVE-category channel entry, as a VIDEO item the 1.0.3 apps already play. */
+    public static ContentItemDto fromLive(Channel channel, String videoId, String title) {
+        ContentItemDto dto = ContentItemDto.video(videoId, title, null, 0, null, null,
+                "https://i.ytimg.com/vi/" + videoId + "/hqdefault_live.jpg", null, channel.getName(), null);
+        dto.setLiveChannelId(channel.getYoutubeId());
+        return dto;
+    }
+
     /** Whole days since {@code uploadedAt}, or {@code null} when unknown — never a made-up 0 ("Today"). */
     public static Integer uploadedDaysAgo(Timestamp uploadedAt) {
         return uploadedAt == null ? null

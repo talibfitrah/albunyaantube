@@ -34,6 +34,9 @@ public class ContentItemDto {
     // Playlist-specific
     private Integer itemCount;
 
+    /** Spec §4.1: the channel whose current live this item is (expanded LIVE-category items only). */
+    private String liveChannelId;
+
     // Search-only: not serialized to API response
     @JsonIgnore
     private List<String> keywords;
@@ -196,6 +199,14 @@ public class ContentItemDto {
 
     public void setItemCount(Integer itemCount) {
         this.itemCount = itemCount;
+    }
+
+    public String getLiveChannelId() {
+        return liveChannelId;
+    }
+
+    public void setLiveChannelId(String liveChannelId) {
+        this.liveChannelId = liveChannelId;
     }
 
     public String getChannelTitle() {

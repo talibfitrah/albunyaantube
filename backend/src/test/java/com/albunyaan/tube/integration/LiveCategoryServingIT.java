@@ -1,0 +1,87 @@
+package com.albunyaan.tube.integration;
+
+import com.albunyaan.tube.model.LiveChannelState;
+import com.albunyaan.tube.scheduler.LiveChannelPoller;
+import com.albunyaan.tube.service.LiveChannelService;
+import com.albunyaan.tube.service.LiveTabReader;
+import org.junit.jupiter.api.BeforeEach;
+import org.junit.jupiter.api.Test;
+import org.springframework.beans.factory.annotation.Autowired;
+import org.springframework.boot.test.mock.mockito.MockBean;
+
+import java.util.List;
+import java.util.Map;
+import java.util.concurrent.TimeUnit;
+
+import static org.hamcrest.Matchers.contains;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
+
+/** Spec §12 IT2 (and IT5 in Task 6): the public lists of a seeded LIVE category. */
+class LiveCategoryServingIT extends BaseIntegrationTest {
+
+    @MockBean LiveTabReader reader;          // no YouTube; the snapshot is set directly
+    @Autowired LiveChannelService live;
+    @Autowired LiveChannelPoller poller;
+
+    static final String CAT = "it2-live";
+    static final String SUNNAH = "UCit2sunnah0000000000000", KIDS = "UCit2kids000000000000000";
+
+    @Override
+    protected String[] getCollectionsToClean() {
+        return new String[]{"categories", "channels", "playlists", "videos", "users", "audit_logs",
+                "category_content_order", "live_channel_state"};
+    }
+
+    private void put(String collection, String id, Map<String, Object> fields) throws Exception {
+        firestore.collection(collection).document(id).set(fields).get(5, TimeUnit.SECONDS);
+    }
+
+    private static LiveChannelState liveState(String uc, String... ids) {
+        LiveChannelState s = LiveChannelState.unknown(uc);
+        s.setStatus(LiveChannelState.LIVE);
+        for (String id : ids) s.getLives().add(new LiveChannelState.Live(id, "title " + id));
+        return s;
+    }
+
+    @BeforeEach
+    void seed() throws Exception {
+        put("categories", CAT, Map.of("name", "Live", "type", "LIVE", "topLevel", true, "displayOrder", 1));
+        // "subscribers": the CHANNELS list orders by it, and Firestore leaves out documents without the field
+        put("channels", "channel_" + SUNNAH, Map.of("youtubeId", SUNNAH, "name", "Sunnah", "status", "APPROVED", "categoryIds", List.of(CAT), "subscribers", 2L));
+        put("channels", "channel_" + KIDS, Map.of("youtubeId", KIDS, "name", "Kids", "status", "APPROVED", "categoryIds", List.of(CAT), "subscribers", 1L));
+        put("category_content_order", CAT + "_channel_channel_" + SUNNAH, Map.of("categoryId", CAT, "contentId", "channel_" + SUNNAH, "contentType", "channel", "position", 0));
+        put("category_content_order", CAT + "_channel_channel_" + KIDS, Map.of("categoryId", CAT, "contentId", "channel_" + KIDS, "contentType", "channel", "position", 1));
+        put("videos", "doc-it2blocked", Map.of("youtubeId", "it2blocked1", "status", "REJECTED", "title", "x"));
+        live.loadStates(List.of(liveState(SUNNAH, "it2sunnah01"), liveState(KIDS, "it2kids0001", "it2blocked1")));
+        poller.refreshView();
+    }
+
+    @Test
+    void theCategoryListServesTheCurrentLivesWithTheirChannel() throws Exception {
+        for (String type : new String[]{"HOME", "VIDEOS"}) {
+            mvc.perform(get("/api/v1/content").param("type", type).param("category", CAT).param("limit", "20"))
+                    .andExpect(status().isOk())
+                    .andExpect(jsonPath("$.data[*].id", contains("it2sunnah01", "it2kids0001")))   // R11 dropped the REJECTED doc
+                    .andExpect(jsonPath("$.data[0].liveChannelId").value(SUNNAH))
+                    .andExpect(jsonPath("$.data[0].type").value("VIDEO"));
+        }
+    }
+
+    @Test
+    void channelsStillListTheChannelCards() throws Exception {
+        mvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("category", CAT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].type").value("CHANNEL"))
+                .andExpect(jsonPath("$.data[0].liveChannelId").doesNotExist());   // NON_NULL omits it (F18)
+    }
+
+    @Test
+    void theHomeSectionCountsTheExpandedItems() throws Exception {
+        mvc.perform(get("/api/v1/home").param("category", CAT))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.data[0].items[*].id", contains("it2sunnah01", "it2kids0001")))
+                .andExpect(jsonPath("$.data[0].totalContentCount").value(2));
+    }
+}
