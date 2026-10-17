@@ -152,4 +152,10 @@ class InnerStoreTest {
         assertNotNull(s.sources);
         assertNotNull(s.breaker);
     }
+
+    @Test
+    void corpusFilesLiveInsideTheCorpusDir() {
+        InnerStore store = new InnerStore(tmp.resolve("inner").toString());
+        assertEquals(store.corpusDir().resolve("channel_UCa.jsonl.gz"), store.corpusFile("channel:UCa"));
+    }
 }

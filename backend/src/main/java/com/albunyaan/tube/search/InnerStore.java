@@ -64,6 +64,10 @@ public class InnerStore {
         return dir.resolve("corpus");
     }
 
+    Path corpusFile(String sourceKey) {
+        return InnerCorpus.file(corpusDir(), sourceKey);
+    }
+
     /** While this file exists the crawler acts as OFF (R25): `touch <dir>/STOP` over SSH, no token, no restart. */
     public boolean stopped() {
         return dir != null && Files.exists(dir.resolve("STOP"));
