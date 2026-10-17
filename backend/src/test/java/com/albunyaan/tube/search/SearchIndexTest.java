@@ -450,6 +450,29 @@ class SearchIndexTest {
     }
 
     @Test
+    void theSlowLineCountsTierHitsLoadedAndHiddenDocuments() throws Exception {
+        index.slowSearchMs = -1;
+        // Tier 1 loads six "halal cooking" streams and shows one ("halal-ok"); the five others are hidden (four
+        // blocked by Video documents or the exclusion list, one from a rejected channel). Want 50 is not met, so
+        // tiers 2 and 3 run: tier 2 re-loads and re-hides the same five and adds nothing; tier 3 adds one more hit.
+        // Totals: loaded 6+6+7 = 19, hidden 5+5+5 = 15.
+        index.search("halal cooking", null, 50);
+        String line = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).findFirst().orElseThrow();
+        assertTrue(line.matches("slow search: ms=\\d+ tokens=2 want=50 type=null tiers=1:\\d+ms:1,2:\\d+ms:0,3:\\d+ms:1"
+                + " loaded=19 hidden=15"), line);
+    }
+
+    @Test
+    void anEmptyTokenQueryLogsAnEmptyTiersValue() throws Exception {
+        index.slowSearchMs = -1;
+        index.search("!!!", null, 50);
+        String line = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).findFirst().orElseThrow();
+        assertTrue(line.contains(" tokens=0 ") && line.contains(" tiers= loaded=0 hidden=0"), line);
+    }
+
+    @Test
     void aFastSearchLogsNoSlowLine() throws Exception {
         index.search("halal kitchen", null, 50); // the fixture answers in a few ms, under the 150 ms default
         assertTrue(logged(Level.INFO).stream().noneMatch(e -> e.getFormattedMessage().startsWith("slow search:")));
