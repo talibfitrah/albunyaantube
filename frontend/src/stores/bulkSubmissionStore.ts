@@ -3,6 +3,7 @@ import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
 import type { AxiosError } from 'axios'
+import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
 
 /**
  * Extract a user-facing message from an axios / generic error. Backend
@@ -13,6 +14,7 @@ import type { AxiosError } from 'axios'
  * preserves backend-formatted messaging (cubic R2 finding #4).
  */
 function extractErrorMessage(e: unknown): string {
+  if (apiErrorCode(e)?.startsWith('LIVE_')) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError')
   if (e && typeof e === 'object') {
     const ax = e as AxiosError<{ message?: string }>
     const fromBody = ax.response?.data?.message

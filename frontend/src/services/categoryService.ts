@@ -19,6 +19,7 @@ export interface Category {
   updatedBy?: string;
   createdAt?: string;
   updatedAt?: string;
+  type?: 'LIVE' | null; // spec §3: null = ordinary
 }
 
 /**
@@ -73,6 +74,7 @@ export async function createCategory(data: {
   icon?: string;
   displayOrder?: number | null;
   localizedNames?: Record<string, string>;
+  type?: 'LIVE' | null;
 }): Promise<Category> {
   const payload: Record<string, any> = {
     name: data.name,
@@ -86,6 +88,10 @@ export async function createCategory(data: {
   }
   if (data.localizedNames && Object.keys(data.localizedNames).length > 0) {
     payload.localizedNames = data.localizedNames;
+  }
+  // Spec §3: omitted = null = ordinary on create, so only send it when the caller chose one.
+  if (data.type !== undefined) {
+    payload.type = data.type;
   }
 
   const response = await apiClient.post<Category>('/api/admin/categories', payload);
@@ -103,6 +109,7 @@ export async function updateCategory(
     displayOrder?: number;
     localizedNames?: Record<string, string>;
     parentCategoryId?: string | null;
+    type?: 'LIVE' | null;
   }
 ): Promise<Category> {
   const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data);
