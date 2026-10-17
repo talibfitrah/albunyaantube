@@ -15,8 +15,16 @@ for (let i = 0; i < 1000; i++) {
   ms.push(performance.now() - t0);
 }
 ms.sort((a, b) => a - b);
+const twoHeldMaxRssMiB = Math.round(process.resourceUsage().maxRSS / 1024);
+// R27 rollover, three times: evict the older player, then build a new one (as pollOnce does), and solve on it.
+for (let i = 0; i < 3; i++) {
+  held.shift();
+  held.push(buildPlayer(newContext(), text));
+  if (!selfTest(held.at(-1))) throw new Error('self-test failed after rollover');
+  solveAll(held.at(-1), ['ABCDEFGHIJKLMNOP'], ['S'.repeat(108)]);
+}
 // resourceUsage().maxRSS is in kilobytes (Node docs); a number in the hundreds of thousands means bytes: report it.
 console.log(JSON.stringify({
-  maxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024), afterBuildMiB: afterBuild, steadyMiB: rssMiB(),
+  twoHeldMaxRssMiB, rolloverMaxRssMiB: Math.round(process.resourceUsage().maxRSS / 1024), afterBuildMiB: afterBuild, steadyMiB: rssMiB(),
   p50Ms: Number(ms[499].toFixed(3)), p95Ms: Number(ms[949].toFixed(3)),
 }));
