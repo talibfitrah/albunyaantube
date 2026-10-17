@@ -55,8 +55,9 @@ class LiveTabReaderTest {
             }
         }
 
-        /** One synthetic answer, as the prod downloader hands it over: it never throws on 4xx/5xx and follows
-         *  redirects ({@code landedOn}, null = no redirect). HTTP/2 carries no reason phrase, hence "". */
+        /** One synthetic answer, as the prod downloader hands it over: it follows redirects ({@code landedOn}, null =
+         *  no redirect) and throws only on HTTP 429 (see {@link #initProdDownloaderAnswering429}), so never use 429
+         *  here. HTTP/2 carries no reason phrase, hence "". */
         void respond(int code, String body, String landedOn, boolean html) {
             Map<String, List<String>> headers = html ? Map.of("Content-Type", List.of("text/html; charset=utf-8")) : Map.of();
             browse.add(url -> new Response(code, "", headers, body, landedOn == null ? url : landedOn));
@@ -190,21 +191,25 @@ class LiveTabReaderTest {
      * R7 root cause, end to end: a plain HTML 429 from www.youtube.com (no redirect, so no URL marker) goes through the
      * real prod downloader, NewPipe and the gateway; it reads RATE_LIMITED and opens the shared breaker.
      */
-    @Test
-    void aPlainHtml429ThroughTheProdDownloaderIsRateLimitedAndOpensTheBreaker() {
+    /** NewPipe through the real prod downloader (NewPipeConfiguration); every browse answers HTTP 429 with this body. */
+    static void initProdDownloaderAnswering429(String contentType, String body) {
         OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain -> {
             boolean swJs = chain.request().url().toString().equals("https://www.youtube.com/sw.js");
             return new okhttp3.Response.Builder().request(chain.request()).protocol(Protocol.HTTP_2)
                     .code(swJs ? 200 : 429).message("")
-                    .body(ResponseBody.create(swJs
-                                    ? "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\""
-                                    : "<!DOCTYPE html><html><head><title>Error 429 (Too Many Requests)</title></head></html>",
-                            MediaType.get(swJs ? "text/javascript" : "text/html; charset=utf-8")))
+                    .body(ResponseBody.create(swJs ? "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\"" : body,
+                            MediaType.get(swJs ? "text/javascript" : contentType)))
                     .build();
         }).build();
         NewPipeConfiguration config = new NewPipeConfiguration();
         ReflectionTestUtils.setField(config, "userAgent", "test-agent");
         NewPipe.init(config.newPipeDownloader(http));
+    }
+
+    @Test
+    void aPlainHtml429ThroughTheProdDownloaderIsRateLimitedAndOpensTheBreaker() {
+        initProdDownloaderAnswering429("text/html; charset=utf-8",
+                "<!DOCTYPE html><html><head><title>Error 429 (Too Many Requests)</title></head></html>");
         ValidationProperties props = new ValidationProperties();
         props.getYoutube().getCircuitBreaker().setEnabled(true);
         props.getYoutube().getCircuitBreaker().getRollingWindow().setErrorThreshold(1);
@@ -222,6 +227,42 @@ class LiveTabReaderTest {
         } finally {
             guarded.shutdown();
         }
+    }
+
+    /**
+     * Proof for the pattern cleanup: InnerTube's JSON 429 (status RESOURCE_EXHAUSTED) is an HTTP 429, so the prod
+     * downloader turns it into a ReCaptchaException before NewPipe parses the body; its text never reaches the reader.
+     */
+    @Test
+    void aJson429ReachesTheReaderAsReCaptchaNeverAsItsMessage() {
+        initProdDownloaderAnswering429("application/json; charset=utf-8", "{\"error\":{\"code\":429,"
+                + "\"message\":\"Resource has been exhausted (e.g. check quota).\",\"status\":\"RESOURCE_EXHAUSTED\"}}");
+
+        LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
+
+        assertThat(r.outcome()).isEqualTo(LiveTabResult.Outcome.RATE_LIMITED);
+        assertThat(r.error()).startsWith("ReCaptchaException:").doesNotContain("RESOURCE_EXHAUSTED");
+    }
+
+    /** No message heuristics beyond the redirect hosts: a stray "429" in another error is an ERROR. */
+    @Test
+    void aStray429InAnotherErrorIsAnErrorNotARateLimit() {
+        downloader.respond(400, "{\"error\":{\"code\":400,\"message\":\"Invalid value at 'params' (429)\","
+                + "\"status\":\"INVALID_ARGUMENT\"}}", null, false);
+
+        assertThat(reader.read("UCOll3M-P7oKs5cSrQ9ytt6g").outcome()).isEqualTo(LiveTabResult.Outcome.ERROR);
+    }
+
+    /** A not-found on a continuation page says nothing about the channel: only the first request can be TERMINATED. */
+    @Test
+    void aNotFoundOnAContinuationPageIsAnErrorNotTerminated() throws IOException {
+        downloader.queue("zad-1.json");
+        downloader.respond(404, "{}", null, false);
+
+        LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
+
+        assertThat(r.outcome()).isEqualTo(LiveTabResult.Outcome.ERROR);
+        assertThat(r.requests()).isEqualTo(2);
     }
 
     @Test
@@ -277,16 +318,11 @@ class LiveTabReaderTest {
         downloader.browse.add(url -> {
             throw new ReCaptchaException("reCaptcha Challenge requested", url);
         });
-        downloader.respond(429, "{\"error\":{\"code\":429,\"message\":\"Resource has been exhausted (e.g. check quota).\","
-                + "\"status\":\"RESOURCE_EXHAUSTED\"}}", null, false);
-        downloader.respond(429, "{\"error\":{\"code\":429,\"message\":\"Too Many Requests\",\"status\":\"UNAVAILABLE\"}}",
-                null, false);
         String html = "<!DOCTYPE html><html><head><title>Before you continue</title></head><body></body></html>";
         downloader.respond(200, html, "https://consent.youtube.com/m?continue=https%3A%2F%2Fwww.youtube.com", true);
-        downloader.respond(429, html, "https://www.google.com/sorry/index?continue=https://www.youtube.com/", true);
+        downloader.respond(200, html, "https://www.google.com/sorry/index?continue=https://www.youtube.com/", true);
 
-        for (String expected : new String[] {"reCaptcha", "RESOURCE_EXHAUSTED", "Too Many Requests",
-                "consent.youtube.com", "google.com/sorry"}) {
+        for (String expected : new String[] {"reCaptcha", "consent.youtube.com", "google.com/sorry"}) {
             LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
 
             assertThat(r.outcome()).as(expected).isEqualTo(LiveTabResult.Outcome.RATE_LIMITED);

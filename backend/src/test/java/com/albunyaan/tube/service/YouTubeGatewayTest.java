@@ -470,6 +470,9 @@ class YouTubeGatewayTest {
 
                 assertThrows(expected, call);
                 assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
+                if (!method.endsWith("SearchPage")) {   // the probe-taking calls: a failed probe reopens the circuit
+                    assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(), method);
+                }
             } catch (Exception e) {
                 throw new AssertionError(e);
             } finally {

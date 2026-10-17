@@ -12,7 +12,6 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.util.LinkedHashMap;
-import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.regex.Pattern;
@@ -31,12 +30,10 @@ public class LiveTabReader {
     private static final Pattern UC_ID = Pattern.compile("UC[A-Za-z0-9_-]{22}");
 
     /**
-     * R7, matched on NewPipe 0.26.5's messages (the prod downloader never throws on 4xx/5xx and follows redirects):
-     * a JSON 429 ("Got error:\"RESOURCE_EXHAUSTED\": …"), "429"/"Too Many Requests", and the HTML a consent or
-     * bot-check redirect lands on (its URL is in the "Got HTML document" ParsingException).
+     * R7 beyond HTTP 429 (which the prod downloader already turns into a ReCaptchaException): the HTML a followed
+     * consent or bot-check redirect lands on, whose URL NewPipe puts in its "Got HTML document" ParsingException.
      */
-    private static final Pattern RATE_LIMITED =
-            Pattern.compile("\\b429\\b|Too Many Requests|RESOURCE_EXHAUSTED|consent\\.youtube\\.com|google\\.com/sorry");
+    private static final Pattern RATE_LIMITED = Pattern.compile("consent\\.youtube\\.com|google\\.com/sorry");
 
     /** NewPipe 0.26.5's not-found messages (YoutubeChannelHelper, YoutubeParsingHelper); new wording falls back to ERROR. */
     private static final Pattern NOT_FOUND = Pattern.compile("This channel doesn't exist\\.|Not found \\(\"404\\b.*");
@@ -80,7 +77,7 @@ public class LiveTabReader {
                     }
                 }
             }
-            return LiveTabResult.ok(List.copyOf(lives.values()), requests);
+            return LiveTabResult.ok(lives.values(), requests);
         } catch (YouTubeGateway.CircuitOpenException e) {
             return LiveTabResult.breaker(requests - 1, e.getMessage());   // the refused call never left
         } catch (Exception e) {
@@ -88,15 +85,18 @@ public class LiveTabReader {
         }
     }
 
-    /** D3 and R7: a rate limit first (never a hide), TERMINATED only on the terminated or not-found signals, else ERROR. */
+    /**
+     * D3 and R7: a rate limit first (never a hide); TERMINATED only on the terminated or not-found signals of the
+     * first request (a continuation page's 404 says nothing about the channel); else ERROR.
+     */
     private static LiveTabResult failure(Exception e, int requests) {
         String message = e.getClass().getSimpleName() + ": " + e.getMessage();
         String raw = String.valueOf(e.getMessage());
         if (e instanceof ReCaptchaException || RATE_LIMITED.matcher(raw).find()) {
             return LiveTabResult.rateLimited(requests, message);
         }
-        if (e instanceof AccountTerminatedException
-                || (e instanceof ContentNotAvailableException && NOT_FOUND.matcher(raw).matches())) {
+        if (requests == 1 && (e instanceof AccountTerminatedException
+                || (e instanceof ContentNotAvailableException && NOT_FOUND.matcher(raw).matches()))) {
             return LiveTabResult.terminated(requests, message);
         }
         return LiveTabResult.error(requests, message);

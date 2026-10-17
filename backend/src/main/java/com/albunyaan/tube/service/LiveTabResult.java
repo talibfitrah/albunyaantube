@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import java.util.Collection;
 import java.util.List;
 
 /**
@@ -16,7 +17,7 @@ public record LiveTabResult(Outcome outcome, List<LiveItem> lives, int requests,
 
     public record LiveItem(String id, String title) {}
 
-    public static LiveTabResult ok(List<LiveItem> lives, int requests) {
+    public static LiveTabResult ok(Collection<LiveItem> lives, int requests) {
         return new LiveTabResult(Outcome.OK, List.copyOf(lives), requests, null);
     }
 

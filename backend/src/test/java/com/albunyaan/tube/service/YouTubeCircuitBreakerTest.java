@@ -7,6 +7,8 @@ import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 
 import java.io.IOException;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
 
@@ -222,8 +224,8 @@ class YouTubeCircuitBreakerTest {
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
         assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getStatus().getState());
 
-        // Record another error while in HALF_OPEN - this simulates a failed probe
-        // and should increase the backoff level
+        // The probe takes the permit and is rate-limited: a failed probe, which increases the backoff level
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
 
         // Backoff level should have increased to 1
@@ -244,28 +246,62 @@ class YouTubeCircuitBreakerTest {
 
         // Cycle 1: OPEN → HALF_OPEN → OPEN (level 1)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(1, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 2: OPEN → HALF_OPEN → OPEN (level 2)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(2, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 3: OPEN → HALF_OPEN → OPEN (level 3)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(3, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 4: OPEN → HALF_OPEN → OPEN (level 4 - cap)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(4, circuitBreaker.getStatus().getBackoffLevel(), "Should cap at level 4");
 
         // Cycle 5: Should stay at cap (level 4)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(4, circuitBreaker.getStatus().getBackoffLevel(), "Should stay at cap");
+    }
+
+    /**
+     * Admin and app searches skip the breaker but record their rate limits. In HALF_OPEN only the probe's own failure
+     * may escalate the backoff (1 h → 6 h → … 48 h); another caller's rate limit must not.
+     */
+    @Test
+    @DisplayName("HALF_OPEN: another caller's rate limit does not escalate the backoff; the probe's own failure does")
+    void halfOpen_onlyTheProbesOwnRateLimitEscalates() throws Exception {
+        Exception error = new RuntimeException("rate limit");
+        circuitBreaker.recordRateLimitError(error);   // CLOSED → OPEN at level 0
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.recordRateLimitError(error);   // e.g. an admin search's 429, on another thread
+
+            assertEquals(0, circuitBreaker.getStatus().getBackoffLevel(), "a non-probe rate limit must not escalate");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+            assertFalse(circuitBreaker.isProbeRequest(), "this thread is not the probe");
+
+            probeThread.submit(() -> circuitBreaker.recordRateLimitError(error)).get();   // the probe itself fails
+
+            assertEquals(1, circuitBreaker.getStatus().getBackoffLevel(), "the failed probe escalates");
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+        } finally {
+            probeThread.shutdownNow();
+        }
     }
 
     @Test
@@ -276,8 +312,10 @@ class YouTubeCircuitBreakerTest {
         // Build up backoff level to 2
         circuitBreaker.recordRateLimitError(error);
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(2, circuitBreaker.getStatus().getBackoffLevel());
 
