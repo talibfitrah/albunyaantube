@@ -1,0 +1,39 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-short-vertical.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-HCWGshgFlqE.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/synthetic/README.txt
+  s_dbb6b1f3671904::t_83e98c2698b530 1-7
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-botcheck-tokenless.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-Ix7uzPm3cU8.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-uZT3McCJHzQ.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-5RHQrhSFTVE.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-uxeSkxtZU5I.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/synthetic/synthetic.json
+  s_dbb6b1f3671904::t_9a9783675c30c0 1-62
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/tv-fixtures-README.txt
+  s_dbb6b1f3671904::t_83e98c2698b530 1-8
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/player-tv-botcheck-tokened.json
+  s_dbb6b1f3671904::t_0e380fcb0eb22d 1
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "45889d215a666af80a2532318499863878ee1440",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
