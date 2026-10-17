@@ -397,6 +397,25 @@ class SearchIndexTest {
     }
 
     @Test
+    void theApproximateTierFillsAShortExactListBehindItButTheRelatedTierStaysGated() throws Exception {
+        // Audit round 2 (2026-10-17): three literal "Ikhlaas" titles stopped the ladder, so "Surah Al-Ikhlas" never showed.
+        String naik = "channel:UCzakir";
+        SearchIndex corpus = started(newIndex(List.of(channel("UCzakir", "Dr Zakir Naik")), List.of(), List.of(
+                        video("BcCLLPZNPHk", "Surah Al-Ikhlas Repeats with ZAKY - Let's Memorise Quran!", "One4kids"),
+                        video("vSincerity", "Sincerity in Worship", null)), // the ikhlaas concept: related tier only
+                List.of(stream("uq7ccPxFN_8", "Test the God You Worship against Surah Ikhlaas - Dr Zakir Naik", naik),
+                        stream("PK3HwwqGMko", "Bhagwan Rajneesh Fails the First Test of Surah Ikhlaas - Dr Zakir Naik", naik),
+                        stream("Iu0eXp1v7J8", "Concept of God in Sikhism Similar to that Given in Surah Ikhlaas - Dr Zakir Naik", naik)),
+                5_000));
+        SearchIndex.Hits hits = corpus.search("surah al ikhlaas", null, 50);
+        List<String> ids = ids(hits);
+        assertEquals("exact", hits.match());
+        assertEquals(4, ids.size(), ids.toString());
+        assertEquals(Set.of("uq7ccPxFN_8", "PK3HwwqGMko", "Iu0eXp1v7J8"), Set.copyOf(ids.subList(0, 3)));
+        assertEquals("BcCLLPZNPHk", ids.get(3));
+    }
+
+    @Test
     void nonsenseFindsNothing() throws Exception {
         SearchIndex.Hits hits = index.search("xqzvbnm", null, 50);
         assertTrue(hits.items().isEmpty());
@@ -523,6 +542,115 @@ class SearchIndexTest {
         assertEquals("exact", hits.match());
         int rank = ids(hits).indexOf("PLarabicKids");
         assertTrue(rank >= 0 && rank < 10, ids(hits).toString());
+    }
+
+    // ---- tri-lingual golden queries (search-languages audit 2026-10-17) ------------------------
+
+    /** Real catalog titles and ids (prod listing and search, 2026-10-17): only what the golden rows below need. */
+    private SearchIndex languages() throws Exception {
+        String source = "channel:UCfassTU6mGWIj-yb26_ADjQ";
+        return started(newIndex(List.of(
+                        channel("UC3YmP7nqf514I1zh1eVbzrA", "Dr Zakir Naik"),
+                        channel("UCWZEG9O221KaXiWThBtMHQQ", "Dr. Zakir Naik in arabic"),
+                        channel("UCNB_OaI4524fASt8h0IL8dw", "Mufti Menk"),
+                        channel("UCFAR9NrKzW8OWzgRscdGXxA", "Islamophobia TV"),
+                        channel("UCHDFNoOk8WOXtHo8DIc8efQ", "Mohammed Hijab"),
+                        channel("UCvWyP-vFhlS1-XENpD6w68A", "Stories of the Prophets - Quran Stories"),
+                        channel("UCzPBBUB3SQlDx7EO00YawkQ", "Tafsir Center for Qur’anic Studies"),
+                        channel("UCQHRLH8RQIrdGWMhf5heWiA", "OnePath Network"),
+                        channel("UCfassTU6mGWIj-yb26_ADjQ", "Dawah Nederland"),
+                        channel("UCYW44APHfIo0GyAO9iosHjQ", "الشيخ مصطفى العدوي"),
+                        channel("UCkL2vNPCvXU1niLe7KhKFXg", "الشيخ مصطفى العدوي"),
+                        channel("UCrZNAOv_KBLfb-3TFgxIZqg", "إذاعة القرآن الكريم"),
+                        channel("UC2FUUw_1T6fLMHOpcc7uuuw", "DoctorJamil AlQudsi (‫الدكتور جميل القدسي دويك‬‎)"),
+                        channel("UC8IZ6wMBddjkisG0oVy0_pQ", "Ahmed Ali (‫احمد علي‬‎)"),
+                        channel("UC7AbKZa30XPMInZIsViiBOQ", "أحمد السيد")),
+                List.of(
+                        playlist("PLEaGEZnOHpUMC6v_ER7j43IdfMlzM4jC-", "Islam for Kids - الإسلام للأطفال"),
+                        playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe", "Verhalen van de Profeten"),
+                        playlist("PL327D4FD70AAB6848", "Nederlandse lezingen"),
+                        playlist("PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA", "شرح العقيدة السفارينية"),
+                        playlist("PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu", "كتاب الأربعين النووية"),
+                        playlist("PLCiQWS1wXKNTkKBPqs_Ca1jIkqGTt2o2G", "مقاطع سلسلة تعليم النشء الصغير العقيدة الصحيحة"),
+                        playlist("PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_", "شــرح الأربــعــون الــنــوويــة - ابن عثيمين"),
+                        playlist("PLwpWNTLjV20_XZx7tY_Gxs4oHUa9Rz5s0", "بالقرآن اهتديت ٢ Guided Through the Quran 2"),
+                        playlist("PLwpWNTLjV2091zs4FkItmzL1cGZst3WdD", "بالقرآن اهتديت ١ الجزء الأول Guided Through the Quran 1"),
+                        playlist("PLwpWNTLjV20_KHh9d7PTks2SdphsBY0YZ", "برنامج فسيروا 2 | رمضان 2018"),
+                        playlist("PLwpWNTLjV208i3Mg2Vdm5sjwVQ6aZ07jz", "برنامج فسيروا 3 | رمضان 2019"),
+                        playlist("PLwpWNTLjV208wwpCNyrj2GUEJMYroD0-2", "برنامج فسيروا 1 - 2017 | Faseero 1 - 1438"),
+                        playlist("PL4rbTm5NDNGVXf3whVMtCFvQdO9J8m5H8", "تيجان النور - رمضان 1439 - 2018"),
+                        playlist("PLiTKQO5a7ZXmaBJcNxgCr-BhedLw_UriP", "شرح نخبة الفكر ( الشرح الأول )"),
+                        playlist("PLiTKQO5a7ZXluOys9QONER4krLwPkgGf-", "شرح الأصول من علم الأصول")),
+                List.of(
+                        video("Ye6CrIcubZg", "شاشات رمضان ١٤٣٩", "جمعية الدعوة بالروضة"),
+                        video("cBjnzYHSV4M", "Hoe voed ik mijn kind op in Nederland? - Shaykh Suhayb Salam", null),
+                        video("BcCLLPZNPHk", "Surah Al-Ikhlas Repeats with ZAKY - Let's Memorise Quran!", "One4kids")),
+                List.of(
+                        stream("WZuaPqbZdTE", "🌙🔴 LAATSTE RAMADAANNACHT LIVE BIJ AFAAQ — QUR’AAN, LEZING, INZAMELING & QIYĀAM 🔴🌙", source),
+                        stream("ilgiwqpcOC8", "Lezing: 'De rechtvaardige kalief ʿOmar ibn ʿAbdoel-ʿAziez'", source),
+                        stream("1CWKkfPncEY", "Learn This Beautiful Du’a with Subi 🤲 #muslimkids #Zaky #MuslimKids #IslamicReminder #Dua", source),
+                        stream("uq7ccPxFN_8", "Test the God You Worship against Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("PK3HwwqGMko", "Bhagwan Rajneesh Fails the First Test of Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("Iu0eXp1v7J8", "Concept of God in Sikhism Similar to that Given in Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("ADQYni3iUGA", "Mohammad Hijab vs EVERY Atheist Argument", source),
+                        stream("ZfHKKlMUelo", "Mohammad Hijab Destroys the Substitution Theory", source),
+                        stream("sqyOExnp5nc", "The conversation nobody expected Mohammad Hijab to have", source)),
+                5_000));
+    }
+
+    /**
+     * Each app language keeps its exact, typo, prefix, stopword, concept and script-variant answers (search-languages audit,
+     * 2026-10-17). A row: language | query | expected ids (any one) | worst acceptable rank | tier of the first result.
+     */
+    @ParameterizedTest(name = "{0}: {1}")
+    @CsvSource(delimiter = '|', value = {
+            "en | dr zakir naik | UC3YmP7nqf514I1zh1eVbzrA UCWZEG9O221KaXiWThBtMHQQ | 1 | exact",
+            "en | DR. ZAKIR NAIK!! | UC3YmP7nqf514I1zh1eVbzrA UCWZEG9O221KaXiWThBtMHQQ | 1 | exact",
+            "en | mufti mank | UCNB_OaI4524fASt8h0IL8dw | 1 | approximate",
+            "en | islamofobia | UCFAR9NrKzW8OWzgRscdGXxA | 1 | approximate",
+            "en | mohammed hij | UCHDFNoOk8WOXtHo8DIc8efQ | 1 | exact",
+            "en | the stories of the prophets | UCvWyP-vFhlS1-XENpD6w68A | 1 | exact",
+            "en | kid islam | PLEaGEZnOHpUMC6v_ER7j43IdfMlzM4jC- | 1 | exact",
+            "en | quranic studies tafsir | UCzPBBUB3SQlDx7EO00YawkQ | 1 | exact",
+            "en | one path network | UCQHRLH8RQIrdGWMhf5heWiA | 1 | related",
+            "en | surah al ikhlaas | BcCLLPZNPHk | 4 | exact",
+            "en | mohammad hijab | UCHDFNoOk8WOXtHo8DIc8efQ | 4 | exact",
+            "nl | verhalen van de profeten | PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe | 1 | exact",
+            "nl | verhallen van de profetten | PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe | 1 | approximate",
+            "nl | dawah neder | UCfassTU6mGWIj-yb26_ADjQ | 1 | exact",
+            "nl | nederlandse lezing | PL327D4FD70AAB6848 | 1 | exact",
+            "nl | qiyāam lezing | WZuaPqbZdTE | 1 | exact",
+            "nl | MĲN KIND NEDERLAND | cBjnzYHSV4M | 1 | exact",
+            "nl | kalief omar abdoel | ilgiwqpcOC8 | 1 | exact",
+            "nl | smeekbede | 1CWKkfPncEY | 1 | related",
+            "ar | شَرْحُ العَقِيدَةِ السَّفَّارِينِيَّةِ | PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA | 1 | exact",
+            "ar | كِتَابُ ٱلۡأَرۡبَعِينَ ٱلنَّوَوِيَّةِ | PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu | 1 | exact",
+            "ar | اذاعة القران الكريم | UCrZNAOv_KBLfb-3TFgxIZqg | 1 | exact",
+            "ar | العقيده الصحيحه | PLCiQWS1wXKNTkKBPqs_Ca1jIkqGTt2o2G | 1 | exact",
+            "ar | مصطفي العدوي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact",
+            "ar | شـرح الاربعـون النوويـة ابن عثيمين | PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_ | 1 | exact",
+            "ar | مصطفی العدوی | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact",
+            "ar | احمد علی | UC8IZ6wMBddjkisG0oVy0_pQ | 1 | exact",
+            "ar | القرآن اهتديت | PLwpWNTLjV20_XZx7tY_Gxs4oHUa9Rz5s0 PLwpWNTLjV2091zs4FkItmzL1cGZst3WdD | 1 | exact",
+            "ar | برنامج فسيروا ٣ | PLwpWNTLjV208i3Mg2Vdm5sjwVQ6aZ07jz | 1 | exact",
+            "ar | شاشات رمضان 1439 | Ye6CrIcubZg | 1 | exact",
+            "ar | الشيخ‏ مصطفى‏ العدوي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact",
+            "ar | دويك جميل القدسي | UC2FUUw_1T6fLMHOpcc7uuuw | 1 | exact",
+            "ar | شرح نخبة الف | PLiTKQO5a7ZXmaBJcNxgCr-BhedLw_UriP | 1 | exact",
+            "ar | الاصول من علم الاصول | PLiTKQO5a7ZXluOys9QONER4krLwPkgGf- | 1 | exact",
+            "ar | مصطفى العودي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | approximate"
+    })
+    void goldenQueriesKeepTheirAnswerInEveryAppLanguage(String language, String query, String expected, int worstRank,
+                                                         String tier) throws Exception {
+        SearchIndex.Hits hits = languages().search(query, null, 50);
+        List<String> ids = ids(hits);
+        int rank = -1;
+        for (String id : expected.split(" ")) {
+            int at = ids.indexOf(id);
+            if (at >= 0 && (rank < 0 || at < rank)) rank = at;
+        }
+        assertTrue(rank >= 0 && rank < worstRank, language + " '" + query + "' -> " + ids);
+        assertEquals(tier, hits.match(), language + " '" + query + "'");
     }
 
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------

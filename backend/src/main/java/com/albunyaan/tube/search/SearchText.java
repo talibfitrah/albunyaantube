@@ -10,8 +10,10 @@ import org.apache.lucene.analysis.ar.ArabicNormalizationFilter;
 import org.apache.lucene.analysis.ar.ArabicStemFilter;
 import org.apache.lucene.analysis.charfilter.MappingCharFilter;
 import org.apache.lucene.analysis.charfilter.NormalizeCharMap;
+import org.apache.lucene.analysis.core.DecimalDigitFilter;
 import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.en.EnglishMinimalStemFilter;
+import org.apache.lucene.analysis.fa.PersianNormalizationFilter;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.nl.DutchAnalyzer;
@@ -82,7 +84,8 @@ final class SearchText {
     /** Characters Lucene's Arabic normaliser misses (Uthmani marks), plus apostrophes and `_`. */
     private static NormalizeCharMap charMap() {
         NormalizeCharMap.Builder b = new NormalizeCharMap.Builder();
-        for (String apostrophe : new String[]{"'", "’", "ʼ", "ʻ", "`"}) b.add(apostrophe, "");
+        // ʾ ʿ (U+02BE/02BF) are the hamza/ʿayn of scholarly transliteration ("ʿOmar", "Qurʾaan"), siblings of ʼ ʻ.
+        for (String apostrophe : new String[]{"'", "’", "ʼ", "ʻ", "`", "ʾ", "ʿ"}) b.add(apostrophe, "");
         b.add("_", " ");
         b.add("ٱ", "ا"); // alef wasla -> alef
         b.add("ٰ", "");       // superscript alef
@@ -118,7 +121,11 @@ final class SearchText {
             @Override
             protected TokenStreamComponents createComponents(String fieldName) {
                 Tokenizer source = new StandardTokenizer();
-                TokenStream ts = new ASCIIFoldingFilter(new ArabicNormalizationFilter(new LowerCaseFilter(source)));
+                // Digits fold to 0-9 (Arabic keyboards type ٠-٩); Persian/Urdu ی ک fold to ي ك.
+                TokenStream ts = new ASCIIFoldingFilter(new PersianNormalizationFilter(new ArabicNormalizationFilter(
+                        new DecimalDigitFilter(new LowerCaseFilter(source)))));
+                // ponytail: no Dutch stemmer; on one mixed-language field its false merges (god/good, rap/rape) outweigh
+                // the Dutch gain (2 of 110 audit queries, 2026-10-17). Add one only together with per-language analysis.
                 if (stem) ts = new EnglishMinimalStemFilter(new ArabicStemFilter(ts));
                 return new TokenStreamComponents(source, ts);
             }

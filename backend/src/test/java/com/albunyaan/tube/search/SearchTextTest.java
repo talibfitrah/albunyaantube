@@ -129,6 +129,29 @@ class SearchTextTest {
     }
 
     @Test
+    void arabicIndicAndPersianDigitsFoldToAsciiDigits() {
+        // Search-languages audit (2026-10-17): titles write 0-9 or ٠-٩ (38 of 3,949 sampled titles), Arabic keyboards type
+        // ٠-٩, and "برنامج فسيروا ٣" ranked season 3 below seasons 2 and 1 in the related tier.
+        assertEquals(tokens(BASE, "شاشات رمضان 1439"), tokens(BASE, "شاشات رمضان ١٤٣٩"));
+        assertEquals(tokens(BASE, "فسيروا 3"), tokens(BASE, "فسيروا ۳")); // Persian digits U+06F0-06F9
+    }
+
+    @Test
+    void transliterationAynAndHamzaSignsVanishLikeApostrophes() {
+        // Audit: U+02BF/U+02BE are the ʿayn/hamza of scholarly transliteration (live title "ʿOmar ibn ʿAbdoel-ʿAziez"). The
+        // apostrophe rule had their siblings ʻ ʼ but not them, so "omar" missed that title in the exact tier.
+        assertEquals(List.of("kalief", "omar", "ibn", "abdoel", "aziez"), tokens(BASE, "kalief ʿOmar ibn ʿAbdoel-ʿAziez"));
+        assertEquals(tokens(BASE, "Quraan Islam"), tokens(BASE, "Qurʾaan ʾIslām"));
+    }
+
+    @Test
+    void persianAndUrduLetterFormsFoldToTheArabicLetters() {
+        // Audit: a Persian/Urdu keyboard types ی (U+06CC) and ک (U+06A9) for ي/ى and ك. Words under 4 letters get no fuzzy
+        // clause, so "احمد علی" never found "احمد علي" above the related tier.
+        assertEquals(tokens(BASE, "مصطفى العدوي كتاب علي"), tokens(BASE, "مصطفی العدوی کتاب علی"));
+    }
+
+    @Test
     void stemDropsTheArabicArticleAndEnglishPlurals() {
         assertEquals(SearchText.stem("عقيدة"), SearchText.stem("العقيدة"));
         assertEquals("lecture", SearchText.stem("lectures"));

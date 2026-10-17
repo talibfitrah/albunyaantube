@@ -534,9 +534,10 @@ public class SearchIndex {
     }
 
     /**
-     * The ladder (spec §4.4): exact, then approximate, then related, each appended (deduplicated by id) while fewer
-     * than {@link #MIN_CONFIDENT_HITS} items are found. `catalogOnly` drops streams (in-tab lists); `allowedIds`
-     * (null = all) restricts membership for filtered in-tab search (spec §4.7).
+     * The ladder (spec §4.4): exact, then approximate, then related, each appended (deduplicated by id) behind the hits
+     * before it. Approximate fills a page the exact tier left short (a spelling variant such as "ikhlas" for "ikhlaas");
+     * related, the noisiest, runs only while fewer than {@link #MIN_CONFIDENT_HITS} items are found. `catalogOnly`
+     * drops streams (in-tab lists); `allowedIds` (null = all) restricts membership for filtered in-tab search (§4.7).
      */
     private Hits ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
                         Set<String> allowedIds) throws IOException {
@@ -555,7 +556,7 @@ public class SearchIndex {
                 throw new UncheckedIOException(e);
             }
         });
-        for (int tier = 1; tier <= 3 && out.size() < Math.min(want, MIN_CONFIDENT_HITS); tier++) {
+        for (int tier = 1; tier <= 3 && out.size() < Math.min(want, tier < 3 ? want : MIN_CONFIDENT_HITS); tier++) {
             boolean wasEmpty = out.isEmpty();
             collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen);
             if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
