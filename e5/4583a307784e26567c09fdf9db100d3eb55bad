@@ -1,0 +1,27 @@
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_78fe9952bc796a 185-189,199,219-221,268,656,704,760,1274-1275,1294,1302,1311
+  s_dbb6b1f3671904::t_67f51a969fb61b 22-24,296-331,705,771-1020,1147-1171
+  s_dbb6b1f3671904::t_a2045f8bb610df 707-749,757
+  s_dbb6b1f3671904::t_9fc29acd164978 332,706,1172
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_4a6e1b154bec72 570
+  s_dbb6b1f3671904::t_d89463f05e1694 582,613
+  s_dbb6b1f3671904::t_75011963995bb2 28,59-60,102-105,141-144,172-173,176,181-185,194,545-552,559-569,571-581,583-612,614-683,703,716-717,721,725,744,746,749-753,841
+  s_dbb6b1f3671904::t_db8b32183fc90a 843-844
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e54583a307784e26567c09fdf9db100d3eb55bad",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
