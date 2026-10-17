@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/service/PlaybackSolveRateLimiterTest.java
+  s_dbb6b1f3671904::t_2412be2c214315 46,51,54-101
+backend/src/main/java/com/albunyaan/tube/service/PlaybackSolveRateLimiter.java
+  s_dbb6b1f3671904::t_427dacfaed6591 12,29-31,34,43,51-58
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "21a445958b5751445d594c3eedd7221b7ee17b62",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
