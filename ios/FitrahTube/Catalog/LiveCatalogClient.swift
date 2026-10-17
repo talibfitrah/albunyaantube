@@ -63,6 +63,12 @@ nonisolated struct LiveCatalogClient: CatalogClient {
                             match: SearchMatch(header: ok.headers.xSearchMatch))
     }
 
+    func liveChannel(id: String) async throws -> LiveChannelLives {
+        let dto = try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id))).ok.body.json
+        return LiveChannelLives(channelId: dto.channelId, status: dto.status.rawValue,
+                                lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
+    }
+
     /// A restarted server answers 503 + Retry-After while its search index builds (5 s). Wait that
     /// long -- cancelled with the caller, e.g. by the next keystroke -- and try once more; a longer
     /// wait, any other answer or a second 503 goes to the caller. Android's `retryOnceWhileIndexBuilds`.
@@ -84,7 +90,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         case .channel: type = .channel
         case .playlist: type = .playlist
         }
-        return ContentItem(
+        var item = ContentItem(
             id: dto.id,
             type: type,
             title: dto.title ?? dto.name ?? "",
@@ -99,5 +105,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             videoCount: dto.videoCount,
             itemCount: dto.itemCount
         )
+        item.liveChannelId = dto.liveChannelId
+        return item
     }
 }

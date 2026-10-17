@@ -4,12 +4,10 @@ import InnerTubeKit
 
 /// The detail screens' two backend header substitutes -- a deep-linked playlist's title/count
 /// (`Route` carries none, CF-C-9) and a bot-checked channel's name/avatar (degraded mode) --
-/// hand-written over `HTTPTransport` like `IndexClient`. Not the generated `getPublicPlaylist` /
-/// `getPublicChannel`: `api-specification.yaml` types `createdAt`/`updatedAt` as `date-time`
-/// strings while the backend emits Firestore `Timestamp` objects (`{"seconds":…,"nanos":…}`), so
-/// the generated decode threw on every production response and both substitutes were silently
-/// dead (C T6 live finding; `PublicHeadersTests` pins the mismatch). Delete once spec and backend
-/// agree and the generated call decodes -- the pin test flips to tell you.
+/// hand-written over `HTTPTransport` like `IndexClient`. Written because the generated decode once
+/// threw on production's Firestore timestamps (C T6). Since b1e93334 the spec types these routes as
+/// `PublicPlaylistDetail`/`PublicChannelDetail`, with no timestamps, so the generated calls now decode.
+/// Moving to them is a later cleanup; this file stays because it works and is tested.
 struct PublicHeaders: Sendable {
     private let transport: HTTPTransport
     private let baseURL: URL

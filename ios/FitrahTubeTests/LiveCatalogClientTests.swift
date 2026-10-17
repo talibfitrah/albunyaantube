@@ -215,4 +215,29 @@ struct LiveCatalogClientTests {
         transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "something-new"]
         #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
     }
+
+    @Test func liveChannelDecodesTheLives() async throws {
+        let json = Data(#"{"channelId":"UCOll3M-P7oKs5cSrQ9ytt6g","status":"LIVE","lives":[{"id":"eaOtcUNHDB8","title":"Zad"}]}"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+
+        let lives = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g")
+
+        #expect(lives == LiveChannelLives(channelId: "UCOll3M-P7oKs5cSrQ9ytt6g", status: "LIVE",
+                                          lives: [.init(id: "eaOtcUNHDB8", title: "Zad")]))
+        #expect(transport.lastRequest?.path == "/v1/live/channels/UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
+
+    @Test func aLiveCategoryItemKeepsItsChannel() async throws {
+        let json = Data(#"""
+        {"data":[{"id":"eaOtcUNHDB8","type":"VIDEO","title":"Zad","durationSeconds":0,"liveChannelId":"UCOll3M-P7oKs5cSrQ9ytt6g"}],
+         "pageInfo":{"hasNext":false}}
+        """#.utf8)
+        let (sut, _) = makeClient(responseBody: json)
+
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"), query: nil)
+
+        #expect(page.items.first?.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).channelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
 }

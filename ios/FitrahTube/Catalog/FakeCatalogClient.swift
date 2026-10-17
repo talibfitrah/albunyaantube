@@ -44,15 +44,18 @@ nonisolated struct FakeCatalogClient: CatalogClient {
     private let homePages: [CursorPage<HomeSection>]
     private let contentPages: [CursorPage<ContentItem>]
     private let searchResultsStore: [ContentItem]
+    private let liveChannelsStore: [String: LiveChannelLives]
 
     init(categories: [Category] = FakeCatalogClient.sampleCategories,
          homePages: [CursorPage<HomeSection>] = FakeCatalogClient.sampleHomePages,
          contentPages: [CursorPage<ContentItem>] = FakeCatalogClient.sampleContentPages,
-         searchResults: [ContentItem] = FakeCatalogClient.sampleSearchResults) {
+         searchResults: [ContentItem] = FakeCatalogClient.sampleSearchResults,
+         liveChannels: [String: LiveChannelLives] = [:]) {
         categoriesStore = categories
         self.homePages = homePages
         self.contentPages = contentPages
         searchResultsStore = searchResults
+        liveChannelsStore = liveChannels
     }
 
     func categories() async throws -> [Category] { categoriesStore }
@@ -66,6 +69,11 @@ nonisolated struct FakeCatalogClient: CatalogClient {
     }
 
     func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: searchResultsStore) }
+
+    func liveChannel(id: String) async throws -> LiveChannelLives {
+        guard let lives = liveChannelsStore[id] else { throw LiveChannelUnsupported() }
+        return lives
+    }
 
     private func page<Item: Sendable & Hashable>(_ cursor: String?, from pages: [CursorPage<Item>]) -> CursorPage<Item> {
         let index = cursor.flatMap(Int.init) ?? 0

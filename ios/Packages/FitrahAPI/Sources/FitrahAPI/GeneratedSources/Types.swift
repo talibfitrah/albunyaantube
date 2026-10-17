@@ -50,6 +50,11 @@ public protocol APIProtocol: Sendable {
     /// - Remark: HTTP `GET /v1/videos/{videoId}`.
     /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)`.
     func getPublicVideo(_ input: Operations.GetPublicVideo.Input) async throws -> Operations.GetPublicVideo.Output
+    /// Current live streams of a live-category channel
+    ///
+    /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
+    /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
+    func getLiveChannel(_ input: Operations.GetLiveChannel.Input) async throws -> Operations.GetLiveChannel.Output
     /// Search across all content types
     ///
     /// - Remark: HTTP `GET /v1/search`.
@@ -141,6 +146,19 @@ extension APIProtocol {
         headers: Operations.GetPublicVideo.Input.Headers = .init()
     ) async throws -> Operations.GetPublicVideo.Output {
         try await getPublicVideo(Operations.GetPublicVideo.Input(
+            path: path,
+            headers: headers
+        ))
+    }
+    /// Current live streams of a live-category channel
+    ///
+    /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
+    /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
+    public func getLiveChannel(
+        path: Operations.GetLiveChannel.Input.Path,
+        headers: Operations.GetLiveChannel.Input.Headers = .init()
+    ) async throws -> Operations.GetLiveChannel.Output {
+        try await getLiveChannel(Operations.GetLiveChannel.Input(
             path: path,
             headers: headers
         ))
@@ -506,529 +524,6 @@ public enum Components {
                 case icon
             }
         }
-        /// - Remark: Generated from `#/components/schemas/Channel`.
-        public struct Channel: Codable, Hashable, Sendable {
-            /// - Remark: Generated from `#/components/schemas/Channel/id`.
-            public var id: Swift.String
-            /// YouTube channel ID
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/youtubeId`.
-            public var youtubeId: Swift.String
-            /// Channel name/title
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/name`.
-            public var name: Swift.String
-            /// - Remark: Generated from `#/components/schemas/Channel/description`.
-            public var description: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Channel/thumbnailUrl`.
-            public var thumbnailUrl: Swift.String?
-            /// Subscriber count
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/subscribers`.
-            public var subscribers: Swift.Int64?
-            /// Number of videos in this channel
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/videoCount`.
-            public var videoCount: Swift.Int?
-            /// List of category IDs this channel belongs to
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/categoryIds`.
-            public var categoryIds: [Swift.String]?
-            /// Search keywords/tags for this channel. Auto-populated from YouTube tags during import if not provided.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/keywords`.
-            public var keywords: [Swift.String]?
-            /// Approval status of the channel
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/status`.
-            @frozen public enum StatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case approved = "APPROVED"
-                case pending = "PENDING"
-                case rejected = "REJECTED"
-            }
-            /// Approval status of the channel
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/status`.
-            public var status: Components.Schemas.Channel.StatusPayload?
-            /// - Remark: Generated from `#/components/schemas/Channel/excludedItems`.
-            public var excludedItems: Components.Schemas.ExcludedItems?
-            /// UID of user who submitted this channel
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/submittedBy`.
-            public var submittedBy: Swift.String?
-            /// UID of user who approved this channel
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/approvedBy`.
-            public var approvedBy: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Channel/approvalMetadata`.
-            public var approvalMetadata: Components.Schemas.ApprovalMetadata?
-            /// - Remark: Generated from `#/components/schemas/Channel/createdAt`.
-            public var createdAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/Channel/updatedAt`.
-            public var updatedAt: Foundation.Date?
-            /// Integer sort order. Lower values appear first. Null until explicitly set.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Channel/displayOrder`.
-            public var displayOrder: Swift.Int?
-            /// Creates a new `Channel`.
-            ///
-            /// - Parameters:
-            ///   - id:
-            ///   - youtubeId: YouTube channel ID
-            ///   - name: Channel name/title
-            ///   - description:
-            ///   - thumbnailUrl:
-            ///   - subscribers: Subscriber count
-            ///   - videoCount: Number of videos in this channel
-            ///   - categoryIds: List of category IDs this channel belongs to
-            ///   - keywords: Search keywords/tags for this channel. Auto-populated from YouTube tags during import if not provided.
-            ///   - status: Approval status of the channel
-            ///   - excludedItems:
-            ///   - submittedBy: UID of user who submitted this channel
-            ///   - approvedBy: UID of user who approved this channel
-            ///   - approvalMetadata:
-            ///   - createdAt:
-            ///   - updatedAt:
-            ///   - displayOrder: Integer sort order. Lower values appear first. Null until explicitly set.
-            public init(
-                id: Swift.String,
-                youtubeId: Swift.String,
-                name: Swift.String,
-                description: Swift.String? = nil,
-                thumbnailUrl: Swift.String? = nil,
-                subscribers: Swift.Int64? = nil,
-                videoCount: Swift.Int? = nil,
-                categoryIds: [Swift.String]? = nil,
-                keywords: [Swift.String]? = nil,
-                status: Components.Schemas.Channel.StatusPayload? = nil,
-                excludedItems: Components.Schemas.ExcludedItems? = nil,
-                submittedBy: Swift.String? = nil,
-                approvedBy: Swift.String? = nil,
-                approvalMetadata: Components.Schemas.ApprovalMetadata? = nil,
-                createdAt: Foundation.Date? = nil,
-                updatedAt: Foundation.Date? = nil,
-                displayOrder: Swift.Int? = nil
-            ) {
-                self.id = id
-                self.youtubeId = youtubeId
-                self.name = name
-                self.description = description
-                self.thumbnailUrl = thumbnailUrl
-                self.subscribers = subscribers
-                self.videoCount = videoCount
-                self.categoryIds = categoryIds
-                self.keywords = keywords
-                self.status = status
-                self.excludedItems = excludedItems
-                self.submittedBy = submittedBy
-                self.approvedBy = approvedBy
-                self.approvalMetadata = approvalMetadata
-                self.createdAt = createdAt
-                self.updatedAt = updatedAt
-                self.displayOrder = displayOrder
-            }
-            public enum CodingKeys: String, CodingKey {
-                case id
-                case youtubeId
-                case name
-                case description
-                case thumbnailUrl
-                case subscribers
-                case videoCount
-                case categoryIds
-                case keywords
-                case status
-                case excludedItems
-                case submittedBy
-                case approvedBy
-                case approvalMetadata
-                case createdAt
-                case updatedAt
-                case displayOrder
-            }
-        }
-        /// - Remark: Generated from `#/components/schemas/Playlist`.
-        public struct Playlist: Codable, Hashable, Sendable {
-            /// - Remark: Generated from `#/components/schemas/Playlist/id`.
-            public var id: Swift.String
-            /// YouTube playlist ID
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/youtubeId`.
-            public var youtubeId: Swift.String
-            /// - Remark: Generated from `#/components/schemas/Playlist/title`.
-            public var title: Swift.String
-            /// - Remark: Generated from `#/components/schemas/Playlist/description`.
-            public var description: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Playlist/thumbnailUrl`.
-            public var thumbnailUrl: Swift.String?
-            /// Number of videos in this playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/itemCount`.
-            public var itemCount: Swift.Int?
-            /// List of category IDs this playlist belongs to
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/categoryIds`.
-            public var categoryIds: [Swift.String]?
-            /// Search keywords/tags for this playlist.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/keywords`.
-            public var keywords: [Swift.String]?
-            /// ID of the channel that owns this playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/channelId`.
-            public var channelId: Swift.String?
-            /// Approval status of the playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/status`.
-            @frozen public enum StatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case approved = "APPROVED"
-                case pending = "PENDING"
-                case rejected = "REJECTED"
-            }
-            /// Approval status of the playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/status`.
-            public var status: Components.Schemas.Playlist.StatusPayload?
-            /// YouTube video IDs to exclude from this playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/excludedVideoIds`.
-            public var excludedVideoIds: [Swift.String]?
-            /// UID of user who submitted this playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/submittedBy`.
-            public var submittedBy: Swift.String?
-            /// UID of user who approved this playlist
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/approvedBy`.
-            public var approvedBy: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Playlist/approvalMetadata`.
-            public var approvalMetadata: Components.Schemas.ApprovalMetadata?
-            /// - Remark: Generated from `#/components/schemas/Playlist/createdAt`.
-            public var createdAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/Playlist/updatedAt`.
-            public var updatedAt: Foundation.Date?
-            /// Integer sort order. Lower values appear first. Null until explicitly set.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Playlist/displayOrder`.
-            public var displayOrder: Swift.Int?
-            /// Creates a new `Playlist`.
-            ///
-            /// - Parameters:
-            ///   - id:
-            ///   - youtubeId: YouTube playlist ID
-            ///   - title:
-            ///   - description:
-            ///   - thumbnailUrl:
-            ///   - itemCount: Number of videos in this playlist
-            ///   - categoryIds: List of category IDs this playlist belongs to
-            ///   - keywords: Search keywords/tags for this playlist.
-            ///   - channelId: ID of the channel that owns this playlist
-            ///   - status: Approval status of the playlist
-            ///   - excludedVideoIds: YouTube video IDs to exclude from this playlist
-            ///   - submittedBy: UID of user who submitted this playlist
-            ///   - approvedBy: UID of user who approved this playlist
-            ///   - approvalMetadata:
-            ///   - createdAt:
-            ///   - updatedAt:
-            ///   - displayOrder: Integer sort order. Lower values appear first. Null until explicitly set.
-            public init(
-                id: Swift.String,
-                youtubeId: Swift.String,
-                title: Swift.String,
-                description: Swift.String? = nil,
-                thumbnailUrl: Swift.String? = nil,
-                itemCount: Swift.Int? = nil,
-                categoryIds: [Swift.String]? = nil,
-                keywords: [Swift.String]? = nil,
-                channelId: Swift.String? = nil,
-                status: Components.Schemas.Playlist.StatusPayload? = nil,
-                excludedVideoIds: [Swift.String]? = nil,
-                submittedBy: Swift.String? = nil,
-                approvedBy: Swift.String? = nil,
-                approvalMetadata: Components.Schemas.ApprovalMetadata? = nil,
-                createdAt: Foundation.Date? = nil,
-                updatedAt: Foundation.Date? = nil,
-                displayOrder: Swift.Int? = nil
-            ) {
-                self.id = id
-                self.youtubeId = youtubeId
-                self.title = title
-                self.description = description
-                self.thumbnailUrl = thumbnailUrl
-                self.itemCount = itemCount
-                self.categoryIds = categoryIds
-                self.keywords = keywords
-                self.channelId = channelId
-                self.status = status
-                self.excludedVideoIds = excludedVideoIds
-                self.submittedBy = submittedBy
-                self.approvedBy = approvedBy
-                self.approvalMetadata = approvalMetadata
-                self.createdAt = createdAt
-                self.updatedAt = updatedAt
-                self.displayOrder = displayOrder
-            }
-            public enum CodingKeys: String, CodingKey {
-                case id
-                case youtubeId
-                case title
-                case description
-                case thumbnailUrl
-                case itemCount
-                case categoryIds
-                case keywords
-                case channelId
-                case status
-                case excludedVideoIds
-                case submittedBy
-                case approvedBy
-                case approvalMetadata
-                case createdAt
-                case updatedAt
-                case displayOrder
-            }
-        }
-        /// - Remark: Generated from `#/components/schemas/Video`.
-        public struct Video: Codable, Hashable, Sendable {
-            /// - Remark: Generated from `#/components/schemas/Video/id`.
-            public var id: Swift.String
-            /// YouTube video ID
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/youtubeId`.
-            public var youtubeId: Swift.String
-            /// - Remark: Generated from `#/components/schemas/Video/title`.
-            public var title: Swift.String
-            /// - Remark: Generated from `#/components/schemas/Video/description`.
-            public var description: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Video/thumbnailUrl`.
-            public var thumbnailUrl: Swift.String?
-            /// Video duration in seconds
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/durationSeconds`.
-            public var durationSeconds: Swift.Int?
-            /// When the video was uploaded to YouTube
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/uploadedAt`.
-            public var uploadedAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/Video/viewCount`.
-            public var viewCount: Swift.Int64?
-            /// YouTube channel ID that owns this video
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/channelId`.
-            public var channelId: Swift.String?
-            /// Channel name (cached from YouTube)
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/channelTitle`.
-            public var channelTitle: Swift.String?
-            /// List of category IDs this video belongs to
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/categoryIds`.
-            public var categoryIds: [Swift.String]?
-            /// Search keywords/tags for this video. Auto-populated from YouTube tags during import if not provided.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/keywords`.
-            public var keywords: [Swift.String]?
-            /// Approval/availability status of the video
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/status`.
-            @frozen public enum StatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case approved = "APPROVED"
-                case pending = "PENDING"
-                case rejected = "REJECTED"
-                case unavailable = "UNAVAILABLE"
-            }
-            /// Approval/availability status of the video
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/status`.
-            public var status: Components.Schemas.Video.StatusPayload?
-            /// Whether the video still exists on YouTube (VALID=accessible, UNAVAILABLE=deleted/private, ERROR=validation failed, null=not yet validated)
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/validationStatus`.
-            @frozen public enum ValidationStatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case valid = "VALID"
-                case unavailable = "UNAVAILABLE"
-                case error = "ERROR"
-            }
-            /// Whether the video still exists on YouTube (VALID=accessible, UNAVAILABLE=deleted/private, ERROR=validation failed, null=not yet validated)
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/validationStatus`.
-            public var validationStatus: Components.Schemas.Video.ValidationStatusPayload?
-            /// Last time this video was validated against YouTube API
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/lastValidatedAt`.
-            public var lastValidatedAt: Foundation.Date?
-            /// UID of user who submitted this video
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/submittedBy`.
-            public var submittedBy: Swift.String?
-            /// UID of user who approved this video
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/approvedBy`.
-            public var approvedBy: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/Video/createdAt`.
-            public var createdAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/Video/updatedAt`.
-            public var updatedAt: Foundation.Date?
-            /// Integer sort order. Lower values appear first. Null until explicitly set.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/displayOrder`.
-            public var displayOrder: Swift.Int?
-            /// - Remark: Generated from `#/components/schemas/Video/videoType`.
-            public var videoType: Components.Schemas.VideoType?
-            /// Whether this video may be saved for offline playback. Every approved video is saveable unless an admin explicitly set this to false (owner ruling 2026-09-27). GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may carry the raw stored flag, where null means never toggled. Clients MUST treat null/absent as true — only an explicit false blocks saving.
-            ///
-            /// - Remark: Generated from `#/components/schemas/Video/offlineAllowed`.
-            public var offlineAllowed: Swift.Bool?
-            /// Creates a new `Video`.
-            ///
-            /// - Parameters:
-            ///   - id:
-            ///   - youtubeId: YouTube video ID
-            ///   - title:
-            ///   - description:
-            ///   - thumbnailUrl:
-            ///   - durationSeconds: Video duration in seconds
-            ///   - uploadedAt: When the video was uploaded to YouTube
-            ///   - viewCount:
-            ///   - channelId: YouTube channel ID that owns this video
-            ///   - channelTitle: Channel name (cached from YouTube)
-            ///   - categoryIds: List of category IDs this video belongs to
-            ///   - keywords: Search keywords/tags for this video. Auto-populated from YouTube tags during import if not provided.
-            ///   - status: Approval/availability status of the video
-            ///   - validationStatus: Whether the video still exists on YouTube (VALID=accessible, UNAVAILABLE=deleted/private, ERROR=validation failed, null=not yet validated)
-            ///   - lastValidatedAt: Last time this video was validated against YouTube API
-            ///   - submittedBy: UID of user who submitted this video
-            ///   - approvedBy: UID of user who approved this video
-            ///   - createdAt:
-            ///   - updatedAt:
-            ///   - displayOrder: Integer sort order. Lower values appear first. Null until explicitly set.
-            ///   - videoType:
-            ///   - offlineAllowed: Whether this video may be saved for offline playback. Every approved video is saveable unless an admin explicitly set this to false (owner ruling 2026-09-27). GET /v1/videos/{videoId} serves the EFFECTIVE value (never null); other reads may carry the raw stored flag, where null means never toggled. Clients MUST treat null/absent as true — only an explicit false blocks saving.
-            public init(
-                id: Swift.String,
-                youtubeId: Swift.String,
-                title: Swift.String,
-                description: Swift.String? = nil,
-                thumbnailUrl: Swift.String? = nil,
-                durationSeconds: Swift.Int? = nil,
-                uploadedAt: Foundation.Date? = nil,
-                viewCount: Swift.Int64? = nil,
-                channelId: Swift.String? = nil,
-                channelTitle: Swift.String? = nil,
-                categoryIds: [Swift.String]? = nil,
-                keywords: [Swift.String]? = nil,
-                status: Components.Schemas.Video.StatusPayload? = nil,
-                validationStatus: Components.Schemas.Video.ValidationStatusPayload? = nil,
-                lastValidatedAt: Foundation.Date? = nil,
-                submittedBy: Swift.String? = nil,
-                approvedBy: Swift.String? = nil,
-                createdAt: Foundation.Date? = nil,
-                updatedAt: Foundation.Date? = nil,
-                displayOrder: Swift.Int? = nil,
-                videoType: Components.Schemas.VideoType? = nil,
-                offlineAllowed: Swift.Bool? = nil
-            ) {
-                self.id = id
-                self.youtubeId = youtubeId
-                self.title = title
-                self.description = description
-                self.thumbnailUrl = thumbnailUrl
-                self.durationSeconds = durationSeconds
-                self.uploadedAt = uploadedAt
-                self.viewCount = viewCount
-                self.channelId = channelId
-                self.channelTitle = channelTitle
-                self.categoryIds = categoryIds
-                self.keywords = keywords
-                self.status = status
-                self.validationStatus = validationStatus
-                self.lastValidatedAt = lastValidatedAt
-                self.submittedBy = submittedBy
-                self.approvedBy = approvedBy
-                self.createdAt = createdAt
-                self.updatedAt = updatedAt
-                self.displayOrder = displayOrder
-                self.videoType = videoType
-                self.offlineAllowed = offlineAllowed
-            }
-            public enum CodingKeys: String, CodingKey {
-                case id
-                case youtubeId
-                case title
-                case description
-                case thumbnailUrl
-                case durationSeconds
-                case uploadedAt
-                case viewCount
-                case channelId
-                case channelTitle
-                case categoryIds
-                case keywords
-                case status
-                case validationStatus
-                case lastValidatedAt
-                case submittedBy
-                case approvedBy
-                case createdAt
-                case updatedAt
-                case displayOrder
-                case videoType
-                case offlineAllowed
-            }
-        }
-        /// Items to exclude from a channel (videos, playlists, etc.)
-        ///
-        /// - Remark: Generated from `#/components/schemas/ExcludedItems`.
-        public struct ExcludedItems: Codable, Hashable, Sendable {
-            /// YouTube video IDs to exclude
-            ///
-            /// - Remark: Generated from `#/components/schemas/ExcludedItems/videos`.
-            public var videos: [Swift.String]?
-            /// YouTube playlist IDs to exclude
-            ///
-            /// - Remark: Generated from `#/components/schemas/ExcludedItems/playlists`.
-            public var playlists: [Swift.String]?
-            /// YouTube livestream IDs to exclude
-            ///
-            /// - Remark: Generated from `#/components/schemas/ExcludedItems/liveStreams`.
-            public var liveStreams: [Swift.String]?
-            /// YouTube Shorts IDs to exclude
-            ///
-            /// - Remark: Generated from `#/components/schemas/ExcludedItems/shorts`.
-            public var shorts: [Swift.String]?
-            /// YouTube community post IDs to exclude
-            ///
-            /// - Remark: Generated from `#/components/schemas/ExcludedItems/posts`.
-            public var posts: [Swift.String]?
-            /// Creates a new `ExcludedItems`.
-            ///
-            /// - Parameters:
-            ///   - videos: YouTube video IDs to exclude
-            ///   - playlists: YouTube playlist IDs to exclude
-            ///   - liveStreams: YouTube livestream IDs to exclude
-            ///   - shorts: YouTube Shorts IDs to exclude
-            ///   - posts: YouTube community post IDs to exclude
-            public init(
-                videos: [Swift.String]? = nil,
-                playlists: [Swift.String]? = nil,
-                liveStreams: [Swift.String]? = nil,
-                shorts: [Swift.String]? = nil,
-                posts: [Swift.String]? = nil
-            ) {
-                self.videos = videos
-                self.playlists = playlists
-                self.liveStreams = liveStreams
-                self.shorts = shorts
-                self.posts = posts
-            }
-            public enum CodingKeys: String, CodingKey {
-                case videos
-                case playlists
-                case liveStreams
-                case shorts
-                case posts
-            }
-        }
         /// Generic cursor-based pagination wrapper
         ///
         /// - Remark: Generated from `#/components/schemas/CursorPageDto`.
@@ -1105,57 +600,159 @@ public enum Components {
                 case truncated
             }
         }
-        /// Metadata about approval/rejection actions (embedded in Channel/Playlist documents)
-        ///
-        /// - Remark: Generated from `#/components/schemas/ApprovalMetadata`.
-        public struct ApprovalMetadata: Codable, Hashable, Sendable {
-            /// Firebase UID of the reviewer
+        /// - Remark: Generated from `#/components/schemas/PublicVideoDetail`.
+        public struct PublicVideoDetail: Codable, Hashable, Sendable {
+            /// YouTube video ID (the id the route was asked for)
             ///
-            /// - Remark: Generated from `#/components/schemas/ApprovalMetadata/reviewedBy`.
-            public var reviewedBy: Swift.String?
-            /// Display name of the reviewer (cached)
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/youtubeId`.
+            public var youtubeId: Swift.String
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/title`.
+            public var title: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/description`.
+            public var description: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/thumbnailUrl`.
+            public var thumbnailUrl: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/durationSeconds`.
+            public var durationSeconds: Swift.Int?
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/viewCount`.
+            public var viewCount: Swift.Int64?
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/channelTitle`.
+            public var channelTitle: Swift.String?
+            /// The EFFECTIVE offline permission (never null): every approved video is saveable unless an admin explicitly set it to false (owner ruling 2026-09-27).
             ///
-            /// - Remark: Generated from `#/components/schemas/ApprovalMetadata/reviewerDisplayName`.
-            public var reviewerDisplayName: Swift.String?
-            /// Timestamp when the review happened
-            ///
-            /// - Remark: Generated from `#/components/schemas/ApprovalMetadata/reviewedAt`.
-            public var reviewedAt: Foundation.Date?
-            /// Review notes from the moderator
-            ///
-            /// - Remark: Generated from `#/components/schemas/ApprovalMetadata/reviewNotes`.
-            public var reviewNotes: Swift.String?
-            /// Rejection reason (for rejected items)
-            ///
-            /// - Remark: Generated from `#/components/schemas/ApprovalMetadata/rejectionReason`.
-            public var rejectionReason: Swift.String?
-            /// Creates a new `ApprovalMetadata`.
+            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/offlineAllowed`.
+            public var offlineAllowed: Swift.Bool
+            /// Creates a new `PublicVideoDetail`.
             ///
             /// - Parameters:
-            ///   - reviewedBy: Firebase UID of the reviewer
-            ///   - reviewerDisplayName: Display name of the reviewer (cached)
-            ///   - reviewedAt: Timestamp when the review happened
-            ///   - reviewNotes: Review notes from the moderator
-            ///   - rejectionReason: Rejection reason (for rejected items)
+            ///   - youtubeId: YouTube video ID (the id the route was asked for)
+            ///   - title:
+            ///   - description:
+            ///   - thumbnailUrl:
+            ///   - durationSeconds:
+            ///   - viewCount:
+            ///   - channelTitle:
+            ///   - offlineAllowed: The EFFECTIVE offline permission (never null): every approved video is saveable unless an admin explicitly set it to false (owner ruling 2026-09-27).
             public init(
-                reviewedBy: Swift.String? = nil,
-                reviewerDisplayName: Swift.String? = nil,
-                reviewedAt: Foundation.Date? = nil,
-                reviewNotes: Swift.String? = nil,
-                rejectionReason: Swift.String? = nil
+                youtubeId: Swift.String,
+                title: Swift.String? = nil,
+                description: Swift.String? = nil,
+                thumbnailUrl: Swift.String? = nil,
+                durationSeconds: Swift.Int? = nil,
+                viewCount: Swift.Int64? = nil,
+                channelTitle: Swift.String? = nil,
+                offlineAllowed: Swift.Bool
             ) {
-                self.reviewedBy = reviewedBy
-                self.reviewerDisplayName = reviewerDisplayName
-                self.reviewedAt = reviewedAt
-                self.reviewNotes = reviewNotes
-                self.rejectionReason = rejectionReason
+                self.youtubeId = youtubeId
+                self.title = title
+                self.description = description
+                self.thumbnailUrl = thumbnailUrl
+                self.durationSeconds = durationSeconds
+                self.viewCount = viewCount
+                self.channelTitle = channelTitle
+                self.offlineAllowed = offlineAllowed
             }
             public enum CodingKeys: String, CodingKey {
-                case reviewedBy
-                case reviewerDisplayName
-                case reviewedAt
-                case reviewNotes
-                case rejectionReason
+                case youtubeId
+                case title
+                case description
+                case thumbnailUrl
+                case durationSeconds
+                case viewCount
+                case channelTitle
+                case offlineAllowed
+            }
+        }
+        /// - Remark: Generated from `#/components/schemas/PublicChannelDetail`.
+        public struct PublicChannelDetail: Codable, Hashable, Sendable {
+            /// YouTube channel ID
+            ///
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/youtubeId`.
+            public var youtubeId: Swift.String
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/name`.
+            public var name: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/description`.
+            public var description: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/thumbnailUrl`.
+            public var thumbnailUrl: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/subscribers`.
+            public var subscribers: Swift.Int64?
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/videoCount`.
+            public var videoCount: Swift.Int?
+            /// Creates a new `PublicChannelDetail`.
+            ///
+            /// - Parameters:
+            ///   - youtubeId: YouTube channel ID
+            ///   - name:
+            ///   - description:
+            ///   - thumbnailUrl:
+            ///   - subscribers:
+            ///   - videoCount:
+            public init(
+                youtubeId: Swift.String,
+                name: Swift.String? = nil,
+                description: Swift.String? = nil,
+                thumbnailUrl: Swift.String? = nil,
+                subscribers: Swift.Int64? = nil,
+                videoCount: Swift.Int? = nil
+            ) {
+                self.youtubeId = youtubeId
+                self.name = name
+                self.description = description
+                self.thumbnailUrl = thumbnailUrl
+                self.subscribers = subscribers
+                self.videoCount = videoCount
+            }
+            public enum CodingKeys: String, CodingKey {
+                case youtubeId
+                case name
+                case description
+                case thumbnailUrl
+                case subscribers
+                case videoCount
+            }
+        }
+        /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail`.
+        public struct PublicPlaylistDetail: Codable, Hashable, Sendable {
+            /// YouTube playlist ID
+            ///
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/youtubeId`.
+            public var youtubeId: Swift.String
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/title`.
+            public var title: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/description`.
+            public var description: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/thumbnailUrl`.
+            public var thumbnailUrl: Swift.String?
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/itemCount`.
+            public var itemCount: Swift.Int?
+            /// Creates a new `PublicPlaylistDetail`.
+            ///
+            /// - Parameters:
+            ///   - youtubeId: YouTube playlist ID
+            ///   - title:
+            ///   - description:
+            ///   - thumbnailUrl:
+            ///   - itemCount:
+            public init(
+                youtubeId: Swift.String,
+                title: Swift.String? = nil,
+                description: Swift.String? = nil,
+                thumbnailUrl: Swift.String? = nil,
+                itemCount: Swift.Int? = nil
+            ) {
+                self.youtubeId = youtubeId
+                self.title = title
+                self.description = description
+                self.thumbnailUrl = thumbnailUrl
+                self.itemCount = itemCount
+            }
+            public enum CodingKeys: String, CodingKey {
+                case youtubeId
+                case title
+                case description
+                case thumbnailUrl
+                case itemCount
             }
         }
         /// Unified DTO for content items (channels, playlists, videos) in public API. Fields are nullable to accommodate different content types.
@@ -1220,6 +817,10 @@ public enum Components {
             ///
             /// - Remark: Generated from `#/components/schemas/ContentItemDto/itemCount`.
             public var itemCount: Swift.Int?
+            /// Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+            ///
+            /// - Remark: Generated from `#/components/schemas/ContentItemDto/liveChannelId`.
+            public var liveChannelId: Swift.String?
             /// Creates a new `ContentItemDto`.
             ///
             /// - Parameters:
@@ -1237,6 +838,7 @@ public enum Components {
             ///   - subscribers: Subscriber count (channels only)
             ///   - videoCount: Number of videos (channels only)
             ///   - itemCount: Number of items (playlists only)
+            ///   - liveChannelId: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
             public init(
                 id: Swift.String,
                 _type: Components.Schemas.ContentItemDto._TypePayload,
@@ -1251,7 +853,8 @@ public enum Components {
                 channelTitle: Swift.String? = nil,
                 subscribers: Swift.Int64? = nil,
                 videoCount: Swift.Int? = nil,
-                itemCount: Swift.Int? = nil
+                itemCount: Swift.Int? = nil,
+                liveChannelId: Swift.String? = nil
             ) {
                 self.id = id
                 self._type = _type
@@ -1267,6 +870,7 @@ public enum Components {
                 self.subscribers = subscribers
                 self.videoCount = videoCount
                 self.itemCount = itemCount
+                self.liveChannelId = liveChannelId
             }
             public enum CodingKeys: String, CodingKey {
                 case id
@@ -1283,6 +887,68 @@ public enum Components {
                 case subscribers
                 case videoCount
                 case itemCount
+                case liveChannelId
+            }
+        }
+        /// A live-category channel's current lives (spec 2026-10-17 §4.1)
+        ///
+        /// - Remark: Generated from `#/components/schemas/LiveChannelLives`.
+        public struct LiveChannelLives: Codable, Hashable, Sendable {
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/channelId`.
+            public var channelId: Swift.String
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/status`.
+            @frozen public enum StatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
+                case live = "LIVE"
+                case offline = "OFFLINE"
+            }
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/status`.
+            public var status: Components.Schemas.LiveChannelLives.StatusPayload
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/LivesPayload`.
+            public struct LivesPayloadPayload: Codable, Hashable, Sendable {
+                /// - Remark: Generated from `#/components/schemas/LiveChannelLives/LivesPayload/id`.
+                public var id: Swift.String
+                /// - Remark: Generated from `#/components/schemas/LiveChannelLives/LivesPayload/title`.
+                public var title: Swift.String
+                /// Creates a new `LivesPayloadPayload`.
+                ///
+                /// - Parameters:
+                ///   - id:
+                ///   - title:
+                public init(
+                    id: Swift.String,
+                    title: Swift.String
+                ) {
+                    self.id = id
+                    self.title = title
+                }
+                public enum CodingKeys: String, CodingKey {
+                    case id
+                    case title
+                }
+            }
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/lives`.
+            public typealias LivesPayload = [Components.Schemas.LiveChannelLives.LivesPayloadPayload]
+            /// - Remark: Generated from `#/components/schemas/LiveChannelLives/lives`.
+            public var lives: Components.Schemas.LiveChannelLives.LivesPayload
+            /// Creates a new `LiveChannelLives`.
+            ///
+            /// - Parameters:
+            ///   - channelId:
+            ///   - status:
+            ///   - lives:
+            public init(
+                channelId: Swift.String,
+                status: Components.Schemas.LiveChannelLives.StatusPayload,
+                lives: Components.Schemas.LiveChannelLives.LivesPayload
+            ) {
+                self.channelId = channelId
+                self.status = status
+                self.lives = lives
+            }
+            public enum CodingKeys: String, CodingKey {
+                case channelId
+                case status
+                case lives
             }
         }
         /// Generic error response for 4xx and 5xx errors
@@ -1321,14 +987,6 @@ public enum Components {
                 case message
                 case details
             }
-        }
-        /// Distinguishes live YouTube videos (LIVE) from regular videos (STANDARD). Null on legacy Video documents is treated as STANDARD.
-        ///
-        ///
-        /// - Remark: Generated from `#/components/schemas/VideoType`.
-        @frozen public enum VideoType: String, Codable, Hashable, Sendable, CaseIterable {
-            case standard = "STANDARD"
-            case live = "LIVE"
         }
     }
     /// Types generated from the `#/components/parameters` section of the OpenAPI document.
@@ -2026,12 +1684,12 @@ public enum Operations {
                 /// - Remark: Generated from `#/paths/v1/channels/{channelId}/GET/responses/200/content`.
                 @frozen public enum Body: Sendable, Hashable {
                     /// - Remark: Generated from `#/paths/v1/channels/{channelId}/GET/responses/200/content/application\/json`.
-                    case json(Components.Schemas.Channel)
+                    case json(Components.Schemas.PublicChannelDetail)
                     /// The associated value of the enum case if `self` is `.json`.
                     ///
                     /// - Throws: An error if `self` is not `.json`.
                     /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.Channel {
+                    public var json: Components.Schemas.PublicChannelDetail {
                         get throws {
                             switch self {
                             case let .json(body):
@@ -2050,7 +1708,7 @@ public enum Operations {
                     self.body = body
                 }
             }
-            /// Channel entity (without nested playlists)
+            /// Public channel fields (never the registry entity)
             ///
             /// - Remark: Generated from `#/paths//v1/channels/{channelId}/get(getPublicChannel)/responses/200`.
             ///
@@ -2207,12 +1865,12 @@ public enum Operations {
                 /// - Remark: Generated from `#/paths/v1/playlists/{playlistId}/GET/responses/200/content`.
                 @frozen public enum Body: Sendable, Hashable {
                     /// - Remark: Generated from `#/paths/v1/playlists/{playlistId}/GET/responses/200/content/application\/json`.
-                    case json(Components.Schemas.Playlist)
+                    case json(Components.Schemas.PublicPlaylistDetail)
                     /// The associated value of the enum case if `self` is `.json`.
                     ///
                     /// - Throws: An error if `self` is not `.json`.
                     /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.Playlist {
+                    public var json: Components.Schemas.PublicPlaylistDetail {
                         get throws {
                             switch self {
                             case let .json(body):
@@ -2231,7 +1889,7 @@ public enum Operations {
                     self.body = body
                 }
             }
-            /// Playlist entity (without nested videos)
+            /// Public playlist fields (never the registry entity)
             ///
             /// - Remark: Generated from `#/paths//v1/playlists/{playlistId}/get(getPublicPlaylist)/responses/200`.
             ///
@@ -2388,12 +2046,12 @@ public enum Operations {
                 /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/200/content`.
                 @frozen public enum Body: Sendable, Hashable {
                     /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/200/content/application\/json`.
-                    case json(Components.Schemas.Video)
+                    case json(Components.Schemas.PublicVideoDetail)
                     /// The associated value of the enum case if `self` is `.json`.
                     ///
                     /// - Throws: An error if `self` is not `.json`.
                     /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.Video {
+                    public var json: Components.Schemas.PublicVideoDetail {
                         get throws {
                             switch self {
                             case let .json(body):
@@ -2412,7 +2070,7 @@ public enum Operations {
                     self.body = body
                 }
             }
-            /// Video entity with metadata and approval status
+            /// Public video fields (never the registry entity), including the effective offlineAllowed
             ///
             /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)/responses/200`.
             ///
@@ -2474,6 +2132,208 @@ public enum Operations {
             /// - Throws: An error if `self` is not `.notFound`.
             /// - SeeAlso: `.notFound`.
             public var notFound: Operations.GetPublicVideo.Output.NotFound {
+                get throws {
+                    switch self {
+                    case let .notFound(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "notFound",
+                            response: self
+                        )
+                    }
+                }
+            }
+            /// Undocumented response.
+            ///
+            /// A response with a code that is not documented in the OpenAPI document.
+            case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
+        }
+        @frozen public enum AcceptableContentType: AcceptableProtocol {
+            case json
+            case other(Swift.String)
+            public init?(rawValue: Swift.String) {
+                switch rawValue.lowercased() {
+                case "application/json":
+                    self = .json
+                default:
+                    self = .other(rawValue)
+                }
+            }
+            public var rawValue: Swift.String {
+                switch self {
+                case let .other(string):
+                    return string
+                case .json:
+                    return "application/json"
+                }
+            }
+            public static var allCases: [Self] {
+                [
+                    .json
+                ]
+            }
+        }
+    }
+    /// Current live streams of a live-category channel
+    ///
+    /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
+    /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
+    public enum GetLiveChannel {
+        public static let id: Swift.String = "getLiveChannel"
+        public struct Input: Sendable, Hashable {
+            /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/path`.
+            public struct Path: Sendable, Hashable {
+                /// YouTube channel ID (UC…)
+                ///
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/path/channelId`.
+                public var channelId: Swift.String
+                /// Creates a new `Path`.
+                ///
+                /// - Parameters:
+                ///   - channelId: YouTube channel ID (UC…)
+                public init(channelId: Swift.String) {
+                    self.channelId = channelId
+                }
+            }
+            public var path: Operations.GetLiveChannel.Input.Path
+            /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/header`.
+            public struct Headers: Sendable, Hashable {
+                public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetLiveChannel.AcceptableContentType>]
+                /// Creates a new `Headers`.
+                ///
+                /// - Parameters:
+                ///   - accept:
+                public init(accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetLiveChannel.AcceptableContentType>] = .defaultValues()) {
+                    self.accept = accept
+                }
+            }
+            public var headers: Operations.GetLiveChannel.Input.Headers
+            /// Creates a new `Input`.
+            ///
+            /// - Parameters:
+            ///   - path:
+            ///   - headers:
+            public init(
+                path: Operations.GetLiveChannel.Input.Path,
+                headers: Operations.GetLiveChannel.Input.Headers = .init()
+            ) {
+                self.path = path
+                self.headers = headers
+            }
+        }
+        @frozen public enum Output: Sendable, Hashable {
+            public struct Ok: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// max-age=15, public
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/headers/Cache-Control`.
+                    public var cacheControl: Swift.String?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - cacheControl: max-age=15, public
+                    public init(cacheControl: Swift.String? = nil) {
+                        self.cacheControl = cacheControl
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetLiveChannel.Output.Ok.Headers
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/content/application\/json`.
+                    case json(Components.Schemas.LiveChannelLives)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.LiveChannelLives {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.GetLiveChannel.Output.Ok.Body
+                /// Creates a new `Ok`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                ///   - body: Received HTTP response body
+                public init(
+                    headers: Operations.GetLiveChannel.Output.Ok.Headers = .init(),
+                    body: Operations.GetLiveChannel.Output.Ok.Body
+                ) {
+                    self.headers = headers
+                    self.body = body
+                }
+            }
+            /// The channel's current lives, filtered so every id plays; OFFLINE with no lives when none
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/200`.
+            ///
+            /// HTTP response code: `200 ok`.
+            case ok(Operations.GetLiveChannel.Output.Ok)
+            /// The associated value of the enum case if `self` is `.ok`.
+            ///
+            /// - Throws: An error if `self` is not `.ok`.
+            /// - SeeAlso: `.ok`.
+            public var ok: Operations.GetLiveChannel.Output.Ok {
+                get throws {
+                    switch self {
+                    case let .ok(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "ok",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct NotFound: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/404/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/404/content/application\/json`.
+                    case json(Components.Schemas.ErrorResponse)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.ErrorResponse {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.GetLiveChannel.Output.NotFound.Body
+                /// Creates a new `NotFound`.
+                ///
+                /// - Parameters:
+                ///   - body: Received HTTP response body
+                public init(body: Operations.GetLiveChannel.Output.NotFound.Body) {
+                    self.body = body
+                }
+            }
+            /// Not a channel entry of a live category
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/404`.
+            ///
+            /// HTTP response code: `404 notFound`.
+            case notFound(Operations.GetLiveChannel.Output.NotFound)
+            /// The associated value of the enum case if `self` is `.notFound`.
+            ///
+            /// - Throws: An error if `self` is not `.notFound`.
+            /// - SeeAlso: `.notFound`.
+            public var notFound: Operations.GetLiveChannel.Output.NotFound {
                 get throws {
                     switch self {
                     case let .notFound(response):

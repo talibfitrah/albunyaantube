@@ -116,6 +116,8 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// Opened from a channel's Live tab (`ChannelLiveTabFragment.kt:62-69`): the report carries
     /// `contentSubType = LIVESTREAM`. Nothing else reads it.
     var isLive: Bool = false
+    /// Spec §9.1: set, the player is in live-channel mode for this channel (from a live-category list item).
+    var liveChannelId: String? = nil
     /// Phase 3 Task 7: set, the player plays this `OfflineItem`'s saved file through
     /// `OfflineResolver` (no network, reduced chrome — `PlayerViewModel.isOfflinePlayback`).
     /// Additive with a nil default so every existing construction — deep links included
@@ -132,6 +134,7 @@ extension PlayerArgs {
     init(item: ContentItem) {
         self.init(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
                   thumbnailURL: item.thumbnailURL, description: item.description,
-                  durationSeconds: item.durationSeconds, viewCount: item.viewCount)
+                  durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: item.liveChannelId)
+        liveChannelId = item.liveChannelId          // §9.3(b): the availability gate checks the channel (F15)
     }
 }
