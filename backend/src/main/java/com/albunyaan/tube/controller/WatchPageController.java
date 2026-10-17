@@ -1,8 +1,10 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -12,19 +14,12 @@ import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
+import java.util.List;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,30 +43,7 @@ public class WatchPageController {
     private static final Logger log = LoggerFactory.getLogger(WatchPageController.class);
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
-    private static final int TITLE_MAX_CHARS = 160;
-    private static final int SHARE_IMAGE_MAX_CHARS = 500;
-    private static final long SHARE_METADATA_TTL_MILLIS = 10 * 60 * 1000L;
-    private static final long SHARE_METADATA_RATE_LIMIT_TTL_MILLIS = 60_000L;
-    private static final int SHARE_METADATA_RATE_LIMIT_PER_MINUTE = 30;
     private static final String PUBLIC_SHARE_HOST = "app.fitrahtube.com";
-    private static final String HEADER_DEVICE_ID = "X-Device-Id";
-
-    /**
-     * Closed allow-list of hosts permitted to appear as {@code og:image} when the
-     * Android client seeds the share-metadata cache. Anything outside this set is
-     * dropped (silently coerced to empty) — the previous behaviour of accepting
-     * any HTTPS URL turned the POST /api/share-metadata endpoint into a
-     * phishing-grade Open Graph spoofing primitive: an unauthenticated caller
-     * could write an arbitrary {@code og:image} for any well-formed video,
-     * channel or playlist ID and have it served to link unfurlers (WhatsApp,
-     * Telegram, Slack, Skype, etc.) for ten minutes per cache entry.
-     */
-    private static final Set<String> APPROVED_IMAGE_HOSTS = Set.of(
-            "i.ytimg.com",
-            "img.youtube.com",
-            "yt3.googleusercontent.com",
-            "yt3.ggpht.com"
-    );
 
     /**
      * Allowed shape for the {@code videoId} path variable. Firestore document IDs and
@@ -89,142 +61,27 @@ public class WatchPageController {
     private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$");
 
     private final PublicContentService contentService;
-    private final Cache<String, CachedShareMetadata> shareMetadataCache = Caffeine.newBuilder()
-            .maximumSize(5_000)
-            .expireAfterWrite(SHARE_METADATA_TTL_MILLIS, TimeUnit.MILLISECONDS)
-            .build();
-    /**
-     * Per-X-Device-Id rate-limit bucket for POST /api/share-metadata. Each entry
-     * holds the request count within the trailing rate-limit window; entries
-     * expire automatically so the table can never grow unbounded. The bucket
-     * is per-device rather than per-IP so a misbehaving NAT/proxy doesn't lock
-     * legitimate clients out, and per-device requires a header that the Android
-     * app always sends — anonymous browser callers (who never sign-share-flow)
-     * can be turned away by header presence alone.
-     */
-    private final Cache<String, AtomicInteger> shareMetadataRateLimit = Caffeine.newBuilder()
-            .maximumSize(50_000)
-            // expireAfterAccess gives a true sliding-window TTL: every successful
-            // getAndUpdate refreshes the entry's expiry, so an active caller can't
-            // get a fresh bucket the instant their previous bucket's first-write
-            // age hits the limit (cubic R5 P2 was on expireAfterWrite — wrote then
-            // never refreshed even when reads happened repeatedly).
-            .expireAfterAccess(SHARE_METADATA_RATE_LIMIT_TTL_MILLIS, TimeUnit.MILLISECONDS)
-            .build();
+    private final SearchIndex searchIndex;
 
-    public WatchPageController(PublicContentService contentService) {
+    public WatchPageController(PublicContentService contentService, SearchIndex searchIndex) {
         this.contentService = contentService;
-    }
-
-    @PostMapping(value = "/api/share-metadata/{type}/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseBody
-    public ResponseEntity<Void> shareMetadata(
-            @PathVariable String type,
-            @PathVariable String id,
-            @RequestBody(required = false) ShareMetadataRequest metadata,
-            HttpServletRequest request
-    ) {
-        if (!isSupportedShareType(type) || id == null || !VIDEO_ID_PATTERN.matcher(id).matches()) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (metadata == null) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        // Require X-Device-Id so the rate-limit bucket can't be bypassed by stripping
-        // a single header. Falling back to remote address (the previous behaviour for
-        // /api/v1/reports) would let a misconfigured proxy collapse every anonymous
-        // caller into one bucket — either DoSing real clients out, or letting an
-        // attacker churn random IDs to bypass the limit. The Android share publisher
-        // always sets the header in NetworkModule.
-        String deviceId = request.getHeader(HEADER_DEVICE_ID);
-        if (deviceId == null || deviceId.isBlank()) {
-            return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).build();
-        }
-        AtomicInteger counter = shareMetadataRateLimit.get(deviceId, k -> new AtomicInteger(0));
-        // Atomic check-and-increment via getAndUpdate: the lambda increments
-        // only when prev < limit, else leaves the counter unchanged. Returns
-        // the value BEFORE the update, so the decision is unambiguous —
-        // prev < limit means admitted, prev >= limit means refused. Two
-        // concurrent threads entering at prev = limit - 1 can no longer both
-        // be admitted: the CAS retry inside getAndUpdate serialises them so
-        // exactly one sees prev = limit - 1 and increments, the other sees
-        // prev = limit and is refused. Refused callers don't grow the counter.
-        int prev = counter.getAndUpdate(p ->
-                p >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE ? p : p + 1);
-        if (prev >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
-            return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build();
-        }
-
-        // Image URL: only YouTube hosts on the closed allow-list survive. Anything
-        // else is silently dropped (coerced to empty) so the title/description can
-        // still seed the cache without giving an attacker control of og:image. The
-        // 500-char cap also bounds the cache footprint (5,000 entries × 500 chars).
-        String image = validateShareImage(metadata.image());
-        String title = truncate(firstNonBlank(metadata.title(), ""), TITLE_MAX_CHARS);
-        String description = truncate(firstNonBlank(metadata.description(), ""), DESCRIPTION_MAX_CHARS);
-        if (title.isEmpty() && description.isEmpty() && image.isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image));
-        return ResponseEntity.noContent().build();
+        this.searchIndex = searchIndex;
     }
 
     /**
-     * Returns {@code rawImageUrl} only if it is an https URL within the configured
-     * size limit and its host is in {@link #APPROVED_IMAGE_HOSTS}; otherwise
-     * returns the empty string. The Android client may legitimately pass a YouTube
-     * thumbnail URL when seeding the share cache; anything else is treated as
-     * untrusted input and dropped without an error so the title/description path
-     * still functions.
-     *
-     * <p>The returned URL is reconstructed via {@code URI} without any user-info
-     * segment: a URL like {@code https://attacker.com@i.ytimg.com/vi/abc/...}
-     * has its host resolved to {@code i.ytimg.com} (no SSRF), but the original
-     * userinfo segment was previously preserved verbatim in the og:image meta
-     * tag where some scrapers and debug surfaces would log or display the
-     * attacker-chosen prefix. Rebuilding from components strips it.
+     * Retired: share pages render only server-known text (registry rows, else the search index's title), so what
+     * a caller posts here is never shown. The route stays authenticated and answers 204, so installed Android apps,
+     * which post on every share and only log a non-2xx, see no change. The body is not read.
      */
-    private static String validateShareImage(String rawImageUrl) {
-        String url = nullSafe(rawImageUrl, "").trim();
-        if (url.isEmpty()) return "";
-        if (url.length() > SHARE_IMAGE_MAX_CHARS) return "";
-        if (!HTTPS_URL_PATTERN.matcher(url).matches()) return "";
-        try {
-            java.net.URI parsed = java.net.URI.create(url);
-            String host = parsed.getHost();
-            if (host == null) return "";
-            String normalised = host.toLowerCase(Locale.ROOT);
-            if (!APPROVED_IMAGE_HOSTS.contains(normalised)) return "";
-            if (parsed.getUserInfo() == null) {
-                return url;
-            }
-            // Reconstruct without userinfo. Use the 5-arg URI ctor so port,
-            // path, query and fragment are preserved verbatim.
-            java.net.URI sanitised = new java.net.URI(
-                    parsed.getScheme(),
-                    null,
-                    parsed.getHost(),
-                    parsed.getPort(),
-                    parsed.getPath(),
-                    parsed.getQuery(),
-                    parsed.getFragment());
-            return sanitised.toString();
-        } catch (java.net.URISyntaxException | IllegalArgumentException e) {
-            return "";
-        }
+    @PostMapping("/api/share-metadata/{type}/{id}")
+    @ResponseBody
+    public ResponseEntity<Void> shareMetadata() {
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping(value = {"/watch/{videoId}", "/api/watch/{videoId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> watch(
-            @PathVariable String videoId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> watch(@PathVariable String videoId, HttpServletRequest request) {
         // Reject malformed IDs outright. Defense-in-depth: even though the response
         // escapes the value, keeping obvious attack payloads out of the rendering path
         // eliminates a whole class of bugs (XSS via </script> injection, log spoofing,
@@ -235,127 +92,70 @@ public class WatchPageController {
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This video is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("watch", videoId);
         try {
             Video video = contentService.getVideoDetails(videoId);
-            if (video == null) {
-                return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
+            if (video != null) {
+                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildHtml(video, canonicalUrl));
             }
-            String html = buildHtml(video, canonicalUrl);
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
             log.warn("Watch page fallback for videoId={}: {}", videoId, e.getMessage());
-            return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
         }
+        return videoFallback(videoId, canonicalUrl);
     }
 
     @GetMapping(value = {"/channel/{channelId}", "/api/channel/{channelId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> channel(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> channel(@PathVariable String channelId, HttpServletRequest request) {
         if (channelId == null || !VIDEO_ID_PATTERN.matcher(channelId).matches()) {
             return ResponseEntity.badRequest()
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This channel is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("channel", channelId);
         try {
-            Object details = contentService.getChannelDetails(channelId);
-            if (details instanceof Channel channel) {
-                String imageUrl = firstNonBlank(
-                        resolveChannelImage(channel.getThumbnailUrl()),
-                        metadata.image()
-                );
-                String html = buildShareHtml(
-                        firstNonBlank(channel.getName(), metadata.title(), "FitrahTube Channel"),
-                        "FitrahTube channel",
-                        truncate(firstNonBlank(channel.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                        imageUrl,
-                        canonicalUrl,
-                        "albunyaantube://channel/" + channelId,
-                        "Open channel in FitrahTube",
-                        "profile"
-                );
-                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-            }
+            Channel channel = contentService.getChannelDetails(channelId);
+            String html = buildShareHtml(
+                    firstNonBlank(channel.getName(), "FitrahTube Channel"),
+                    "FitrahTube channel",
+                    truncate(nullSafe(channel.getDescription(), ""), DESCRIPTION_MAX_CHARS),
+                    resolveChannelImage(channel.getThumbnailUrl()),
+                    canonicalUrl,
+                    "albunyaantube://channel/" + channelId,
+                    "Open channel in FitrahTube",
+                    "profile");
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
             log.warn("Channel share page fallback for channelId={}: {}", channelId, e.getMessage());
+            return notAvailable(channelId, canonicalUrl, "albunyaantube://channel/" + channelId, "channel");
         }
-        return metadataFallback(
-                channelId,
-                canonicalUrl,
-                "albunyaantube://channel/" + channelId,
-                title,
-                description,
-                image,
-                "Open channel in FitrahTube",
-                "profile",
-                "channel",
-                canonicalUrl,
-                metadata
-        );
     }
 
     @GetMapping(value = {"/playlist/{playlistId}", "/api/playlist/{playlistId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> playlist(
-            @PathVariable String playlistId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> playlist(@PathVariable String playlistId, HttpServletRequest request) {
         if (playlistId == null || !VIDEO_ID_PATTERN.matcher(playlistId).matches()) {
             return ResponseEntity.badRequest()
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This playlist is not available.", ""));
         }
         String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("playlist", playlistId);
         try {
-            Object details = contentService.getPlaylistDetails(playlistId);
-            if (details instanceof Playlist playlist) {
-                String imageUrl = firstNonBlank(
-                        resolvePreviewImage(playlist.getThumbnailUrl(), ""),
-                        metadata.image()
-                );
-                String itemCount = playlist.getItemCount() == null
-                        ? "FitrahTube playlist"
-                        : playlist.getItemCount() + " videos";
-                String html = buildShareHtml(
-                        firstNonBlank(playlist.getTitle(), metadata.title(), "FitrahTube Playlist"),
-                        itemCount,
-                        truncate(firstNonBlank(playlist.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                        imageUrl,
-                        canonicalUrl,
-                        "albunyaantube://playlist/" + playlistId,
-                        "Open playlist in FitrahTube",
-                        "website"
-                );
-                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-            }
+            Playlist playlist = contentService.getPlaylistDetails(playlistId);
+            String itemCount = playlist.getItemCount() == null ? "FitrahTube playlist" : playlist.getItemCount() + " videos";
+            String html = buildShareHtml(
+                    firstNonBlank(playlist.getTitle(), "FitrahTube Playlist"),
+                    itemCount,
+                    truncate(nullSafe(playlist.getDescription(), ""), DESCRIPTION_MAX_CHARS),
+                    resolvePreviewImage(playlist.getThumbnailUrl(), ""),
+                    canonicalUrl,
+                    "albunyaantube://playlist/" + playlistId,
+                    "Open playlist in FitrahTube",
+                    "website");
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
             log.warn("Playlist share page fallback for playlistId={}: {}", playlistId, e.getMessage());
+            return notAvailable(playlistId, canonicalUrl, "albunyaantube://playlist/" + playlistId, "playlist");
         }
-        return metadataFallback(
-                playlistId,
-                canonicalUrl,
-                "albunyaantube://playlist/" + playlistId,
-                title,
-                description,
-                image,
-                "Open playlist in FitrahTube",
-                "website",
-                "playlist",
-                canonicalUrl,
-                metadata
-        );
     }
 
     private String buildHtml(Video video, String canonicalUrl) {
@@ -372,68 +172,41 @@ public class WatchPageController {
         );
     }
 
-    private ResponseEntity<String> videoFallback(
-            String videoId,
-            String canonicalUrl,
-            String title,
-            String image,
-            String description,
-            ShareMetadata metadata
-    ) {
-        if (YOUTUBE_ID_PATTERN.matcher(videoId).matches()) {
-            String html = buildShareHtml(
-                    firstNonBlank(title, metadata.title(), "FitrahTube Video"),
-                    "",
-                    firstNonBlank(description, metadata.description(), "Watch this video in FitrahTube."),
-                    firstNonBlank(resolvePreviewImage(image, videoId), metadata.image()),
-                    canonicalUrl,
-                    "albunyaantube://video/" + videoId,
-                    "Open in FitrahTube",
-                    "video.other"
-            );
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    /**
+     * A video id outside the registry: the title and channel the search index holds for it (stored streams, and inner
+     * videos once served), else the generic card. Never text a caller supplied (backlog fix, inner-search plan Task 5).
+     */
+    private ResponseEntity<String> videoFallback(String videoId, String canonicalUrl) {
+        if (!YOUTUBE_ID_PATTERN.matcher(videoId).matches()) {
+            return notAvailable(videoId, canonicalUrl, "albunyaantube://video/" + videoId, "video");
         }
-        String html = buildUnavailableHtml(
-                videoId,
+        ContentItemDto indexed = known(videoId);
+        String html = buildShareHtml(
+                indexed != null ? firstNonBlank(indexed.getTitle(), "FitrahTube Video") : "FitrahTube Video",
+                indexed != null ? nullSafe(indexed.getChannelTitle(), "") : "",
+                "Watch this video in FitrahTube.",
+                stableYoutubeThumbnail(videoId),
                 canonicalUrl,
                 "albunyaantube://video/" + videoId,
-                "FitrahTube",
-                "This video is not available.",
-                "Video not found"
-        );
-        return ResponseEntity.status(404).contentType(MediaType.TEXT_HTML).body(html);
+                "Open in FitrahTube",
+                "video.other");
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
     }
 
-    private ResponseEntity<String> metadataFallback(
-            String id,
-            String canonicalUrl,
-            String deepLink,
-            String title,
-            String description,
-            String image,
-            String ctaText,
-            String ogType,
-            String itemType,
-            String fallbackUrl,
-            ShareMetadata metadata
-    ) {
-        String previewImage = "profile".equals(ogType)
-                ? resolveChannelImage(firstNonBlank(image, metadata.image()))
-                : resolvePreviewImage(firstNonBlank(image, metadata.image()), "");
-        if (!previewImage.isEmpty()) {
-            String html = buildShareHtml(
-                    firstNonBlank(title, metadata.title(), "FitrahTube"),
-                    "",
-                    truncate(firstNonBlank(description, metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                    previewImage,
-                    firstNonBlank(fallbackUrl, canonicalUrl),
-                    deepLink,
-                    ctaText,
-                    ogType
-            );
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    /** The visible hit the search index holds for this id, or null (absent, or the index is still building). */
+    private ContentItemDto known(String videoId) {
+        try {
+            List<ContentItemDto> items = searchIndex.byId(videoId, "VIDEO").items();
+            return items.isEmpty() ? null : items.get(0);
+        } catch (Exception e) {
+            return null;
         }
-        String html = buildUnavailableHtml(id, canonicalUrl, deepLink, title, "This " + itemType + " is not available.", title);
+    }
+
+    private ResponseEntity<String> notAvailable(String id, String canonicalUrl, String deepLink, String itemType) {
+        String html = buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
+                "This " + itemType + " is not available.", itemType.substring(0, 1).toUpperCase(Locale.ROOT)
+                        + itemType.substring(1) + " not found");
         return ResponseEntity.status(404).contentType(MediaType.TEXT_HTML).body(html);
     }
 
@@ -718,47 +491,11 @@ public class WatchPageController {
         return s.length() <= maxChars ? s : s.substring(0, maxChars - 1) + "…";
     }
 
-    private static boolean isSupportedShareType(String type) {
-        return "watch".equals(type) || "channel".equals(type) || "playlist".equals(type);
-    }
-
-    private ShareMetadata getShareMetadata(String type, String id) {
-        CachedShareMetadata cached = shareMetadataCache.getIfPresent(cacheKey(type, id));
-        if (cached == null) return ShareMetadata.EMPTY;
-        return new ShareMetadata(cached.title(), cached.description(), cached.image());
-    }
-
-    private static String cacheKey(String type, String id) {
-        return type + ":" + id;
-    }
-
     private static String firstNonBlank(String value, String fallback) {
         return (value == null || value.isBlank()) ? fallback : value.trim();
     }
 
-    private static String firstNonBlank(String... values) {
-        if (values == null) {
-            return "";
-        }
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value.trim();
-            }
-        }
-        return "";
-    }
-
     private static String nullSafe(String s, String fallback) {
         return (s == null || s.isEmpty()) ? fallback : s;
-    }
-
-    private record ShareMetadataRequest(String title, String description, String image) {
-    }
-
-    private record CachedShareMetadata(String title, String description, String image) {
-    }
-
-    private record ShareMetadata(String title, String description, String image) {
-        private static final ShareMetadata EMPTY = new ShareMetadata("", "", "");
     }
 }

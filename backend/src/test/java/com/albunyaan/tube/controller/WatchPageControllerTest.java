@@ -18,7 +18,10 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import static org.hamcrest.Matchers.containsString;
 import static org.hamcrest.Matchers.not;
+import java.util.List;
+
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -43,10 +46,13 @@ class WatchPageControllerTest {
     @MockBean
     private com.albunyaan.tube.repository.UserRepository userRepository;
 
+    @MockBean
+    private com.albunyaan.tube.search.SearchIndex searchIndex;
+
     private Video video;
 
     @BeforeEach
-    void setUp() {
+    void setUp() throws Exception {
         video = new Video();
         video.setId("doc-id");
         video.setYoutubeId("EnfgPg0Ey3I");
@@ -54,6 +60,7 @@ class WatchPageControllerTest {
         video.setDescription("Test description");
         video.setStatus("APPROVED");
         video.setValidationStatus(ValidationStatus.VALID);
+        when(searchIndex.byId(anyString(), eq("VIDEO"))).thenReturn(com.albunyaan.tube.search.SearchIndex.Hits.NONE);
     }
 
     @Test
@@ -97,17 +104,80 @@ class WatchPageControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/watch/{videoId} can fall back to app-supplied title and image")
-    void apiWatchPage_missingBackendVideoUsesQueryMetadata() throws Exception {
+    @DisplayName("GET /api/watch/{videoId} never renders caller-supplied text or images")
+    void apiWatchPage_ignoresQueryMetadata() throws Exception {
         when(contentService.getVideoDetails("MissingVid1")).thenThrow(new RuntimeException("not found"));
 
         mockMvc.perform(get("/api/watch/{videoId}", "MissingVid1")
-                        .param("title", "Channel video")
+                        .param("title", "Phishing Title")
+                        .param("description", "Phishing description")
                         .param("image", "https://example.com/channel-video.jpg"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("property=\"og:title\" content=\"Channel video\"")))
-                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://example.com/channel-video.jpg\"")))
-                .andExpect(content().string(containsString("name=\"twitter:image\" content=\"https://example.com/channel-video.jpg\"")));
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"FitrahTube Video\"")))
+                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://i.ytimg.com/vi/MissingVid1/hqdefault.jpg\"")))
+                .andExpect(content().string(not(containsString("Phishing"))))
+                .andExpect(content().string(not(containsString("example.com"))));
+    }
+
+    @Test
+    @DisplayName("GET /watch/{videoId} for a catalog video keeps its own title and image whatever the query says")
+    void watchPage_catalogTextWinsOverQueryMetadata() throws Exception {
+        video.setThumbnailUrl("https://i.ytimg.com/vi/EnfgPg0Ey3I/hqdefault.jpg");
+        when(contentService.getVideoDetails("EnfgPg0Ey3I")).thenReturn(video);
+
+        mockMvc.perform(get("/watch/{videoId}", "EnfgPg0Ey3I")
+                        .param("title", "Phishing Title")
+                        .param("description", "Phishing description")
+                        .param("image", "https://example.com/spoof.jpg"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"Test Video\"")))
+                .andExpect(content().string(containsString("property=\"og:description\" content=\"Test description\"")))
+                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://i.ytimg.com/vi/EnfgPg0Ey3I/hqdefault.jpg\"")))
+                .andExpect(content().string(not(containsString("Phishing"))))
+                .andExpect(content().string(not(containsString("example.com"))));
+    }
+
+    @Test
+    @DisplayName("GET /api/watch/{videoId} HTML-escapes the title the search index holds")
+    void apiWatchPage_indexedTitleIsHtmlEscaped() throws Exception {
+        when(contentService.getVideoDetails("MissingVid1")).thenThrow(new RuntimeException("not found"));
+        com.albunyaan.tube.dto.ContentItemDto indexed = com.albunyaan.tube.dto.ContentItemDto.video("MissingVid1",
+                "<img src=x onerror=alert(1)> \"quoted\"", null, 60, null, null, null, null, "<b>Chan</b>", null);
+        when(searchIndex.byId("MissingVid1", "VIDEO")).thenReturn(new com.albunyaan.tube.search.SearchIndex.Hits(List.of(indexed), "exact"));
+
+        mockMvc.perform(get("/api/watch/{videoId}", "MissingVid1"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"&lt;img src=x onerror=alert(1)&gt; &quot;quoted&quot;\"")))
+                .andExpect(content().string(containsString("&lt;b&gt;Chan&lt;/b&gt;")))
+                .andExpect(content().string(not(containsString("<img src=x"))))
+                .andExpect(content().string(not(containsString("<b>Chan"))));
+    }
+
+    @Test
+    @DisplayName("GET /api/watch/{videoId} outside the registry uses the title the search index holds")
+    void apiWatchPage_unregisteredIdUsesTheIndexedTitle() throws Exception {
+        when(contentService.getVideoDetails("ilgiwqpcOC8")).thenThrow(new RuntimeException("not found"));
+        com.albunyaan.tube.dto.ContentItemDto indexed = com.albunyaan.tube.dto.ContentItemDto.video("ilgiwqpcOC8",
+                "Lezing: 'De rechtvaardige kalief'", null, 2712, null, null,
+                "https://i.ytimg.com/vi/ilgiwqpcOC8/hqdefault.jpg", null, "Dawah Nederland", null);
+        when(searchIndex.byId("ilgiwqpcOC8", "VIDEO")).thenReturn(new com.albunyaan.tube.search.SearchIndex.Hits(List.of(indexed), "exact"));
+
+        mockMvc.perform(get("/api/watch/{videoId}", "ilgiwqpcOC8"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"Lezing: &#39;De rechtvaardige kalief&#39;\"")))
+                .andExpect(content().string(containsString("Dawah Nederland")))
+                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://i.ytimg.com/vi/ilgiwqpcOC8/hqdefault.jpg\"")));
+    }
+
+    @Test
+    @DisplayName("GET /api/watch/{videoId} while the search index builds still answers the generic card")
+    void apiWatchPage_indexNotReadyFallsBackToTheGenericCard() throws Exception {
+        when(contentService.getVideoDetails("MissingVid1")).thenThrow(new RuntimeException("not found"));
+        when(searchIndex.byId("MissingVid1", "VIDEO")).thenThrow(new com.albunyaan.tube.search.SearchIndex.NotReadyException());
+
+        mockMvc.perform(get("/api/watch/{videoId}", "MissingVid1"))
+                .andExpect(status().isOk())
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"FitrahTube Video\"")));
     }
 
     @Test
@@ -169,28 +239,61 @@ class WatchPageControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/channel/{channelId} can use cached app metadata without query params")
-    void channelSharePage_usesCachedMetadataForCleanUrl() throws Exception {
+    @DisplayName("POST /api/share-metadata is a no-op 204 and never reaches a page")
+    void shareMetadataPostIsANoOpAndNeverReachesThePage() throws Exception {
         when(contentService.getChannelDetails("UCmissing")).thenThrow(new RuntimeException("not found"));
 
         mockMvc.perform(post("/api/share-metadata/{type}/{id}", "channel", "UCmissing")
                         .header("X-Device-Id", "test-device-123")
                         .contentType(MediaType.APPLICATION_JSON)
-                        .content("""
-                                {
-                                  "title": "Cached Channel",
-                                  "image": "https://yt3.googleusercontent.com/avatar=s160-c-k-c0x00ffffff-no-rj",
-                                  "description": "Cached description"
-                                }
-                                """))
+                        .content("{\"title\":\"Cached Channel\",\"image\":\"https://yt3.googleusercontent.com/avatar=s160\",\"description\":\"x\"}"))
+                .andExpect(status().isNoContent());
+        mockMvc.perform(post("/api/share-metadata/{type}/{id}", "nonsense", "bad<id>").content("not json"))
                 .andExpect(status().isNoContent());
 
         mockMvc.perform(get("/api/channel/{channelId}", "UCmissing"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(not(containsString("Cached Channel"))));
+    }
+
+    @Test
+    @DisplayName("GET /api/channel/{channelId} outside the registry is not available, whatever the query says")
+    void channelSharePage_ignoresQueryMetadata() throws Exception {
+        when(contentService.getChannelDetails("UCmissing")).thenThrow(new RuntimeException("not found"));
+
+        mockMvc.perform(get("/api/channel/{channelId}", "UCmissing")
+                        .param("title", "Phishing Channel")
+                        .param("description", "Phishing description")
+                        .param("image", "https://yt3.googleusercontent.com/spoof=s160"))
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(not(containsString("Phishing"))))
+                .andExpect(content().string(not(containsString("spoof"))));
+    }
+
+    @Test
+    @DisplayName("GET /api/channel/{channelId} never fills a catalog channel's blank fields from posted or query text")
+    void channelSharePage_catalogBlankFieldsStayServerOnly() throws Exception {
+        Channel channel = new Channel("UCblank1");
+        channel.setStatus("APPROVED");
+        channel.setName("Catalog Channel");
+        when(contentService.getChannelDetails("UCblank1")).thenReturn(channel);
+
+        mockMvc.perform(post("/api/share-metadata/{type}/{id}", "channel", "UCblank1")
+                        .header("X-Device-Id", "test-device-123")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Posted Title\",\"image\":\"https://yt3.googleusercontent.com/posted=s160\",\"description\":\"Posted description\"}"))
+                .andExpect(status().isNoContent());
+
+        mockMvc.perform(get("/api/channel/{channelId}", "UCblank1")
+                        .param("title", "Query Title")
+                        .param("description", "Query description")
+                        .param("image", "https://yt3.googleusercontent.com/query=s160"))
                 .andExpect(status().isOk())
-                .andExpect(content().string(containsString("property=\"og:title\" content=\"Cached Channel\"")))
-                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://yt3.googleusercontent.com/avatar=s512-c-k-c0x00ffffff-no-rj\"")))
-                .andExpect(content().string(containsString("property=\"og:url\" content=\"http://localhost/api/channel/UCmissing\"")))
-                .andExpect(content().string(not(containsString("?title="))));
+                .andExpect(content().string(containsString("property=\"og:title\" content=\"Catalog Channel\"")))
+                .andExpect(content().string(not(containsString("Posted"))))
+                .andExpect(content().string(not(containsString("posted="))))
+                .andExpect(content().string(not(containsString("Query"))))
+                .andExpect(content().string(not(containsString("query="))));
     }
 
     @Test
@@ -212,16 +315,16 @@ class WatchPageControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/playlist/{playlistId} can fall back to app-supplied metadata")
-    void playlistSharePage_usesQueryMetadataWhenBackendDoesNotHavePlaylist() throws Exception {
+    @DisplayName("GET /api/playlist/{playlistId} outside the registry is not available, whatever the query says")
+    void playlistSharePage_ignoresQueryMetadata() throws Exception {
         when(contentService.getPlaylistDetails("PLmissing")).thenThrow(new RuntimeException("not found"));
 
         mockMvc.perform(get("/api/playlist/{playlistId}", "PLmissing")
                         .param("title", "On-device playlist")
                         .param("image", "https://example.com/playlist.jpg"))
-                .andExpect(status().isOk())
-                .andExpect(content().string(containsString("property=\"og:title\" content=\"On-device playlist\"")))
-                .andExpect(content().string(containsString("property=\"og:image\" content=\"https://example.com/playlist.jpg\"")));
+                .andExpect(status().isNotFound())
+                .andExpect(content().string(not(containsString("On-device playlist"))))
+                .andExpect(content().string(not(containsString("example.com"))));
     }
 
     @Test
