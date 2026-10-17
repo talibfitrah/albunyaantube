@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/search/UploadsFetcherTest.java
+  s_dbb6b1f3671904::t_c3f604fbc0a042 1-152
+backend/src/main/java/com/albunyaan/tube/search/UploadsFetcher.java
+  s_dbb6b1f3671904::t_d709e6b43f1be0 1-92
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bfa13ce95c28947305b6551495ef2871802b5d5d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
