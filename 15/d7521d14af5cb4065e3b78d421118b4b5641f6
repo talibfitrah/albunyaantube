@@ -1,0 +1,25 @@
+backend/solver/test/sandbox-probe.mjs
+  s_dbb6b1f3671904::t_e310e94f0b5ba4 1-12
+backend/solver/test/memory-probe.mjs
+  s_dbb6b1f3671904::t_e310e94f0b5ba4 1-22
+backend/scripts/systemd/fitrah-solver.service
+  s_dbb6b1f3671904::t_e310e94f0b5ba4 1-29
+backend/solver/test/sandbox.test.mjs
+  s_dbb6b1f3671904::t_4c92324d03cfc9 1-135
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "15d7521d14af5cb4065e3b78d421118b4b5641f6",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
