@@ -1,0 +1,27 @@
+backend/solver/SHA256SUMS
+  s_dbb6b1f3671904::t_288890f7650f3d 1-3
+.gitignore
+  s_dbb6b1f3671904::t_288890f7650f3d 220-222
+backend/solver/vendor/ejs-0.8.0/LICENSE
+  s_dbb6b1f3671904::t_590d19abc87136 1-24
+backend/solver/vendor/ejs-0.8.0/core.min.js
+  s_dbb6b1f3671904::t_ea2d58aa84fb72 1-5
+backend/solver/vendor/ejs-0.8.0/lib.min.js
+  s_dbb6b1f3671904::t_56b990639757ae 1-52
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3df1a102cf720665ce2c0c2cab04b4e0aede101",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
