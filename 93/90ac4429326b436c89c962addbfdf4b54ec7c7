@@ -1,0 +1,109 @@
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_dbb6b1f3671904::t_055c53de55a89c 176,315,443,468
+  s_dbb6b1f3671904::t_056ae93e192d30 231,240-244,250
+  s_dbb6b1f3671904::t_c40babf10157c3 85-90,175,177-186,276,288,316,325-326,329,343,348-352,355,359,362,438,469
+android/app/src/main/java/com/albunyaan/tube/auth/AccountStatusInterceptor.kt
+  s_dbb6b1f3671904::t_d72973cadfd317 45,113-117
+  s_dbb6b1f3671904::t_64b4921ad8e5eb 118
+android/app/src/test/java/com/albunyaan/tube/ui/SplashRouterOfflineTest.kt
+  s_dbb6b1f3671904::t_d6603629410352 289-305
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPrefetchTtlTest.kt
+  s_dbb6b1f3671904::t_5429f4131dfc10 49-50,70-72
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelTestDoubles.kt
+  s_dbb6b1f3671904::t_970598e7645ec0 1-257
+android/app/src/main/java/com/albunyaan/tube/ui/FeaturedListFragment.kt
+  s_dbb6b1f3671904::t_87201c1ea3cfa8 70
+  s_dbb6b1f3671904::t_6bd7b01fa23178 25
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_dbb6b1f3671904::t_59c644727d364a 30,100-102,104,542-543,547-548,570,578-583,585-603,605-606,608-621,624-627,629-635,650-652
+  s_dbb6b1f3671904::t_0157964d054ed1 106-111,288-293,296-319
+  s_dbb6b1f3671904::t_65370e99c386f0 294-295,384
+  s_dbb6b1f3671904::t_354fcef99adeba 105,653
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_f0f7a0c04cd7de 819,878-880,882,903,907,913-916
+  s_dbb6b1f3671904::t_f974a11ac3f10f 1913-1914
+  s_dbb6b1f3671904::t_4a4c28a92a2124 931-938
+  s_dbb6b1f3671904::t_d85e9fc89b9393 193-195,805-818
+  s_dbb6b1f3671904::t_b969ed5f26b161 327-329
+  s_dbb6b1f3671904::t_e87bf4e6e40aaf 804,820
+  s_dbb6b1f3671904::t_5d542e4e6998c2 939
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelAvailabilityGateTest.kt
+  s_dbb6b1f3671904::t_5429f4131dfc10 40,52
+android/app/src/androidTest/java/com/albunyaan/tube/ui/player/PlayerDownloadScreenTest.kt
+  s_dbb6b1f3671904::t_67c86a0a39a8d9 280-314
+android/app/src/main/java/com/albunyaan/tube/data/sync/SyncManager.kt
+  s_dbb6b1f3671904::t_c2bf03e0fd86e9 471-472
+  s_dbb6b1f3671904::t_83a19fd787ced7 632-635,641
+  s_dbb6b1f3671904::t_2ad6ee6b2cfed2 74-82,93,95,97,101-102,109-115,220,475,507,518,542,551,575,593,609,621-623,636,642-646,686-702
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelDownloadPlaybackTest.kt
+  s_dbb6b1f3671904::t_5429f4131dfc10 43-44,322-323
+  s_dbb6b1f3671904::t_29bc077b68d0fe 285-299
+  s_dbb6b1f3671904::t_0fd053ea3d1eb9 252-257,259-260,262-265,302-319,321
+  s_dbb6b1f3671904::t_970598e7645ec0 268-274,276-279,281-282
+  s_dbb6b1f3671904::t_b49c8290358a90 324
+android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt
+  s_dbb6b1f3671904::t_d85e9fc89b9393 121-126
+  s_dbb6b1f3671904::t_970598e7645ec0 32-34
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerArgsTest.kt
+  s_dbb6b1f3671904::t_5071c2f8209d23 1-32
+android/app/src/main/java/com/albunyaan/tube/ui/MainActivity.kt
+  s_dbb6b1f3671904::t_c0aff8f3ae6297 114-115,118
+android/app/src/main/java/com/albunyaan/tube/player/StreamPrefetchService.kt
+  s_dbb6b1f3671904::t_c40babf10157c3 200
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_dbb6b1f3671904::t_d73f48ef1f7e08 671-685
+  s_dbb6b1f3671904::t_578ecb427d3143 16
+  s_dbb6b1f3671904::t_c06e5c72533fbf 51-53,97-101
+  s_dbb6b1f3671904::t_e39c137dd233be 686-687
+android/app/src/main/java/com/albunyaan/tube/auth/AccountRepositoryImpl.kt
+  s_dbb6b1f3671904::t_75715fc0a1c9d7 179-186
+  s_dbb6b1f3671904::t_d72973cadfd317 297,302-305
+android/app/src/main/java/com/albunyaan/tube/download/FFmpegMerger.kt
+  s_dbb6b1f3671904::t_6f79f3e95e6631 80-82,84-106,112
+android/app/src/main/java/com/albunyaan/tube/ui/HomeFragment.kt
+  s_dbb6b1f3671904::t_87201c1ea3cfa8 153
+  s_dbb6b1f3671904::t_6bd7b01fa23178 28
+android/app/src/main/java/com/albunyaan/tube/ui/SplashFragment.kt
+  s_dbb6b1f3671904::t_d24f918cd22bfc 143-145,148
+android/app/src/test/java/com/albunyaan/tube/data/sync/PushDirtyTest.kt
+  s_dbb6b1f3671904::t_bcce605d3c3fcb 14
+  s_dbb6b1f3671904::t_0e453d42e97445 100-163
+  s_dbb6b1f3671904::t_3921cf9b67053a 164
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_dbb6b1f3671904::t_87201c1ea3cfa8 4305-4318
+android/app/src/test/java/com/albunyaan/tube/auth/AccountRepositoryImplTest.kt
+  s_dbb6b1f3671904::t_878808603aa15f 565-589
+android/app/src/main/java/com/albunyaan/tube/ui/SearchFragment.kt
+  s_dbb6b1f3671904::t_6bd7b01fa23178 25
+  s_dbb6b1f3671904::t_87201c1ea3cfa8 281
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_dbb6b1f3671904::t_e3c748c4501dcd 86,112,128-155,190,592,594-595,598-599,603,609-612,614,616,620,622-623,628,633,635,637-638,640,644
+  s_dbb6b1f3671904::t_373785596078d2 206-207,590-591,593,596-597,600-602,604-608,613,615,617-619,621,624-627,629-632,634,636,639,641-643,645,945,975-977,991
+android/app/src/test/java/com/albunyaan/tube/auth/AccountStatusInterceptorTest.kt
+  s_dbb6b1f3671904::t_6ff4e73bfcac5a 166-181
+android/app/src/main/java/com/albunyaan/tube/ui/VideosFragmentNew.kt
+  s_dbb6b1f3671904::t_87201c1ea3cfa8 170
+  s_dbb6b1f3671904::t_6bd7b01fa23178 28
+android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerRangeTest.kt
+  s_dbb6b1f3671904::t_2ff244e50251bb 32
+  s_dbb6b1f3671904::t_fd00e045125aa1 105-106,246,257-272,274,280,284-334
+  s_dbb6b1f3671904::t_c61438b5731a32 110
+  s_dbb6b1f3671904::t_555a724790795e 15,21,116-129,139-146,149,162-163,171,335,423-472
+  s_dbb6b1f3671904::t_1f943a08e1b550 336,473
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9390ac4429326b436c89c962addbfdf4b54ec7c7",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
