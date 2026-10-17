@@ -74,6 +74,12 @@
             <!-- Expanded content items -->
             <tr v-if="expandedCategoryId === cat.id" class="content-row">
               <td colspan="5" class="content-cell">
+                <template v-if="liveCategory(cat.id)">
+                  <p class="live-note">{{ t('contentSorting.live.note') }}</p>
+                  <p v-if="liveStatus?.suspectSince" class="live-suspect" role="status">
+                    {{ t('contentSorting.live.suspectSince', { time: formatTime(liveStatus.suspectSince) }) }}
+                  </p>
+                </template>
                 <!-- Content toolbar: type filter + add button -->
                 <div class="content-toolbar">
                   <div class="type-filters">
@@ -168,7 +174,11 @@
                         />
                         <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
                       </td>
-                      <td class="col-content-name">{{ item.title }}</td>
+                      <td class="col-content-name">
+                        {{ item.title }}
+                        <span v-for="chip in rowChips(cat.id, item.contentId)" :key="chip.key"
+                              class="live-chip" :class="`live-chip--${chip.tone}`">{{ t(chip.key, chip.params ?? {}) }}</span>
+                      </td>
                       <td class="col-content-type">
                         <span class="type-badge" :class="'type-' + item.contentType">{{ item.contentType }}</span>
                       </td>
@@ -324,10 +334,21 @@ import {
   type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
+import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+
+// Spec §8: the live state loads once when the view opens (no auto-refresh).
+const liveStatus = ref<LiveStatus | null>(null);
+const formatTime = (iso: string) => new Date(iso).toLocaleString(locale.value);
+function liveCategory(categoryId: string) {
+  return liveStatus.value?.categories.find(c => c.id === categoryId) ?? null;
+}
+function rowChips(categoryId: string, contentId: string) {
+  return liveChips(liveCategory(categoryId)?.entries.find(e => e.contentId === contentId), formatTime);
+}
 
 function contentKey(item: { contentType?: string; type?: string; contentId?: string; id?: string }): string {
   return `${item.contentType ?? item.type}:${item.contentId ?? item.id}`;
@@ -820,6 +841,8 @@ async function confirmAddContent() {
 
 onMounted(() => {
   loadCategories();
+  // Admin-only endpoint: a moderator's 403 (or any failure) just means no live chips; it never blocks the list.
+  getLiveStatus().then(s => { liveStatus.value = s; }).catch(() => { liveStatus.value = null; });
 });
 </script>
 
@@ -1403,4 +1426,11 @@ tr.drag-over {
 [dir="rtl"] .content-cell {
   padding: 0 2.5rem 0.5rem 0;
 }
+
+.live-note { margin-block: 0 0.5rem; color: var(--color-text-secondary); text-align: start; }
+.live-suspect { margin-block: 0 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--color-warning-soft); color: var(--color-warning); text-align: start; }
+.live-chip { margin-inline-start: 0.5rem; padding-inline: 0.5rem; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }
+.live-chip--ok { background: var(--color-success-soft); color: var(--color-success); }
+.live-chip--warn { background: var(--color-warning-soft); color: var(--color-warning); }
+.live-chip--bad { background: var(--color-danger-soft); color: var(--color-danger); }
 </style>

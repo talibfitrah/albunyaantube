@@ -35,7 +35,7 @@ export interface LiveChip {
 }
 
 export async function getLiveStatus(): Promise<LiveStatus> {
-  const response = await apiClient.get<LiveStatus>('/api/admin/live-channels/status');
+  const response = await apiClient.get<LiveStatus>('/api/admin/live-channels/status', { suppressGlobalErrorToast: true });
   return response.data;
 }
 

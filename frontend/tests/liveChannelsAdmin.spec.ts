@@ -142,6 +142,6 @@ describe('live channels: category type and status on the wire (spec §3, §4.2)'
     await updateCategory('cat-1', { name: 'Live', type: null });
     expect(apiClient.put).toHaveBeenCalledWith('/api/admin/categories/cat-1', { name: 'Live', type: null }, { suppressGlobalErrorToast: true });
     expect(await getLiveStatus()).toEqual({ suspectSince: null, categories: [] });
-    expect(apiClient.get).toHaveBeenCalledWith('/api/admin/live-channels/status');
+    expect(apiClient.get).toHaveBeenCalledWith('/api/admin/live-channels/status', { suppressGlobalErrorToast: true });
   });
 });
