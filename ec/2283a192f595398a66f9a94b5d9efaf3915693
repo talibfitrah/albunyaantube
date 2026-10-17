@@ -1,0 +1,26 @@
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_99b0906ca07674 53-68,117-120,283-296,306,308-311,314,316,318,326-328,330,341,344-350,441,464-471
+  s_dbb6b1f3671904::t_0cb71d7c548560 307
+  s_dbb6b1f3671904::t_6cc5ac8eb7caa1 472
+backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+  s_dbb6b1f3671904::t_99b0906ca07674 96
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_310d28616bbea0 36-37,235-248,367-460
+  s_dbb6b1f3671904::t_18ff08010429a9 461
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ec2283a192f595398a66f9a94b5d9efaf3915693",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
