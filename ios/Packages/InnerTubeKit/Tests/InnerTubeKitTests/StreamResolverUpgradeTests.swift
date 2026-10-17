@@ -30,6 +30,35 @@ import Testing
         }
     }
 
+    /// `StreamResolverTests.GatedTransport`'s pattern: the first call throws `firstError`, or hangs until cancelled;
+    /// later calls answer `response`.
+    private final class FirstCallTransport: HTTPTransport, @unchecked Sendable {
+        // Sendable: all mutable state is guarded by `lock`.
+        private let lock = NSLock()
+        private var count = 0
+        private let response: HTTPResponse
+        private let firstError: URLError?
+
+        init(_ response: HTTPResponse, firstError: URLError? = nil) {
+            self.response = response
+            self.firstError = firstError
+        }
+
+        var callCount: Int { lock.withLock { count } }
+
+        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+            let first = lock.withLock { count += 1; return count == 1 }
+            if first, let firstError { throw firstError }
+            if first { try await Task.sleep(for: .seconds(30)) }
+            return response
+        }
+
+        /// Bounded wait so a wiring regression fails the assertions instead of hanging the suite.
+        func waitForCall() async {
+            for _ in 0..<1000 where callCount == 0 { try? await Task.sleep(for: .milliseconds(1)) }
+        }
+    }
+
     private struct AlwaysAvailable: AvailabilityGate {
         func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { true }
     }
@@ -117,8 +146,11 @@ import Testing
         _ = await rig.resolver.upgrade("Ix7uzPm3cU8")
         _ = await rig.resolver.upgrade("HCWGshgFlqE")
         #expect(solver.playerInfoCalls == 1)
-        rig.clock.advance(by: .seconds(1801))
+        rig.clock.advance(by: .seconds(1799))
         _ = await rig.resolver.upgrade("uxeSkxtZU5I")
+        #expect(solver.playerInfoCalls == 1)                                 // still inside the 30 minutes
+        rig.clock.advance(by: .seconds(2))
+        _ = await rig.resolver.upgrade("5RHQrhSFTVE")
         #expect(solver.playerInfoCalls == 2)
     }
 
@@ -222,7 +254,65 @@ import Testing
         let transport = RecordingTransport([body("<html>"), try fixture("player-tv-Ix7uzPm3cU8")])
         let rig = await rig(transport, solver: FakeSolver())
         #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)          // denied: no second POST
+        #expect(transport.callCount == 1)
         #expect(await rig.resolver.upgrade("HCWGshgFlqE") != nil)
+    }
+
+    /// Fix round 1: a YouTube transport failure is retryable, as in the walk. No denial, no window, no pause.
+    @Test func aTVPlayer503LeavesNoState() async throws {
+        let transport = RecordingTransport([HTTPResponse(status: 503, headers: [:], body: Data()), try fixture("player-tv-Ix7uzPm3cU8")])
+        let rig = await rig(transport, solver: FakeSolver())
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)
+        #expect(await rig.resolver.upgrade("HCWGshgFlqE") != nil)          // no window: the next video upgrades at once
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") != nil)          // not denied: the same video POSTs again
+        #expect(transport.callCount == 3)
+    }
+
+    @Test func aRawURLErrorOnTheTVPlayerLeavesNoState() async throws {
+        let transport = FirstCallTransport(try fixture("player-tv-Ix7uzPm3cU8"), firstError: URLError(.networkConnectionLost))
+        let rig = await rig(transport, solver: FakeSolver())
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") != nil)
+        #expect(transport.callCount == 2)
+    }
+
+    /// Fix round 1: the player moving on (the most frequent outcome) changes nothing: no denial, no pause, the
+    /// player-info cache kept.
+    @Test(.timeLimit(.minutes(1))) func aCancelledUpgradeChangesNothing() async throws {
+        let transport = FirstCallTransport(try fixture("player-tv-Ix7uzPm3cU8"))
+        let solver = FakeSolver()
+        let rig = await rig(transport, solver: solver)
+        let resolver = rig.resolver
+        let upgrade = Task { await resolver.upgrade("Ix7uzPm3cU8") }
+        await transport.waitForCall()
+        upgrade.cancel()
+        #expect(await upgrade.value == nil)
+        #expect(await resolver.upgrade("Ix7uzPm3cU8") != nil)
+        #expect(transport.callCount == 2)
+        #expect(solver.playerInfoCalls == 1)
+    }
+
+    /// Fix round 1: a backend window that opens while the 30-minute pause runs never shortens it.
+    @Test(.timeLimit(.minutes(1))) func aBackendWindowNeverShortensTheThirtyMinutePause() async throws {
+        let transport = RecordingTransport([try fixture("player-tv-Ix7uzPm3cU8")])
+        let solver = FakeSolver()
+        solver.infoDelay = .milliseconds(300)
+        solver.solveError = .unavailable(retryAfterSeconds: nil)
+        let rig = await rig(transport, solver: solver)
+        let resolver = rig.resolver
+        let inFlight = Task { await resolver.upgrade("Ix7uzPm3cU8") }
+        for _ in 0..<1000 where solver.playerInfoCalls == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        await resolver.hdRefused()                                           // the pause starts mid-upgrade...
+        #expect(await inFlight.value == nil)                                 // ...then the solve opens a 120 s window
+        #expect(transport.callCount == 1)
+        solver.solveError = nil
+        solver.infoDelay = .zero
+        rig.clock.advance(by: .seconds(1799))
+        #expect(await resolver.upgrade("HCWGshgFlqE") == nil)
+        #expect(transport.callCount == 1)
+        rig.clock.advance(by: .seconds(2))
+        #expect(await resolver.upgrade("HCWGshgFlqE") != nil)
     }
 
     /// R5: synthetic shapes (no TVHTML5 refusal was ever captured, spec §9.6). None is a verdict, none pauses HD.
@@ -238,14 +328,18 @@ import Testing
         let rig = await rig(transport, solver: FakeSolver())
         #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)
         #expect(await rig.session.cooldownRemaining(now: rig.clock.wallNow) == nil)
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)          // denied: no second POST
+        #expect(transport.callCount == 1)
         #expect(await rig.resolver.upgrade("HCWGshgFlqE") != nil)
     }
 
     @Test func theTokenlessBootstrapAdoptsTheFreshVisitorAndRetriesOnce() async throws {   // R6
         let transport = RecordingTransport([try fixture("player-tv-botcheck-tokenless"), try fixture("player-tv-Ix7uzPm3cU8")])
-        let rig = await rig(transport, solver: FakeSolver())
+        let solver = FakeSolver()
+        let rig = await rig(transport, solver: solver)
         #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") != nil)
         #expect(transport.callCount == 2)
+        #expect(solver.solveCount == 1)                                      // the retry's answer only
         #expect(await rig.session.visitorData(for: .tvSamsung) == "FIXTURE_VISITOR_DATA")
         #expect(transport.recorded[1].headers["X-Goog-Visitor-Id"] == "FIXTURE_VISITOR_DATA")
         #expect(await rig.session.visitorData(for: .visionos) == nil)       // one session per family (R3)

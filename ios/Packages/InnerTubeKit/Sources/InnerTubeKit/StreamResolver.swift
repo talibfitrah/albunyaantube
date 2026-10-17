@@ -206,9 +206,10 @@ public actor StreamResolver {
     /// One `tv_samsung` `/player` and one backend solve for the video whose 360p is on screen; returned no earlier than
     /// the `/player` response + `hdFirstFetchDelay` (R42). nil = stay on 360p. It never throws, because the caller is
     /// already playing, and it never touches the walk, the manifest cache or the global bot-check cooldown.
-    /// Only our backend's unavailability opens R23's skip window and only a bot check the 30-minute pause (R44); every
-    /// other failure (a non-OK answer, no usable format, a defect in YouTube's data, a YouTube transport error or the
-    /// 8 s budget) is this video's alone (R5, R7, R41).
+    /// Only our backend's unavailability opens R23's skip window and only a bot check the 30-minute pause (R44). A
+    /// YouTube transport failure (a non-2xx, a `URLError`, the 8 s budget) and a cancellation leave no state, so the
+    /// next play retries, as the walk would. What the answer itself rules out (a non-OK answer, no usable format, a
+    /// defect in YouTube's data) is this video's alone (R5, R7, R41).
     public func upgrade(_ videoId: String) async -> Resolved? {
         guard let solver = challengeSolver, Self.isValidVideoId(videoId), !hdDenied.contains(videoId) else { return nil }
         if let until = hdPausedUntil, monotonicClock.now < until { return nil }
@@ -229,6 +230,10 @@ public actor StreamResolver {
             pauseHD(seconds: Self.botCheckPauseSeconds)                           // R44
         } catch is CancellationError {
             // The player moved on; nothing about the source or the backend is known.
+        } catch ExtractionError.transport {
+            // YouTube non-2xx or the 8 s budget: retryable, as in the walk. (A solver timeout is `.unavailable`, above.)
+        } catch is URLError {
+            // `URLSessionTransport` maps nothing but `.cancelled`: a raw network failure to YouTube, retryable.
         } catch {
             hdDenied.insert(videoId)                                              // never the backend window
         }
