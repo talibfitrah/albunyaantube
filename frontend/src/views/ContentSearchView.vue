@@ -152,6 +152,7 @@
     <CategoryAssignmentModal
       :is-open="isCategoryModalOpen"
       :multi-select="true"
+      :content-type="pendingContent?.type ?? null"
       @close="handleCategoryModalClose"
       @assign="handleCategoryAssignment"
     />
@@ -186,6 +187,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
+import { apiErrorCode, apiErrorToMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
@@ -494,7 +496,8 @@ async function handleCategoryAssignment(categoryIds: string[]) {
     if (err.response?.status === 409) {
       toast.error(t('contentSearch.alreadyExists'));
     } else {
-      toast.error(t('contentSearch.addError'));
+      // A coded refusal (the live-category guard) names its reason; an uncoded axios error keeps the localized generic text.
+      toast.error(apiErrorCode(err) ? apiErrorToMessage(err, t, 'contentSearch.addError') : t('contentSearch.addError'));
     }
   }
 }

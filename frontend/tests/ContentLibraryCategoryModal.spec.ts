@@ -17,6 +17,9 @@ vi.mock('@/services/api/client', () => ({
   }
 }));
 
+// The modal reads the role (spec §8: LIVE categories are admin-only).
+vi.mock('@/stores/auth', () => ({ useAuthStore: () => ({ isAdmin: true }) }));
+
 vi.mock('@/services/contentLibrary', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/contentLibrary')>()),
   fetchRegistryTotals: () => Promise.resolve({ channels: 0, playlists: 0, videos: 0 }),

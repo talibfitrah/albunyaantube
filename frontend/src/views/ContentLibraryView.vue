@@ -536,6 +536,7 @@
       v-if="categoryModalOpen"
       :is-open="categoryModalOpen"
       :current-category-ids="categoryModalCurrentIds"
+      :content-type="categoryModalContentType"
       :allow-empty="true"
       :multi-select="true"
       @close="closeCategoryModal"
@@ -710,6 +711,11 @@ const itemsForCategoryAssignment = ref<ContentItem[]>([]);
 const categoryModalCurrentIds = computed(() =>
   itemsForCategoryAssignment.value.map(item => item.categoryIds)
 );
+/** Spec §8: one type for the modal when every selected item shares it. */
+const categoryModalContentType = computed(() => {
+  const types = new Set(itemsForCategoryAssignment.value.map(i => String(i.type).toLowerCase()));
+  return types.size === 1 ? ([...types][0] as 'channel' | 'playlist' | 'video') : null;
+});
 
 // Keywords Modal State
 const keywordsModalOpen = ref(false);

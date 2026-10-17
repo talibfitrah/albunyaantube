@@ -15,6 +15,7 @@
         <span v-if="category.icon && !isIconDataUrl(category.icon)" class="category-icon">{{ category.icon }}</span>
         <img v-else-if="category.icon && isIconDataUrl(category.icon)" :src="category.icon" alt="" class="category-icon-img" />
         <span class="category-name">{{ category.label }}</span>
+        <span v-if="category.type === 'LIVE'" class="live-chip">{{ t('categories.dialog.typeLive') }}</span>
         <span v-if="hasChildren" class="subcategory-count">
           ({{ category.subcategories.length }})
         </span>
@@ -22,6 +23,7 @@
 
       <div class="category-actions">
         <button
+          v-if="category.type !== 'LIVE'"
           type="button"
           class="action-btn"
           :title="t('categories.addSubcategory')"
@@ -71,6 +73,7 @@ interface Category {
   id: string;
   label: string;
   icon?: string;
+  type?: string | null;
   subcategories?: Category[];
 }
 
@@ -192,6 +195,15 @@ function toggleExpanded() {
 .subcategory-count {
   font-size: 0.8125rem;
   color: var(--color-text-secondary);
+}
+
+.live-chip {
+  margin-inline-start: 0.5rem;
+  padding-inline: 0.5rem;
+  border-radius: 999px;
+  font-size: 0.75rem;
+  background: var(--color-danger-soft);
+  color: var(--color-danger);
 }
 
 .category-actions {

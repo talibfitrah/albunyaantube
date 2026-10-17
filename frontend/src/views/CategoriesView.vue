@@ -72,6 +72,15 @@
               <p class="parent-name">{{ getParentName(dialogData.parentId) }}</p>
             </div>
 
+            <div class="form-group">
+              <label for="category-type">{{ t('categories.dialog.type') }}</label>
+              <select id="category-type" v-model="dialogData.type" :disabled="!!dialogData.parentId">
+                <option :value="null">{{ t('categories.dialog.typeStandard') }}</option>
+                <option value="LIVE">{{ t('categories.dialog.typeLive') }}</option>
+              </select>
+              <p v-if="dialogData.type === 'LIVE'" class="type-help">{{ t('categories.dialog.typeLiveHelp') }}</p>
+            </div>
+
             <fieldset class="localized-names-group">
               <legend>{{ t('categories.dialog.translations') }}</legend>
               <div class="form-group">
@@ -163,6 +172,7 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
+import { apiErrorWithOffenders } from '@/services/http';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 import ErrorRetry from '@/components/common/ErrorRetry.vue';
 import { useToast } from '@/composables/useToast';
@@ -194,7 +204,8 @@ const dialogData = ref({
   parentId: null as string | null,
   icon: '',
   displayOrder: null as number | null,
-  localizedNames: { en: '', ar: '', nl: '' }
+  localizedNames: { en: '', ar: '', nl: '' },
+  type: null as 'LIVE' | null
 });
 const isSubmitting = ref(false);
 const dialogError = ref<string | null>(null);
@@ -221,7 +232,8 @@ function openAddDialog(parentId: string | null) {
     parentId,
     icon: '',
     displayOrder: null,
-    localizedNames: { en: '', ar: '', nl: '' }
+    localizedNames: { en: '', ar: '', nl: '' },
+    type: null
   };
   showDialog.value = true;
 }
@@ -235,7 +247,8 @@ function openEditDialog(category: any) {
     parentId: category.parentId || null,
     icon: category.icon || '',
     displayOrder: category.displayOrder ?? null,
-    localizedNames: { en: ln.en || '', ar: ln.ar || '', nl: ln.nl || '' }
+    localizedNames: { en: ln.en || '', ar: ln.ar || '', nl: ln.nl || '' },
+    type: category.type ?? null
   };
   showDialog.value = true;
 }
@@ -267,7 +280,8 @@ async function handleSubmit() {
         parentId: dialogData.value.parentId,
         icon: dialogData.value.icon,
         displayOrder: dialogData.value.displayOrder,
-        localizedNames: ln
+        localizedNames: ln,
+        type: dialogData.value.type
       });
       success(t('categories.createSuccess'));
     } else {
@@ -275,7 +289,9 @@ async function handleSubmit() {
         name: dialogData.value.name,
         icon: dialogData.value.icon,
         localizedNames: ln,
-        parentCategoryId: dialogData.value.parentId || null
+        parentCategoryId: dialogData.value.parentId || null,
+        // Always sent: an omitted type keeps the stored one, so Standard must arrive as an explicit null (R18 kill switch).
+        type: dialogData.value.parentId ? null : dialogData.value.type
       };
       if (dialogData.value.displayOrder !== null && dialogData.value.displayOrder !== undefined) {
         updatePayload.displayOrder = dialogData.value.displayOrder;
@@ -287,7 +303,8 @@ async function handleSubmit() {
     closeDialog();
     await loadCategories();
   } catch (err) {
-    dialogError.value = err instanceof Error ? err.message : t('categories.dialog.error');
+    // A flip to LIVE can be refused with each offending member listed (MEMBERS_INVALID).
+    dialogError.value = apiErrorWithOffenders(err, t, 'categories.dialog.error');
   } finally {
     isSubmitting.value = false;
   }
@@ -520,7 +537,8 @@ form {
   color: var(--color-text-primary);
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   padding: 0.875rem 1rem;
   border-radius: 0.5rem;
   border: 1.5px solid var(--color-border);
@@ -529,7 +547,8 @@ form {
   transition: all 0.2s ease;
 }
 
-.form-group input {
+.form-group input,
+.form-group select {
   -webkit-tap-highlight-color: transparent;
   min-height: 48px;
 }
@@ -606,7 +625,8 @@ form {
   }
 }
 
-.form-group input:focus {
+.form-group input:focus,
+.form-group select:focus {
   outline: none;
   border-color: var(--color-brand);
   box-shadow: 0 0 0 3px rgba(22, 131, 90, 0.1);
@@ -637,7 +657,16 @@ form {
   font-size: 0.875rem;
 }
 
+.type-help {
+  margin: 0;
+  margin-block-start: 0.25rem;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
+  text-align: start;
+}
+
 .form-error {
+  white-space: pre-line;
   background: var(--color-danger-soft);
   color: var(--color-danger);
   padding: 0.75rem;

@@ -94,12 +94,13 @@ export async function createCategory(data: {
     payload.type = data.type;
   }
 
-  const response = await apiClient.post<Category>('/api/admin/categories', payload);
+  // The dialog shows the localized refusal (e.g. LIVE_CATEGORY_SHAPE); the global English toast would repeat it.
+  const response = await apiClient.post<Category>('/api/admin/categories', payload, { suppressGlobalErrorToast: true });
   return response.data;
 }
 
 /**
- * Update an existing category
+ * Update an existing category. `type`: undefined keeps the stored type, an explicit null clears it (R18).
  */
 export async function updateCategory(
   id: string,
@@ -112,7 +113,7 @@ export async function updateCategory(
     type?: 'LIVE' | null;
   }
 ): Promise<Category> {
-  const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data);
+  const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data, { suppressGlobalErrorToast: true });
   return response.data;
 }
 

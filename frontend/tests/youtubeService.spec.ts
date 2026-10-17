@@ -8,9 +8,11 @@ import {
   getChannelPlaylists,
   getPlaylistDetails,
   getPlaylistVideos,
-  toggleIncludeState
+  toggleIncludeState,
+  addToPendingApprovals
 } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
+import type { AdminSearchVideoResult } from '@/types/registry';
 import * as youtubeDataApi from '@/services/youtubeDataApi';
 
 vi.mock('@/services/api/client');
@@ -306,6 +308,20 @@ describe('YouTubeService', () => {
       await toggleIncludeState('video-1', 'video', 'INCLUDED');
 
       expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/videos/video-1/toggle');
+    });
+  });
+
+  describe('addToPendingApprovals (live channels, spec D10)', () => {
+    it("sends the search result's channel with a video add", async () => {
+      vi.mocked(apiClient.post).mockResolvedValue({ data: {} } as never);
+      const video = { id: 'Rs7St51oDDc', ytId: 'Rs7St51oDDc', title: 'Sunnah', thumbnailUrl: null,
+        parentChannelId: 'UCROKYPep-UuODNwyipe6JMw' } as unknown as AdminSearchVideoResult;
+
+      await addToPendingApprovals(video, 'video', ['live']);
+
+      expect(apiClient.post).toHaveBeenCalledWith('/api/admin/registry/videos',
+        expect.objectContaining({ youtubeId: 'Rs7St51oDDc', channelId: 'UCROKYPep-UuODNwyipe6JMw' }),
+        { suppressGlobalErrorToast: true });
     });
   });
 });
