@@ -113,11 +113,14 @@ public class LiveCategoryGuard {
     /**
      * Rows 15–16 (D9): the changes a simple-format import ([channels, playlists, videos] maps of youtubeId →
      * "Title|Cat1,Cat2|keywords") would make. Only rows that name a LIVE category and are new (the import skips
-     * existing ones) are returned, so an import that never touches LIVE costs no extra read.
+     * existing ones) are returned, so an import that never touches LIVE costs no extra read. {@code storedLiveRows}
+     * receives "type:youtubeId" for each LIVE row found stored: the writer must skip those unread, or a doc deleted after
+     * this read would be written into LIVE unchecked.
      * ponytail: both simple importers drop checkAll's verified channel ids and store the uploader-URL id; NewPipe 0.26.5
      * gives a /channel/UC… URL, and the guard proved the video live on that channel. Write the verified id if it stops.
      */
-    public List<Change> simpleImportChanges(List<Map<String, String>> simpleData, String defaultStatus)
+    public List<Change> simpleImportChanges(List<Map<String, String>> simpleData, String defaultStatus,
+                                            Set<String> storedLiveRows)
             throws ExecutionException, InterruptedException, TimeoutException {
         Set<String> liveIds = liveCategories.liveCategoryIds();
         List<Change> changes = new ArrayList<>();
@@ -135,7 +138,9 @@ public class LiveCategoryGuard {
                     case "playlist" -> playlists.findByYoutubeId(youtubeId).isPresent();
                     default -> videos.findByYoutubeId(youtubeId).isPresent();
                 };
-                if (!exists) {
+                if (exists) {
+                    storedLiveRows.add(types[i] + ":" + youtubeId);
+                } else {
                     changes.add(new Change(youtubeId, types[i], youtubeId, null, List.of(), null, ids, defaultStatus));
                 }
             }

@@ -21,6 +21,7 @@ import java.io.IOException;
 import java.time.Clock;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
@@ -523,9 +524,11 @@ class LiveCategoryGuardTest {
                 Map.of("PLkw", "P|Plain|kw,Live", "PLlive", "P|Live"),
                 Map.of("vidplain", "V|Plain"));
 
-        List<LiveCategoryGuard.Change> changes = guard.simpleImportChanges(simpleData, "APPROVED");
+        Set<String> storedLiveRows = new HashSet<>();
+        List<LiveCategoryGuard.Change> changes = guard.simpleImportChanges(simpleData, "APPROVED", storedLiveRows);
 
         assertThat(changes).extracting(LiveCategoryGuard.Change::ref).containsExactlyInAnyOrder("UCnew", "PLlive");
+        assertThat(storedLiveRows).containsExactly("channel:UCold");   // the writers skip it unread
         assertThat(changes).allSatisfy(c -> assertThat(c.newCategoryIds()).containsExactly(LIVE));
         verify(playlists, never()).findByYoutubeId("PLkw");
         verifyNoInteractions(videos);

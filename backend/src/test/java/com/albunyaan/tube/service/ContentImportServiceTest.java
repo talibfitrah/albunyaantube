@@ -682,4 +682,34 @@ class ContentImportServiceTest {
         verifyNoInteractions(channelOrchestrator);
         verify(playlistRepository, never()).save(any(Playlist.class));
     }
+
+    /**
+     * §7 row 16: a LIVE row the guard saw stored is skipped unread. Re-reading it would write a doc deleted in between
+     * (playlists run only after every channel batch is validated) into LIVE with no check.
+     */
+    @Test
+    void importSimpleFormatAsync_aRowTheGuardSawStoredIsSkippedEvenIfDeletedSince() throws Exception {
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, mock(LiveChannelService.class), videoRepository,
+                channelRepository, playlistRepository, categoryMappingService);
+        ContentImportService guarded = new ContentImportService(channelOrchestrator, categoryMappingService,
+                channelRepository, playlistRepository, videoRepository, validationRunRepository, guard);
+        when(categoryMappingService.mapCategoryNamesToIds("Live")).thenReturn(List.of("live-cat"));
+        when(playlistRepository.findByYoutubeId("PLgone"))
+                .thenReturn(Optional.of(new Playlist("PLgone")))   // the guard's read: stored, so no check
+                .thenReturn(Optional.empty());                     // deleted before the writer gets there
+        BatchValidationResult<PlaylistDetailsDto> valid = new BatchValidationResult<>();
+        valid.addValid("PLgone", createPlaylistDto("PLgone", "P"));
+        lenient().when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(valid);
+        lenient().when(playlistRepository.save(any(Playlist.class))).thenAnswer(inv -> inv.getArgument(0));
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+
+        guarded.importSimpleFormatAsync(run, List.of(Collections.emptyMap(), Map.of("PLgone", "P|Live"),
+                Collections.emptyMap()), "APPROVED", "test-user");
+
+        verify(playlistRepository, never()).save(any(Playlist.class));
+        verify(playlistRepository, times(1)).findByYoutubeId("PLgone");
+        assertEquals(1, run.getPlaylistsSkipped());
+    }
 }

@@ -90,13 +90,15 @@ public class SimpleImportService {
      * @param defaultStatus Status to set for imported items (APPROVED or PENDING)
      * @param currentUserId Firebase UID of user performing import
      * @param validateOnly If true, only validate without importing (dry-run)
+     * @param storedLiveRows "type:youtubeId" of the LIVE rows the live guard saw stored: skipped unread (§7 row 16)
      * @return Import response with counts and detailed results
      */
     public SimpleImportResponse importSimpleFormat(
             List<Map<String, String>> simpleData,
             String defaultStatus,
             String currentUserId,
-            boolean validateOnly
+            boolean validateOnly,
+            Set<String> storedLiveRows
     ) {
         SimpleImportResponse response = new SimpleImportResponse();
 
@@ -135,17 +137,17 @@ public class SimpleImportService {
 
         // Import channels
         if (channelsMap != null && !channelsMap.isEmpty()) {
-            importChannels(channelsMap, defaultStatus, currentUserId, validateOnly, response);
+            importChannels(channelsMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         // Import playlists
         if (playlistsMap != null && !playlistsMap.isEmpty()) {
-            importPlaylists(playlistsMap, defaultStatus, currentUserId, validateOnly, response);
+            importPlaylists(playlistsMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         // Import videos
         if (videosMap != null && !videosMap.isEmpty()) {
-            importVideos(videosMap, defaultStatus, currentUserId, validateOnly, response);
+            importVideos(videosMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         response.setSuccess(true);
@@ -164,7 +166,8 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
         for (Map.Entry<String, String> entry : channelsMap.entrySet()) {
             String youtubeId = entry.getKey();
@@ -175,8 +178,8 @@ public class SimpleImportService {
 
             try {
                 // 1. Check if already exists in Firestore
-                Optional<Channel> existing = channelRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("channel:" + youtubeId)
+                        || channelRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,
@@ -300,7 +303,8 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
         for (Map.Entry<String, String> entry : playlistsMap.entrySet()) {
             String youtubeId = entry.getKey();
@@ -311,8 +315,8 @@ public class SimpleImportService {
 
             try {
                 // 1. Check if already exists
-                Optional<Playlist> existing = playlistRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("playlist:" + youtubeId)
+                        || playlistRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,
@@ -429,7 +433,8 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
         for (Map.Entry<String, String> entry : videosMap.entrySet()) {
             String youtubeId = entry.getKey();
@@ -440,8 +445,8 @@ public class SimpleImportService {
 
             try {
                 // 1. Check if already exists
-                Optional<Video> existing = videoRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("video:" + youtubeId)
+                        || videoRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,

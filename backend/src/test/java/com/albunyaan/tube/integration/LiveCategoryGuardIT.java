@@ -684,4 +684,15 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_SHAPE"));
         assertThat(firestore.collection("categories").document("it1-kid").get().get().exists()).isFalse();
     }
+
+    /** D8 binds only what is written: SKIP leaves a stored category alone, so its file row is not refused. */
+    @Test
+    void row15_skipExemptsAStoredCategoryFromTheShapeRule() throws Exception {
+        as("admin");
+        importJson(Map.of("categories", List.of(Map.of("id", LIVE, "name", "Live", "parentCategoryId", PLAIN))), "SKIP")
+                .andExpect(status().isOk());
+        var stored = firestore.collection("categories").document(LIVE).get().get();
+        assertThat(stored.getString("parentCategoryId")).isNull();
+        assertThat(stored.getString("type")).isEqualTo("LIVE");
+    }
 }

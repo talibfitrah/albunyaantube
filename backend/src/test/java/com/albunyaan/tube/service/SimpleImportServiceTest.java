@@ -23,6 +23,7 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Optional;
+import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
@@ -79,7 +80,7 @@ class SimpleImportServiceTest {
         when(categoryMappingService.mapCategoryNamesToIds("CatA")).thenReturn(List.of("cat-1"));
         when(channelRepository.save(any(Channel.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        SimpleImportResponse response = service.importSimpleFormat(payload, "APPROVED", "user-1", false);
+        SimpleImportResponse response = service.importSimpleFormat(payload, "APPROVED", "user-1", false, Set.of());
 
         ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
         verify(channelRepository).save(channelCaptor.capture());
@@ -110,7 +111,7 @@ class SimpleImportServiceTest {
         when(categoryMappingService.mapCategoryNamesToIds("CatB")).thenReturn(List.of("cat-2"));
         when(playlistRepository.save(any(Playlist.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.importSimpleFormat(payload, "PENDING", "user-2", false);
+        service.importSimpleFormat(payload, "PENDING", "user-2", false, Set.of());
 
         ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
         verify(playlistRepository).save(playlistCaptor.capture());
@@ -143,7 +144,7 @@ class SimpleImportServiceTest {
         when(categoryMappingService.mapCategoryNamesToIds("CatC")).thenReturn(List.of("cat-3"));
         when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.importSimpleFormat(payload, "APPROVED", "user-3", false);
+        service.importSimpleFormat(payload, "APPROVED", "user-3", false, Set.of());
 
         ArgumentCaptor<Video> videoCaptor = ArgumentCaptor.forClass(Video.class);
         verify(videoRepository).save(videoCaptor.capture());
@@ -175,7 +176,7 @@ class SimpleImportServiceTest {
                 inv.<String>getArgument(0).split(",")).map(String::trim).map(names::get).filter(Objects::nonNull).toList());
         when(playlistRepository.save(any(Playlist.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
-        service.importSimpleFormat(payload, "APPROVED", "user-1", false);
+        service.importSimpleFormat(payload, "APPROVED", "user-1", false, Set.of());
 
         ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
         verify(playlistRepository).save(playlistCaptor.capture());

@@ -127,8 +127,10 @@ public class ContentImportService {
 
             // §7 row 16 (D9): the live checks run here, off the request thread (K11), before the first write.
             // A refusal (a transient 503 included) fails the whole run and writes nothing; the run shows the code and rows.
+            // The LIVE rows the guard saw stored are skipped unread below: a doc deleted since must not come back unchecked.
+            Set<String> storedLiveRows = new HashSet<>();
             try {
-                liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus));
+                liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus, storedLiveRows));
             } catch (LiveCategoryException e) {
                 boolean retry = e.getStatus() == HttpStatus.SERVICE_UNAVAILABLE;   // only failed checks: try again later
                 run.setCurrentPhase(retry ? "LIVE_CHECK_UNAVAILABLE" : "LIVE_CATEGORY_REFUSED");
@@ -144,21 +146,21 @@ public class ContentImportService {
             if (channelsMap != null && !channelsMap.isEmpty()) {
                 run.setCurrentPhase("CHANNELS");
                 validationRunRepository.save(run);
-                processChannels(run, channelsMap, defaultStatus, currentUserId, reasonCounts, failedItemIds);
+                processChannels(run, channelsMap, defaultStatus, currentUserId, reasonCounts, failedItemIds, storedLiveRows);
             }
 
             // Import playlists
             if (playlistsMap != null && !playlistsMap.isEmpty()) {
                 run.setCurrentPhase("PLAYLISTS");
                 validationRunRepository.save(run);
-                processPlaylists(run, playlistsMap, defaultStatus, currentUserId, reasonCounts, failedItemIds);
+                processPlaylists(run, playlistsMap, defaultStatus, currentUserId, reasonCounts, failedItemIds, storedLiveRows);
             }
 
             // Import videos
             if (videosMap != null && !videosMap.isEmpty()) {
                 run.setCurrentPhase("VIDEOS");
                 validationRunRepository.save(run);
-                processVideos(run, videosMap, defaultStatus, currentUserId, reasonCounts, failedItemIds);
+                processVideos(run, videosMap, defaultStatus, currentUserId, reasonCounts, failedItemIds, storedLiveRows);
             }
 
             // Mark complete
@@ -198,7 +200,8 @@ public class ContentImportService {
             String defaultStatus,
             String currentUserId,
             Map<String, Integer> reasonCounts,
-            List<String> failedItemIds
+            List<String> failedItemIds,
+            Set<String> storedLiveRows
     ) throws ExecutionException, InterruptedException, TimeoutException {
         List<String> youtubeIds = new ArrayList<>(channelsMap.keySet());
 
@@ -212,7 +215,8 @@ public class ContentImportService {
             List<String> unreadIds = new ArrayList<>();
             for (String id : batch) {
                 try {
-                    if (channelRepository.findByYoutubeId(id).isPresent()) {
+                    if (storedLiveRows.contains("channel:" + id)
+                            || channelRepository.findByYoutubeId(id).isPresent()) {
                         existingIds.add(id);
                     }
                 } catch (Exception e) {
@@ -342,7 +346,8 @@ public class ContentImportService {
             String defaultStatus,
             String currentUserId,
             Map<String, Integer> reasonCounts,
-            List<String> failedItemIds
+            List<String> failedItemIds,
+            Set<String> storedLiveRows
     ) throws ExecutionException, InterruptedException, TimeoutException {
         List<String> youtubeIds = new ArrayList<>(playlistsMap.keySet());
 
@@ -355,7 +360,8 @@ public class ContentImportService {
             List<String> unreadIds = new ArrayList<>();
             for (String id : batch) {
                 try {
-                    if (playlistRepository.findByYoutubeId(id).isPresent()) {
+                    if (storedLiveRows.contains("playlist:" + id)
+                            || playlistRepository.findByYoutubeId(id).isPresent()) {
                         existingIds.add(id);
                     }
                 } catch (Exception e) {
@@ -477,7 +483,8 @@ public class ContentImportService {
             String defaultStatus,
             String currentUserId,
             Map<String, Integer> reasonCounts,
-            List<String> failedItemIds
+            List<String> failedItemIds,
+            Set<String> storedLiveRows
     ) throws ExecutionException, InterruptedException, TimeoutException {
         List<String> youtubeIds = new ArrayList<>(videosMap.keySet());
 
@@ -490,7 +497,8 @@ public class ContentImportService {
             List<String> unreadIds = new ArrayList<>();
             for (String id : batch) {
                 try {
-                    if (videoRepository.findByYoutubeId(id).isPresent()) {
+                    if (storedLiveRows.contains("video:" + id)
+                            || videoRepository.findByYoutubeId(id).isPresent()) {
                         existingIds.add(id);
                     }
                 } catch (Exception e) {

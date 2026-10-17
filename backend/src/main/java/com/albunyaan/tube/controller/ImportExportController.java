@@ -29,10 +29,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -283,13 +285,16 @@ public class ImportExportController {
                 SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]")
             );
         }
-        liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus));   // row 16 (D9)
+        // Row 16 (D9). The LIVE rows the guard saw stored are skipped unread: a doc deleted since must not return unchecked.
+        Set<String> storedLiveRows = new HashSet<>();
+        liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus, storedLiveRows));
 
         SimpleImportResponse response = simpleImportService.importSimpleFormat(
             simpleData,
             defaultStatus,
             user.getUid(),
-            false // not validateOnly
+            false, // not validateOnly
+            storedLiveRows
         );
 
         return ResponseEntity.ok(response);
@@ -341,7 +346,8 @@ public class ImportExportController {
             simpleData,
             "APPROVED", // default status doesn't matter for validation
             user.getUid(),
-            true // validateOnly = true (dry-run)
+            true, // validateOnly = true (dry-run)
+            Set.of()
         );
 
         return ResponseEntity.ok(validation);
