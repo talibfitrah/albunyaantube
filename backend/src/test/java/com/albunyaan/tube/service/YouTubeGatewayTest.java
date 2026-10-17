@@ -393,6 +393,7 @@ class YouTubeGatewayTest {
             IOException thrown = assertThrows(IOException.class, () -> {
                 testGateway.fetchChannelInfo("UCTest");
             });
+            assertInstanceOf(YouTubeGateway.CircuitOpenException.class, thrown);
 
             assertTrue(thrown.getMessage().contains("circuit breaker is open"),
                     "Error message should say circuit is open. Got: " + thrown.getMessage());

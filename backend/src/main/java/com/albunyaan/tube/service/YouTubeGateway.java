@@ -11,6 +11,7 @@ import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs;
 import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
@@ -168,12 +169,12 @@ public class YouTubeGateway {
             YouTubeCircuitBreaker.State currentState = circuitBreaker.getCurrentState();
             if (currentState == YouTubeCircuitBreaker.State.HALF_OPEN) {
                 // HALF_OPEN and isOpen() returned true means probeInProgress is true
-                throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                throw new CircuitOpenException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
                         "Waiting for probe result before allowing more requests.");
             } else {
                 // OPEN state with cooldown remaining
                 long remainingMs = circuitBreaker.getRemainingCooldownMs();
-                throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
+                throw new CircuitOpenException("YouTube circuit breaker is open. Remaining cooldown: " +
                         (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
             }
         }
@@ -183,7 +184,7 @@ public class YouTubeGateway {
         if (!circuitBreaker.allowProbe()) {
             // This can only happen in a race condition: another thread acquired the permit
             // between our isOpen() check and this allowProbe() call
-            throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+            throw new CircuitOpenException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
                     "Waiting for probe result before allowing more requests.");
         }
 
@@ -423,6 +424,21 @@ public class YouTubeGateway {
      */
     public ChannelTabExtractor createChannelTabExtractor(ListLinkHandler tab) throws ExtractionException {
         return youtube.getChannelTabExtractor(tab);
+    }
+
+    /**
+     * A channel's Live tab built straight from its UC id (spec D2): no ChannelInfo fetch first. NewPipe 0.26.5 reads
+     * a "channel/UC…" id without a resolve request (pinned by LiveTabReaderTest).
+     */
+    public ChannelTabExtractor createLiveTabExtractor(String ucId) throws ExtractionException {
+        return youtube.getChannelTabExtractorFromId("channel/" + ucId, ChannelTabs.LIVESTREAMS);
+    }
+
+    /** A breaker refusal (OPEN, or HALF_OPEN with the probe taken): callers tell it apart from a YouTube error (D3). */
+    public static final class CircuitOpenException extends IOException {
+        public CircuitOpenException(String message) {
+            super(message);
+        }
     }
 
     /**

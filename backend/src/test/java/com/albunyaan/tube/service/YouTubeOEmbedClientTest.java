@@ -73,4 +73,17 @@ class YouTubeOEmbedClientTest {
         assertTrue(client.playlistThumbnailUrl(null).isEmpty());
         assertTrue(client.playlistThumbnailUrl("  ").isEmpty());
     }
+
+    @Test
+    void parseAuthorUrlAcceptsAYouTubeHandleUrl() {
+        assertEquals(Optional.of("https://www.youtube.com/@ZadTVchannel"),
+                client.parseAuthorUrl("{\"author_name\":\"Zad\",\"author_url\":\"https://www.youtube.com/@ZadTVchannel\"}"));
+    }
+
+    @Test
+    void parseAuthorUrlRejectsAForeignHostOrPlainHttp() {
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{\"author_url\":\"https://evil.example/@ZadTVchannel\"}"));
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{\"author_url\":\"http://www.youtube.com/@ZadTVchannel\"}"));
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{}"));
+    }
 }
