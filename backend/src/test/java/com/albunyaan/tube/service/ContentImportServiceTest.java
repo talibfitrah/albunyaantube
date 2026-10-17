@@ -611,9 +611,75 @@ class ContentImportServiceTest {
         service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
 
         assertEquals(ValidationRun.STATUS_FAILED, run.getStatus());
+        assertEquals("LIVE_CHECK_UNAVAILABLE", run.getCurrentPhase());   // a retry, not a refusal
         assertEquals(LiveCategoryException.CHECK_UNAVAILABLE, run.getDetails().get("code"));
         assertEquals(List.of(Map.of("ref", "it1r16uvid1")), run.getDetails().get("offenders"));
         verifyNoInteractions(channelOrchestrator);
         verify(videoRepository, never()).save(any(Video.class));
+    }
+
+    /**
+     * §7 row 16: "Title|Categories|keywords" is parsed as the sync import and the live guard parse it, so a keyword is
+     * never a category name. (A limit-2 split made "Plain|kw,Live" map "Live" and wrote the row into LIVE unchecked.)
+     */
+    @Test
+    void importSimpleFormatAsync_aKeywordIsNeverACategory() throws Exception {
+        String value = "X|Plain|kw,Live";
+        List<Map<String, String>> simpleData = List.of(Map.of("UCk", value), Map.of("PLk", value), Map.of("VIDk", value));
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(playlistRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<ChannelDetailsDto> channels = new BatchValidationResult<>();
+        channels.addValid("UCk", createChannelDto("UCk", "C"));
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channels);
+        BatchValidationResult<PlaylistDetailsDto> playlists = new BatchValidationResult<>();
+        playlists.addValid("PLk", createPlaylistDto("PLk", "P"));
+        when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlists);
+        BatchValidationResult<StreamDetailsDto> videos = new BatchValidationResult<>();
+        videos.addValid("VIDk", createVideoDto("VIDk", "V"));
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videos);
+        // The real mapper's contract: comma-separated names, unknown names dropped.
+        Map<String, String> names = Map.of("Plain", "plain-cat", "Live", "live-cat");
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenAnswer(inv -> Arrays.stream(
+                inv.<String>getArgument(0).split(",")).map(String::trim).map(names::get).filter(Objects::nonNull).toList());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(playlistRepository.save(any(Playlist.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(videoRepository.save(any(Video.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        ArgumentCaptor<Channel> channel = ArgumentCaptor.forClass(Channel.class);
+        ArgumentCaptor<Playlist> playlist = ArgumentCaptor.forClass(Playlist.class);
+        ArgumentCaptor<Video> video = ArgumentCaptor.forClass(Video.class);
+        verify(channelRepository).save(channel.capture());
+        verify(playlistRepository).save(playlist.capture());
+        verify(videoRepository).save(video.capture());
+        assertEquals(List.of("plain-cat"), channel.getValue().getCategoryIds());
+        assertEquals(List.of("plain-cat"), playlist.getValue().getCategoryIds());
+        assertEquals(List.of("plain-cat"), video.getValue().getCategoryIds());
+    }
+
+    /** Fail closed: a row whose existence read fails is failed, never treated as new (and written past the live guard). */
+    @Test
+    void importSimpleFormatAsync_aFailedExistenceReadFailsTheRow() throws Exception {
+        List<Map<String, String>> simpleData = List.of(
+                Collections.emptyMap(),
+                Map.of("PLr", "P|Live"),
+                Collections.emptyMap()
+        );
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(playlistRepository.findByYoutubeId("PLr")).thenThrow(new TimeoutException("read timed out"));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+        assertEquals(1, run.getPlaylistsFailed());
+        assertEquals(0, run.getPlaylistsImported());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(List.of("playlist:PLr"), failedItemIds);
+        verifyNoInteractions(channelOrchestrator);
+        verify(playlistRepository, never()).save(any(Playlist.class));
     }
 }

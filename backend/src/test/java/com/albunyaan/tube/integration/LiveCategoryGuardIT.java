@@ -581,6 +581,7 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
 
         var doc = run.get().get();
         assertThat(doc.getString("status")).isEqualTo("FAILED");
+        assertThat(doc.getString("currentPhase")).isEqualTo("LIVE_CATEGORY_REFUSED");
         assertThat(doc.get("details.code")).isEqualTo("LIVE_CATEGORY_TYPE_NOT_ALLOWED");
         assertThat(countDocuments("playlists")).isZero();
     }
@@ -605,5 +606,82 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_MEMBERS_INVALID"))
                 .andExpect(jsonPath("$.details.offenders[0].ref").value("pl-r17"));
         assertThat(firestore.collection("categories").document(PLAIN).get().get().getString("type")).isNull();
+    }
+
+    // ---- Task 10 fix round 1: row 15 (identity, D8, SKIP and MERGE, the verified channel) ----
+
+    private ResultActions importJson(Object file, String mergeStrategy) throws Exception {
+        return importFile("/api/admin/import-export/import", json.writeValueAsString(file), "mergeStrategy", mergeStrategy);
+    }
+
+    /** A file that keeps a LIVE doc's id but swaps in another youtubeId adds a new link, so it is checked as one. */
+    @Test
+    void row15_aJsonImportSwappingTheYoutubeIdOfALiveDocIsChecked() throws Exception {
+        doc("videos", "doc-r15s", Map.of("youtubeId", "it1r15svid1", "title", "V", "status", "APPROVED",
+                "channelId", uc("r15s"), "categoryIds", List.of(LIVE), "createdAt", Timestamp.now()));
+        as("admin");
+        liveOn(uc("r15s"), "it1r15svid1");
+        importJson(Map.of("videos", List.of(Map.of("id", "doc-r15s", "youtubeId", "it1r15sother", "title", "V",
+                "status", "APPROVED", "channelId", uc("r15s"), "categoryIds", List.of(LIVE)))), "OVERWRITE")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_LINK_NOT_LIVE"));
+        assertThat(videos.findById("doc-r15s").orElseThrow().getYoutubeId()).isEqualTo("it1r15svid1");
+    }
+
+    /** D13: a JSON-imported live video is stored with the verified channel, not the file's. */
+    @Test
+    void row15_aJsonImportedLiveVideoStoresTheVerifiedChannel() throws Exception {
+        as("admin");
+        when(reader.resolveChannelId("it1r15cvid1")).thenReturn(Optional.of(uc("r15c")));
+        liveOn(uc("r15c"), "it1r15cvid1");
+        importJson(Map.of("videos", List.of(Map.of("id", "doc-r15c", "youtubeId", "it1r15cvid1", "title", "V",
+                "status", "APPROVED", "channelId", "@it1r15c", "categoryIds", List.of(LIVE)))), "OVERWRITE")
+                .andExpect(status().isOk());
+        assertThat(videos.findById("doc-r15c").orElseThrow().getChannelId()).isEqualTo(uc("r15c"));
+    }
+
+    /** SKIP never writes a stored doc, so a file row naming LIVE for it is no add and is not refused. */
+    @Test
+    void row15_skipLeavesAStoredDocAloneAndIsNotRefused() throws Exception {
+        doc("playlists", "pl-r15k", Map.of("youtubeId", "PLit1r15k000000000000000000000000", "title", "P",
+                "status", "APPROVED", "categoryIds", List.of(PLAIN), "createdAt", Timestamp.now()));
+        as("admin");
+        importJson(Map.of("playlists", List.of(Map.of("id", "pl-r15k", "youtubeId", "PLit1r15k000000000000000000000000",
+                "title", "P", "status", "APPROVED", "categoryIds", List.of(LIVE)))), "SKIP")
+                .andExpect(status().isOk());
+        assertThat(playlists.findById("pl-r15k").orElseThrow().getCategoryIds()).containsExactly(PLAIN);
+    }
+
+    /** MERGE of a doc already in LIVE (same youtubeId) adds nothing: no Live-tab read, and the edit is saved. */
+    @Test
+    void row15_mergeOfADocAlreadyInLiveIsNoAdd() throws Exception {
+        doc("videos", "doc-r15m", Map.of("youtubeId", "it1r15mvid1", "title", "V", "status", "APPROVED",
+                "channelId", uc("r15m"), "categoryIds", List.of(LIVE), "createdAt", Timestamp.now()));
+        as("admin");
+        importJson(Map.of("videos", List.of(Map.of("id", "doc-r15m", "youtubeId", "it1r15mvid1", "title", "V2",
+                "status", "APPROVED", "channelId", uc("r15m"), "categoryIds", List.of(LIVE)))), "MERGE")
+                .andExpect(status().isOk());
+        verify(reader, never()).read(uc("r15m"));
+        assertThat(videos.findById("doc-r15m").orElseThrow().getTitle()).isEqualTo("V2");
+    }
+
+    /** D8: a file can't give a stored LIVE category a parent. */
+    @Test
+    void row15_aJsonImportGivingTheLiveCategoryAParentIsRefusedShape() throws Exception {
+        as("admin");
+        importJson(Map.of("categories", List.of(Map.of("id", LIVE, "name", "Live", "parentCategoryId", PLAIN))), "OVERWRITE")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_SHAPE"));
+        assertThat(firestore.collection("categories").document(LIVE).get().get().getString("parentCategoryId")).isNull();
+    }
+
+    /** D8: nothing nests under a LIVE category, through a file either. */
+    @Test
+    void row15_aJsonImportNestingACategoryUnderLiveIsRefusedShape() throws Exception {
+        as("admin");
+        importJson(Map.of("categories", List.of(Map.of("id", "it1-kid", "name", "Kid", "parentCategoryId", LIVE))), "OVERWRITE")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_SHAPE"));
+        assertThat(firestore.collection("categories").document("it1-kid").get().get().exists()).isFalse();
     }
 }

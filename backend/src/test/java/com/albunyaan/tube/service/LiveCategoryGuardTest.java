@@ -1,9 +1,11 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.exception.LiveCategoryException;
+import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
@@ -45,8 +47,11 @@ class LiveCategoryGuardTest {
     final LiveCategoryService liveCategories = mock(LiveCategoryService.class);
     final LiveChannelService live = mock(LiveChannelService.class);
     final VideoRepository videos = mock(VideoRepository.class);
-    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, live, videos,
-            mock(ChannelRepository.class), mock(PlaylistRepository.class), mock(CategoryMappingService.class));
+    final ChannelRepository channels = mock(ChannelRepository.class);
+    final PlaylistRepository playlists = mock(PlaylistRepository.class);
+    final CategoryRepository categoryRepository = mock(CategoryRepository.class);
+    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, live, videos, channels, playlists,
+            new CategoryMappingService(categoryRepository));
 
     @BeforeEach
     void setUp() throws Exception {
@@ -499,5 +504,30 @@ class LiveCategoryGuardTest {
         v.setStatus("APPROVED");
         v.setChannelId(channelId);
         return v;
+    }
+
+    /**
+     * Row 16: the simple-import parse (the keywords part is never categories, as in both importers) and the existence
+     * skip (the import skips existing rows). A row naming no LIVE category costs no read.
+     */
+    @Test
+    void simpleImportChangesListsOnlyNewRowsThatNameLive() throws Exception {
+        Category liveCategory = new Category("Live", null);
+        liveCategory.setId(LIVE);
+        Category plainCategory = new Category("Plain", null);
+        plainCategory.setId(PLAIN);
+        when(categoryRepository.findAll()).thenReturn(List.of(liveCategory, plainCategory));
+        when(channels.findByYoutubeId("UCold")).thenReturn(Optional.of(new Channel("UCold")));
+        List<Map<String, String>> simpleData = List.of(
+                Map.of("UCnew", "C|Live|kw", "UCold", "C|Live"),
+                Map.of("PLkw", "P|Plain|kw,Live", "PLlive", "P|Live"),
+                Map.of("vidplain", "V|Plain"));
+
+        List<LiveCategoryGuard.Change> changes = guard.simpleImportChanges(simpleData, "APPROVED");
+
+        assertThat(changes).extracting(LiveCategoryGuard.Change::ref).containsExactlyInAnyOrder("UCnew", "PLlive");
+        assertThat(changes).allSatisfy(c -> assertThat(c.newCategoryIds()).containsExactly(LIVE));
+        verify(playlists, never()).findByYoutubeId("PLkw");
+        verifyNoInteractions(videos);
     }
 }

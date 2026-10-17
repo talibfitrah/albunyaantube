@@ -20,7 +20,6 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
-import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -134,7 +133,7 @@ public class CategoryController {
             boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
                     .map(Category::isLive).orElse(false);
             if (category.isLive() || parentLive) {
-                throw shapeRefusal(category.getName());
+                throw LiveCategoryException.shape(category.getName());
             }
         }
 
@@ -188,11 +187,11 @@ public class CategoryController {
             boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
                     .map(Category::isLive).orElse(false);
             if (live || parentLive) {
-                throw shapeRefusal(existing.getName());
+                throw LiveCategoryException.shape(existing.getName());
             }
         }
         if (live && !categoryRepository.findByParentId(id).isEmpty()) {
-            throw shapeRefusal(existing.getName());
+            throw LiveCategoryException.shape(existing.getName());
         }
         if (live && !existing.isLive()) {
             liveCategoryGuard.checkMembersForLive(id);                         // row 17 (§4.2)
@@ -279,11 +278,5 @@ public class CategoryController {
         }
 
         return false;
-    }
-
-    private static LiveCategoryException shapeRefusal(String name) {
-        return new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.SHAPE,
-                "A live category can't have a parent category or subcategories",
-                Map.of("category", name == null ? "" : name));
     }
 }

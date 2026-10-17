@@ -17,14 +17,17 @@ import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
+import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -154,5 +157,28 @@ class SimpleImportServiceTest {
         assertEquals(180, saved.getDurationSeconds());
         assertEquals(1_000L, saved.getViewCount());
         assertEquals(List.of("cat-3"), saved.getCategoryIds());
+    }
+
+    /** §7 row 16: the keywords part is never read as categories (the same parse as the async import and the live guard). */
+    @Test
+    void importSimpleFormat_aKeywordIsNeverACategory() throws Exception {
+        Map<String, String> playlists = Map.of("PLk", "P|Plain|kw,Live");
+        List<Map<String, String>> payload = List.of(Collections.emptyMap(), playlists, Collections.emptyMap());
+        PlaylistDetailsDto dto = new PlaylistDetailsDto();
+        dto.setId("PLk");
+        dto.setName("P");
+
+        when(playlistRepository.findByYoutubeId("PLk")).thenReturn(Optional.empty());
+        when(channelOrchestrator.validateAndFetchPlaylistDto("PLk")).thenReturn(dto);
+        Map<String, String> names = Map.of("Plain", "plain-cat", "Live", "live-cat");
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenAnswer(inv -> Arrays.stream(
+                inv.<String>getArgument(0).split(",")).map(String::trim).map(names::get).filter(Objects::nonNull).toList());
+        when(playlistRepository.save(any(Playlist.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormat(payload, "APPROVED", "user-1", false);
+
+        ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
+        verify(playlistRepository).save(playlistCaptor.capture());
+        assertEquals(List.of("plain-cat"), playlistCaptor.getValue().getCategoryIds());
     }
 }

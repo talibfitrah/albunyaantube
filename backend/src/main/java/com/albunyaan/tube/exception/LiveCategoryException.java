@@ -31,6 +31,13 @@ public class LiveCategoryException extends RuntimeException {
         this.details = details == null ? Map.of() : details;
     }
 
+    /** D8: a LIVE category is top-level and nothing nests under one (category create/update and the JSON import). */
+    public static LiveCategoryException shape(String categoryName) {
+        return new LiveCategoryException(HttpStatus.BAD_REQUEST, SHAPE,
+                "A live category can't have a parent category or subcategories",
+                Map.of("category", categoryName == null ? "" : categoryName));
+    }
+
     public HttpStatus getStatus() {
         return status;
     }

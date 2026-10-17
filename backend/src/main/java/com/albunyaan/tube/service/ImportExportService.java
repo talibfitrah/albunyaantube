@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.dto.ExportResponse;
 import com.albunyaan.tube.dto.ImportRequest;
 import com.albunyaan.tube.dto.ImportResponse;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -17,8 +18,10 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -131,27 +134,51 @@ public class ImportExportService {
         String mergeStrategy = request.getMergeStrategy();
         String importedBy = request.getImportedBy();
 
-        // §7 row 15 (D9): a full JSON import is a raw model write; the guard sees every item before anything is saved.
+        // §7 row 15 (D9): a full JSON import is a raw model write. Every stored doc is read once, here: D8 and the live
+        // guard below and the writes after them see the same docs, and nothing is saved until both rules pass.
+        // A doc whose youtubeId the file swaps is a new item to the guard (its stored LIVE membership proves nothing).
+        Map<String, Category> oldCategories = new HashMap<>();
+        Map<String, Channel> oldChannels = new HashMap<>();
+        Map<String, Playlist> oldPlaylists = new HashMap<>();
+        Map<String, Video> oldVideos = new HashMap<>();
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
+        if (request.getCategories() != null) {
+            for (Category c : request.getCategories()) {
+                Category old = c.getId() == null ? null : categoryRepository.findById(c.getId()).orElse(null);
+                oldCategories.put(c.getId(), old);
+                if ((old != null && "SKIP".equals(mergeStrategy)) || c.getParentCategoryId() == null) continue;
+                // D8 (a file never sets the type, below): a LIVE category stays top-level, and nothing nests under one.
+                if ((old != null && old.isLive())
+                        || categoryRepository.findById(c.getParentCategoryId()).map(Category::isLive).orElse(false)) {
+                    throw LiveCategoryException.shape(c.getName());
+                }
+            }
+        }
         if (request.getChannels() != null) {
             for (Channel c : request.getChannels()) {
                 Channel old = c.getId() == null ? null : channelRepository.findById(c.getId()).orElse(null);
+                oldChannels.put(c.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
-                liveChanges.add(LiveCategoryGuard.Change.of("channel:" + c.getId(), c, old, c.getCategoryIds(), c.getStatus()));
+                Channel before = old != null && Objects.equals(old.getYoutubeId(), c.getYoutubeId()) ? old : null;
+                liveChanges.add(LiveCategoryGuard.Change.of("channel:" + c.getId(), c, before, c.getCategoryIds(), c.getStatus()));
             }
         }
         if (request.getPlaylists() != null) {
             for (Playlist p : request.getPlaylists()) {
                 Playlist old = p.getId() == null ? null : playlistRepository.findById(p.getId()).orElse(null);
+                oldPlaylists.put(p.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
-                liveChanges.add(LiveCategoryGuard.Change.of("playlist:" + p.getId(), p, old, p.getCategoryIds(), p.getStatus()));
+                Playlist before = old != null && Objects.equals(old.getYoutubeId(), p.getYoutubeId()) ? old : null;
+                liveChanges.add(LiveCategoryGuard.Change.of("playlist:" + p.getId(), p, before, p.getCategoryIds(), p.getStatus()));
             }
         }
         if (request.getVideos() != null) {
             for (Video v : request.getVideos()) {
                 Video old = v.getId() == null ? null : videoRepository.findById(v.getId()).orElse(null);
+                oldVideos.put(v.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
-                liveChanges.add(LiveCategoryGuard.Change.of("video:" + v.getId(), v, old, v.getCategoryIds(), v.getStatus()));
+                Video before = old != null && Objects.equals(old.getYoutubeId(), v.getYoutubeId()) ? old : null;
+                liveChanges.add(LiveCategoryGuard.Change.of("video:" + v.getId(), v, before, v.getCategoryIds(), v.getStatus()));
             }
         }
         Map<String, String> verifiedChannels = liveCategoryGuard.checkAll(true, liveChanges);
@@ -166,7 +193,8 @@ public class ImportExportService {
         if (request.getCategories() != null) {
             for (Category category : request.getCategories()) {
                 try {
-                    Optional<Category> existingOpt = categoryRepository.findById(category.getId());
+                    Objects.requireNonNull(category.getId(), "Missing category ID");   // a per-item error, as findById(null) was
+                    Optional<Category> existingOpt = Optional.ofNullable(oldCategories.get(category.getId()));
 
                     if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementCategoriesSkipped();
@@ -205,7 +233,8 @@ public class ImportExportService {
         if (request.getChannels() != null) {
             for (Channel channel : request.getChannels()) {
                 try {
-                    Optional<Channel> existingOpt = channelRepository.findById(channel.getId());
+                    Objects.requireNonNull(channel.getId(), "Missing channel ID");
+                    Optional<Channel> existingOpt = Optional.ofNullable(oldChannels.get(channel.getId()));
 
                     if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementChannelsSkipped();
@@ -237,7 +266,8 @@ public class ImportExportService {
         if (request.getPlaylists() != null) {
             for (Playlist playlist : request.getPlaylists()) {
                 try {
-                    Optional<Playlist> existingOpt = playlistRepository.findById(playlist.getId());
+                    Objects.requireNonNull(playlist.getId(), "Missing playlist ID");
+                    Optional<Playlist> existingOpt = Optional.ofNullable(oldPlaylists.get(playlist.getId()));
 
                     if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementPlaylistsSkipped();
@@ -270,7 +300,8 @@ public class ImportExportService {
         if (request.getVideos() != null) {
             for (Video video : request.getVideos()) {
                 try {
-                    Optional<Video> existingOpt = videoRepository.findById(video.getId());
+                    Objects.requireNonNull(video.getId(), "Missing video ID");
+                    Optional<Video> existingOpt = Optional.ofNullable(oldVideos.get(video.getId()));
 
                     if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementVideosSkipped();

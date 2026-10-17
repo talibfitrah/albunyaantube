@@ -57,6 +57,18 @@ public class SimpleImportService {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
 
+    /**
+     * One simple-format value, "Title|Cat1,Cat2|keyword1,keyword2" (the keywords part optional). The one parse the
+     * sync import, the async import (ContentImportService) and the live guard share, so a keyword can never be read as a
+     * category by one of them and not the others (§7 row 16). A null value is an empty row.
+     */
+    public record Row(String title, String categories, String keywords) {
+        public static Row parse(String value) {
+            String[] parts = (value == null ? "" : value).split("\\|", 3);
+            return new Row(parts[0].trim(), parts.length > 1 ? parts[1].trim() : "", parts.length > 2 ? parts[2].trim() : "");
+        }
+    }
+
     public SimpleImportService(
             ChannelOrchestrator channelOrchestrator,
             CategoryMappingService categoryMappingService,
@@ -156,13 +168,10 @@ public class SimpleImportService {
     ) {
         for (Map.Entry<String, String> entry : channelsMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords from "Title|Cat1,Cat2|keyword1,keyword2" format
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists in Firestore
@@ -295,13 +304,10 @@ public class SimpleImportService {
     ) {
         for (Map.Entry<String, String> entry : playlistsMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists
@@ -427,13 +433,10 @@ public class SimpleImportService {
     ) {
         for (Map.Entry<String, String> entry : videosMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists
