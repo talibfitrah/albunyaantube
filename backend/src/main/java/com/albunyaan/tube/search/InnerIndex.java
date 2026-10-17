@@ -185,6 +185,27 @@ public class InnerIndex {
         }
     }
 
+    static final long TRUST_MS = 30L * 86_400_000;
+
+    /**
+     * R18 stream gate: a stored stream is hidden for `sourceKey` only when that source's latest crawl was complete (not
+     * short, and not stopped at a cap, which never lists the older items), at most 30 days old, and does not list the id.
+     * Fails open: an unknown, untrusted or unreadable case keeps today's behaviour.
+     */
+    boolean gateDrops(String sourceKey, String id) {
+        InnerState s = store.state();
+        if (!s.streamGate || live == null) return false;
+        InnerState.Source src = s.sources.get(sourceKey);
+        if (src == null || src.completeAt == 0 || src.shortCrawl || src.capped || clock.millis() - src.completeAt > TRUST_MS) {
+            return false;
+        }
+        try {
+            return !has(sourceKey, id);
+        } catch (IOException | RuntimeException e) { // AlreadyClosedException included (shutdown): never fails a search
+            return false;
+        }
+    }
+
     /** Every source key whose listing holds this video (R34). Empty before the first build. */
     Set<String> sourceKeys(String id) throws IOException {
         IndexSearcher s = acquire();

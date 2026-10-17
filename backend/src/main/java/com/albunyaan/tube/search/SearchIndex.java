@@ -728,20 +728,26 @@ public class SearchIndex {
     /** A video's copies looked at for its inner title; one video is rarely listed by more sources. */
     private static final int TITLE_COPIES = 16;
 
-    /**
-     * The inner title of `id` (Q17, and Task 24b's titles): the copy `preferredKey` lists if that source keeps it, else the
-     * first copy an admitted source keeps; null if none does. A source that is not admitted never names a video, nor
-     * does a blank title (as in the catalog path).
-     */
+    /** The inner title of `id` (Q17, and Task 24b's titles), from {@link #innerCopy}; null if no copy names it. */
     String innerTitle(IndexSearcher searcher, String id, String preferredKey) throws IOException {
+        Document copy = innerCopy(searcher, id, preferredKey);
+        return copy == null ? null : copy.get("t");
+    }
+
+    /**
+     * The inner copy that names `id` (Q17, Task 24b's titles, R27's pasted ids): the copy `preferredKey` lists if that
+     * source keeps it, else the first copy an admitted source keeps; null if none does. A source that is not admitted
+     * never names a video, nor does a blank title (as in the catalog path).
+     */
+    private Document innerCopy(IndexSearcher searcher, String id, String preferredKey) throws IOException {
         StoredFields fields = searcher.storedFields();
-        String first = null;
+        Document first = null;
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
             String keeper = keeper(doc), title = doc.get("t");
             if (keeper == null || title == null || title.isBlank()) continue;
-            if (keeper.equals(preferredKey)) return title;
-            if (first == null) first = title;
+            if (keeper.equals(preferredKey)) return doc;
+            if (first == null) first = doc;
         }
         return first;
     }
@@ -828,7 +834,7 @@ public class SearchIndex {
 
     private record Tiered(ContentItemDto item, int tier) {}
 
-    /** Exact YouTube-id lookup for pasted URLs and ids (spec §4.4); no Firestore read. */
+    /** Exact YouTube-id lookup for pasted URLs and ids (spec §4.4); on a miss, the inner index (inner-search R27). No Firestore read. */
     public Hits byId(String youtubeId, String type) throws IOException {
         awaitReady();
         List<ContentItemDto> out = new ArrayList<>();
@@ -837,6 +843,21 @@ public class SearchIndex {
             collect(searcher, filtered(new TermQuery(new Term("id", youtubeId)), type, false), 1, null, out, new HashSet<>(), new Trace());
         } finally {
             searchers.release(searcher);
+        }
+        if (out.isEmpty() && inner != null && inner.serving() && (type == null || "VIDEO".equals(type))) {
+            try { // R27: a pasted id of a video inside an admitted source, named by the search's own copy rule
+                IndexSearcher s = inner.acquire();
+                if (s != null) {
+                    try {
+                        Document copy = innerCopy(s, youtubeId, null);
+                        if (copy != null) out.add(innerDto(copy, keeper(copy)));
+                    } finally {
+                        inner.release(s);
+                    }
+                }
+            } catch (IOException | RuntimeException e) { // AlreadyClosedException included: as /search, never a 500
+                log.warn("pasted id: inner lookup failed ({}); answering a miss", e.getClass().getName()); // the class only: no id
+            }
         }
         return out.isEmpty() ? Hits.NONE : new Hits(out, "exact");
     }
@@ -914,6 +935,15 @@ public class SearchIndex {
         return out;
     }
 
+    /** Inner-search R34: every admitted source that lists this video, from the inner index and the stored stream's keys. */
+    public List<String> sourcesListing(String youtubeId) throws IOException {
+        Set<String> keys = new LinkedHashSet<>();
+        if (inner != null) keys.addAll(inner.sourceKeys(youtubeId));
+        keys.addAll(storedValues("STREAM:" + youtubeId, "sourceKey"));
+        keys.retainAll(admittedSources.keySet());
+        return List.copyOf(keys);
+    }
+
     /** True once the first build, catalog and stored streams, has logged "search index built" (inner-search R14). */
     public boolean awaitBuilt(long ms) throws InterruptedException {
         return built.await(ms, TimeUnit.MILLISECONDS);
@@ -976,10 +1006,13 @@ public class SearchIndex {
         if (!"STREAM".equals(kind) && !"INNER".equals(kind)) return null;
         String id = doc.get("id");
         if (videoIds.contains(id)) return null;
+        boolean stream = "STREAM".equals(kind); // the R18 gate applies to stored streams only
         Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
             Admitted source = sources.get(key);
-            if (source != null && !source.excluded().contains(id)) return key;
+            if (source != null && !source.excluded().contains(id) && !(stream && inner != null && inner.gateDrops(key, id))) {
+                return key;
+            }
         }
         return null;
     }

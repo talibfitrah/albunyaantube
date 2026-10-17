@@ -1298,6 +1298,155 @@ class SearchIndexTest {
         assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(blank).titles(List.of("vKahf", "lesson00001")).map());
     }
 
+    // ---- pasted ids, sourcesListing, the stream gate (inner-search R27, R34, R18, §8.1) ----------
+
+    @Test
+    void aPastedIdOfAnInnerOnlyVideoIsFoundWhileServedAndOnlyThen() throws Exception {
+        InnerIndex inner = zubdahnoor();
+        SearchIndex idx = alafasy(inner);
+        SearchIndex.Hits hit = idx.byId("lesson00001", null);
+        assertEquals(List.of("lesson00001"), ids(hit));
+        assertEquals("exact", hit.match());
+        assertEquals("UCalafasy", hit.items().get(0).getSourceId());
+        assertEquals(List.of("lesson00001"), ids(idx.byId("lesson00001", "VIDEO")));
+        assertTrue(ids(idx.byId("lesson00001", "CHANNEL")).isEmpty());
+        innerStore.state().serveInner = false;
+        assertTrue(ids(idx.byId("lesson00001", null)).isEmpty());
+    }
+
+    /** Hand-off 2: a pasted id names the same copy, title and source as /titles (one shared rule, never a non-admitted copy). */
+    @Test
+    void aPastedInnerIdNamesTheSameCopyAsTitles() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UCrejected", List.of(item("orphan-x0001", "Rejected Copy", 600)),
+                "channel:UChalal", List.of(item("orphan-x0001", "Halal Copy", 600)),
+                "playlist:PLtafsir", List.of(item("orphan-x0001", "Tafsir Copy", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        ContentItemDto hit = idx.byId("orphan-x0001", null).items().get(0);
+        assertEquals(idx.titles(List.of("orphan-x0001")).map().get("orphan-x0001"), hit.getTitle());
+        assertNotEquals("Rejected Copy", hit.getTitle());
+        String key = hit.getSourceType().toLowerCase(java.util.Locale.ROOT) + ":" + hit.getSourceId();
+        assertEquals(Map.of("channel:UChalal", "Halal Copy", "playlist:PLtafsir", "Tafsir Copy").get(key), hit.getTitle());
+    }
+
+    /** Hand-off 1: as /search and /titles, an inner index closing under a pasted id answers the main index's miss. */
+    @Test
+    void aPastedIdAnswersAMissWhenTheInnerIndexClosesUnderIt() throws Exception {
+        InnerIndex served = zubdahnoor();
+        int refs = refCount(served);
+        alafasy(served).byId("lesson00001", null);
+        assertEquals(refs, refCount(served), "the inner searcher is released");
+
+        Directory empty = new ByteBuffersDirectory();
+        new IndexWriter(empty, new IndexWriterConfig()).close();
+        DirectoryReader reader = DirectoryReader.open(empty);
+        IndexSearcher stale = new IndexSearcher(reader);
+        reader.close(); // after acquire: the next read, and the release, throw AlreadyClosedException
+        InnerStore store = new InnerStore(innerTmp.resolve("closing").toString());
+        for (boolean atAcquire : new boolean[] {true, false}) {
+            InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+                @Override
+                boolean serving() {
+                    return true;
+                }
+
+                @Override
+                IndexSearcher acquire() {
+                    if (atAcquire) throw new AlreadyClosedException("this ReferenceManager is closed");
+                    return stale;
+                }
+            };
+            SearchIndex idx = alafasy(closing);
+            SearchIndex.Hits miss = assertDoesNotThrow(() -> idx.byId("lesson00001", null), "closed at acquire: " + atAcquire);
+            assertSame(SearchIndex.Hits.NONE, miss, "closed at acquire: " + atAcquire);
+            assertEquals(List.of("vKahf"), ids(idx.byId("vKahf", null)), "a main-index hit never reads the inner index");
+        }
+        assertEquals(2, logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter("pasted id: inner lookup failed (org.apache.lucene.store.AlreadyClosedException); answering a miss"::equals)
+                .count());
+    }
+
+    @Test
+    void sourcesListingNamesEveryAdmittedSourceThatListsTheVideo() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("orphan-lecture", "Orphan Lecture", 600)),
+                "playlist:PLtafsir", List.of(item("orphan-lecture", "Orphan Lecture", 600)),
+                "channel:UCrejected", List.of(item("orphan-lecture", "Orphan Lecture", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        assertEquals(Set.of("channel:UChalal", "playlist:PLtafsir"), Set.copyOf(idx.sourcesListing("orphan-lecture")));
+        assertEquals(List.of("channel:UChalal"), idx.sourcesListing("halal-ok"), "a stored stream's own key");
+        assertEquals(List.of(), idx.sourcesListing("lesson99999"));
+    }
+
+    @Test
+    void theStreamGateHidesAStoredStreamOnlyForATrustedCompleteCrawlThatDoesNotListIt() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = new InnerState.Source();
+        halal.completeAt = System.currentTimeMillis();
+        innerStore.state().sources.put("channel:UChalal", halal);
+
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "gate off: today");
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "complete, fresh, not listed: hidden");
+
+        halal.shortCrawl = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "a short crawl is never trusted");
+        halal.shortCrawl = false;
+        halal.capped = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "a capped crawl did not list everything");
+        halal.capped = false;
+        halal.completeAt = System.currentTimeMillis() - 31L * 86_400_000;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "older than 30 days");
+        halal.completeAt = System.currentTimeMillis();
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty());
+    }
+
+    @Test
+    void theStreamGateKeepsAStoredStreamThatAnotherSourceStillKeepsOrTheCrawlLists() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("lesson00001", "Something else", 600)),
+                ALAFASY, List.of(item("both-kept", "Both Kept Lesson", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), List.of(
+                stream("two-sources", "Two Sources Lesson", "channel:UChalal", ALAFASY),
+                stream("both-kept", "Both Kept Lesson", ALAFASY)), 5_000, inner));
+        for (String key : List.of("channel:UChalal", ALAFASY)) {
+            InnerState.Source src = new InnerState.Source();
+            src.completeAt = System.currentTimeMillis();
+            innerStore.state().sources.put(key, src);
+        }
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("two sources", "VIDEO", 50)).isEmpty(), "both complete crawls miss it");
+        assertEquals(List.of("both-kept"), ids(idx.search("both kept", "VIDEO", 50)), "listed by Alafasy's complete crawl: kept");
+        innerStore.state().sources.get(ALAFASY).completeAt = 0;  // Alafasy not trusted: it keeps the stream
+        assertEquals(List.of("two-sources"), ids(idx.search("two sources", "VIDEO", 50)));
+    }
+
+    /** The gate fails open: an inner index closing under a search (shutdown) keeps today's stream, never a 500. */
+    @Test
+    void theStreamGateKeepsAStoredStreamWhenTheInnerIndexClosesUnderIt() throws Exception {
+        InnerStore store = new InnerStore(innerTmp.resolve("gate").toString());
+        AtomicBoolean closed = new AtomicBoolean();
+        InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            IndexSearcher acquire() throws IOException {
+                if (closed.get()) throw new AlreadyClosedException("this ReferenceManager is closed");
+                return super.acquire();
+            }
+        };
+        closing.sleeper = ms -> { };
+        closing.rebuild(Map.of(), 10_000);
+        openedInner.add(closing);
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, closing));
+        InnerState.Source halal = new InnerState.Source();
+        halal.completeAt = System.currentTimeMillis();
+        store.state().sources.put("channel:UChalal", halal);
+        store.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "readable: not listed, hidden");
+        closed.set(true);
+        assertEquals(List.of("orphan-lecture"), ids(assertDoesNotThrow(() -> idx.search("orphan", "VIDEO", 50))));
+    }
+
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------
 
     @Test
