@@ -2089,6 +2089,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     }
 
     private fun updatePlayerStatus(binding: FragmentPlayerBinding, state: PlayerState) {
+        // §9.1 step 4: a live channel's reconnect (up to ~12 min over an ended or stopped player, where ExoPlayer shows
+        // no spinner) shows the recovery overlay as laid out: spinner, "Resolving stream…", no Retry. A first load keeps
+        // today's look. The overlay's spinner is the only one meanwhile; otherwise the layouts' show_buffering="always".
+        val reconnecting = state.streamState is StreamState.Loading && viewModel.liveReconnecting()
+        binding.playerView.setShowBuffering(
+            if (reconnecting) PlayerView.SHOW_BUFFERING_NEVER else PlayerView.SHOW_BUFFERING_ALWAYS
+        )
         when (val streamState = state.streamState) {
             StreamState.Idle -> {
                 binding.playerStatus.text = getString(R.string.player_status_initializing)
@@ -2098,10 +2105,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             StreamState.Loading -> {
                 binding.playerStatus.text = getString(R.string.player_status_resolving)
                 binding.playerErrorOverlay.visibility = View.GONE
-                // §9.1 step 4: a live channel's reconnect (up to ~12 min over an ended or stopped player, where
-                // ExoPlayer shows no spinner) shows the recovery overlay as laid out: spinner, "Resolving stream…",
-                // no Retry. A first load keeps today's look.
-                val reconnecting = viewModel.liveReconnecting(playerHasContent = player?.currentMediaItem != null)
                 binding.playerRecoveryOverlay.isVisible = reconnecting
                 if (reconnecting) {
                     binding.playerRecoveryProgress.isVisible = true

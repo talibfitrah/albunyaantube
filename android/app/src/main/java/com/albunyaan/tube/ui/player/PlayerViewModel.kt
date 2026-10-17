@@ -259,6 +259,8 @@ class PlayerViewModel @Inject constructor(
 
     // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
     private var liveIncident: LiveChannelRecovery? = null
+    /** This live-channel item reached live or had an incident: a later load (a Retry, a switch) is a reconnect. */
+    private var liveStarted = false
     private var liveRetryJob: Job? = null
     private var liveForceEndJob: Job? = null
     /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
@@ -865,7 +867,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel()
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel(); liveStarted = false
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -1755,6 +1757,7 @@ class PlayerViewModel @Inject constructor(
                     return
                 }
                 liveIncident = null                                   // live again: the incident is over
+                liveStarted = true
             }
             val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
@@ -1913,6 +1916,7 @@ class PlayerViewModel @Inject constructor(
     private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger, onSameId: () -> Unit = {}) {
         val item = currentItem ?: return
         val channelId = item.liveChannelId ?: return
+        liveStarted = true
         // An incident belongs to one stream id: a stale one (the user picked another item) never blocks this one.
         val incident = liveIncident?.takeIf { it.currentId == item.streamId }
             ?: LiveChannelRecovery(item.streamId, item.title, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
@@ -1964,12 +1968,11 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * §9.1 step 4 on screen (Main thread, while Loading): a live channel reconnects during an incident (an ended id
-     * opened cold included) or a load over a stream the player already played (a switch, a Retry). A first load is
-     * neither and stays as it was.
+     * §9.1 step 4 on screen (Main thread, while Loading): every load of a live-channel item after it reached live or had
+     * an incident (an ended id opened cold included) is a reconnect: step 4's waits, a switch, a Retry. Its first load
+     * is not, whatever played before it, and stays as it was.
      */
-    fun liveReconnecting(playerHasContent: Boolean): Boolean =
-        currentItem?.liveChannelId != null && (playerHasContent || liveIncident != null)
+    fun liveReconnecting(): Boolean = currentItem?.liveChannelId != null && liveStarted
 
     /**
      * Build a fresh PlaybackSelection maintaining current preferences.

@@ -364,22 +364,24 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `only a reconnect shows the reconnecting state`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("pqC-1yfFvu8", isLive = false))
         vm.cancelAfter {
-            vm.loadVideo(videoId = "pqC-1yfFvu8")                                    // an ordinary video, even over old content
-            assertFalse(vm.liveReconnecting(playerHasContent = true))
+            vm.loadVideo(videoId = "pqC-1yfFvu8")                                    // an ordinary video plays first
+            advanceTimeBy(1_000); runCurrent()
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+            assertFalse(vm.liveReconnecting())
 
             content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
             vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
             assertEquals(StreamState.Loading, vm.state.value.streamState)            // the first load: as it was
-            assertFalse(vm.liveReconnecting(playerHasContent = false))
+            assertFalse(vm.liveReconnecting())
 
             advanceTimeBy(1_000); runCurrent()                                       // an ended id (a recording): step 4 waits
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertTrue(vm.liveReconnecting(playerHasContent = false))                // with nothing ever played
+            assertTrue(vm.liveReconnecting())                                        // with nothing ever played
         }
     }
 
-    /** Task 28: a live load over a stream the player already played (a switch, a Retry) is a reconnect too. */
-    @Test fun `a live load over a played stream shows the reconnecting state`() = runTest(dispatcher) {
+    /** Fix round 1: a Retry over a played live is a reconnect; a new live load after it is a first load again. */
+    @Test fun `a new live load after other playback is a first load`() = runTest(dispatcher) {
         val (vm, _, _) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
@@ -388,8 +390,30 @@ class PlayerViewModelLiveChannelTest {
 
             vm.retryCurrentStream()                                                  // no incident open
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertTrue(vm.liveReconnecting(playerHasContent = true))
-            assertFalse(vm.liveReconnecting(playerHasContent = false))
+            assertTrue(vm.liveReconnecting())
+
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertFalse(vm.liveReconnecting())
+        }
+    }
+
+    /** Fix round 1: the switch's resolve (the incident is closed) keeps the reconnecting state. */
+    @Test fun `a switch keeps the reconnecting state`() = runTest(dispatcher) {
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            repository.resolveDelayMs = 5_000                                        // hold the switch's resolve
+
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("newSunnah01", vm.state.value.currentItem?.streamId)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertTrue(vm.liveReconnecting())
         }
     }
 
