@@ -85,6 +85,47 @@ struct LiveChannelPlaybackTests {
         try await waitUntil { Self.file(vm) == "a1fresh.m3u8" }
 
         #expect((sleeper.recorded.first?.components.seconds ?? 99) <= 1)       // 601 s to expiry → ~1 s
+        // The landed refresh re-arms from the FRESH expiry (21 540 s − 600 s), and its re-arm ends the retry loop.
+        try await waitUntil { sleeper.recorded.count == 2 }
+        #expect(abs(Int(sleeper.recorded[1].components.seconds) - 20_940) <= 5)
+    }
+
+    /// Fix round 1: one blip at T − 10 min must not bring back the 6 h cut (§9.3(a): "no error state"). A refresh that
+    /// does not land is retried every 2 min inside the lead (Android parity).
+    @Test func aRefreshThatDoesNotLandIsRetriedEveryTwoMinutes() async throws {
+        let resolver = RecordingResolver([.success(Self.live("a1", expiresIn: 601)), .failure(URLError(.timedOut)),
+                                          .success(Self.live("a1fresh"))])
+        let sleeper = Sleeper(immediate: 2)                                    // the lead, one retry; the re-arm parks
+        let vm = makeViewModel(resolver, args: PlayerArgs(videoId: "Rs7St51oDDc"), sleeper: sleeper)
+
+        await vm.open()
+        try await waitUntil { await resolver.videoIds.count == 3 }
+        try await waitUntil { Self.file(vm) == "a1fresh.m3u8" }
+
+        #expect(sleeper.recorded.contains(.seconds(120)))
+    }
+
+    /// Fix round 1 (Minor 1): a proactive refresh (the live timer or the foreground check) arriving while an advance
+    /// resolves would force-resolve on top of it and swallow the advance.
+    @Test(.timeLimit(.minutes(1))) func aProactiveRefreshDuringAnAdvanceLeavesTheAdvanceAlone() async {
+        let resolver = FitrahTubeTests.RecordingResolver(.hls)
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
+        settings.safeMode = false                                              // Safe Mode disables auto-advance
+        let vm = PlayerViewModel(resolver: resolver, settings: settings, args: PlayerArgs(videoId: "a", playlistId: "PL"),
+                                 queueSource: FakeQueueSource(pages: [(ids: ["a", "b"], next: nil)]))
+        await vm.open()
+        resolver.hold("b")
+        let advancing = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 3)                               // open: a, b(.prefetch); then b, held
+        let refreshing = Task { await vm.reResolveIfExpiring(now: .distantFuture) }
+        try? await Task.sleep(for: .milliseconds(50))                          // let a wrong refresh reach the resolver
+        resolver.release(id: "b")
+        resolver.release(id: "b")                                              // a wrong refresh's own walk of b, if any
+        await refreshing.value
+        await advancing.value
+
+        #expect(!resolver.calls.contains { $0.kind == .proactiveTTLRefresh }, "refreshed on top of the advance")
+        #expect(vm.args.videoId == "b")
     }
 
     /// A refresh only replaces a live stream with one that is still live now (never a recording, F28).
@@ -125,17 +166,28 @@ struct LiveChannelPlaybackTests {
         #expect(Self.file(vm) == "recfresh.m3u8")
     }
 
-    /// HD (spec R43) is VOD only: a 360p stream arms no live timer, and the live refresh leaves it alone.
-    @Test func theHDPathNeverTouchesTheLiveRefresh() async {
+    /// HD (spec R43) is VOD only: neither the 360p nor the committed HD stream arms a live timer, and the live refresh
+    /// leaves the HD stream alone.
+    @Test func aCommittedHDStreamNeverTouchesTheLiveRefresh() async throws {
         let sd = Resolved(stream: .progressive(url: URL(string: "https://media.test/sd.mp4")!, label: "360p"),
                           client: .android, userAgent: "ua", resolvedAt: Date(), expiresAt: Date().addingTimeInterval(601))
+        let hdURL = URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!
+        let hd = Resolved(stream: .hls(url: hdURL, isLive: false, audioOnlyURL: nil, captionTracks: [],
+                                       synthetic: SyntheticHLS(video: [], audio: [])),
+                          client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: Date().addingTimeInterval(601))
         let resolver = RecordingResolver([.success(sd)])
         let sleeper = Sleeper(immediate: 0)
-        let vm = makeViewModel(resolver, args: PlayerArgs(videoId: "x"), sleeper: sleeper)
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
+        let vm = PlayerViewModel(resolver: resolver, settings: settings, args: PlayerArgs(videoId: "x"),
+                                 hd: HDUpgrade(upgrade: { _ in hd }, failed: { _ in }, refused: {}),
+                                 sleep: { try await sleeper.sleep($0) })
 
         await vm.open()
+        try await waitUntil { vm.pendingUpgrade != nil }
+        #expect(vm.commitUpgrade(hdURL))
         await vm.refreshLiveStream()
 
+        #expect(vm.state.resolved?.client == .tvSamsung)
         #expect(sleeper.recorded.isEmpty)
         #expect(await resolver.videoIds.count == 1)
     }

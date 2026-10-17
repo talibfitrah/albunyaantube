@@ -1212,7 +1212,12 @@ extension StreamState {
         return TimeInterval(arguments[i + 1])
     }
 
+    /// Fix round 1: a refresh that does not land (a blip, a cooldown, not live now) is retried this often inside the
+    /// lead (Android parity), so one blip at T − 10 min does not bring back the 6 h cut.
+    static let liveRefreshRetry: TimeInterval = 120
+
     /// Re-armed by every landed resolve; anything but a stream that is live now disarms it (a recording, a VOD, HD).
+    /// A landed refresh re-arms, which cancels this task and so ends its retries.
     private func scheduleLiveRefresh() {
         liveRefreshTask?.cancel()
         liveRefreshTask = nil
@@ -1220,8 +1225,12 @@ extension StreamState {
         let delay = Self.debugLiveRefreshSeconds ?? Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
         liveRefreshTask = Task { [weak self, sleep = self.sleep] in
             try? await sleep(.seconds(delay))
-            guard !Task.isCancelled else { return }
-            await self?.refreshLiveStream()
+            let stop = min(expiresAt, Date().addingTimeInterval(Self.liveRefreshLead)).addingTimeInterval(-Self.liveRefreshRetry)
+            while !Task.isCancelled {
+                await self?.refreshLiveStream()
+                guard !Task.isCancelled, self != nil, Date() < stop else { return }
+                try? await sleep(.seconds(Self.liveRefreshRetry))
+            }
         }
     }
 
@@ -1233,7 +1242,9 @@ extension StreamState {
     }
 
     /// The one proactive refresh path (`proactiveRefresh` above): a second caller joins the walk in flight.
+    /// Never during an advance (fix round 1): its forced walk would supersede the advance's resolve and swallow it.
     private func refreshInPlace() async {
+        guard !isAdvancing, resolvedVideoId == args.videoId else { return }
         if let proactiveRefresh { return await proactiveRefresh.value }
         // `showLoading: false` + `silent: true` are both load-bearing and are NOT the same flag:
         // `showLoading: false` holds the playable branch on the way IN (a `.loading` hop dismantles

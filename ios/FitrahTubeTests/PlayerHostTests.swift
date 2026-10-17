@@ -875,6 +875,33 @@ struct PlayerHostTests {
         #expect(abs(rebuilt.currentTime().seconds - 1) < 0.1)
     }
 
+    /// Live Task 31 fix round 1 (Minor 2): the call site, not only `resumePosition`. A live-now replacement of the SAME
+    /// video (the refresh, a recovery) starts at the live edge, never at the old item's clock or the fallback.
+    @Test(.timeLimit(.minutes(1))) func aLiveReplacementOfTheSameVideoStartsAtTheLiveEdge() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        func live(_ url: URL) -> StreamState {
+            .ready(Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []), client: .visionos,
+                            userAgent: "TestUA", resolvedAt: Date(), expiresAt: nil, isLiveNow: true))
+        }
+        let player = try #require(PlayerHostView.player(for: live(url), replacing: nil))
+        player.pause()
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(player.currentTime().seconds > 0.5)
+
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        try FileManager.default.copyItem(at: url, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let refreshed = try #require(PlayerHostView.player(for: live(copy), replacing: player,
+                                                           continuesCurrentVideo: true, resumeFallback: 1))
+        #expect(refreshed === player)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while refreshed.currentItem?.status != .readyToPlay, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await Task.sleep(for: .milliseconds(200))                          // room for a carried seek to land
+        #expect(refreshed.currentTime().seconds < 0.1)
+    }
+
     /// B5 final review, IMPORTANT-1 (host half): the two passes an advance produces, in order. The
     /// intermediate pass (old url, still the same video per `hostVideoId`) must REUSE -- same
     /// player, same item, no restart; the resolved pass (new url, different video) builds at 0
