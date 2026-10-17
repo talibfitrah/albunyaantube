@@ -1,0 +1,47 @@
+frontend/src/components/CategoryAssignmentModal.vue
+  s_dbb6b1f3671904::t_4fb6b561782f53 7,11,33-34,49-50,90-99,119,124-125,187,283-284
+frontend/src/views/ContentSearchView.vue
+  s_dbb6b1f3671904::t_80183536af5aed 155,190,499-500
+frontend/src/services/categoryService.ts
+  s_dbb6b1f3671904::t_6368394a9b9734 97-98,103,116
+frontend/tests/ContentLibraryCategoryModal.spec.ts
+  s_dbb6b1f3671904::t_19d497badb52f5 20-22
+frontend/src/views/CategoriesView.vue
+  s_dbb6b1f3671904::t_f7a965ac3f0488 75-83,175,207-208,235-236,250-251,283-284,292-294,306-307,540-541,550-551,628-629,660-667,669
+frontend/src/components/CategoryTreeNode.vue
+  s_dbb6b1f3671904::t_cc2150f417c1ea 14,19-20,24,37-38,53,64-67,81,156-159
+  s_dbb6b1f3671904::t_f88645114fc541 160-161
+frontend/tests/youtubeService.spec.ts
+  s_dbb6b1f3671904::t_048c9a1798f43d 11-12,15,313-324
+  s_dbb6b1f3671904::t_8430d7abd6ae25 325-326
+frontend/src/components/categories/CategoryTreeItem.vue
+  s_dbb6b1f3671904::t_34ce047ede30ef 200-206
+  s_dbb6b1f3671904::t_2086d863ccd0d5 18,26,76
+  s_dbb6b1f3671904::t_c5ca8df718f438 207-208
+frontend/tests/liveChannelsAdmin.spec.ts
+  s_dbb6b1f3671904::t_71f11eb38d5a63 129
+frontend/src/services/youtubeService.ts
+  s_dbb6b1f3671904::t_80183536af5aed 190-192,214,228,241,244
+frontend/src/views/ContentLibraryView.vue
+  s_dbb6b1f3671904::t_80183536af5aed 539,714-718
+frontend/tests/CategoryAssignmentModalLive.spec.ts
+  s_dbb6b1f3671904::t_f517b3ae2cdcd7 1-85
+frontend/tests/categoryService.spec.ts
+  s_dbb6b1f3671904::t_71f11eb38d5a63 82,103,162
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "435c186c7a9d0531a7b7e5929e14d1630783cd7c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
