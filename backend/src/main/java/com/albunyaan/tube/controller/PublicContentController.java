@@ -12,8 +12,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -212,11 +210,5 @@ public class PublicContentController {
         // partial (a later ask may find more originals; Cloudflare must not pin translated titles for an hour).
         return ResponseEntity.ok().cacheControl(titles.complete() ? CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic()
                 : CacheControl.maxAge(1, TimeUnit.MINUTES).cachePublic()).body(titles.map());
-    }
-
-    /** Spec §7: the first index build has not finished; installed clients show their usual error state. */
-    @ExceptionHandler(SearchIndex.NotReadyException.class)
-    public ResponseEntity<Void> searchNotReady() {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5").build();
     }
 }

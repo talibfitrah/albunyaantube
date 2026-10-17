@@ -30,8 +30,6 @@ public class ContentReportService {
     private static final Logger log = LoggerFactory.getLogger(ContentReportService.class);
     private static final int RATE_LIMIT_MAX = 5;
     private static final String ANONYMOUS_DEVICE_KEY = "ANONYMOUS_DEVICE";
-    /** R34: how long a resolve waits for the search index's first build, as long as a search waits for its catalog. */
-    private static final long INDEX_WAIT_MS = 5_000;
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
@@ -41,6 +39,7 @@ public class ContentReportService {
     private final PublicContentCacheService publicContentCacheService;
     private final StreamIndexService streamIndexService;
     private final SearchIndex searchIndex;
+    private final Cache<String, Object> workspaceExclusionsCache;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
@@ -50,7 +49,8 @@ public class ContentReportService {
             PlaylistRepository playlistRepository,
             PublicContentCacheService publicContentCacheService,
             StreamIndexService streamIndexService,
-            SearchIndex searchIndex) {
+            SearchIndex searchIndex,
+            @Qualifier("workspaceExclusionsCache") Cache<String, Object> workspaceExclusionsCache) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
         this.videoRepository = videoRepository;
@@ -59,6 +59,7 @@ public class ContentReportService {
         this.publicContentCacheService = publicContentCacheService;
         this.streamIndexService = streamIndexService;
         this.searchIndex = searchIndex;
+        this.workspaceExclusionsCache = workspaceExclusionsCache;
     }
 
     public ContentReport submitReport(
@@ -132,6 +133,13 @@ public class ContentReportService {
             throws ExecutionException, InterruptedException, TimeoutException {
         ContentReport report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new IllegalArgumentException("Report not found: " + reportId));
+        boolean parented = report.getParentType() != null && report.getParentId() != null;
+        // R34 reads the sources listing the video from the built search index. Refuse a cold resolve before the report is
+        // marked, so it stays PENDING and the admin retries on the 503. No wait; the Video read happens only while cold.
+        if (newStatus == ReportStatus.RESOLVED && !parented && report.getTargetType() == ReportTargetType.VIDEO
+                && !searchIndex.awaitBuilt(0) && videoRepository.findByYoutubeId(report.getTargetId()).isEmpty()) {
+            throw new SearchIndex.NotReadyException();
+        }
         report.setStatus(newStatus);
         report.setResolvedAt(Timestamp.now());
         report.setResolvedBy(resolvedBy);
@@ -147,15 +155,20 @@ public class ContentReportService {
             // archive-everywhere behaviour so existing reports keep
             // working.
             boolean excluded = false;
-            if (report.getParentType() != null && report.getParentId() != null) {
+            if (parented) {
                 excluded = addReportTargetToParentExclusionList(report);
             }
+            String miss = null;
             if (!excluded) {
-                archiveReportedContent(report.getTargetType(), report.getTargetId());
+                miss = archiveReportedContent(report.getTargetType(), report.getTargetId());
             } else {
-                // Exclusion changes affect public listings — bust the
-                // public-content cache so users see the change immediately.
-                publicContentCacheService.evictPublicContentCaches();
+                // Exclusion changes affect public listings and the admin
+                // Exclusions workspace — bust both caches so they show it now.
+                exclusionsChanged();
+            }
+            if (miss != null) { // never a clean "resolved": the admin sees the miss and does it by hand
+                report.setResolutionNote(note == null || note.isBlank() ? miss : note + "\n" + miss);
+                saved = reportRepository.update(report);
             }
         }
         return saved;
@@ -284,8 +297,10 @@ public class ContentReportService {
         return false;
     }
 
-    private void archiveReportedContent(ReportTargetType targetType, String targetId) {
+    /** Archives the target; a video with no document is excluded where listed instead (R34). Returns a miss for the note, or null. */
+    private String archiveReportedContent(ReportTargetType targetType, String targetId) {
         boolean archived = false;
+        String miss = null;
         try {
             switch (targetType) {
                 case VIDEO -> {
@@ -296,7 +311,7 @@ public class ContentReportService {
                         streamIndexService.markStreamArchived(opt.get().getYoutubeId());
                         archived = true;
                     } else {
-                        archived = excludeEverywhereListed(targetId);
+                        miss = excludeEverywhereListed(targetId);
                     }
                 }
                 case CHANNEL -> {
@@ -325,10 +340,18 @@ public class ContentReportService {
         } catch (Exception e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("Failed to archive {} {}: {}", targetType, targetId, e.getMessage());
+            miss = "Not taken down: " + e.getClass().getSimpleName() + ". Take it down by hand.";
         }
         if (archived) {
             publicContentCacheService.evictPublicContentCaches();
         }
+        return miss;
+    }
+
+    /** After an exclusion write: public listings and the admin Exclusions workspace (a 5-minute cache) show it at once. */
+    private void exclusionsChanged() {
+        publicContentCacheService.evictPublicContentCaches();
+        workspaceExclusionsCache.invalidateAll();
     }
 
     /**
@@ -336,23 +359,27 @@ public class ContentReportService {
      * document, so archiving finds nothing to archive. Exclude it instead on every admitted source that lists it:
      * channels -> excludedItems.videos, playlists -> excludedVideoIds. Each repository save fires CatalogChanged, so
      * search hides it at once. Works for every installed app; a later app may send sourceType/sourceId as the parent.
-     * Before the index's first build (catalog and stored streams) an empty listing would mean "not loaded", so it waits.
+     * Returns the miss for the resolution note (sources not excluded), or null.
      */
-    private boolean excludeEverywhereListed(String videoId) throws java.io.IOException, InterruptedException {
-        if (!searchIndex.awaitBuilt(INDEX_WAIT_MS)) {
-            log.warn("Cannot exclude video {}: the search index is still building; exclude it by hand", videoId);
-            return false;
+    private String excludeEverywhereListed(String videoId) throws java.io.IOException, InterruptedException {
+        // Before the first build (catalog and stored streams) an empty listing means "not loaded", not "none".
+        // resolveReport refuses a cold parentless resolve; only a parented report whose parent is gone gets here cold.
+        if (!searchIndex.awaitBuilt(0)) {
+            log.warn("Cannot exclude video {}: the search index is still building", videoId);
+            return "Not excluded: the search index was still building, so the sources listing this video are unknown. "
+                    + "Exclude it by hand.";
         }
         List<String> keys = searchIndex.sourcesListing(videoId);
         if (keys.isEmpty()) {
             log.warn("Cannot archive video {}: not in the database and no approved source lists it", videoId);
-            return false;
+            return null;
         }
-        List<String> excluded = keys.stream().filter(key -> excludeFromParent(
+        List<String> missed = keys.stream().filter(key -> !excludeFromParent(
                 key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
                 key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null)).toList();
-        log.info("Report resolved: video {} excluded on {} of {}", videoId, excluded, keys);
-        return !excluded.isEmpty();
+        if (missed.size() < keys.size()) exclusionsChanged();
+        log.info("Report resolved: video {} listed by {}; not excluded on {}", videoId, keys, missed);
+        return missed.isEmpty() ? null : "Not excluded on " + String.join(", ", missed) + ". Exclude it there by hand.";
     }
 
     public ReportStats getStats() throws ExecutionException, InterruptedException, TimeoutException {

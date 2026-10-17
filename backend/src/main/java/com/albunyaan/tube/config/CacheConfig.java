@@ -150,7 +150,8 @@ public class CacheConfig {
      *
      * Invalidated by: ChannelController (exclusion mutations),
      * RegistryController (playlist exclusion mutations),
-     * ExclusionsWorkspaceController (create/delete).
+     * ExclusionsWorkspaceController (create/delete),
+     * ContentReportService (exclusions a resolved report writes).
      */
     @Bean
     public com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache() {

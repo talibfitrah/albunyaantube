@@ -426,6 +426,15 @@ public class GlobalExceptionHandler {
     // No live code paths threw these exceptions — they were aspirational
     // scaffolding from an earlier design.
 
+    /**
+     * Search spec §7: the search index's first build has not finished. Installed clients show their usual error state on
+     * search; an admin's report resolve (inner-search R34) stays PENDING and is retried.
+     */
+    @ExceptionHandler(com.albunyaan.tube.search.SearchIndex.NotReadyException.class)
+    public ResponseEntity<Void> handleSearchIndexNotReady() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5").build();
+    }
+
     @ExceptionHandler(LastAdminException.class)
     public ResponseEntity<Object> handleLastAdmin(
             LastAdminException ex, WebRequest request) {
