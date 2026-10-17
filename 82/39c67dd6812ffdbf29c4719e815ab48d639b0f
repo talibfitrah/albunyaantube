@@ -1,0 +1,39 @@
+android/app/src/main/java/com/albunyaan/tube/data/channel/NewPipeChannelDetailRepository.kt
+  s_dbb6b1f3671904::t_fff7574b387196 11,69,263,271-272,274-276,379,386,399,719-721
+  s_dbb6b1f3671904::t_8ef6940c652927 722
+android/app/src/test/java/com/albunyaan/tube/data/source/OriginalTitlesTest.kt
+  s_dbb6b1f3671904::t_48d7a14ee1907b 1-140
+android/app/src/main/java/com/albunyaan/tube/data/me/ChannelDeepPaginator.kt
+  s_dbb6b1f3671904::t_606893a53d7c67 7,47-48,51,54,82
+android/app/src/test/java/com/albunyaan/tube/data/me/ChannelDeepPaginatorTest.kt
+  s_dbb6b1f3671904::t_3ab07b064da93b 3-4,11-13,18,55-75
+  s_dbb6b1f3671904::t_7df38c3788f612 76-77
+android/app/src/main/java/com/albunyaan/tube/di/ChannelDetailRepositoryModule.kt
+  s_dbb6b1f3671904::t_fff7574b387196 8,33,40
+android/app/src/main/java/com/albunyaan/tube/di/PlaylistDetailRepositoryModule.kt
+  s_dbb6b1f3671904::t_e730568b0c6471 7,28-29,31
+android/app/src/main/java/com/albunyaan/tube/data/source/api/ContentApi.kt
+  s_dbb6b1f3671904::t_391188b8044c8e 58-61
+android/app/src/main/java/com/albunyaan/tube/data/playlist/NewPipePlaylistDetailRepository.kt
+  s_dbb6b1f3671904::t_e730568b0c6471 10,48-49,204-206,210,216-217
+android/app/src/test/java/com/albunyaan/tube/data/source/ContentApiTitlesTest.kt
+  s_dbb6b1f3671904::t_48d7a14ee1907b 1-47
+android/app/src/main/java/com/albunyaan/tube/data/source/OriginalTitles.kt
+  s_dbb6b1f3671904::t_adaa7d3c2df225 1-79
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8239c67dd6812ffdbf29c4719e815ab48d639b0f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
