@@ -20,14 +20,12 @@ enum TVAdaptive {
 
     /// R9: `video/mp4` avc1, either orientation, no height clause (above 1080p is VP9/AV1, dropped here). R10: `audio/mp4`
     /// mp4a grouped by `audioTrack.id`; per group the first of: not DRC, then no `vb`/`drc` xtag, then response order.
-    /// Every rendition needs a URL or a cipher, both byte ranges, a length and no DRM, so a live stream (no byte ranges)
-    /// never selects (R7). R9 (revision 4): at least one avc1 rendition above 360p on its short side, or the swap would
-    /// trade 360p for 360p and hide the rung-2 pill. nil = nothing to play in HD.
+    /// Every rendition needs a usable URL or cipher, sane byte ranges, a quoted codecs value and no DRM, so a live stream
+    /// (no byte ranges) never selects (R7), and one bad entry is dropped rather than failing the upgrade. R9 (revision 4):
+    /// at least one avc1 rendition above 360p on its short side, or the swap would trade 360p for 360p and hide the rung-2
+    /// pill. nil = nothing to play in HD.
     static func select(_ formats: [AdaptiveFormat]) -> Selection? {
-        let usable = formats.filter {
-            ($0.url != nil || $0.signatureCipher != nil) && $0.initRange != nil && $0.indexRange != nil
-                && $0.contentLength != nil && !$0.hasDRM
-        }
+        let usable = formats.filter { parts($0) != nil && rangesAreSane($0) && !codecs($0.mimeType).isEmpty && !$0.hasDRM }
         var seenItags = Set<Int>()
         let video = usable
             .filter { $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("avc1") && seenItags.insert($0.itag).inserted }
@@ -44,6 +42,13 @@ enum TVAdaptive {
         let audio = ranked.filter(\.audioIsDefault) + ranked.filter { !$0.audioIsDefault }
         guard video.contains(where: { min($0.width ?? 0, $0.height ?? 0) > 360 }), !audio.isEmpty else { return nil }
         return Selection(video: video, audio: audio)
+    }
+
+    /// Non-negative, init before index, index inside a file of at most 2^40 bytes (which also makes the length positive).
+    private static func rangesAreSane(_ f: AdaptiveFormat) -> Bool {
+        guard let initRange = f.initRange, let indexRange = f.indexRange, let length = f.contentLength else { return false }
+        return initRange.lowerBound >= 0 && initRange.upperBound < indexRange.lowerBound && indexRange.upperBound < length
+            && length <= 1 << 40
     }
 
     private static func rank(_ member: (index: Int, format: AdaptiveFormat)) -> (Int, Int, Int) {
@@ -83,9 +88,10 @@ enum TVAdaptive {
         return result
     }
 
-    /// The raw base URL (never re-encoded), its decoded `n`, and for a cipher its decoded `s` and `sp`.
+    /// The raw base URL (never re-encoded), its decoded `n`, and for a cipher its decoded `s` and `sp`. nil when the URL,
+    /// or a cipher's `s`, is missing, empty or undecodable: that format cannot be played.
     private static func parts(_ format: AdaptiveFormat) -> (url: String, n: String?, s: String?, sp: String)? {
-        if let url = format.url { return (url, queryValue("n", in: url), nil, "signature") }
+        if let url = format.url { return url.isEmpty ? nil : (url, queryValue("n", in: url), nil, "signature") }
         guard let cipher = format.signatureCipher else { return nil }
         var fields: [String: String] = [:]
         for pair in cipher.split(separator: "&") {
@@ -93,31 +99,37 @@ enum TVAdaptive {
             let kv = pair.split(separator: "=", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
             if fields[kv[0]] == nil { fields[kv[0]] = (kv.count > 1 ? kv[1] : "").removingPercentEncoding ?? "" }
         }
-        guard let url = fields["url"], !url.isEmpty else { return nil }
-        return (url, queryValue("n", in: url), fields["s"], fields["sp"] ?? "signature")
+        guard let url = fields["url"], !url.isEmpty, let s = fields["s"], !s.isEmpty else { return nil }
+        return (url, queryValue("n", in: url), s, fields["sp"].flatMap { $0.isEmpty ? nil : $0 } ?? "signature")
     }
 
     private static func queryValue(_ name: String, in url: String) -> String? {
-        guard let query = url.split(separator: "?", maxSplits: 1).dropFirst().first else { return nil }
+        guard let query = url.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).dropFirst().first else {
+            return nil
+        }
         return query.split(separator: "&").first { $0.hasPrefix(name + "=") }
             .flatMap { String($0.dropFirst(name.count + 1)).removingPercentEncoding }
     }
 
     private static let unreserved = CharacterSet(charactersIn: "ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_.~")
 
+    private static func encoded(_ text: String) -> String {
+        text.addingPercentEncoding(withAllowedCharacters: unreserved) ?? text
+    }
+
     /// R11: `n` replaced by its answer in place; a cipher's `url` gets `&<sp>=<answer>`; every other parameter
     /// byte-identical. The result must be `https`.
     static func solvedURL(_ format: AdaptiveFormat, answers: SolvedChallenges) throws -> URL {
         guard let parts = parts(format) else { throw RewriteError.missingAnswer }
-        let pieces = parts.url.split(separator: "?", maxSplits: 1).map(String.init)
+        let pieces = parts.url.split(separator: "?", maxSplits: 1, omittingEmptySubsequences: false).map(String.init)
         var items = pieces.count > 1 ? pieces[1].split(separator: "&", omittingEmptySubsequences: false).map(String.init) : []
         if let i = items.firstIndex(where: { $0.hasPrefix("n=") }) {
             guard let n = parts.n, let solved = answers.n[n] else { throw RewriteError.missingAnswer }
-            items[i] = "n=" + (solved.addingPercentEncoding(withAllowedCharacters: unreserved) ?? solved)
+            items[i] = "n=" + encoded(solved)
         }
         if let s = parts.s {
             guard let solved = answers.s[s] else { throw RewriteError.missingAnswer }
-            items.append(parts.sp + "=" + (solved.addingPercentEncoding(withAllowedCharacters: unreserved) ?? solved))
+            items.append(encoded(parts.sp) + "=" + encoded(solved))
         }
         guard let url = URL(string: pieces[0] + "?" + items.joined(separator: "&")), url.scheme == "https" else {
             throw RewriteError.notHTTPS
@@ -141,7 +153,7 @@ enum TVAdaptive {
                             audio: try selection.audio.enumerated().map { try rendition($1, isDefault: $0 == 0) })
     }
 
-    /// `video/mp4; codecs="avc1.640028"` -> `avc1.640028`.
+    /// `video/mp4; codecs="avc1.640028"` -> `avc1.640028`; "" when unquoted or absent (`select` drops those).
     static func codecs(_ mimeType: String) -> String {
         guard let range = mimeType.range(of: "codecs=\"") else { return "" }
         return String(mimeType[range.upperBound...].prefix { $0 != "\"" })
