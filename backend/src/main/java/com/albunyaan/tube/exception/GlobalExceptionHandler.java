@@ -62,6 +62,23 @@ public class GlobalExceptionHandler {
         return new ResponseEntity<>(body, HttpStatus.GONE);
     }
 
+    /** Live-category guard refusals (spec §4.2): the typed code and details the admin UI renders. */
+    @ExceptionHandler(LiveCategoryException.class)
+    public ResponseEntity<Object> handleLiveCategoryException(LiveCategoryException ex, WebRequest request) {
+        logger.info("Live category refusal {}: {}", ex.getCode(), ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", ex.getStatus().value());
+        body.put("error", ex.getStatus().getReasonPhrase());
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+        body.put("details", ex.getDetails());
+
+        return new ResponseEntity<>(body, ex.getStatus());
+    }
+
     /**
      * Handle InvalidTokenException (401)
      */

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -257,5 +258,103 @@ class CategoryControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         verify(categoryRepository, never()).deleteById(any());
     }
-}
 
+    // ---- Live channels (spec §3, §4.2, D8, R18) ----
+
+    private static Category live(String name, String parentId) {
+        Category c = new Category(name, parentId);
+        c.setType(Category.TYPE_LIVE);
+        return c;
+    }
+
+    @Test
+    void createLiveTopLevelIsSavedWithItsType() throws Exception {
+        when(categoryRepository.findMaxDisplayOrder()).thenReturn(16);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        ResponseEntity<Category> response = categoryController.createCategory(live("Channels Live", null), adminUser);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals(Category.TYPE_LIVE, response.getBody().getType());
+    }
+
+    @Test
+    void createLiveWithAParentIsRefusedWithShape() throws Exception {
+        when(categoryRepository.existsById("parent-1")).thenReturn(true);
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.createCategory(live("Live kids", "parent-1"), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        assertEquals(HttpStatus.BAD_REQUEST, e.getStatus());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    @Test
+    void createSubcategoryUnderALiveParentIsRefusedWithShape() throws Exception {
+        when(categoryRepository.existsById("live-1")).thenReturn(true);
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(live("Channels Live", null)));
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.createCategory(new Category("Kids", "live-1"), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    @Test
+    void createWithAnUnknownTypeIs400() throws Exception {
+        Category odd = new Category("Odd", null);
+        odd.setType("PODCAST");
+
+        ResponseEntity<Category> response = categoryController.createCategory(odd, adminUser);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    /** Review Focus 2: the old dashboard (and any PUT without "type") keeps the live type. */
+    @Test
+    void anUpdateWithoutTypeKeepsTheLiveType() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("live-1")).thenReturn(List.of());
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        Category body = new Category("Live Channels", null);   // never calls setType
+        ResponseEntity<Category> response = categoryController.updateCategory("live-1", body, adminUser);
+
+        assertEquals(Category.TYPE_LIVE, response.getBody().getType());
+        assertEquals("Live Channels", response.getBody().getName());
+    }
+
+    /** R18: the kill switch is an explicit "type": null, always allowed. */
+    @Test
+    void anUpdateWithANullTypeClearsIt() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        Category body = new Category("Channels Live", null);
+        body.setType(null);
+        ResponseEntity<Category> response = categoryController.updateCategory("live-1", body, adminUser);
+
+        assertNull(response.getBody().getType());
+    }
+
+    @Test
+    void makingACategoryWithChildrenLiveIsRefusedWithShape() throws Exception {
+        Category existing = new Category("Kids", null);
+        existing.setId("kids");
+        when(categoryRepository.findById("kids")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("kids")).thenReturn(List.of(new Category("Cartoons", "kids")));
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.updateCategory("kids", live("Kids", null), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        verify(categoryRepository, never()).save(any());
+    }
+}

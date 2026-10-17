@@ -2,6 +2,7 @@ package com.albunyaan.tube.model;
 
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.fasterxml.jackson.annotation.JsonIgnore;
 import com.google.cloud.firestore.annotation.Exclude;
 
 import java.util.HashMap;
@@ -60,6 +61,17 @@ public class Category {
      */
     private Map<String, String> localizedNames;
 
+    /** {@code null} = an ordinary category; {@link #TYPE_LIVE} = a live-channels category (spec §3). */
+    public static final String TYPE_LIVE = "LIVE";
+
+    private String type;
+
+    /**
+     * True once {@link #setType} ran. Jackson calls it only when a request body names "type", so a PUT that omits
+     * the field keeps the stored type and only an explicit {@code "type": null} clears it (the kill switch, R18).
+     */
+    private boolean typeProvided;
+
     /**
      * Metadata
      */
@@ -83,6 +95,32 @@ public class Category {
     }
 
     // Getters and Setters
+
+    public String getType() {
+        return type;
+    }
+
+    public void setType(String type) {
+        this.type = type;
+        this.typeProvided = true;
+    }
+
+    @Exclude
+    @JsonIgnore
+    public boolean isTypeProvided() {
+        return typeProvided;
+    }
+
+    @Exclude
+    @JsonIgnore
+    public boolean isLive() {
+        return TYPE_LIVE.equals(type);
+    }
+
+    /** The allowlist {null, "LIVE"} (spec §3); no enum class for one value. */
+    public static boolean isValidType(String type) {
+        return type == null || TYPE_LIVE.equals(type);
+    }
 
     public String getId() {
         return id;

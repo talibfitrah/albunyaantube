@@ -1,6 +1,7 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.config.CacheConfig;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -18,6 +19,7 @@ import org.springframework.security.core.annotation.AuthenticationPrincipal;
 import org.springframework.web.bind.annotation.*;
 
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
 
@@ -115,11 +117,21 @@ public class CategoryController {
             category.setDisplayOrder(maxOrder + 1);
         }
 
+        if (!Category.isValidType(category.getType())) {
+            return ResponseEntity.badRequest().build();
+        }
+
         // Validate parent exists if specified
         if (category.getParentCategoryId() != null) {
             boolean parentExists = categoryRepository.existsById(category.getParentCategoryId());
             if (!parentExists) {
                 return ResponseEntity.badRequest().build();
+            }
+            // Spec D8: a LIVE category is top-level, and nothing nests under one.
+            boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
+                    .map(Category::isLive).orElse(false);
+            if (category.isLive() || parentLive) {
+                throw shapeRefusal(category.getName());
             }
         }
 
@@ -149,6 +161,12 @@ public class CategoryController {
         if (existing == null) {
             return ResponseEntity.notFound().build();
         }
+        if (category.isTypeProvided() && !Category.isValidType(category.getType())) {
+            return ResponseEntity.badRequest().build();
+        }
+        // R18: a body that never names "type" keeps the stored one; an explicit null clears it (always allowed).
+        String type = category.isTypeProvided() ? category.getType() : existing.getType();
+        boolean live = Category.TYPE_LIVE.equals(type);
 
         // Validate parent category if specified
         if (category.getParentCategoryId() != null) {
@@ -164,6 +182,14 @@ public class CategoryController {
             if (isDescendant(id, category.getParentCategoryId())) {
                 return ResponseEntity.badRequest().build();
             }
+            boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
+                    .map(Category::isLive).orElse(false);
+            if (live || parentLive) {
+                throw shapeRefusal(existing.getName());
+            }
+        }
+        if (live && !categoryRepository.findByParentId(id).isEmpty()) {
+            throw shapeRefusal(existing.getName());
         }
 
         existing.setName(category.getName());
@@ -171,6 +197,7 @@ public class CategoryController {
         existing.setIcon(category.getIcon());
         existing.setDisplayOrder(category.getDisplayOrder());
         existing.setLocalizedNames(category.getLocalizedNames());
+        existing.setType(type);
         existing.setUpdatedBy(user.getUid());
 
         Category updated = categoryRepository.save(existing);
@@ -247,5 +274,10 @@ public class CategoryController {
 
         return false;
     }
-}
 
+    private static LiveCategoryException shapeRefusal(String name) {
+        return new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.SHAPE,
+                "A live category can't have a parent category or subcategories",
+                Map.of("category", name == null ? "" : name));
+    }
+}
