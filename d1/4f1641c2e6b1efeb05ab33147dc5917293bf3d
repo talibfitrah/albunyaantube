@@ -1,0 +1,27 @@
+backend/src/main/java/com/albunyaan/tube/dto/BatchValidationResult.java
+  s_dbb6b1f3671904::t_e939a2d2aeca71 28-32
+backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+  s_dbb6b1f3671904::t_534ecde45e0be5 18-19,22-24,40,65-133,640-642,711-712,777,838-839,902,958-964
+backend/src/main/java/com/albunyaan/tube/service/YouTubeCircuitBreaker.java
+  s_dbb6b1f3671904::t_6f0dc9dac58e8b 844-853,862
+backend/src/test/java/com/albunyaan/tube/service/ChannelOrchestratorTest.java
+  s_dbb6b1f3671904::t_0d7c3ae5076d86 3-5,10,17-21,24-25,27-30,37-38,40,46-47,72,374-375,378-389,393-396,398,400-401,405-416,421,436,450-900
+docs/library-guides/newpipe-extractor.md
+  s_dbb6b1f3671904::t_5d5f73e850252c 320,331-341,352-354,409,412-416
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d14f1641c2e6b1efeb05ab33147dc5917293bf3d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
