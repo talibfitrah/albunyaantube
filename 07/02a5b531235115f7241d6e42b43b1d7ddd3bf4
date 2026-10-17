@@ -1,0 +1,28 @@
+CHANGELOG.md
+  s_dbb6b1f3671904::t_304395888611ec 21
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_dbb6b1f3671904::t_6eeb503fadaf9d 2101-2110
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_e6160c571a5184 1967-1971,1973
+  s_dbb6b1f3671904::t_06a4af0d2d06f8 1972
+  s_dbb6b1f3671904::t_b4da21225c0615 1966
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelLiveChannelTest.kt
+  s_dbb6b1f3671904::t_87ee488ff8bdde 361,363-393
+  s_dbb6b1f3671904::t_2be2898ce6447b 362
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0702a5b531235115f7241d6e42b43b1d7ddd3bf4",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
