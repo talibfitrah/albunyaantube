@@ -1,0 +1,24 @@
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryGuard.java
+  s_dbb6b1f3671904::t_070a239422b4f7 7-8,37-38,181-182,184,187,226
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryGuardTest.java
+  s_dbb6b1f3671904::t_3058fd1cc08c07 12-14,17,32,194-212,215-228,335-341
+  s_dbb6b1f3671904::t_9b0405b357463d 342
+backend/src/main/java/com/albunyaan/tube/service/LiveTabReader.java
+  s_dbb6b1f3671904::t_070a239422b4f7 110,125-133
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "580aa6cf2e642c4cb0269b78b31e727c38ebe248",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
