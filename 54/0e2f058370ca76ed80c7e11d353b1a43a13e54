@@ -1,0 +1,22 @@
+backend/solver/test/solver.test.mjs
+  s_dbb6b1f3671904::t_0a96e41ad16ee4 87-330
+backend/solver/server.mjs
+  s_dbb6b1f3671904::t_526f34bcd9510d 64-72,74-77,79-120,123-269
+  s_dbb6b1f3671904::t_c5f58474091386 73
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "540e2f058370ca76ed80c7e11d353b1a43a13e54",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
