@@ -793,8 +793,8 @@ public class SearchIndex {
         return doc;
     }
 
-    /** A base field and its `_stem` twin; the per-field index analyzer picks the chain (spec §4.3). */
-    private static void addText(Document doc, String field, String value) {
+    /** A base field and its `_stem` twin; the per-field index analyzer picks the chain (spec §4.3). Shared by InnerIndex (inner-search R16). */
+    static void addText(Document doc, String field, String value) {
         if (value == null || value.isBlank()) return;
         doc.add(new TextField(field, value, Field.Store.NO));
         doc.add(new TextField(field + "_stem", value, Field.Store.NO));
