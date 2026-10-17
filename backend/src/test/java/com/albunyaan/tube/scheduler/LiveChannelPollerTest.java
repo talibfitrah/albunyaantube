@@ -519,4 +519,20 @@ class LiveChannelPollerTest {
         assertThat(live.entries()).containsKey(A);
         verify(reader, never()).read(anyString());
     }
+
+    /** Tomcat serves before ApplicationReadyEvent: a LIVE list cached from the empty snapshot must not outlive the load. */
+    @Test
+    void bootLoadEvictsWhatWasCachedBeforeIt() throws Exception {
+        entries(A);
+        LiveChannelState saved = LiveChannelState.unknown(A);
+        saved.setStatus(LiveChannelState.LIVE);
+        saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
+        when(states.findAll()).thenReturn(List.of(saved));
+        List<Boolean> servedAtEviction = new ArrayList<>();
+        doAnswer(i -> servedAtEviction.add(live.served().containsKey(A))).when(caches).evictPublicContentCaches();
+
+        poller.loadAtBoot();
+
+        assertThat(servedAtEviction).containsExactly(true);   // once, and only after the view holds the lives
+    }
 }

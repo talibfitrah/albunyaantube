@@ -98,12 +98,17 @@ public class LiveChannelPoller {
         }
     }
 
-    /** D1: serve the last known lives from Firestore before the first cycle (Review Focus 1). No YouTube traffic. */
+    /**
+     * D1: serve the last known lives from Firestore before the first cycle (Review Focus 1). No YouTube traffic.
+     * Tomcat serves before ApplicationReadyEvent, so a LIVE list rendered from the empty snapshot may already be cached
+     * (1 h): evict once the view holds the loaded lives.
+     */
     @EventListener(ApplicationReadyEvent.class)
     public void loadAtBoot() {
         try {
             live.loadStates(states.findAll());
             refreshView();
+            caches.evictPublicContentCaches();
         } catch (Exception e) {
             log.warn("live poller: boot load failed, serving nothing until the first cycle: {}", e.getMessage());
         }

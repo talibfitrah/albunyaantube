@@ -1398,8 +1398,8 @@ public class PublicContentService {
 
     /**
      * Offset paging over the whole expanded LIVE list.
-     * ponytail: every page builds the full list; bounded by the 30-entry cap (LIVE_CATEGORY_FULL), page inside
-     * items() if the cap grows.
+     * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
+     * few lives each), still small; page inside items() if the cap or the lives per channel grow.
      */
     private CursorPageDto<ContentItemDto> livePage(List<ContentItemDto> all, String cursor, int limit) {
         int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);

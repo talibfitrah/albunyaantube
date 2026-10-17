@@ -90,8 +90,8 @@ public class ChannelOrchestrator {
             Pattern.compile("Got error LOGIN_REQUIRED: \"Sign in to confirm your age\\.?\"");
 
     /**
-     * Archive a channel only when it is definitively gone. The 1.0.4 branch's LiveTabReader has its own not-found
-     * rule (first request only, and still a bare 404); the two rules must be reconciled when 1.0.4 merges.
+     * Archive a channel only when it is definitively gone. LiveTabReader reuses this rule for its first request (a
+     * continuation page is never TERMINATED).
      */
     static boolean channelGone(ExtractionException e) {
         return e instanceof AccountTerminatedException
