@@ -104,9 +104,9 @@ public class LiveTabReader {
 
     /**
      * D10's last source: oEmbed author (bypasses the throttle) → handle → channel details (cached, throttled) → UC id.
-     * 2–3 requests when unknown; empty when a step answers with no channel. A channel-details IOException (breaker,
-     * rate limit, network, or an extraction failure NewPipe gives no definitive reason for) is no signal (R7): it
-     * reaches the caller, which must not read it as "no channel".
+     * 2–3 requests when unknown; empty when a step answers with no channel. An IOException (oEmbed's 429, 5xx or
+     * network failure; a channel-details breaker, rate limit, network failure, or an extraction failure NewPipe gives
+     * no definitive reason for) is no signal (R7): it reaches the caller, which must not read it as "no channel".
      */
     public Optional<String> resolveChannelId(String videoId) throws IOException {
         try {

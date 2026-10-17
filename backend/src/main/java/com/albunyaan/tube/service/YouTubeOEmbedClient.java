@@ -87,9 +87,11 @@ public class YouTubeOEmbedClient {
 
     /**
      * Spec D10: the channel URL oEmbed names as a video's author ({@code https://www.youtube.com/@handle} or
-     * {@code /channel/UC…}), or empty when oEmbed refuses or the answer is not a YouTube https URL.
+     * {@code /channel/UC…}), or empty when oEmbed answers it can't (401 embedding disabled, 404 private or deleted,
+     * any other non-2xx) or the answer is not a YouTube https URL. R7: HTTP 429, a 5xx or a network failure is no
+     * signal, so it throws {@link IOException} instead of answering "no author".
      */
-    public Optional<String> authorUrl(String videoId) {
+    public Optional<String> authorUrl(String videoId) throws IOException {
         if (videoId == null || !VIDEO_ID.matcher(videoId).matches()) {
             return Optional.empty();
         }
@@ -97,14 +99,14 @@ public class YouTubeOEmbedClient {
                 + URLEncoder.encode("https://www.youtube.com/watch?v=" + videoId, StandardCharsets.UTF_8) + "&format=json";
         Request request = new Request.Builder().url(requestUrl).header("User-Agent", userAgent).get().build();
         try (Response response = httpClient.newCall(request).execute()) {
+            if (response.code() == 429 || response.code() >= 500) {
+                throw new IOException("oEmbed author lookup for " + videoId + " returned HTTP " + response.code());
+            }
             if (!response.isSuccessful() || response.body() == null) {
                 logger.warn("oEmbed author lookup for {} returned HTTP {}", videoId, response.code());
                 return Optional.empty();
             }
             return parseAuthorUrl(response.body().string());
-        } catch (IOException e) {
-            logger.warn("oEmbed author lookup for {} failed: {}", videoId, e.getMessage());
-            return Optional.empty();
         }
     }
 

@@ -5,11 +5,13 @@ import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
+import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.springframework.http.HttpStatus;
 
+import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -168,6 +170,29 @@ class LiveCategoryGuardTest {
 
         assertThat(e.getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
         assertThat(e.getCode()).isEqualTo(LiveCategoryException.CHECK_UNAVAILABLE);
+    }
+
+    /** R7 end to end: oEmbed (D10's last source) pushing back for load reaches the guard as 503, never CHANNEL_UNKNOWN. */
+    @Test
+    void anOEmbedRateLimitOrServerErrorIs503ThroughTheRealReader() {
+        assertThat(refusedWhenOEmbedAnswers(429).getStatus()).isEqualTo(HttpStatus.SERVICE_UNAVAILABLE);
+        assertThat(refusedWhenOEmbedAnswers(429).getCode()).isEqualTo(LiveCategoryException.CHECK_UNAVAILABLE);
+        assertThat(refusedWhenOEmbedAnswers(503).getCode()).isEqualTo(LiveCategoryException.CHECK_UNAVAILABLE);
+    }
+
+    /** A 404 is a real answer: oEmbed can't name the author, and it is the last source, so CHANNEL_UNKNOWN as before. */
+    @Test
+    void anOEmbed404IsStillChannelUnknown() {
+        assertThat(refusedWhenOEmbedAnswers(404).getCode()).isEqualTo(LiveCategoryException.CHANNEL_UNKNOWN);
+    }
+
+    /** The real LiveChannelService and LiveTabReader over an oEmbed client answering {@code code}; no other source. */
+    private LiveCategoryException refusedWhenOEmbedAnswers(int code) {
+        LiveTabReader reader = new LiveTabReader(mock(YouTubeGateway.class), YouTubeOEmbedClientTest.answering(code),
+                mock(ChannelOrchestrator.class));
+        LiveCategoryGuard real = new LiveCategoryGuard(liveCategories, orders,
+                new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC()), videos);
+        return assertThrows(LiveCategoryException.class, () -> real.check(true, add("video", "J3bDNstCnzE", null, "APPROVED")));
     }
 
     /** D10: a channel id that is not a UC id (body or stored doc) counts as missing, so resolution runs. */
