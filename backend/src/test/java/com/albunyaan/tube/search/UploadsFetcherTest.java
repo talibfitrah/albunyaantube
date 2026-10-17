@@ -97,11 +97,24 @@ class UploadsFetcherTest {
                 new InfoItemsPage<>(items, null, List.of(new ParsingException("one bad item"))), 150);
         assertEquals(150, last.count());
         assertEquals(1, last.items().size());
-        assertEquals(3, last.listed());
+        assertEquals(2, last.listed(), "fix round 1: an item NewPipe could not parse was not listed");
         assertNull(last.next());
         UploadsFetcher.Batch more = UploadsFetcher.batch("channel:UCx",
                 new InfoItemsPage<>(items, new Page("https://www.youtube.com/youtubei/v1/browse"), List.of()), -1);
         assertNotNull(more.next());
+    }
+
+    /**
+     * Fix round 1: NewPipe 0.26.5's StreamInfoItemsCollector records a field-level error and keeps the item, and drops an
+     * item it cannot parse with an error too. Errors are never listed items: a short listing must read as short (R32).
+     */
+    @Test
+    void parseErrorsAreNeverCountedAsListedItems() {
+        List<StreamInfoItem> items = List.of(stream("ilgiwqpcOC8", "a", 10), stream("cBjnzYHSV4M", "b", 10));
+        UploadsFetcher.Batch page = UploadsFetcher.batch("channel:UCx", new InfoItemsPage<>(items, null, List.of(
+                new ParsingException("Could not get upload date"), new ParsingException("Could not get view count"))), 5);
+        assertEquals(2, page.listed());
+        assertFalse(InnerCrawler.complete(page.listed(), page.count(), true), "2 of 5 listed is short (tolerance 2), never complete");
     }
 
     @Test

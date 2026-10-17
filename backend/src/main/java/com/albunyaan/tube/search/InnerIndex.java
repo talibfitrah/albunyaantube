@@ -30,6 +30,7 @@ import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Collection;
+import java.util.HashSet;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -53,7 +54,8 @@ public class InnerIndex {
         void sleep(long ms) throws InterruptedException;
     }
 
-    private record Live(Path path, Directory dir, IndexWriter writer, SearcherManager searchers) {}
+    /** `cap`: the per-source cut this index was built with (R31). */
+    private record Live(Path path, Directory dir, IndexWriter writer, SearcherManager searchers, int cap) {}
 
     private final Path base;
     private final InnerStore store;
@@ -89,10 +91,12 @@ public class InnerIndex {
             writer = new IndexWriter(dir, config());
             int docs = 0, inBatch = 0;
             long batchStart = System.nanoTime();
+            Set<String> indexed = new HashSet<>();
             for (Path file : InnerCorpus.files(store.corpusDir())) {
                 String key = InnerCorpus.sourceKey(file);
                 List<InnerCorpus.Item> items = InnerCorpus.read(file);
                 if (items == null) continue; // unreadable: treated as missing; the crawler crawls that source again (§5)
+                indexed.add(key);
                 for (InnerCorpus.Item item : items.subList(0, Math.min(cap, items.size()))) {
                     if (!indexable(item)) continue;
                     writer.addDocument(doc(key, names.get(key), item));
@@ -104,7 +108,8 @@ public class InnerIndex {
                     }
                 }
             }
-            if (!swap(new Live(path, dir, writer, new SearcherManager(writer, null)))) return;
+            untrustUnindexed(indexed);
+            if (!swap(new Live(path, dir, writer, new SearcherManager(writer, null), cap))) return;
             rebuildCpuMs = (cpuNanos() - cpu0) / 1_000_000;
             rebuildWallMs = (System.nanoTime() - wall0) / 1_000_000;
             // processCpuMs: every thread, so the merge thread too, but also requests and any other work meanwhile
@@ -131,7 +136,7 @@ public class InnerIndex {
         for (InnerCorpus.Item item : items.subList(0, Math.min(cap, items.size()))) {
             if (indexable(item)) l.writer().addDocument(doc(sourceKey, name, item));
         }
-        maybeRefresh();
+        refresh(); // sweeps are rare; a stale searcher would let the R18 gate hide what this crawl lists
     }
 
     /** A merge or a poll: only what changed (§6.4). */
@@ -148,11 +153,13 @@ public class InnerIndex {
 
     /** At most every refreshEveryMs (R14, RV M2: fewer tiny segments), and retires a swapped-out index after a minute. */
     void maybeRefresh() throws IOException {
-        long now = clock.millis();
-        if (now - lastRefreshAt < refreshEveryMs) return;
+        if (clock.millis() - lastRefreshAt >= refreshEveryMs) refresh();
+    }
+
+    private void refresh() throws IOException {
         Live l = live;
         if (l != null) l.searchers().maybeRefreshBlocking();
-        lastRefreshAt = now;
+        lastRefreshAt = clock.millis();
         closeRetired();
     }
 
@@ -175,34 +182,44 @@ public class InnerIndex {
         return store.state().serveInner && live != null;
     }
 
-    boolean has(String sourceKey, String id) throws IOException {
-        IndexSearcher s = acquire();
-        if (s == null) return false;
-        try {
-            return s.count(pair(sourceKey, id)) > 0;
-        } finally {
-            release(s);
-        }
-    }
-
     static final long TRUST_MS = 30L * 86_400_000;
 
     /**
      * R18 stream gate: a stored stream is hidden for `sourceKey` only when that source's latest crawl was complete (not
-     * short, and not stopped at a cap, which never lists the older items), at most 30 days old, and does not list the id.
-     * Fails open: an unknown, untrusted or unreadable case keeps today's behaviour.
+     * short, and not stopped at a cap, which never lists the older items), at most 30 days old, and does not list the id
+     * in this index. The index must hold all the crawl listed: every counted item stored (NewPipe drops items it cannot
+     * parse), and no more than the cap this index and the current one cut a source to (R31 lowers it unattended).
+     * Fails open: an unknown, untrusted or unreadable case, or no searcher (not built, closing), keeps today's behaviour.
+     * `trace` (nullable) counts the lookups and their time for the slow-search line.
      */
-    boolean gateDrops(String sourceKey, String id) {
+    boolean gateDrops(String sourceKey, String id, SearchIndex.Trace trace) {
         InnerState s = store.state();
-        if (!s.streamGate || live == null) return false;
+        Live l = live;
+        if (!s.streamGate || l == null) return false;
         InnerState.Source src = s.sources.get(sourceKey);
-        if (src == null || src.completeAt == 0 || src.shortCrawl || src.capped || clock.millis() - src.completeAt > TRUST_MS) {
+        if (src == null) return false;
+        long count = src.count, completeAt = src.completeAt;
+        int items = src.items;
+        if (completeAt == 0 || src.shortCrawl || src.capped || clock.millis() - completeAt > TRUST_MS
+                || count < 0 || items < count - InnerCrawler.tolerance(count) || items > Math.min(clamp(s.capPerSource), l.cap())) {
             return false;
         }
+        long started = System.nanoTime();
         try {
-            return !has(sourceKey, id);
+            IndexSearcher searcher = acquire();
+            if (searcher == null) return false;
+            try {
+                return searcher.count(pair(sourceKey, id)) == 0;
+            } finally {
+                release(searcher);
+            }
         } catch (IOException | RuntimeException e) { // AlreadyClosedException included (shutdown): never fails a search
             return false;
+        } finally {
+            if (trace != null) {
+                trace.gateChecks++;
+                trace.gateNs += System.nanoTime() - started;
+            }
         }
     }
 
@@ -293,6 +310,20 @@ public class InnerIndex {
         doc.add(new StoredField("d", item.d()));
         if (item.a() != null) doc.add(new StoredField("a", item.a()));
         return doc;
+    }
+
+    /**
+     * A source whose corpus is missing or unreadable has no documents in the rebuilt index, so the R18 gate must not trust
+     * its last crawl: it waits for the crawler to crawl it again. Crawler thread; no save under the monitor (the 5-min one
+     * persists it, and a restart rebuilds and clears it again).
+     */
+    private void untrustUnindexed(Set<String> indexed) {
+        InnerState s = store.state();
+        synchronized (s) {
+            s.sources.forEach((key, src) -> {
+                if (!indexed.contains(key)) src.completeAt = 0;
+            });
+        }
     }
 
     /** A hand-edited line without an id or title is skipped, never fatal; a blank title too (upstream drops only null). */

@@ -530,6 +530,9 @@ public class SearchIndex {
         long titlesMs = -1;
         int titles;
         boolean titlesTimedOut;
+        /** R18 gate lookups on the inner index (InnerIndex.gateDrops) and their total time; today's ladder pays them. */
+        int gateChecks;
+        long gateNs;
 
         String line(long totalMs, int want, String type) {
             StringBuilder tiers = new StringBuilder();
@@ -541,7 +544,8 @@ public class SearchIndex {
             return "slow search: ms=" + totalMs + " tokens=" + tokens + " want=" + want + " type=" + type
                     + " tiers=" + tiers + " loaded=" + loaded + " hidden=" + hidden
                     + (innerMs < 0 ? "" : " inner=" + innerMs + "ms:" + innerHits + (innerTimedOut ? ":timeout" : ""))
-                    + (titlesMs < 0 ? "" : " titles=" + titlesMs + "ms:" + titles + (titlesTimedOut ? ":timeout" : ""));
+                    + (titlesMs < 0 ? "" : " titles=" + titlesMs + "ms:" + titles + (titlesTimedOut ? ":timeout" : ""))
+                    + (gateChecks == 0 ? "" : " gate=" + gateChecks + ":" + gateNs / 1_000_000);
         }
     }
 
@@ -681,7 +685,7 @@ public class SearchIndex {
                 }
                 Document doc = fields.document(hit.doc);
                 trace.loaded++;
-                String keeper = keeper(doc);
+                String keeper = keeper(doc, trace);
                 if (keeper == null) {
                     trace.hidden++;
                     continue;
@@ -730,24 +734,27 @@ public class SearchIndex {
 
     /** The inner title of `id` (Q17, and Task 24b's titles), from {@link #innerCopy}; null if no copy names it. */
     String innerTitle(IndexSearcher searcher, String id, String preferredKey) throws IOException {
-        Document copy = innerCopy(searcher, id, preferredKey);
-        return copy == null ? null : copy.get("t");
+        Copy copy = innerCopy(searcher, id, preferredKey);
+        return copy == null ? null : copy.doc().get("t");
     }
+
+    /** An inner copy and the admitted source that kept it when it was chosen: one read, so a catalog swap cannot split them. */
+    private record Copy(Document doc, String keeper) {}
 
     /**
      * The inner copy that names `id` (Q17, Task 24b's titles, R27's pasted ids): the copy `preferredKey` lists if that
      * source keeps it, else the first copy an admitted source keeps; null if none does. A source that is not admitted
      * never names a video, nor does a blank title (as in the catalog path).
      */
-    private Document innerCopy(IndexSearcher searcher, String id, String preferredKey) throws IOException {
+    private Copy innerCopy(IndexSearcher searcher, String id, String preferredKey) throws IOException {
         StoredFields fields = searcher.storedFields();
-        Document first = null;
+        Copy first = null;
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
-            String keeper = keeper(doc), title = doc.get("t");
+            String keeper = keeper(doc, null), title = doc.get("t"); // an INNER copy never reaches the stream gate
             if (keeper == null || title == null || title.isBlank()) continue;
-            if (keeper.equals(preferredKey)) return doc;
-            if (first == null) first = doc;
+            if (keeper.equals(preferredKey)) return new Copy(doc, keeper);
+            if (first == null) first = new Copy(doc, keeper);
         }
         return first;
     }
@@ -849,8 +856,8 @@ public class SearchIndex {
                 IndexSearcher s = inner.acquire();
                 if (s != null) {
                     try {
-                        Document copy = innerCopy(s, youtubeId, null);
-                        if (copy != null) out.add(innerDto(copy, keeper(copy)));
+                        Copy copy = innerCopy(s, youtubeId, null);
+                        if (copy != null) out.add(innerDto(copy.doc(), copy.keeper()));
                     } finally {
                         inner.release(s);
                     }
@@ -984,7 +991,7 @@ public class SearchIndex {
                 trace.loaded++;
                 String id = doc.get("id");
                 if (allowedIds != null && !allowedIds.contains(id)) continue;
-                String keeper = keeper(doc);
+                String keeper = keeper(doc, trace);
                 if (!"CATALOG".equals(doc.get("source")) && keeper == null) {
                     trace.hidden++;
                     continue;
@@ -1000,8 +1007,11 @@ public class SearchIndex {
         }
     }
 
-    /** Spec §4.2, §8.1: the admitted source that keeps a STREAM or INNER document visible, or null (hidden or catalog). */
-    private String keeper(Document doc) {
+    /**
+     * Spec §4.2, §8.1: the admitted source that keeps a STREAM or INNER document visible, or null (hidden or catalog).
+     * `trace` (nullable) counts the stream gate's lookups.
+     */
+    private String keeper(Document doc, Trace trace) {
         String kind = doc.get("source");
         if (!"STREAM".equals(kind) && !"INNER".equals(kind)) return null;
         String id = doc.get("id");
@@ -1010,7 +1020,7 @@ public class SearchIndex {
         Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
             Admitted source = sources.get(key);
-            if (source != null && !source.excluded().contains(id) && !(stream && inner != null && inner.gateDrops(key, id))) {
+            if (source != null && !source.excluded().contains(id) && !(stream && inner != null && inner.gateDrops(key, id, trace))) {
                 return key;
             }
         }

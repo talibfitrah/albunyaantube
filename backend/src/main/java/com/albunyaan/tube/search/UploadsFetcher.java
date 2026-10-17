@@ -32,7 +32,10 @@ public class UploadsFetcher {
     /** A channel key needs a UC… id (its uploads list is UU…); a playlist key takes any id family (PL/OL/RD/LL/UU...). */
     private static final Pattern SOURCE_KEY = Pattern.compile("channel:UC([A-Za-z0-9_-]{1,62})|playlist:([A-Za-z0-9_-]{1,64})");
 
-    /** `count`: the exact item count (first page, else -1); `listed`: what YouTube listed before R20 (R32 counts it); `next`: null at the end. */
+    /**
+     * `count`: the exact item count (first page, else -1); `listed`: the items NewPipe returned, before R20 (R32 counts
+     * them), never its parse errors, which name kept items too; `next`: null at the end.
+     */
     public record Batch(long count, List<InnerCorpus.Item> items, int listed, Page next) {}
 
     public Batch first(String sourceKey, String hl) throws IOException, ExtractionException {
@@ -65,7 +68,8 @@ public class UploadsFetcher {
             InnerCorpus.Item it = item(s, playlist);
             if (it != null) items.add(it);
         }
-        return new Batch(count, items, page.getItems().size() + page.getErrors().size(), page.hasNextPage() ? page.getNextPage() : null);
+        // an item NewPipe could not parse is not listed: the listing reads short, never complete (R32)
+        return new Batch(count, items, page.getItems().size(), page.hasNextPage() ? page.getNextPage() : null);
     }
 
     /** R20 (members-only, paid, upcoming: never stored), `a` (approximate upload day), `c`/`u` for playlist items (R16). Null = skip. */

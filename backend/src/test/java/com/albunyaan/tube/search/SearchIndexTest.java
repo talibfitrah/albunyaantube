@@ -19,6 +19,8 @@ import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.PublicContentService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.StoredField;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
@@ -1374,16 +1376,25 @@ class SearchIndexTest {
                 "channel:UCrejected", List.of(item("orphan-lecture", "Orphan Lecture", 600))), Map.of());
         SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
         assertEquals(Set.of("channel:UChalal", "playlist:PLtafsir"), Set.copyOf(idx.sourcesListing("orphan-lecture")));
+        assertEquals(2, idx.sourcesListing("orphan-lecture").size(), "fix round 1: UChalal, from the inner index and the stream, once");
         assertEquals(List.of("channel:UChalal"), idx.sourcesListing("halal-ok"), "a stored stream's own key");
         assertEquals(List.of(), idx.sourcesListing("lesson99999"));
+    }
+
+    /** Fix round 1: a source whose latest crawl was complete and fresh, with every counted item stored. */
+    private static InnerState.Source trusted(int items) {
+        InnerState.Source src = new InnerState.Source();
+        src.completeAt = System.currentTimeMillis();
+        src.count = items;
+        src.items = items;
+        return src;
     }
 
     @Test
     void theStreamGateHidesAStoredStreamOnlyForATrustedCompleteCrawlThatDoesNotListIt() throws Exception {
         InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
         SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
-        InnerState.Source halal = new InnerState.Source();
-        halal.completeAt = System.currentTimeMillis();
+        InnerState.Source halal = trusted(1);
         innerStore.state().sources.put("channel:UChalal", halal);
 
         assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "gate off: today");
@@ -1411,9 +1422,7 @@ class SearchIndexTest {
                 stream("two-sources", "Two Sources Lesson", "channel:UChalal", ALAFASY),
                 stream("both-kept", "Both Kept Lesson", ALAFASY)), 5_000, inner));
         for (String key : List.of("channel:UChalal", ALAFASY)) {
-            InnerState.Source src = new InnerState.Source();
-            src.completeAt = System.currentTimeMillis();
-            innerStore.state().sources.put(key, src);
+            innerStore.state().sources.put(key, trusted(1));
         }
         innerStore.state().streamGate = true;
         assertTrue(ids(idx.search("two sources", "VIDEO", 50)).isEmpty(), "both complete crawls miss it");
@@ -1422,29 +1431,184 @@ class SearchIndexTest {
         assertEquals(List.of("two-sources"), ids(idx.search("two sources", "VIDEO", 50)));
     }
 
-    /** The gate fails open: an inner index closing under a search (shutdown) keeps today's stream, never a 500. */
+    /**
+     * The gate fails open (fix round 1, Minor 6): with no searcher (closing, or a boot rebuild racing the check) or an
+     * inner index closing under a search (shutdown), today's stream is kept, never a 500.
+     */
     @Test
     void theStreamGateKeepsAStoredStreamWhenTheInnerIndexClosesUnderIt() throws Exception {
         InnerStore store = new InnerStore(innerTmp.resolve("gate").toString());
-        AtomicBoolean closed = new AtomicBoolean();
+        AtomicBoolean closed = new AtomicBoolean(), none = new AtomicBoolean();
         InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
             @Override
             IndexSearcher acquire() throws IOException {
                 if (closed.get()) throw new AlreadyClosedException("this ReferenceManager is closed");
-                return super.acquire();
+                return none.get() ? null : super.acquire();
             }
         };
         closing.sleeper = ms -> { };
         closing.rebuild(Map.of(), 10_000);
         openedInner.add(closing);
         SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, closing));
-        InnerState.Source halal = new InnerState.Source();
-        halal.completeAt = System.currentTimeMillis();
-        store.state().sources.put("channel:UChalal", halal);
+        store.state().sources.put("channel:UChalal", trusted(1));
         store.state().streamGate = true;
         assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "readable: not listed, hidden");
+        none.set(true);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "no searcher: kept");
+        none.set(false);
         closed.set(true);
         assertEquals(List.of("orphan-lecture"), ids(assertDoesNotThrow(() -> idx.search("orphan", "VIDEO", 50))));
+    }
+
+    /** Fix round 1, Minor 6: an inner index not built yet, or a source with no crawl state, keeps every stored stream. */
+    @Test
+    void theStreamGateKeepsAStoredStreamBeforeTheBuildAndForASourceWithNoState() throws Exception {
+        InnerStore store = new InnerStore(innerTmp.resolve("cold").toString());
+        InnerIndex cold = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC());
+        openedInner.add(cold);
+        store.state().sources.put("channel:UChalal", trusted(1));
+        store.state().streamGate = true;
+        SearchIndex unbuilt = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, cold));
+        assertEquals(List.of("orphan-lecture"), ids(unbuilt.search("orphan", "VIDEO", 50)), "not built");
+
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        innerStore.state().streamGate = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "no state for UChalal");
+    }
+
+    /** Fix round 1, Important 1(b): NewPipe dropped items the crawl counted, so its listing says nothing about them. */
+    @Test
+    void theStreamGateKeepsAStoredStreamWhenTheCrawlStoredFewerItemsThanItsCount() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = trusted(1);
+        innerStore.state().sources.put("channel:UChalal", halal);
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "every counted item stored: hidden");
+        halal.count = 10; // 1 stored < 10 − tolerance(10) = 8
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "fewer stored than counted: kept");
+        halal.count = -1;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "an unknown count: kept");
+    }
+
+    /** Fix round 1, Important 1(a): an index cut to a cap below the crawl (R31 lowers it unattended) cannot say "not listed". */
+    @Test
+    void theStreamGateKeepsAStoredStreamPastTheCapTheIndexHolds() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600),
+                item("lesson00002", "Another lesson", 600), item("orphan-lecture", "Orphan Lecture", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        innerStore.state().sources.put("channel:UChalal", trusted(3));
+        innerStore.state().streamGate = true;
+        innerStore.state().serveInner = false; // the stored stream alone answers
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "listed: kept");
+        innerStore.state().capPerSource = 2; // R31's trigger; the rebuild cuts the source to its newest 2
+        inner.rebuild(Map.of(), 2);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "past the lowered cap: kept");
+        innerStore.state().capPerSource = 10_000; // raised: until the rebuild the index still holds the newest 2
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "raised, not rebuilt yet: kept");
+        inner.rebuild(Map.of(), 10_000);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "rebuilt: listed again");
+        assertTrue(ids(idx.search("halal cooking", "VIDEO", 50)).isEmpty(), "the gate is on: an unlisted stream hides");
+    }
+
+    /** Fix round 1, Minor 4: a complete crawl's sweep is searchable at once, so the gate never reads the stale listing. */
+    @Test
+    void theStreamGateSeesACompleteCrawlsSweepAtOnce() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        inner.refreshEveryMs = Long.MAX_VALUE; // a merge waits for the next refresh; a sweep must not
+        inner.replaceSource("channel:UChalal", null,
+                List.of(item("lesson00001", "Something else", 600), item("orphan-lecture", "Orphan Lecture", 600)));
+        innerStore.state().sources.put("channel:UChalal", trusted(2));
+        innerStore.state().streamGate = true;
+        innerStore.state().serveInner = false;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)));
+    }
+
+    /** Fix round 1, Minor 5: a source the rebuild could not index (corpus missing or unreadable) is no longer trusted. */
+    @Test
+    void aSourceTheRebuildCouldNotIndexIsNoLongerTrusted() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600)),
+                ALAFASY, List.of(item("lesson00002", "Another lesson", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = trusted(1), alafasy = trusted(1), tafsir = trusted(1);
+        innerStore.state().sources.putAll(Map.of("channel:UChalal", halal, ALAFASY, alafasy, "playlist:PLtafsir", tafsir));
+        Files.write(innerStore.corpusFile("channel:UChalal"), "not gzip".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        inner.rebuild(Map.of(), 10_000); // PLtafsir never had a corpus file
+        assertEquals(0, halal.completeAt, "unreadable");
+        assertEquals(0, tafsir.completeAt, "missing");
+        assertNotEquals(0, alafasy.completeAt, "indexed: still trusted");
+        innerStore.state().streamGate = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)));
+    }
+
+    /** Fix round 1, Important 3: the gate's lookups show in the slow line, integers only, and only when it ran one. */
+    @Test
+    void theSlowLineShowsTheGatesChecksAndMs() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        idx.slowSearchMs = -1;
+        innerStore.state().serveInner = false; // the gate runs inside today's ladder, inner hits or not
+        innerStore.state().sources.put("channel:UChalal", trusted(1));
+        idx.search("orphan", "VIDEO", 50);
+        assertFalse(lastSlowLine().contains(" gate="), "gate off: " + lastSlowLine());
+        innerStore.state().streamGate = true;
+        idx.search("orphan", "VIDEO", 50);
+        assertTrue(lastSlowLine().matches("slow search: .* loaded=\\d+ hidden=\\d+ gate=[1-9]\\d*:\\d+"), lastSlowLine());
+    }
+
+    /** Fix round 1, Minor 7: a pasted id's keeper is read once, so a catalog swap between two reads never loses the hit. */
+    @Test
+    void aPastedIdKeepsTheKeeperItChose() throws Exception {
+        Directory dir = new ByteBuffersDirectory();
+        try (IndexWriter w = new IndexWriter(dir, new IndexWriterConfig())) {
+            Document doc = InnerIndex.doc(ALAFASY, "Alafasy", item("lesson00001", "Zubdahnoor lesson", 600));
+            doc.removeFields("source");
+            doc.add(new StoredField("source", "STREAM")); // the one kind whose keeper asks the gate: a seam between two reads
+            w.addDocument(doc);
+        }
+        InnerStore store = new InnerStore(innerTmp.resolve("swap").toString());
+        int[] reads = {0};
+        InnerIndex swapping = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            boolean serving() {
+                return true;
+            }
+
+            @Override
+            IndexSearcher acquire() throws IOException {
+                return new IndexSearcher(DirectoryReader.open(dir)); // release() closes it
+            }
+
+            @Override
+            boolean gateDrops(String sourceKey, String id, SearchIndex.Trace trace) {
+                return reads[0]++ > 0; // keeps it at the first read, drops it at any later one
+            }
+        };
+        ContentItemDto hit = alafasy(swapping).byId("lesson00001", null).items().get(0);
+        assertEquals("UCalafasy", hit.getSourceId());
+        assertEquals(1, reads[0]);
+    }
+
+    /** Fix round 1, Minor 8: search threads read these lock-free (InnerState's own rule). */
+    @Test
+    void everySourceFieldTheGateReadsIsVolatile() throws Exception {
+        for (String field : List.of("completeAt", "shortCrawl", "capped", "count", "items")) {
+            assertTrue(java.lang.reflect.Modifier.isVolatile(InnerState.Source.class.getField(field).getModifiers()), field);
+        }
+    }
+
+    /** Fix round 1, Minor 9: a pasted id that only an excluding, a rejected or a blocked source lists is a miss. */
+    @Test
+    void aPastedExcludedRejectedOnlyOrBlockedIdIsAMiss() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("halal-excluded", "Excluded Copy", 600), item("halal-rejected", "Blocked Copy", 600)),
+                "channel:UCrejected", List.of(item("rejected-only", "Rejected Only", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        for (String id : List.of("halal-excluded", "rejected-only", "halal-rejected")) {
+            assertSame(SearchIndex.Hits.NONE, idx.byId(id, null), id);
+        }
     }
 
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------

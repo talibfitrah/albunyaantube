@@ -88,7 +88,6 @@ class InnerIndexTest {
         assertNull(index.acquire());
         assertEquals(0, index.bytes());
         assertEquals(0, index.docs());
-        assertFalse(index.has(CH, "lesson00001"));
         assertEquals(Set.of(), index.sourceKeys("lesson00001"));
         store.state().serveInner = true;
         assertFalse(index.serving());
@@ -118,8 +117,8 @@ class InnerIndexTest {
         corpus(CH, InnerCrawlerTest.items("lesson", 0, 300, "x"));
         index.rebuild(Map.of(), 100);
         assertEquals(100, index.docs());
-        assertTrue(index.has(CH, InnerCrawlerTest.id("lesson", 0)));
-        assertFalse(index.has(CH, InnerCrawlerTest.id("lesson", 100)));
+        assertTrue(index.sourceKeys(InnerCrawlerTest.id("lesson", 0)).contains(CH));
+        assertFalse(index.sourceKeys(InnerCrawlerTest.id("lesson", 100)).contains(CH));
     }
 
     @Test
@@ -128,7 +127,7 @@ class InnerIndexTest {
         index.rebuild(Map.of(CH, "Dawah Nederland"), 10_000);
         index.replaceSource(CH, "Dawah Nederland", InnerCrawlerTest.items("story", 0, 2, "x"));
         assertEquals(2, index.docs());
-        assertFalse(index.has(CH, InnerCrawlerTest.id("lesson", 0)));
+        assertFalse(index.sourceKeys(InnerCrawlerTest.id("lesson", 0)).contains(CH));
         String renamed = InnerCrawlerTest.id("story", 0);
         index.merge(CH, "Dawah Nederland", List.of(new InnerCorpus.Item(renamed, "Renamed lecture", 60, null, null, null)),
                 List.of(InnerCrawlerTest.id("story", 1)));
@@ -161,10 +160,10 @@ class InnerIndexTest {
         index.rebuild(Map.of(), 10_000);
         assertEquals(1, index.docs());
         index.replaceSource(PL, "x", List.of(new InnerCorpus.Item("ilgiwqpcOC8", "", 1, null, null, null)));
-        assertFalse(index.has(PL, "ilgiwqpcOC8"));
-        assertTrue(index.has(CH, "cBjnzYHSV4M"), "replacing one source never touches another");
+        assertFalse(index.sourceKeys("ilgiwqpcOC8").contains(PL));
+        assertTrue(index.sourceKeys("cBjnzYHSV4M").contains(CH), "replacing one source never touches another");
         index.merge(CH, "x", List.of(new InnerCorpus.Item("cBjnzYHSV4M", "  ", 1, null, null, null)), List.of());
-        assertFalse(index.has(CH, "cBjnzYHSV4M"), "a title gone blank drops the old document");
+        assertFalse(index.sourceKeys("cBjnzYHSV4M").contains(CH), "a title gone blank drops the old document");
         assertEquals(0, index.docs());
     }
 
@@ -207,7 +206,7 @@ class InnerIndexTest {
         store.state().capPerSource = -5;
         index.replaceSource(CH, "x", InnerCrawlerTest.items("story", 0, 3, "x"));
         assertEquals(1, index.docs());
-        assertTrue(index.has(CH, InnerCrawlerTest.id("story", 0)));
+        assertTrue(index.sourceKeys(InnerCrawlerTest.id("story", 0)).contains(CH));
     }
 
     /** A kill -9 skips close(): the first rebuild sweeps what it left, without following a link out of base-dir. */

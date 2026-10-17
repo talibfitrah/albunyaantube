@@ -53,9 +53,9 @@ public class InnerState {
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Source {
         public String hl;
-        public long count = -1;
-        public int items;
-        public boolean capped;
+        public volatile long count = -1; // count, items, capped, shortCrawl, completeAt: the stream gate reads them lock-free
+        public volatile int items;
+        public volatile boolean capped;
         public volatile boolean dirty;
         @JsonProperty("short")
         public volatile boolean shortCrawl;

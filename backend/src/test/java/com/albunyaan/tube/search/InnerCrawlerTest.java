@@ -1186,7 +1186,7 @@ class InnerCrawlerTest {
         when(fetcher.first(eq(CH), anyString())).thenReturn(batch(2, items("lesson", 1, 2, "x"), false));
         step();
         assertEquals(2, index.docs());
-        assertFalse(index.has(CH, id("lesson", 0)));
+        assertFalse(index.sourceKeys(id("lesson", 0)).contains(CH));
     }
 
     @Test
@@ -1199,7 +1199,7 @@ class InnerCrawlerTest {
         step();
         assertEquals(3, corpus(CH).size(), "the corpus keeps everything (R31)");
         assertEquals(2, index.docs(), "replaceSource cuts to the cap; a merge would add all 3");
-        assertFalse(index.has(CH, id("lesson", 2)));
+        assertFalse(index.sourceKeys(id("lesson", 2)).contains(CH));
     }
 
     @Test
