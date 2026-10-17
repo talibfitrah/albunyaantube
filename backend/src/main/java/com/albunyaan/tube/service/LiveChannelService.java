@@ -19,7 +19,7 @@ import java.util.concurrent.TimeoutException;
 /**
  * The live-channel snapshot (D1) and the single entry point to the Live tab (§5: poller, guard and seed share it).
  * Readers (expansion, the public endpoint, admin status) never touch Firestore through this class.
- * ponytail: no lock, single instance; adopt the validators' Firestore lock if the backend scales out (D7).
+ * ponytail: no distributed lock, single instance; adopt the validators' Firestore lock if the backend scales out (D7).
  */
 @Service
 public class LiveChannelService {
@@ -33,6 +33,7 @@ public class LiveChannelService {
     private final LiveChannelStateRepository states;
     private final Clock clock;
     private final Map<String, Memo> memo = new ConcurrentHashMap<>();
+    private final Object stateLock = new Object();
 
     private volatile Map<String, LiveChannelState> snapshot = Map.of();
     private volatile Map<String, Channel> entries = Map.of();
@@ -45,12 +46,13 @@ public class LiveChannelService {
         this.clock = clock;
     }
 
-    /** The channel's current lives; OK and TERMINATED reads are reused for 60 s. */
+    /** The channel's current lives; OK and TERMINATED reads are reused for 60 s, at no request cost (D16). */
     public LiveTabResult livesNow(String ucId) {
         long now = clock.millis();
         Memo m = memo.get(ucId);
         if (m != null && now - m.at() < MEMO_MS) {
-            return m.result();
+            LiveTabResult r = m.result();
+            return new LiveTabResult(r.outcome(), r.lives(), 0, r.error());
         }
         LiveTabResult r = reader.read(ucId);
         if (r.outcome() == LiveTabResult.Outcome.OK || r.outcome() == LiveTabResult.Outcome.TERMINATED) {
@@ -72,25 +74,35 @@ public class LiveChannelService {
     /**
      * D15: a CHANNEL add seeds its state with one read; a failed read seeds ERROR. The add is never refused for the
      * seed (pre-flight M9): a failed state write is logged and the state stays in the snapshot; the next cycle persists it.
-     * A breaker refusal or a rate limit says nothing about the channel, so it seeds nothing (R7). Only a new state may
-     * hide: re-adding a known channel during a suspect stretch keeps its last lives (R10).
+     * A breaker refusal or a rate limit says nothing about the channel, so it seeds nothing (R7). An empty read hides
+     * only a channel that is not served now: re-adding a served channel during a suspect stretch keeps its lives (R10).
+     * Restore records stay for the next cycle, which restores the docs (R12).
      */
     public void seed(String ucId) {
-        LiveTabResult r = livesNow(ucId);
+        LiveTabResult r = livesNow(ucId);                       // the YouTube read stays outside the lock
         if (r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
             return;
         }
-        LiveChannelState prev = state(ucId);
-        LiveChannelState next = LivePollRules.apply(prev, ucId, r, false, prev == null, Set.of(), clock.millis()).next();
-        try {
-            put(next);
-        } catch (ExecutionException | TimeoutException e) {
-            log.warn("live seed: state write failed for {} ({}); kept in memory until the next cycle", ucId, e.getMessage());
-            publishState(next);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            publishState(next);
+        synchronized (stateLock) {
+            LivePollRules.Outcome o = LivePollRules.apply(state(ucId), ucId, r, false, !entries.containsKey(ucId),
+                    Set.of(), clock.millis());
+            LiveChannelState next = o.next();
+            next.getArchived().putAll(o.restored());
+            try {
+                put(next);
+            } catch (ExecutionException | TimeoutException e) {
+                log.warn("live seed: state write failed for {} ({}); kept in memory until the next cycle", ucId, e.getMessage());
+                publishState(next);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                publishState(next);
+            }
         }
+    }
+
+    /** D7: the seed and the poller's per-channel apply compute-and-put one at a time under this monitor. */
+    public Object stateLock() {
+        return stateLock;
     }
 
     /** Persist, then publish into the snapshot. */

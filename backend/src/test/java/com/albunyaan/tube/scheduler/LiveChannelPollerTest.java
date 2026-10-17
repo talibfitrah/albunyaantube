@@ -25,16 +25,25 @@ import org.slf4j.LoggerFactory;
 
 import java.time.Clock;
 import java.time.Instant;
+import java.time.ZoneId;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
+import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
@@ -50,6 +59,8 @@ class LiveChannelPollerTest {
     static final long T0 = 1_792_200_000_000L;
     static final long MIN = 60_000L;
     static final String CAT = "btiLw1LiEqiUHQJiaJKX";
+    static final String A = "UCa0000000000000000000aa";
+    static final String B = "UCb0000000000000000000bb";
 
     final VideoRepository videos = mock(VideoRepository.class);
     final LiveChannelStateRepository states = mock(LiveChannelStateRepository.class);
@@ -59,7 +70,7 @@ class LiveChannelPollerTest {
     final AuditLogService audit = mock(AuditLogService.class);
     final PublicContentCacheService caches = mock(PublicContentCacheService.class);
     final YouTubeCircuitBreaker breaker = mock(YouTubeCircuitBreaker.class);
-    final java.util.concurrent.atomic.AtomicLong now = new java.util.concurrent.atomic.AtomicLong(T0);
+    final AtomicLong now = new AtomicLong(T0);
     LiveChannelService live;
     LiveChannelPoller poller;
     final List<Object> members = new ArrayList<>();
@@ -83,19 +94,19 @@ class LiveChannelPollerTest {
     }
 
     static LiveTabResult live(String... ids) {
-        return LiveTabResult.ok(java.util.Arrays.stream(ids).map(i -> new LiveTabResult.LiveItem(i, "t")).toList(), 1);
+        return LiveTabResult.ok(Arrays.stream(ids).map(i -> new LiveTabResult.LiveItem(i, "t")).toList(), 1);
     }
 
     @BeforeEach
     void setUp() throws Exception {
         Clock clock = new Clock() {
-            @Override public java.time.ZoneId getZone() { return java.time.ZoneOffset.UTC; }
-            @Override public Clock withZone(java.time.ZoneId zone) { return this; }
-            @Override public java.time.Instant instant() { return java.time.Instant.ofEpochMilli(now.get()); }
+            @Override public ZoneId getZone() { return ZoneOffset.UTC; }
+            @Override public Clock withZone(ZoneId zone) { return this; }
+            @Override public Instant instant() { return Instant.ofEpochMilli(now.get()); }
         };
         live = new LiveChannelService(reader, states, clock);
         poller = new LiveChannelPoller(liveCategories, videos, states, live, sortOrder, audit, caches, breaker, clock, true);
-        when(liveCategories.liveCategoryIds()).thenReturn(new java.util.LinkedHashSet<>(List.of(CAT)));
+        when(liveCategories.liveCategoryIds()).thenReturn(new LinkedHashSet<>(List.of(CAT)));
         when(liveCategories.members(CAT)).thenAnswer(i -> new LiveCategoryService.Members(List.copyOf(members)));
         when(videos.findByYoutubeIds(any())).thenReturn(Map.of());
         logs.start();
@@ -111,9 +122,32 @@ class LiveChannelPollerTest {
         for (String uc : ucs) members.add(channel(uc));
     }
 
+    private List<ILoggingEvent> logged(Level level) {
+        return logs.list.stream().filter(e -> e.getLevel() == level).toList();
+    }
+
+    /** A link of channel A in the LIVE category, and the same doc after it left the category (as findById sees it). */
+    private Video endingLink() throws Exception {
+        Video link = new Video("linkid00001");
+        link.setId("doc-link");
+        link.setStatus("APPROVED");
+        link.setChannelId(A);
+        link.setCategoryIds(new ArrayList<>(List.of(CAT)));
+        link.setValidationStatus(ValidationStatus.VALID);
+        members.add(link);
+        Video left = new Video("linkid00001");
+        left.setId("doc-link");
+        left.setStatus("APPROVED");
+        left.setCategoryIds(new ArrayList<>());
+        left.setValidationStatus(ValidationStatus.VALID);
+        when(videos.findByYoutubeId("linkid00001")).thenReturn(Optional.of(link));
+        when(videos.findById("doc-link")).thenReturn(Optional.of(left));
+        return left;
+    }
+
     @Test
     void noLiveCategoryMeansNoYouTubeTraffic() throws Exception {
-        when(liveCategories.liveCategoryIds()).thenReturn(new java.util.LinkedHashSet<>());
+        when(liveCategories.liveCategoryIds()).thenReturn(new LinkedHashSet<>());
 
         cycleAt(T0);
 
@@ -122,7 +156,7 @@ class LiveChannelPollerTest {
 
     @Test
     void anOpenBreakerSkipsTheCycle() {
-        entries("UCa0000000000000000000aa");
+        entries(A);
         when(breaker.isOpen()).thenReturn(true);
 
         cycleAt(T0);
@@ -133,11 +167,11 @@ class LiveChannelPollerTest {
     /** C1 / R10: a parse break that reads every channel as "nothing LIVE" never removes or archives anything. */
     @Test
     void aPersistentParseBreakNeverRemovesOrArchives() throws Exception {
-        entries("UCa0000000000000000000aa", "UCb0000000000000000000bb");
+        entries(A, B);
         Video link = new Video("linkid00001");
         link.setId("doc-link");
         link.setStatus("APPROVED");
-        link.setChannelId("UCa0000000000000000000aa");
+        link.setChannelId(A);
         link.setCategoryIds(new ArrayList<>(List.of(CAT)));
         members.add(link);
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
@@ -150,21 +184,22 @@ class LiveChannelPollerTest {
 
         verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
         verify(videos, never()).save(any());
-        assertThat(live.state("UCa0000000000000000000aa").getStatus()).isEqualTo(LiveChannelState.OFFLINE);   // hidden after 1 h
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);   // hidden after 1 h
         assertThat(live.suspectSince()).isEqualTo(T0 + 10 * MIN);
     }
 
     @Test
     void unprovenHidesWaitAnHour() {
-        entries("UCa0000000000000000000aa");
+        entries(A);
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
         cycleAt(T0);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(), 1));
 
         cycleAt(T0 + 10 * MIN);
-        assertThat(live.state("UCa0000000000000000000aa").getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(logged(Level.ERROR)).hasSize(1);                  // the suspect line: an empty read of a LIVE channel
         cycleAt(T0 + 70 * MIN);
-        assertThat(live.state("UCa0000000000000000000aa").getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
     }
 
     /** D16: the 90-request ceiling stops a cycle; the next one starts with the channels left unread. */
@@ -183,59 +218,70 @@ class LiveChannelPollerTest {
     /** D3 / RV M3: a breaker refusal mid-cycle stops it and is not counted against the channel. */
     @Test
     void aBreakerRefusalStopsTheCycleWithoutCounting() {
-        entries("UCa0000000000000000000aa", "UCb0000000000000000000bb");
-        when(reader.read("UCa0000000000000000000aa")).thenReturn(LiveTabResult.breaker(0, "open"));
+        entries(A, B);
+        when(reader.read(A)).thenReturn(LiveTabResult.breaker(0, "open"));
 
         cycleAt(T0);
 
-        verify(reader, never()).read("UCb0000000000000000000bb");
-        assertThat(live.state("UCa0000000000000000000aa")).isNull();
+        verify(reader, never()).read(B);
+        assertThat(live.state(A)).isNull();
     }
 
     /** R7: the first rate limit stops the cycle with one WARN; only that channel's checkedAt moves (no error, no hide). */
     @Test
     void aRateLimitStopsTheCycleWithOneWarning() {
-        entries("UCa0000000000000000000aa", "UCb0000000000000000000bb");
-        when(reader.read("UCa0000000000000000000aa")).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
+        entries(A, B);
+        when(reader.read(A)).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
 
         cycleAt(T0);
 
-        verify(reader, never()).read("UCb0000000000000000000bb");
-        LiveChannelState a = live.state("UCa0000000000000000000aa");
+        verify(reader, never()).read(B);
+        LiveChannelState a = live.state(A);
         assertThat(a.getCheckedAt()).isEqualTo(T0);
         assertThat(a.getStatus()).isEqualTo(LiveChannelState.UNKNOWN);
         assertThat(a.getErrorCount()).isZero();
-        assertThat(logs.list).filteredOn(e -> e.getLevel() == Level.WARN).singleElement()
-                .satisfies(e -> assertThat(e.getFormattedMessage())
-                        .contains("UCa0000000000000000000aa", Instant.ofEpochMilli(T0).toString()));
+        assertThat(logged(Level.WARN)).singleElement()
+                .satisfies(e -> assertThat(e.getFormattedMessage()).contains(A, Instant.ofEpochMilli(T0).toString()));
+    }
+
+    /** A rate limit is not a read: stopping on a LIVE channel logs the stop, never the "nothing LIVE" suspect line. */
+    @Test
+    void aRateLimitStopOfALiveChannelIsNotASuspectRead() {
+        entries(A);
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0);
+        when(reader.read(A)).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
+
+        cycleAt(T0 + 10 * MIN);
+
+        assertThat(logged(Level.ERROR)).isEmpty();
+        assertThat(logged(Level.WARN)).hasSize(1);
     }
 
     /** R7 / D16: a rate-limited channel goes to the back of the next cycle, so it can never starve the others. */
     @Test
     void aRateLimitedChannelIsReadLastInTheNextCycle() {
-        String a = "UCa0000000000000000000aa";
-        String b = "UCb0000000000000000000bb";
-        entries(a, b);
+        entries(A, B);
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
         cycleAt(T0);                                                  // both read at T0; ties keep the entry order
-        when(reader.read(a)).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
-        cycleAt(T0 + 10 * MIN);                                       // a first, rate-limited: the cycle stops before b
-        when(reader.read(a)).thenReturn(live("aaaaaaaaaaa"));
-        cycleAt(T0 + 20 * MIN);                                       // a was checked later than b, so b leads
+        when(reader.read(A)).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
+        cycleAt(T0 + 10 * MIN);                                       // A first, rate-limited: the cycle stops before B
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0 + 20 * MIN);                                       // A was checked later than B, so B leads
 
         InOrder order = inOrder(reader);
-        order.verify(reader).read(a);
-        order.verify(reader).read(b);
-        order.verify(reader).read(a);
-        order.verify(reader).read(b);
-        order.verify(reader).read(a);
-        verify(reader, times(2)).read(b);
+        order.verify(reader).read(A);
+        order.verify(reader).read(B);
+        order.verify(reader).read(A);
+        order.verify(reader).read(B);
+        order.verify(reader).read(A);
+        verify(reader, times(2)).read(B);
     }
 
     /** D3: errors back off 10, 20, 40, 80 min; a cycle inside the backoff skips the channel. */
     @Test
     void targetsInBackoffAreSkipped() {
-        entries("UCa0000000000000000000aa");
+        entries(A);
         when(reader.read(anyString())).thenReturn(LiveTabResult.error(1, "x"));
         cycleAt(T0);                                                  // error 1: nextPollAt = T0 + 10 min
         cycleAt(T0 + 10 * MIN);                                       // due: error 2, nextPollAt = T0 + 30 min
@@ -247,7 +293,7 @@ class LiveChannelPollerTest {
     /** Spec §12 U2: a single-channel category; any LIVE read resets the unproven clock, so the hour restarts. */
     @Test
     void aLiveReadResetsTheUnprovenClock() throws Exception {
-        entries("UCa0000000000000000000aa");
+        entries(A);
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
         cycleAt(T0);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(), 1));
@@ -258,75 +304,173 @@ class LiveChannelPollerTest {
         cycleAt(T0 + 30 * MIN);                                       // unproven since T0 + 30
 
         cycleAt(T0 + 80 * MIN);                                       // 50 min unproven: still shown
-        assertThat(live.state("UCa0000000000000000000aa").getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);
         assertThat(live.suspectSince()).isEqualTo(T0 + 30 * MIN);
         cycleAt(T0 + 90 * MIN);                                       // 60 min: hidden
-        assertThat(live.state("UCa0000000000000000000aa").getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
     }
 
     /** R12 (poller level): a returning live restores only the poller's own archive; an admin's archive is left alone. */
     @Test
     void aReturningLiveRestoresOnlyThePollersOwnArchive() throws Exception {
-        entries("UCa0000000000000000000aa");
-        LiveChannelState s = LiveChannelState.unknown("UCa0000000000000000000aa");
+        entries(A);
+        LiveChannelState s = LiveChannelState.unknown(A);
         s.getArchived().put("ownarchive1", "ERROR");
         live.loadStates(List.of(s));
         Video own = new Video("ownarchive1");
         own.setId("doc-own");
-        own.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        own.setValidationStatus(ValidationStatus.ARCHIVED);
         Video admins = new Video("adminarch01");
         admins.setId("doc-admin");
-        admins.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-        when(videos.findByYoutubeId("ownarchive1")).thenReturn(java.util.Optional.of(own));
-        when(videos.findByYoutubeId("adminarch01")).thenReturn(java.util.Optional.of(admins));
+        admins.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("ownarchive1")).thenReturn(Optional.of(own));
+        when(videos.findByYoutubeId("adminarch01")).thenReturn(Optional.of(admins));
         when(reader.read(anyString())).thenReturn(live("ownarchive1", "adminarch01"));
 
         cycleAt(T0);
 
-        assertThat(own.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ERROR);
-        assertThat(admins.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(own.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
+        assertThat(admins.getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
         verify(videos, times(1)).save(any());
         verify(audit).logSystem("live_stream_restored", "video", "doc-own", "live-poller");
     }
 
+    /** R12: an add-time seed that sees an archived id live keeps its restore record, so the next cycle restores the doc. */
+    @Test
+    void aSeedKeepsTheRestoreRecordForTheNextCycle() throws Exception {
+        entries(A);
+        LiveChannelState s = LiveChannelState.unknown(A);
+        s.getArchived().put("ownarchive1", "ERROR");
+        live.loadStates(List.of(s));
+        Video own = new Video("ownarchive1");
+        own.setId("doc-own");
+        own.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("ownarchive1")).thenReturn(Optional.of(own));
+        when(reader.read(anyString())).thenReturn(live("ownarchive1"));
+
+        live.seed(A);
+        cycleAt(T0);
+
+        assertThat(own.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
+        verify(audit).logSystem("live_stream_restored", "video", "doc-own", "live-poller");
+    }
+
     /**
-     * R12: the restore record is durable before a doc is archived. A failed state write archives nothing (the id stays
-     * tracked), and the next cycle archives it with the record written first.
+     * R12: nothing outside the state doc changes for an ended id until the state, with its restore record, is written.
+     * A failed state write leaves the membership and the doc untouched; the id stays tracked and the next cycle ends it.
      */
     @Test
-    void theStateIsWrittenBeforeTheDocIsArchived() throws Exception {
-        entries("UCa0000000000000000000aa");
-        Video link = new Video("linkid00001");
-        link.setId("doc-link");
-        link.setStatus("APPROVED");
-        link.setChannelId("UCa0000000000000000000aa");
-        link.setCategoryIds(new ArrayList<>(List.of(CAT)));
-        members.add(link);
-        Video left = new Video("linkid00001");                         // the doc after it left the LIVE category
-        left.setId("doc-link");
-        left.setStatus("APPROVED");
-        left.setCategoryIds(new ArrayList<>());
-        left.setValidationStatus(ValidationStatus.VALID);
-        when(videos.findByYoutubeId("linkid00001")).thenReturn(Optional.of(link));
-        when(videos.findById("doc-link")).thenReturn(Optional.of(left));
+    void theStateIsWrittenBeforeTheLinkLeavesOrIsArchived() throws Exception {
+        entries(A);
+        Video left = endingLink();
         when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
         cycleAt(T0);                                                  // proven miss 1
         cycleAt(T0 + 10 * MIN);                                       // proven miss 2, only 10 min after the first
 
         doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(states).save(any());
         cycleAt(T0 + 20 * MIN);                                       // ends, but the state write fails
+        verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
         verify(videos, never()).save(any());
         assertThat(left.getValidationStatus()).isEqualTo(ValidationStatus.VALID);
 
         doNothing().when(states).save(any());
-        cycleAt(T0 + 30 * MIN);                                       // still tracked: ends again and archives
-        InOrder order = inOrder(states, videos);
+        cycleAt(T0 + 30 * MIN);                                       // still tracked: ends again, state first
+        InOrder order = inOrder(states, sortOrder, videos);
         order.verify(states).save(argThat(s -> "VALID".equals(s.getArchived().get("linkid00001"))));
+        order.verify(sortOrder).removeContentFromCategoryAndUpdate(CAT, "doc-link", "video");
         order.verify(videos).save(left);
         assertThat(left.getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
-        assertThat(live.state("UCa0000000000000000000aa").getArchived()).containsEntry("linkid00001", "VALID");
+        assertThat(live.state(A).getArchived()).containsEntry("linkid00001", "VALID");
+        verify(audit).logSystem("live_link_removed_ended", "video", "doc-link", "live-poller");
         verify(audit).logSystem("live_stream_archived_ended", "video", "doc-link", "live-poller");
+    }
+
+    /** Concern 2: an archive that fails after its restore record was written is logged with both ids for an admin. */
+    @Test
+    void aFailedArchiveNamesTheDocForTheAdmin() throws Exception {
+        entries(A);
+        endingLink();
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(videos).save(any());
+
+        for (int i = 0; i <= 2; i++) cycleAt(T0 + i * 10 * MIN);
+
+        assertThat(logged(Level.WARN)).singleElement()
+                .satisfies(e -> assertThat(e.getFormattedMessage()).contains("doc-link", "linkid00001"));
+    }
+
+    /** One channel's Firestore failure never costs the others their cycle; the view and the eviction still run. */
+    @Test
+    void aFailedChannelDoesNotAbortTheCycle() throws Exception {
+        entries(A, B);
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        doThrow(new ExecutionException(new RuntimeException("firestore down")))
+                .when(states).save(argThat(s -> A.equals(s.getChannelId())));
+
+        cycleAt(T0);
+
+        assertThat(live.state(A)).isNull();
+        assertThat(live.state(B).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(live.served()).containsOnlyKeys(B);
+        verify(caches).evictPublicContentCaches();
+    }
+
+    /** A restore that landed changes what the public sees, so it evicts even when the channel's state write then fails. */
+    @Test
+    void aRestoreThatLandedEvictsEvenWhenTheStateWriteFails() throws Exception {
+        entries(A);
+        LiveChannelState s = LiveChannelState.unknown(A);
+        s.getArchived().put("ownarchive1", "ERROR");
+        live.loadStates(List.of(s));
+        Video own = new Video("ownarchive1");
+        own.setId("doc-own");
+        own.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("ownarchive1")).thenReturn(Optional.of(own));
+        when(reader.read(anyString())).thenReturn(live("ownarchive1"));
+        doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(states).save(any());
+
+        cycleAt(T0);
+
+        verify(videos).save(own);
+        verify(caches).evictPublicContentCaches();
+    }
+
+    /** D7: the seed and a cycle compute-and-put one at a time, so a cycle never overwrites a newer add-time read. */
+    @Test
+    void aSeedWaitsForTheCyclesStateWrite() throws Exception {
+        entries(A);
+        CountDownLatch inSave = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        AtomicBoolean first = new AtomicBoolean(true);
+        doAnswer(i -> {
+            if (first.getAndSet(false)) {                            // only the cycle's write waits
+                inSave.countDown();
+                release.await(10, TimeUnit.SECONDS);
+            }
+            return null;
+        }).when(states).save(any());
+        when(reader.read(A)).thenReturn(live("cyclelive01"), live("seedlive001"));
+        Thread cycle = new Thread(() -> poller.cycle(T0));
+        Thread seed = new Thread(() -> live.seed(A));
+        try {
+            cycle.start();
+            assertThat(inSave.await(10, TimeUnit.SECONDS)).isTrue();  // the cycle is inside its state write
+            now.addAndGet(61_000);                                    // past the memo: the seed reads afresh
+            seed.start();
+            long deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(10);
+            while (seed.getState() != Thread.State.BLOCKED) {        // its read done, it waits for the cycle's put
+                assertThat(seed.isAlive()).as("the seed wrote while the cycle held the state").isTrue();
+                assertThat(System.nanoTime()).isLessThan(deadline);
+                Thread.onSpinWait();
+            }
+        } finally {
+            release.countDown();
+            cycle.join(10_000);
+            seed.join(10_000);
+        }
+
+        assertThat(live.state(A).getLives()).extracting(LiveChannelState.Live::getVideoId).containsExactly("seedlive001");
     }
 
     /** D13 / RV M12: a link without a channel id is never polled. */
@@ -346,7 +490,7 @@ class LiveChannelPollerTest {
     /** D14: a retitled live keeps the caches; a new id evicts them. */
     @Test
     void onlyAServedIdChangeEvicts() {
-        entries("UCa0000000000000000000aa");
+        entries(A);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("aaaaaaaaaaa", "Morning")), 1));
         cycleAt(T0);
         verify(caches, times(1)).evictPublicContentCaches();
@@ -363,16 +507,16 @@ class LiveChannelPollerTest {
     /** Review Focus 1: after a restart the snapshot serves the last lives before the first cycle. */
     @Test
     void bootLoadServesTheLastLivesBeforeTheFirstCycle() throws Exception {
-        entries("UCa0000000000000000000aa");
-        LiveChannelState saved = LiveChannelState.unknown("UCa0000000000000000000aa");
+        entries(A);
+        LiveChannelState saved = LiveChannelState.unknown(A);
         saved.setStatus(LiveChannelState.LIVE);
         saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
         when(states.findAll()).thenReturn(List.of(saved));
 
         poller.loadAtBoot();
 
-        assertThat(live.served().get("UCa0000000000000000000aa")).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
-        assertThat(live.entries()).containsKey("UCa0000000000000000000aa");
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        assertThat(live.entries()).containsKey(A);
         verify(reader, never()).read(anyString());
     }
 }

@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.LiveChannelState;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import org.junit.jupiter.api.Test;
@@ -9,10 +10,13 @@ import java.time.Instant;
 import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.List;
+import java.util.Map;
+import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
@@ -48,6 +52,15 @@ class LiveChannelServiceTest {
         service.livesNow(SUNNAH);
 
         verify(reader, times(2)).read(SUNNAH);
+    }
+
+    /** D16: a memo hit sends nothing, so it costs nothing against the cycle budget or the daily count. */
+    @Test
+    void aMemoHitCostsNoRequests() {
+        when(reader.read(SUNNAH)).thenReturn(sunnahLive());
+
+        assertThat(service.livesNow(SUNNAH).requests()).isEqualTo(1);
+        assertThat(service.livesNow(SUNNAH).requests()).isZero();
     }
 
     @Test
@@ -95,8 +108,7 @@ class LiveChannelServiceTest {
     @Test
     void aFailedStateWriteNeverRefusesTheAdd() throws Exception {
         when(reader.read(SUNNAH)).thenReturn(sunnahLive());
-        org.mockito.Mockito.doThrow(new java.util.concurrent.ExecutionException(new RuntimeException("firestore down")))
-                .when(states).save(any());
+        doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(states).save(any());
 
         service.seed(SUNNAH);                                   // no exception
 
@@ -124,13 +136,18 @@ class LiveChannelServiceTest {
         verify(states, never()).save(any());
     }
 
-    /** R10: re-adding a channel during a suspect stretch must not hide its last lives; only a new state may hide. */
-    @Test
-    void aReSeedOfAKnownChannelNeverHides() {
+    private void knownLive() {
         LiveChannelState known = LiveChannelState.unknown(SUNNAH);
         known.setStatus(LiveChannelState.LIVE);
         known.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
         service.loadStates(List.of(known));
+    }
+
+    /** R10: re-adding a channel that is served now, during a suspect stretch, must not hide its last lives. */
+    @Test
+    void aReSeedOfAServedChannelNeverHides() {
+        knownLive();
+        service.publish(Map.of(SUNNAH, new Channel(SUNNAH)), Map.of());
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.ok(List.of(), 1));
 
         service.seed(SUNNAH);
@@ -138,6 +155,17 @@ class LiveChannelServiceTest {
         assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.LIVE);
         assertThat(service.state(SUNNAH).getLives()).extracting(LiveChannelState.Live::getVideoId)
                 .containsExactly("Rs7St51oDDc");
+    }
+
+    /** A channel that is not served now (removed earlier, re-added) shows nothing stale: an empty read hides it. */
+    @Test
+    void aSeedOfAKnownButUnservedChannelHides() {
+        knownLive();
+        when(reader.read(SUNNAH)).thenReturn(LiveTabResult.ok(List.of(), 1));
+
+        service.seed(SUNNAH);
+
+        assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
     }
 
     @Test

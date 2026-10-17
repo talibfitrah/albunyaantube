@@ -41,7 +41,7 @@ import java.util.concurrent.TimeUnit;
 /**
  * Spec §5: every 10 minutes, read the Live tab of each distinct channel behind a LIVE category, apply
  * LivePollRules, remove/archive ended streams, persist, republish the snapshot, and evict caches only when what is
- * served changed (D14). ponytail: no lock, single instance; adopt the validators' Firestore lock if the backend
+ * served changed (D14). ponytail: no distributed lock, single instance; adopt the validators' Firestore lock if the backend
  * scales out (D7).
  */
 @Component
@@ -137,7 +137,7 @@ public class LiveChannelPoller {
                 budget -= r.requests();
                 spent += r.requests();
                 if (r.outcome() == LiveTabResult.Outcome.BREAKER) break; // D3: not counted
-                fetched.put(uc, r);                                     // a rate limit too: apply advances its checkedAt
+                fetched.put(uc, r);                             // a rate limit too: apply advances its checkedAt
                 if (r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
                     // R7: stop at the first rate limit; oldest-first then reads this channel last next cycle
                     log.warn("live poller: YouTube rate-limited {}; cycle at {} stopped ({})", uc,
@@ -150,14 +150,20 @@ public class LiveChannelPoller {
             boolean proven = fetched.values().stream().anyMatch(LiveTabResult::hasLive);
             unprovenSince = proven ? null : (unprovenSince != null ? unprovenSince : now);
             boolean hideAllowed = proven || now - unprovenSince >= HIDE_AFTER_UNPROVEN_MS;
-            if (!proven && fetched.keySet().stream().anyMatch(uc -> isLive(live.state(uc)))) {
+            if (!proven && fetched.entrySet().stream()
+                    .anyMatch(e -> isRead(e.getValue()) && isLive(live.state(e.getKey())))) {
                 log.error("live poller: no channel read LIVE this cycle; keeping the last lives (suspect since {})",
                         Instant.ofEpochMilli(unprovenSince));
             }
             boolean changed = false;
             for (Map.Entry<String, LiveTabResult> e : fetched.entrySet()) {
-                changed |= apply(e.getKey(), e.getValue(), proven, hideAllowed,
-                        view.links().getOrDefault(e.getKey(), Set.of()), view.liveCategoryIds(), now);
+                try {
+                    changed |= apply(e.getKey(), e.getValue(), proven, hideAllowed,
+                            view.links().getOrDefault(e.getKey(), Set.of()), view.liveCategoryIds(), now);
+                } catch (Exception ex) {
+                    changed = true;                                     // a restore may have landed before the failure
+                    log.warn("live poller: {} not applied this cycle: {}", e.getKey(), ex.toString());
+                }
             }
             live.setSuspectSince(unprovenSince);
             refreshView(view);
@@ -218,61 +224,80 @@ public class LiveChannelPoller {
         live.publish(view.entries(), served);
     }
 
+    private record Ending(Video doc, boolean archive) {}
+
     /**
-     * One channel: rules, restores, LIVE-category exits, persist + publish, then archives. True when what is served
-     * changed. R12 write order: a restore saves its doc before the state drops the record, and an archive saves its
-     * doc only after the state holding the record is persisted. A failed state write therefore archives nothing; the
-     * id stays tracked in the snapshot and the next cycle ends it again.
+     * One channel: rules and restores, then persist + publish, then the ended ids leave and archive. True when what is
+     * served changed. Compute-and-put runs under the seed's monitor (D7); the YouTube read is already done. R12 order:
+     * a restore saves its doc before the state drops the record, and nothing else changes for an ended id until the
+     * state holding its restore record is written. A failed state write therefore changes no membership or doc; the id
+     * stays tracked and the next cycle ends it again. A failure after the write is logged with the ids (see end()).
      */
     private boolean apply(String uc, LiveTabResult read, boolean proven, boolean hideAllowed, Set<String> links,
                           Set<String> liveCategoryIds, long now) throws Exception {
-        LiveChannelState prev = live.state(uc);
-        LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
-        LiveChannelState next = o.next();
-        boolean changed = !Objects.equals(servedIds(prev), servedIds(next));
-        for (Map.Entry<String, String> r : o.restored().entrySet()) {
-            changed |= restore(r.getKey(), r.getValue());
+        boolean changed;
+        List<Ending> endings = new ArrayList<>();
+        synchronized (live.stateLock()) {
+            LiveChannelState prev = live.state(uc);
+            LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
+            LiveChannelState next = o.next();
+            changed = !Objects.equals(servedIds(prev), servedIds(next));
+            for (Map.Entry<String, String> r : o.restored().entrySet()) {
+                changed |= restore(r.getKey(), r.getValue());
+            }
+            for (String id : o.ended()) {
+                Video doc = videos.findByYoutubeId(id).orElse(null);
+                if (doc == null) continue;
+                boolean archive = archivable(doc, liveCategoryIds);
+                if (archive) {
+                    ValidationStatus vs = doc.getValidationStatus();
+                    next.getArchived().put(id, vs == null ? "" : vs.name());
+                }
+                endings.add(new Ending(doc, archive));
+            }
+            live.put(next);
         }
-        List<Video> toArchive = new ArrayList<>();
-        for (String id : o.ended()) {
-            changed |= end(id, next, liveCategoryIds, toArchive);
+        for (Ending e : endings) {
+            changed |= end(e.doc(), e.archive(), liveCategoryIds);
         }
-        live.put(next);
-        for (Video doc : toArchive) {
-            doc.setValidationStatus(ValidationStatus.ARCHIVED);
-            videos.save(doc);
-            audit.logSystem("live_stream_archived_ended", "video", doc.getId(), "live-poller");
-        }
-        return changed || !toArchive.isEmpty();
+        return changed;
     }
 
     /**
-     * §5 end(): leave every LIVE category; when the doc is APPROVED and holds no other category, record its status to
-     * restore and queue it for archiving (R12).
+     * §5 end(), after the state is written: leave every LIVE category, then archive when decided (R12). A failure is
+     * logged with both ids: a link still in a LIVE category is tracked again and ends later, but a failed archive is
+     * not retried, so an admin archives it by hand.
      */
-    private boolean end(String youtubeId, LiveChannelState state, Set<String> liveCategoryIds, List<Video> toArchive)
-            throws Exception {
-        Video doc = videos.findByYoutubeId(youtubeId).orElse(null);
-        if (doc == null) {
-            return false;
-        }
+    private boolean end(Video doc, boolean archive, Set<String> liveCategoryIds) {
         boolean changed = false;
-        List<String> held = doc.getCategoryIds() == null ? List.of() : new ArrayList<>(doc.getCategoryIds());
-        for (String cat : held) {
-            if (!liveCategoryIds.contains(cat)) continue;
-            sortOrder.removeContentFromCategoryAndUpdate(cat, doc.getId(), "video");
-            audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
-            changed = true;
-        }
-        Video fresh = videos.findById(doc.getId()).orElse(doc);
-        ValidationStatus vs = fresh.getValidationStatus();
-        boolean uncategorised = fresh.getCategoryIds() == null || fresh.getCategoryIds().isEmpty();
-        if ("APPROVED".equals(fresh.getStatus()) && uncategorised
-                && vs != ValidationStatus.UNAVAILABLE && vs != ValidationStatus.ARCHIVED) {
-            state.getArchived().put(youtubeId, vs == null ? "" : vs.name());
-            toArchive.add(fresh);
+        try {
+            for (String cat : doc.getCategoryIds() == null ? List.<String>of() : List.copyOf(doc.getCategoryIds())) {
+                if (!liveCategoryIds.contains(cat)) continue;
+                sortOrder.removeContentFromCategoryAndUpdate(cat, doc.getId(), "video");
+                audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
+                changed = true;
+            }
+            Video fresh = archive ? videos.findById(doc.getId()).orElse(null) : null;   // removal saved categoryIds
+            if (fresh != null && archivable(fresh, liveCategoryIds)) {
+                fresh.setValidationStatus(ValidationStatus.ARCHIVED);
+                videos.save(fresh);
+                audit.logSystem("live_stream_archived_ended", "video", fresh.getId(), "live-poller");
+                changed = true;
+            }
+        } catch (Exception e) {
+            log.warn("live poller: ending video {} (doc {}) failed after its state was written; archive it by hand if "
+                    + "it is still listed: {}", doc.getYoutubeId(), doc.getId(), e.toString());
+            return true;                                                    // something may have landed
         }
         return changed;
+    }
+
+    /** R12: APPROVED, no category outside the LIVE ones, and not already UNAVAILABLE or ARCHIVED. */
+    private static boolean archivable(Video doc, Set<String> liveCategoryIds) {
+        ValidationStatus vs = doc.getValidationStatus();
+        return "APPROVED".equals(doc.getStatus())
+                && (doc.getCategoryIds() == null || liveCategoryIds.containsAll(doc.getCategoryIds()))
+                && vs != ValidationStatus.UNAVAILABLE && vs != ValidationStatus.ARCHIVED;
     }
 
     /** R12: only a doc this poller archived, and only while it is still ARCHIVED (an admin's later change wins). */
@@ -299,6 +324,11 @@ public class LiveChannelPoller {
             requestsToday = 0;
         }
         requestsToday += requests;
+    }
+
+    /** A real Live-tab read (an empty one when the cycle is unproven), not an error, rate limit or refusal. */
+    private static boolean isRead(LiveTabResult r) {
+        return r.outcome() == LiveTabResult.Outcome.OK || r.outcome() == LiveTabResult.Outcome.TERMINATED;
     }
 
     private static boolean isLive(LiveChannelState s) {

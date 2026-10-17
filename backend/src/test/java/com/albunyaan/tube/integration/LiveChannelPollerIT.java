@@ -24,6 +24,10 @@ import java.util.concurrent.TimeUnit;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.atLeastOnce;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.times;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /** Spec §12 IT3: proven misses remove a link, archive its uncategorised doc, and audit; unproven cycles change nothing. */
@@ -112,23 +116,23 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
     void onlyAServedIdChangeEvictsThePublicCaches() throws Exception {
         String uc = "UCit3d00000000000000000d";
         seed(uc, "it3link001d", List.of(LIVE_CAT));
-        PublicContentCacheService spyCaches = org.mockito.Mockito.mock(PublicContentCacheService.class);   // counts evictions only
+        PublicContentCacheService spyCaches = mock(PublicContentCacheService.class);   // counts evictions only
         LiveChannelPoller poller = new LiveChannelPoller(liveCategories, videos, states, live, sortOrder, audit, spyCaches,
                 null, Clock.systemUTC(), false);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Morning")), 1));
         poller.cycle(T0);
-        org.mockito.Mockito.verify(spyCaches, org.mockito.Mockito.times(1)).evictPublicContentCaches();
+        verify(spyCaches, times(1)).evictPublicContentCaches();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening")), 1));
         live.readFresh(uc);                                      // the service's 60 s memo runs on the wall clock here
         poller.cycle(T0 + 10 * MIN);
-        org.mockito.Mockito.verify(spyCaches, org.mockito.Mockito.times(1)).evictPublicContentCaches();
+        verify(spyCaches, times(1)).evictPublicContentCaches();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening"),
                 new LiveTabResult.LiveItem("it3live002d", "Second")), 1));
         live.readFresh(uc);
         poller.cycle(T0 + 20 * MIN);
-        org.mockito.Mockito.verify(spyCaches, org.mockito.Mockito.times(2)).evictPublicContentCaches();
+        verify(spyCaches, times(2)).evictPublicContentCaches();
     }
 
     @Test
@@ -140,6 +144,8 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
 
         for (int i = 0; i < 4; i++) poller.cycle(T0 + i * 10 * MIN);
 
+        verify(reader, atLeastOnce()).read(uc);                  // the cycles did read: nothing changed because of R10
+        assertThat(states.findAll()).singleElement().satisfies(s -> assertThat(s.getCheckedAt()).isEqualTo(T0 + 30 * MIN));
         Video doc = videos.findById("doc-it3link001c").orElseThrow();
         assertThat(doc.getCategoryIds()).containsExactly(LIVE_CAT);
         assertThat(doc.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);

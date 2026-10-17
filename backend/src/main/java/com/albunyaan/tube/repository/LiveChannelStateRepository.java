@@ -5,6 +5,7 @@ import com.albunyaan.tube.model.LiveChannelState;
 import com.google.cloud.firestore.Firestore;
 import org.springframework.stereotype.Repository;
 
+import java.time.Clock;
 import java.util.List;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
@@ -18,14 +19,16 @@ public class LiveChannelStateRepository {
 
     private final Firestore firestore;
     private final FirestoreTimeoutProperties timeouts;
+    private final Clock clock;
 
-    public LiveChannelStateRepository(Firestore firestore, FirestoreTimeoutProperties timeouts) {
+    public LiveChannelStateRepository(Firestore firestore, FirestoreTimeoutProperties timeouts, Clock clock) {
         this.firestore = firestore;
         this.timeouts = timeouts;
+        this.clock = clock;
     }
 
     public void save(LiveChannelState state) throws ExecutionException, InterruptedException, TimeoutException {
-        state.setUpdatedAt(System.currentTimeMillis());
+        state.setUpdatedAt(clock.millis());
         firestore.collection(COLLECTION).document(state.getChannelId()).set(state)
                 .get(timeouts.getWrite(), TimeUnit.SECONDS);
     }
