@@ -97,20 +97,31 @@ class NewPipeDownloaderPacerTest {
         verify(pacer).after(eq(limited), eq(429), eq(limited), any(), eq(""));
     }
 
+    /** Prod's default (search.inner.dir unset): the real pacer neither throttles nor counts another thread's request. */
+    @Test
+    void featureOffTheRealPacerLeavesAnotherThreadExactlyAsBefore() throws Exception {
+        String limited = limited();
+        InnerStore off = new InnerStore("");
+        YouTubeThrottler throttler = mock(YouTubeThrottler.class);
+        Downloader real = realDownloader(new CrawlPacer(off, throttler, Clock.systemUTC()));
+
+        assertNull(thrownOn("http-nio-8080-exec-1", () -> {
+            assertEquals(200, real.get(url).responseCode());
+            return null;
+        }));
+        assertInstanceOf(ReCaptchaException.class, thrownOn("http-nio-8080-exec-1", () -> real.get(limited)));
+        verifyNoInteractions(throttler);
+        assertTrue(off.state().requestsByDay.isEmpty());
+    }
+
     /** The real pacer, feature on: other threads keep hotfix #2's 429 -> ReCaptchaException, unpaced and only counted. */
     @Test
     void withTheRealPacerOnlyTheCrawlerThreadsOwn429BecomesASignal(@TempDir Path tmp) throws Exception {
-        server.createContext("/limited", ex -> {
-            ex.sendResponseHeaders(429, -1);
-            ex.close();
-        });
-        String limited = url.replace("/ok", "/limited");
+        String limited = limited();
         InnerStore store = new InnerStore(tmp.toString());
         store.state().mode = InnerState.Mode.FULL;
         YouTubeThrottler throttler = mock(YouTubeThrottler.class);
-        NewPipeConfiguration config = new NewPipeConfiguration();
-        ReflectionTestUtils.setField(config, "userAgent", "inner-search-test");
-        Downloader real = config.newPipeDownloader(new OkHttpClient(), new CrawlPacer(store, throttler, Clock.systemUTC()));
+        Downloader real = realDownloader(new CrawlPacer(store, throttler, Clock.systemUTC()));
 
         assertNull(thrownOn("http-nio-8080-exec-1", () -> {
             assertEquals(200, real.get(url).responseCode());
@@ -126,6 +137,20 @@ class NewPipeDownloaderPacerTest {
         assertEquals(Map.of("http-nio-8080-exec-", 2L, CrawlPacer.CRAWLER_THREAD, 1L), store.state().requestsByDay.lastEntry().getValue());
     }
 
+    private String limited() {
+        server.createContext("/limited", ex -> {
+            ex.sendResponseHeaders(429, -1);
+            ex.close();
+        });
+        return url.replace("/ok", "/limited");
+    }
+
+    private static Downloader realDownloader(CrawlPacer pacer) {
+        NewPipeConfiguration config = new NewPipeConfiguration();
+        ReflectionTestUtils.setField(config, "userAgent", "inner-search-test");
+        return config.newPipeDownloader(new OkHttpClient(), pacer);
+    }
+
     private static Throwable thrownOn(String thread, Callable<?> body) throws InterruptedException {
         Throwable[] thrown = {null};
         Thread t = new Thread(() -> {
@@ -137,6 +162,7 @@ class NewPipeDownloaderPacerTest {
         }, thread);
         t.start();
         t.join(10_000);
+        assertFalse(t.isAlive(), thread + " still running after 10 s");
         return thrown[0];
     }
 }

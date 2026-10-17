@@ -10,8 +10,8 @@ import java.util.concurrent.ConcurrentHashMap;
 
 /**
  * The inner-search crawler's persisted state, state.json (spec §5, R15, R26). A plain bag for Jackson. Rule: every
- * change to a collection here, and every save, holds this object's monitor; the volatile switches are read lock-free
- * by search threads.
+ * change to a collection here, and a save's serialisation, holds this object's monitor (the disk write runs under
+ * InnerStore's separate save lock); the volatile switches are read lock-free by search threads.
  */
 @JsonIgnoreProperties(ignoreUnknown = true)
 public class InnerState {

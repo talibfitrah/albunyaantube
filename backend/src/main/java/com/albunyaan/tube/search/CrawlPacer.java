@@ -40,6 +40,7 @@ public class CrawlPacer {
     static final int MAX_SIGNALS = 20, DAYS_KEPT = 14, UNAVAILABLE_RUN = 3, WINDOW = 10, WINDOW_FAILURES = 3,
             TRANSPORT_PAUSES = 3;
     private static final Pattern BOT_TEXT = Pattern.compile("not a bot|unusual traffic|g-recaptcha", Pattern.CASE_INSENSITIVE);
+    private static final Pattern TRAILING_DIGITS = Pattern.compile("\\d+$");
 
     /** Aborts the current crawl job: a rate signal after() just recorded, or STOP, OFF, a pause or the daily cap. */
     public static class CrawlPausedException extends IOException {
@@ -82,9 +83,7 @@ public class CrawlPacer {
         }
         if (url.contains("/player") || url.contains("googlevideo.com")) throw new IOException("inner crawl refused: " + url);
         InnerState s = store.state();
-        if (store.stopped()) throw new CrawlPausedException("STOP file");
-        if (s.mode == InnerState.Mode.OFF) throw new CrawlPausedException("mode OFF");
-        if (clock.millis() < s.breaker.pausedUntil) throw new CrawlPausedException("paused");
+        refuseWhileHeld(s);
         if (today(CRAWLER_THREAD) >= dailyCap) throw new CrawlPausedException("daily cap");
         long wait = lastRequestAt + Math.round(s.breaker.intervalMs * jitter.getAsDouble()) - clock.millis();
         if (wait > 0) {
@@ -94,10 +93,17 @@ public class CrawlPacer {
                 Thread.currentThread().interrupt();
                 throw new CrawlPausedException("interrupted");
             }
+            refuseWhileHeld(s); // a `touch STOP` during the sleep holds this request too
         }
         throttler.throttle(); // the shared 3-4 s spacing: how the crawler yields to the live poller and validators (R12)
         lastRequestAt = clock.millis();
         count(CRAWLER_THREAD);
+    }
+
+    private void refuseWhileHeld(InnerState s) throws CrawlPausedException {
+        if (store.stopped()) throw new CrawlPausedException("STOP file");
+        if (s.mode == InnerState.Mode.OFF) throw new CrawlPausedException("mode OFF");
+        if (clock.millis() < s.breaker.pausedUntil) throw new CrawlPausedException("paused");
     }
 
     /** After every NewPipe response, crawler thread only (R33 items 1-5): a match is a rate signal and aborts the job. */
@@ -273,19 +279,20 @@ public class CrawlPacer {
 
     /** "http-nio-8080-exec-7" -> "http-nio-8080-exec-": one key per thread pool. */
     static String prefix(String threadName) {
-        return threadName.replaceAll("\\d+$", "");
+        return TRAILING_DIGITS.matcher(threadName).replaceAll("");
     }
 
     private static String day(long ms) {
         return LocalDate.ofInstant(Instant.ofEpochMilli(ms), ZoneOffset.UTC).toString();
     }
 
-    // ponytail: every thread's request takes the state monitor, which save() holds through its fsync; per-prefix
-    // LongAdders folded in at save time if that wait ever shows in request latency.
+    // ponytail: every thread's request takes the state monitor, which save() holds only while serialising (never
+    // through the disk write); per-prefix LongAdders folded in at save time if that wait ever shows in request latency.
     private void count(String threadName) {
+        String day = day(clock.millis()), key = prefix(threadName);
         InnerState s = store.state();
         synchronized (s) {
-            s.requestsByDay.computeIfAbsent(day(clock.millis()), d -> new TreeMap<>()).merge(prefix(threadName), 1L, Long::sum);
+            s.requestsByDay.computeIfAbsent(day, d -> new TreeMap<>()).merge(key, 1L, Long::sum);
             while (s.requestsByDay.size() > DAYS_KEPT) s.requestsByDay.pollFirstEntry();
         }
     }

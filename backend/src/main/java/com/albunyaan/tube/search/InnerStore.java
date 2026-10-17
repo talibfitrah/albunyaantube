@@ -33,6 +33,10 @@ public class InnerStore {
 
     private final Path dir;
     private final InnerState state;
+    private final Object saveLock = new Object(); // save()'s disk phase; the state monitor is never taken inside it
+    private long serialized; // under the state monitor
+    private long written; // under saveLock
+    Runnable beforeWrite = () -> {}; // test seam: save()'s disk phase
 
     public InnerStore(@Value("${search.inner.dir:}") String dir) {
         Path usable = null;
@@ -73,21 +77,34 @@ public class InnerStore {
         return dir != null && Files.exists(dir.resolve("STOP"));
     }
 
-    /** Temp + force + atomic move (R15): a crash leaves the old state or the new one, never half of one. */
+    /**
+     * Temp + force + atomic move (R15): a crash leaves the old state or the new one, never half of one. The state
+     * monitor is held only to serialise, so a save's fsync never holds up a NewPipe request's count (R37); the disk
+     * phase runs under its own lock, and a snapshot older than the one already written is dropped.
+     */
     public void save() {
         if (dir == null) return;
-        synchronized (state) {
-            try {
-                ByteBuffer bytes = ByteBuffer.wrap(JSON.writeValueAsBytes(state));
+        try {
+            byte[] json;
+            long seq;
+            synchronized (state) {
+                json = JSON.writeValueAsBytes(state);
+                seq = ++serialized;
+            }
+            synchronized (saveLock) {
+                if (seq < written) return; // a newer snapshot is already on disk
+                beforeWrite.run();
+                ByteBuffer bytes = ByteBuffer.wrap(json);
                 Path tmp = dir.resolve("state.json.tmp");
                 try (FileChannel ch = FileChannel.open(tmp, CREATE, TRUNCATE_EXISTING, WRITE)) {
                     while (bytes.hasRemaining()) ch.write(bytes);
                     ch.force(true);
                 }
                 Files.move(tmp, dir.resolve("state.json"), ATOMIC_MOVE, REPLACE_EXISTING);
-            } catch (IOException e) {
-                log.error("inner state not saved", e);
+                written = seq;
             }
+        } catch (IOException e) {
+            log.error("inner state not saved", e);
         }
     }
 

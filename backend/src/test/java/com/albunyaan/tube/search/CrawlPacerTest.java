@@ -10,6 +10,7 @@ import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.CsvSource;
 
 import java.io.IOException;
+import java.io.UncheckedIOException;
 import java.lang.reflect.Constructor;
 import java.lang.reflect.Field;
 import java.nio.file.Files;
@@ -22,6 +23,8 @@ import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.TreeMap;
+import java.util.concurrent.CountDownLatch;
+import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -72,6 +75,7 @@ class CrawlPacerTest {
         }, name);
         t.start();
         t.join(10_000);
+        assertFalse(t.isAlive(), name + " still running after 10 s");
         if (failure[0] instanceof Exception e) throw e;
         if (failure[0] instanceof Error e) throw e;
     }
@@ -294,6 +298,63 @@ class CrawlPacerTest {
         });
         verify(throttler, times(1)).throttle();
         assertTrue(store.state().signals.isEmpty(), "a refusal is never a signal");
+    }
+
+    private String heldDuringTheSleep(Runnable hold) throws Exception {
+        int sleeps = slept.size();
+        pacer.sleeper = ms -> {
+            slept.add(ms);
+            hold.run();
+        };
+        String[] why = {null};
+        onCrawler(() -> why[0] = assertThrows(CrawlPacer.CrawlPausedException.class, () -> pacer.before(BROWSE)).getMessage());
+        assertEquals(sleeps + 1, slept.size(), "held after the sleep, not before it");
+        return why[0];
+    }
+
+    @Test
+    void aStopOffOrPauseThatLandsDuringTheIntervalSleepHoldsTheWaitingRequest() throws Exception {
+        Path stop = tmp.resolve("inner/STOP");
+        onCrawler(() -> pacer.before(BROWSE)); // every later request sleeps the interval first
+        assertTrue(heldDuringTheSleep(() -> {
+            try {
+                Files.createFile(stop);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
+            }
+        }).contains("STOP file"));
+        Files.delete(stop);
+        assertTrue(heldDuringTheSleep(() -> store.state().mode = InnerState.Mode.OFF).contains("mode OFF"));
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        assertTrue(heldDuringTheSleep(() -> store.state().breaker.pausedUntil = now.get().toEpochMilli() + 1).contains("paused"));
+        verify(throttler, times(1)).throttle();
+        assertEquals(1, pacer.today(CrawlPacer.CRAWLER_THREAD));
+    }
+
+    /** R37 with the feature on: a save's fsync never holds up another thread's NewPipe request (fix round 1). */
+    @Test
+    void anotherThreadsCountNeverWaitsForASaveWritingToDisk() throws Exception {
+        CountDownLatch writing = new CountDownLatch(1), release = new CountDownLatch(1);
+        store.beforeWrite = () -> {
+            writing.countDown();
+            try {
+                release.await(20, TimeUnit.SECONDS);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+            }
+        };
+        Thread saver = new Thread(store::save, "saver");
+        saver.start();
+        try {
+            assertTrue(writing.await(10, TimeUnit.SECONDS));
+            onThread("validation-sched-1", () -> pacer.before(BROWSE));
+            assertEquals(1, pacer.today("validation-sched-"));
+        } finally {
+            release.countDown();
+            saver.join(10_000);
+        }
+        assertFalse(saver.isAlive());
+        assertTrue(Files.exists(tmp.resolve("inner/state.json")));
     }
 
     @Test
