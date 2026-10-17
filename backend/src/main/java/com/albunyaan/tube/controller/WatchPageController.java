@@ -1,30 +1,27 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.exception.ContentGoneException;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
 import org.springframework.web.bind.annotation.PostMapping;
-import org.springframework.web.bind.annotation.RequestParam;
-import org.springframework.web.bind.annotation.RequestBody;
 import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import java.util.Locale;
-import java.util.Map;
-import java.util.Set;
-import java.util.concurrent.TimeUnit;
-import java.util.concurrent.atomic.AtomicInteger;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -48,30 +45,8 @@ public class WatchPageController {
     private static final Logger log = LoggerFactory.getLogger(WatchPageController.class);
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
-    private static final int TITLE_MAX_CHARS = 160;
-    private static final int SHARE_IMAGE_MAX_CHARS = 500;
-    private static final long SHARE_METADATA_TTL_MILLIS = 10 * 60 * 1000L;
-    private static final long SHARE_METADATA_RATE_LIMIT_TTL_MILLIS = 60_000L;
-    private static final int SHARE_METADATA_RATE_LIMIT_PER_MINUTE = 30;
-    private static final String PUBLIC_SHARE_HOST = "app.fitrahtube.com";
-    private static final String HEADER_DEVICE_ID = "X-Device-Id";
-
-    /**
-     * Closed allow-list of hosts permitted to appear as {@code og:image} when the
-     * Android client seeds the share-metadata cache. Anything outside this set is
-     * dropped (silently coerced to empty) — the previous behaviour of accepting
-     * any HTTPS URL turned the POST /api/share-metadata endpoint into a
-     * phishing-grade Open Graph spoofing primitive: an unauthenticated caller
-     * could write an arbitrary {@code og:image} for any well-formed video,
-     * channel or playlist ID and have it served to link unfurlers (WhatsApp,
-     * Telegram, Slack, Skype, etc.) for ten minutes per cache entry.
-     */
-    private static final Set<String> APPROVED_IMAGE_HOSTS = Set.of(
-            "i.ytimg.com",
-            "img.youtube.com",
-            "yt3.googleusercontent.com",
-            "yt3.ggpht.com"
-    );
+    /** The FitrahTube logo card the landing site already serves as its own og:image (landing/build.py), 1200x630. */
+    private static final String GENERIC_CARD_IMAGE = "https://fitrahtube.com/og.png";
 
     /**
      * Allowed shape for the {@code videoId} path variable. Firestore document IDs and
@@ -86,145 +61,35 @@ public class WatchPageController {
     );
     private static final Pattern YOUTUBE_AVATAR_SIZE_PATTERN = Pattern.compile("=s\\d+(?=-|$)");
     private static final Pattern HTTPS_URL_PATTERN = Pattern.compile("^https://[^\\s\"'<>]+$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$");
 
     private final PublicContentService contentService;
-    private final Cache<String, CachedShareMetadata> shareMetadataCache = Caffeine.newBuilder()
-            .maximumSize(5_000)
-            .expireAfterWrite(SHARE_METADATA_TTL_MILLIS, TimeUnit.MILLISECONDS)
-            .build();
-    /**
-     * Per-X-Device-Id rate-limit bucket for POST /api/share-metadata. Each entry
-     * holds the request count within the trailing rate-limit window; entries
-     * expire automatically so the table can never grow unbounded. The bucket
-     * is per-device rather than per-IP so a misbehaving NAT/proxy doesn't lock
-     * legitimate clients out, and per-device requires a header that the Android
-     * app always sends — anonymous browser callers (who never sign-share-flow)
-     * can be turned away by header presence alone.
-     */
-    private final Cache<String, AtomicInteger> shareMetadataRateLimit = Caffeine.newBuilder()
-            .maximumSize(50_000)
-            // expireAfterAccess gives a true sliding-window TTL: every successful
-            // getAndUpdate refreshes the entry's expiry, so an active caller can't
-            // get a fresh bucket the instant their previous bucket's first-write
-            // age hits the limit (cubic R5 P2 was on expireAfterWrite — wrote then
-            // never refreshed even when reads happened repeatedly).
-            .expireAfterAccess(SHARE_METADATA_RATE_LIMIT_TTL_MILLIS, TimeUnit.MILLISECONDS)
-            .build();
+    private final String publicBaseUrl;
 
-    public WatchPageController(PublicContentService contentService) {
+    /**
+     * {@code publicBaseUrl} is the only origin og:url and canonical links ever use; request Host and
+     * X-Forwarded-* headers never reach the page. Its default lives here, not in application.yml, because prod's
+     * application-prod.yml replaces the classpath yml.
+     */
+    public WatchPageController(PublicContentService contentService,
+                               @Value("${app.public-base-url:https://app.fitrahtube.com}") String publicBaseUrl) {
         this.contentService = contentService;
-    }
-
-    @PostMapping(value = "/api/share-metadata/{type}/{id}", consumes = MediaType.APPLICATION_JSON_VALUE)
-    @ResponseBody
-    public ResponseEntity<Void> shareMetadata(
-            @PathVariable String type,
-            @PathVariable String id,
-            @RequestBody(required = false) ShareMetadataRequest metadata,
-            HttpServletRequest request
-    ) {
-        if (!isSupportedShareType(type) || id == null || !VIDEO_ID_PATTERN.matcher(id).matches()) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (metadata == null) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        // Require X-Device-Id so the rate-limit bucket can't be bypassed by stripping
-        // a single header. Falling back to remote address (the previous behaviour for
-        // /api/v1/reports) would let a misconfigured proxy collapse every anonymous
-        // caller into one bucket — either DoSing real clients out, or letting an
-        // attacker churn random IDs to bypass the limit. The Android share publisher
-        // always sets the header in NetworkModule.
-        String deviceId = request.getHeader(HEADER_DEVICE_ID);
-        if (deviceId == null || deviceId.isBlank()) {
-            return ResponseEntity.status(org.springframework.http.HttpStatus.BAD_REQUEST).build();
-        }
-        AtomicInteger counter = shareMetadataRateLimit.get(deviceId, k -> new AtomicInteger(0));
-        // Atomic check-and-increment via getAndUpdate: the lambda increments
-        // only when prev < limit, else leaves the counter unchanged. Returns
-        // the value BEFORE the update, so the decision is unambiguous —
-        // prev < limit means admitted, prev >= limit means refused. Two
-        // concurrent threads entering at prev = limit - 1 can no longer both
-        // be admitted: the CAS retry inside getAndUpdate serialises them so
-        // exactly one sees prev = limit - 1 and increments, the other sees
-        // prev = limit and is refused. Refused callers don't grow the counter.
-        int prev = counter.getAndUpdate(p ->
-                p >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE ? p : p + 1);
-        if (prev >= SHARE_METADATA_RATE_LIMIT_PER_MINUTE) {
-            return ResponseEntity.status(org.springframework.http.HttpStatus.TOO_MANY_REQUESTS).build();
-        }
-
-        // Image URL: only YouTube hosts on the closed allow-list survive. Anything
-        // else is silently dropped (coerced to empty) so the title/description can
-        // still seed the cache without giving an attacker control of og:image. The
-        // 500-char cap also bounds the cache footprint (5,000 entries × 500 chars).
-        String image = validateShareImage(metadata.image());
-        String title = truncate(firstNonBlank(metadata.title(), ""), TITLE_MAX_CHARS);
-        String description = truncate(firstNonBlank(metadata.description(), ""), DESCRIPTION_MAX_CHARS);
-        if (title.isEmpty() && description.isEmpty() && image.isEmpty()) {
-            return ResponseEntity.badRequest().build();
-        }
-
-        shareMetadataCache.put(cacheKey(type, id), new CachedShareMetadata(title, description, image));
-        return ResponseEntity.noContent().build();
+        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
     /**
-     * Returns {@code rawImageUrl} only if it is an https URL within the configured
-     * size limit and its host is in {@link #APPROVED_IMAGE_HOSTS}; otherwise
-     * returns the empty string. The Android client may legitimately pass a YouTube
-     * thumbnail URL when seeding the share cache; anything else is treated as
-     * untrusted input and dropped without an error so the title/description path
-     * still functions.
-     *
-     * <p>The returned URL is reconstructed via {@code URI} without any user-info
-     * segment: a URL like {@code https://attacker.com@i.ytimg.com/vi/abc/...}
-     * has its host resolved to {@code i.ytimg.com} (no SSRF), but the original
-     * userinfo segment was previously preserved verbatim in the og:image meta
-     * tag where some scrapers and debug surfaces would log or display the
-     * attacker-chosen prefix. Rebuilding from components strips it.
+     * Retired: share pages render only server-known text (registry rows, else one generic card), so what
+     * a caller posts here is never shown. The route stays authenticated and answers 204, so installed Android apps,
+     * which post on every share and only log a non-2xx, see no change. The body is not read.
      */
-    private static String validateShareImage(String rawImageUrl) {
-        String url = nullSafe(rawImageUrl, "").trim();
-        if (url.isEmpty()) return "";
-        if (url.length() > SHARE_IMAGE_MAX_CHARS) return "";
-        if (!HTTPS_URL_PATTERN.matcher(url).matches()) return "";
-        try {
-            java.net.URI parsed = java.net.URI.create(url);
-            String host = parsed.getHost();
-            if (host == null) return "";
-            String normalised = host.toLowerCase(Locale.ROOT);
-            if (!APPROVED_IMAGE_HOSTS.contains(normalised)) return "";
-            if (parsed.getUserInfo() == null) {
-                return url;
-            }
-            // Reconstruct without userinfo. Use the 5-arg URI ctor so port,
-            // path, query and fragment are preserved verbatim.
-            java.net.URI sanitised = new java.net.URI(
-                    parsed.getScheme(),
-                    null,
-                    parsed.getHost(),
-                    parsed.getPort(),
-                    parsed.getPath(),
-                    parsed.getQuery(),
-                    parsed.getFragment());
-            return sanitised.toString();
-        } catch (java.net.URISyntaxException | IllegalArgumentException e) {
-            return "";
-        }
+    @PostMapping("/api/share-metadata/{type}/{id}")
+    @ResponseBody
+    public ResponseEntity<Void> shareMetadata() {
+        return ResponseEntity.noContent().build();
     }
 
     @GetMapping(value = {"/watch/{videoId}", "/api/watch/{videoId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> watch(
-            @PathVariable String videoId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> watch(@PathVariable String videoId, HttpServletRequest request) {
         // Reject malformed IDs outright. Defense-in-depth: even though the response
         // escapes the value, keeping obvious attack payloads out of the rendering path
         // eliminates a whole class of bugs (XSS via </script> injection, log spoofing,
@@ -234,128 +99,66 @@ public class WatchPageController {
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This video is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("watch", videoId);
+        String canonicalUrl = canonicalUrl(request, "watch", videoId);
         try {
             Video video = contentService.getVideoDetails(videoId);
-            if (video == null) {
-                return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
-            }
-            String html = buildHtml(video, canonicalUrl);
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildHtml(video, canonicalUrl));
         } catch (Exception e) {
-            log.warn("Watch page fallback for videoId={}: {}", videoId, e.getMessage());
-            return videoFallback(videoId, canonicalUrl, title, image, description, metadata);
+            return fallback(e, "video", videoId, canonicalUrl);
         }
     }
 
     @GetMapping(value = {"/channel/{channelId}", "/api/channel/{channelId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> channel(
-            @PathVariable String channelId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> channel(@PathVariable String channelId, HttpServletRequest request) {
         if (channelId == null || !VIDEO_ID_PATTERN.matcher(channelId).matches()) {
             return ResponseEntity.badRequest()
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This channel is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("channel", channelId);
+        String canonicalUrl = canonicalUrl(request, "channel", channelId);
         try {
-            Object details = contentService.getChannelDetails(channelId);
-            if (details instanceof Channel channel) {
-                String imageUrl = firstNonBlank(
-                        resolveChannelImage(channel.getThumbnailUrl()),
-                        metadata.image()
-                );
-                String html = buildShareHtml(
-                        firstNonBlank(channel.getName(), metadata.title(), "FitrahTube Channel"),
-                        "FitrahTube channel",
-                        truncate(firstNonBlank(channel.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                        imageUrl,
-                        canonicalUrl,
-                        "albunyaantube://channel/" + channelId,
-                        "Open channel in FitrahTube",
-                        "profile"
-                );
-                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-            }
+            Channel channel = contentService.getChannelDetails(channelId);
+            String html = buildShareHtml(
+                    firstNonBlank(channel.getName(), "FitrahTube Channel"),
+                    "FitrahTube channel",
+                    truncate(nullSafe(channel.getDescription(), ""), DESCRIPTION_MAX_CHARS),
+                    resolveChannelImage(channel.getThumbnailUrl()),
+                    canonicalUrl,
+                    "albunyaantube://channel/" + channelId,
+                    "Open channel in FitrahTube",
+                    "profile");
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
-            log.warn("Channel share page fallback for channelId={}: {}", channelId, e.getMessage());
+            return fallback(e, "channel", channelId, canonicalUrl);
         }
-        return metadataFallback(
-                channelId,
-                canonicalUrl,
-                "albunyaantube://channel/" + channelId,
-                title,
-                description,
-                image,
-                "Open channel in FitrahTube",
-                "profile",
-                "channel",
-                canonicalUrl,
-                metadata
-        );
     }
 
     @GetMapping(value = {"/playlist/{playlistId}", "/api/playlist/{playlistId}"}, produces = MediaType.TEXT_HTML_VALUE)
     @ResponseBody
-    public ResponseEntity<String> playlist(
-            @PathVariable String playlistId,
-            @RequestParam(required = false) String title,
-            @RequestParam(required = false) String image,
-            @RequestParam(required = false) String description,
-            HttpServletRequest request
-    ) {
+    public ResponseEntity<String> playlist(@PathVariable String playlistId, HttpServletRequest request) {
         if (playlistId == null || !VIDEO_ID_PATTERN.matcher(playlistId).matches()) {
             return ResponseEntity.badRequest()
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This playlist is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
-        ShareMetadata metadata = getShareMetadata("playlist", playlistId);
+        String canonicalUrl = canonicalUrl(request, "playlist", playlistId);
         try {
-            Object details = contentService.getPlaylistDetails(playlistId);
-            if (details instanceof Playlist playlist) {
-                String imageUrl = firstNonBlank(
-                        resolvePreviewImage(playlist.getThumbnailUrl(), ""),
-                        metadata.image()
-                );
-                String itemCount = playlist.getItemCount() == null
-                        ? "FitrahTube playlist"
-                        : playlist.getItemCount() + " videos";
-                String html = buildShareHtml(
-                        firstNonBlank(playlist.getTitle(), metadata.title(), "FitrahTube Playlist"),
-                        itemCount,
-                        truncate(firstNonBlank(playlist.getDescription(), metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                        imageUrl,
-                        canonicalUrl,
-                        "albunyaantube://playlist/" + playlistId,
-                        "Open playlist in FitrahTube",
-                        "website"
-                );
-                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-            }
+            Playlist playlist = contentService.getPlaylistDetails(playlistId);
+            String itemCount = playlist.getItemCount() == null ? "FitrahTube playlist" : playlist.getItemCount() + " videos";
+            String html = buildShareHtml(
+                    firstNonBlank(playlist.getTitle(), "FitrahTube Playlist"),
+                    itemCount,
+                    truncate(nullSafe(playlist.getDescription(), ""), DESCRIPTION_MAX_CHARS),
+                    resolvePreviewImage(playlist.getThumbnailUrl(), ""),
+                    canonicalUrl,
+                    "albunyaantube://playlist/" + playlistId,
+                    "Open playlist in FitrahTube",
+                    "website");
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
-            log.warn("Playlist share page fallback for playlistId={}: {}", playlistId, e.getMessage());
+            return fallback(e, "playlist", playlistId, canonicalUrl);
         }
-        return metadataFallback(
-                playlistId,
-                canonicalUrl,
-                "albunyaantube://playlist/" + playlistId,
-                title,
-                description,
-                image,
-                "Open playlist in FitrahTube",
-                "website",
-                "playlist",
-                canonicalUrl,
-                metadata
-        );
     }
 
     private String buildHtml(Video video, String canonicalUrl) {
@@ -372,69 +175,38 @@ public class WatchPageController {
         );
     }
 
-    private ResponseEntity<String> videoFallback(
-            String videoId,
-            String canonicalUrl,
-            String title,
-            String image,
-            String description,
-            ShareMetadata metadata
-    ) {
-        if (YOUTUBE_ID_PATTERN.matcher(videoId).matches()) {
-            String html = buildShareHtml(
-                    firstNonBlank(title, metadata.title(), "FitrahTube Video"),
-                    "",
-                    firstNonBlank(description, metadata.description(), "Watch this video in FitrahTube."),
-                    firstNonBlank(resolvePreviewImage(image, videoId), metadata.image()),
-                    canonicalUrl,
-                    "albunyaantube://video/" + videoId,
-                    "Open in FitrahTube",
-                    "video.other"
-            );
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
+    /**
+     * Why the registry lookup failed decides the page:
+     * - not in the catalog, or not public yet (the service's 404): one generic, server-authored card. It never carries
+     *   a per-id title or thumbnail, so a fitrahtube.com link can't be dressed up as arbitrary content;
+     * - blocked (the service's 410): what it answered before the fix, a video's 200 card, a channel's or playlist's 404;
+     * - anything else is a registry error: 503 no-store, so an unfurler never caches a stand-in for a catalog item.
+     */
+    private ResponseEntity<String> fallback(Exception e, String kind, String id, String canonicalUrl) {
+        String deepLink = "albunyaantube://" + kind + "/" + id;
+        String label = kind.substring(0, 1).toUpperCase(Locale.ROOT) + kind.substring(1);
+        if (!(e instanceof ResourceNotFoundException) && !(e instanceof ContentGoneException)) {
+            log.warn("Share page registry error for {} {}: {}", kind, id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).cacheControl(CacheControl.noStore())
+                    .contentType(MediaType.TEXT_HTML)
+                    .body(buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
+                            "This " + kind + " is temporarily unavailable. Please try again shortly.", "Temporarily unavailable"));
         }
-        String html = buildUnavailableHtml(
-                videoId,
+        boolean card = "video".equals(kind) ? YOUTUBE_ID_PATTERN.matcher(id).matches() : e instanceof ResourceNotFoundException;
+        if (!card) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.TEXT_HTML)
+                    .body(buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
+                            "This " + kind + " is not available.", label + " not found"));
+        }
+        return ResponseEntity.ok().header("X-Robots-Tag", "noindex").contentType(MediaType.TEXT_HTML).body(buildShareHtml(
+                "FitrahTube " + label,
+                "",
+                "Open this " + kind + " in the FitrahTube app.",
+                GENERIC_CARD_IMAGE,
                 canonicalUrl,
-                "albunyaantube://video/" + videoId,
-                "FitrahTube",
-                "This video is not available.",
-                "Video not found"
-        );
-        return ResponseEntity.status(404).contentType(MediaType.TEXT_HTML).body(html);
-    }
-
-    private ResponseEntity<String> metadataFallback(
-            String id,
-            String canonicalUrl,
-            String deepLink,
-            String title,
-            String description,
-            String image,
-            String ctaText,
-            String ogType,
-            String itemType,
-            String fallbackUrl,
-            ShareMetadata metadata
-    ) {
-        String previewImage = "profile".equals(ogType)
-                ? resolveChannelImage(firstNonBlank(image, metadata.image()))
-                : resolvePreviewImage(firstNonBlank(image, metadata.image()), "");
-        if (!previewImage.isEmpty()) {
-            String html = buildShareHtml(
-                    firstNonBlank(title, metadata.title(), "FitrahTube"),
-                    "",
-                    truncate(firstNonBlank(description, metadata.description(), ""), DESCRIPTION_MAX_CHARS),
-                    previewImage,
-                    firstNonBlank(fallbackUrl, canonicalUrl),
-                    deepLink,
-                    ctaText,
-                    ogType
-            );
-            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-        }
-        String html = buildUnavailableHtml(id, canonicalUrl, deepLink, title, "This " + itemType + " is not available.", title);
-        return ResponseEntity.status(404).contentType(MediaType.TEXT_HTML).body(html);
+                deepLink,
+                "Open in FitrahTube",
+                "website"));
     }
 
     private String buildShareHtml(
@@ -452,14 +224,17 @@ public class WatchPageController {
         String description = escapeHtml(truncate(nullSafe(rawDescription, ""), DESCRIPTION_MAX_CHARS));
         String thumbnail = escapeAttr(nullSafe(rawThumbnail, ""));
         boolean profileImage = "profile".equals(ogType);
-        int imageWidth = profileImage ? 512 : 480;
-        int imageHeight = profileImage ? 512 : 360;
+        boolean genericCard = GENERIC_CARD_IMAGE.equals(rawThumbnail);
+        int imageWidth = genericCard ? 1200 : profileImage ? 512 : 480;
+        int imageHeight = genericCard ? 630 : profileImage ? 512 : 360;
 
         StringBuilder html = new StringBuilder(4096);
         html.append("<!DOCTYPE html>\n<html lang=\"en\"><head>\n");
         html.append("<meta charset=\"utf-8\">\n");
         html.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n");
-        html.append("<meta name=\"robots\" content=\"index,follow,max-image-preview:large\">\n");
+        // The generic card answers for any made-up id: keep it out of search indexes. Catalog pages stay indexable.
+        html.append("<meta name=\"robots\" content=\"")
+                .append(genericCard ? "noindex" : "index,follow,max-image-preview:large").append("\">\n");
         html.append("<title>").append(title).append(" — FitrahTube</title>\n");
         html.append("<meta name=\"description\" content=\"").append(description).append("\">\n");
         html.append("<link rel=\"canonical\" href=\"").append(escapeAttr(canonicalUrl)).append("\">\n");
@@ -498,7 +273,7 @@ public class WatchPageController {
         html.append("display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}\n");
         html.append(".card{max-width:640px;width:100%;background:#13161d;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)}\n");
         html.append(".thumb{width:100%;aspect-ratio:")
-                .append(profileImage ? "1/1" : "16/9")
+                .append(genericCard ? "1200/630" : profileImage ? "1/1" : "16/9")
                 .append(";object-fit:cover;background:#000;display:block}\n");
         html.append(".body{padding:20px}\n");
         html.append("h1{margin:0 0 8px;font-size:20px;line-height:1.3}\n");
@@ -621,82 +396,9 @@ public class WatchPageController {
         return "https://i.ytimg.com/vi/" + youtubeId + "/hqdefault.jpg";
     }
 
-    private static String buildCanonicalUrl(HttpServletRequest request) {
-        return buildCanonicalUrl(request, false);
-    }
-
-    private static String buildCanonicalUrl(HttpServletRequest request, boolean includeQueryString) {
-        String host = firstHeaderValue(request, "X-Forwarded-Host");
-        if (host.isEmpty()) {
-            host = firstHeaderValue(request, "Host");
-        }
-        if (host.isEmpty()) {
-            host = request.getServerName();
-            int port = request.getServerPort();
-            if (port > 0 && port != 80 && port != 443) {
-                host += ":" + port;
-            }
-        }
-        host = sanitizeHost(host, request.getServerName());
-
-        String scheme = firstHeaderValue(request, "X-Forwarded-Proto");
-        String cfScheme = extractCloudflareScheme(request.getHeader("CF-Visitor"));
-        if ("https".equals(cfScheme)) {
-            scheme = "https";
-        }
-        if ("https".equalsIgnoreCase(scheme)) {
-            scheme = "https";
-        } else if ("http".equalsIgnoreCase(scheme)) {
-            scheme = "http";
-        } else {
-            scheme = request.isSecure() ? "https" : nullSafe(request.getScheme(), "http");
-        }
-        if ("http".equals(scheme) && hostWithoutPort(host).equalsIgnoreCase(PUBLIC_SHARE_HOST)) {
-            scheme = "https";
-        }
-
-        String url = scheme + "://" + host + request.getRequestURI();
-        String query = request.getQueryString();
-        if (includeQueryString && query != null && !query.isBlank()) {
-            url += "?" + query;
-        }
-        return url;
-    }
-
-    private static String firstHeaderValue(HttpServletRequest request, String name) {
-        String value = request.getHeader(name);
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        int comma = value.indexOf(',');
-        return (comma >= 0 ? value.substring(0, comma) : value).trim();
-    }
-
-    private static String sanitizeHost(String host, String fallback) {
-        String value = host == null ? "" : host.trim();
-        if (SAFE_HOST_PATTERN.matcher(value).matches()) {
-            return value;
-        }
-        return (fallback == null || fallback.isBlank()) ? PUBLIC_SHARE_HOST : fallback;
-    }
-
-    private static String hostWithoutPort(String host) {
-        int colon = host.indexOf(':');
-        return colon >= 0 ? host.substring(0, colon) : host;
-    }
-
-    private static String extractCloudflareScheme(String cfVisitor) {
-        if (cfVisitor == null) {
-            return "";
-        }
-        String compact = cfVisitor.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
-        if (compact.contains("\"scheme\":\"https\"")) {
-            return "https";
-        }
-        if (compact.contains("\"scheme\":\"http\"")) {
-            return "http";
-        }
-        return "";
+    /** The configured origin, the matched route ("/api" alias kept) and the validated id: never request headers. */
+    private String canonicalUrl(HttpServletRequest request, String route, String id) {
+        return publicBaseUrl + (request.getRequestURI().startsWith("/api/") ? "/api/" : "/") + route + "/" + id;
     }
 
     private static String escapeHtml(String s) {
@@ -718,47 +420,11 @@ public class WatchPageController {
         return s.length() <= maxChars ? s : s.substring(0, maxChars - 1) + "…";
     }
 
-    private static boolean isSupportedShareType(String type) {
-        return "watch".equals(type) || "channel".equals(type) || "playlist".equals(type);
-    }
-
-    private ShareMetadata getShareMetadata(String type, String id) {
-        CachedShareMetadata cached = shareMetadataCache.getIfPresent(cacheKey(type, id));
-        if (cached == null) return ShareMetadata.EMPTY;
-        return new ShareMetadata(cached.title(), cached.description(), cached.image());
-    }
-
-    private static String cacheKey(String type, String id) {
-        return type + ":" + id;
-    }
-
     private static String firstNonBlank(String value, String fallback) {
         return (value == null || value.isBlank()) ? fallback : value.trim();
     }
 
-    private static String firstNonBlank(String... values) {
-        if (values == null) {
-            return "";
-        }
-        for (String value : values) {
-            if (value != null && !value.isBlank()) {
-                return value.trim();
-            }
-        }
-        return "";
-    }
-
     private static String nullSafe(String s, String fallback) {
         return (s == null || s.isEmpty()) ? fallback : s;
-    }
-
-    private record ShareMetadataRequest(String title, String description, String image) {
-    }
-
-    private record CachedShareMetadata(String title, String description, String image) {
-    }
-
-    private record ShareMetadata(String title, String description, String image) {
-        private static final ShareMetadata EMPTY = new ShareMetadata("", "", "");
     }
 }
