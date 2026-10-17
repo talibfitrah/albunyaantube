@@ -41,6 +41,8 @@ internal fun playerViewModel(
     playlistDetailRepository: PlaylistDetailRepository = FakePlaylistDetailRepository(),
     favoritesRepository: FavoritesRepository = FakeFavoritesRepository(),
     extractorClient: ExtractorClient = FakeExtractorClient(),
+    contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
+    prefetchService: StreamPrefetchService = FakePrefetchService(),
     livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector = com.albunyaan.tube.player.LivePlaylistRedirector { _, _ -> null },
     ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) = PlayerViewModel(
@@ -48,7 +50,7 @@ internal fun playerViewModel(
     downloadRepository = downloadRepository,
     playlistDetailRepository = playlistDetailRepository,
     rateLimiter = ExtractionRateLimiter(),
-    prefetchService = FakePrefetchService(),
+    prefetchService = prefetchService,
     favoritesRepository = favoritesRepository,
     metricsReporter = FakeExtractorMetricsReporter(),
     playbackMetrics = PlaybackMetricsCollector(),
@@ -62,7 +64,7 @@ internal fun playerViewModel(
             androidx.test.core.app.ApplicationProvider.getApplicationContext()
         ),
     ),
-    contentService = com.albunyaan.tube.data.source.FakeContentService(),
+    contentService = contentService,
     livePlaylistRedirector = livePlaylistRedirector,
     ioDispatcher = ioDispatcher,
 )
@@ -190,10 +192,10 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
     override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
 }
 
-/** No prefetch data: cold-start playback. */
-internal class FakePrefetchService : StreamPrefetchService {
+/** No prefetch data (cold-start playback), or [prefetched]: a tap prefetch that finished. */
+internal class FakePrefetchService(private val prefetched: ResolvedStreams? = null) : StreamPrefetchService {
     override fun triggerPrefetch(videoId: String, scope: CoroutineScope) {}
-    override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? = null
+    override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? = prefetched
     override fun consumePrefetch(videoId: String): ResolvedStreams? = null
     override fun isPrefetchInFlight(videoId: String): Boolean = false
     override fun cancelPrefetch(videoId: String) {}

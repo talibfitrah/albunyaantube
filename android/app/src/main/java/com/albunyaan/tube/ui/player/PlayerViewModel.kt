@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -256,6 +257,12 @@ class PlayerViewModel @Inject constructor(
     /** DEBUG only: L2/L3 shorten the refresh (PlayerFragment reads Settings.Global "fitrah_live_refresh_ms"). */
     var debugLiveRefreshOverrideMs: Long? = null
 
+    // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
+    private var liveIncident: LiveChannelRecovery? = null
+    private var liveRetryJob: Job? = null
+    /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
+    var debugLiveForceEndMs: Long? = null
+
     // Playlist playback state
     private var isPlaylistMode: Boolean = false
 
@@ -422,7 +429,13 @@ class PlayerViewModel @Inject constructor(
         resolveStreamFor(target, PlaybackStartReason.USER_SELECTED)
     }
 
-    fun markCurrentComplete(): Boolean = advanceToNext(PlaybackStartReason.AUTO, markComplete = true)
+    fun markCurrentComplete(): Boolean {
+        if (currentItem?.liveChannelId != null) {                    // §9.1: never advance in live-channel mode
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+            return false
+        }
+        return advanceToNext(PlaybackStartReason.AUTO, markComplete = true)
+    }
 
     fun skipToNext(): Boolean = advanceToNext(PlaybackStartReason.USER_SELECTED, markComplete = false)
 
@@ -851,6 +864,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -1413,6 +1427,16 @@ class PlayerViewModel @Inject constructor(
      * @return true if refresh was initiated, false if rate-limited
      */
     fun forceRefreshForAutoRecovery(): Boolean {
+        if (currentItem?.liveChannelId != null && liveIncident?.currentId != currentItem?.streamId) {
+            // §9.1 step 1: ask the backend first; the same id runs today's recovery (step 3). A refused refresh is a
+            // spent budget: step 4, never a stopped player waiting for a Ready that never comes.
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE) {
+                if (!forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)) {
+                    onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                }
+            }
+            return true
+        }
         return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
     }
 
@@ -1567,9 +1591,11 @@ class PlayerViewModel @Inject constructor(
      */
     private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int, forceRefresh: Boolean = false) {
         playingDownloadId?.let { resolveDownload(it); return }
+        // §9.1 / RV I11: a live-channel item always resolves below, through the live check (a prefetch can be a recording).
+        val useCaches = !forceRefresh && item.liveChannelId == null
         // Check tap-to-prefetch service first (triggered when user taps video in list)
         // This will await in-flight prefetch for up to 3 seconds, providing in-flight dedupe
-        if (!forceRefresh) {
+        if (useCaches) {
             val tapPrefetched = try {
                 prefetchService.awaitOrConsumePrefetch(item.streamId)
             } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
@@ -1605,7 +1631,7 @@ class PlayerViewModel @Inject constructor(
         }
 
         // Check local prefetch cache (for queue items) - skip if forceRefresh
-        if (!forceRefresh) {
+        if (useCaches) {
             val prefetched = consumeFreshPrefetchCache(item.streamId)
             if (prefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
@@ -1620,7 +1646,7 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.w("PlayerViewModel", "Queue-prefetched stream invalid, resolving fresh")
             }
         } else {
-            android.util.Log.d("PlayerViewModel", "Force refresh requested for ${item.streamId}, bypassing caches")
+            android.util.Log.d("PlayerViewModel", "Bypassing caches for ${item.streamId} (force refresh or live channel)")
         }
 
         for (attempt in 1..maxAttempts) {
@@ -1702,6 +1728,13 @@ class PlayerViewModel @Inject constructor(
                 }
             }
 
+            if (item.liveChannelId != null) {
+                if (!resolved.isLive) {                               // §9.1 / RV I11: never play a recording here
+                    onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                    return
+                }
+                liveIncident = null                                   // live again: the incident is over
+            }
             val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
                 playbackMetrics.onPlaybackFailed(item.streamId, "no_selection")
@@ -1720,6 +1753,12 @@ class PlayerViewModel @Inject constructor(
 
             // Schedule proactive URL refresh for live streams
             scheduleLiveStreamRefresh(resolved)
+            debugLiveForceEndMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG && item.liveChannelId != null }?.let { ms ->
+                viewModelScope.launch(dispatcher) {
+                    kotlinx.coroutines.delay(ms)
+                    onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                }
+            }
 
             // Apply pending quality cap if set (stored when URLs expired during quality switch)
             val pendingCap = pendingQualityCap
@@ -1792,9 +1831,17 @@ class PlayerViewModel @Inject constructor(
                 forceRefresh = true,
                 sourceChannelId = currentItem?.sourceChannelId,
             )
-            if (freshStreams == null || !freshStreams.isLive) {
-                android.util.Log.w("PlayerViewModel", "Live stream: refresh failed or stream no longer live")
-                return freshStreams != null
+            if (freshStreams == null) {
+                android.util.Log.w("PlayerViewModel", "Live stream: refresh failed")
+                return false
+            }
+            if (!freshStreams.isLive) {
+                android.util.Log.w("PlayerViewModel", "Live stream: no longer live")
+                // This runs on the IO dispatcher; the trigger touches currentItem, the queue state and the resolve job.
+                kotlinx.coroutines.withContext(dispatcher) {
+                    if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                }
+                return true
             }
             // Spec §9.2(a): swap the media-playlist URLs in place. No event, no setMediaSource, no prepare, no seek,
             // so it also lands while the fragment's view is gone (background audio, F13). An audio-only player plays
@@ -1834,6 +1881,61 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
             return false
         }
+    }
+
+    /**
+     * §9.1: ask the backend for the channel's current lives, then switch, wait, recover the same id, or give up.
+     * Main thread only (it and [switchLive] touch [currentItem], the queue state and the resolve job).
+     */
+    private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger, onSameId: () -> Unit = {}) {
+        val item = currentItem ?: return
+        val channelId = item.liveChannelId ?: return
+        // An incident belongs to one stream id: a stale one (the user picked another item) never blocks this one.
+        val incident = liveIncident?.takeIf { it.currentId == item.streamId }
+            ?: LiveChannelRecovery(item.streamId, item.title, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
+        liveRetryJob?.cancel()
+        liveRetryJob = viewModelScope.launch(dispatcher) {
+            var notLiveChannel = false
+            val lives = try {
+                contentService.fetchChannelLives(channelId).lives
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A 404 is the backend saying this is not a servable live channel: stop. Anything else is no answer.
+                notLiveChannel = (e as? retrofit2.HttpException)?.code() == 404
+                null
+            }
+            if (currentItem?.streamId != incident.currentId) return@launch       // the user moved on
+            val step = if (notLiveChannel) LiveChannelRecovery.Step.GiveUp
+            else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime())
+            when (step) {
+                is LiveChannelRecovery.Step.SwitchTo -> switchLive(step.id, step.title)
+                LiveChannelRecovery.Step.SameId -> onSameId()
+                is LiveChannelRecovery.Step.Wait -> {
+                    updateState { it.copy(streamState = StreamState.Loading) }   // the existing reconnecting state
+                    kotlinx.coroutines.delay(step.seconds * 1_000L)
+                    // The same trigger again: a failure the backend could not answer still gets its same-id recovery.
+                    onLiveChannelTrigger(trigger, onSameId)
+                }
+                LiveChannelRecovery.Step.GiveUp -> {
+                    liveIncident = null
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                }
+            }
+        }
+    }
+
+    /** §9.1 step 2: a new broadcast is a new timeline; the item's id and title are replaced in place. */
+    private fun switchLive(newId: String, title: String) {
+        val item = currentItem ?: return
+        liveIncident = null
+        pendingRefreshJob?.cancel()
+        liveRefreshJob?.cancel()
+        val next = item.copy(id = newId, streamId = newId, title = title,
+            thumbnailUrl = "https://i.ytimg.com/vi/$newId/hqdefault_live.jpg")
+        currentItem = next
+        applyQueueState()
+        resolveStreamFor(next, PlaybackStartReason.AUTO)
     }
 
     /**
@@ -2057,7 +2159,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun updateState(transform: (PlayerState) -> PlayerState) {
-        _state.value = transform(_state.value)
+        _state.update { transform(it) }   // atomic: the live refresh writes from the IO thread while Main writes too
     }
 
     private fun advanceToNext(reason: PlaybackStartReason, markComplete: Boolean): Boolean {
@@ -2234,6 +2336,10 @@ class PlayerViewModel @Inject constructor(
      * show the manual-retry escape hatch.
      */
     fun setRecoveryExhaustedState() {
+        if (currentItem?.liveChannelId != null) {                    // §9.1 step 3: exhausted → the step 4 retries
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+            return
+        }
         val current = _state.value.streamState
         val (streamId, selection) = when (current) {
             is StreamState.Ready -> current.streamId to current.selection

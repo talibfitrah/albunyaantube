@@ -425,6 +425,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             val resolver = requireContext().contentResolver
             viewModel.debugLiveRefreshOverrideMs =
                 ResolvedStreams.debugLiveRefreshOverrideMs(android.provider.Settings.Global.getString(resolver, "fitrah_live_refresh_ms"))
+            // L5: adb shell settings put global fitrah_live_force_end_ms 60000 forces a live-channel end (delete it after).
+            viewModel.debugLiveForceEndMs =
+                android.provider.Settings.Global.getString(resolver, "fitrah_live_force_end_ms")?.toLongOrNull()
         }
 
         when {
