@@ -2,7 +2,6 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Video;
-import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -13,6 +12,7 @@ import java.io.IOException;
 import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
@@ -28,7 +28,7 @@ import java.util.concurrent.TimeoutException;
  * Adds are ADMIN-only; a CHANNEL is capped and seeded (D15); a VIDEO must be LIVE on its channel's Live tab now,
  * which proves both "live" and ownership; anything else is refused. Bulk paths use checkAll (D9).
  * Every entry point runs two passes, so a refused request spends no YouTube read and seeds nothing: pass 1 applies the
- * rules that need no read (admin, type, cap) to every row; pass 2 checks every video against its channel's Live tab;
+ * rules that need no YouTube read (admin, type, cap) to every row; pass 2 checks every video against its channel's Live tab;
  * the channel seeds run only once both pass. An admin with both kinds of offender sees the YouTube ones next attempt.
  */
 @Service
@@ -57,8 +57,11 @@ public class LiveCategoryGuard {
                     before == null ? null : before.getStatus(), newIds, newStatus);
         }
 
+        /** D10: {@code after}'s channel id when it is a UC id (the request body), else {@code before}'s (the stored doc). */
         public static Change of(String ref, Video after, Video before, Collection<String> newIds, String newStatus) {
-            return new Change(ref, "video", after.getYoutubeId(), after.getChannelId(),
+            String channelId = before == null || LiveTabReader.isChannelId(after.getChannelId())
+                    ? after.getChannelId() : before.getChannelId();
+            return new Change(ref, "video", after.getYoutubeId(), channelId,
                     before == null ? List.of() : before.getCategoryIds(), before == null ? null : before.getStatus(),
                     newIds, newStatus);
         }
@@ -68,14 +71,11 @@ public class LiveCategoryGuard {
     private record Offender(String ref, LiveCategoryException refusal) {}
 
     private final LiveCategoryService liveCategories;
-    private final CategoryContentOrderRepository orders;
     private final LiveChannelService live;
     private final VideoRepository videos;
 
-    public LiveCategoryGuard(LiveCategoryService liveCategories, CategoryContentOrderRepository orders,
-                             LiveChannelService live, VideoRepository videos) {
+    public LiveCategoryGuard(LiveCategoryService liveCategories, LiveChannelService live, VideoRepository videos) {
         this.liveCategories = liveCategories;
-        this.orders = orders;
         this.live = live;
         this.videos = videos;
     }
@@ -115,9 +115,9 @@ public class LiveCategoryGuard {
         m.channels().forEach(c -> changes.add(new Change(c.getId(), "channel", c.getYoutubeId(), null, List.of(), c.getStatus(), into, c.getStatus())));
         m.playlists().forEach(p -> changes.add(new Change(p.getId(), "playlist", p.getYoutubeId(), null, List.of(), p.getStatus(), into, p.getStatus())));
         m.videos().forEach(v -> changes.add(new Change(v.getId(), "video", v.getYoutubeId(), v.getChannelId(), List.of(), v.getStatus(), into, v.getStatus())));
-        Map<String, Long> counts = new HashMap<>(Map.of(categoryId, 0L));      // the members ARE the entries
+        Map<String, Set<String>> entries = new HashMap<>(Map.of(categoryId, keys(m)));   // the members ARE the entries
         List<Offender> refused = new ArrayList<>();
-        Map<String, String> verified = run(true, changes, Set.of(categoryId), counts, refused);
+        Map<String, String> verified = run(true, changes, Set.of(categoryId), entries, refused);
         if (!refused.isEmpty()) {
             LiveCategoryException e = envelope(refused);
             if (e.getStatus() == HttpStatus.SERVICE_UNAVAILABLE) {             // only failed checks: retry, not bad members
@@ -151,13 +151,16 @@ public class LiveCategoryGuard {
         return added;
     }
 
-    /** The two passes and the seeds (class doc). Refusals land in {@code refused}; the returned map is ref → channel. */
-    private Map<String, String> run(boolean admin, List<Change> changes, Set<String> liveIds, Map<String, Long> counts,
+    /**
+     * The two passes and the seeds (class doc). Refusals land in {@code refused}; the returned map is ref → channel.
+     * {@code entries}: per LIVE category, the type:youtubeId keys of its members, read once per request on first use.
+     */
+    private Map<String, String> run(boolean admin, List<Change> changes, Set<String> liveIds, Map<String, Set<String>> entries,
                                     List<Offender> refused) throws ExecutionException, InterruptedException, TimeoutException {
         List<Change> adds = new ArrayList<>();
         for (Change c : changes) {                                             // pass 1: no YouTube read
             try {
-                if (admits(admin, c, liveIds, counts)) {
+                if (admits(admin, c, liveIds, entries)) {
                     adds.add(c);
                 }
             } catch (LiveCategoryException e) {
@@ -190,7 +193,7 @@ public class LiveCategoryGuard {
     }
 
     /** Pass 1 for one row: false when it adds no LIVE id (rule 1); throws for rules 2 and 4 and the cap. */
-    private boolean admits(boolean admin, Change c, Set<String> liveIds, Map<String, Long> counts)
+    private boolean admits(boolean admin, Change c, Set<String> liveIds, Map<String, Set<String>> entries)
             throws ExecutionException, InterruptedException, TimeoutException {
         Set<String> added = addedLive(c, liveIds);
         if (added.isEmpty()) {
@@ -204,14 +207,19 @@ public class LiveCategoryGuard {
             throw refusal(HttpStatus.BAD_REQUEST, LiveCategoryException.TYPE_NOT_ALLOWED,
                     "The live category accepts only channels and live streams", c);
         }
-        for (String cat : added) {                                             // the cap (R7)
-            Long current = counts.get(cat);
-            long next = (current != null ? current : orders.countByCategoryId(cat)) + 1;
-            if (next > MAX_ENTRIES) {
+        for (String cat : added) {                                             // the cap (R7), over the poller's members
+            Set<String> members = entries.get(cat);
+            if (members == null) {
+                // ponytail: members() is ~3 doc reads per member (≤ ~90 at the cap), once per LIVE category per request;
+                // a stored member count if these writes ever get hot.
+                members = keys(liveCategories.members(cat));
+                entries.put(cat, members);
+            }
+            members.add(c.type() + ":" + c.youtubeId());                       // a doc already in the category is no new entry
+            if (members.size() > MAX_ENTRIES) {
                 throw refusal(HttpStatus.BAD_REQUEST, LiveCategoryException.FULL,
                         "The live category is full (" + MAX_ENTRIES + " entries)", c);
             }
-            counts.put(cat, next);
         }
         return true;
     }
@@ -245,6 +253,15 @@ public class LiveCategoryGuard {
                     "Video " + c.youtubeId() + " is not live on channel " + channel + " now", details);
         }
         return channel;
+    }
+
+    /** One key per member, as a {@link Change} names it: type:youtubeId. */
+    private static Set<String> keys(LiveCategoryService.Members m) {
+        Set<String> keys = new HashSet<>();
+        m.channels().forEach(x -> keys.add("channel:" + x.getYoutubeId()));
+        m.playlists().forEach(x -> keys.add("playlist:" + x.getYoutubeId()));
+        m.videos().forEach(x -> keys.add("video:" + x.getYoutubeId()));
+        return keys;
     }
 
     private static LiveCategoryException unavailable(String youtubeId, Map<String, Object> details) {

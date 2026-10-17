@@ -1,5 +1,6 @@
 package com.albunyaan.tube.integration;
 
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
@@ -7,6 +8,7 @@ import com.albunyaan.tube.service.LiveChannelService;
 import com.albunyaan.tube.service.LiveTabReader;
 import com.albunyaan.tube.service.LiveTabResult;
 import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.BeforeEach;
@@ -28,6 +30,8 @@ import java.util.concurrent.TimeUnit;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
@@ -125,6 +129,35 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(channels.findById("ch-r1r").orElseThrow().getStatus()).isEqualTo("REQUEST_CHANGES");
     }
 
+    @Test
+    void row1_anOverLongResubmitNoteIs400BeforeAnyYouTubeRead() throws Exception {
+        doc("channels", "ch-r1n", Map.of("youtubeId", uc("r1n"), "name", "C", "status", "REQUEST_CHANGES",
+                "submittedBy", "admin-uid", "categoryIds", List.of(PLAIN)));
+        as("admin");
+        liveOn(uc("r1n"), "it1r1nlive1");
+        send(post("/api/admin/registry/channels"), Map.of("youtubeId", uc("r1n"), "name", "C",
+                "categoryIds", List.of(LIVE), "submitterNote", "x".repeat(1001)))
+                .andExpect(status().isBadRequest());
+        verify(reader, never()).read(uc("r1n"));                     // no seed, no Live-tab read
+        assertThat(channels.findById("ch-r1n").orElseThrow().getStatus()).isEqualTo("REQUEST_CHANGES");
+    }
+
+    /** R7: the cap counts member docs, not only order rows (admin PUTs and imports write no order row). */
+    @Test
+    void row1_thirtyMemberDocsWithoutOrderRowsRefuseThe31stAsFull() throws Exception {
+        for (int i = 0; i < 30; i++) {
+            doc("channels", "ch-cap" + i, Map.of("youtubeId", uc(String.format("c%02d", i)), "name", "C",
+                    "status", "APPROVED", "categoryIds", List.of(LIVE), "createdAt", Timestamp.now()));
+        }
+        as("admin");
+        liveOn(uc("c30"), "it1c30live1");
+        send(post("/api/admin/registry/channels"),
+                Map.of("youtubeId", uc("c30"), "name", "C", "categoryIds", List.of(LIVE), "status", "APPROVED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_FULL"));
+        assertThat(countDocuments("channels")).isEqualTo(30);
+    }
+
     // ---- Row 2: admin edit channel (ids and status) ----
 
     @Test
@@ -158,6 +191,18 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
         assertThat(countDocuments("playlists")).isZero();
+    }
+
+    @Test
+    void row4_aModeratorResubmitAddingLiveIs403() throws Exception {
+        doc("playlists", "pl-r4r", Map.of("youtubeId", "PLit1r4r0000000000000000000000000", "title", "P",
+                "status", "REQUEST_CHANGES", "submittedBy", "moderator-uid", "categoryIds", List.of(PLAIN)));
+        as("moderator");
+        send(post("/api/admin/registry/playlists"),
+                Map.of("youtubeId", "PLit1r4r0000000000000000000000000", "title", "P", "categoryIds", List.of(LIVE)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_ADMIN_ONLY"));
+        assertThat(playlists.findById("pl-r4r").orElseThrow().getStatus()).isEqualTo("REQUEST_CHANGES");
     }
 
     // ---- Row 5: admin edit playlist ----
@@ -208,6 +253,43 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(countDocuments("videos")).isZero();
     }
 
+    @Test
+    void row7_aNonUcBodyChannelIsResolvedAndTheVerifiedOneStored() throws Exception {
+        as("admin");
+        when(reader.resolveChannelId("it1r7cvid01")).thenReturn(Optional.of(uc("r7c")));
+        liveOn(uc("r7c"), "it1r7cvid01");
+        send(post("/api/admin/registry/videos"), Map.of("youtubeId", "it1r7cvid01", "title", "V",
+                "categoryIds", List.of(LIVE), "status", "APPROVED", "channelId", "@it1r7c"))
+                .andExpect(status().isCreated());
+        assertThat(videos.findByYoutubeId("it1r7cvid01").orElseThrow().getChannelId()).isEqualTo(uc("r7c"));
+    }
+
+    @Test
+    void row7_aModeratorResubmitAddingLiveIs403() throws Exception {
+        doc("videos", "doc-r7r", Map.of("youtubeId", "it1r7rvid01", "title", "V", "status", "REQUEST_CHANGES",
+                "submittedBy", "moderator-uid", "channelId", uc("r7r"), "categoryIds", List.of(PLAIN)));
+        as("moderator");
+        send(post("/api/admin/registry/videos"), Map.of("youtubeId", "it1r7rvid01", "title", "V", "categoryIds", List.of(LIVE)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_ADMIN_ONLY"));
+        assertThat(videos.findById("doc-r7r").orElseThrow().getStatus()).isEqualTo("REQUEST_CHANGES");
+    }
+
+    /** D10: a blank (or non-UC) body channel on a resubmit falls back to the stored doc's UC id. */
+    @Test
+    void row7_aBlankBodyChannelOnAResubmitUsesTheStoredOne() throws Exception {
+        doc("videos", "doc-r7d", Map.of("youtubeId", "it1r7dvid01", "title", "V", "status", "REQUEST_CHANGES",
+                "submittedBy", "admin-uid", "channelId", uc("r7d"), "categoryIds", List.of(PLAIN)));
+        as("admin");
+        liveOn(uc("r7d"), "it1r7dvid01");
+        send(post("/api/admin/registry/videos"), Map.of("youtubeId", "it1r7dvid01", "title", "V",
+                "categoryIds", List.of(LIVE), "channelId", ""))
+                .andExpect(status().isOk());
+        Video stored = videos.findById("doc-r7d").orElseThrow();
+        assertThat(stored.getChannelId()).isEqualTo(uc("r7d"));
+        assertThat(stored.getStatus()).isEqualTo("PENDING");
+    }
+
     // ---- Row 8: admin edit video (ids and status) ----
 
     @Test
@@ -242,5 +324,18 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         liveOn(uc("r9"), "it1r9other1");
         send(patch("/api/admin/registry/videos/doc-r9/toggle"), Map.of()).andExpect(status().isBadRequest());
         assertThat(videos.findById("doc-r9").orElseThrow().getStatus()).isEqualTo("PENDING");
+    }
+
+    @Test
+    void row9_togglingALiveVideoToApprovedStoresTheVerifiedChannel() throws Exception {
+        doc("videos", "doc-r9b", Map.of("youtubeId", "it1r9bvid01", "title", "V", "status", "PENDING",
+                "categoryIds", List.of(LIVE)));
+        as("admin");
+        when(reader.resolveChannelId("it1r9bvid01")).thenReturn(Optional.of(uc("r9b")));
+        liveOn(uc("r9b"), "it1r9bvid01");
+        send(patch("/api/admin/registry/videos/doc-r9b/toggle"), Map.of()).andExpect(status().isOk());
+        Video stored = videos.findById("doc-r9b").orElseThrow();
+        assertThat(stored.getChannelId()).isEqualTo(uc("r9b"));
+        assertThat(stored.getStatus()).isEqualTo("APPROVED");
     }
 }

@@ -4,7 +4,6 @@ import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
-import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
@@ -16,6 +15,7 @@ import org.springframework.http.HttpStatus;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.List;
 import java.util.Map;
@@ -41,15 +41,23 @@ class LiveCategoryGuardTest {
     static final String KIDS = "UC5vfWTTPnKdFp-8s0KbqJhw", SUNNAH = "UCROKYPep-UuODNwyipe6JMw";
 
     final LiveCategoryService liveCategories = mock(LiveCategoryService.class);
-    final CategoryContentOrderRepository orders = mock(CategoryContentOrderRepository.class);
     final LiveChannelService live = mock(LiveChannelService.class);
     final VideoRepository videos = mock(VideoRepository.class);
-    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, orders, live, videos);
+    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, live, videos);
 
     @BeforeEach
     void setUp() throws Exception {
         when(liveCategories.liveCategoryIds()).thenReturn(Set.of(LIVE));
-        when(orders.countByCategoryId(LIVE)).thenReturn(4L);
+        when(liveCategories.members(LIVE)).thenReturn(members(4));
+    }
+
+    /** {@code n} channel members, none of them SUNNAH or KIDS. */
+    static LiveCategoryService.Members members(int n) {
+        List<Object> list = new ArrayList<>();
+        for (int i = 0; i < n; i++) {
+            list.add(new Channel(String.format("UCmember%016d", i)));
+        }
+        return new LiveCategoryService.Members(list);
     }
 
     static LiveCategoryGuard.Change add(String type, String youtubeId, String channelId, String status) {
@@ -226,7 +234,7 @@ class LiveCategoryGuardTest {
 
     private LiveCategoryException refusedThrough(YouTubeOEmbedClient oEmbed, ChannelOrchestrator channels) {
         LiveTabReader reader = new LiveTabReader(new YouTubeGateway(ServiceList.YouTube, 1, null, null), oEmbed, channels);
-        LiveCategoryGuard real = new LiveCategoryGuard(liveCategories, orders,
+        LiveCategoryGuard real = new LiveCategoryGuard(liveCategories,
                 new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC()), videos);
         return assertThrows(LiveCategoryException.class, () -> real.check(true, add("video", "J3bDNstCnzE", null, "APPROVED")));
     }
@@ -261,15 +269,28 @@ class LiveCategoryGuardTest {
 
     @Test
     void theThirtyFirstEntryIsRefusedFull() throws Exception {
-        when(orders.countByCategoryId(LIVE)).thenReturn(30L);
+        when(liveCategories.members(LIVE)).thenReturn(members(30));
 
         assertThat(refused(true, add("channel", SUNNAH, null, "APPROVED")).getCode()).isEqualTo(LiveCategoryException.FULL);
         verify(live, never()).seed(anyString());
     }
 
+    /** A publish of a doc already in the category is no new entry: a full category still lets its members publish. */
+    @Test
+    void aMemberPublishingIntoAFullCategoryIsNotCountedTwice() throws Exception {
+        List<Object> thirty = new ArrayList<>(members(29).ordered());
+        thirty.add(new Channel(SUNNAH));
+        when(liveCategories.members(LIVE)).thenReturn(new LiveCategoryService.Members(thirty));
+        LiveCategoryGuard.Change publish = new LiveCategoryGuard.Change("doc", "channel", SUNNAH, null,
+                List.of(LIVE), "PENDING", List.of(LIVE), "APPROVED");
+
+        assertThat(guard.check(true, publish)).isNull();
+        verify(live).seed(SUNNAH);
+    }
+
     @Test
     void theThirtiethEntryPasses() throws Exception {
-        when(orders.countByCategoryId(LIVE)).thenReturn(29L);
+        when(liveCategories.members(LIVE)).thenReturn(members(29));
 
         assertThat(guard.check(true, add("channel", SUNNAH, null, "APPROVED"))).isNull();
         verify(live).seed(SUNNAH);
@@ -356,7 +377,7 @@ class LiveCategoryGuardTest {
 
     @Test
     void checkAllCountsItsOwnAddsAgainstTheCap() throws Exception {
-        when(orders.countByCategoryId(LIVE)).thenReturn(29L);
+        when(liveCategories.members(LIVE)).thenReturn(members(29));
 
         LiveCategoryException e = assertThrows(LiveCategoryException.class, () -> guard.checkAll(true,
                 List.of(add("channel", SUNNAH, null, "APPROVED"), add("channel", KIDS, null, "APPROVED"))));
@@ -415,7 +436,7 @@ class LiveCategoryGuardTest {
         verify(videos).save(fresh);
         verify(videos, never()).save(v);
         verify(live).seed(SUNNAH);
-        verify(orders, never()).countByCategoryId(any());                    // members are counted, not re-counted
+        verify(liveCategories, times(1)).members("kids");                    // members are counted, not re-read
     }
 
     /** More members than the cap: refused FULL before any YouTube read. */

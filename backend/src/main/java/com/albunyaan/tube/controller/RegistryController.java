@@ -216,13 +216,6 @@ public class RegistryController {
             if (existing.isPresent()) {
                 Channel ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
-                    liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(), ex, ex,
-                            channel.getCategoryIds() != null ? channel.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
-                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
-                    ex.setStatus("PENDING");
-                    ex.setApprovalMetadata(null);
-                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
-                    if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
                     // Only overwrite submitterNote if the resubmit body explicitly provided a NON-EMPTY one.
                     // null OR "" on the body means "I'm not touching the note" (gstack R6 P2: many
                     // HTTP clients always send the key with "" rather than omitting it; the prior
@@ -232,12 +225,20 @@ public class RegistryController {
                     // whitespace + zero-width + bidi-override chars to null, so the
                     // null-check below correctly treats all "no real content" payloads
                     // as "don't touch" — no special-case isBlank() / isEmpty() needed.
+                    // It reads only the body, so it runs before the live guard: a 400 spends no YouTube read.
                     String sanitizedChannelNote;
                     try {
                         sanitizedChannelNote = sanitizeSubmitterNote(channel.getSubmitterNote());
                     } catch (IllegalArgumentException tooLong) {
                         return ResponseEntity.badRequest().build();
                     }
+                    liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(), ex, ex,
+                            channel.getCategoryIds() != null ? channel.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
                     if (sanitizedChannelNote != null) {
                         ex.setSubmitterNote(sanitizedChannelNote);
                     }
@@ -548,6 +549,13 @@ public class RegistryController {
             if (existing.isPresent()) {
                 Playlist ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
+                    // Cubic R4 P2: sanitize first, before the live guard; see channel resubmit above.
+                    String sanitizedPlaylistNote;
+                    try {
+                        sanitizedPlaylistNote = sanitizeSubmitterNote(playlist.getSubmitterNote());
+                    } catch (IllegalArgumentException tooLong) {
+                        return ResponseEntity.badRequest().build();
+                    }
                     liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(), ex, ex,
                             playlist.getCategoryIds() != null ? playlist.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
                     // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
@@ -555,13 +563,6 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
-                    // Cubic R4 P2: sanitize first; see channel resubmit above.
-                    String sanitizedPlaylistNote;
-                    try {
-                        sanitizedPlaylistNote = sanitizeSubmitterNote(playlist.getSubmitterNote());
-                    } catch (IllegalArgumentException tooLong) {
-                        return ResponseEntity.badRequest().build();
-                    }
                     if (sanitizedPlaylistNote != null) {
                         ex.setSubmitterNote(sanitizedPlaylistNote);
                     }
@@ -934,11 +935,16 @@ public class RegistryController {
             if (existing.isPresent()) {
                 Video ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
-                    // D10: the body's channelId, else the stored doc's
-                    String verifiedChannel = liveCategoryGuard.check(user.isAdmin(), new LiveCategoryGuard.Change(ex.getId(),
-                            "video", ex.getYoutubeId(), video.getChannelId() != null ? video.getChannelId() : ex.getChannelId(),
-                            ex.getCategoryIds(), ex.getStatus(),
-                            video.getCategoryIds() != null ? video.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
+                    // Cubic R4 P2: sanitize first, before the live guard; see channel resubmit above.
+                    String sanitizedVideoNote;
+                    try {
+                        sanitizedVideoNote = sanitizeSubmitterNote(video.getSubmitterNote());
+                    } catch (IllegalArgumentException tooLong) {
+                        return ResponseEntity.badRequest().build();
+                    }
+                    // D10: Change.of takes the body's channelId when it is a UC id, else the stored doc's.
+                    String verifiedChannel = liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(),
+                            video, ex, video.getCategoryIds() != null ? video.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
                     if (verifiedChannel != null) {
                         ex.setChannelId(verifiedChannel);
                     }
@@ -947,13 +953,6 @@ public class RegistryController {
                     ex.setApprovalMetadata(null);
                     ex.setUpdatedAt(com.google.cloud.Timestamp.now());
                     if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
-                    // Cubic R4 P2: sanitize first; see channel resubmit above.
-                    String sanitizedVideoNote;
-                    try {
-                        sanitizedVideoNote = sanitizeSubmitterNote(video.getSubmitterNote());
-                    } catch (IllegalArgumentException tooLong) {
-                        return ResponseEntity.badRequest().build();
-                    }
                     if (sanitizedVideoNote != null) {
                         ex.setSubmitterNote(sanitizedVideoNote);
                     }
@@ -989,7 +988,7 @@ public class RegistryController {
         if (videoStatus == null) {
             return ResponseEntity.badRequest().build();
         }
-        // D10: Change.of takes the body's channelId (the first channel source).
+        // D10: Change.of takes the body's channelId (the first channel source; no stored doc yet).
         String verifiedChannel = liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(video.getYoutubeId(),
                 video, null, video.getCategoryIds(), videoStatus));
         if (verifiedChannel != null) {
