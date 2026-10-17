@@ -11,6 +11,7 @@ import com.albunyaan.tube.repository.ValidationRunRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentImportService;
 import com.albunyaan.tube.service.ImportExportService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.SimpleExportService;
 import com.albunyaan.tube.service.SimpleImportService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -59,6 +60,7 @@ public class ImportExportController {
     private final ContentImportService contentImportService;
     private final ValidationRunRepository validationRunRepository;
     private final Executor validationExecutor;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     /**
      * Flag to prevent concurrent import runs.
@@ -73,7 +75,8 @@ public class ImportExportController {
             SimpleExportService simpleExportService,
             ContentImportService contentImportService,
             ValidationRunRepository validationRunRepository,
-            @Qualifier("validationExecutor") Executor validationExecutor
+            @Qualifier("validationExecutor") Executor validationExecutor,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.importExportService = importExportService;
         this.simpleImportService = simpleImportService;
@@ -81,6 +84,7 @@ public class ImportExportController {
         this.contentImportService = contentImportService;
         this.validationRunRepository = validationRunRepository;
         this.validationExecutor = validationExecutor;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -250,7 +254,7 @@ public class ImportExportController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(defaultValue = "APPROVED") String defaultStatus,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws IOException {
+    ) throws IOException, ExecutionException, InterruptedException, TimeoutException {
 
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(
@@ -279,6 +283,7 @@ public class ImportExportController {
                 SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]")
             );
         }
+        liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus));   // row 16 (D9)
 
         SimpleImportResponse response = simpleImportService.importSimpleFormat(
             simpleData,

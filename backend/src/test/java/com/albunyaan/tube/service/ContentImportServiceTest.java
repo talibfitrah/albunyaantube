@@ -4,6 +4,7 @@ import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.StreamDetailsDto;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationRun;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -58,6 +60,9 @@ class ContentImportServiceTest {
     @Mock
     private ValidationRunRepository validationRunRepository;
 
+    @Mock
+    private LiveCategoryGuard liveCategoryGuard;
+
     private ContentImportService service;
 
     @BeforeEach
@@ -68,7 +73,8 @@ class ContentImportServiceTest {
                 channelRepository,
                 playlistRepository,
                 videoRepository,
-                validationRunRepository
+                validationRunRepository,
+                liveCategoryGuard
         );
     }
 
@@ -587,5 +593,27 @@ class ContentImportServiceTest {
         dto.setUploaderName("Test Channel");
         dto.setUploaderUrl("https://youtube.com/channel/UC123");
         return dto;
+    }
+
+    /** §7 row 16 (K11): a live check that cannot run (503) fails the run with its code, before any validation or write. */
+    @Test
+    void importSimpleFormatAsync_anUnavailableLiveCheckFailsTheRunWithItsCode() throws Exception {
+        List<Map<String, String>> simpleData = List.of(
+                Collections.emptyMap(),
+                Collections.emptyMap(),
+                Map.of("it1r16uvid1", "V|Live")
+        );
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(liveCategoryGuard.checkAll(eq(true), anyList())).thenThrow(new LiveCategoryException(
+                HttpStatus.SERVICE_UNAVAILABLE, LiveCategoryException.CHECK_UNAVAILABLE, "try again later",
+                Map.of("offenders", List.of(Map.of("ref", "it1r16uvid1")))));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(ValidationRun.STATUS_FAILED, run.getStatus());
+        assertEquals(LiveCategoryException.CHECK_UNAVAILABLE, run.getDetails().get("code"));
+        assertEquals(List.of(Map.of("ref", "it1r16uvid1")), run.getDetails().get("offenders"));
+        verifyNoInteractions(channelOrchestrator);
+        verify(videoRepository, never()).save(any(Video.class));
     }
 }

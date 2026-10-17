@@ -18,6 +18,7 @@ import org.springframework.stereotype.Service;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -44,6 +45,7 @@ public class ImportExportService {
     private final VideoRepository videoRepository;
     private final AuditLogService auditLogService;
     private final VideoValidationService videoValidationService;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ImportExportService(
             CategoryRepository categoryRepository,
@@ -51,7 +53,8 @@ public class ImportExportService {
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
             AuditLogService auditLogService,
-            VideoValidationService videoValidationService
+            VideoValidationService videoValidationService,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.categoryRepository = categoryRepository;
         this.channelRepository = channelRepository;
@@ -59,6 +62,7 @@ public class ImportExportService {
         this.videoRepository = videoRepository;
         this.auditLogService = auditLogService;
         this.videoValidationService = videoValidationService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -127,6 +131,37 @@ public class ImportExportService {
         String mergeStrategy = request.getMergeStrategy();
         String importedBy = request.getImportedBy();
 
+        // §7 row 15 (D9): a full JSON import is a raw model write; the guard sees every item before anything is saved.
+        List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
+        if (request.getChannels() != null) {
+            for (Channel c : request.getChannels()) {
+                Channel old = c.getId() == null ? null : channelRepository.findById(c.getId()).orElse(null);
+                if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                liveChanges.add(LiveCategoryGuard.Change.of("channel:" + c.getId(), c, old, c.getCategoryIds(), c.getStatus()));
+            }
+        }
+        if (request.getPlaylists() != null) {
+            for (Playlist p : request.getPlaylists()) {
+                Playlist old = p.getId() == null ? null : playlistRepository.findById(p.getId()).orElse(null);
+                if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                liveChanges.add(LiveCategoryGuard.Change.of("playlist:" + p.getId(), p, old, p.getCategoryIds(), p.getStatus()));
+            }
+        }
+        if (request.getVideos() != null) {
+            for (Video v : request.getVideos()) {
+                Video old = v.getId() == null ? null : videoRepository.findById(v.getId()).orElse(null);
+                if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                liveChanges.add(LiveCategoryGuard.Change.of("video:" + v.getId(), v, old, v.getCategoryIds(), v.getStatus()));
+            }
+        }
+        Map<String, String> verifiedChannels = liveCategoryGuard.checkAll(true, liveChanges);
+        if (request.getVideos() != null) {
+            request.getVideos().forEach(v -> {
+                String verified = verifiedChannels.get("video:" + v.getId());
+                if (verified != null) v.setChannelId(verified);
+            });
+        }
+
         // Import categories first (they're referenced by other entities)
         if (request.getCategories() != null) {
             for (Category category : request.getCategories()) {
@@ -154,6 +189,8 @@ public class ImportExportService {
                         }
                     }
 
+                    // R1/R18: a file never sets or clears LIVE; the shape and members rules run only in CategoryController.
+                    category.setType(existingOpt.map(Category::getType).orElse(null));
                     categoryRepository.save(category);
                     counts.incrementCategoriesImported();
                 } catch (Exception e) {

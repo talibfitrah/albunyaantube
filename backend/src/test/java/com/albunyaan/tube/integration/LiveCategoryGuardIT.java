@@ -17,9 +17,11 @@ import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
+import org.springframework.mock.web.MockMultipartFile;
 import org.springframework.test.web.servlet.ResultActions;
 import org.springframework.test.web.servlet.request.MockHttpServletRequestBuilder;
 
+import java.nio.charset.StandardCharsets;
 import java.util.Arrays;
 import java.util.HashMap;
 import java.util.List;
@@ -33,6 +35,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -520,5 +523,87 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         Video stored = videos.findById("doc-r14v").orElseThrow();
         assertThat(stored.getChannelId()).isEqualTo(uc("r14v"));
         assertThat(stored.getCategoryIds()).containsExactly(LIVE);
+    }
+
+    // ---- Row 15: JSON import (ImportExportService.importAll) ----
+
+    private ResultActions importFile(String path, String jsonBody, String param, String value) throws Exception {
+        return mvc.perform(multipart(path)
+                .file(new MockMultipartFile("file", "import.json", "application/json", jsonBody.getBytes(StandardCharsets.UTF_8)))
+                .param(param, value)
+                .header("Authorization", "Bearer t"));
+    }
+
+    @Test
+    void row15_aJsonImportOfAPlaylistIntoLiveIsRefusedWhole() throws Exception {
+        as("admin");
+        String body = json.writeValueAsString(Map.of("playlists", List.of(Map.of("id", "pl-r15",
+                "youtubeId", "PLit1r1500000000000000000000000000", "title", "P", "status", "APPROVED", "categoryIds", List.of(LIVE)))));
+        importFile("/api/admin/import-export/import", body, "mergeStrategy", "OVERWRITE")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(countDocuments("playlists")).isZero();
+    }
+
+    @Test
+    void row15_aJsonImportNeverSetsOrClearsTheLiveType() throws Exception {
+        as("admin");
+        String body = "{\"categories\":[{\"id\":\"" + LIVE + "\",\"name\":\"Live\",\"type\":null},"
+                + "{\"id\":\"it1-new\",\"name\":\"New\",\"type\":\"LIVE\"}]}";
+        importFile("/api/admin/import-export/import", body, "mergeStrategy", "OVERWRITE")
+                .andExpect(status().isOk());
+        assertThat(firestore.collection("categories").document(LIVE).get().get().getString("type")).isEqualTo("LIVE");
+        assertThat(firestore.collection("categories").document("it1-new").get().get().getString("type")).isNull();
+    }
+
+    // ---- Row 16: simple import (sync refuses the request; async fails its run before the first write) ----
+
+    @Test
+    void row16_aSimpleImportRowPuttingAPlaylistIntoLiveIsRefusedWhole() throws Exception {
+        as("admin");
+        String body = "[{}, {\"PLit1r1600000000000000000000000000\": \"P|Live\"}, {}]";
+        importFile("/api/admin/import-export/import/simple", body, "defaultStatus", "APPROVED")
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(countDocuments("playlists")).isZero();
+    }
+
+    /** D9 + K11 (pre-flight M8): the async import never checks on the request thread; its run fails before any write. */
+    @Test
+    void row16_theAsyncSimpleImportFailsItsRunBeforeAnyWrite() throws Exception {
+        as("admin");
+        String body = "[{}, {\"PLit1r16a000000000000000000000000\": \"P|Live\"}, {}]";
+        String runId = json.readTree(importFile("/api/admin/import-export/import/simple/async", body, "defaultStatus", "APPROVED")
+                .andExpect(status().isAccepted())
+                .andReturn().getResponse().getContentAsString()).get("runId").asText();
+        var run = firestore.collection("validation_runs").document(runId);
+        for (int i = 0; i < 100 && !"FAILED".equals(run.get().get().getString("status")); i++) Thread.sleep(100);
+
+        var doc = run.get().get();
+        assertThat(doc.getString("status")).isEqualTo("FAILED");
+        assertThat(doc.get("details.code")).isEqualTo("LIVE_CATEGORY_TYPE_NOT_ALLOWED");
+        assertThat(countDocuments("playlists")).isZero();
+    }
+
+    // ---- Row 17: category create/update (shape and members) ----
+
+    @Test
+    void row17_aLiveCategoryWithAParentIsRefusedShape() throws Exception {
+        as("admin");
+        send(post("/api/admin/categories"), Map.of("name", "Live kids", "parentCategoryId", PLAIN, "type", "LIVE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_SHAPE"));
+    }
+
+    @Test
+    void row17_settingLiveOnACategoryHoldingAPlaylistIsRefusedMembersInvalid() throws Exception {
+        doc("playlists", "pl-r17", Map.of("youtubeId", "PLit1r1700000000000000000000000000", "title", "P",
+                "status", "APPROVED", "categoryIds", List.of(PLAIN), "createdAt", Timestamp.now()));   // members() orders by createdAt
+        as("admin");
+        send(put("/api/admin/categories/" + PLAIN), Map.of("name", "Plain", "type", "LIVE"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_MEMBERS_INVALID"))
+                .andExpect(jsonPath("$.details.offenders[0].ref").value("pl-r17"));
+        assertThat(firestore.collection("categories").document(PLAIN).get().get().getString("type")).isNull();
     }
 }

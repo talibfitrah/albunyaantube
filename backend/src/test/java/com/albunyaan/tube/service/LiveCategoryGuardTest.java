@@ -4,7 +4,9 @@ import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
+import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -43,7 +45,8 @@ class LiveCategoryGuardTest {
     final LiveCategoryService liveCategories = mock(LiveCategoryService.class);
     final LiveChannelService live = mock(LiveChannelService.class);
     final VideoRepository videos = mock(VideoRepository.class);
-    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, live, videos);
+    final LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, live, videos,
+            mock(ChannelRepository.class), mock(PlaylistRepository.class), mock(CategoryMappingService.class));
 
     @BeforeEach
     void setUp() throws Exception {
@@ -235,7 +238,8 @@ class LiveCategoryGuardTest {
     private LiveCategoryException refusedThrough(YouTubeOEmbedClient oEmbed, ChannelOrchestrator channels) {
         LiveTabReader reader = new LiveTabReader(new YouTubeGateway(ServiceList.YouTube, 1, null, null), oEmbed, channels);
         LiveCategoryGuard real = new LiveCategoryGuard(liveCategories,
-                new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC()), videos);
+                new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC()), videos,
+                mock(ChannelRepository.class), mock(PlaylistRepository.class), mock(CategoryMappingService.class));
         return assertThrows(LiveCategoryException.class, () -> real.check(true, add("video", "J3bDNstCnzE", null, "APPROVED")));
     }
 

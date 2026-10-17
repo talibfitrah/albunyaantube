@@ -4,6 +4,7 @@ import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.StreamDetailsDto;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationRun;
@@ -61,6 +62,7 @@ public class ContentImportService {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final ValidationRunRepository validationRunRepository;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ContentImportService(
             ChannelOrchestrator channelOrchestrator,
@@ -68,7 +70,8 @@ public class ContentImportService {
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            ValidationRunRepository validationRunRepository
+            ValidationRunRepository validationRunRepository,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.channelOrchestrator = channelOrchestrator;
         this.categoryMappingService = categoryMappingService;
@@ -76,6 +79,7 @@ public class ContentImportService {
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.validationRunRepository = validationRunRepository;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -119,6 +123,20 @@ public class ContentImportService {
                     run.getTotalPlaylistsToCheck(),
                     run.getTotalVideosToCheck(),
                     run.getTotalToCheck());
+
+            // §7 row 16 (D9): the live checks run here, off the request thread (K11), before the first write.
+            // A refusal (a transient 503 included) fails the whole run and writes nothing; the run shows the code and rows.
+            try {
+                liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus));
+            } catch (LiveCategoryException e) {
+                run.setCurrentPhase("LIVE_CATEGORY_REFUSED");
+                run.complete(ValidationRun.STATUS_FAILED);
+                run.addDetail("errorMessage", e.getMessage());
+                run.addDetail("code", e.getCode());
+                run.addDetail("offenders", e.getDetails().get("offenders"));
+                validationRunRepository.save(run);
+                return;
+            }
 
             // Import channels
             if (channelsMap != null && !channelsMap.isEmpty()) {

@@ -2,6 +2,8 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.ChannelRepository;
+import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -73,11 +75,18 @@ public class LiveCategoryGuard {
     private final LiveCategoryService liveCategories;
     private final LiveChannelService live;
     private final VideoRepository videos;
+    private final ChannelRepository channels;
+    private final PlaylistRepository playlists;
+    private final CategoryMappingService categoryMapping;
 
-    public LiveCategoryGuard(LiveCategoryService liveCategories, LiveChannelService live, VideoRepository videos) {
+    public LiveCategoryGuard(LiveCategoryService liveCategories, LiveChannelService live, VideoRepository videos,
+                             ChannelRepository channels, PlaylistRepository playlists, CategoryMappingService categoryMapping) {
         this.liveCategories = liveCategories;
         this.live = live;
         this.videos = videos;
+        this.channels = channels;
+        this.playlists = playlists;
+        this.categoryMapping = categoryMapping;
     }
 
     /** One write. Returns the verified UC channel id for a VIDEO that adds or publishes LIVE; null otherwise. */
@@ -99,6 +108,37 @@ public class LiveCategoryGuard {
             throw envelope(refused);
         }
         return verified;
+    }
+
+    /**
+     * Rows 15–16 (D9): the changes a simple-format import ([channels, playlists, videos] maps of youtubeId →
+     * "Title|Cat1,Cat2|keywords") would make. Only rows that name a LIVE category and are new (the import skips
+     * existing ones) are returned, so an import that never touches LIVE costs no extra read.
+     */
+    public List<Change> simpleImportChanges(List<Map<String, String>> simpleData, String defaultStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Set<String> liveIds = liveCategories.liveCategoryIds();
+        List<Change> changes = new ArrayList<>();
+        String[] types = {"channel", "playlist", "video"};
+        for (int i = 0; i < types.length && i < simpleData.size(); i++) {
+            Map<String, String> rows = simpleData.get(i);
+            if (rows == null) continue;
+            for (Map.Entry<String, String> row : rows.entrySet()) {
+                String[] parts = row.getValue() == null ? new String[0] : row.getValue().split("\\|", 3);
+                List<String> ids = categoryMapping.mapCategoryNamesToIds(parts.length > 1 ? parts[1].trim() : "");
+                if (ids.stream().noneMatch(liveIds::contains)) continue;
+                String youtubeId = row.getKey();
+                boolean exists = switch (types[i]) {
+                    case "channel" -> channels.findByYoutubeId(youtubeId).isPresent();
+                    case "playlist" -> playlists.findByYoutubeId(youtubeId).isPresent();
+                    default -> videos.findByYoutubeId(youtubeId).isPresent();
+                };
+                if (!exists) {
+                    changes.add(new Change(youtubeId, types[i], youtubeId, null, List.of(), null, ids, defaultStatus));
+                }
+            }
+        }
+        return changes;
     }
 
     /** Row 17 (§4.2): setting LIVE on a non-empty category requires every member to conform. */
