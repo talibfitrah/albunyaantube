@@ -1,0 +1,36 @@
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/FeaturedListAdapter.kt
+  s_dbb6b1f3671904::t_7a6aef656bf705 135-137,139
+android/app/src/main/java/com/albunyaan/tube/ui/detail/PlaylistDetailFragment.kt
+  s_dbb6b1f3671904::t_7c729c67326fe2 55-56
+  s_dbb6b1f3671904::t_7a6aef656bf705 505-506,523-524
+android/app/src/main/java/com/albunyaan/tube/util/ImageLoading.kt
+  s_dbb6b1f3671904::t_814283e11e9cdf 36,47-48,60-61,65,95-96,98-99,105,137,144-145,150,161,174,179,181,202,230,235,237,256-259,273,276
+android/app/src/main/java/com/albunyaan/tube/ui/adapters/PlaylistAdapter.kt
+  s_dbb6b1f3671904::t_7a6aef656bf705 52-54,56
+android/app/src/main/java/com/albunyaan/tube/ui/SearchResultsAdapter.kt
+  s_dbb6b1f3671904::t_7a6aef656bf705 140
+android/app/src/main/res/drawable/playlist_thumbnail_placeholder.xml
+  s_dbb6b1f3671904::t_814283e11e9cdf 1-11
+android/app/src/main/java/com/albunyaan/tube/ui/detail/adapters/ChannelPlaylistsAdapter.kt
+  s_dbb6b1f3671904::t_7a6aef656bf705 11,56-57
+android/app/src/test/java/com/albunyaan/tube/util/ImageLoadingPlaceholderTest.kt
+  s_dbb6b1f3671904::t_355f71cff1a65c 1-50
+android/app/src/test/java/com/albunyaan/tube/util/ImageLoadingTest.kt
+  s_dbb6b1f3671904::t_f4a362f8f71f4e 42-52,97-101
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "92257da4f286083c910e4eafeefd92e00da6197a",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
