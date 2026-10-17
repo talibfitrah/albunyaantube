@@ -209,10 +209,12 @@ public actor RemoteConfigStore {
         // walks zero rungs -> allRungsFailed for every video, surviving relaunch. One operator typo
         // must not brick playback: fall back to the bundled default's order. An order left with no rung
         // a walk POSTs for (e.g. only `tvSamsungAdaptive`) bricks the same way, so it falls back too.
+        // What is left holds only non-walk switches (spec §4.1: the TV rung anywhere turns HD on); they are kept after the
+        // bundled rungs, so nothing duplicates and an empty order still gets exactly the bundled one.
         // Logged once per sanitize (a fetch or a launch), not per resolve: the persisted copy is the fixed one.
         if !config.resolverOrder.contains(where: walkStrategies.contains) {
-            log.error("resolverOrder \(config.resolverOrder, privacy: .public) has no walk rung; using the bundled order")
-            config.resolverOrder = RemoteConfig.bundledDefault.resolverOrder
+            log.error("resolverOrder \(config.resolverOrder, privacy: .public) has no walk rung; prepending the bundled order")
+            config.resolverOrder = RemoteConfig.bundledDefault.resolverOrder + config.resolverOrder
         }
         // Floor at 0: "0 = no cache" is a legitimate published choice; a negative value back-dates
         // every entry's expiry in `ManifestCache.put`, silently disabling the cache.

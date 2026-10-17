@@ -228,6 +228,7 @@ import Testing
         // `embed` third rung to owner directive 2026-10-14 (no YouTube player), and `sanitized`
         // would drop the entry even if it came back.
         #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
+        #expect(config.resolverOrder == raw.resolverOrder)   // no fallback may mask a bad published order
         #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }

@@ -649,7 +649,10 @@ import Testing
     /// It falls back to the bundled order, like an empty one.
     @Test func anOrderOfOnlyTheTVRungWalksTheDefaultRungs() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
-        let (resolver, _) = makeResolver(transport: transport, configStore: configStore(resolverOrder: ["tvSamsungAdaptive"]))
+        let store = configStore(resolverOrder: ["tvSamsungAdaptive"])
+        // Spec §4.1: the TV rung anywhere in the order is the HD switch, so the fallback keeps it after the bundled rungs.
+        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18", "tvSamsungAdaptive"])
+        let (resolver, _) = makeResolver(transport: transport, configStore: store)
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         guard case .progressive = resolved.stream else { Issue.record("expected the 360p"); return }
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3"])

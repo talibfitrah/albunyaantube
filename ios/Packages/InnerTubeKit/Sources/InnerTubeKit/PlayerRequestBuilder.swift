@@ -43,6 +43,8 @@ public struct PlayerRequestBuilder: Sendable {
         assert(
             context.clientName == family.expectedClientName,
             "PlayerRequestBuilder: family \(family) expects clientName \(family.expectedClientName), got \(context.clientName)")
+        // R4: a TV request without the solver's sts mints URLs the backend cannot solve; dev-time wiring check.
+        assert(family != .tvSamsung || signatureTimestamp != nil, "PlayerRequestBuilder: a tvSamsung request needs a signatureTimestamp")
         var client = InnerTubeContext.client(context: context, visitorData: visitorData, locale: locale)
         var headers = InnerTubeContext.headers(context: context, visitorData: visitorData, locale: locale)
         var url = Self.requestURL
