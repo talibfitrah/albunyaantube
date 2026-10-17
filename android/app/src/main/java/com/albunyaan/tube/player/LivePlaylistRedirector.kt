@@ -11,7 +11,6 @@ import com.albunyaan.tube.data.extractor.ExtractionClient
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
-import java.io.IOException
 import java.util.concurrent.ConcurrentHashMap
 import javax.inject.Inject
 import javax.inject.Singleton
@@ -36,7 +35,7 @@ class LivePlaylistRedirector internal constructor(
             try {
                 source.open(DataSpec(Uri.parse(url)))
                 String(DataSourceUtil.readToEnd(source), Charsets.UTF_8)
-            } catch (e: IOException) {
+            } catch (e: Exception) {                                // any fetch failure takes the rebuild
                 null
             } finally {
                 DataSourceUtil.closeQuietly(source)                 // close() throws IOException too; never escape refresh
@@ -47,6 +46,8 @@ class LivePlaylistRedirector internal constructor(
     private val maps = ConcurrentHashMap<String, Map<Int, String>>()
     /** The itags the player has asked for since the source was built: a fresh master must cover all of them. */
     private val requested = ConcurrentHashMap<String, MutableSet<Int>>()
+    /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it. */
+    private val generations = ConcurrentHashMap<String, Long>()
 
     /** The `ResolvingDataSource` hook. */
     fun resolve(streamId: String, spec: DataSpec): DataSpec =
@@ -66,8 +67,11 @@ class LivePlaylistRedirector internal constructor(
 
     /** A new source for [streamId] starts from its own master: never redirected to an older one. */
     fun clear(streamId: String) {
-        maps.remove(streamId)
-        requested.remove(streamId)
+        synchronized(this) {
+            generations[streamId] = (generations[streamId] ?: 0L) + 1
+            maps.remove(streamId)
+            requested.remove(streamId)
+        }
     }
 
     /**
@@ -78,10 +82,16 @@ class LivePlaylistRedirector internal constructor(
     suspend fun refresh(current: ResolvedStreams, fresh: ResolvedStreams): Boolean {
         if (fresh.extractionClient != current.extractionClient) return false       // RV I10b
         val master = fresh.hlsUrl ?: return false
+        val id = current.streamId
+        val generation = generations[id]
         val map = variantMap(fetchText(master, fresh.extractionClient) ?: return false)
-        if (map.isEmpty() || !map.keys.containsAll(requested[current.streamId].orEmpty())) return false
-        maps[current.streamId] = map
-        if (BuildConfig.DEBUG) Log.d(TAG, "swap ${current.streamId}: ${map.size} renditions -> expire ${expire(master)}")
+        // Short and never taken by loader threads (rewrite reads lock-free): only clear() contends.
+        synchronized(this) {
+            if (generations[id] != generation) return false                       // a new source was built meanwhile
+            if (map.isEmpty() || !map.keys.containsAll(requested[id].orEmpty())) return false
+            maps[id] = map
+        }
+        if (BuildConfig.DEBUG) Log.d(TAG, "swap $id: ${map.size} renditions -> expire ${expire(master)}")
         return true
     }
 

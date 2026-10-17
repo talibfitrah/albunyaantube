@@ -72,7 +72,8 @@ class LivePlaylistRedirectorTest {
         val r = redirector(master(e2))
         r.refresh(streams(e1), streams(e2))
 
-        assertNull(r.rewrite("Rs7St51oDDc", "https://rr3---sn-x.googlevideo.com/videoplayback/id/Rs7St51oDDc.1/itag/230/sq/69099/goap/x"))
+        // A real live segment carries /expire/, /ip/ and /itag/ too: only the hls_playlist guard keeps it out.
+        assertNull(r.rewrite("Rs7St51oDDc", "https://rr3---sn-x.googlevideo.com/videoplayback/expire/$e1/ei/x/ip/203.0.113.7/id/Rs7St51oDDc.1/itag/230/sq/69099/goap/x"))
         assertNull(r.rewrite("Rs7St51oDDc", url(999, e1)))
         assertNull(r.rewrite("eaOtcUNHDB8", url(230, e1)))
     }
@@ -103,5 +104,27 @@ class LivePlaylistRedirectorTest {
 
     @Test fun `a failed master fetch falls back to the rebuild`() = runTest {
         assertFalse(redirector(null).refresh(streams(e1), streams(e2)))
+    }
+
+    /** RV I10a: a source rebuilt while the fresh master is in flight starts from its own master; the late map is dropped. */
+    @Test fun `a clear during the master fetch drops that refresh`() = runTest {
+        lateinit var r: LivePlaylistRedirector
+        r = LivePlaylistRedirector { _, _ -> r.clear("Rs7St51oDDc"); master(e2) }
+
+        assertFalse(r.refresh(streams(e1), streams(e2)))
+        assertNull(r.rewrite("Rs7St51oDDc", url(230, e1)))
+    }
+
+    @Test fun `a failed or garbage refresh keeps the earlier map`() = runTest {
+        var text: String? = master(e2)
+        val r = LivePlaylistRedirector { _, _ -> text }
+        assertTrue(r.refresh(streams(e1), streams(e2)))
+
+        text = null
+        assertFalse(r.refresh(streams(e1), streams(e2)))
+        text = "<html>not a playlist</html>"
+        assertFalse(r.refresh(streams(e1), streams(e2)))
+
+        assertEquals(url(230, e2), r.rewrite("Rs7St51oDDc", url(230, e1)))
     }
 }
