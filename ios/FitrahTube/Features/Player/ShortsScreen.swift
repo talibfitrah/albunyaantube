@@ -81,7 +81,7 @@ struct ShortsScreen: View {
                         CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent, bottomClearance: 200)
                     }
                 }
-                .overlay { ShortsOverlay(model: model, args: args) }
+                .overlay { ShortsOverlay(model: model, args: model.args) }   // owner issue 1: the adopted title
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {

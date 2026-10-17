@@ -84,6 +84,35 @@ struct PlayerViewModelTests {
         #expect(vm.state == .rung2Progressive(Self.progressive))
     }
 
+    // MARK: - Owner issue 1: the source's own title, not the list row's translation
+
+    private static let originalTitle = "جزء عم المعلم مشاري راشد العفاسي"
+
+    private func listTitledArgs() -> PlayerArgs {
+        PlayerArgs(videoId: "abcdefghijk", title: "Juz Amma (list)", channelId: "ch1")
+    }
+
+    @Test func aResolvedTitleReplacesTheListTitle() async {
+        var titled = Self.hls
+        titled.title = Self.originalTitle
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(titled)]), args: listTitledArgs())
+        await vm.open()
+        #expect(vm.args.title == Self.originalTitle)
+    }
+
+    @Test func aTitlelessResolveKeepsTheListTitle() async {
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.success(Self.hls)]), args: listTitledArgs())
+        await vm.open()
+        #expect(vm.args.title == "Juz Amma (list)")
+    }
+
+    @Test func aFailedResolveKeepsTheListTitle() async {
+        let vm = makeViewModel(resolver: FakeResolver(outcomes: [.failure(ExtractionError.botCheck)]),
+                               args: listTitledArgs())
+        await vm.open()
+        #expect(vm.args.title == "Juz Amma (list)")
+    }
+
     @Test func aSilentRefreshNeverReplacesAPlayingStreamWithAFailure() async {
         // CF-B2-3 + plan §6.6: `reResolveIfExpiring` shows the user nothing, so it must not be able to
         // change the playback SURFACE. The near-expiry rung-1 stream keeps playing; reactive recovery

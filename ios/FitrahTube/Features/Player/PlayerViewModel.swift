@@ -1145,6 +1145,10 @@ extension StreamState {
         // Together, always: `.error`/`.contentUnavailable` results move it too --
         // the state on screen is now THIS video's, whatever it says.
         resolvedVideoId = videoId
+        // Owner issue 1: the source's own title (videoDetails.title), never the list row's hl=en translation.
+        // Before `state`: the host republishes Now Playing from `args` on the pass the state change triggers.
+        // Replace-only: a titleless resolve (offline, TV) keeps what the row gave.
+        if let title = result.resolved?.title, !title.isEmpty { args.title = title }
         state = result
     }
 

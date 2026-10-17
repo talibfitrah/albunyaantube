@@ -79,6 +79,17 @@ struct PlayerViewModelQueueTests {
         #expect(vm.args.playlistId == "PL")   // the queue context survives the advance
     }
 
+    /// Owner issue 1: the player shows the next video's own title once its resolve lands; the Up
+    /// Next rows keep their list titles (ruling (b) is separate).
+    @Test func anAdvanceShowsTheNextVideosResolvedTitleAndLeavesUpNextRowsAlone() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        resolver.titles = ["b": "orig-b"]
+        await vm.open()
+        await vm.playToEnd()
+        #expect(vm.args.title == "orig-b")
+        #expect(vm.queue.upcoming.map(\.title) == ["T-c"])
+    }
+
     /// Captions bug: Up Next keeps the chosen caption LANGUAGE, like Android's
     /// `setPreferredTextLanguage` on its one player (`PlayerFragment.kt:549-553`). The next video's
     /// track is the same language at a different URL, so matching by URL dropped the captions AND

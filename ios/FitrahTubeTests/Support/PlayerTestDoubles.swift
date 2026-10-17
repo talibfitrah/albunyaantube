@@ -47,6 +47,8 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     private var _expiresIn: TimeInterval = 3600
     /// Per-video `captionTracks` for the `.hls` answer (the caption carry-over test); default none.
     private var _captionTracks: [String: [CaptionTrack]] = [:]
+    /// Per-video `Resolved.title` (`videoDetails.title`, owner issue 1); default none.
+    private var _titles: [String: String] = [:]
     /// `demote` calls in order, as "videoId:family" (playback hardening, spec §4.1).
     private var _demotions: [String] = []
     var demotions: [String] { lock.withLock { _demotions } }
@@ -86,6 +88,10 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
     var captionTracks: [String: [CaptionTrack]] {
         get { lock.withLock { _captionTracks } }
         set { lock.withLock { _captionTracks = newValue } }
+    }
+    var titles: [String: String] {
+        get { lock.withLock { _titles } }
+        set { lock.withLock { _titles = newValue } }
     }
     var calls: [Call] { lock.withLock { _calls } }
     var outcomes: [String: Outcome] {
@@ -186,15 +192,15 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                                          audioOnlyURL: URL(string: "https://r1/a140")!,
                                          captionTracks: captionTracks[videoId] ?? []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
-                            expiresAt: expiresAt)
+                            expiresAt: expiresAt, title: titles[videoId])
         case .liveHLS:
             return Resolved(stream: .hls(url: nonResolvingURL, isLive: true, audioOnlyURL: nil,
                                          captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
-                            expiresAt: expiresAt)
+                            expiresAt: expiresAt, title: titles[videoId])
         case .progressive:
             return Resolved(stream: .progressive(url: nonResolvingURL, label: "360p"), client: .android,
-                            userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt)
+                            userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt, title: titles[videoId])
         case .failure(let error):
             throw error
         }
