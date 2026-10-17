@@ -1,0 +1,24 @@
+backend/src/test/java/com/albunyaan/tube/controller/InnerSearchAdminControllerTest.java
+  s_dbb6b1f3671904::t_318c12cb036039 38
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_318c12cb036039 1414,1420-1422,1427-1466
+  s_dbb6b1f3671904::t_6435b87624d135 1412,1467
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_a386e42a38b991 198-200,641-652,655-658
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4ff7762a016a0e69cf3d65758ed4f93374e071ab",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
