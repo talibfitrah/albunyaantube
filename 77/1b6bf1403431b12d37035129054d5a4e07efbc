@@ -1,0 +1,27 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/LiveChannelRecoveryTest.kt
+  s_dbb6b1f3671904::t_784e43df92eae9 51-70
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelLiveChannelTest.kt
+  s_dbb6b1f3671904::t_805846f84a3961 207,213,217,225-360
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_1fb50bfe4c9c7f 1925
+  s_dbb6b1f3671904::t_b890e3a8fa04c3 1924
+  s_dbb6b1f3671904::t_dfa6b8e76dd3c6 263,868,1706-1707,1726-1727,1762-1763,1765,1914-1915
+android/app/src/main/java/com/albunyaan/tube/ui/player/LiveChannelRecovery.kt
+  s_dbb6b1f3671904::t_239f6a79ab9a7e 21,25,30-34,37-39
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "771b6bf1403431b12d37035129054d5a4e07efbc",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
