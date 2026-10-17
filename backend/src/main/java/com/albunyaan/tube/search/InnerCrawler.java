@@ -261,8 +261,9 @@ public class InnerCrawler {
 
     /**
      * R23: FIRST_PASS = first pages only. FULL = (1) newly admitted sources' full crawls, (2) due polls, oldest due
-     * first (a short source is listed in full at its poll slot), (3) backfill full crawls, smallest first, unless held
-     * (R32), (4) `dirty` full crawls. Sets `steady` (no new and no backfill work left) for the daily cap. Sources in the
+     * first (a short or dirty source is listed in full at its poll slot), (3) backfill full crawls, smallest first,
+     * unknown counts last, unless held (R32), (4) `dirty` full crawls not yet due. Sets `steady` (no backfill left, or
+     * it is held): from then on every job, a new source's too (owner ruling), runs inside the daily cap. Sources in the
      * current unavailable run wait for it to resolve (R33.7); non-admitted sources are simply never picked (R24), and
      * nothing is dropped for a missing read (SearchIndex's catalog change removes, then re-adds).
      */
@@ -284,23 +285,25 @@ public class InnerCrawler {
                 continue;
             }
             if (!full) continue;
-            boolean crawled = src.completeAt > 0 || src.shortCrawl;
-            if (!crawled) {
-                if (!s.backfillHeld && src.count < backfillCount) {
+            if (src.completeAt == 0 && !src.shortCrawl) { // first-paged only: backfill
+                long count = src.count < 0 ? Long.MAX_VALUE : src.count;
+                if (!s.backfillHeld && (backfill == null || count < backfillCount)) {
                     backfill = new Job(Kind.FULL, key);
-                    backfillCount = src.count;
+                    backfillCount = count;
                 }
-            } else if (src.dirty) {
-                if (dirty == null) dirty = new Job(Kind.FULL, key);
-            } else {
-                long due = src.lastPollAt + pollInterval(src, now);
-                if (due <= now && due < pollDue) {
-                    poll = new Job(src.shortCrawl ? Kind.FULL : Kind.POLL, key);
+                continue;
+            }
+            long due = src.lastPollAt + pollInterval(src, now);
+            if (due <= now) {
+                if (due < pollDue) { // a dirty source competes here too, so a binding cap never starves it
+                    poll = new Job(src.shortCrawl || src.dirty ? Kind.FULL : Kind.POLL, key);
                     pollDue = due;
                 }
+            } else if (src.dirty && dirty == null) {
+                dirty = new Job(Kind.FULL, key);
             }
         }
-        steady = full && fresh == null && backfill == null; // a held backfill is steady: the cap binds
+        steady = full && backfill == null; // a held backfill is steady; a new admission does not lift the cap
         if (fresh != null) return fresh;
         if (poll != null) return poll;
         if (backfill != null) return backfill;
@@ -480,7 +483,9 @@ public class InnerCrawler {
         all = mergeKeep(all, List.of()); // a deletion during the crawl can list one item twice
         boolean capped = next != null;
         boolean complete = !capped && complete(listed, page.count(), true);
-        List<InnerCorpus.Item> stored = complete ? all : capped ? mergeWindow(all, corpus) : mergeKeep(all, corpus);
+        // a capped playlist only merges: its order is the owner's, so its window says nothing about older positions
+        List<InnerCorpus.Item> stored = complete ? all
+                : capped && key.startsWith("channel:") ? mergeWindow(all, corpus) : mergeKeep(all, corpus);
         int added = added(all, corpus), removed = corpus.size() + added - stored.size();
         writeCorpus(key, stored); // first: a failed write changes no state
         src.count = page.count();
@@ -488,8 +493,10 @@ public class InnerCrawler {
         src.lastPollAt = now;
         src.dirty = false;
         if (src.firstPageAt == 0) src.firstPageAt = now;
-        if (added > 0 || removed > 0) src.lastChangeAt = now;
-        else if (src.lastChangeAt == 0) src.lastChangeAt = newest(all, now);
+        // R22: a removal, or a poll's relist that found new ids (§6.4), changed it now; added items alone date from
+        // their newest upload, so a backfill of old items never speeds the polls up
+        if (removed > 0 || (added > 0 && firstPage != null)) src.lastChangeAt = now;
+        else if (added > 0 || src.lastChangeAt == 0) src.lastChangeAt = Math.max(src.lastChangeAt, newest(all, now));
         if (complete || capped) {
             src.completeAt = now;
             src.shortCrawl = false;
@@ -532,10 +539,12 @@ public class InnerCrawler {
         Set<String> known = new HashSet<>(ids(corpus));
         int cap = Math.min(store.state().capPerSource, InnerState.MAX_PER_SOURCE);
         List<InnerCorpus.Item> window = new ArrayList<>(page.items());
+        int listed = page.listed(); // before R20, as fullCrawl counts: a members-only listing still reaches the cap
         org.schabi.newpipe.extractor.Page next = page.next();
-        while (next != null && window.size() < cap && window.stream().noneMatch(i -> known.contains(i.id()))) {
+        while (next != null && listed < cap && window.stream().noneMatch(i -> known.contains(i.id()))) {
             UploadsFetcher.Batch more = fetcher.next(key, src.hl != null ? src.hl : hl(name), next); // gap fill
             window.addAll(more.items());
+            listed += more.listed();
             next = more.next();
         }
         window = mergeKeep(window, List.of());
@@ -545,7 +554,8 @@ public class InnerCrawler {
         src.lastPollAt = now;
         if (added > 0 || removed > 0) src.lastChangeAt = now;
         src.count = page.count();
-        if (page.count() >= 0 && page.count() < merged.size() - tolerance(page.count())) {
+        boolean keepsMoreThanACrawlSweeps = src.capped && merged.size() > cap; // stopped at a lowered cap: never swept
+        if (!keepsMoreThanACrawlSweeps && page.count() >= 0 && page.count() < merged.size() - tolerance(page.count())) {
             src.dirty = true; // removed outside the window: listed again in full (R22)
         }
         logJob("POLL", key, src, added, removed);
@@ -558,8 +568,9 @@ public class InnerCrawler {
     }
 
     /**
-     * §6.4: the window (newest first) replaces the stored items down to its oldest already-known id, so a known id
-     * above that point that the window no longer lists is dropped; every older stored item stays.
+     * §6.4: the window (newest first) replaces the stored items down to `o`, its oldest already-known id: the last
+     * known one in the window's own order, never the deepest stored position (a resurfaced id would drop everything
+     * above it). A known id stored above `o` that the window no longer lists is dropped; every item below `o` stays.
      */
     static List<InnerCorpus.Item> mergeWindow(List<InnerCorpus.Item> window, List<InnerCorpus.Item> stored) {
         Map<String, Integer> at = new HashMap<>();
@@ -569,7 +580,7 @@ public class InnerCrawler {
         for (InnerCorpus.Item it : window) {
             inWindow.add(it.id());
             Integer p = at.get(it.id());
-            if (p != null) oldestKnown = Math.max(oldestKnown, p);
+            if (p != null) oldestKnown = p;
         }
         if (oldestKnown < 0) return mergeKeep(window, stored); // no overlap (gap fill hit the cap): never drop
         List<InnerCorpus.Item> out = new ArrayList<>(window);

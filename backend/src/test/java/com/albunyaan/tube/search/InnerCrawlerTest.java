@@ -39,6 +39,7 @@ import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -850,10 +851,22 @@ class InnerCrawlerTest {
         step();
         assertTrue(corpus(PL).stream().allMatch(i -> i.t().startsWith("New title")));
         crawler.source(PL).lastPollAt = 0;
-        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(41, items("story", 0, 41, "New title"), false));
+        List<InnerCorpus.Item> edited = new ArrayList<>(items("story", 0, 39, "New title"));
+        edited.addAll(items("story", 40, 2, "New title")); // the owner removed story…39 and added two
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(41, edited, false));
         step();
         assertEquals(41, corpus(PL).size(), "count changed; 41 ≤ 100 items: the poll page itself is the complete listing");
+        assertTrue(corpus(PL).stream().noneMatch(i -> i.id().equals(id("story", 39))),
+                "listed again and swept: a channel-style poll would keep the item below its window");
+        assertEquals(now.get().toEpochMilli(), source(PL).lastChangeAt, "§6.4: a poll that found a change");
         verify(fetcher, times(2)).first(eq(PL), anyString());
+        crawler.source(PL).lastPollAt = 0;
+        crawler.source(PL).lastChangeAt = now.get().toEpochMilli() - 2 * InnerCrawler.DAY_MS;
+        List<InnerCorpus.Item> added = new ArrayList<>(edited);
+        added.addAll(items("story", 42, 1, "New title")); // only an addition: an old video, new to the playlist
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(42, added, false));
+        step();
+        assertEquals(now.get().toEpochMilli(), source(PL).lastChangeAt, "§6.4: a poll that found a new id, however old");
         verify(fetcher, never()).next(anyString(), anyString(), any());
     }
 
@@ -978,5 +991,160 @@ class InnerCrawlerTest {
         when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
         step();
         assertEquals(0, source(CH).failures, "the next failure waits 1 h again");
+    }
+
+    // ---- Task 19 fix round 1 ----------------------------------------------------------------------
+
+    @Test
+    void aDueDirtySourceIsServedAtItsPollSlotUnderTheCap() throws Exception {
+        String clean = "channel:UCbbbbbbbbbbbbbbbbbbbbbb", dirty = "channel:UCdddddddddddddddddddddd";
+        admitted.put(clean, "x");
+        admitted.put(dirty, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(clean, items("lesson", 0, 3, "x"), 3, 2);   // due 1 d ago
+        crawled(dirty, items("story", 0, 3, "x"), 3, 3);    // due 1.5 d ago
+        crawler.source(dirty).dirty = true;
+        today(990);                                         // steady and the cap binds: priority 4 would never run
+        when(fetcher.first(eq(dirty), anyString())).thenReturn(batch(3, items("story", 0, 3, "x"), false));
+        step();
+        verify(fetcher).first(eq(dirty), anyString());
+        verify(fetcher, never()).first(eq(clean), anyString());
+        assertFalse(source(dirty).dirty);
+    }
+
+    @Test
+    void theWindowEndsAtItsLastKnownIdSoAResurfacedIdDropsNothingBelowIt() {
+        List<InnerCorpus.Item> stored = items("lesson", 0, 150, "x");
+        List<InnerCorpus.Item> window = new ArrayList<>(items("lesson", 120, 1, "x")); // resurfaced at the top
+        window.addAll(items("lesson", 0, 2, "x"));
+        List<InnerCorpus.Item> merged = InnerCrawler.mergeWindow(window, stored);
+        assertEquals(150, merged.size(), "§6.4 o = lesson…01, the window's oldest known id: nothing below it goes");
+        assertEquals(window, merged.subList(0, 3));
+    }
+
+    @Test
+    void aCappedPlaylistCrawlNeverDropsItemsTheOwnerReordered() throws Exception {
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 100;
+        crawled(PL, items("story", 0, 300, "x"), 300, 2);
+        List<InnerCorpus.Item> page = new ArrayList<>(items("story", 0, 50, "x"));
+        page.addAll(items("story", 200, 50, "x"));          // the owner moved 200…249 up: order is theirs, not upload time
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(300, page, true));
+        step();
+        assertTrue(source(PL).capped);
+        assertEquals(300, corpus(PL).size(), "capped: merged, nothing dropped");
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+    }
+
+    @Test
+    void aFullCrawlStartsLastChangeAtAtTheNewestUploadAndARemovalAtNow() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        step();
+        assertEquals(20_000 * InnerCrawler.DAY_MS, source(CH).lastChangeAt, "R22: the newest upload day, not the crawl time");
+        crawler.source(CH).dirty = true;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(2, items("lesson", 0, 2, "x"), false));
+        step();
+        assertEquals(now.get().toEpochMilli(), source(CH).lastChangeAt, "an item was removed");
+    }
+
+    @Test
+    void aPollGapFillCountsListedItemsSoAHiddenListingStopsAtTheCap() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 200;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);
+        UploadsFetcher.Batch membersOnly = new UploadsFetcher.Batch(5_000, List.of(), 100, new Page(BROWSE)); // all R20-filtered
+        AtomicInteger pages = new AtomicInteger();
+        when(fetcher.first(eq(CH), anyString())).thenReturn(membersOnly);
+        when(fetcher.next(eq(CH), anyString(), any())).thenAnswer(inv ->
+                pages.incrementAndGet() < 20 ? membersOnly : new UploadsFetcher.Batch(-1, List.of(), 100, null));
+        step();
+        verify(fetcher, times(1)).next(eq(CH), anyString(), any());
+        assertEquals(3, corpus(CH).size());
+    }
+
+    @Test
+    void theBackfillGoesSmallestFirstAndUnknownCountsLast() throws Exception {
+        String big = "channel:UCaaaaaaaaaaaaaaaaaaaaaa", unknown = "channel:UCbbbbbbbbbbbbbbbbbbbbbb",
+                small = "channel:UCcccccccccccccccccccccc";
+        store.state().mode = InnerState.Mode.FULL;
+        Map<String, Long> counts = Map.of(big, 900L, unknown, -1L, small, 300L);
+        for (String k : counts.keySet()) {
+            admitted.put(k, "x");
+            crawled(k, items("lesson", 0, 1, "x"), counts.get(k), 0);
+            crawler.source(k).completeAt = 0; // first-paged only
+        }
+        long t = now.get().toEpochMilli();
+        for (String k : List.of(small, big, unknown)) {
+            assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, k), crawler.nextJob(admitted, t));
+            crawler.source(k).completeAt = t;
+        }
+    }
+
+    @Test
+    void theDuePollsGoOldestDueFirst() throws Exception {
+        String a = "channel:UCaaaaaaaaaaaaaaaaaaaaaa", b = "channel:UCbbbbbbbbbbbbbbbbbbbbbb",
+                c = "channel:UCcccccccccccccccccccccc";
+        store.state().mode = InnerState.Mode.FULL;
+        Map<String, Integer> daysAgo = Map.of(a, 2, b, 5, c, 3); // due 1 d, 2.5 d and 1.5 d ago
+        for (String k : daysAgo.keySet()) {
+            admitted.put(k, "x");
+            crawled(k, items("lesson", 0, 1, "x"), 1, daysAgo.get(k));
+        }
+        long t = now.get().toEpochMilli();
+        for (String k : List.of(b, c, a)) {
+            assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.POLL, k), crawler.nextJob(admitted, t));
+            crawler.source(k).lastPollAt = t;
+        }
+    }
+
+    @Test
+    void thereIsNoCapWhileTheBackfillRuns() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 100, "x"), 150, 0);
+        crawler.source(CH).completeAt = 0;                 // first-paged only: R23 "pace only"
+        today(999);
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            pacer.before(BROWSE);
+            return batch(150, items("lesson", 0, 100, "x"), true);
+        });
+        when(fetcher.next(eq(CH), anyString(), any())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            return batch(-1, items("lesson", 100, 50, "x"), false);
+        });
+        step();
+        assertEquals(1_002, pacer.today(CrawlPacer.CRAWLER_THREAD));
+        assertEquals(150, corpus(CH).size());
+        assertTrue(source(CH).completeAt > 0);
+    }
+
+    @Test
+    void aNewSourceAdmittedInTheSteadyStateWaitsForTheCapLikeAPoll() throws Exception {
+        String fresh = "channel:UCaaaaaaaaaaaaaaaaaaaaaa";
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 0);     // steady: nothing new, nothing to backfill
+        today(999);
+        admitted.put(fresh, "x");                           // owner ruling: new admissions never lift the cap
+        when(fetcher.first(eq(fresh), anyString())).thenReturn(batch(1, items("new", 0, 1, "x"), false));
+        assertEquals(Instant.parse("2026-10-21T00:00:00Z").toEpochMilli() - now.get().toEpochMilli(), step());
+        verifyNoInteractions(fetcher);
+    }
+
+    @Test
+    void aSourceCappedAtALoweredCapIsNotMarkedDirtyByItsPoll() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 100;
+        crawled(CH, items("lesson", 0, 300, "x"), 300, 2);
+        crawler.source(CH).capped = true;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(290, items("lesson", 0, 100, "x"), true));
+        step();
+        assertFalse(source(CH).dirty, "it keeps more than a capped crawl lists, and a capped crawl never sweeps");
     }
 }
