@@ -34,6 +34,7 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -674,5 +675,308 @@ class InnerCrawlerTest {
         assertEquals(60_000, back.breaker.intervalMs);
         assertTrue(back.breaker.pausedUntil > now.get().toEpochMilli());
         assertEquals(2_000, back.capPerSource);
+    }
+
+    // ---- Task 19: FULL ---------------------------------------------------------------------------
+
+    /** A source already crawled: complete, its corpus written, last polled and changed `daysAgo` ago. */
+    void crawled(String key, List<InnerCorpus.Item> stored, long count, int daysAgo) throws IOException {
+        InnerCorpus.write(store.corpusFile(key), stored);
+        InnerState.Source src = crawler.source(key);
+        long at = now.get().toEpochMilli() - daysAgo * InnerCrawler.DAY_MS;
+        src.firstPageAt = at;
+        src.completeAt = at;
+        src.lastPollAt = at;
+        src.lastChangeAt = at;
+        src.count = count;
+        src.hl = "en";
+        src.items = stored.size();
+    }
+
+    @Test
+    void fullModeOrdersNewSourcesThenDuePollsThenBackfillThenDirty() throws Exception {
+        String fresh = "channel:UCaaaaaaaaaaaaaaaaaaaaaa", due = "channel:UCbbbbbbbbbbbbbbbbbbbbbb",
+                backfill = "channel:UCcccccccccccccccccccccc", dirty = "channel:UCdddddddddddddddddddddd";
+        for (String k : List.of(fresh, due, backfill, dirty)) admitted.put(k, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(due, items("due", 0, 3, "x"), 3, 2);
+        crawled(dirty, items("dirt", 0, 3, "x"), 3, 0);
+        crawler.source(dirty).dirty = true;
+        crawled(backfill, items("back", 0, 100, "x"), 900, 0);
+        crawler.source(backfill).completeAt = 0;                          // first-paged only
+        long t = now.get().toEpochMilli();
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, fresh), crawler.nextJob(admitted, t));
+        crawled(fresh, items("fresh", 0, 1, "x"), 1, 0);
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.POLL, due), crawler.nextJob(admitted, t));
+        crawler.source(due).lastPollAt = t;
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, backfill), crawler.nextJob(admitted, t));
+        store.state().backfillHeld = true;                                // R32 rule of three: no backfill crawls
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, dirty), crawler.nextJob(admitted, t));
+        crawler.source(dirty).dirty = false;
+        assertNull(crawler.nextJob(admitted, t));
+    }
+
+    @Test
+    void aShortSourceIsListedInFullAtItsPollSlot() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 3);
+        crawler.source(CH).shortCrawl = true;
+        crawler.source(CH).completeAt = 0;
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, CH), crawler.nextJob(admitted, now.get().toEpochMilli()));
+    }
+
+    @Test
+    void aCompleteFullCrawlSweepsAndAShortOneOnlyMerges() throws Exception {
+        admitted.put(CH, "x");
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        InnerCorpus.write(store.corpusFile(CH), items("gone", 0, 2, "x"));
+        InnerCorpus.write(store.corpusFile(PL), items("kept", 0, 2, "x"));
+        crawler.source(CH).firstPageAt = 1;
+        crawler.source(PL).firstPageAt = 1;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(150, items("lesson", 0, 100, "x"), true));
+        when(fetcher.next(eq(CH), anyString(), any())).thenReturn(batch(-1, items("lesson", 100, 50, "x"), false));
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(300, items("story", 0, 100, "x"), true));
+        when(fetcher.next(eq(PL), anyString(), any())).thenReturn(batch(-1, items("story", 100, 50, "x"), false));
+        step();
+        step();
+        assertEquals(150, corpus(CH).size(), "complete (150 of 150): swept, the two old ids are gone");
+        assertTrue(corpus(CH).stream().noneMatch(i -> i.id().startsWith("gone")));
+        assertTrue(source(CH).completeAt > 0);
+        assertFalse(source(CH).shortCrawl);
+        assertEquals(152, corpus(PL).size(), "short (150 of 300): merged, nothing dropped");
+        assertTrue(source(PL).shortCrawl);
+        assertEquals(0, source(PL).completeAt);
+    }
+
+    @Test
+    void theToleranceIsTwoItemsOrOnePercent() {
+        assertEquals(2, InnerCrawler.tolerance(100));
+        assertEquals(3, InnerCrawler.tolerance(300));
+        assertEquals(17, InnerCrawler.tolerance(1634));
+        assertTrue(InnerCrawler.complete(98, 100, false));
+        assertFalse(InnerCrawler.complete(97, 100, false));
+        assertTrue(InnerCrawler.complete(297, 300, false));
+        assertFalse(InnerCrawler.complete(296, 300, false));
+        assertTrue(InnerCrawler.complete(5, -1, true));
+        assertFalse(InnerCrawler.complete(5, -1, false));
+    }
+
+    @Test
+    void threeShortCrawlsOfLargeSourcesInARowHoldTheBackfill() throws Exception {
+        store.state().mode = InnerState.Mode.FULL;
+        for (String k : List.of("channel:UCaaaaaaaaaaaaaaaaaaaaaa", "channel:UCbbbbbbbbbbbbbbbbbbbbbb", "channel:UCcccccccccccccccccccccc")) {
+            admitted.put(k, "x"); // new sources: each one's FULL job is its whole crawl
+            when(fetcher.first(eq(k), anyString())).thenReturn(batch(5_000, items("lesson", 0, 100, "x"), true));
+            when(fetcher.next(eq(k), anyString(), any())).thenReturn(batch(-1, items("lesson", 100, 100, "x"), false));
+        }
+        step();
+        step();
+        assertFalse(store.state().backfillHeld);
+        step();
+        assertTrue(store.state().backfillHeld);
+        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.WARN && e.getFormattedMessage().contains("backfill held")));
+    }
+
+    @Test
+    void aCrawlStoppedAtALoweredCapKeepsTheOlderItems() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 100;
+        crawled(CH, items("lesson", 0, 300, "x"), 300, 0);
+        crawler.source(CH).dirty = true;
+        List<InnerCorpus.Item> newest = new ArrayList<>(items("new", 0, 50, "x"));
+        newest.addAll(items("lesson", 0, 50, "x"));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(350, newest, true));
+        step();
+        assertEquals(350, corpus(CH).size(), "50 new + the 300 stored: a capped window never sweeps older items");
+        assertTrue(source(CH).capped);
+        assertFalse(source(CH).dirty);
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+    }
+
+    @Test
+    void aPollAddsNewUploadsAndDropsOnesGoneFromItsWindow() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 150, "x"), 150, 2);
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 2, "x"));
+        page.addAll(items("lesson", 0, 1, "x"));
+        page.addAll(items("lesson", 2, 97, "x")); // lesson…01 is gone; the window ends at lesson…98
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(151, page, true));
+        step();
+        List<String> ids = corpus(CH).stream().map(InnerCorpus.Item::id).toList();
+        assertEquals(151, ids.size());
+        assertFalse(ids.contains(id("lesson", 1)));
+        assertTrue(ids.contains(id("lesson", 149)), "older than the window: kept");
+        assertEquals(id("new", 0), ids.get(0));
+        assertFalse(source(CH).dirty);
+        assertEquals(now.get().toEpochMilli(), source(CH).lastChangeAt);
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+    }
+
+    @Test
+    void aPollThatFindsOnlyNewItemsFollowsUntilItMeetsAKnownOne() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 50, "x"), 50, 2);
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(180, items("new", 0, 100, "x"), true));
+        List<InnerCorpus.Item> second = new ArrayList<>(items("new", 100, 30, "x"));
+        second.addAll(items("lesson", 0, 50, "x"));
+        when(fetcher.next(eq(CH), anyString(), any())).thenReturn(batch(-1, second, true));
+        step();
+        verify(fetcher, times(1)).next(eq(CH), anyString(), any());
+        assertEquals(180, corpus(CH).size());
+    }
+
+    @Test
+    void aCountBelowWhatThePollKeepsMarksTheSourceDirtyForAFullCrawl() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 300, "x"), 300, 2);
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(290, items("lesson", 0, 100, "x"), true));
+        step();
+        assertTrue(source(CH).dirty, "300 kept but YouTube counts 290: something older left");
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, CH), crawler.nextJob(admitted, now.get().toEpochMilli()));
+    }
+
+    @Test
+    void aChangedPlaylistIsListedAgainAtOnceAndAnUnchangedOneOnlyRefreshesItsTitles() throws Exception {
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(PL, items("story", 0, 40, "Old title"), 40, 2);
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(40, items("story", 0, 40, "New title"), false));
+        step();
+        assertTrue(corpus(PL).stream().allMatch(i -> i.t().startsWith("New title")));
+        crawler.source(PL).lastPollAt = 0;
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(41, items("story", 0, 41, "New title"), false));
+        step();
+        assertEquals(41, corpus(PL).size(), "count changed; 41 ≤ 100 items: the poll page itself is the complete listing");
+        verify(fetcher, times(2)).first(eq(PL), anyString());
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+    }
+
+    @Test
+    void thePollIntervalIsHalfTheTimeSinceTheLastChangeBetweenOneAndSevenDays() {
+        long t = 100 * InnerCrawler.DAY_MS;
+        InnerState.Source src = new InnerState.Source();
+        src.lastChangeAt = t - InnerCrawler.DAY_MS;
+        assertEquals(InnerCrawler.DAY_MS, InnerCrawler.pollInterval(src, t));
+        src.lastChangeAt = t - 10 * InnerCrawler.DAY_MS;
+        assertEquals(5 * InnerCrawler.DAY_MS, InnerCrawler.pollInterval(src, t));
+        src.lastChangeAt = t - 30 * InnerCrawler.DAY_MS;
+        assertEquals(7 * InnerCrawler.DAY_MS, InnerCrawler.pollInterval(src, t));
+    }
+
+    private void today(long crawlerRequests) {
+        store.state().requestsByDay.put("2026-10-20", new TreeMap<>(Map.of(CrawlPacer.CRAWLER_THREAD, crawlerRequests)));
+    }
+
+    @Test
+    void theSteadyStateStopsAtAThousandRequestsAUtcDay() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);
+        today(999);
+        long wait = step();
+        assertEquals(Instant.parse("2026-10-21T00:00:00Z").toEpochMilli() - now.get().toEpochMilli(), wait);
+        verifyNoInteractions(fetcher);
+    }
+
+    @Test
+    void theDailyCapInsideAFullCrawlKeepsTheOldCorpusAndRecordsNoSignal() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 150, "x"), 150, 0);
+        crawler.source(CH).dirty = true;                 // estimate 1 + 2 = 3 requests: 997 + 3 fits the cap
+        today(997);
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            pacer.before(BROWSE);
+            return batch(400, items("new", 0, 100, "x"), true);
+        });
+        when(fetcher.next(eq(CH), anyString(), any())).thenAnswer(inv -> {
+            pacer.before(BROWSE);                         // the 1,001st request is refused before it is sent
+            return batch(-1, items("new", 100, 100, "x"), true);
+        });
+        step();
+        assertEquals(150, corpus(CH).size(), "the old corpus stays");
+        assertTrue(store.state().signals.isEmpty());
+        assertTrue(source(CH).dirty, "still due tomorrow");
+        assertTrue(step() > 0);
+    }
+
+    @Test
+    void aCompleteSourceWhoseCorpusFileIsGoneIsCrawledAgain() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);
+        Files.delete(store.corpusFile(CH));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        step();                                           // the poll finds no file: the source is reset, nothing fetched
+        verifyNoInteractions(fetcher);
+        assertEquals(0, source(CH).firstPageAt);
+        step();                                           // now a new source: a full crawl
+        verify(fetcher, times(1)).first(eq(CH), anyString());
+        assertEquals(3, corpus(CH).size());
+        assertTrue(source(CH).completeAt > 0);
+    }
+
+    @Test
+    void aSourceNoLongerAdmittedIsSkippedAndComesBackWithoutAFetch() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 0);
+        admitted.remove(CH);
+        assertNull(crawler.nextJob(admitted, now.get().toEpochMilli()));
+        admitted.put(CH, "x");
+        assertNull(crawler.nextJob(admitted, now.get().toEpochMilli()), "re-admitted: its corpus is still there, not due yet");
+        verifyNoInteractions(fetcher);
+    }
+
+    // ---- Task 19: beyond the brief ---------------------------------------------------------------
+
+    @Test
+    void theDailyCountSurvivesARestartAndResetsAtMidnightUtc() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);
+        today(999);
+        store.save();
+        store = new InnerStore(tmp.resolve("inner").toString()); // a restart: the day's count is read back from state.json
+        pacer = new CrawlPacer(store, mock(YouTubeThrottler.class), clock);
+        crawler = new InnerCrawler(store, pacer, fetcher, search, categories, channels, clock);
+        assertTrue(step() > 0);
+        verifyNoInteractions(fetcher);
+        now.set(Instant.parse("2026-10-21T00:00:00Z"));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        assertEquals(0, step(), "a new UTC day: a new budget");
+        verify(fetcher).first(eq(CH), anyString());
+    }
+
+    @Test
+    void aShortDirtyCrawlWaitsForItsPollSlotInsteadOfRepeating() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 150, "x"), 1_500, 0);
+        crawler.source(CH).dirty = true;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(1_490, items("lesson", 0, 100, "x"), true));
+        when(fetcher.next(eq(CH), anyString(), any())).thenReturn(batch(-1, items("lesson", 100, 100, "x"), false));
+        step();
+        assertTrue(source(CH).shortCrawl);
+        assertFalse(source(CH).dirty, "R32: a short crawl is retried at the next poll slot");
+        assertNull(crawler.nextJob(admitted, now.get().toEpochMilli()));
+    }
+
+    @Test
+    void aSuccessfulPollOrFullCrawlEndsTheBackoffRun() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);
+        crawler.source(CH).failures = 4;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        step();
+        assertEquals(0, source(CH).failures, "the next failure waits 1 h again");
     }
 }

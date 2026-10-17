@@ -24,6 +24,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.HashMap;
 import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
@@ -50,6 +51,7 @@ public class InnerCrawler {
     // either gets first pages (2 requests each). Refresh on CatalogChanged, or page the query, if that ever matters.
     static final long LIVE_REFRESH_MS = 3_600_000;
     static final int LIVE_CHANNELS_MAX = 500;
+    static final int DAILY_CAP = 1_000;
     /**
      * R21's language markers (I-1): stop words that only one of the two languages uses. Dutch is Lucene's Dutch stop set
      * minus its English one (in, is, of, was) minus English words and Arabic transliteration particles (al, die, door,
@@ -67,7 +69,7 @@ public class InnerCrawler {
     private static final Set<String> EN = markers(EnglishAnalyzer.ENGLISH_STOP_WORDS_SET, DutchAnalyzer.getDefaultStopSet(),
             Set.of("an", "as", "at"));
 
-    enum Kind { FIRST_PAGE }
+    enum Kind { FIRST_PAGE, FULL, POLL }
 
     record Job(Kind kind, String key) {}
 
@@ -87,6 +89,7 @@ public class InnerCrawler {
     private long jobStartedAt, jobRequestsBefore;
     private volatile Set<String> liveOnly; // channel keys whose every category is LIVE; null until first read
     private long liveOnlyAt;
+    private boolean steady;
 
     public InnerCrawler(InnerStore store, CrawlPacer pacer, UploadsFetcher fetcher, SearchIndex search,
                         CategoryRepository categories, ChannelRepository channels, Clock clock) {
@@ -168,6 +171,10 @@ public class InnerCrawler {
         Map<String, String> admitted = crawlable(search.sources());
         Job job = nextJob(admitted, now);
         if (job == null) return IDLE_MS;
+        pacer.dailyCap(steady ? DAILY_CAP : Integer.MAX_VALUE);
+        if (steady && pacer.today(CrawlPacer.CRAWLER_THREAD) + estimate(job) > DAILY_CAP) {
+            return (now / DAY_MS + 1) * DAY_MS - now; // R23: due work waits for the next UTC day, oldest first
+        }
         runJob(job, admitted.get(job.key()), now);
         return 0;
     }
@@ -253,25 +260,51 @@ public class InnerCrawler {
     }
 
     /**
-     * FIRST_PASS (R23): the first source, in key order, that has had no first page and is not waiting. Sources in the
-     * current unavailable run wait for it to resolve (R33.7), so one gone source never fills the run by itself. A
-     * source absent from `admitted` is only skipped: nothing is dropped for a missing read (SearchIndex's catalog
-     * change removes, then re-adds).
+     * R23: FIRST_PASS = first pages only. FULL = (1) newly admitted sources' full crawls, (2) due polls, oldest due
+     * first (a short source is listed in full at its poll slot), (3) backfill full crawls, smallest first, unless held
+     * (R32), (4) `dirty` full crawls. Sets `steady` (no new and no backfill work left) for the daily cap. Sources in the
+     * current unavailable run wait for it to resolve (R33.7); non-admitted sources are simply never picked (R24), and
+     * nothing is dropped for a missing read (SearchIndex's catalog change removes, then re-adds).
      */
     Job nextJob(Map<String, String> admitted, long now) {
         InnerState s = store.state();
-        if (s.mode != InnerState.Mode.FIRST_PASS) return null;
         Set<String> inRun;
         synchronized (s) {
             inRun = new HashSet<>(s.breaker.unavailableRun);
         }
+        boolean full = s.mode == InnerState.Mode.FULL;
+        Job fresh = null, backfill = null, dirty = null, poll = null;
+        long pollDue = Long.MAX_VALUE, backfillCount = Long.MAX_VALUE;
         for (String key : new TreeSet<>(admitted.keySet())) {
             InnerState.Source src = source(key);
             if (src.retryAt > now || inRun.contains(key)) continue;
             src.unavailable = false; // its 7 days are over: back to its previous state
-            if (src.firstPageAt == 0) return new Job(Kind.FIRST_PAGE, key);
+            if (src.firstPageAt == 0) {
+                if (fresh == null) fresh = new Job(full ? Kind.FULL : Kind.FIRST_PAGE, key);
+                continue;
+            }
+            if (!full) continue;
+            boolean crawled = src.completeAt > 0 || src.shortCrawl;
+            if (!crawled) {
+                if (!s.backfillHeld && src.count < backfillCount) {
+                    backfill = new Job(Kind.FULL, key);
+                    backfillCount = src.count;
+                }
+            } else if (src.dirty) {
+                if (dirty == null) dirty = new Job(Kind.FULL, key);
+            } else {
+                long due = src.lastPollAt + pollInterval(src, now);
+                if (due <= now && due < pollDue) {
+                    poll = new Job(src.shortCrawl ? Kind.FULL : Kind.POLL, key);
+                    pollDue = due;
+                }
+            }
         }
-        return null;
+        steady = full && fresh == null && backfill == null; // a held backfill is steady: the cap binds
+        if (fresh != null) return fresh;
+        if (poll != null) return poll;
+        if (backfill != null) return backfill;
+        return dirty;
     }
 
     private void runJob(Job job, String name, long now) {
@@ -282,7 +315,7 @@ public class InnerCrawler {
         pacer.jobStart();
         boolean ended = false;
         try {
-            attempt(key, name, src, now);
+            attempt(job, name, src, now);
             ended = true;
         } finally {
             if (!ended) { // I-3: an Error, or a fault inside a handler, still propagates to R10's loop; this source waits
@@ -293,9 +326,18 @@ public class InnerCrawler {
     }
 
     /** Runs the job and classifies its outcome (§6.6, R3-18, the controller's rulings). */
-    private void attempt(String key, String name, InnerState.Source src, long now) {
+    private void attempt(Job job, String name, InnerState.Source src, long now) {
+        String key = job.key();
         try {
-            if (firstPage(key, name, src, now)) succeeded(now);
+            boolean ok = switch (job.kind()) {
+                case FIRST_PAGE -> firstPage(key, name, src, now);
+                case FULL -> fullCrawl(key, name, src, now, null);
+                case POLL -> poll(key, name, src, now);
+            };
+            if (ok) {
+                src.failures = 0; // the next failure waits 1 h again
+                succeeded(now);
+            }
         } catch (CrawlPacer.CrawlPausedException e) {
             // a rate signal CrawlPacer.after already recorded, or STOP / OFF / a pause / the daily cap: nothing to add
         } catch (ReCaptchaException e) { // a rate limit on the IP (NewPipe's convention; the prod downloader's 429), never this source's fault
@@ -390,7 +432,6 @@ public class InnerCrawler {
         src.count = page.count();
         src.firstPageAt = now;
         src.lastPollAt = now;
-        src.failures = 0;
         if (src.lastChangeAt == 0) src.lastChangeAt = newest(page.items(), now);
         if (complete) {
             src.completeAt = now;
@@ -400,6 +441,146 @@ public class InnerCrawler {
         }
         logJob("FIRST_PAGE", key, src, added(page.items(), corpus), 0);
         return true;
+    }
+
+    private long estimate(Job job) {
+        if (job.kind() != Kind.FULL) return 2;
+        long count = source(job.key()).count;
+        int cap = Math.min(store.state().capPerSource, InnerState.MAX_PER_SOURCE);
+        return count < 0 ? 2 : 1 + (Math.min(count, cap) + 99) / 100;
+    }
+
+    /**
+     * §6.4 full crawl: 1 + ⌈n/100⌉ requests, until the listing ends or `capPerSource` items. Complete (R32): replaced
+     * (mark and sweep). Stopped at the cap: the newest window replaces its stretch and older stored items stay, because
+     * the corpus keeps everything (R31). Short: merged, never swept, and retried at the next poll slot (R32), so `dirty`
+     * clears either way. A failure mid-crawl leaves the old corpus untouched; a crawl restarts from its first page.
+     */
+    private boolean fullCrawl(String key, String name, InnerState.Source src, long now, UploadsFetcher.Batch firstPage)
+            throws IOException, ExtractionException {
+        List<InnerCorpus.Item> corpus = corpus(key, src);
+        if (corpus == null) return false;
+        InnerState s = store.state();
+        int cap = Math.min(s.capPerSource, InnerState.MAX_PER_SOURCE);
+        UploadsFetcher.Batch page = firstPage != null ? firstPage : fetcher.first(key, src.hl != null ? src.hl : hl(name));
+        if (page.listed() == 0 && !corpus.isEmpty()) {
+            pacer.unavailable(key);
+            return false;
+        }
+        if (src.hl == null && !page.items().isEmpty()) src.hl = hl(titles(page.items()));
+        List<InnerCorpus.Item> all = new ArrayList<>(page.items());
+        int listed = page.listed();
+        org.schabi.newpipe.extractor.Page next = page.next();
+        while (next != null && listed < cap) {
+            UploadsFetcher.Batch more = fetcher.next(key, src.hl != null ? src.hl : hl(name), next);
+            all.addAll(more.items());
+            listed += more.listed();
+            next = more.next();
+        }
+        all = mergeKeep(all, List.of()); // a deletion during the crawl can list one item twice
+        boolean capped = next != null;
+        boolean complete = !capped && complete(listed, page.count(), true);
+        List<InnerCorpus.Item> stored = complete ? all : capped ? mergeWindow(all, corpus) : mergeKeep(all, corpus);
+        int added = added(all, corpus), removed = corpus.size() + added - stored.size();
+        writeCorpus(key, stored); // first: a failed write changes no state
+        src.count = page.count();
+        src.capped = capped;
+        src.lastPollAt = now;
+        src.dirty = false;
+        if (src.firstPageAt == 0) src.firstPageAt = now;
+        if (added > 0 || removed > 0) src.lastChangeAt = now;
+        else if (src.lastChangeAt == 0) src.lastChangeAt = newest(all, now);
+        if (complete || capped) {
+            src.completeAt = now;
+            src.shortCrawl = false;
+            if (page.count() > 1_000) s.shortLargeRun = 0;
+        } else {
+            src.shortCrawl = true;
+            if (page.count() > 1_000 && ++s.shortLargeRun >= 3 && !s.backfillHeld) {
+                s.backfillHeld = true;
+                log.warn("inner-crawl: 3 short crawls in a row of sources over 1,000 items; backfill held (R32)");
+                store.save();
+            }
+        }
+        logJob("FULL", key, src, added, removed);
+        return true;
+    }
+
+    /**
+     * §6.4 poll: the first page (count + newest 100). Channels: gap fill while a page holds no known id, in-window
+     * removals, then the count check (R22). Playlists: unchanged = titles refreshed; changed = listed again at once
+     * (≤ 100 items: the poll page itself is the complete listing).
+     */
+    private boolean poll(String key, String name, InnerState.Source src, long now) throws IOException, ExtractionException {
+        List<InnerCorpus.Item> corpus = corpus(key, src);
+        if (corpus == null) return false;
+        UploadsFetcher.Batch page = fetcher.first(key, src.hl != null ? src.hl : hl(name));
+        if (page.listed() == 0 && !corpus.isEmpty()) {
+            pacer.unavailable(key);
+            return false;
+        }
+        if (key.startsWith("playlist:")) {
+            List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), page.items().size())));
+            if (page.count() == src.count && ids(page.items()).equals(top)) {
+                writeCorpus(key, mergeWindow(page.items(), corpus)); // titles refreshed
+                src.lastPollAt = now;
+                logJob("POLL", key, src, 0, 0);
+                return true;
+            }
+            return fullCrawl(key, name, src, now, page);
+        }
+        Set<String> known = new HashSet<>(ids(corpus));
+        int cap = Math.min(store.state().capPerSource, InnerState.MAX_PER_SOURCE);
+        List<InnerCorpus.Item> window = new ArrayList<>(page.items());
+        org.schabi.newpipe.extractor.Page next = page.next();
+        while (next != null && window.size() < cap && window.stream().noneMatch(i -> known.contains(i.id()))) {
+            UploadsFetcher.Batch more = fetcher.next(key, src.hl != null ? src.hl : hl(name), next); // gap fill
+            window.addAll(more.items());
+            next = more.next();
+        }
+        window = mergeKeep(window, List.of());
+        List<InnerCorpus.Item> merged = mergeWindow(window, corpus);
+        int added = added(window, corpus), removed = corpus.size() + added - merged.size();
+        writeCorpus(key, merged); // first: a failed write changes no state
+        src.lastPollAt = now;
+        if (added > 0 || removed > 0) src.lastChangeAt = now;
+        src.count = page.count();
+        if (page.count() >= 0 && page.count() < merged.size() - tolerance(page.count())) {
+            src.dirty = true; // removed outside the window: listed again in full (R22)
+        }
+        logJob("POLL", key, src, added, removed);
+        return true;
+    }
+
+    /** R22: half the time since the source last changed, between 1 and 7 days. */
+    static long pollInterval(InnerState.Source src, long now) {
+        return Math.max(DAY_MS, Math.min(7 * DAY_MS, (now - src.lastChangeAt) / 2));
+    }
+
+    /**
+     * §6.4: the window (newest first) replaces the stored items down to its oldest already-known id, so a known id
+     * above that point that the window no longer lists is dropped; every older stored item stays.
+     */
+    static List<InnerCorpus.Item> mergeWindow(List<InnerCorpus.Item> window, List<InnerCorpus.Item> stored) {
+        Map<String, Integer> at = new HashMap<>();
+        for (int i = 0; i < stored.size(); i++) at.putIfAbsent(stored.get(i).id(), i);
+        int oldestKnown = -1;
+        Set<String> inWindow = new HashSet<>();
+        for (InnerCorpus.Item it : window) {
+            inWindow.add(it.id());
+            Integer p = at.get(it.id());
+            if (p != null) oldestKnown = Math.max(oldestKnown, p);
+        }
+        if (oldestKnown < 0) return mergeKeep(window, stored); // no overlap (gap fill hit the cap): never drop
+        List<InnerCorpus.Item> out = new ArrayList<>(window);
+        for (int i = oldestKnown + 1; i < stored.size(); i++) {
+            if (!inWindow.contains(stored.get(i).id())) out.add(stored.get(i));
+        }
+        return out;
+    }
+
+    static List<String> ids(List<InnerCorpus.Item> items) {
+        return items.stream().map(InnerCorpus.Item::id).toList();
     }
 
     /**
