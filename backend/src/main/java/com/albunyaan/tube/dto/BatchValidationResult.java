@@ -25,13 +25,11 @@ public class BatchValidationResult<T> {
     private final Map<String, T> valid;
 
     /**
-     * YouTube IDs of content that definitely doesn't exist.
-     * These threw ContentNotAvailableException or its subclasses:
-     * - AccountTerminatedException (channel terminated)
-     * - PrivateContentException (private content)
-     * - AgeRestrictedContentException
-     * - GeographicRestrictionException
-     * - PaidContentException
+     * YouTube IDs of content that is definitively gone or gated; callers archive these. Only the per-type rules in
+     * ChannelOrchestrator ({@code channelGone}, {@code playlistGone}, {@code videoGoneOrGated} plus an oEmbed 404 for
+     * a generic "unavailable" reason) put an ID here. A plain ContentNotAvailableException is not enough: NewPipe
+     * also throws it for InnerTube JSON errors, ERROR alerts, /oops redirects and ambiguous HTTP 404s, and a
+     * GeographicRestrictionException is the server's region only. Those are {@link #errors}.
      */
     private final Set<String> notFound;
 

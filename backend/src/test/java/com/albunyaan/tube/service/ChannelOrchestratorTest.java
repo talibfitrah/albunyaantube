@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
@@ -12,6 +13,11 @@ import org.junit.jupiter.api.Nested;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
+import okhttp3.Interceptor;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.ResponseBody;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.NewPipe;
@@ -26,13 +32,17 @@ import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
 import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.ArrayDeque;
+import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Deque;
 import java.util.List;
 import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.CompletableFuture;
+
+import org.springframework.test.util.ReflectionTestUtils;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -450,6 +460,13 @@ class ChannelOrchestratorTest {
         private YouTubeGateway realGateway;
         private ChannelOrchestrator realOrchestrator;
 
+        /** The real oEmbed client over a fake OkHttp answer; by default the validator must not ask oEmbed at all. */
+        private YouTubeOEmbedClient oEmbed;
+        private final List<String> oEmbedUrls = new ArrayList<>();
+        private Interceptor oEmbedAnswer = chain -> {
+            throw new AssertionError("oEmbed must not be asked: " + chain.request().url());
+        };
+
         @BeforeEach
         void setUp() {
             NewPipe.init(new Downloader() {
@@ -467,8 +484,18 @@ class ChannelOrchestratorTest {
                     return replies.remove();
                 }
             });
+            oEmbed = new YouTubeOEmbedClient("test-agent");
+            ReflectionTestUtils.setField(oEmbed, "httpClient", new OkHttpClient.Builder().addInterceptor(chain -> {
+                oEmbedUrls.add(chain.request().url().toString());
+                return oEmbedAnswer.intercept(chain);
+            }).build());
             realGateway = new YouTubeGateway(ServiceList.YouTube, 1, null, null);
-            realOrchestrator = new ChannelOrchestrator(realGateway, null, null, null);
+            realOrchestrator = new ChannelOrchestrator(realGateway, null, null, oEmbed);
+        }
+
+        private static Interceptor oEmbedStatus(int code) {
+            return chain -> new okhttp3.Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                    .code(code).message("").body(ResponseBody.create("{}", MediaType.get("application/json"))).build();
         }
 
         @AfterEach
@@ -600,10 +627,17 @@ class ChannelOrchestratorTest {
         // ---- Round 2: playlists ----
 
         @Test
-        @DisplayName("R2 playlist: any ERROR alert is ERROR, not archived")
-        void playlistErrorAlert_isError() {
-            assertError(playlist(200, alert("The playlist does not exist."), BROWSE), PLAYLIST,
-                    "The playlist does not exist.");
+        @DisplayName("R3 playlist: YouTube's exact alert \"The playlist does not exist.\" is archived")
+        void playlistDoesNotExistAlert_archives() {
+            assertArchived(playlist(200, alert("The playlist does not exist."), BROWSE), PLAYLIST, "does-not-exist");
+        }
+
+        @Test
+        @DisplayName("R3 playlist: any other ERROR alert, or a near-miss of that wording, is ERROR")
+        void playlistOtherAlert_isError() {
+            for (String text : new String[] {"Something went wrong", "The playlist does not exist. Learn more"}) {
+                assertError(playlist(200, alert(text), BROWSE), PLAYLIST, text);
+            }
         }
 
         @Test
@@ -666,8 +700,6 @@ class ChannelOrchestratorTest {
         @DisplayName("R2 video: removed, private, terminated, age-gated and paid videos are archived")
         void videoGoneOrGated_archives() {
             String[][] cases = {
-                    {"ERROR", "Video unavailable"},
-                    {"ERROR", "This video is unavailable"},
                     {"ERROR", "This video has been removed by the uploader"},
                     {"UNPLAYABLE", "This video is no longer available due to a copyright claim by Example Rights"},
                     {"LOGIN_REQUIRED", "This video is private"},
@@ -681,6 +713,91 @@ class ChannelOrchestratorTest {
             for (String[] c : cases) {
                 assertArchived(playability(c[0], c[1]), VIDEO, c[0] + " " + c[1]);
             }
+            assertTrue(oEmbedUrls.isEmpty(), "specific reasons archive without oEmbed: " + oEmbedUrls);
+        }
+
+        // ---- Round 3: videos ----
+
+        /** A generic reason whose real cause (a geo-block) sits only in errorScreen, which NewPipe's message omits. */
+        private static final String GENERIC_WITH_GEO_SUBREASON = "{\"playerResponse\":{\"playabilityStatus\":{"
+                + "\"status\":\"UNPLAYABLE\",\"reason\":\"Video unavailable\",\"errorScreen\":{"
+                + "\"playerErrorMessageRenderer\":{\"reason\":{\"simpleText\":\"Video unavailable\"},"
+                + "\"subreason\":{\"runs\":[{\"text\":\"The uploader has not made this video available in your "
+                + "country\"}]}}}}}}";
+
+        @Test
+        @DisplayName("R3 video: a generic reason with a geo subreason and oEmbed 200 is ERROR")
+        void videoGenericUnavailable_oEmbed200_isError() {
+            oEmbedAnswer = oEmbedStatus(200);
+
+            assertError(video(200, GENERIC_WITH_GEO_SUBREASON, PLAYER), VIDEO, "Video unavailable");
+            assertEquals(List.of("https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D"
+                    + VIDEO + "&format=json"), oEmbedUrls);
+        }
+
+        @Test
+        @DisplayName("R3 video: a generic unavailable reason with oEmbed 404 is archived")
+        void videoGenericUnavailable_oEmbed404_archives() {
+            oEmbedAnswer = oEmbedStatus(404);
+            for (String reason : new String[] {"Video unavailable", "This video is unavailable",
+                    "This video isn't available anymore"}) {
+                assertArchived(playability("ERROR", reason), VIDEO, reason);
+            }
+            assertEquals(3, oEmbedUrls.size());
+        }
+
+        @Test
+        @DisplayName("R3 video: a generic unavailable reason is ERROR when oEmbed times out or answers anything but 404")
+        void videoGenericUnavailable_oEmbedTimeoutOrOther_isError() {
+            oEmbedAnswer = chain -> {
+                throw new SocketTimeoutException("timeout");
+            };
+            assertError(playability("ERROR", "Video unavailable"), VIDEO, "Video unavailable");
+
+            for (int code : new int[] {401, 403, 429, 500}) {
+                oEmbedAnswer = oEmbedStatus(code);
+                assertError(playability("ERROR", "Video unavailable"), VIDEO, "Video unavailable");
+            }
+        }
+
+        /** A breaker that is on, with no persistence, shared by the gateway and the validator as in prod. */
+        private ChannelOrchestrator withBreaker(YouTubeCircuitBreaker breaker) {
+            YouTubeGateway gatewayWithBreaker = new YouTubeGateway(ServiceList.YouTube, 1, null, breaker);
+            return new ChannelOrchestrator(gatewayWithBreaker, null, breaker, oEmbed);
+        }
+
+        private static YouTubeCircuitBreaker enabledBreaker() {
+            ValidationProperties props = new ValidationProperties();
+            props.getYoutube().getCircuitBreaker().setEnabled(true);
+            return new YouTubeCircuitBreaker(props, null);
+        }
+
+        @Test
+        @DisplayName("R3 video: the short age gate archives and is never recorded as a rate limit")
+        void videoShortAgeGate_archivesAndIsNotARateLimit() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                    + "\"LOGIN_REQUIRED\",\"reason\":\"Sign in to confirm your age\"}}}", PLAYER));
+
+            var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
+
+            assertArchived(result, VIDEO, "age gate");
+            assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+            assertNull(breaker.getStatusSnapshot().getLastErrorType());
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, breaker.getCurrentState());
+        }
+
+        @Test
+        @DisplayName("R3 video: the bot check stays a rate limit (ERROR, recorded by the breaker)")
+        void videoBotCheck_staysARateLimit() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                    + "\"LOGIN_REQUIRED\",\"reason\":\"Sign in to confirm you're not a bot\"}}}", PLAYER));
+
+            var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
+
+            assertError(result, VIDEO, "Rate limit");
+            assertEquals(1, breaker.getStatusSnapshot().getTotalRateLimitErrors());
         }
     }
 

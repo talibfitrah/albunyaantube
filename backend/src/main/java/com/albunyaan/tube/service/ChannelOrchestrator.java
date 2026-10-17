@@ -71,14 +71,23 @@ public class ChannelOrchestrator {
     private static final Pattern CHANNEL_NOT_FOUND = Pattern.compile(
             "This channel doesn't exist\\.|Not found \\(\"404\\b.*|Got error: \"This channel does not exist\\.\"");
 
+    /** Exact ERROR alert YouTube shows for a deleted playlist, as defaultAlertsCheck words it (owner ruling R3). */
+    private static final Pattern PLAYLIST_NOT_FOUND = Pattern.compile("Got error: \"The playlist does not exist\\.\"");
+
     /**
-     * YouTube's removed/private playability reasons as YoutubeStreamExtractor.checkPlayabilityStatus words an
-     * unclassified non-OK status: Got error STATUS: "reason". Any other reason ("try again later", a live
-     * that has not started, an unusual sign-in prompt) falls back to ERROR.
+     * Playability reasons that name a removal, as YoutubeStreamExtractor.checkPlayabilityStatus words an
+     * unclassified non-OK status: Got error STATUS: "reason". These archive directly.
      */
-    private static final Pattern VIDEO_GONE = Pattern.compile("Got error [A-Z_]+: \"(?:Video unavailable"
-            + "|This video is unavailable|This video is private|This video isn't available anymore"
+    private static final Pattern VIDEO_REMOVED = Pattern.compile("Got error [A-Z_]+: \"(?:This video is private"
             + "|This video has been removed\\b.*|This video is no longer available\\b.*)\"");
+
+    /**
+     * Generic reasons that name no cause. YouTube can keep the real cause (e.g. a geo-block) in
+     * errorScreen.playerErrorMessageRenderer.subreason, which NewPipe's message omits, so these archive only when
+     * oEmbed confirms the video is gone ({@link #oEmbedSaysRemoved}).
+     */
+    private static final Pattern VIDEO_UNAVAILABLE = Pattern.compile("Got error [A-Z_]+: \"(?:Video unavailable"
+            + "|This video is unavailable|This video isn't available anymore)\"");
 
     /** Archive a channel only when it is definitively gone (shared rule; LiveTabReader should call this). */
     static boolean channelGone(ExtractionException e) {
@@ -88,18 +97,22 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Archive a playlist only when its owner's account is terminated. NewPipe 0.26.5's YoutubePlaylistExtractor has
-     * no not-found text of its own; every other ContentNotAvailableException it surfaces is an HTTP 404 from either
-     * of its two browse requests (metadata, then a NewPipe-built continuation), an /oops redirect or an ERROR alert.
+     * Archive a playlist only when its owner's account is terminated or YouTube's exact deleted-playlist alert comes
+     * back. NewPipe 0.26.5's YoutubePlaylistExtractor has no not-found text of its own; every other
+     * ContentNotAvailableException it surfaces is an HTTP 404 from either of its two browse requests (metadata, then
+     * a NewPipe-built continuation), an /oops redirect or another ERROR alert.
      */
     static boolean playlistGone(ExtractionException e) {
-        return e instanceof AccountTerminatedException;
+        return e instanceof AccountTerminatedException
+                || (e instanceof ContentNotAvailableException
+                    && PLAYLIST_NOT_FOUND.matcher(String.valueOf(e.getMessage())).matches());
     }
 
     /**
-     * Archive a video only when it is removed, private or terminated, or behind a gate the app cannot pass
-     * (age, payment/members, Music Premium). A geo-block (the server's region only), HTTP 404 (NewPipe cannot say
-     * which request got it: visitor_id, player or next), /oops and every other playability status are ERROR.
+     * Archive a video directly only when it is removed, private or terminated, or behind a gate the app cannot pass
+     * (age, including the short "Sign in to confirm your age" gate NewPipe leaves untyped; payment/members; Music
+     * Premium). A geo-block (the server's region only), HTTP 404 (NewPipe cannot say which request got it:
+     * visitor_id, player or next), /oops and every other playability status are ERROR.
      */
     static boolean videoGoneOrGated(ExtractionException e) {
         return e instanceof AccountTerminatedException
@@ -108,7 +121,28 @@ public class ChannelOrchestrator {
                 || e instanceof PaidContentException
                 || e instanceof YoutubeMusicPremiumContentException
                 || (e instanceof ContentNotAvailableException
-                    && VIDEO_GONE.matcher(String.valueOf(e.getMessage())).matches());
+                    && (VIDEO_REMOVED.matcher(String.valueOf(e.getMessage())).matches()
+                        || YouTubeCircuitBreaker.isAgeGate(e.getMessage())));
+    }
+
+    static boolean videoGenericUnavailable(ExtractionException e) {
+        return e instanceof ContentNotAvailableException
+                && VIDEO_UNAVAILABLE.matcher(String.valueOf(e.getMessage())).matches();
+    }
+
+    /**
+     * The second signal a generic reason needs: oEmbed answers 404 only for a video YouTube no longer has. Any other
+     * answer (200 for a geo-blocked video, 401/403, 429, 5xx) or a failure is not proof. One throttled request, made
+     * only for a video whose extraction already ended in a generic reason.
+     */
+    private boolean oEmbedSaysRemoved(String videoId) {
+        if (oEmbedClient == null) {
+            return false;
+        }
+        if (throttler != null && throttler.isEnabled()) {
+            throttler.throttle();
+        }
+        return oEmbedClient.videoStatus(videoId) == 404;
     }
 
     private final YouTubeGateway gateway;
@@ -935,15 +969,16 @@ public class ChannelOrchestrator {
                     result.addError(videoId, "Null response from YouTube");
                 }
             } catch (ExtractionException e) {
-                // Check if this is a rate limit error (detection only - recording is in gateway)
-                if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
-                    logger.error("Video {} RATE LIMITED: {} ({})",
-                            videoId, e.getMessage(), e.getClass().getSimpleName());
-                    result.addError(videoId, "Rate limit: " + e.getMessage());
-                } else if (videoGoneOrGated(e)) {
+                // Gone or gated first: the short age gate reads like a sign-in rate limit but is a stable gate.
+                if (videoGoneOrGated(e) || (videoGenericUnavailable(e) && oEmbedSaysRemoved(videoId))) {
                     logger.info("Video {} CONFIRMED not available: {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(videoId);
+                } else if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
+                    // Detection only - recording is in gateway
+                    logger.error("Video {} RATE LIMITED: {} ({})",
+                            videoId, e.getMessage(), e.getClass().getSimpleName());
+                    result.addError(videoId, "Rate limit: " + e.getMessage());
                 } else {
                     logger.warn("Video {} extraction error (will retry): {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
