@@ -9,6 +9,7 @@ import java.time.Duration;
 import java.time.Instant;
 import java.util.ArrayDeque;
 import java.util.Deque;
+import java.util.Objects;
 import java.util.concurrent.TimeUnit;
 
 /**
@@ -25,10 +26,12 @@ public class PlaybackSolveRateLimiter {
     private static final Duration HOUR = Duration.ofHours(1);
 
     private final Clock clock;
-    // ponytail: per-instance memory, so N backend instances allow N x the limit; single instance in prod, Redis if that changes
+    // ponytail: per-instance memory, so N backend instances allow N x the limit; single instance in prod, Redis if that changes.
+    // Worst case 10_000 uids x 300 Instants (about 10 KB each) is about 100 MB; eviction forgets a uid, which errs toward allowing.
+    // Wall-clock time (Clock.instant()): a backwards clock step can only delay a slot freeing, not over-admit.
     private final Cache<String, Deque<Instant>> hits = Caffeine.newBuilder()
             .expireAfterAccess(1, TimeUnit.HOURS)
-            .maximumSize(100_000)
+            .maximumSize(10_000)
             .build();
 
     public PlaybackSolveRateLimiter(Clock clock) {
@@ -37,6 +40,7 @@ public class PlaybackSolveRateLimiter {
 
     /** {@code null} = allowed and counted; otherwise the whole seconds until a slot frees (at least 1). */
     public Long tryAcquire(String uid) {
+        Objects.requireNonNull(uid, "uid must not be null");
         Instant now = clock.instant();
         Long[] retryAfter = {null};
         hits.asMap().compute(uid, (key, existing) -> {
@@ -44,10 +48,14 @@ public class PlaybackSolveRateLimiter {
             while (!dq.isEmpty() && !dq.peekFirst().isAfter(now.minus(HOUR))) dq.pollFirst();
             Instant oldestInMinute = dq.stream().filter(t -> t.isAfter(now.minus(MINUTE))).findFirst().orElse(null);
             long inMinute = dq.stream().filter(t -> t.isAfter(now.minus(MINUTE))).count();
-            if (dq.size() >= PER_HOUR) {
-                retryAfter[0] = secondsUntil(dq.peekFirst().plus(HOUR), now);
-            } else if (inMinute >= PER_MINUTE) {
-                retryAfter[0] = secondsUntil(oldestInMinute.plus(MINUTE), now);
+            boolean hourFull = dq.size() >= PER_HOUR;
+            boolean minuteFull = inMinute >= PER_MINUTE;
+            if (hourFull || minuteFull) {
+                // both windows full: the slot only frees when the later of the two waits is over
+                long wait = 1;
+                if (hourFull) wait = Math.max(wait, secondsUntil(dq.peekFirst().plus(HOUR), now));
+                if (minuteFull) wait = Math.max(wait, secondsUntil(oldestInMinute.plus(MINUTE), now));
+                retryAfter[0] = wait;
             } else {
                 dq.addLast(now);
             }
