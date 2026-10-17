@@ -310,6 +310,7 @@ public class InnerCrawler {
                 transport(key, src, now, e);
             }
         } catch (UncheckedIOException e) { // our own disk write: never a rate signal (§12)
+            if (stopped) return; // stop()'s interrupt closed the channel (ClosedByInterruptException): not a failed disk
             log.error("inner-crawl source={}: corpus write failed; the old data is kept; crawling paused 1 h", key, e);
             long pausedUntil = now + CrawlPacer.PAUSE_MS;
             synchronized (store.state()) {
@@ -338,6 +339,7 @@ public class InnerCrawler {
      * up to 7 d, so one source that keeps failing neither blocks the key-ordered pass nor fills the window by itself.
      */
     private void transport(String key, InnerState.Source src, long now, Exception e) {
+        if (stopped) return; // stop()'s interrupt (an InterruptedIOException), not this source's failure
         backoff(src, now);
         log.warn("inner-crawl source={}: {}; retry in {} min", key, e.toString(), (src.retryAt - now) / 60_000);
         if (!pacer.signalled()) pacer.transportFailure();
@@ -453,7 +455,8 @@ public class InnerCrawler {
         }
         if (arabic > latin) return "ar";
         int nl = 0, en = 0;
-        for (String word : text.toLowerCase(Locale.ROOT).split("[^\\p{L}]+")) {
+        // An apostrophe stays inside a word: Ja'far, Na‘at and Jaʼfar are one word each, never the markers ja and na.
+        for (String word : text.toLowerCase(Locale.ROOT).split("[^\\p{L}'\u2018\u2019\u02BC]+")) {
             if (word.isEmpty()) continue;
             if (NL.contains(word)) nl++;
             if (EN.contains(word)) en++;

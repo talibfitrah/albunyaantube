@@ -23,6 +23,7 @@ import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.slf4j.LoggerFactory;
 
 import java.io.IOException;
+import java.io.InterruptedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -247,6 +248,16 @@ class InnerCrawlerTest {
     }
 
     @Test
+    void anApostropheInsideATransliteratedWordKeepsItOneWord() {
+        // round 3: split at the apostrophe, Ja'far gave `ja` and Na'at gave `na`, both Dutch markers
+        assertEquals("en", InnerCrawler.hl(InnerCrawler.titles(items("tahawi", 1, 100,
+                "Sharh al-Aqidah at-Tahawiyyah (Imam Abu Ja'far at-Tahawi) - Lesson"))));
+        assertEquals("en", InnerCrawler.hl(InnerCrawler.titles(items("naat", 1, 100, "Beautiful Na'at Sharif"))));
+        assertEquals("en", InnerCrawler.hl("Imam Ja’far as-Sadiq | Na‘at | Jaʼfar"), "’ ‘ ʼ too");
+        assertEquals("nl", InnerCrawler.hl("Wat is de betekenis van tawhied"));
+    }
+
+    @Test
     void aSourceMissingFromOneSourcesReadKeepsItsStateAndCorpus() throws Exception {
         admitted.put(CH, "Dawah Nederland");
         store.state().mode = InnerState.Mode.FIRST_PASS;
@@ -402,13 +413,55 @@ class InnerCrawlerTest {
         store.state().mode = InnerState.Mode.FIRST_PASS;
         when(fetcher.first(eq(CH), anyString())).thenAnswer(requestThen(new IOException("timeout")));
         when(fetcher.first(eq(rejected), anyString())).thenThrow(new IllegalArgumentException("not a crawlable source key"));
-        step();
-        step();
+        step(); // transport(): its own save is the only one after the job (the first window failure saves nothing)
         InnerState back = new InnerStore(tmp.resolve("inner").toString()).state(); // I-4: no 5-min housekeeping in between
+        assertNotNull(back.sources.get(CH), "transport() saved");
         assertEquals(source(CH).retryAt, back.sources.get(CH).retryAt);
         assertTrue(back.sources.get(CH).retryAt > 0);
+        step(); // the rejected key's own save
+        back = new InnerStore(tmp.resolve("inner").toString()).state();
         assertEquals(source(rejected).retryAt, back.sources.get(rejected).retryAt);
         assertTrue(back.sources.get(rejected).retryAt > 0);
+    }
+
+    /** The real thread reaches the fetcher, stop() interrupts it there, and `then` ends the job; returns the saved state. */
+    InnerState stopInsideTheJob(Answer<UploadsFetcher.Batch> then) throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(search.awaitBuilt(anyLong())).thenReturn(true);
+        CountDownLatch inJob = new CountDownLatch(1);
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            inJob.countDown();
+            try {
+                Thread.sleep(10_000);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt(); // as NewPipe's I/O leaves it: the job goes on with the flag set
+            }
+            return then.answer(inv);
+        });
+        crawler.start();
+        assertTrue(inJob.await(10, TimeUnit.SECONDS));
+        crawler.stop();
+        return new InnerStore(tmp.resolve("inner").toString()).state();
+    }
+
+    @Test
+    void stopDuringTheCorpusWriteIsNeitherAPauseNorTheSourcesFailure() throws Exception {
+        // the write then throws ClosedByInterruptException: an interrupted channel, not a failed disk
+        InnerState back = stopInsideTheJob(inv -> batch(1, items("lesson", 0, 1, "x"), false));
+        assertEquals(0, back.breaker.pausedUntil, "a clean restart is not paused");
+        assertEquals(0, back.sources.get(CH).retryAt);
+        assertEquals(0, back.sources.get(CH).failures);
+        assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.ERROR), "no false ERROR");
+    }
+
+    @Test
+    void stopDuringARequestIsNotTheSourcesFailure() throws Exception {
+        InnerState back = stopInsideTheJob(inv -> {
+            throw new InterruptedIOException("interrupted");
+        });
+        assertEquals(0, back.sources.get(CH).retryAt);
+        assertEquals(0, back.sources.get(CH).failures);
     }
 
     @Test
