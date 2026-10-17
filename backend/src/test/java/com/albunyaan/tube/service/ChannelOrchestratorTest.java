@@ -1,5 +1,6 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.config.NewPipeConfiguration;
 import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
@@ -26,13 +27,13 @@ import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.downloader.Downloader;
 import org.schabi.newpipe.extractor.downloader.Request;
 import org.schabi.newpipe.extractor.downloader.Response;
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 
 import java.io.IOException;
-import java.net.SocketTimeoutException;
 import java.util.ArrayDeque;
 import java.util.ArrayList;
 import java.util.Collections;
@@ -389,6 +390,18 @@ class ChannelOrchestratorTest {
         }
 
         @Test
+        @DisplayName("R5 channel: NewPipe's \"doesn't exist\" text archives with either apostrophe")
+        void channelDoesNotExist_eitherApostrophe_archives() throws Exception {
+            for (String text : new String[] {"This channel doesn't exist.", "This channel doesn\u2019t exist."}) {
+                doThrow(new ContentNotAvailableException(text)).when(gateway).fetchChannelInfo("UC_gone");
+
+                var result = orchestrator.batchValidateChannelsDtoWithDetails(List.of("UC_gone"));
+
+                assertTrue(result.isNotFound("UC_gone"), text);
+            }
+        }
+
+        @Test
         @DisplayName("Playlists and videos are archived only on NewPipe's own signals, never on free-text messages")
         void playlistAndVideoFreeTextGoneMessage_isErrorNotArchived() throws Exception {
             when(gateway.fetchPlaylistInfo("PL_text")).thenThrow(new ExtractionException("this playlist does not exist"));
@@ -459,8 +472,6 @@ class ChannelOrchestratorTest {
         private Interceptor oEmbedAnswer = chain -> {
             throw new AssertionError("oEmbed must not be asked: " + chain.request().url());
         };
-        /** Runs just before each queued InnerTube reply (e.g. another caller tripping the shared breaker). */
-        private Runnable beforeReply = () -> { };
 
         @BeforeEach
         void setUp() {
@@ -476,7 +487,6 @@ class ChannelOrchestratorTest {
                                 "{\"responseContext\":{\"visitorData\":\"CgtWYWxpZGF0b3JUZXN0\"}}", request.url());
                     }
                     assertTrue(request.url().contains("/youtubei/v1/"), "unexpected request " + request.url());
-                    beforeReply.run();
                     return replies.remove();
                 }
             });
@@ -724,41 +734,6 @@ class ChannelOrchestratorTest {
                 + "\"subreason\":{\"runs\":[{\"text\":\"The uploader has not made this video available in your "
                 + "country\"}]}}}}}}";
 
-        @Test
-        @DisplayName("R3 video: a generic reason with a geo subreason and oEmbed 200 is ERROR")
-        void videoGenericUnavailable_oEmbed200_isError() {
-            oEmbedAnswer = oEmbedStatus(200);
-
-            assertError(video(200, GENERIC_WITH_GEO_SUBREASON, PLAYER), VIDEO, "Video unavailable");
-            assertEquals(List.of("https://www.youtube.com/oembed?url=https%3A%2F%2Fwww.youtube.com%2Fwatch%3Fv%3D"
-                    + VIDEO + "&format=json"), oEmbedUrls);
-        }
-
-        @Test
-        @DisplayName("R3 video: a generic unavailable reason with oEmbed 404 is archived")
-        void videoGenericUnavailable_oEmbed404_archives() {
-            oEmbedAnswer = oEmbedStatus(404);
-            for (String reason : new String[] {"Video unavailable", "This video is unavailable",
-                    "This video isn't available anymore"}) {
-                assertArchived(playability("ERROR", reason), VIDEO, reason);
-            }
-            assertEquals(3, oEmbedUrls.size());
-        }
-
-        @Test
-        @DisplayName("R3 video: a generic unavailable reason is ERROR when oEmbed times out or answers anything but 404")
-        void videoGenericUnavailable_oEmbedTimeoutOrOther_isError() {
-            oEmbedAnswer = chain -> {
-                throw new SocketTimeoutException("timeout");
-            };
-            assertError(playability("ERROR", "Video unavailable"), VIDEO, "Video unavailable");
-
-            for (int code : new int[] {401, 403, 429, 500}) {
-                oEmbedAnswer = oEmbedStatus(code);
-                assertError(playability("ERROR", "Video unavailable"), VIDEO, "Video unavailable");
-            }
-        }
-
         /** A breaker that is on, with no persistence, shared by the gateway and the validator as in prod. */
         private ChannelOrchestrator withBreaker(YouTubeCircuitBreaker breaker) {
             YouTubeGateway gatewayWithBreaker = new YouTubeGateway(ServiceList.YouTube, 1, null, breaker);
@@ -830,48 +805,84 @@ class ChannelOrchestratorTest {
             assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors());
         }
 
-        /** A generic reason, so the validator asks oEmbed for its second signal. */
-        private void queueGenericUnavailable() {
-            replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
-                    + "\"ERROR\",\"reason\":\"Video unavailable\"}}}", PLAYER));
+        // ---- Round 5: no oEmbed corroboration; a generic reason is ERROR with no extra request ----
+
+        @Test
+        @DisplayName("R5 video: a generic unavailable reason is ERROR and oEmbed is never asked")
+        void videoGenericUnavailable_isErrorWithNoOEmbedCall() {
+            oEmbedAnswer = oEmbedStatus(404);   // the old corroboration would have archived on this
+
+            assertError(video(200, GENERIC_WITH_GEO_SUBREASON, PLAYER), VIDEO, "Video unavailable");
+            String[][] cases = {{"ERROR", "Video unavailable"}, {"ERROR", "This video is unavailable"},
+                    {"UNPLAYABLE", "This video isn't available anymore"}};
+            for (String[] c : cases) {
+                assertError(playability(c[0], c[1]), VIDEO, c[1]);
+            }
+            assertTrue(oEmbedUrls.isEmpty(), "no extra request: " + oEmbedUrls);
         }
 
         @Test
-        @DisplayName("R4 video: oEmbed 429s go through the shared breaker; the threshold opens it and the rest is skipped")
-        void oEmbed429_opensTheBreakerAndSkipsTheRest() {
+        @DisplayName("R5 video: the generic path leaves the breaker's rate-limit window untouched")
+        void videoGenericUnavailable_leavesTheBreakerWindowUntouched() {
             YouTubeCircuitBreaker breaker = enabledBreaker();
-            oEmbedAnswer = oEmbedStatus(429);
-            List<String> ids = List.of("validatorT1", "validatorT2", "validatorT3", "validatorT4");
-            for (int i = 0; i < 3; i++) {
-                queueGenericUnavailable();
+            breaker.recordRateLimitError(new IOException("HTTP 429 earlier"));
+            breaker.recordRateLimitError(new IOException("HTTP 429 earlier"));
+            oEmbedAnswer = oEmbedStatus(401);   // the old corroboration recorded a success here, clearing the window
+            List<String> ids = List.of("validatorT1", "validatorT2", "validatorT3");
+            for (String reason : new String[] {"Video unavailable", "This video is unavailable",
+                    "This video isn't available anymore"}) {
+                replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                        + "\"ERROR\",\"reason\":\"" + reason + "\"}}}", PLAYER));
             }
 
             var result = withBreaker(breaker).batchValidateVideosWithDetails(ids);
 
-            assertEquals(3, breaker.getStatusSnapshot().getTotalRateLimitErrors());
-            assertEquals(YouTubeCircuitBreaker.State.OPEN, breaker.getCurrentState());
-            assertEquals(3, oEmbedUrls.size());
-            for (String id : ids.subList(0, 3)) {
-                assertError(result, id, "Video unavailable");
-            }
-            assertTrue(result.isSkipped("validatorT4"), "items after the breaker opens are skipped");
+            ids.forEach(id -> assertTrue(result.isError(id), id));
+            assertEquals(2, breaker.getStatusSnapshot().getTotalRateLimitErrors(), "the validator recorded nothing");
+            breaker.recordRateLimitError(new IOException("HTTP 429 later"));
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, breaker.getCurrentState(),
+                    "the two earlier errors are still in the window, so the third opens the breaker");
+        }
+
+        /** The shared prod downloader over an OkHttp fake: version and visitor-id lookups answer 200, every other
+         *  InnerTube request answers HTTP 429 with YouTube's RESOURCE_EXHAUSTED JSON body. */
+        private static Downloader prodDownloaderAnswering429() {
+            OkHttpClient http = new OkHttpClient.Builder().addInterceptor(chain -> {
+                String url = chain.request().url().toString();
+                int code = 429;
+                String body = "{\"error\":{\"code\":429,\"message\":\"Resource has been exhausted (e.g. check quota).\","
+                        + "\"status\":\"RESOURCE_EXHAUSTED\"}}";
+                if (url.equals("https://www.youtube.com/sw.js")) {
+                    code = 200;
+                    body = "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\"";
+                } else if (url.contains("/youtubei/v1/visitor_id")) {
+                    code = 200;
+                    body = "{\"responseContext\":{\"visitorData\":\"CgtWYWxpZGF0b3JUZXN0\"}}";
+                }
+                return new okhttp3.Response.Builder().request(chain.request()).protocol(Protocol.HTTP_2).code(code)
+                        .message("").body(ResponseBody.create(body, MediaType.get("application/json; charset=utf-8")))
+                        .build();
+            }).build();
+            NewPipeConfiguration config = new NewPipeConfiguration();
+            ReflectionTestUtils.setField(config, "userAgent", "test-agent");
+            return config.newPipeDownloader(http);
         }
 
         @Test
-        @DisplayName("R4 video: with the breaker open, oEmbed is not asked and the generic reason is ERROR")
-        void oEmbedRefusedByAnOpenBreaker_isErrorWithNoCall() {
-            YouTubeCircuitBreaker breaker = enabledBreaker();
-            beforeReply = () -> {   // another caller trips the shared breaker while this item is extracted
-                for (int i = 0; i < 3; i++) {
-                    breaker.recordRateLimitError(new IOException("HTTP 429 elsewhere"));
-                }
-            };
-            queueGenericUnavailable();
+        @DisplayName("R5: an HTTP 429 through the prod downloader is ERROR plus one rate limit for every type, never archive")
+        void http429ThroughTheProdDownloader_isARateLimitNeverAnArchive() {
+            NewPipe.init(prodDownloaderAnswering429());
+            YouTubeCircuitBreaker channelBreaker = enabledBreaker();
+            YouTubeCircuitBreaker playlistBreaker = enabledBreaker();
+            YouTubeCircuitBreaker videoBreaker = enabledBreaker();
 
-            var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
-
-            assertError(result, VIDEO, "Video unavailable");
-            assertTrue(oEmbedUrls.isEmpty(), "oEmbed must not be asked while the breaker is open");
+            assertError(withBreaker(channelBreaker).batchValidateChannelsWithDetails(List.of(ID)), ID, "Rate limit");
+            assertError(withBreaker(playlistBreaker).batchValidatePlaylistsWithDetails(List.of(PLAYLIST)), PLAYLIST,
+                    "Rate limit");
+            assertError(withBreaker(videoBreaker).batchValidateVideosWithDetails(List.of(VIDEO)), VIDEO, "Rate limit");
+            for (YouTubeCircuitBreaker breaker : List.of(channelBreaker, playlistBreaker, videoBreaker)) {
+                assertEquals(1, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+            }
         }
 
         @Test

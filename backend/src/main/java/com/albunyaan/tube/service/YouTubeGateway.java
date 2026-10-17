@@ -512,27 +512,6 @@ public class YouTubeGateway {
     // ==================== Video Operations ====================
 
     /**
-     * oEmbed's HTTP status for a video under the same throttle and circuit breaker as NewPipe requests, or -1 when
-     * the breaker refuses (no request is made) or the lookup fails. A 429 is recorded as a rate limit.
-     */
-    public int fetchOEmbedVideoStatus(YouTubeOEmbedClient oEmbed, String videoId) {
-        try {
-            checkCircuitBreaker();
-        } catch (IOException refused) {
-            return -1;
-        }
-        applyThrottling();
-
-        int status = oEmbed.videoStatus(videoId);
-        if (status >= 200 && status < 500 && status != 429) {
-            recordSuccess();   // YouTube answered about the content (200, 401, 403, 404…)
-        } else {
-            recordError(new IOException(status < 0 ? "oEmbed lookup failed" : "oEmbed HTTP " + status));
-        }
-        return status;
-    }
-
-    /**
      * Fetch stream info by video ID.
      * Applies throttling, circuit breaker protection, and probe timeout (for HALF_OPEN probes).
      */

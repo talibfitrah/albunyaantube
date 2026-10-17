@@ -83,22 +83,6 @@ public class YouTubeOEmbedClient {
     }
 
     /**
-     * The HTTP status oEmbed answers for a video, or -1 when the lookup fails (timeout, network). 404 means YouTube
-     * no longer has the video; a geo-blocked video still answers 200, a private one 401.
-     */
-    public int videoStatus(String videoId) {
-        String requestUrl = OEMBED_BASE + "?url="
-                + URLEncoder.encode("https://www.youtube.com/watch?v=" + videoId, StandardCharsets.UTF_8) + "&format=json";
-        Request request = new Request.Builder().url(requestUrl).header("User-Agent", userAgent).get().build();
-        try (Response response = httpClient.newCall(request).execute()) {
-            return response.code();
-        } catch (IOException e) {
-            logger.warn("oEmbed status lookup for video {} failed: {}", videoId, e.getMessage());
-            return -1;
-        }
-    }
-
-    /**
      * Parses the {@code thumbnail_url} from an oEmbed JSON body and returns it
      * only if it is a usable (non-expiring {@code /vi/}) image. Package-private
      * for unit testing without a network round-trip.

@@ -180,6 +180,13 @@ public class NewPipeConfiguration {
                             }
                         }
 
+                        if (response.code() == 429) {
+                            // YouTube is rate-limiting this IP, for every caller. NewPipe's own convention (its
+                            // reference DownloaderImpl) is ReCaptchaException, which the circuit breaker and admin
+                            // search read as a rate limit. Logged above with its retry-after.
+                            throw new ReCaptchaException("HTTP 429 Too Many Requests", response.request().url().toString());
+                        }
+
                         return new Response(
                                 response.code(),
                                 response.message(),

@@ -328,7 +328,7 @@ All exceptions extend `ExtractionException`:
 | `YoutubeMusicPremiumContentException` | YouTube Music premium |
 | `SoundCloudGoPlusContentException` | SoundCloud Go+ premium |
 
-**`ContentNotAvailableException` is not proof that content is gone.** In 0.26.5, YouTube throws a plain (untyped)
+**`ContentNotAvailableException` is not proof that content is gone.** In 0.26.5, NewPipe throws a plain (untyped)
 `ContentNotAvailableException` for:
 - any InnerTube JSON `error` object on a channel request (500, 503, 403, 400, 429): `Got error:"<STATUS>": <message>`;
 - any ERROR alert on a channel or playlist page: `Got error: "<alert text>"`;
@@ -336,7 +336,8 @@ All exceptions extend `ExtractionException`:
 - an HTTP 404 on any InnerTube request, including NewPipe's own visitor_id and continuation requests: `Not found ("404 …")`;
 - any playability status `checkPlayabilityStatus` does not recognise: `Got error <STATUS>: "<reason>"`. This includes "try again later", and a generic "Video unavailable" whose real cause (e.g. a geo-block) sits only in `errorScreen…subreason`.
 
-Only a few signals are definitive. The project's rule is in `ChannelOrchestrator`: `channelGone`, `playlistGone`, `videoGoneOrGated`, plus an oEmbed 404 for a generic reason. Archive only on those. Everything else is transient or ambiguous and stays ERROR (retry). Sign-in wording is a rate limit only for the bot check ("not a bot").
+Only a few signals are definitive. The project's rule is in `ChannelOrchestrator`: `channelGone`, `playlistGone`, `videoGoneOrGated`. Each accepts only typed exceptions or exact messages, so a generic "Video unavailable" stays
+ERROR. Archive only on those. Everything else is transient or ambiguous and stays ERROR (retry). Sign-in wording is a rate limit only for the bot check ("not a bot").
 
 **Recommended Pattern:**
 
@@ -411,18 +412,8 @@ for (Image img : thumbnails) {
 // Validate: never "catch ContentNotAvailableException -> gone". Use the orchestrator's three-way result.
 BatchValidationResult<StreamInfo> r = channelOrchestrator.batchValidateVideosWithDetails(youtubeIds);
 r.isValid(id);     // exists
-r.isNotFound(id);  // definitively gone or gated (videoGoneOrGated / oEmbed 404): safe to archive
+r.isNotFound(id);  // definitively gone or gated (videoGoneOrGated): safe to archive
 r.isError(id);     // anything else, including most ContentNotAvailableExceptions: retry later
-
-// Batch validate
-Map<String, StreamInfo> results = new HashMap<>();
-for (String id : youtubeIds) {
-    try {
-        results.put(id, StreamInfo.getInfo(...));
-    } catch (ExtractionException e) {
-        // Skip unavailable
-    }
-}
 ```
 
 ### Search Pattern
