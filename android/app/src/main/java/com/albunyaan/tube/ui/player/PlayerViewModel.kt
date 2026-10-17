@@ -74,6 +74,8 @@ class PlayerViewModel @Inject constructor(
     private val dubAudioEnumerator: DubAudioEnumerator,
     private val dubAudioResolver: DubAudioResolver,
     @javax.inject.Named("real") private val contentService: com.albunyaan.tube.data.source.ContentService,
+    private val livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector,
+    @javax.inject.Named("io") private val ioDispatcher: CoroutineDispatcher,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -244,6 +246,13 @@ class PlayerViewModel @Inject constructor(
     // Live stream proactive refresh: job that schedules URL refresh before expiration
     private var liveRefreshJob: Job? = null
 
+    /**
+     * The streams a live refresh put behind the player while Ready keeps the selection the source was built from
+     * (a swap leaves Ready alone so the fragment never rebuilds; the fallback rebuild does not update it either).
+     * A rebuild that starts from Ready (the audio-only toggle) starts from these instead. Null once Ready is current.
+     */
+    @Volatile private var liveSourceStreams: ResolvedStreams? = null
+
     /** DEBUG only: L2/L3 shorten the refresh (PlayerFragment reads Settings.Global "fitrah_live_refresh_ms"). */
     var debugLiveRefreshOverrideMs: Long? = null
 
@@ -361,7 +370,15 @@ class PlayerViewModel @Inject constructor(
 
     fun setAudioOnly(audioOnly: Boolean) {
         if (_state.value.audioOnly == audioOnly) return
-        updateState { it.copy(audioOnly = audioOnly) }
+        // The toggle rebuilds the source from Ready: after a live refresh, rebuild from the refreshed URLs, not
+        // from a selection whose URLs die at the old expire.
+        val ready = _state.value.streamState as? StreamState.Ready
+        val swapped = liveSourceStreams
+        val fresh = if (ready != null && swapped != null && swapped.streamId == ready.streamId) {
+            buildFreshSelection(swapped, ready.selection)?.let { StreamState.Ready(ready.streamId, it) }
+        } else null
+        if (fresh != null) liveSourceStreams = null
+        updateState { it.copy(audioOnly = audioOnly, streamState = fresh ?: it.streamState) }
         publishAnalytics(PlaybackAnalyticsEvent.AudioOnlyToggled(audioOnly))
     }
 
@@ -1696,7 +1713,7 @@ class PlayerViewModel @Inject constructor(
             maybeEnumerateDubs(selection)
 
             // Schedule proactive URL refresh for live streams
-            scheduleLiveStreamRefresh(resolved, selection)
+            scheduleLiveStreamRefresh(resolved)
 
             // Apply pending quality cap if set (stored when URLs expired during quality switch)
             val pendingCap = pendingQualityCap
@@ -1712,46 +1729,51 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Schedule proactive URL refresh for live streams before they expire.
-     * This fetches fresh URLs in the background and emits an event for seamless swap.
+     * This fetches fresh URLs in the background and swaps them in place (or, failing that, emits the rebuild event).
      */
-    private fun scheduleLiveStreamRefresh(resolved: ResolvedStreams, currentSelection: PlaybackSelection) {
+    private fun scheduleLiveStreamRefresh(resolved: ResolvedStreams) {
         // Cancel any existing refresh job
         liveRefreshJob?.cancel()
+        // A new schedule follows a new Ready or a refresh outcome; the refresh sets this again after it.
+        liveSourceStreams = null
 
         // Only schedule for live streams
         if (!resolved.isLive) return
 
         val delayMs = debugLiveRefreshOverrideMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG }
             ?: resolved.timeUntilLiveRefreshMs() ?: return
-        if (delayMs <= 0) {
-            // Already time to refresh - do it immediately in a coroutine
-            android.util.Log.d("PlayerViewModel", "Live stream: immediate proactive refresh needed")
-            liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
-                performLiveStreamRefresh(resolved.streamId, currentSelection)
-            }
-            return
-        }
 
         android.util.Log.d("PlayerViewModel", "Live stream: scheduling proactive refresh in ${delayMs / 1000}s")
 
-        liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+        liveRefreshJob = viewModelScope.launch(ioDispatcher) {
             kotlinx.coroutines.delay(delayMs)
-
-            // Verify we're still playing the same stream
-            val currentState = _state.value.streamState
-            if (currentState !is StreamState.Ready || currentState.streamId != resolved.streamId) {
-                android.util.Log.d("PlayerViewModel", "Live stream: skipping refresh, stream changed")
-                return@launch
+            // A failed refresh retries in this same job while the player's URLs still play (at most the 10-min
+            // lead). After that the 403 at expiry takes today's rebuild (PlayerFragment.requestStreamRefreshAndResume).
+            var leftMs = ((resolved.liveRefreshAtElapsedMs() ?: return@launch) + ResolvedStreams.LIVE_REFRESH_LEAD_MS -
+                android.os.SystemClock.elapsedRealtime()).coerceAtMost(ResolvedStreams.LIVE_REFRESH_LEAD_MS)
+            while (true) {
+                // Verify we're still playing the same stream
+                val currentState = _state.value.streamState
+                if (currentState !is StreamState.Ready || currentState.streamId != resolved.streamId) {
+                    android.util.Log.d("PlayerViewModel", "Live stream: skipping refresh, stream changed")
+                    return@launch
+                }
+                if (performLiveStreamRefresh(resolved.streamId, currentState.selection)) return@launch
+                leftMs -= LIVE_REFRESH_RETRY_MS
+                if (leftMs <= 0) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: refresh retries spent; expiry takes the rebuild")
+                    return@launch
+                }
+                kotlinx.coroutines.delay(LIVE_REFRESH_RETRY_MS)
             }
-
-            performLiveStreamRefresh(resolved.streamId, currentState.selection)
         }
     }
 
     /**
      * Perform the actual live stream URL refresh in the background.
+     * @return false when it should be retried (no fresh streams, no selection, an error); true otherwise.
      */
-    private suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection) {
+    internal suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection): Boolean {
         android.util.Log.d("PlayerViewModel", "Live stream: proactively refreshing URLs for $streamId")
 
         try {
@@ -1764,22 +1786,27 @@ class PlayerViewModel @Inject constructor(
             )
             if (freshStreams == null || !freshStreams.isLive) {
                 android.util.Log.w("PlayerViewModel", "Live stream: refresh failed or stream no longer live")
-                return
+                return freshStreams != null
             }
-
-            // Build selection maintaining current audio-only and quality preferences
+            // Spec §9.2(a): swap the media-playlist URLs in place. No event, no setMediaSource, no prepare, no seek,
+            // so it also lands while the fragment's view is gone (background audio, F13). An audio-only player plays
+            // a progressive audio URL the redirector never sees, so it takes the rebuild below.
+            if (!_state.value.audioOnly && livePlaylistRedirector.refresh(currentSelection.resolved, freshStreams)) {
+                scheduleLiveStreamRefresh(freshStreams)
+                liveSourceStreams = freshStreams
+                return true
+            }
+            // Fallback (another client, a vanished itag, a failed master fetch): today's rebuild at the live edge.
             val freshSelection = buildFreshSelection(freshStreams, currentSelection)
             if (freshSelection == null) {
                 android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
-                return
+                return false
             }
-
-            android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")
+            android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")   // L2/soak criterion (Task 34)
             _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
-
-            // Schedule next refresh
-            scheduleLiveStreamRefresh(freshStreams, freshSelection)
-
+            scheduleLiveStreamRefresh(freshStreams)
+            liveSourceStreams = freshStreams
+            return true
         } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
             // Live stream became unavailable mid-broadcast (channel removed, video
             // archived, geo-changed). Surface ContentUnavailable instead of an
@@ -1787,10 +1814,11 @@ class PlayerViewModel @Inject constructor(
             // another refresh attempt.
             android.util.Log.i("PlayerViewModel", "Live stream: ${cu.videoId} now unavailable per backend; emitting ContentUnavailable")
             updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+            return true
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
-            // Will fall back to error-based refresh when URLs actually expire
+            return false
         }
     }
 
@@ -1922,6 +1950,8 @@ class PlayerViewModel @Inject constructor(
         /** Longest a first open waits for the download list's startup load before it streams. */
         private const val STARTUP_LOAD_WAIT_MS = 2_000L
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
+        /** A failed live refresh retries this often inside the lead window (Task 26 hand-off). */
+        private const val LIVE_REFRESH_RETRY_MS = 2 * 60 * 1000L
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch

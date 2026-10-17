@@ -41,6 +41,8 @@ internal fun playerViewModel(
     playlistDetailRepository: PlaylistDetailRepository = FakePlaylistDetailRepository(),
     favoritesRepository: FavoritesRepository = FakeFavoritesRepository(),
     extractorClient: ExtractorClient = FakeExtractorClient(),
+    livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector = com.albunyaan.tube.player.LivePlaylistRedirector { _, _ -> null },
+    ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
 ) = PlayerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
@@ -61,6 +63,8 @@ internal fun playerViewModel(
         ),
     ),
     contentService = com.albunyaan.tube.data.source.FakeContentService(),
+    livePlaylistRedirector = livePlaylistRedirector,
+    ioDispatcher = ioDispatcher,
 )
 
 internal class FakePlayerRepository : PlayerRepository {
