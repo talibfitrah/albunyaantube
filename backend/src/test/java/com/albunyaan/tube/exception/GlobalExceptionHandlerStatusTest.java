@@ -52,6 +52,9 @@ class GlobalExceptionHandlerStatusTest {
         @GetMapping("/rse499")
         void rse499() { throw new ResponseStatusException(org.springframework.http.HttpStatusCode.valueOf(499), "gone away"); }
 
+        @GetMapping("/denied")
+        void denied() { throw new org.springframework.security.access.AccessDeniedException("nope"); }
+
         @GetMapping("/boom")
         void boom() { throw new RuntimeException("secret internals"); }
     }
@@ -64,6 +67,13 @@ class GlobalExceptionHandlerStatusTest {
                 .setMessageConverters(new org.springframework.http.converter.json.MappingJackson2HttpMessageConverter(
                         org.springframework.http.converter.json.Jackson2ObjectMapperBuilder.json().build()))
                 .build();
+    }
+
+    @Test
+    void aMethodSecurityDenialIs403NotA500() throws Exception {
+        mvc.perform(get("/denied")).andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.status").value(403)).andExpect(jsonPath("$.error").value("Forbidden"))
+                .andExpect(jsonPath("$.message").value("Access denied")).andExpect(jsonPath("$.path").value("/denied"));
     }
 
     @Test

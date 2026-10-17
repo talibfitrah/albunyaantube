@@ -359,6 +359,22 @@ public class GlobalExceptionHandler {
                 .body(body);
     }
 
+    /** @PreAuthorize denials surface here (the filter chain answers 401/403 itself for URL rules): 403, not the 500 catch-all. */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<Object> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        logger.warn("Access denied: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", "Forbidden");
+        body.put("message", "Access denied");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
+    }
+
     /**
      * Client errors Spring raises itself (ResponseStatusException, MVC 405/404/400...) keep their own
      * status; malformed JSON is a 400. Everything else is a real 500.
