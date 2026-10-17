@@ -591,6 +591,7 @@ import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
 import type { ReorderItem } from '@/services/contentLibrary';
 import type { BulkActionItem } from '@/types/api';
+import { apiErrorCode, apiErrorWithOffenders } from '@/services/http';
 
 const { t, locale } = useI18n();
 
@@ -947,10 +948,15 @@ async function bulkChangeStatus(status: string) {
       });
     }
   } catch (err: any) {
-    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+    alert(t('contentLibrary.errorBulkAction') + ': ' + bulkErrorReason(err));
   } finally {
     closeBulkActionsMenu();
   }
+}
+
+// A coded refusal reads in the admin's language with each offending row (spec §8, D9); anything else keeps its message.
+function bulkErrorReason(err: any): string {
+  return apiErrorCode(err) ? apiErrorWithOffenders(err, t, 'contentLibrary.errorBulkAction') : (err?.message || String(err));
 }
 
 function openBulkCategoryAssignment() {
@@ -1069,7 +1075,7 @@ async function handleCategoriesAssigned(categoryIds: string[], unchangedIds: str
           updateLoadedItems(group.items, item => { item.categoryIds = [...group.categoryIds]; });
         }
       } catch (err: any) {
-        errors.push(err?.message || String(err));
+        errors.push(bulkErrorReason(err));
       }
     }
     const result = { successCount, errors };
@@ -1097,7 +1103,7 @@ async function handleCategoriesAssigned(categoryIds: string[], unchangedIds: str
       alert(t('contentLibrary.errorBulkAction') + ': ' + result.errors[0]);
     }
   } catch (err: any) {
-    alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
+    alert(t('contentLibrary.errorBulkAction') + ': ' + bulkErrorReason(err));
   } finally {
     categoryModalOpen.value = false;
     itemsForCategoryAssignment.value = [];

@@ -5,6 +5,7 @@ import { describe, it, expect, beforeEach, vi } from 'vitest';
 import ContentLibraryView from '@/views/ContentLibraryView.vue';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import { messages } from '@/locales/messages';
+import { ApiError } from '@/services/http';
 
 const getMock = vi.fn();
 const bulkAssignCategoriesMock = vi.fn();
@@ -189,5 +190,27 @@ describe('CategoryAssignmentModal — empty selection', () => {
     const dialog = await renderModal({ allowEmpty: true });
 
     expect(within(dialog).getByRole('button', { name: 'Assign' })).not.toBeDisabled();
+  });
+});
+
+describe('ContentLibraryView — a live-category refusal lists each offender (spec §8, D9)', () => {
+  beforeEach(() => {
+    getMock.mockReset();
+    bulkAssignCategoriesMock.mockReset();
+    vi.stubGlobal('alert', vi.fn());
+  });
+
+  it('puts the reason and each offending row in the alert', async () => {
+    bulkAssignCategoriesMock.mockRejectedValue(new ApiError('1 item(s) refused', 400, 'LIVE_LINK_NOT_LIVE',
+      { offenders: [{ ref: 'video:doc-1', code: 'LIVE_LINK_NOT_LIVE', message: 'x' }] }));
+    stubLibrary([TECH_CHANNEL]);
+    renderView();
+
+    await fireEvent.click((await screen.findAllByTitle('Categories'))[0]);
+    const dialog = await openModal();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Assign' }));
+
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining(
+      "video:doc-1: This video isn't live on its channel's Live tab right now")));
   });
 });

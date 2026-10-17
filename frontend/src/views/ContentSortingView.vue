@@ -334,6 +334,7 @@ import {
   type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
+import { apiErrorToMessage } from '@/services/http';
 import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
@@ -833,7 +834,7 @@ async function confirmAddContent() {
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
     closeAddContentModal();
   } catch (e: any) {
-    toast.error(t('contentSorting.addContentError'));
+    toast.error(apiErrorToMessage(e, t, 'contentSorting.addContentError'));
   } finally {
     addModalSubmitting.value = false;
   }

@@ -1629,7 +1629,9 @@ export const messages = {
         CHANNELS: 'Processing channels...',
         PLAYLISTS: 'Processing playlists...',
         VIDEOS: 'Processing videos...',
-        COMPLETE: 'Complete'
+        COMPLETE: 'Complete',
+        LIVE_CATEGORY_REFUSED: 'Refused by the live category. Nothing was imported.',
+        LIVE_CHECK_UNAVAILABLE: 'Live check unavailable. Nothing was imported.'
       },
       results: {
         title: 'Import Results',
@@ -2998,7 +3000,9 @@ export const messages = {
         CHANNELS: 'جارٍ معالجة القنوات...',
         PLAYLISTS: 'جارٍ معالجة قوائم التشغيل...',
         VIDEOS: 'جارٍ معالجة الفيديوهات...',
-        COMPLETE: 'مكتمل'
+        COMPLETE: 'مكتمل',
+        LIVE_CATEGORY_REFUSED: 'رفضته فئة البث المباشر. لم يُستورد أي شيء.',
+        LIVE_CHECK_UNAVAILABLE: 'تعذّر فحص البث المباشر. لم يُستورد أي شيء.'
       },
       results: {
         title: 'نتائج الاستيراد',
@@ -4421,7 +4425,9 @@ export const messages = {
         CHANNELS: 'Kanalen verwerken...',
         PLAYLISTS: 'Afspeellijsten verwerken...',
         VIDEOS: "Video's verwerken...",
-        COMPLETE: 'Voltooid'
+        COMPLETE: 'Voltooid',
+        LIVE_CATEGORY_REFUSED: 'Geweigerd door de livecategorie. Er is niets geïmporteerd.',
+        LIVE_CHECK_UNAVAILABLE: 'Livecontrole niet beschikbaar. Er is niets geïmporteerd.'
       },
       results: {
         title: 'Importresultaten',

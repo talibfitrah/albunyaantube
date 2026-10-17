@@ -428,6 +428,7 @@ import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
 import { useToast } from '@/composables/useToast';
+import { apiErrorCode, apiErrorToMessage } from '@/services/http';
 import { getAllCategories } from '@/services/categoryService';
 import { getPendingApprovals, getPendingSubmitters, getMySubmissions, approveItem, rejectItem as rejectItemApi, getPendingCount, type PendingApproval, type PendingSubmitter, type SubmissionStatus, type MySubmission } from '@/services/approvalService';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
@@ -838,7 +839,12 @@ async function handleApprove(item: any) {
     removeFromQueue([item.id]);
     loadPendingCount();
   } catch (err) {
-    error.value = err instanceof Error ? err.message : t('approvals.approveError');
+    // A live-category refusal (spec §8) is about this item only: toast it and keep the queue on screen.
+    if (apiErrorCode(err)?.startsWith('LIVE_')) {
+      toast.error(apiErrorToMessage(err, t, 'approvals.approveError'));
+    } else {
+      error.value = err instanceof Error ? err.message : t('approvals.approveError');
+    }
   } finally {
     processingId.value = null;
   }
@@ -864,7 +870,7 @@ async function bulkApprove() {
         // One rejection from the server must not abandon the rest of the batch — but a batch
         // where everything failed must still say why, not just how many.
         failed += 1;
-        if (!firstError) firstError = err instanceof Error ? err.message : null;
+        if (!firstError) firstError = apiErrorToMessage(err, t, 'approvals.approveError');
       }
     });
   } finally {

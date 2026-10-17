@@ -6,15 +6,16 @@ import type { AxiosError } from 'axios'
 import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
 
 /**
- * Extract a user-facing message from an axios / generic error. Backend
- * structured error envelopes (e.g. 429 RATE_LIMIT, validation errors)
- * carry the message in `response.data.message`; axios surfaces only its
+ * Extract a user-facing message from an axios / generic error. A coded
+ * envelope (429 RATE_LIMIT, a live-category refusal with its offenders)
+ * reads in the admin's language via `apiErrors.<CODE>` (F20). Uncoded
+ * envelopes carry the message in `response.data.message`; axios surfaces only its
  * connection-level message ("Network Error", "timeout exceeded") on the
  * `Error.message` field. Falling back to the structured body first
  * preserves backend-formatted messaging (cubic R2 finding #4).
  */
 function extractErrorMessage(e: unknown): string {
-  if (apiErrorCode(e)?.startsWith('LIVE_')) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError')
+  if (apiErrorCode(e)) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError')
   if (e && typeof e === 'object') {
     const ax = e as AxiosError<{ message?: string }>
     const fromBody = ax.response?.data?.message

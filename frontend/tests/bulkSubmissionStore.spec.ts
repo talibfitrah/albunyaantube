@@ -2,6 +2,7 @@ import { setActivePinia, createPinia } from 'pinia'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBulkSubmissionStore } from '../src/stores/bulkSubmissionStore'
 import { bulkSubmissionService } from '../src/services/bulkSubmissionService'
+import { i18n } from '../src/main'
 
 vi.mock('../src/services/bulkSubmissionService', () => ({
   bulkSubmissionService: { previewBulk: vi.fn(), submitBulk: vi.fn() },
@@ -87,5 +88,44 @@ describe('bulkSubmissionStore', () => {
     expect(s.parsedUrls).toEqual([])
     expect(s.previewRows).toEqual([])
     expect(s.submitResult).toBeNull()
+  })
+})
+
+describe('bulkSubmissionStore: coded errors read in the admin language (F20)', () => {
+  const okRow = { rowIndex: 0, status: 'OK', originalUrl: 'u', detectedType: 'VIDEO', metadata: {}, categoryIds: ['cat-1'] } as any
+  const coded = (status: number, data: Record<string, unknown>) =>
+    Object.assign(new Error(`Request failed with status code ${status}`), { response: { status, data } })
+
+  it('translates a 429 RATE_LIMIT instead of showing the server English', async () => {
+    mockedSubmit.mockRejectedValue(coded(429, { code: 'RATE_LIMIT', message: 'Daily limit of 50 submissions reached' }))
+    const s = useBulkSubmissionStore()
+    s.previewRows = [okRow]
+
+    await s.runSubmit()
+
+    expect(s.phase).toBe('PREVIEW')
+    expect(s.error).toBe(i18n.global.t('apiErrors.RATE_LIMIT'))
+  })
+
+  it('lists each offender of a live-category refusal (D9)', async () => {
+    mockedSubmit.mockRejectedValue(coded(403, { code: 'LIVE_CATEGORY_ADMIN_ONLY', message: 'x',
+      details: { offenders: [{ ref: 'video:vid00000001', code: 'LIVE_CATEGORY_ADMIN_ONLY' }] } }))
+    const s = useBulkSubmissionStore()
+    s.previewRows = [okRow]
+
+    await s.runSubmit()
+
+    const t = i18n.global.t
+    expect(s.error).toBe(`${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}\nvideo:vid00000001: ${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}`)
+  })
+
+  it('keeps the server message for an uncoded error', async () => {
+    mockedSubmit.mockRejectedValue(coded(400, { message: 'rows must not be empty' }))
+    const s = useBulkSubmissionStore()
+    s.previewRows = [okRow]
+
+    await s.runSubmit()
+
+    expect(s.error).toBe('rows must not be empty')
   })
 })

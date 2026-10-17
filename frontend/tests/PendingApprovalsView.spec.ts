@@ -15,6 +15,7 @@ import { createI18n } from 'vue-i18n';
 import { messages } from '@/locales/messages';
 
 const approveItemMock = vi.fn().mockResolvedValue(undefined);
+const toastErrorMock = vi.fn();
 const getPendingApprovalsMock = vi.fn();
 const getMySubmissionsMock = vi.fn();
 const getPendingCountMock = vi.fn().mockResolvedValue(1);
@@ -41,7 +42,7 @@ vi.mock('@/utils/formatters', () => ({
 }));
 
 vi.mock('@/composables/useToast', () => ({
-  useToast: () => ({ warning: vi.fn() })
+  useToast: () => ({ warning: vi.fn(), success: vi.fn(), error: (...a: unknown[]) => toastErrorMock(...a) })
 }));
 
 vi.mock('@/components/exclusions/ChannelDetailModal.vue', () => ({
@@ -210,5 +211,26 @@ describe('PendingApprovalsView — category is optional when approving', () => {
     await waitFor(() => {
       expect(approveItemMock).toHaveBeenCalledWith('ch-cat', 'channel', undefined);
     });
+  });
+});
+
+describe('PendingApprovalsView — a live-category refusal (spec §8)', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPendingCountMock.mockResolvedValue(1);
+    getAllCategoriesMock.mockResolvedValue([{ id: 'cat-1', label: 'Education', subcategories: [] }]);
+  });
+
+  it('toasts the localized reason and keeps the item in the queue', async () => {
+    approveItemMock.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED', message: 'x' } }
+    }));
+    await renderView([makeItem({ id: 'pl-1', source: 'ADMIN', categories: ['cat-1'] })]);
+
+    await fireEvent.click(await waitFor(() => screen.getByRole('button', { name: /^approve$/i })));
+
+    await waitFor(() => expect(toastErrorMock).toHaveBeenCalledWith(
+      'The live category accepts only channels and streams that are live right now.'));
+    expect(screen.getByText('My Channel')).toBeTruthy();
   });
 });
