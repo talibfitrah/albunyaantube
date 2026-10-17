@@ -1,5 +1,6 @@
 package com.albunyaan.tube.integration;
 
+import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.YouTubeSearchResponse;
 import com.albunyaan.tube.service.YouTubeSearchService;
 import com.google.firebase.auth.FirebaseAuth;
@@ -15,6 +16,7 @@ import java.util.Map;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -98,13 +100,19 @@ class YouTubeSearchControllerIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.nextPageToken").value("next-token-abc"));
     }
 
+    // 55e182cd made `type` optional (defaultValue "ALL") for the admin UI's ALL filter chip.
     @Test
-    void getSearch_missingType_returns400() throws Exception {
+    void getSearch_missingType_defaultsToAll() throws Exception {
+        when(youtubeSearchService.search(any(), any(), any()))
+                .thenReturn(new YouTubeSearchResponse(List.of(), null));
+
         stubAuthAs("uid-search-it-notype", "moderator");
         mvc.perform(get("/api/admin/youtube/search")
                         .param("q", "kittens")
                         .header("Authorization", "Bearer fake"))
-                .andExpect(status().isBadRequest());
+                .andExpect(status().isOk());
+
+        verify(youtubeSearchService).search("kittens", YouTubeContentType.ALL, null);
     }
 
     // ─── Helpers ────────────────────────────────────────────────────────────

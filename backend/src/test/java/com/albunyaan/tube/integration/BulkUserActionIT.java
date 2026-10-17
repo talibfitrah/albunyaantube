@@ -27,8 +27,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 /**
  * Plan F (ADMIN-USER-01) — bulk-block over 6 mixed users.
  * 1 self + 1 other admin + 2 regular-active + 1 already-blocked + 1 already-deleted
- * → HTTP 200 with 2 successes + 4 failures (self_action_forbidden, admin_target_forbidden,
- *   already_blocked, and one already_deleted-or-invalid_state).
+ * → HTTP 200 with 3 successes (2 active + the idempotent already-blocked) + 3 failures
+ *   (self_action_forbidden, admin_target_forbidden, deleted_cannot_block).
  */
 class BulkUserActionIT extends BaseIntegrationTest {
 
@@ -66,8 +66,8 @@ class BulkUserActionIT extends BaseIntegrationTest {
         // silently (no exception, no audit row). BulkUserService counts the no-op as
         // a "success" because no exception was thrown. So the already-blocked user
         // joins the successes bucket but does NOT produce a USER_BLOCKED audit row.
-        // The DELETED target throws "Cannot block a deleted user" which classifies as
-        // "invalid_state".
+        // The DELETED target throws UserStateConflictException(DELETED_CANNOT_BLOCK), which
+        // BulkUserService.classify maps to the typed "deleted_cannot_block" (25b56c78).
         assertEquals(3, result.get("successes").size(),
                 "expected 3 successes (2 regular-active + already-blocked idempotent no-op)");
         assertEquals(3, result.get("failures").size(),
@@ -79,10 +79,9 @@ class BulkUserActionIT extends BaseIntegrationTest {
                 "must reject the calling admin's own uid");
         assertTrue(reasons.contains("admin_target_forbidden"),
                 "must reject the other admin uid");
-        // The DELETED target's specific failure code depends on AuthService.blockUser
-        // behaviour — either already_deleted or invalid_state is acceptable.
-        assertTrue(reasons.contains("already_deleted") || reasons.contains("invalid_state"),
-                "deleted user should surface as already_deleted or invalid_state");
+        // Typed reason code (users.bulk.reason.deleted_cannot_block in the admin i18n).
+        assertTrue(reasons.contains("deleted_cannot_block"),
+                "deleted user should surface as deleted_cannot_block: " + reasons);
 
         // Audit assertions. AuditLogService.log is @Async, so allow it to settle.
         Thread.sleep(500);
@@ -109,7 +108,9 @@ class BulkUserActionIT extends BaseIntegrationTest {
     }
 
     private String seedUser(String email, String role, UserStatus status) throws Exception {
-        String uid = "test-" + email.replace("@", "-at-").replace(".", "-");
+        // Firebase-shaped uid: the bulk endpoints reject anything but ^[A-Za-z0-9]{20,128}$
+        // (BulkUserActionRequest). The 14-char prefix keeps even a short email at 20+.
+        String uid = "testuid0000000" + email.replaceAll("[^A-Za-z0-9]", "");
         User u = new User();
         u.setUid(uid);
         u.setEmail(email);

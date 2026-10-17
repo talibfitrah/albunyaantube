@@ -15,6 +15,8 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doNothing;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
 /**
@@ -105,20 +107,26 @@ class AuthServiceSoftDeleteIntegrationTest extends BaseIntegrationTest {
                 () -> authService.softDeleteUser("nonexistent-uid", "admin", "x"));
     }
 
+    // F-LIFECYCLE-NOOP-01 (5c4841ea): recovering an ACTIVE user is an idempotent no-op (a retry after
+    // a successful recover), like unblockUser. Only BLOCKED / PENDING_PROFILE targets are rejected.
     @Test
-    void recoverNonDeletedUser_throws() throws Exception {
+    void recoverActiveUser_isIdempotentNoOp() throws Exception {
         stubFirebaseAuthMutations();
 
         String adminUid = seedUser("admin5@t.com", "admin");
         String activeUid = seedUser("active@t.com", "moderator"); // ACTIVE, not deleted
 
-        assertThrows(IllegalStateException.class,
-                () -> authService.recoverUser(activeUid, adminUid),
-                "Expected IllegalStateException when recovering a non-DELETED user");
+        assertDoesNotThrow(() -> authService.recoverUser(activeUid, adminUid));
 
-        // User should remain ACTIVE
+        // User should remain ACTIVE, with no recovery audit row and no Firebase re-enable call.
         User after = userRepository.findByUid(activeUid).orElseThrow();
         assertEquals(UserStatus.ACTIVE, after.getStatusEnum());
+        QuerySnapshot recoveryAudits = auditRepo.auditLogsCollection()
+                .whereEqualTo("action", "USER_RECOVERED")
+                .whereEqualTo("entityId", activeUid)
+                .get().get();
+        assertEquals(0, recoveryAudits.size());
+        verify(firebaseAuth, never()).updateUser(any());
     }
 
     // ── F13 — softDeleteUser is idempotent on already-DELETED target ─────────

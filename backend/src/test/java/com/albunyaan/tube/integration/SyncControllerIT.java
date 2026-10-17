@@ -34,9 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Each test seeds a fresh ACTIVE user via userRepository so the FirebaseAuthFilter
  * can resolve a FirebaseUserDetails principal from the stubbed token.
  *
- * Subcollection cleanup (users/{uid}/subscriptions etc.) is handled automatically:
- * BaseIntegrationTest.setUpFirestore() wipes the top-level "users" collection, and
- * the Firestore emulator cascades the delete into all subcollections.
+ * Subcollection cleanup (users/{uid}/subscriptions etc.): Firestore never cascades a delete
+ * into subcollections, so BaseIntegrationTest's clear is recursive (FirestoreTestHelper).
  */
 class SyncControllerIT extends BaseIntegrationTest {
 
@@ -118,18 +117,21 @@ class SyncControllerIT extends BaseIntegrationTest {
                         .content(json.writeValueAsString(put)))
                 .andExpect(status().isOk());
 
-        // First pull — note the updatedAt of the row as our cursor
+        // First pull — keep the compound cursor (nextCursor, nextCursorId) the server mints
         String body = mvc.perform(get("/api/account/sync")
                         .header("Authorization", "Bearer fake"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
-        long cursor = json.readTree(body)
-                .path("subscriptions").path("items").get(0).path("updatedAt").asLong();
+        var page = json.readTree(body).path("subscriptions");
+        long cursor = page.path("nextCursor").asLong();
+        String cursorId = page.path("nextCursorId").asText();
 
-        // Second pull with cursor: the row is at exactly `cursor`, so strict > means 0 results
+        // Second pull with both halves: startAfter(ts, id) skips the pulled row, so 0 results.
+        // (A timestamp-only cursor deliberately re-includes same-ms rows; see SyncRepository.pull.)
         mvc.perform(get("/api/account/sync")
                         .param("subs", String.valueOf(cursor))
+                        .param("subs_id", cursorId)
                         .header("Authorization", "Bearer fake"))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.subscriptions.items").isEmpty());
