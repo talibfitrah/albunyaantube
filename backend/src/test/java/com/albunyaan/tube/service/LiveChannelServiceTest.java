@@ -94,6 +94,20 @@ class LiveChannelServiceTest {
         verify(states).save(any(LiveChannelState.class));
     }
 
+    /** Spec §10: the migration seeds from its own fresh read, under seed()'s rules (restore records kept for the poller). */
+    @Test
+    void aSeedWithTheMigrationsReadSendsNoRequestAndKeepsRestoreRecords() {
+        LiveChannelState known = LiveChannelState.unknown(SUNNAH);
+        known.getArchived().put("Rs7St51oDDc", "VALID");
+        service.loadStates(List.of(known));
+
+        service.seedWith(SUNNAH, sunnahLive());
+
+        verify(reader, never()).read(any());
+        assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(service.state(SUNNAH).getArchived()).containsEntry("Rs7St51oDDc", "VALID");
+    }
+
     @Test
     void aFailedSeedRecordsAnError() throws Exception {
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.error(1, "boom"));

@@ -81,7 +81,11 @@ public class LiveChannelService {
      * Restore records stay for the next cycle, which restores the docs (R12).
      */
     public void seed(String ucId) {
-        LiveTabResult r = livesNow(ucId);                       // the YouTube read stays outside the lock
+        seedWith(ucId, livesNow(ucId));                         // the YouTube read stays outside the lock
+    }
+
+    /** {@link #seed} from a read the caller already made (spec §10: the migration's fresh poll). Sends no request. */
+    public void seedWith(String ucId, LiveTabResult r) {
         if (r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
             return;
         }
