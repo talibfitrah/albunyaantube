@@ -161,9 +161,80 @@ class InnerIndexTest {
         assertEquals(1, index.docs());
         index.replaceSource(PL, "x", List.of(new InnerCorpus.Item("ilgiwqpcOC8", "", 1, null, null, null)));
         assertFalse(index.has(PL, "ilgiwqpcOC8"));
+        assertTrue(index.has(CH, "cBjnzYHSV4M"), "replacing one source never touches another");
         index.merge(CH, "x", List.of(new InnerCorpus.Item("cBjnzYHSV4M", "  ", 1, null, null, null)), List.of());
         assertFalse(index.has(CH, "cBjnzYHSV4M"), "a title gone blank drops the old document");
         assertEquals(0, index.docs());
+    }
+
+    long hits(String field, String term) throws IOException {
+        IndexSearcher s = index.acquire();
+        try {
+            return s.count(new TermQuery(new Term(field, term)));
+        } finally {
+            index.release(s);
+        }
+    }
+
+    @Test
+    void theTextFieldsUseTheMainIndexAnalyzers() throws Exception {
+        corpus(CH, List.of(new InnerCorpus.Item("ilgiwqpcOC8", "Lectures on Patience", 1, null, null, null)));
+        index.rebuild(Map.of(CH, "Dawah Nederland"), 10_000);
+        assertEquals(1, hits("title", "lectures"), "base chain: lower-cased, unstemmed");
+        assertEquals(0, hits("title", "lecture"));
+        assertEquals(1, hits("title_stem", "lecture"), "stem chain");
+        assertEquals(1, hits("channel", "nederland"));
+    }
+
+    /** R16: `c` is the catalog name only for channel sources; a playlist's own title is never a channel name. */
+    @Test
+    void aPlaylistItemWithoutAnUploaderGetsNoChannel() throws Exception {
+        corpus(PL, List.of(new InnerCorpus.Item("ilgiwqpcOC8", "x", 1, null, null, null)));
+        index.rebuild(Map.of(PL, "Nederlandse lezingen"), 10_000);
+        assertNull(find(PL, "ilgiwqpcOC8").get("c"));
+        index.merge(PL, "Nederlandse lezingen", List.of(new InnerCorpus.Item("cBjnzYHSV4M", "y", 1, null, null, null)), List.of());
+        assertNull(find(PL, "cBjnzYHSV4M").get("c"));
+        assertEquals(0, hits("channel", "nederlandse"));
+    }
+
+    /** A hand-edited state.json: a cap below 1 must not throw once replaceSource has buffered its delete. */
+    @Test
+    void aCapBelowOneIsClampedNeverThrown() throws Exception {
+        corpus(CH, InnerCrawlerTest.items("lesson", 0, 3, "x"));
+        index.rebuild(Map.of(), -1);
+        assertEquals(1, index.docs());
+        store.state().capPerSource = -5;
+        index.replaceSource(CH, "x", InnerCrawlerTest.items("story", 0, 3, "x"));
+        assertEquals(1, index.docs());
+        assertTrue(index.has(CH, InnerCrawlerTest.id("story", 0)));
+    }
+
+    /** A kill -9 skips close(): the first rebuild sweeps what it left, without following a link out of base-dir. */
+    @Test
+    void theFirstRebuildSweepsLeftoversOfAKilledProcess() throws Exception {
+        Path base = tmp.resolve("base"), outside = tmp.resolve("outside");
+        Files.createDirectories(base.resolve("fitrahtube-inner-1234/sub"));
+        Files.write(base.resolve("fitrahtube-inner-1234/sub/_0.cfs"), new byte[]{1});
+        Files.createDirectories(outside);
+        Files.write(outside.resolve("keep"), new byte[]{1});
+        Path link = Files.createSymbolicLink(base.resolve("fitrahtube-inner-link"), outside);
+        Files.createDirectories(base.resolve("fitrahtube-search-5678"));
+        corpus(CH, InnerCrawlerTest.items("lesson", 0, 3, "x"));
+        index.rebuild(Map.of(), 10_000);
+        assertFalse(Files.exists(base.resolve("fitrahtube-inner-1234")));
+        assertTrue(Files.exists(outside.resolve("keep")));
+        assertTrue(Files.isSymbolicLink(link));
+        assertTrue(Files.exists(base.resolve("fitrahtube-search-5678")), "the main index's directories are not ours");
+        assertEquals(2, indexDirs().size(), "the live index and the untouched link");
+    }
+
+    @Test
+    void aRebuildThatFinishesAfterCloseLeavesNothingBehind() throws Exception {
+        corpus(CH, InnerCrawlerTest.items("lesson", 0, 3, "x"));
+        index.close();
+        index.rebuild(Map.of(), 10_000);
+        assertFalse(index.ready());
+        assertEquals(List.of(), indexDirs());
     }
 
     @Test
@@ -172,6 +243,8 @@ class InnerIndexTest {
         corpus(PL, List.of(new InnerCorpus.Item("ilgiwqpcOC8", "x", 1, null, "y", null)));
         index.rebuild(Map.of(), 10_000);
         assertEquals(Set.of(CH, PL), index.sourceKeys("ilgiwqpcOC8"));
+        index.merge(PL, "y", List.of(), List.of("ilgiwqpcOC8"));
+        assertEquals(Set.of(CH), index.sourceKeys("ilgiwqpcOC8"), "a removal drops only that source's copy");
     }
 
     @Test

@@ -203,7 +203,7 @@ public class SearchIndex {
         return dir instanceof FSDirectory fs ? fs.getDirectory() : null;
     }
 
-    private static void delete(Path path) {
+    static void delete(Path path) {
         try (Stream<Path> files = Files.walk(path)) {
             for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
         } catch (IOException e) {

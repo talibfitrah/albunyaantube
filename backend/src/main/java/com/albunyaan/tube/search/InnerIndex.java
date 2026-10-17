@@ -26,10 +26,10 @@ import org.springframework.stereotype.Component;
 import java.io.IOException;
 import java.lang.management.ManagementFactory;
 import java.nio.file.Files;
+import java.nio.file.LinkOption;
 import java.nio.file.Path;
 import java.time.Clock;
 import java.util.Collection;
-import java.util.Comparator;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -47,6 +47,7 @@ public class InnerIndex {
     private static final Logger log = LoggerFactory.getLogger(InnerIndex.class);
     static final int BATCH = 5_000;
     private static final long RETIRE_MS = 60_000;
+    private static final String PREFIX = "fitrahtube-inner-";
 
     interface Sleeper {
         void sleep(long ms) throws InterruptedException;
@@ -61,6 +62,7 @@ public class InnerIndex {
     long refreshEveryMs = 60_000;
     private volatile Live live;
     private Live retired;
+    private boolean closed; // under the monitor
     private long retiredAt, lastRefreshAt;
     private final AtomicLong timeouts = new AtomicLong();
     private volatile long rebuildCpuMs = -1, rebuildWallMs = -1;
@@ -76,9 +78,11 @@ public class InnerIndex {
      * sleep as long as it took (≤ 50 % of the one core), then swapped in. A failure keeps the old index.
      */
     void rebuild(Map<String, String> names, int cap) throws IOException, InterruptedException {
-        long cpu0 = cpuNanos(), wall0 = System.nanoTime();
+        long cpu0 = cpuNanos(), process0 = processCpuNanos(), wall0 = System.nanoTime();
+        cap = clamp(cap);
         Files.createDirectories(base);
-        Path path = Files.createTempDirectory(base, "fitrahtube-inner-");
+        if (live == null) sweepLeftovers();
+        Path path = Files.createTempDirectory(base, PREFIX);
         Directory dir = FSDirectory.open(path);
         IndexWriter writer = null;
         try {
@@ -100,10 +104,12 @@ public class InnerIndex {
                     }
                 }
             }
-            swap(new Live(path, dir, writer, new SearcherManager(writer, null)));
+            if (!swap(new Live(path, dir, writer, new SearcherManager(writer, null)))) return;
             rebuildCpuMs = (cpuNanos() - cpu0) / 1_000_000;
             rebuildWallMs = (System.nanoTime() - wall0) / 1_000_000;
-            log.info("inner-index built: docs={} bytes={} cpuMs={} wallMs={}", docs, bytes(), rebuildCpuMs, rebuildWallMs);
+            // processCpuMs: every thread, so the merge thread too, but also requests and any other work meanwhile
+            log.info("inner-index built: docs={} bytes={} cpuMs={} processCpuMs={} wallMs={}", docs, bytes(), rebuildCpuMs,
+                    (processCpuNanos() - process0) / 1_000_000, rebuildWallMs);
         } catch (IOException | InterruptedException | RuntimeException e) {
             try {
                 if (writer != null) writer.rollback();
@@ -111,7 +117,7 @@ public class InnerIndex {
             } catch (IOException suppressed) {
                 e.addSuppressed(suppressed);
             }
-            delete(path);
+            SearchIndex.delete(path);
             throw e;
         }
     }
@@ -121,7 +127,7 @@ public class InnerIndex {
         Live l = live;
         if (l == null) return; // not built: the next rebuild reads the corpus
         l.writer().deleteDocuments(new Term("sourceKey", sourceKey));
-        int cap = store.state().capPerSource;
+        int cap = clamp(store.state().capPerSource);
         for (InnerCorpus.Item item : items.subList(0, Math.min(cap, items.size()))) {
             if (indexable(item)) l.writer().addDocument(doc(sourceKey, name, item));
         }
@@ -240,19 +246,24 @@ public class InnerIndex {
 
     @PreDestroy
     synchronized void close() {
-        close(live);
-        live = null;
+        closed = true;
+        Live l = live;
+        live = null; // a concurrent search sees "not ready", never a closed index
+        close(l);
         close(retired);
         retired = null;
     }
 
-    /** R16: slim, ranked by score only. `c` = the item's uploader for playlist sources, else the catalog channel name. */
+    /**
+     * R16: slim, ranked by score only. `c` = the item's own uploader (playlist sources), else the catalog name for a
+     * channel source; a playlist's title is never a channel name.
+     */
     static Document doc(String sourceKey, String channelName, InnerCorpus.Item item) {
         Document doc = new Document();
         doc.add(new StringField("id", item.id(), Field.Store.YES));
         doc.add(new StringField("sourceKey", sourceKey, Field.Store.YES));
         doc.add(new StoredField("source", "INNER"));
-        String channel = item.c() != null ? item.c() : channelName;
+        String channel = item.c() != null ? item.c() : sourceKey.startsWith("channel:") ? channelName : null;
         SearchIndex.addText(doc, "title", item.t());
         SearchIndex.addText(doc, "channel", channel);
         doc.add(new StoredField("t", item.t()));
@@ -268,6 +279,26 @@ public class InnerIndex {
         return item.id() != null && item.t() != null && !item.t().isBlank();
     }
 
+    /** A hand-edited state.json can hold any cap; a bad one must not throw after replaceSource buffered its delete. */
+    private static int clamp(int cap) {
+        return Math.min(Math.max(cap, 1), InnerState.MAX_PER_SOURCE);
+    }
+
+    /**
+     * A kill -9 skips close(), and each leftover is a whole index: before the first build, delete our directories that
+     * earlier processes left. Real directories directly under base only; a link is never followed.
+     * ponytail: assumes one backend per base-dir; give each its own base-dir if two ever share a host.
+     */
+    private void sweepLeftovers() throws IOException {
+        try (Stream<Path> all = Files.list(base)) {
+            for (Path p : all.toList()) {
+                if (p.getFileName().toString().startsWith(PREFIX) && Files.isDirectory(p, LinkOption.NOFOLLOW_LINKS)) {
+                    SearchIndex.delete(p);
+                }
+            }
+        }
+    }
+
     private static Query pair(String sourceKey, String id) {
         return new BooleanQuery.Builder()
                 .add(new TermQuery(new Term("sourceKey", sourceKey)), Occur.FILTER)
@@ -281,12 +312,18 @@ public class InnerIndex {
         return new IndexWriterConfig(SearchText.INDEX).setMergeScheduler(merges);
     }
 
-    private synchronized void swap(Live next) {
+    /** False once closed: a rebuild that finishes after shutdown closes its index instead of leaking it. */
+    private synchronized boolean swap(Live next) {
+        if (closed) {
+            close(next);
+            return false;
+        }
         close(retired); // an older retired index is long out of use
         retired = live;
         retiredAt = clock.millis();
         live = next;
         lastRefreshAt = clock.millis();
+        return true;
     }
 
     /** A retired index closes once in-flight searches (≤ 40 ms) are long done. */
@@ -306,18 +343,16 @@ public class InnerIndex {
         } catch (IOException e) {
             log.warn("inner index close failed", e);
         }
-        delete(l.path());
-    }
-
-    private static void delete(Path path) {
-        try (Stream<Path> files = Files.walk(path)) {
-            for (Path p : files.sorted(Comparator.reverseOrder()).toList()) Files.delete(p);
-        } catch (IOException e) {
-            log.warn("inner index directory {} not deleted", path, e);
-        }
+        SearchIndex.delete(l.path());
     }
 
     private static long cpuNanos() {
         return ManagementFactory.getThreadMXBean().getCurrentThreadCpuTime();
+    }
+
+    /** -1 on a JVM without the com.sun extension (the delta then reads 0). */
+    private static long processCpuNanos() {
+        return ManagementFactory.getOperatingSystemMXBean() instanceof com.sun.management.OperatingSystemMXBean os
+                ? os.getProcessCpuTime() : -1;
     }
 }
