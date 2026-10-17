@@ -1,0 +1,55 @@
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceHomeFeedTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 51-52
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemDto.java
+  s_dbb6b1f3671904::t_3bcef2031541a4 37-39,204-210
+  s_dbb6b1f3671904::t_43f9f12d4636e3 211
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryServiceTest.java
+  s_dbb6b1f3671904::t_e8cc8438ba0f87 1-245
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 78
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 18,707
+  s_dbb6b1f3671904::t_b2ef444f31b9f5 706
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryServingIT.java
+  s_dbb6b1f3671904::t_e8cc8438ba0f87 1-50,54-87
+  s_dbb6b1f3671904::t_0f16e6c2d6f275 51-53
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceLiveTest.java
+  s_dbb6b1f3671904::t_e8cc8438ba0f87 1-82
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemMapper.java
+  s_dbb6b1f3671904::t_3bcef2031541a4 80-87
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceSearchTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 43
+  s_dbb6b1f3671904::t_b2ef444f31b9f5 42
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceVisibilityTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 48-49
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryService.java
+  s_dbb6b1f3671904::t_53c76695f07545 3-4,20,101-131
+  s_dbb6b1f3671904::t_970bde77d704a4 132-133
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_dbb6b1f3671904::t_2bc22bd1b0c5e6 1399-1403
+  s_dbb6b1f3671904::t_7920988cc54537 64,73-74,83,120-126,128,569-579,1404-1410
+  s_dbb6b1f3671904::t_7627bf0d2699c2 1411-1412
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServicePaginationTest.java
+  s_dbb6b1f3671904::t_4f321e05a171ed 65-66
+backend/src/main/java/com/albunyaan/tube/service/LiveTabReader.java
+  s_dbb6b1f3671904::t_01e27dcfcec740 6,85-87,95
+backend/src/test/java/com/albunyaan/tube/service/LiveTabReaderTest.java
+  s_dbb6b1f3671904::t_7bdc813a9600ff 279,286-287,289-290,299-311
+  s_dbb6b1f3671904::t_5a5ef707d1c5cc 312-313
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b5403a869a2e4f95381aa4858f1a588bdf459efc",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
