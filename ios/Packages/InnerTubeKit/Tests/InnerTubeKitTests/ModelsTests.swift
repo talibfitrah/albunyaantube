@@ -75,4 +75,29 @@ import Testing
             #expect(!error.terminal, "\(error) should not be terminal")
         }
     }
+
+    // MARK: - Playback Phase 2 (spec R3, R13)
+
+    @Test func tvSamsungIsTheTVHTML5Family() {
+        #expect(ClientFamily.tvSamsung.expectedClientName == "TVHTML5")
+    }
+
+    @Test func onlyASyntheticStreamCarriesAModel() {
+        let model = SyntheticHLS(video: [], audio: [])
+        let tv = ResolvedStream.hls(url: URL(string: "fitrah-hls://x/master.m3u8")!, isLive: false, audioOnlyURL: nil,
+                                    captionTracks: [], synthetic: model)
+        #expect(tv.synthetic == model)
+        #expect(ResolvedStream.hls(url: URL(string: "https://a.example/b.m3u8")!, isLive: false, audioOnlyURL: nil,
+                                   captionTracks: []).synthetic == nil)
+        #expect(ResolvedStream.progressive(url: URL(string: "https://a.example/b.mp4")!, label: "360p").synthetic == nil)
+    }
+
+    @Test func theFixtureClipsModelDecodes() throws {
+        let dir = try #require(Bundle.module.resourceURL).appending(path: "Fixtures/synthetic")
+        let model = try JSONDecoder().decode(SyntheticHLS.self, from: Data(contentsOf: dir.appending(path: "synthetic.json")))
+        #expect(model.video.map(\.height) == [144, 72])
+        #expect(model.audio.map(\.isDefault) == [true])
+        #expect(model.video[0].initRange.lowerBound == 0)
+        #expect(model.video[0].indexRange.lowerBound == model.video[0].initRange.upperBound + 1)
+    }
 }

@@ -142,7 +142,7 @@ extension StreamState {
     /// unwrap was written out in the host and again in `NowPlayingSnapshot`, so a rung that ever
     /// carries liveness has one place to say so.
     var isLive: Bool {
-        guard let resolved, case .hls(_, let isLive, _, _) = resolved.stream else { return false }
+        guard let resolved, case .hls(_, let isLive, _, _, _) = resolved.stream else { return false }
         return isLive
     }
 }
@@ -367,7 +367,7 @@ extension StreamState {
         // the `audioOnlyURL != nil` test already excludes it. Add one here if a live stream ever
         // resolves with one (the swap would then hand AVPlayer a non-live audio rendition).
         guard case .ready(let resolved) = state,
-              case .hls(_, _, let audioOnlyURL, _) = resolved.stream else { return false }
+              case .hls(_, _, let audioOnlyURL, _, _) = resolved.stream else { return false }
         return audioOnlyURL != nil
     }
 

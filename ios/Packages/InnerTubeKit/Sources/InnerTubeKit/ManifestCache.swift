@@ -59,7 +59,7 @@ public actor ManifestCache {
     }
 
     private func isLive(_ resolved: Resolved) -> Bool {
-        if case .hls(_, let isLive, _, _) = resolved.stream {
+        if case .hls(_, let isLive, _, _, _) = resolved.stream {
             return isLive
         }
         return false

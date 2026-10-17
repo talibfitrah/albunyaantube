@@ -99,7 +99,7 @@ struct OfflinePlaybackTests {
         let resolved = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         let expected = OfflineStorage.fileURL(relativePath: item.localPath!, base: rig.base)
-        guard case .hls(let url, let isLive, let audioOnlyURL, let captionTracks) = resolved.stream else {
+        guard case .hls(let url, let isLive, let audioOnlyURL, let captionTracks, _) = resolved.stream else {
             Issue.record("expected .hls, got \(resolved.stream)"); return
         }
         #expect(url == expected)

@@ -3403,7 +3403,7 @@ struct OfflineManagerTests {
         let probe = try await innerTube.resolver.resolve(Self.lectureVideoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         let audioOnly: Bool
         switch probe.stream {
-        case .hls(_, _, let audioOnlyURL, _): audioOnly = audioOnlyURL != nil
+        case .hls(_, _, let audioOnlyURL, _, _): audioOnly = audioOnlyURL != nil
         case .progressive: audioOnly = false
         }
         print("[offline-live] probe client=\(probe.client) stream=\(probe.stream) → audioOnly=\(audioOnly)")

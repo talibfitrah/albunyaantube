@@ -17,11 +17,21 @@ public struct CaptionTrack: Sendable, Equatable {
 
 /// The playable result of resolving a videoId (spec §9).
 public enum ResolvedStream: Sendable {
-    case hls(url: URL, isLive: Bool, audioOnlyURL: URL?, captionTracks: [CaptionTrack])
+    /// `synthetic` (spec R13): the `tv_samsung` HD upgrade's model, played through `SyntheticHLSLoader` on
+    /// `fitrah-hls://`. nil for every native manifest.
+    case hls(url: URL, isLive: Bool, audioOnlyURL: URL?, captionTracks: [CaptionTrack], synthetic: SyntheticHLS? = nil)
     case progressive(url: URL, label: String)
     // No `openInYouTube` case (owner directive 2026-08-27: no redirect or hand-off to YouTube) and
     // no `embed` case (owner directive 2026-10-14: no YouTube player of any kind). The ladder's
     // floor is the progressive stream; anything below it is an `ExtractionError`.
+}
+
+extension ResolvedStream {
+    /// The synthesized HLS behind a `tv_samsung` stream; nil for every other stream.
+    public var synthetic: SyntheticHLS? {
+        if case .hls(_, _, _, _, let synthetic) = self { return synthetic }
+        return nil
+    }
 }
 
 /// The InnerTube client family a resolve was performed under. The `userAgent`
@@ -32,6 +42,8 @@ public enum ClientFamily: Sendable {
     case visionos
     case android
     case web
+    /// The tv_samsung TVHTML5 client of the HD upgrade (spec R3).
+    case tvSamsung
 
     /// The `context.client.clientName` value this family's `ClientContext` must carry
     /// (`remote-config-default.json`) — guards against mixing a family with the wrong
@@ -41,6 +53,7 @@ public enum ClientFamily: Sendable {
         case .visionos: return "VISIONOS"
         case .android: return "ANDROID"
         case .web: return "WEB"
+        case .tvSamsung: return "TVHTML5"
         }
     }
 }

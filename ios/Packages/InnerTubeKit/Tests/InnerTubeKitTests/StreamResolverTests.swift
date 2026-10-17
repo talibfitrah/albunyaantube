@@ -620,7 +620,7 @@ import Testing
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
 
-        guard case .hls(_, let isLive, _, _) = resolved.stream, isLive else {
+        guard case .hls(_, let isLive, _, _, _) = resolved.stream, isLive else {
             Issue.record("expected live .hls, got \(resolved.stream)"); return
         }
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
@@ -677,7 +677,7 @@ import Testing
         let resolved = try await resolver.resolve(
             Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresHLS: true)
 
-        guard case .hls(_, _, let audioOnlyURL, _) = resolved.stream else {
+        guard case .hls(_, _, let audioOnlyURL, _, _) = resolved.stream else {
             Issue.record("expected .hls, got \(resolved.stream)"); return
         }
         #expect(audioOnlyURL != nil, "the HLS answer lost its itag 140")

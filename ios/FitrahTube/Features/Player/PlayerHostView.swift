@@ -959,7 +959,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// Not private: `PlayerHostTests` pins the audio-only selection directly.
     static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL {
         switch stream {
-        case .hls(let url, _, let audioOnlyURL, _):
+        case .hls(let url, _, let audioOnlyURL, _, _):
             // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
             // the toggle (and gates the automatic swap) when there is no itag 140 URL, so a true
             // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,

@@ -1016,7 +1016,7 @@ actor OfflineManager: OfflineSaving {
     /// always 360p/mp4, Task 5's picker must reflect this).
     nonisolated static func sourceURL(_ stream: ResolvedStream, audioOnly: Bool) -> URL? {
         switch (stream, audioOnly) {
-        case (.hls(_, _, let audioOnlyURL, _), true): return audioOnlyURL
+        case (.hls(_, _, let audioOnlyURL, _, _), true): return audioOnlyURL
         case (.progressive(let url, _), false): return url
         case (.hls, false), (.progressive, true): return nil
         }
