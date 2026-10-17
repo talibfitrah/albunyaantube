@@ -172,13 +172,52 @@ private let syntheticCipherURL = "url=https%3A%2F%2Fexample.test%2Fv%3Fn%3Dxyz%2
     }
 
     @Test(arguments: [(-1...740, 741...1000, 5000), (0...800, 741...1000, 5000), (0...740, 741...5000, 5000),
-                      (0...740, 741...1000, 0), (0...740, 741...1000, (1 << 40) + 1)])
+                      (0...740, 741...1000, 0), (0...740, 741...1000, (1 << 40) + 1),
+                      (1...740, 741...1000, 5000), (0...740, 741...(741 + 786_460), 1 << 30)])
     func insaneByteRangesAreUnusable(_ initRange: ClosedRange<Int>, _ indexRange: ClosedRange<Int>, _ length: Int) throws {
         var bad = try #require(try parse(video()).first)
         bad.initRange = initRange
         bad.indexRange = indexRange
         bad.contentLength = length
         #expect(TVAdaptive.select([bad] + (try parse(audio()))) == nil)
+    }
+
+    /// A base URL that is not absolute `https` with a host drops that one format; it used to reach `solvedURL`, throw
+    /// `notHTTPS` and fail the whole upgrade.
+    @Test(arguments: [#""url":"http://example.test/v?n=xyz""#, #""url":"/videoplayback?n=xyz""#, #""url":"https:v?n=xyz""#,
+                      #""signatureCipher":"s=abc&url=http%3A%2F%2Fexample.test%2Fv%3Fn%3Dxyz""#])
+    func aBaseURLThatIsNotAbsoluteHTTPSIsDropped(_ source: String) throws {
+        let selection = try #require(TVAdaptive.select(try parse(video(source, itag: 999, bitrate: 99_000_000), video(), audio())))
+        #expect(selection.video.map(\.itag) == [137])
+        _ = try TVAdaptive.synthetic(selection, answers: answers(TVAdaptive.challenges(selection)))
+    }
+
+    @Test func aDrcXtagAloneLosesToThePlainOne() throws {   // R10 rule 2, the `drc` key without `isDrc`
+        let selection = try #require(TVAdaptive.select(try parse(video(), audio(bitrate: 1, #","xtags":"CggKA2RyYxIBMQ""#),
+                                                                 audio(bitrate: 2))))
+        #expect(selection.audio.map(\.bitrate) == [2])
+    }
+
+    @Test(arguments: [0, -1, 1_000_000_001])
+    func anInsaneBitrateIsUnusable(_ bitrate: Int) throws {
+        #expect(TVAdaptive.select(try parse(video(bitrate: bitrate), audio())) == nil)
+        #expect(TVAdaptive.select(try parse(video(), audio(bitrate: bitrate))) == nil)
+    }
+
+    @Test(arguments: [0, -1])
+    func aNonPositiveAverageBitrateIsUnusable(_ average: Int) throws {
+        var bad = try #require(try parse(video()).first)
+        bad.averageBitrate = average
+        #expect(TVAdaptive.select([bad] + (try parse(audio()))) == nil)
+    }
+
+    /// The limits themselves: bitrate 1 b/s and 1 Gb/s, average 1, the largest `sidx` without largesize (786,460 bytes).
+    @Test func theNumericLimitsAreUsable() throws {
+        var video = try #require(try parse(video(bitrate: 1_000_000_000)).first)
+        video.averageBitrate = 1
+        video.indexRange = 741...(740 + 786_460)
+        video.contentLength = 1 << 30
+        #expect(TVAdaptive.select([video] + (try parse(audio(bitrate: 1)))) != nil)
     }
 
     @Test func aRepeatedItagKeepsItsFirstEntry() throws {

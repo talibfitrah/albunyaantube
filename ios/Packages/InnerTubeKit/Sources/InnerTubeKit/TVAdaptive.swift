@@ -25,7 +25,7 @@ enum TVAdaptive {
     /// at least one avc1 rendition above 360p on its short side, or the swap would trade 360p for 360p and hide the rung-2
     /// pill. nil = nothing to play in HD.
     static func select(_ formats: [AdaptiveFormat]) -> Selection? {
-        let usable = formats.filter { parts($0) != nil && rangesAreSane($0) && !codecs($0.mimeType).isEmpty && !$0.hasDRM }
+        let usable = formats.filter { isHTTPS(parts($0)?.url) && numbersAreSane($0) && !codecs($0.mimeType).isEmpty && !$0.hasDRM }
         var seenItags = Set<Int>()
         let video = usable
             .filter { $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("avc1") && seenItags.insert($0.itag).inserted }
@@ -44,11 +44,21 @@ enum TVAdaptive {
         return Selection(video: video, audio: audio)
     }
 
-    /// Non-negative, init before index, index inside a file of at most 2^40 bytes (which also makes the length positive).
-    private static func rangesAreSane(_ f: AdaptiveFormat) -> Bool {
+    /// An absolute `https` base URL with a host; anything else would throw `notHTTPS` in `solvedURL` and fail the whole
+    /// upgrade instead of dropping this one format.
+    private static func isHTTPS(_ url: String?) -> Bool {
+        guard let url = url.flatMap({ URL(string: $0) }) else { return false }
+        return url.scheme == "https" && url.host != nil
+    }
+
+    /// Init from byte 0 and before the index; the index inside a file of at most 2^40 bytes (which also makes the length
+    /// positive) and no longer than the largest `sidx` without largesize (65,535 references: 786,460 bytes, which also caps
+    /// the loader's GET). Bitrate 1 b/s to 1 Gb/s, average nil or positive. Ordered so `indexRange.count` cannot overflow.
+    private static func numbersAreSane(_ f: AdaptiveFormat) -> Bool {
         guard let initRange = f.initRange, let indexRange = f.indexRange, let length = f.contentLength else { return false }
-        return initRange.lowerBound >= 0 && initRange.upperBound < indexRange.lowerBound && indexRange.upperBound < length
-            && length <= 1 << 40
+        return initRange.lowerBound == 0 && initRange.upperBound < indexRange.lowerBound && indexRange.upperBound < length
+            && length <= 1 << 40 && indexRange.count <= 786_460
+            && (1...1_000_000_000).contains(f.bitrate) && (f.averageBitrate ?? 1) > 0
     }
 
     private static func rank(_ member: (index: Int, format: AdaptiveFormat)) -> (Int, Int, Int) {
