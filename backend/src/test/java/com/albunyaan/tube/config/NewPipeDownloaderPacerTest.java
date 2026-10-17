@@ -80,7 +80,7 @@ class NewPipeDownloaderPacerTest {
 
     @Test
     void aSignalFromAfterReachesTheCaller() throws Exception {
-        doThrow(new CrawlPacer.CrawlPausedException("HTTP_429")).when(pacer).after(anyString(), anyInt(), anyString(), any(), anyString());
+        doThrow(new CrawlPacer.CrawlPausedException("rate-limited")).when(pacer).after(anyString(), anyInt(), anyString(), any(), anyString());
         assertThrows(CrawlPacer.CrawlPausedException.class, () -> downloader.get(url));
         assertEquals(1, hits.get());
     }

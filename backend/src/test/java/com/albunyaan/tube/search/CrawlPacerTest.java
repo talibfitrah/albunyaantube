@@ -1,5 +1,7 @@
 package com.albunyaan.tube.search;
 
+import com.albunyaan.tube.config.ValidationProperties;
+import com.albunyaan.tube.service.ChannelOrchestrator;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import com.albunyaan.tube.service.YouTubeGateway;
 import com.albunyaan.tube.service.YouTubeThrottler;
@@ -21,7 +23,9 @@ import java.time.ZoneId;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
+import java.util.HashSet;
 import java.util.List;
+import java.util.Set;
 import java.util.TreeMap;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
@@ -46,6 +50,8 @@ class CrawlPacerTest {
     private final List<Long> slept = new ArrayList<>();
 
     static final String BROWSE = "https://www.youtube.com/youtubei/v1/browse?prettyPrint=false";
+    /** The shared breaker's own classifier: no exception the pacer throws may read as a rate limit to it. */
+    static final YouTubeCircuitBreaker SHARED = new YouTubeCircuitBreaker(new ValidationProperties(), null);
     static final String JSON_BODY = "{\"contents\":{\"twoColumnBrowseResultsRenderer\":{\"tabs\":[]}},\"padding\":\"…\"}";
 
     @BeforeEach
@@ -84,24 +90,35 @@ class CrawlPacerTest {
         onThread(CrawlPacer.CRAWLER_THREAD, body);
     }
 
-    /** R12 by construction: none of the crawler's classes can reach the shared breaker or the gateway. */
+    /**
+     * R12 by construction: none of the crawler's classes can reach the shared breaker, the gateway or the orchestrator,
+     * directly or through any project class it holds or takes in a constructor (transitively).
+     */
     static void neverHoldsTheSharedBreaker(Class<?> c) {
-        List<Class<?>> forbidden = List.of(YouTubeCircuitBreaker.class, YouTubeGateway.class);
-        for (Field f : c.getDeclaredFields()) assertFalse(forbidden.contains(f.getType()), c + "." + f.getName());
-        for (Constructor<?> k : c.getDeclaredConstructors()) {
-            assertTrue(Arrays.stream(k.getParameterTypes()).noneMatch(forbidden::contains), k.toString());
+        neverReaches(c, c.getSimpleName(), new HashSet<>());
+    }
+
+    private static void neverReaches(Class<?> c, String path, Set<Class<?>> seen) {
+        if (!seen.add(c)) return;
+        List<Class<?>> forbidden = List.of(YouTubeCircuitBreaker.class, YouTubeGateway.class, ChannelOrchestrator.class);
+        List<Class<?>> held = new ArrayList<>();
+        for (Field f : c.getDeclaredFields()) held.add(f.getType());
+        for (Constructor<?> k : c.getDeclaredConstructors()) held.addAll(Arrays.asList(k.getParameterTypes()));
+        for (Class<?> d : held) {
+            assertFalse(forbidden.contains(d), path + " -> " + d.getSimpleName());
+            if (d.getName().startsWith("com.albunyaan.tube.")) neverReaches(d, path + " -> " + d.getSimpleName(), seen);
         }
     }
 
-    private String signalOnCrawler(String url, int status, String finalUrl, String type, String body) throws Exception {
-        String[] seen = {null};
+    private CrawlPacer.CrawlPausedException signalOnCrawler(String url, int status, String finalUrl, String type, String body) throws Exception {
+        CrawlPacer.CrawlPausedException[] seen = {null};
         onCrawler(() -> {
             pacer.jobStart();
             try {
                 pacer.after(url, status, finalUrl, type, body);
             } catch (CrawlPacer.CrawlPausedException e) {
                 assertTrue(pacer.signalled());
-                seen[0] = e.getMessage();
+                seen[0] = e;
             }
         });
         return seen[0];
@@ -121,9 +138,10 @@ class CrawlPacerTest {
             "NON_JSON   | 200 | https://www.youtube.com/youtubei/v1/browse | text/html; charset=utf-8 | <html>a page</html>",
             "SHORT_BODY | 200 | https://www.youtube.com/youtubei/v1/browse | application/json | {}"})
     void eachSoftBlockShapeIsARateSignal(String type, int status, String finalUrl, String contentType, String body) throws Exception {
-        String message = signalOnCrawler(BROWSE, status, finalUrl, contentType, body);
-        assertNotNull(message, type);
-        assertTrue(message.contains(type), message);
+        CrawlPacer.CrawlPausedException thrown = signalOnCrawler(BROWSE, status, finalUrl, contentType, body);
+        assertNotNull(thrown, type);
+        assertFalse(thrown.getMessage().contains("429"), thrown.getMessage());
+        assertFalse(SHARED.isRateLimitError(thrown), thrown.getMessage());
         InnerState s = store.state();
         assertEquals(type, s.signals.get(s.signals.size() - 1).type());
         assertEquals(60_000, s.breaker.intervalMs);
@@ -274,7 +292,12 @@ class CrawlPacerTest {
     void playerAndGooglevideoAreRefused() throws Exception {
         for (String url : List.of("https://www.youtube.com/youtubei/v1/player?prettyPrint=false",
                 "https://rr3---sn-x.googlevideo.com/videoplayback?id=1")) {
-            onCrawler(() -> assertTrue(assertThrows(IOException.class, () -> pacer.before(url)).getMessage().contains("refused")));
+            onCrawler(() -> {
+                IOException refused = assertThrows(IOException.class, () -> pacer.before(url));
+                assertTrue(refused.getMessage().contains("refused"));
+                assertFalse(refused.getMessage().contains(url), "a URL can hold any text, \"429\" included");
+                assertFalse(SHARED.isRateLimitError(refused));
+            });
         }
         verifyNoInteractions(throttler);
         assertEquals(0, pacer.today(CrawlPacer.CRAWLER_THREAD));

@@ -42,7 +42,11 @@ public class CrawlPacer {
     private static final Pattern BOT_TEXT = Pattern.compile("not a bot|unusual traffic|g-recaptcha", Pattern.CASE_INSENSITIVE);
     private static final Pattern TRAILING_DIGITS = Pattern.compile("\\d+$");
 
-    /** Aborts the current crawl job: a rate signal after() just recorded, or STOP, OFF, a pause or the daily cap. */
+    /**
+     * Aborts the current crawl job: a rate signal after() just recorded, or STOP, OFF, a pause or the daily cap. No
+     * message carries text YouTubeCircuitBreaker.isRateLimitError reads as a rate limit ("429", "too many requests"...),
+     * so even one that escaped the crawler thread could not trip the shared breaker; the signal's type is in state.json.
+     */
     public static class CrawlPausedException extends IOException {
         public CrawlPausedException(String why) {
             super("inner crawl paused: " + why);
@@ -81,7 +85,10 @@ public class CrawlPacer {
             count(Thread.currentThread().getName());
             return;
         }
-        if (url.contains("/player") || url.contains("googlevideo.com")) throw new IOException("inner crawl refused: " + url);
+        if (url.contains("/player") || url.contains("googlevideo.com")) {
+            log.warn("inner crawl refused {}", url);
+            throw new IOException("inner crawl refused: a player or media request");
+        }
         InnerState s = store.state();
         refuseWhileHeld(s);
         if (today(CRAWLER_THREAD) >= dailyCap) throw new CrawlPausedException("daily cap");
@@ -112,7 +119,7 @@ public class CrawlPacer {
         String type = classify(url, status, finalUrl, contentType, body);
         if (type != null) {
             rateSignal(type, path(finalUrl != null ? finalUrl : url), status);
-            throw new CrawlPausedException(type);
+            throw new CrawlPausedException("rate-limited");
         }
         if (status >= 500) throw new IOException("HTTP " + status); // transport (§6.6): the job window, never a signal
         clean();

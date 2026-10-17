@@ -105,7 +105,7 @@ public class ChannelOrchestrator {
      * ContentNotAvailableException it surfaces is an HTTP 404 from either of its two browse requests (metadata, then
      * a NewPipe-built continuation), an /oops redirect or another ERROR alert.
      */
-    static boolean playlistGone(ExtractionException e) {
+    public static boolean playlistGone(ExtractionException e) {
         return e instanceof AccountTerminatedException
                 || (e instanceof ContentNotAvailableException
                     && PLAYLIST_NOT_FOUND.matcher(String.valueOf(e.getMessage())).matches());
