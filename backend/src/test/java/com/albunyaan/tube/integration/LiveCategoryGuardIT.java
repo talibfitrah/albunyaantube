@@ -697,6 +697,16 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
     }
 
     @Test
+    void theAdminStatusAnswers401ToAnInvalidToken() throws Exception {
+        com.google.firebase.auth.FirebaseAuthException bad = Mockito.mock(com.google.firebase.auth.FirebaseAuthException.class);
+        when(firebaseAuth.verifyIdToken(anyString())).thenThrow(bad);
+        when(firebaseAuth.verifyIdToken(anyString(), anyBoolean())).thenThrow(bad);
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/admin/live-channels/status")
+                .header("Authorization", "Bearer expired"))
+                .andExpect(status().isUnauthorized());
+    }
+
+    @Test
     void theAdminStatusIsAdminOnly() throws Exception {
         as("moderator");
         mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/admin/live-channels/status")

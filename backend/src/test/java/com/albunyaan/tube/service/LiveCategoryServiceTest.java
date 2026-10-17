@@ -262,6 +262,55 @@ class LiveCategoryServiceTest {
         assertThat(withMiss.getId()).isEqualTo(entries.get(1).get("contentId"));
     }
 
+    @SuppressWarnings("unchecked")
+    private List<Map<String, Object>> statusEntries() throws Exception {
+        com.albunyaan.tube.model.Category cat = new com.albunyaan.tube.model.Category("Live", null);
+        cat.setId(CAT);
+        cat.setType("LIVE");
+        when(categoryRepository.findAll()).thenReturn(List.of(cat));
+        return (List<Map<String, Object>>) ((List<Map<String, Object>>) service.status().get("categories")).get(0).get("entries");
+    }
+
+    @Test
+    void statusShowsOfflineAndErrorEntries() throws Exception {
+        entry(QURAN, LiveChannelState.OFFLINE);
+        entry(ZAD, LiveChannelState.LIVE, "eaOtcUNHDB8");
+        LiveChannelState zad = states.get(1);
+        zad.setErrorCount(3);
+        zad.setErrorSince(1_792_200_000_000L);
+        zad.setLastError("boom");
+        live.loadStates(states);
+
+        List<Map<String, Object>> entries = statusEntries();
+
+        assertThat(entries.get(0)).containsEntry("status", "OFFLINE");
+        assertThat(entries.get(1)).containsEntry("lastError", "boom").containsEntry("errorSince", "2026-10-17T01:20:00Z");
+    }
+
+    @Test
+    void anUnservableChannelShowsNoServedLives() throws Exception {
+        entry(QURAN, LiveChannelState.LIVE, "eC4LfEVxvKg").setStatus("REJECTED");
+        entry(ZAD, LiveChannelState.LIVE, "eaOtcUNHDB8").setVisibility("PERSONAL");
+
+        List<Map<String, Object>> entries = statusEntries();
+
+        for (Map<String, Object> e : entries) {
+            assertThat(e).containsEntry("servable", false);
+            @SuppressWarnings("unchecked")
+            List<Map<String, Object>> lives = (List<Map<String, Object>>) e.get("lives");
+            assertThat(lives).extracting(l -> l.get("served")).containsExactly("BLOCKED");
+        }
+        assertThat(service.items(CAT)).isEmpty();
+    }
+
+    @Test
+    void anUnservableLinkIsNotReportedLive() throws Exception {
+        link("Rs7St51oDDc", "UCROKYPep-UuODNwyipe6JMw").setStatus("PENDING");
+
+        assertThat(statusEntries().get(0)).containsEntry("status", "BLOCKED");
+        assertThat(service.items(CAT)).isEmpty();
+    }
+
     private static boolean publicFilter(Object service, Object doc) {
         return Boolean.TRUE.equals(org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "isApproved", doc))
                 && Boolean.TRUE.equals(org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "isAvailable", doc));

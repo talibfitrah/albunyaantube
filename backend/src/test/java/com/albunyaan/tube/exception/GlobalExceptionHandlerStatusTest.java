@@ -55,6 +55,10 @@ class GlobalExceptionHandlerStatusTest {
         @GetMapping("/denied")
         void denied() { throw new org.springframework.security.access.AccessDeniedException("nope"); }
 
+        @GetMapping("/denied63")
+        void denied63() { throw new org.springframework.security.authorization.AuthorizationDeniedException("nope",
+                new org.springframework.security.authorization.AuthorizationDecision(false)); }
+
         @GetMapping("/boom")
         void boom() { throw new RuntimeException("secret internals"); }
     }
@@ -74,6 +78,11 @@ class GlobalExceptionHandlerStatusTest {
         mvc.perform(get("/denied")).andExpect(status().isForbidden())
                 .andExpect(jsonPath("$.status").value(403)).andExpect(jsonPath("$.error").value("Forbidden"))
                 .andExpect(jsonPath("$.message").value("Access denied")).andExpect(jsonPath("$.path").value("/denied"));
+    }
+
+    @Test
+    void anAuthorizationDeniedExceptionIs403() throws Exception {
+        mvc.perform(get("/denied63")).andExpect(status().isForbidden()).andExpect(jsonPath("$.message").value("Access denied"));
     }
 
     @Test

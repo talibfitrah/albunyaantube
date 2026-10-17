@@ -206,6 +206,7 @@ public class LiveCategoryService {
         e.put("contentId", c.getId());
         e.put("channelId", c.getYoutubeId());
         e.put("name", c.getName());
+        e.put("servable", servable(c));   // false: items() drops this entry whole (its lives show BLOCKED)
         e.put("status", s == null ? LiveChannelState.UNKNOWN : s.getStatus());
         e.put("reason", s == null ? null : s.getReason());
         List<Map<String, Object>> lives = new ArrayList<>();
@@ -214,7 +215,7 @@ public class LiveCategoryService {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("id", l.getVideoId());
                 item.put("title", l.getTitle());
-                item.put("served", served(c, l.getVideoId(), docs).name());
+                item.put("served", (servable(c) ? served(c, l.getVideoId(), docs) : Served.BLOCKED).name());
                 lives.add(item);
             }
         }
@@ -234,7 +235,7 @@ public class LiveCategoryService {
         e.put("channelId", v.getChannelId());
         LiveChannelState s = v.getChannelId() == null ? null : snapshot.get(v.getChannelId());
         LiveChannelState.Miss miss = s == null ? null : s.getMisses().get(v.getYoutubeId());
-        e.put("status", v.getChannelId() == null ? "NO_CHANNEL" : miss == null ? "LIVE" : "MISSING");
+        e.put("status", v.getChannelId() == null ? "NO_CHANNEL" : !servable(v) ? "BLOCKED" : miss == null ? "LIVE" : "MISSING");
         e.put("misses", miss == null ? 0 : miss.getCount());
         e.put("missingSince", iso(miss == null ? null : miss.getSince()));
         return e;
