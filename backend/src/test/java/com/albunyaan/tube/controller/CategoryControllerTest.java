@@ -17,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -42,6 +43,9 @@ class CategoryControllerTest {
 
     @Mock
     private com.albunyaan.tube.service.SortOrderService sortOrderService;
+
+    @Mock
+    private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks
     private CategoryController categoryController;
@@ -355,6 +359,20 @@ class CategoryControllerTest {
                 () -> categoryController.updateCategory("kids", live("Kids", null), adminUser));
 
         assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    /** Row 17: setting LIVE on an ordinary category runs the members rule before anything is saved. */
+    @Test
+    void settingLiveOnAnOrdinaryCategoryChecksItsMembers() throws Exception {
+        Category existing = new Category("Live Kids", null);
+        existing.setId("kids");
+        when(categoryRepository.findById("kids")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("kids")).thenReturn(List.of());
+        doThrow(new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.MEMBERS_INVALID, "x", Map.of()))
+                .when(liveCategoryGuard).checkMembersForLive("kids");
+
+        assertThrows(LiveCategoryException.class, () -> categoryController.updateCategory("kids", live("Live Kids", null), adminUser));
         verify(categoryRepository, never()).save(any());
     }
 }

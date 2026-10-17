@@ -6,6 +6,7 @@ import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
 import org.slf4j.Logger;
@@ -40,14 +41,16 @@ public class CategoryController {
     private final AuditLogService auditLogService;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public CategoryController(CategoryRepository categoryRepository, AuditLogService auditLogService,
                               PublicContentCacheService publicContentCacheService,
-                              SortOrderService sortOrderService) {
+                              SortOrderService sortOrderService, LiveCategoryGuard liveCategoryGuard) {
         this.categoryRepository = categoryRepository;
         this.auditLogService = auditLogService;
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -190,6 +193,9 @@ public class CategoryController {
         }
         if (live && !categoryRepository.findByParentId(id).isEmpty()) {
             throw shapeRefusal(existing.getName());
+        }
+        if (live && !existing.isLive()) {
+            liveCategoryGuard.checkMembersForLive(id);                         // row 17 (§4.2)
         }
 
         existing.setName(category.getName());
