@@ -1,0 +1,27 @@
+android/app/src/test/java/com/albunyaan/tube/player/DashSourceBuilderLiveHlsTest.kt
+  s_dbb6b1f3671904::t_556d8f04731ea0 1-49
+android/app/src/test/java/com/albunyaan/tube/player/DashSourceBuilderTest.kt
+  s_dbb6b1f3671904::t_556d8f04731ea0 111-112
+android/app/src/test/java/com/albunyaan/tube/player/LivePlaylistRedirectorTest.kt
+  s_dbb6b1f3671904::t_556d8f04731ea0 1-107
+android/app/src/main/java/com/albunyaan/tube/player/LivePlaylistRedirector.kt
+  s_dbb6b1f3671904::t_2c393ad1b2e6fe 1-109
+android/app/src/main/java/com/albunyaan/tube/player/DashSourceBuilder.kt
+  s_dbb6b1f3671904::t_2c393ad1b2e6fe 10-11,76,301-309
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "550c687c7596307c3992435c97ccbf339106f50b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
