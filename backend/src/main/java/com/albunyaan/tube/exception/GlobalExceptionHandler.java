@@ -2,7 +2,10 @@ package com.albunyaan.tube.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
 import org.springframework.http.converter.HttpMessageNotReadableException;
 import org.springframework.web.ErrorResponse;
@@ -363,17 +366,23 @@ public class GlobalExceptionHandler {
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleGenericException(
             Exception ex, WebRequest request) {
-        HttpStatus status = HttpStatus.INTERNAL_SERVER_ERROR;
+        HttpStatusCode status = HttpStatus.INTERNAL_SERVER_ERROR;
+        HttpHeaders headers = new HttpHeaders();
         String message = "An unexpected error occurred";
         if (ex instanceof ErrorResponse er && er.getStatusCode().is4xxClientError()) {
-            status = HttpStatus.valueOf(er.getStatusCode().value());
+            status = er.getStatusCode();
+            headers.putAll(er.getHeaders()); // e.g. Allow on 405
             message = ex instanceof ResponseStatusException rse && rse.getReason() != null
-                    ? rse.getReason() : status.getReasonPhrase();
+                    ? rse.getReason() : reasonOf(status);
             logger.warn("Client error {}: {}", status.value(), message);
         } else if (ex instanceof HttpMessageNotReadableException) {
             status = HttpStatus.BAD_REQUEST;
             message = "Malformed request body";
             logger.warn("Client error 400: {}", message);
+        } else if (ex instanceof TypeMismatchException) {
+            status = HttpStatus.BAD_REQUEST;
+            message = reasonOf(status);
+            logger.warn("Client error 400: type mismatch");
         } else {
             logger.error("Unexpected error: {}", ex.getMessage(), ex);
         }
@@ -381,15 +390,17 @@ public class GlobalExceptionHandler {
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
         body.put("status", status.value());
-        body.put("error", status.getReasonPhrase());
+        body.put("error", reasonOf(status));
         body.put("message", message);
         body.put("path", request.getDescription(false).replace("uri=", ""));
 
-        ResponseEntity.BodyBuilder response = ResponseEntity.status(status);
-        if (ex instanceof ErrorResponse er) {
-            response.headers(er.getHeaders()); // e.g. Allow on 405
-        }
-        return response.body(body);
+        return ResponseEntity.status(status).headers(headers).body(body);
+    }
+
+    /** Reason phrase when the code is a standard one, else the numeric code. */
+    private static String reasonOf(HttpStatusCode code) {
+        HttpStatus known = HttpStatus.resolve(code.value());
+        return known != null ? known.getReasonPhrase() : String.valueOf(code.value());
     }
 
     // F16: handlers for AccountBlockedException and AccountDeletedException
