@@ -1,16 +1,20 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.CursorPageDto;
-import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.exception.GlobalExceptionHandler;
 import com.albunyaan.tube.exception.ContentGoneException;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
+import com.albunyaan.tube.model.ApprovalMetadata;
+import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
+import com.fasterxml.jackson.databind.JsonNode;
+import com.fasterxml.jackson.databind.ObjectMapper;
+import com.google.cloud.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
@@ -25,7 +29,12 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Set;
+import java.util.regex.Pattern;
 
+import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -82,8 +91,7 @@ public class PublicContentControllerTest {
                         .contentType(MediaType.APPLICATION_JSON))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.youtubeId").value("EnfgPg0Ey3I"))
-                .andExpect(jsonPath("$.title").value("Test Video"))
-                .andExpect(jsonPath("$.status").value("APPROVED"));
+                .andExpect(jsonPath("$.title").value("Test Video"));
     }
 
     @Test
@@ -277,23 +285,6 @@ public class PublicContentControllerTest {
     }
 
     @Test
-    @DisplayName("GET /api/v1/channels/{channelId} - Success")
-    void testGetChannelDetails_Success() throws Exception {
-        // Given
-        ChannelDetailsDto channelDto = new ChannelDetailsDto();
-        channelDto.setId("test-channel");
-        channelDto.setName("Test Channel");
-        when(contentService.getChannelDetails(anyString()))
-                .thenReturn(channelDto);
-
-        // When & Then
-        mockMvc.perform(get("/api/v1/channels/{channelId}", "test-channel")
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("test-channel"));
-    }
-
-    @Test
     @DisplayName("GET /api/v1/channels/{channelId} - Channel Not Found → 404")
     void testGetChannelDetails_NotFound() throws Exception {
         when(contentService.getChannelDetails(anyString()))
@@ -316,23 +307,6 @@ public class PublicContentControllerTest {
                 .andExpect(status().isGone())
                 .andExpect(jsonPath("$.status").value(410))
                 .andExpect(jsonPath("$.error").value("Gone"));
-    }
-
-    @Test
-    @DisplayName("GET /api/v1/playlists/{playlistId} - Success")
-    void testGetPlaylistDetails_Success() throws Exception {
-        // Given
-        PlaylistDetailsDto playlistDto = new PlaylistDetailsDto();
-        playlistDto.setId("test-playlist");
-        playlistDto.setName("Test Playlist");
-        when(contentService.getPlaylistDetails(anyString()))
-                .thenReturn(playlistDto);
-
-        // When & Then
-        mockMvc.perform(get("/api/v1/playlists/{playlistId}", "test-playlist")
-                        .contentType(MediaType.APPLICATION_JSON))
-                .andExpect(status().isOk())
-                .andExpect(jsonPath("$.id").value("test-playlist"));
     }
 
     @Test
@@ -491,5 +465,115 @@ public class PublicContentControllerTest {
         mockMvc.perform(get("/api/v1/content").param("type", "CHANNELS").param("q", "zakit"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"));
+    }
+
+    // Privacy (1.0.4): the public by-id routes served the raw Firestore entity, staff uids and the
+    // reviewer's email included. Each route must serve exactly the public field set: what a client
+    // reads (iOS OfflineGateClient: youtubeId + offlineAllowed; PublicHeaders: channel youtubeId/name/
+    // thumbnailUrl, playlist title/thumbnailUrl/itemCount) plus the content metadata ContentItemDto serves.
+
+    private static final String STAFF_UID = "staffUid00000000000000000001";
+    private static final String STAFF_EMAIL = "reviewer@staff.example";
+    private static final Pattern EMAIL = Pattern.compile("[A-Za-z0-9._%+-]+@[A-Za-z0-9.-]+\\.[A-Za-z]{2,}");
+
+    @Autowired
+    private ObjectMapper objectMapper;
+
+    private static ApprovalMetadata staffReview() {
+        ApprovalMetadata review = new ApprovalMetadata(STAFF_UID, STAFF_EMAIL, "internal review note");
+        review.setRejectionReason("internal reason");
+        return review;
+    }
+
+    private JsonNode publicDetail(String path, Set<String> expectedKeys) throws Exception {
+        String body = mockMvc.perform(get(path)).andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        JsonNode json = objectMapper.readTree(body);
+        Set<String> keys = new java.util.TreeSet<>();
+        json.fieldNames().forEachRemaining(keys::add);
+        assertEquals(new java.util.TreeSet<>(expectedKeys), keys, path + " must serve exactly the public fields");
+        assertFalse(body.contains(STAFF_UID), path + " leaks a staff uid");
+        assertFalse(EMAIL.matcher(body).find(), path + " leaks an email address");
+        return json;
+    }
+
+    @Test
+    @DisplayName("Privacy: GET /api/v1/videos/{id} serves only public fields (no staff uid/email, review or registry data)")
+    void videoDetailServesOnlyPublicFields() throws Exception {
+        testVideo.setSubmittedBy(STAFF_UID);
+        testVideo.setApprovedBy(STAFF_UID);
+        testVideo.setApprovalMetadata(staffReview());
+        testVideo.setSubmitterNote("context for the admin");
+        testVideo.setSource("MODERATOR");
+        testVideo.setKeywords(List.of("tafsir"));
+        testVideo.setDisplayOrder(3);
+        testVideo.setLastValidatedAt(Timestamp.now());
+        testVideo.setChannelTitle("Test Channel");
+        testVideo.setViewCount(42L);
+        when(contentService.getVideoDetails("EnfgPg0Ey3I")).thenReturn(testVideo);
+
+        JsonNode json = publicDetail("/api/v1/videos/EnfgPg0Ey3I", Set.of(
+                "youtubeId", "title", "description", "thumbnailUrl", "durationSeconds",
+                "viewCount", "channelTitle", "offlineAllowed"));
+        assertEquals("EnfgPg0Ey3I", json.get("youtubeId").asText());
+        assertTrue(json.get("offlineAllowed").isBoolean());
+        assertTrue(json.get("offlineAllowed").asBoolean());
+        assertEquals(240, json.get("durationSeconds").asInt());
+    }
+
+    @Test
+    @DisplayName("Privacy: GET /api/v1/channels/{id} serves only public fields (no staff uid/email, review or registry data)")
+    void channelDetailServesOnlyPublicFields() throws Exception {
+        Channel channel = new Channel();
+        channel.setId("firestore-doc-id");
+        channel.setYoutubeId("UCabc123");
+        channel.setName("Test Channel");
+        channel.setDescription("Lectures");
+        channel.setThumbnailUrl("https://example.com/avatar.jpg");
+        channel.setSubscribers(1200L);
+        channel.setVideoCount(80);
+        channel.setStatus("APPROVED");
+        channel.setSubmittedBy(STAFF_UID);
+        channel.setApprovedBy(STAFF_UID);
+        channel.setApprovalMetadata(staffReview());
+        channel.setSubmitterNote("context for the admin");
+        channel.setKeywords(List.of("seerah"));
+        channel.setDisplayOrder(1);
+        channel.setLastValidatedAt(Timestamp.now());
+        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+
+        JsonNode json = publicDetail("/api/v1/channels/UCabc123", Set.of(
+                "youtubeId", "name", "description", "thumbnailUrl", "subscribers", "videoCount"));
+        assertEquals("UCabc123", json.get("youtubeId").asText());
+        assertEquals("Test Channel", json.get("name").asText());
+        assertEquals("https://example.com/avatar.jpg", json.get("thumbnailUrl").asText());
+    }
+
+    @Test
+    @DisplayName("Privacy: GET /api/v1/playlists/{id} serves only public fields (no staff uid/email, review or registry data)")
+    void playlistDetailServesOnlyPublicFields() throws Exception {
+        Playlist playlist = new Playlist();
+        playlist.setId("firestore-doc-id");
+        playlist.setYoutubeId("PLabc123");
+        playlist.setTitle("Test Playlist");
+        playlist.setDescription("Series");
+        playlist.setThumbnailUrl("https://example.com/cover.jpg");
+        playlist.setItemCount(12);
+        playlist.setStatus("APPROVED");
+        playlist.setSubmittedBy(STAFF_UID);
+        playlist.setApprovedBy(STAFF_UID);
+        playlist.setApprovalMetadata(staffReview());
+        playlist.setSubmitterNote("context for the admin");
+        playlist.setExcludedVideoIds(List.of("xc7keR2piUM"));
+        playlist.setKeywords(List.of("fiqh"));
+        playlist.setDisplayOrder(2);
+        playlist.setLastValidatedAt(Timestamp.now());
+        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+
+        JsonNode json = publicDetail("/api/v1/playlists/PLabc123", Set.of(
+                "youtubeId", "title", "description", "thumbnailUrl", "itemCount"));
+        assertEquals("Test Playlist", json.get("title").asText());
+        assertEquals("https://example.com/cover.jpg", json.get("thumbnailUrl").asText());
+        assertEquals(12, json.get("itemCount").asInt());
     }
 }

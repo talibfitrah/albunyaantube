@@ -253,11 +253,11 @@ paths:
           description: YouTube channel ID
       responses:
         '200':
-          description: Channel entity (without nested playlists)
+          description: Public channel fields (never the registry entity)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Channel'
+                $ref: '#/components/schemas/PublicChannelDetail'
         '404':
           description: Channel not found
           content:
@@ -280,11 +280,11 @@ paths:
           description: YouTube playlist ID
       responses:
         '200':
-          description: Playlist entity (without nested videos)
+          description: Public playlist fields (never the registry entity)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Playlist'
+                $ref: '#/components/schemas/PublicPlaylistDetail'
         '404':
           description: Playlist not found
           content:
@@ -307,11 +307,11 @@ paths:
           description: YouTube video ID
       responses:
         '200':
-          description: Video entity with metadata and approval status
+          description: Public video fields (never the registry entity), including the effective offlineAllowed
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/Video'
+                $ref: '#/components/schemas/PublicVideoDetail'
         '404':
           description: Video not found or not approved/available
           content:
@@ -4641,6 +4641,85 @@ components:
           type: integer
           format: int64
           description: How many of their submissions are still PENDING
+
+    # Public by-id responses (GET /v1/videos|channels|playlists/{id}). Backend: PublicDetails.java.
+    # Never the registry entity: no staff uids/emails (submittedBy, approvedBy, approvalMetadata),
+    # no review or registry bookkeeping. Admin routes keep the Channel/Playlist/Video schemas.
+    PublicVideoDetail:
+      type: object
+      required: [youtubeId, offlineAllowed]
+      properties:
+        youtubeId:
+          type: string
+          description: YouTube video ID (the id the route was asked for)
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+        durationSeconds:
+          type: integer
+          nullable: true
+        viewCount:
+          type: integer
+          format: int64
+          nullable: true
+        channelTitle:
+          type: string
+          nullable: true
+        offlineAllowed:
+          type: boolean
+          description: >-
+            The EFFECTIVE offline permission (never null): every approved video is saveable
+            unless an admin explicitly set it to false (owner ruling 2026-09-27).
+
+    PublicChannelDetail:
+      type: object
+      required: [youtubeId]
+      properties:
+        youtubeId:
+          type: string
+          description: YouTube channel ID
+        name:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+        subscribers:
+          type: integer
+          format: int64
+          nullable: true
+        videoCount:
+          type: integer
+          nullable: true
+
+    PublicPlaylistDetail:
+      type: object
+      required: [youtubeId]
+      properties:
+        youtubeId:
+          type: string
+          description: YouTube playlist ID
+        title:
+          type: string
+          nullable: true
+        description:
+          type: string
+          nullable: true
+        thumbnailUrl:
+          type: string
+          nullable: true
+        itemCount:
+          type: integer
+          nullable: true
 
     # Public API Response Wrappers
     ChannelDetailResponse:
