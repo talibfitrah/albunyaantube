@@ -13,11 +13,11 @@ struct PlayerViewModelUpgradeTests {
                                                       audioOnlyURL: nil, captionTracks: []),
                                          client: .visionos, userAgent: "ua", resolvedAt: Date(), expiresAt: nil)
 
-    private static func hd() -> Resolved {
+    private static func hd(expiresAt: Date? = nil) -> Resolved {
         Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
                               audioOnlyURL: URL(string: "https://example.com/a.m4a"), captionTracks: [],
                               synthetic: SyntheticHLS(video: [], audio: [])),
-                 client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: nil)
+                 client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: expiresAt)
     }
 
     private static func masterURL(_ resolved: Resolved) -> URL {
@@ -33,39 +33,53 @@ struct PlayerViewModelUpgradeTests {
         func open() { isOpen = true; waiters.forEach { $0.resume() }; waiters = [] }
     }
 
-    /// Scripts `HDUpgrade` and records what was asked, failed and refused.
+    /// Scripts `HDUpgrade` and records what was asked, failed and refused. `failedGate` holds a `failed` report
+    /// until opened; `cancelledAsks` counts asks whose task was cancelled by the time the answer came back.
     nonisolated final class Recorder: @unchecked Sendable {
         private let lock = NSLock()
         private var _asked: [String] = []
         private var _failed: [String] = []
         private var _refused = 0
+        private var _cancelledAsks = 0
         var answer: Resolved?
         var gate: AsyncGate?
+        var failedGate: AsyncGate?
 
         var asked: [String] { lock.withLock { _asked } }
         var failed: [String] { lock.withLock { _failed } }
         var refused: Int { lock.withLock { _refused } }
+        var cancelledAsks: Int { lock.withLock { _cancelledAsks } }
 
         var upgrade: HDUpgrade {
             HDUpgrade(upgrade: { id in
                 self.lock.withLock { self._asked.append(id) }
                 await self.gate?.wait()
+                if Task.isCancelled { self.lock.withLock { self._cancelledAsks += 1 } }
                 return self.answer
-            }, failed: { id in self.lock.withLock { self._failed.append(id) } },
-               refused: { self.lock.withLock { self._refused += 1 } })
+            }, failed: { id in
+                await self.failedGate?.wait()
+                self.lock.withLock { self._failed.append(id) }
+            }, refused: { self.lock.withLock { self._refused += 1 } })
         }
     }
 
+    /// `throwingOnCall` (1-based) makes that one call throw; `demoted` records every step-down.
     private actor ScriptedResolver: StreamResolving {
         private var outcomes: [Resolved]
+        private let throwingOnCall: Int?
         private(set) var calls = 0
-        init(_ outcomes: [Resolved]) { self.outcomes = outcomes }
+        private(set) var demoted: [ClientFamily] = []
+        init(_ outcomes: [Resolved], throwingOnCall: Int? = nil) {
+            self.outcomes = outcomes
+            self.throwingOnCall = throwingOnCall
+        }
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
                      requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             calls += 1
+            if calls == throwingOnCall { throw URLError(.timedOut) }
             return outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
         }
-        func demote(_ videoId: String, failed: ClientFamily) async {}
+        func demote(_ videoId: String, failed: ClientFamily) async { demoted.append(failed) }
     }
 
     private func model(_ resolver: ScriptedResolver, hd: HDUpgrade?,
@@ -139,6 +153,7 @@ struct PlayerViewModelUpgradeTests {
         #expect(recorder.failed == ["abcdefghijk"])
         await vm.handleRecoveryEvent(.stall)          // the 360p's own incident: Phase 1's same-rung re-resolve, budget intact
         #expect(await resolver.calls == 2)
+        #expect(await resolver.demoted.isEmpty)       // a spent budget would have stepped down here
     }
 
     /// Plan review I4: a 360p incident while HD stages means the link cannot carry both. HD is off for the video, and the
@@ -190,6 +205,94 @@ struct PlayerViewModelUpgradeTests {
         vm.stopUpgrade()
         await gate.open()
         try? await Task.sleep(for: .milliseconds(50))
+        #expect(vm.pendingUpgrade == nil)
+    }
+
+    /// Fix round 1: leaving the screen also drops an upgrade that was already published.
+    @Test func leavingTheScreenDropsAPublishedUpgrade() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        #expect(vm.pendingUpgrade != nil)
+        vm.stopUpgrade()
+        #expect(vm.pendingUpgrade == nil)
+    }
+
+    /// Fix round 1 (spec §4.9): a silent TTL refresh that never lands keeps the kept 360p, so an HD incident still
+    /// drops back and the HD stream never reaches the budget machine (which could demote `.tvSamsung`).
+    @Test func aFailedRefreshOfTheHDStreamKeepsTheDropBack() async {
+        let recorder = Recorder()
+        let upgrade = Self.hd(expiresAt: Date())
+        recorder.answer = upgrade
+        let resolver = ScriptedResolver([Self.standard], throwingOnCall: 2)
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        #expect(vm.commitUpgrade(Self.masterURL(upgrade)))
+        await vm.reResolveIfExpiring()                // throws; `silent` keeps the HD stream on screen
+        #expect(await resolver.calls == 2)
+        #expect(vm.state == .ready(upgrade))
+        await vm.handleRecoveryEvent(.stall)
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(recorder.failed == ["abcdefghijk"])
+        #expect(await resolver.calls == 2)
+        #expect(await resolver.demoted.isEmpty)
+    }
+
+    /// Fix round 1: video A's published HD never lands on video B's 360p. B's 360p passes the commit's own rung-2 and
+    /// video checks, so clearing `pendingUpgrade` when a resolve starts is the guard.
+    @Test func aPublishedUpgradeIsNeverCommittedOntoTheNextVideos360p() async {
+        let recorder = Recorder()
+        let old = Self.hd()
+        recorder.answer = old
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade,
+                       args: PlayerArgs(videoId: "abcdefghijk", playlistId: "PL"),
+                       queueSource: FakeQueueSource(pages: [(ids: ["abcdefghijk", "bcdefghijkl"], next: nil)]))
+        await vm.open()
+        await waitForPending(vm)                      // A's HD is published
+        recorder.answer = nil                         // B gets no HD of its own
+        await vm.playToEnd()                          // B lands on 360p
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(vm.args.videoId == "bcdefghijkl")
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(!vm.commitUpgrade(Self.masterURL(old)))
+    }
+
+    /// Fix round 1 (R41): a denial reaches the resolver before the next ask, so the ask a 360p incident's own
+    /// re-resolve starts is already refused there.
+    @Test func anHDFailureIsReportedBeforeTheNextAsk() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let failedGate = AsyncGate()
+        recorder.failedGate = failedGate
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        await vm.handleRecoveryEvent(.stall)          // I4: HD denied, then the 360p's same-rung re-resolve lands
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.asked.count == 1)
+        await failedGate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.failed == ["abcdefghijk"])
+        #expect(recorder.asked.count == 2)
+    }
+
+    /// Fix round 1: giving up also stops the ask the last re-resolve started; nothing could take its answer.
+    @Test func exhaustionCancelsTheUpgradeInFlight() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let gate = AsyncGate()
+        recorder.gate = gate
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        for _ in 0..<4 { await vm.handleRecoveryEvent(.stall) }   // same rung, two step-downs, then exhausted
+        guard case .recoveryExhausted = vm.state else { Issue.record("not exhausted: \(vm.state)"); return }
+        await gate.open()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(!recorder.asked.isEmpty)
+        #expect(recorder.cancelledAsks == recorder.asked.count)
         #expect(vm.pendingUpgrade == nil)
     }
 

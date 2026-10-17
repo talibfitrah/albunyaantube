@@ -346,6 +346,9 @@ extension StreamState {
     private var standardBeforeUpgrade: Resolved?
     private let hd: HDUpgrade?
     private var upgradeTask: Task<Void, Never>?
+    /// R41: the last `hd.failed` report. The next ask waits for it, so the resolver has denied the video before it is
+    /// asked again (a 360p incident's own re-resolve starts that ask right away).
+    private var hdFailedReport: Task<Void, Never>?
 
     /// The app's ONE cast seam (spec §10), or nil for a player that has no cast affordance: Shorts
     /// (the cast button is the main player's toolbar only) and every test that is not about
@@ -702,6 +705,7 @@ extension StreamState {
             // its result is discarded like any other.
             generation += 1
             resolveTask?.cancel()
+            upgradeTask?.cancel()                // spec R43: nothing can take its answer now
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
             steppedDownVideoIds.insert(hostVideoId)
@@ -732,7 +736,10 @@ extension StreamState {
     /// R8: only the stream on screen, never a saved file. The answer is dropped if anything moved on meanwhile.
     private func startUpgrade(videoId: String, generation: Int) {
         guard let hd, !isOfflinePlayback else { return }
+        let report = hdFailedReport
         upgradeTask = Task {
+            await report?.value
+            guard !Task.isCancelled else { return }
             let upgrade = await hd.upgrade(videoId)
             guard let upgrade, !Task.isCancelled, generation == self.generation, resolvedVideoId == videoId else { return }
             pendingUpgrade = upgrade
@@ -762,7 +769,7 @@ extension StreamState {
         guard pendingUpgrade != nil else { return }
         pendingUpgrade = nil
         let videoId = hostVideoId
-        if let hd { Task { await hd.failed(videoId) } }
+        if let hd { hdFailedReport = Task { await hd.failed(videoId) } }
     }
 
     /// R42 (revision 4): the staged item's `sidx` was still refused after its retry.
@@ -1190,7 +1197,6 @@ extension StreamState {
         // Spec R43: an upgrade belongs to the stream that asked for it; whatever this resolve lands, it is not that one.
         upgradeTask?.cancel()
         pendingUpgrade = nil
-        standardBeforeUpgrade = nil
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
         // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
         // own re-resolves must not refill their own budget.
@@ -1239,6 +1245,10 @@ extension StreamState {
         // Before `state`: the host republishes Now Playing from `args` on the pass the state change triggers.
         // Replace-only: a titleless resolve (offline, TV) keeps what the row gave.
         if let title = result.resolved?.title, !title.isEmpty { args.title = title }
+        // Spec §4.9: the kept 360p goes only when a resolve replaces the stream on screen. A silent refresh that never
+        // lands (it failed, or is still out) keeps it, so the HD stream still drops back and never reaches `decide`,
+        // whose step-down would demote `.tvSamsung`.
+        standardBeforeUpgrade = nil
         state = result
         // Spec R43: 360p is on screen; ask for HD in the background.
         if case .rung2Progressive = result { startUpgrade(videoId: videoId, generation: generation) }
