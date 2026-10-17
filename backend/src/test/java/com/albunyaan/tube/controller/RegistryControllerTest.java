@@ -54,6 +54,9 @@ class RegistryControllerTest {
     @Mock
     private com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
+    @Mock
+    private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
+
     @InjectMocks
     private RegistryController registryController;
 
