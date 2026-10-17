@@ -247,9 +247,9 @@ class PlayerViewModel @Inject constructor(
     private var liveRefreshJob: Job? = null
 
     /**
-     * The streams a live refresh put behind the player while Ready keeps the selection the source was built from
-     * (a swap leaves Ready alone so the fragment never rebuilds; the fallback rebuild does not update it either).
-     * A rebuild that starts from Ready (the audio-only toggle) starts from these instead. Null once Ready is current.
+     * The streams a seamless swap put behind the player while Ready keeps the selection the source was built from (a
+     * fresh Ready would make the fragment rebuild). A rebuild that starts from Ready ([setAudioOnly], [selectAudioTrack])
+     * starts from these instead, via [rebuildSelection]. Null once Ready is current.
      */
     @Volatile private var liveSourceStreams: ResolvedStreams? = null
 
@@ -370,16 +370,22 @@ class PlayerViewModel @Inject constructor(
 
     fun setAudioOnly(audioOnly: Boolean) {
         if (_state.value.audioOnly == audioOnly) return
-        // The toggle rebuilds the source from Ready: after a live refresh, rebuild from the refreshed URLs, not
-        // from a selection whose URLs die at the old expire.
-        val ready = _state.value.streamState as? StreamState.Ready
-        val swapped = liveSourceStreams
-        val fresh = if (ready != null && swapped != null && swapped.streamId == ready.streamId) {
-            buildFreshSelection(swapped, ready.selection)?.let { StreamState.Ready(ready.streamId, it) }
-        } else null
-        if (fresh != null) liveSourceStreams = null
-        updateState { it.copy(audioOnly = audioOnly, streamState = fresh ?: it.streamState) }
+        // The toggle rebuilds the source from Ready.
+        val ready = (_state.value.streamState as? StreamState.Ready)
+            ?.let { StreamState.Ready(it.streamId, rebuildSelection(it)) }
+        updateState { it.copy(audioOnly = audioOnly, streamState = ready ?: it.streamState) }
         publishAnalytics(PlaybackAnalyticsEvent.AudioOnlyToggled(audioOnly))
+    }
+
+    /**
+     * [selection] for a rebuild that starts from [ready]: after a live swap, rebuilt on the swapped-in streams, not on
+     * Ready's (which die at the old expire). The caller puts the result in Ready, so the swapped-in streams are used up.
+     */
+    private fun rebuildSelection(ready: StreamState.Ready, selection: PlaybackSelection = ready.selection): PlaybackSelection {
+        val swapped = liveSourceStreams?.takeIf { it.streamId == ready.streamId } ?: return selection
+        val fresh = buildFreshSelection(swapped, selection) ?: return selection
+        liveSourceStreams = null
+        return fresh
     }
 
     fun playItem(item: UpNextItem) {
@@ -688,7 +694,7 @@ class PlayerViewModel @Inject constructor(
         // audio track baked in) and the language never changes.
         // No-op for real DASH/HLS — the registry isn't used there.
         mpdRegistry.unregisterBoth(ready.streamId)
-        val newSelection = ready.selection.copy(audio = track)
+        val newSelection = rebuildSelection(ready, ready.selection.copy(audio = track))
         android.util.Log.d(
             "PlayerViewModel",
             "selectAudioTrack: streamId=${ready.streamId} lang=${track.language} trackName=${track.trackName}"
@@ -1747,10 +1753,13 @@ class PlayerViewModel @Inject constructor(
 
         liveRefreshJob = viewModelScope.launch(ioDispatcher) {
             kotlinx.coroutines.delay(delayMs)
-            // A failed refresh retries in this same job while the player's URLs still play (at most the 10-min
-            // lead). After that the 403 at expiry takes today's rebuild (PlayerFragment.requestStreamRefreshAndResume).
-            var leftMs = ((resolved.liveRefreshAtElapsedMs() ?: return@launch) + ResolvedStreams.LIVE_REFRESH_LEAD_MS -
-                android.os.SystemClock.elapsedRealtime()).coerceAtMost(ResolvedStreams.LIVE_REFRESH_LEAD_MS)
+            // A failed refresh retries in this same job while a retry still starts before the player's URLs expire
+            // (at most one lead from now, so the DEBUG override retries like prod). After that the 403 at expiry takes
+            // today's rebuild (PlayerFragment.requestStreamRefreshAndResume).
+            val expiryAt = minOf(
+                (resolved.liveRefreshAtElapsedMs() ?: return@launch) + ResolvedStreams.LIVE_REFRESH_LEAD_MS,
+                android.os.SystemClock.elapsedRealtime() + ResolvedStreams.LIVE_REFRESH_LEAD_MS,
+            )
             while (true) {
                 // Verify we're still playing the same stream
                 val currentState = _state.value.streamState
@@ -1759,8 +1768,7 @@ class PlayerViewModel @Inject constructor(
                     return@launch
                 }
                 if (performLiveStreamRefresh(resolved.streamId, currentState.selection)) return@launch
-                leftMs -= LIVE_REFRESH_RETRY_MS
-                if (leftMs <= 0) {
+                if (android.os.SystemClock.elapsedRealtime() + LIVE_REFRESH_RETRY_MS >= expiryAt) {
                     android.util.Log.w("PlayerViewModel", "Live stream: refresh retries spent; expiry takes the rebuild")
                     return@launch
                 }
@@ -1804,8 +1812,14 @@ class PlayerViewModel @Inject constructor(
             }
             android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")   // L2/soak criterion (Task 34)
             _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
+            // Ready follows the rebuilt source: the event is posted before the state collector resumes, so the
+            // fragment's next state pass is a cache hit, never a rebuild from the old URLs (if the order ever flipped,
+            // both rebuilds would use fresh URLs).
+            updateState { s ->
+                if ((s.streamState as? StreamState.Ready)?.streamId != streamId) s
+                else s.copy(streamState = StreamState.Ready(streamId, freshSelection))
+            }
             scheduleLiveStreamRefresh(freshStreams)
-            liveSourceStreams = freshStreams
             return true
         } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
             // Live stream became unavailable mid-broadcast (channel removed, video

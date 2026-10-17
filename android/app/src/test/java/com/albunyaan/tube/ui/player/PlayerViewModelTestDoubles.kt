@@ -87,6 +87,9 @@ internal class FakePlayerRepository : PlayerRepository {
     /** Suspend forever, like a cold-start extraction that outlives the player's timeout. */
     var hang = false
 
+    /** How long each resolve takes, in (virtual) time: a slow extraction. */
+    var resolveDelayMs = 0L
+
     override suspend fun resolveStreams(
         videoId: String,
         forceRefresh: Boolean,
@@ -97,6 +100,7 @@ internal class FakePlayerRepository : PlayerRepository {
         lastObservedPriority = priority
         resolvedVideoIds += videoId
         if (hang) awaitCancellation()
+        if (resolveDelayMs > 0) kotlinx.coroutines.delay(resolveDelayMs)
         if (videoId in archivedIds) throw ContentUnavailableException(videoId)
         if (alwaysFail) return null
         if (failNextResolve) {
