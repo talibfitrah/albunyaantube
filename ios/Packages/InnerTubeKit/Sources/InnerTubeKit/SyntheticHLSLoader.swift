@@ -7,7 +7,7 @@ import ObjectiveC
 /// touches it. A media playlist costs one ranged GET of the rendition's `sidx`, kept for this loader's life. The
 /// package's only `import AVFoundation`.
 public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
-    // @unchecked Sendable: `playlists` is guarded by `lock`, `tasks` is touched only on `queue` (AVFoundation calls the
+    // @unchecked Sendable: `playlists` and `refused` are guarded by `lock`, `tasks` is touched only on `queue` (AVFoundation calls the
     // delegate there, and every finish hops back to it); every other stored property is immutable.
     public static let scheme = "fitrah-hls"
     /// One session for every loader's `sidx` GETs (each `URLSessionTransport` is its own `URLSession`).
@@ -27,6 +27,8 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
     private let queue = DispatchQueue(label: "SyntheticHLSLoader")
     private let lock = NSLock()
     private var playlists: [String: String] = [:]
+    /// Set by the first `sidx` GET still 403 after its retry: every later one fails without a GET (R42).
+    private var refused = false
     /// In-flight answers by loading request; whoever removes an entry (the finish or `didCancel`) owns that request.
     private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 
@@ -96,18 +98,28 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
 
     /// R42: a 403 is retried once, `retryDelay` later (googlevideo refuses the first seconds after `/player`). Any
     /// other answer than a 206 of exactly the index range (a 200 is the whole file), or a second 403, fails this
-    /// playlist, which fails the item, and 360p keeps playing. A second 403 is also reported (revision 4): it is the
-    /// signature of a wrong solve or a refused IP, and pauses `tv_samsung`.
+    /// playlist, which fails the item, and 360p keeps playing. A second 403 is also reported, once per loader (revision
+    /// 4): it is the signature of a wrong solve or a refused IP, and pauses `tv_samsung`. From then on this loader sends
+    /// no `sidx` GET, so a wrong solve costs one rendition's two GETs.
+    /// ponytail: renditions already in flight when the refusal lands still finish their own two GETs; single-flight the
+    /// `sidx` GETs if the hard ceiling of 2 per asset ever matters.
     private func fetchIndex(_ rendition: SyntheticHLS.Rendition) async throws -> Data {
         let request = HTTPRequest(method: "GET", url: rendition.url, headers: [
             "User-Agent": userAgent,
             "Range": "bytes=\(rendition.indexRange.lowerBound)-\(rendition.indexRange.upperBound)",
         ], body: nil)
+        if lock.withLock({ refused }) { throw LoaderError.http(403) }
         var response = try await transport.send(request)
         if response.status == 403 {
             try await Task.sleep(for: retryDelay)
             response = try await transport.send(request)
-            if response.status == 403 { onRefused?() }
+            if response.status == 403 {
+                let first = lock.withLock { () -> Bool in
+                    defer { refused = true }
+                    return !refused
+                }
+                if first { onRefused?() }
+            }
         }
         guard response.status == 206, response.body.count == rendition.indexRange.count else {
             throw LoaderError.http(response.status)

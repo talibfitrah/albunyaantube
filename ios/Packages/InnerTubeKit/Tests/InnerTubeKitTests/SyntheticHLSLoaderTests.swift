@@ -44,8 +44,9 @@ import Testing
         var value: Int { lock.withLock { count } }
     }
 
-    private func loader(_ files: FixtureFiles, refusals: Counter = Counter()) throws -> SyntheticHLSLoader {
-        SyntheticHLSLoader(model: try model(), userAgent: "TV-UA", transport: files, retryDelay: .milliseconds(10),
+    private func loader(_ files: FixtureFiles, refusals: Counter = Counter(),
+                        retryDelay: Duration = .milliseconds(10)) throws -> SyntheticHLSLoader {
+        SyntheticHLSLoader(model: try model(), userAgent: "TV-UA", transport: files, retryDelay: retryDelay,
                            onRefused: { refusals.add() })
     }
 
@@ -71,7 +72,10 @@ import Testing
     @Test func a403IsRetriedOnceThenServed() async throws {   // R42
         let files = FixtureFiles(statuses: [403])
         let refusals = Counter()
-        _ = try await loader(files, refusals: refusals).answer("a0.m3u8")
+        let loader = try loader(files, refusals: refusals, retryDelay: .milliseconds(200))
+        let start = ContinuousClock.now
+        _ = try await loader.answer("a0.m3u8")
+        #expect(ContinuousClock.now - start >= .milliseconds(200))   // the measured wait (§3.7); a lower bound only
         #expect(files.requests.count == 2)
         #expect(refusals.value == 0)
     }
@@ -80,6 +84,18 @@ import Testing
         let files = FixtureFiles(statuses: [403, 403])
         let refusals = Counter()
         let loader = try loader(files, refusals: refusals)
+        await #expect(throws: SyntheticHLSLoader.LoaderError.http(403)) { try await loader.answer("a0.m3u8") }
+        #expect(files.requests.count == 2)
+        #expect(refusals.value == 1)
+    }
+
+    /// A wrong solve costs at most the first playlist's two GETs: every later `sidx` request fails at once.
+    @Test func aRefusalFailsEveryLaterPlaylistWithoutAGET() async throws {   // R42
+        let files = FixtureFiles(statuses: [403, 403])
+        let refusals = Counter()
+        let loader = try loader(files, refusals: refusals)
+        await #expect(throws: SyntheticHLSLoader.LoaderError.http(403)) { try await loader.answer("a0.m3u8") }
+        await #expect(throws: SyntheticHLSLoader.LoaderError.http(403)) { try await loader.answer("v0.m3u8") }
         await #expect(throws: SyntheticHLSLoader.LoaderError.http(403)) { try await loader.answer("a0.m3u8") }
         #expect(files.requests.count == 2)
         #expect(refusals.value == 1)
