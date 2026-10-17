@@ -20,6 +20,7 @@
   },
   "testTargets" : [
     {
+      "parallelizable" : false,
       "target" : {
         "containerPath" : "container:FitrahTube.xcodeproj",
         "identifier" : "6B774751025FBB62028A3B46",

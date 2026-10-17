@@ -47,7 +47,6 @@ struct ShortsScreen: View {
         .onDisappear { OrientationLock.release() }
         .task {
             guard model == nil else { return }
-            BackgroundPlaybackController.userAskedToPlay()   // round 3 m2: the user's open
             let vm = PlayerViewModel(resolver: PlayerScreen.resolver(container: container),
                                      settings: container.settings, args: args)
             model = vm

@@ -40,10 +40,12 @@ import UIKit
     /// lands with no player mounted still clears it. Per-player `interrupted` stays as it was.
     private(set) static var sessionInterrupted = false
 
-    /// Round 3 (review m2, ruling): a user's open, Short or Up Next tap is the user's Play (Apple:
+    /// Round 3 (review m2, ruling): a user's open, Up Next tap or Retry is the user's Play (Apple:
     /// treat Play as the interruption's end). Another media app started from Control Center sends a
-    /// begin and never an end, so without this every later open waited for a tap. Never called for
-    /// an automatic start: an advance, or an auto-skip's rebuild inside the same screen.
+    /// begin and never an end, so without this every later open waited for a tap. Called from
+    /// `Router.push` for `.player`/`.shorts` (a tap or a deep link; round 5 N2 moved it off the
+    /// screen's mount, which an iPad resize also re-runs), `PlayerScreen.playUpNext` and
+    /// `PlayerScreen.retryTapped`. Never for an automatic start: an advance, an auto-skip's rebuild.
     static func userAskedToPlay() { sessionInterrupted = false }
     private static var sessionObserver: NSObjectProtocol?
     /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED

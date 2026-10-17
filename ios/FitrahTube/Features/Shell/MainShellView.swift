@@ -171,8 +171,10 @@ struct MainShellView: View {
     // task-13: `.settings`/`.about` replace their placeholders. Plan C Tasks 4/5: `.playlist` and
     // `.channel` too -- the last placeholder, so the `default:` arm is gone and this switch is
     // exhaustive again. Internal, not private: `MainShellRoutingTests` pins the Plan C arms.
+    /// `injected` (tests only, round 5 N6): the container the `.player` arm routes against, so
+    /// `MainShellRoutingTests` never writes into the shared fake's store.
     @ViewBuilder
-    func destination(for route: Route) -> some View {
+    func destination(for route: Route, container injected: AppContainer? = nil) -> some View {
         switch route {
         case .channel(let id, let name, let avatarURL):
             ChannelDetailScreen(id: id, name: name, avatarURL: avatarURL)
@@ -180,7 +182,8 @@ struct MainShellView: View {
             PlaylistDetailScreen(id: id, title: title, category: category, count: count, thumbnailURL: thumbnailURL)
         case .player(let args):
             // 1.0.4 I10: local-first -- every entry point reaches the player through here.
-            PlayerScreen(args: args.preferringSavedCopy(store: container.offlineStore, base: container.offlineBase))
+            let source = injected ?? container
+            PlayerScreen(args: args.preferringSavedCopy(store: source.offlineStore, base: source.offlineBase))
         case .shorts(let args):
             ShortsScreen(args: args)
         case .featured(let categoryId, let categoryName):

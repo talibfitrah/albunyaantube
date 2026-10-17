@@ -57,6 +57,12 @@ nonisolated enum ReselectAction: Equatable {
     }
 
     func push(_ route: Route) {
+        // A player or Shorts push is always a tap or a deep link: the user's Play (round 3 m2). Here,
+        // not where the screen mounts (round 5, N2): an iPad resize across 600 pt re-runs the mount.
+        switch route {
+        case .player, .shorts: BackgroundPlaybackController.userAskedToPlay()
+        default: break
+        }
         paths[selectedTab, default: []].append(route)
     }
 

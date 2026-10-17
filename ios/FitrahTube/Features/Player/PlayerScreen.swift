@@ -140,7 +140,6 @@ struct PlayerScreen: View {
         }
         .task {
             guard model == nil else { return }
-            BackgroundPlaybackController.userAskedToPlay()   // round 3 m2: the user's open
             // Task 7 (reconciliation note 5): an offline open builds the SAME VM over
             // `OfflineResolver` — no network, no player fork — and passes NO queue source, so
             // Up Next/queue paging are disabled by construction (`loadQueue` guards on it).

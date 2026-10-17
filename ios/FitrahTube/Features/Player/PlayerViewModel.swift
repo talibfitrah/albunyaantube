@@ -423,13 +423,19 @@ extension StreamState {
         // `.resume` playing it while the advance is out) must not skip a lecture.
         guard !safeMode, !queue.items.isEmpty, !isAdvancing else { return }
         isAdvancing = true
-        defer { isAdvancing = false }
+        advanceSerial += 1
+        let mine = advanceSerial
+        // Not a later advance's flag: the landing clears this one before the prefetch (round 5, N1),
+        // so the next lecture's own end can start another advance while this one still prefetches.
+        defer { if advanceSerial == mine { isAdvancing = false } }
         await advance()
     }
+    private var advanceSerial = 0
 
-    /// 1.0.4 round 3 (review m1): an auto-advance is in flight. The ended item leaves the player
-    /// paused, so an interruption that begins now would read "not playing" and its `.shouldResume`
-    /// would leave the next lecture paused; the host counts this as playing (`resumeIntentPending`).
+    /// 1.0.4 round 3 (review m1): an auto-advance is in flight, from the end until the next lecture
+    /// has landed (round 5, N1). The ended item leaves the player paused, so an interruption that
+    /// begins now would read "not playing" and its `.shouldResume` would leave the next lecture
+    /// paused; the host counts this as playing (`resumeIntentPending`).
     private(set) var isAdvancing = false
 
     private func advance() async {
@@ -467,6 +473,10 @@ extension StreamState {
         guard stillCurrent else { return }
         if state.isPlayable {
             consecutiveSkips = 0             // `PlayerViewModel.kt:1916`
+            // Round 5 (re-review N1): landed, so the lecture is the user's from here. Kept through the
+            // prefetch, the flag resumed a lecture the user paused after an interruption, and
+            // swallowed the end of a short next lecture.
+            isAdvancing = false
             await prefetchUpcoming()
             await pageIfNeeded()
         } else if queue.hasNext, AutoSkipPolicy.decide(consecutive: consecutiveSkips, limit: 3) {

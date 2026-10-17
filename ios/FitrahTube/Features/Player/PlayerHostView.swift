@@ -644,11 +644,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 // B5: `PlayerFragment.kt:1247-1249` -> `PlayerViewModel.playToEnd` decides (Safe Mode,
                 // empty queue, queue end, auto-skip); this is only the notification.
                 endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let model = self?.model else { return }
-                        Task { await model.playToEnd() }
-                    }
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self, weak item] _ in
+                    MainActor.assumeIsolated { if let item { self?.itemEnded(item) } }
                 }
             case .none:
                 break
@@ -695,8 +692,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
             if player.rate != 0 { lastPlayingAt = Date() }
         }
 
-        /// M6: `monitor` is private, so teardown goes through here (see
-        /// `dismantleUIViewController`). Separate from `stopObserving` on purpose -- the per-item
+        /// The auto-advance end (B5), with the failed-to-end observer's guard (review M2; round 5,
+        /// N1): an end queued for the OLD item before the swap must never advance a second time.
+        func itemEnded(_ item: AVPlayerItem) {
+            guard item === observedItem, let model else { return }
+            Task { await model.playToEnd() }
+        }
+
+        /// M6: the one teardown call for the path monitor (`dismantleUIViewController`); `monitor` is
+        /// internal only so the host test can drive its handler. Separate from `stopObserving` on purpose -- the per-item
         /// observers are torn down and re-attached on every item swap; the path monitor is not.
         func stopMonitoring() { monitor.cancel() }
 

@@ -54,10 +54,33 @@ struct SavedScreenTests {
         let none = FileManager.default.temporaryDirectory.appending(path: "SavedScreenTests-\(UUID().uuidString).jpg")
         #expect(await RemoteImage.cachedImage(for: unreachable, savedCopy: none) == nil)
 
-        // Round 3 (review m5): decoded once, then from the decoded-image cache -- a long Saved list
-        // read and decoded every row from disk on the main actor as it scrolled.
-        try FileManager.default.removeItem(at: copy)
-        #expect(await RemoteImage.cachedImage(for: unreachable, savedCopy: copy) != nil, "the copy was read from disk again")
+        // Round 3 (review m5): decoded once into the decoded-image cache -- a long Saved list read
+        // and decoded every row from disk on the main actor as it scrolled. Read in the SAME main-actor
+        // turn as the load that filled it (round 5, N5): an account-wipe purge from another suite
+        // cannot land in between.
+        let loaded = await RemoteImage.cachedImage(for: unreachable, savedCopy: copy)
+        #expect(loaded != nil && RemoteImage.cache.object(forKey: copy as NSURL) === loaded, "the copy was not cached")
+    }
+
+    /// Round 5 (re-review N3): a save made before 1.0.4 gets its copy from the image already in hand,
+    /// not only from a network load: a card on Home usually loaded the same thumbnail first.
+    @Test(.timeLimit(.minutes(1))) func aMissingCopyIsWrittenFromTheImageAlreadyInMemory() async throws {
+        let copy = FileManager.default.temporaryDirectory.appending(path: "SavedScreenTests-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let image = UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4)).image { context in
+            UIColor.green.setFill()
+            context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+        }
+        let url = URL(string: "https://127.0.0.1:9/thumb-\(UUID().uuidString).jpg")!   // never fetched
+        for _ in 0..<3 {                                  // re-seed if a wipe's purge took it meanwhile
+            RemoteImage.cache.setObject(image, forKey: url as NSURL)
+            if await RemoteImage.cachedImage(for: url, savedCopy: copy) != nil { break }
+        }
+        let deadline = ContinuousClock.now + .seconds(5)  // the copy is written off the main actor
+        while !FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)), ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+        #expect(UIImage(contentsOfFile: copy.path(percentEncoded: false)) != nil, "no copy from the cached image")
     }
 
     // MARK: - Row captions (status/error keys, running → "saving")

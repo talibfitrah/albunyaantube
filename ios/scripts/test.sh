@@ -25,6 +25,10 @@
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 # Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
 # IPAD_SIM="" (explicitly empty, not just unset) drops the iPad destination and runs iPhone only.
+# FitrahTube.xctestplan sets "parallelizable": false (JSON has no comments, so the why is here): the
+# test target is MainActor by default, and Swift Testing's in-process parallelism (on by default for
+# ONE destination; two destinations already ran serially) queued all ~1,860 tests on the main thread,
+# so the wall-clock-bounded ones failed (1.0.4: 54-77 failures iPhone-only, 0 serial).
 # Invoke from the repo root (`ios/scripts/test.sh`) -- the first stage's path is repo-root-relative.
 set -uo pipefail
 set -m

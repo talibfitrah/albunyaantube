@@ -64,7 +64,9 @@ struct RemoteImage: View {
     /// system raised memory pressure -- on an iPad grid of 16:9 thumbnails that is tens of MB
     /// before any eviction. `totalCostLimit` only means anything if every `setObject` supplies a
     /// cost, which `load()` below does.
-    private static let cache: NSCache<NSURL, UIImage> = {
+    /// Internal, not private: `SavedScreenTests` reads it in the same main-actor turn as the load, so
+    /// a concurrent account-wipe purge cannot land in between (round 5, N5).
+    static let cache: NSCache<NSURL, UIImage> = {
         let cache = NSCache<NSURL, UIImage>()
         cache.countLimit = 200
         cache.totalCostLimit = 50 << 20 // 50 MB of decoded pixels
@@ -118,8 +120,11 @@ struct RemoteImage: View {
 
     private func load() async {
         // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
-        for key in [savedCopy, url].compactMap({ $0 }) {
-            if let cached = Self.cache.object(forKey: key as NSURL) { image = cached; return }
+        if let savedCopy, let cached = Self.cache.object(forKey: savedCopy as NSURL) { image = cached; return }
+        if let url, let cached = Self.cache.object(forKey: url as NSURL) {
+            image = cached
+            if let savedCopy { Self.backfill(cached, to: savedCopy) }
+            return
         }
         image = nil
         let loaded = await Self.cachedImage(for: url, savedCopy: savedCopy)
@@ -155,19 +160,31 @@ struct RemoteImage: View {
             }
         }
         guard let url, url.scheme?.lowercased() == "https" else { return nil }
-        if let cached = cache.object(forKey: url as NSURL) { return cached }
+        if let cached = cache.object(forKey: url as NSURL) {
+            if let savedCopy { backfill(cached, to: savedCopy) }
+            return cached
+        }
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
         // (max ~320 pt here); move to a background decode if profiling shows main-thread jank.
         guard let data = try? await boundedImageData(from: url),
               let decoded = UIImage(data: data) else { return nil }
         let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
         cache.setObject(decoded, forKey: url as NSURL, cost: cost)
-        // Round 3 (review m4): a save made before 1.0.4 has no copy; the first online load of its
-        // thumbnail keeps one (the downloaded bytes, already checked as an image).
-        // ponytail: only the Saved row passes `savedCopy`; a row deleted while its picture loads can
-        // leave this one small file, and nothing enumerates the directory to sweep it.
-        if let savedCopy { Task.detached(priority: .utility) { try? data.write(to: savedCopy, options: .atomic) } }
+        if let savedCopy { backfill(decoded, to: savedCopy) }
         return decoded
+    }
+
+    /// Round 3 (review m4) and round 5 (N3): a save made before 1.0.4 has no copy; it gets one from
+    /// the image in hand, a network load or a cache hit (a card on Home usually loaded the same URL
+    /// first), as the save writes it: JPEG 0.8, atomic, off the main actor, never over a copy.
+    /// ponytail: only the Saved row passes `savedCopy`; a row deleted while its picture loads can
+    /// leave this one small file, and nothing enumerates the directory to sweep it.
+    private static func backfill(_ image: UIImage, to copy: URL) {
+        Task.detached(priority: .utility) {
+            guard !FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)),
+                  let data = image.jpegData(compressionQuality: 0.8) else { return }
+            try? data.write(to: copy, options: .atomic)
+        }
     }
 
     private static let maxImageBytes = 10 << 20 // 10 MB

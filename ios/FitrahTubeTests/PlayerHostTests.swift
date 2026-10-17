@@ -302,6 +302,32 @@ struct PlayerHostTests {
         #expect(resolver.calls.count == 2)
     }
 
+    /// 1.0.4 round 5 (re-review N1, test c): the auto-advance end had no "still the current item"
+    /// guard (its failed-to-end sibling has one). An end AVFoundation delivers for the OLD item after
+    /// the swap (queued on main before the observer went) must not advance a second time; the current
+    /// item's end still does.
+    @Test(.timeLimit(.minutes(1))) func aLateEndFromTheOldItemDoesNotAdvance() async throws {
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                    args: PlayerArgs(videoId: "fixture-1"))
+        let player = try #require(PlayerHostView.player(for: Self.progressive(try Self.fixtureURL()), replacing: nil))
+        defer { player.pause() }
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        let old = try #require(player.currentItem)
+        coordinator.observe(item: old, player: player, model: model, isLive: false, playToEnd: .advance)
+        defer { coordinator.stopObserving() }
+        _ = PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: player, continuesCurrentVideo: false)
+        let current = try #require(player.currentItem)
+        coordinator.observe(item: current, player: player, model: model, isLive: false, playToEnd: .advance)
+
+        coordinator.itemEnded(old)                       // the late end the observer's block delivers
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.playToEndCalls == 0, "a late end from the old item advanced")
+        coordinator.itemEnded(current)                   // the current item's own end still advances
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.playToEndCalls == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.playToEndCalls == 1)
+    }
+
     /// 1.0.4 round 3 (review m6): the live rig's probe says whether the open is the saved file, so
     /// "no Save button" can no longer pass for a streaming open whose Save is hidden.
     @Test func theRouteProbeSaysWhetherTheOpenIsTheSavedFile() {

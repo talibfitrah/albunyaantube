@@ -32,6 +32,44 @@ struct PlayerViewModelQueueTests {
         return (vm, resolver)
     }
 
+    /// 1.0.4 round 5 (re-review N1, test b): the advance's flag outlived the swap through the
+    /// prefetch, so a SHORT next lecture that ended meanwhile hit the one-advance guard and the
+    /// playlist stopped. The flag clears once the advance lands; the next end advances again.
+    @Test(.timeLimit(.minutes(1))) func aShortNextLectureThatEndsDuringThePrefetchStillAdvances() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"],
+                                       cooldown: ["c"])   // open() leaves c unprefetched
+        await vm.open()
+        resolver.prefetchRefusals = []
+        resolver.hold("c")                                 // the advance to b now waits in c's prefetch
+        let first = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 5)           // a, b, c(refused) at open; b(.player), c(.prefetch, held)
+        #expect(vm.args.videoId == "b")
+
+        let second = Task { await vm.playToEnd() }         // b, a 16 s clip, ends while c's prefetch is out
+        await resolver.waitUntilCalled(count: 6)           // c on .player, held
+        resolver.release(id: "c")
+        resolver.release(id: "c")
+        await first.value
+        await second.value
+        #expect(vm.advanceCalls == 2, "b's end was swallowed")
+        #expect(vm.args.videoId == "c")
+    }
+
+    /// Round 3 m1's other half (re-review: pin it): one end, one advance. A second end for the same
+    /// ended item while its advance is still resolving (a `.resume` that plays it) must not skip.
+    @Test(.timeLimit(.minutes(1))) func aSecondEndWhileTheAdvanceResolvesIsIgnored() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.hold("b")
+        let first = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        await vm.playToEnd()                               // the same end again
+        resolver.release(id: "b")
+        await first.value
+        #expect(vm.advanceCalls == 1, "one end advanced twice")
+        #expect(vm.args.videoId == "b")
+    }
+
     @Test func endOfItemAdvancesToTheNextQueuedVideo() async {
         let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
         await vm.open()

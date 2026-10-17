@@ -46,8 +46,10 @@ struct MainShellRoutingTests {
 
     /// 1.0.4 I10 (review m3): every `.player` push reaches the player through this one arm, and a
     /// video saved in full opens its file. Reverting the arm to `PlayerScreen(args: args)` fails it.
+    /// Round 5 (N6): on its own fake container (its own in-memory store, a temp base), never the
+    /// shared one.
     @Test func thePlayerRouteOpensAFullySavedVideoLocally() throws {
-        let container = AppContainer.sharedFake
+        let container = AppContainer.fake(offlineAllowedVideoId: "route-test")   // base: the temp directory
         let item = OfflineItem(videoId: "route-\(UUID().uuidString.prefix(8))", title: "T", channelName: "C",
                                thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
                                status: OfflineStatus.completed.rawValue, completedAt: Date())
@@ -61,7 +63,8 @@ struct MainShellRoutingTests {
             try? container.offlineStore.delete(item)
         }
 
-        let leaf = leafValue(of: MainShellView().destination(for: .player(PlayerArgs(videoId: item.videoId))))
+        let leaf = leafValue(of: MainShellView().destination(for: .player(PlayerArgs(videoId: item.videoId)),
+                                                             container: container))
         let args = Mirror(reflecting: leaf).children.first { $0.label == "args" }?.value as? PlayerArgs
         #expect(args?.offlineItemId == item.id, "the player route opened a saved video streaming")
     }
