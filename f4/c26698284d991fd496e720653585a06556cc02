@@ -1,0 +1,28 @@
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_6b40ad13bd35d5 837,847-860
+  s_dbb6b1f3671904::t_7008b61d12643e 1009,1013-1015
+  s_dbb6b1f3671904::t_6b9152276c513e 731-736,738-740,742,744,749-750
+  s_dbb6b1f3671904::t_4d7130dda55afe 938-946
+  s_dbb6b1f3671904::t_f2346a2fde7d37 861
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_cab096e90c4df5 1301-1449
+backend/src/main/java/com/albunyaan/tube/search/InnerIndex.java
+  s_dbb6b1f3671904::t_fb128fc0e77101 188-203,205-208
+  s_dbb6b1f3671904::t_da50b6ed60936a 204
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f4c26698284d991fd496e720653585a06556cc02",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
