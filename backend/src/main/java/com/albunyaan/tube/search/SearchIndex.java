@@ -118,6 +118,9 @@ public class SearchIndex {
         }
     }
 
+    /** An admitted channel or playlist: its display name (the inner index's channel name, R16) and the ids it excludes. */
+    record Admitted(String name, Set<String> excluded) {}
+
     private final ChannelRepository channels;
     private final PlaylistRepository playlists;
     private final VideoRepository videos;
@@ -129,6 +132,7 @@ public class SearchIndex {
     SearcherLifetimeManager snapshots = new SearcherLifetimeManager();
     private final long readyWaitMs;
     private final CountDownLatch ready = new CountDownLatch(1);
+    private final CountDownLatch built = new CountDownLatch(1);
     private final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, runnable -> {
         Thread thread = new Thread(runnable, "search-index-writer");
         thread.setDaemon(true);
@@ -143,8 +147,8 @@ public class SearchIndex {
     long[] lateCommitRereadMs = {15_000, 60_000};
 
     // Query-time stream visibility (spec §4.2). Replaced or mutated only on the writer thread.
-    /** Admitted channel/playlist source keys ("channel:UC…") -> the video ids that source excludes. */
-    private volatile Map<String, Set<String>> admittedSources = new ConcurrentHashMap<>();
+    /** Admitted channel/playlist source keys ("channel:UC…") -> name and the video ids that source excludes. */
+    private volatile Map<String, Admitted> admittedSources = new ConcurrentHashMap<>();
     /** youtubeId of every Video document, admitted or not: such an id never shows as a stream. */
     private volatile Set<String> videoIds = ConcurrentHashMap.newKeySet();
 
@@ -273,6 +277,7 @@ public class SearchIndex {
             // Spec §5.1 step 3: the line that measures the real counts and size after each deploy.
             log.info("search index built: {} streams={} skippedStreams={} bytes={} ms={}",
                     catalogCounts, total, totalSkipped, bytes(), System.currentTimeMillis() - buildStartedAt);
+            built.countDown();
         }
     }
 
@@ -281,7 +286,7 @@ public class SearchIndex {
      * document is built before the old ones are deleted, so a failure leaves the last good catalog.
      */
     void replaceCatalog() throws Exception {
-        Map<String, Set<String>> sources = new ConcurrentHashMap<>();
+        Map<String, Admitted> sources = new ConcurrentHashMap<>();
         Set<String> ids = ConcurrentHashMap.newKeySet();
         List<Document> docs = new ArrayList<>();
         int[] c = admitEach(channels.findByStatusUnordered("APPROVED"), Channel.class, sources, ids, docs);
@@ -300,7 +305,7 @@ public class SearchIndex {
      * Admits each document; returns {admitted, not admitted, skipped}. Counting documents, not ids, keeps the
      * log exact when two share a youtubeId (F8). One that cannot be mapped or indexed is skipped, never failing the build (F4).
      */
-    private static int[] admitEach(List<QueryDocumentSnapshot> found, Class<?> type, Map<String, Set<String>> sources,
+    private static int[] admitEach(List<QueryDocumentSnapshot> found, Class<?> type, Map<String, Admitted> sources,
                                    Set<String> ids, List<Document> docs) {
         int[] counts = new int[3];
         for (QueryDocumentSnapshot d : found) {
@@ -373,7 +378,7 @@ public class SearchIndex {
 
     /** Indexes `entity` (null = gone) under the event's key; nothing is applied if building its documents fails. */
     private void applyCatalogChange(CatalogChanged event, Object entity) throws Exception {
-        Map<String, Set<String>> sources = new HashMap<>();
+        Map<String, Admitted> sources = new HashMap<>();
         Set<String> ids = new HashSet<>();
         List<Document> docs = new ArrayList<>();
         admit(entity, sources, ids, docs);
@@ -616,6 +621,18 @@ public class SearchIndex {
         };
     }
 
+    /** Admitted source keys ("channel:UC…", "playlist:PL…") and their names, now (inner-search R23, R24). */
+    public Map<String, String> sources() {
+        Map<String, String> out = new HashMap<>();
+        admittedSources.forEach((key, source) -> out.put(key, source.name() == null ? "" : source.name()));
+        return out;
+    }
+
+    /** True once the first build, catalog and stored streams, has logged "search index built" (inner-search R14). */
+    public boolean awaitBuilt(long ms) throws InterruptedException {
+        return built.await(ms, TimeUnit.MILLISECONDS);
+    }
+
     /** Blocks up to the ready wait for the first catalog build; NotReadyException after it (spec §7). */
     public void awaitReady() {
         try {
@@ -669,10 +686,10 @@ public class SearchIndex {
         if (!"STREAM".equals(doc.get("source"))) return true;
         String id = doc.get("id");
         if (videoIds.contains(id)) return false;
-        Map<String, Set<String>> sources = admittedSources;
+        Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
-            Set<String> excluded = sources.get(key);
-            if (excluded != null && !excluded.contains(id)) return true;
+            Admitted source = sources.get(key);
+            if (source != null && !source.excluded().contains(id)) return true;
         }
         return false;
     }
@@ -700,19 +717,19 @@ public class SearchIndex {
      * </ul>
      * Returns whether the entity was admitted. Deleting any previous document is the caller's job.
      */
-    static boolean admit(Object entity, Map<String, Set<String>> sources, Set<String> videoIds, List<Document> docs)
+    static boolean admit(Object entity, Map<String, Admitted> sources, Set<String> videoIds, List<Document> docs)
             throws IOException {
         if (entity instanceof Channel c) {
             if (!admitted(c.getStatus(), c.getVisibility(), c.getValidationStatus(), c.getYoutubeId())) return false;
             // Its own name in `channel` too: every upload of it matches there, and the channel must not lose to them (P1).
             docs.add(catalogDoc("CHANNEL", c.getId(), c.getYoutubeId(), c.getName(), c.getKeywords(), c.getName(),
                     c.getDescription(), ContentItemMapper.fromChannel(c), null));
-            sources.put("channel:" + c.getYoutubeId(), exclusions(c));
+            sources.put("channel:" + c.getYoutubeId(), new Admitted(c.getName(), exclusions(c)));
         } else if (entity instanceof Playlist p) {
             if (!admitted(p.getStatus(), p.getVisibility(), p.getValidationStatus(), p.getYoutubeId())) return false;
             docs.add(catalogDoc("PLAYLIST", p.getId(), p.getYoutubeId(), p.getTitle(), p.getKeywords(), null,
                     p.getDescription(), ContentItemMapper.fromPlaylist(p), null));
-            sources.put("playlist:" + p.getYoutubeId(), exclusions(p));
+            sources.put("playlist:" + p.getYoutubeId(), new Admitted(p.getTitle(), exclusions(p)));
         } else if (entity instanceof Video v) {
             if (v.getYoutubeId() != null) videoIds.add(v.getYoutubeId());
             if (!admitted(v.getStatus(), v.getVisibility(), v.getValidationStatus(), v.getYoutubeId())) return false;

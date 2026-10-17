@@ -45,6 +45,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -842,6 +843,35 @@ class SearchIndexTest {
         List<ContentItemDto> items = index.search("orphan", "VIDEO", 50).items();
         assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
         assertNull(items.get(0).getUploadedDaysAgo(), "unknown upload date must stay null, never 'Today'");
+    }
+
+    @Test
+    void sourcesNameEveryAdmittedChannelAndPlaylistAndNothingElse() {
+        Map<String, String> sources = index.sources();
+        assertEquals("Dr Zakir Naik", sources.get("channel:UCzakir"));
+        assertEquals("Tafsir Ibn Kathir – Surah Al-Fatiha", sources.get("playlist:PLtafsir"));
+        assertFalse(sources.containsKey("channel:UCrejected"));
+        assertFalse(sources.containsKey("channel:UCzakirPersonal"));
+        assertEquals(8 + 5, sources.size(), sources.toString()); // the fixture's 8 admitted channels and 5 playlists
+    }
+
+    @Test
+    void aRenamedOrRejectedSourceIsSeenAtOnce() throws Exception {
+        saved(channel("UCzakir", "Dr Zakir Naik Official"));
+        index.awaitWrites();
+        assertEquals("Dr Zakir Naik Official", index.sources().get("channel:UCzakir"));
+        saved(with(channel("UCzakir", "Dr Zakir Naik"), c -> c.setStatus("REJECTED")));
+        index.awaitWrites();
+        assertFalse(index.sources().containsKey("channel:UCzakir"));
+    }
+
+    @Test
+    void awaitBuiltIsTrueOnlyOnceTheStreamsHaveLoaded() throws Exception {
+        SearchIndex cold = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        assertFalse(cold.awaitBuilt(10));
+        cold.onReady();
+        cold.awaitWrites();
+        assertTrue(cold.awaitBuilt(10));
     }
 
     // ---- startup (spec §5.1, §7) ---------------------------------------------------------------
