@@ -41,6 +41,9 @@ app:
       email: test-moderator@albunyaan.tube
       password: TestPassword123!
       display-name: Test Moderator
+  live-channels:
+    poller:
+      enabled: false   # ITs call LiveChannelPoller.cycle(now) directly
 
 # Logging for tests
 logging:
