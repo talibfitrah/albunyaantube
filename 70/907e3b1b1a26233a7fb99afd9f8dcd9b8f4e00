@@ -1,0 +1,23 @@
+backend/src/main/java/com/albunyaan/tube/search/InnerState.java
+  s_dbb6b1f3671904::t_781a19a3a16cae 39,53
+backend/src/main/java/com/albunyaan/tube/search/InnerStore.java
+  s_dbb6b1f3671904::t_7c871f37f90290 14-16,93-100,102-108
+backend/src/test/java/com/albunyaan/tube/search/InnerStoreTest.java
+  s_dbb6b1f3671904::t_55c6222acce11c 12,19-20,115-116,126-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "70907e3b1b1a26233a7fb99afd9f8dcd9b8f4e00",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
