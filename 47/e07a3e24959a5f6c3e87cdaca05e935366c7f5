@@ -1,0 +1,31 @@
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryGuard.java
+  s_dbb6b1f3671904::t_9ef5ea0ba132cf 10,18,28-30,63-65,81-86,92-97,103-108,115-119,128-134,150-154,156-157,160-172,176-181,186-187,191,210-220,227,234,238,243-256
+  s_dbb6b1f3671904::t_6f7870d1abcd35 257
+backend/src/test/java/com/albunyaan/tube/service/LiveTabReaderTest.java
+  s_dbb6b1f3671904::t_395900e2aa1172 380,382-391
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryGuardTest.java
+  s_dbb6b1f3671904::t_2010f12d201b4c 23,155,162-182,209-217,223-244,249-285,337-341,344-347,351-408
+backend/src/main/java/com/albunyaan/tube/service/LiveTabReader.java
+  s_dbb6b1f3671904::t_b211d8523e327e 47-50,53,107-109,111,121,125-127
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_c3c7bafea12252 8,72
+  s_dbb6b1f3671904::t_b211d8523e327e 71
+backend/src/test/java/com/albunyaan/tube/controller/CategoryControllerTest.java
+  s_dbb6b1f3671904::t_395900e2aa1172 378-391
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47e07a3e24959a5f6c3e87cdaca05e935366c7f5",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
