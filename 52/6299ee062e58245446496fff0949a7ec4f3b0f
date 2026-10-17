@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/model/LiveChannelState.java
+  s_dbb6b1f3671904::t_03c260c5fd0044 34
+  s_dbb6b1f3671904::t_1a52d595e7b9c4 1-33,35-129
+backend/src/main/java/com/albunyaan/tube/service/LivePollRules.java
+  s_dbb6b1f3671904::t_81f35bc242f408 1-38,45-107
+  s_dbb6b1f3671904::t_da56256369ae10 39-44
+backend/src/test/java/com/albunyaan/tube/service/LivePollRulesTest.java
+  s_dbb6b1f3671904::t_7ff8ed268dd42c 1-227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "526299ee062e58245446496fff0949a7ec4f3b0f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
