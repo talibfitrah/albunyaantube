@@ -4,6 +4,8 @@ import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Service;
 
@@ -31,6 +33,8 @@ import java.util.concurrent.TimeoutException;
  */
 @Service
 public class LiveCategoryGuard {
+
+    private static final Logger log = LoggerFactory.getLogger(LiveCategoryGuard.class);
 
     /** R7: at most 30 entries per LIVE category. */
     public static final int MAX_ENTRIES = 30;
@@ -174,11 +178,13 @@ public class LiveCategoryGuard {
             }
         }
         if (refused.isEmpty()) {
-            for (Change c : adds) {                                            // rule 3 (D15): seed once verified
+            Set<String> seeds = new LinkedHashSet<>();                         // rule 3 (D15): once per channel, once verified
+            for (Change c : adds) {
                 if ("channel".equals(c.type()) && c.youtubeId() != null) {
-                    live.seed(c.youtubeId());
+                    seeds.add(c.youtubeId());
                 }
             }
+            seeds.forEach(live::seed);
         }
         return verified;
     }
@@ -217,6 +223,7 @@ public class LiveCategoryGuard {
             try {
                 channel = live.resolveChannelId(c.youtubeId()).orElse(null);
             } catch (IOException e) {
+                log.warn("live guard: channel lookup for video {} failed ({}); answering 503", c.youtubeId(), e.getMessage());
                 throw unavailable(c.youtubeId(), Map.of("youtubeId", String.valueOf(c.youtubeId())));
             }
         }

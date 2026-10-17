@@ -9,8 +9,12 @@ import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
+import org.schabi.newpipe.extractor.ServiceList;
+import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.springframework.http.HttpStatus;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.util.Arrays;
 import java.util.List;
@@ -25,6 +29,7 @@ import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
@@ -186,10 +191,41 @@ class LiveCategoryGuardTest {
         assertThat(refusedWhenOEmbedAnswers(404).getCode()).isEqualTo(LiveCategoryException.CHANNEL_UNKNOWN);
     }
 
+    /** A gone channel (ChannelOrchestrator.channelGone) behind the author's handle is definitive: a retry can't succeed. */
+    @Test
+    void aGoneChannelInTheLookupIsChannelUnknown() throws Exception {
+        LiveCategoryException e = refusedWhenTheChannelLookupThrows(
+                new IOException("Channel fetch failed", new AccountTerminatedException("This account has been terminated")));
+
+        assertThat(e.getStatus()).isEqualTo(HttpStatus.BAD_REQUEST);
+        assertThat(e.getCode()).isEqualTo(LiveCategoryException.CHANNEL_UNKNOWN);
+    }
+
+    @Test
+    void aRateLimitOrBreakerInTheLookupIsStill503() throws Exception {
+        assertThat(refusedWhenTheChannelLookupThrows(new IOException("Channel fetch failed",
+                new ReCaptchaException("reCaptcha Challenge requested", "https://www.youtube.com"))).getCode())
+                .isEqualTo(LiveCategoryException.CHECK_UNAVAILABLE);
+        assertThat(refusedWhenTheChannelLookupThrows(new YouTubeGateway.CircuitOpenException("open")).getCode())
+                .isEqualTo(LiveCategoryException.CHECK_UNAVAILABLE);
+    }
+
     /** The real LiveChannelService and LiveTabReader over an oEmbed client answering {@code code}; no other source. */
     private LiveCategoryException refusedWhenOEmbedAnswers(int code) {
-        LiveTabReader reader = new LiveTabReader(mock(YouTubeGateway.class), YouTubeOEmbedClientTest.answering(code),
-                mock(ChannelOrchestrator.class));
+        return refusedThrough(YouTubeOEmbedClientTest.answering(code), mock(ChannelOrchestrator.class));
+    }
+
+    /** oEmbed names the author's handle; the channel-details lookup for it throws {@code failure}. */
+    private LiveCategoryException refusedWhenTheChannelLookupThrows(IOException failure) throws IOException {
+        YouTubeOEmbedClient oEmbed = mock(YouTubeOEmbedClient.class);
+        when(oEmbed.authorUrl("J3bDNstCnzE")).thenReturn(Optional.of("https://www.youtube.com/@ZadTVchannel"));
+        ChannelOrchestrator channels = mock(ChannelOrchestrator.class);
+        when(channels.getChannelDetails("@ZadTVchannel")).thenThrow(failure);
+        return refusedThrough(oEmbed, channels);
+    }
+
+    private LiveCategoryException refusedThrough(YouTubeOEmbedClient oEmbed, ChannelOrchestrator channels) {
+        LiveTabReader reader = new LiveTabReader(new YouTubeGateway(ServiceList.YouTube, 1, null, null), oEmbed, channels);
         LiveCategoryGuard real = new LiveCategoryGuard(liveCategories, orders,
                 new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC()), videos);
         return assertThrows(LiveCategoryException.class, () -> real.check(true, add("video", "J3bDNstCnzE", null, "APPROVED")));
@@ -294,6 +330,14 @@ class LiveCategoryGuardTest {
         org.mockito.InOrder order = inOrder(live);
         order.verify(live).livesNow(KIDS);
         order.verify(live).seed(SUNNAH);
+    }
+
+    /** Seeds are per channel, not per row: an ERROR read is not memoized, so a second seed would read YouTube again. */
+    @Test
+    void aChannelNamedTwiceIsSeededOnce() throws Exception {
+        guard.checkAll(true, List.of(add("channel", SUNNAH, null, "APPROVED"), add("channel", SUNNAH, null, "APPROVED")));
+
+        verify(live, times(1)).seed(SUNNAH);
     }
 
     /** The headline is the first 4xx offender: a definitive refusal outranks a failed check. */

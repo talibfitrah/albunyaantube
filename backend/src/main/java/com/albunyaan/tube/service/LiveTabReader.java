@@ -107,6 +107,7 @@ public class LiveTabReader {
      * 2–3 requests when unknown; empty when a step answers with no channel. An IOException (oEmbed's 429, 5xx or
      * network failure; a channel-details breaker, rate limit, network failure, or an extraction failure NewPipe gives
      * no definitive reason for) is no signal (R7): it reaches the caller, which must not read it as "no channel".
+     * A gone channel ({@link ChannelOrchestrator#channelGone}, as {@link #read}'s TERMINATED) is definitive: empty.
      */
     public Optional<String> resolveChannelId(String videoId) throws IOException {
         try {
@@ -121,7 +122,15 @@ public class LiveTabReader {
             if (isChannelId(handleOrId)) {
                 return Optional.of(handleOrId);
             }
-            String id = channels.getChannelDetails(handleOrId).getId();
+            String id;
+            try {
+                id = channels.getChannelDetails(handleOrId).getId();
+            } catch (IOException e) {                               // getChannelDetails wraps every ExtractionException
+                if (e.getCause() instanceof ExtractionException ee && ChannelOrchestrator.channelGone(ee)) {
+                    return Optional.empty();
+                }
+                throw e;
+            }
             return isChannelId(id) ? Optional.of(id) : Optional.empty();
         } catch (RuntimeException e) {
             return Optional.empty();                                // a crash, not a transient: a retry finds nothing
