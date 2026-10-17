@@ -250,9 +250,9 @@ class YouTubeSearchServiceTest {
     @Test
     void search_itemWithNullId_isSkipped() throws Exception {
         ChannelInfoItem badItem = mock(ChannelInfoItem.class);
-        when(badItem.getUrl()).thenReturn("https://www.youtube.com/user/somehandle");
-        // Gateway fails to extract ID for this item — no further stubs needed as service skips it immediately
-        when(gateway.extractChannelId("https://www.youtube.com/user/somehandle")).thenReturn(null);
+        when(badItem.getUrl()).thenReturn("https://www.youtube.com/watch?v=notAChannel");
+        // NewPipe's channel factory rejects a non-channel URL, so the gateway returns null and the service skips it
+        when(gateway.extractChannelId("https://www.youtube.com/watch?v=notAChannel")).thenReturn(null);
 
         ChannelInfoItem goodItem = mock(ChannelInfoItem.class);
         when(goodItem.getUrl()).thenReturn("https://www.youtube.com/channel/UCgood");

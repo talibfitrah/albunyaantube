@@ -343,7 +343,7 @@ public class YouTubeGateway {
             ChannelInfo result = ChannelInfo.getInfo(youtube, url);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
         }
@@ -381,12 +381,13 @@ public class YouTubeGateway {
     }
 
     /**
-     * Extract the YouTube channel ID from a channel URL (e.g. "/channel/UCxxxx" → "UCxxxx").
-     * Returns null if parsing fails.
+     * Extract the channel id from a channel URL: "/channel/UCxxxx" → "UCxxxx". A handle or legacy URL keeps NewPipe's
+     * form ("@handle", "c/name", "user/name"). Returns null if the URL is not a YouTube channel URL.
      */
     public String extractChannelId(String url) {
         try {
-            return channelLinkHandlerFactory.getId(url);
+            String id = channelLinkHandlerFactory.getId(url);   // NewPipe 0.26.5 answers "channel/UCxxxx" for UC ids
+            return id.startsWith("channel/") ? id.substring("channel/".length()) : id;
         } catch (Exception e) {
             logger.debug("Could not extract channel ID from '{}': {}", url, e.getMessage());
             return null;
@@ -452,7 +453,7 @@ public class YouTubeGateway {
         try {
             extractor.fetchPage();
             recordSuccess();
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
         }
@@ -471,7 +472,7 @@ public class YouTubeGateway {
             ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
         }
@@ -492,7 +493,7 @@ public class YouTubeGateway {
             PlaylistInfo result = PlaylistInfo.getInfo(youtube, url);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
         }
@@ -519,7 +520,7 @@ public class YouTubeGateway {
             ListExtractor.InfoItemsPage<StreamInfoItem> result = PlaylistInfo.getMoreItems(youtube, url, page);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
         }

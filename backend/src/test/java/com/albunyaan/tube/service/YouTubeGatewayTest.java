@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.Page;
@@ -17,6 +20,7 @@ import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
@@ -198,6 +202,15 @@ class YouTubeGatewayTest {
     class UrlUtilityTests {
 
         @Test
+        @DisplayName("extractChannelId with NewPipe's real factory: /channel/UC… gives the bare UC id, a handle stays")
+        void extractChannelId_realFactory_returnsBareUcIdOrHandle() {
+            assertEquals("UCROKYPep-UuODNwyipe6JMw",
+                    gateway.extractChannelId("https://www.youtube.com/channel/UCROKYPep-UuODNwyipe6JMw"));
+            assertEquals("@ZadTVchannel", gateway.extractChannelId("https://www.youtube.com/@ZadTVchannel"));
+            assertNull(gateway.extractChannelId("https://example.com/channel/UCROKYPep-UuODNwyipe6JMw"));
+        }
+
+        @Test
         @DisplayName("Should build channel URL with /channel/ format for UC IDs")
         void getChannelUrl_channelId_usesChannelFormat() throws ExtractionException {
             // UC prefix identifies official YouTube channel IDs
@@ -336,30 +349,11 @@ class YouTubeGatewayTest {
             // Transition to HALF_OPEN (simulating cooldown expiry)
             circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
 
-            // First request: should proceed (acquires probe permit)
-            // We need to call a public method that triggers checkCircuitBreaker()
-            // fetchChannelInfo will fail due to stub downloader returning null (causes NPE)
-
-            // Acquire the probe permit by making a request that will fail on extraction but pass circuit check
-            try {
-                testGateway.fetchChannelInfo("UCTest");
-                fail("Expected exception from extraction");
-            } catch (IOException e) {
-                // If it's a circuit breaker message, fail the test
-                if (e.getMessage() != null && e.getMessage().contains("circuit breaker")) {
-                    fail("First request should not be blocked by circuit breaker: " + e.getMessage());
-                }
-                // Otherwise, it's an extraction error which is expected (stub downloader)
-            } catch (ExtractionException e) {
-                // Expected - extraction fails because of stub downloader
-            } catch (NullPointerException e) {
-                // Expected - stub downloader returns null, causing NPE in NewPipe
-                // This is fine - the circuit breaker check passed and the probe permit was acquired
-            }
-
-            // Verify probe permit was acquired (circuit breaker check passed for first request)
-            assertTrue(circuitBreaker.isProbeRequest(),
-                    "First request should have acquired probe permit");
+            // A probe in flight: another request holds the permit. (This test used to get there by letting the stub
+            // downloader's NullPointerException escape fetchChannelInfo, which leaked the permit; a failed probe
+            // now releases it and reopens the circuit, see otherGatewayCalls_neverLeaveTheHalfOpenProbeHeld.)
+            assertTrue(circuitBreaker.allowProbe(), "the in-flight probe takes the permit");
+            assertTrue(circuitBreaker.isProbeRequest(), "probe permit is held");
 
             // Now probe is in progress - second request should get specific message
             IOException thrown = assertThrows(IOException.class, () -> {
@@ -404,6 +398,83 @@ class YouTubeGatewayTest {
 
             // Clean up
             testGateway.shutdown();
+        }
+
+        @Test
+        @DisplayName("A RuntimeException from a tab call during the HALF_OPEN probe releases the probe")
+        void tabCallRuntimeException_releasesHalfOpenProbe() throws Exception {
+            ChannelTabExtractor tab = mock(ChannelTabExtractor.class);
+            doThrow(new IllegalStateException("parse bug")).when(tab).fetchPage();
+            when(tab.getPage(any())).thenThrow(new IllegalStateException("parse bug"));
+
+            for (boolean initialPage : new boolean[] {true, false}) {
+                YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+                circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+                circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+                YouTubeGateway testGateway = new YouTubeGateway(ServiceList.YouTube, 1, null, circuitBreaker);
+                try {
+                    assertThrows(IllegalStateException.class, () -> {
+                        if (initialPage) {
+                            testGateway.fetchTabPage(tab);
+                        } else {
+                            testGateway.getTabPage(tab, null);
+                        }
+                    });
+                    assertFalse(circuitBreaker.isProbeRequest(), "the probe permit must be released");
+                    assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+                } finally {
+                    testGateway.shutdown();
+                }
+            }
+        }
+
+        /**
+         * The other gateway calls during a HALF_OPEN probe. NewPipe's static calls hit this class's stub downloader,
+         * whose null Response makes NewPipe throw a NullPointerException; search takes a throwing mock extractor.
+         * Search never takes the probe (no breaker check) and fetchStreamInfo wraps any failure in an IOException
+         * (executeWithProbeTimeout), so only the three static channel/playlist calls could leak it.
+         */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"fetchSearchPage", "getSearchPage", "fetchChannelInfo", "fetchPlaylistInfo",
+                "getPlaylistMoreItems", "fetchStreamInfo"})
+        void otherGatewayCalls_neverLeaveTheHalfOpenProbeHeld(String method) {
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeGateway g = new YouTubeGateway(ServiceList.YouTube, 1, null, circuitBreaker);
+            String playlistId = "PLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            Page page = new Page("https://www.youtube.com/youtubei/v1/browse?prettyPrint=false", "token");
+            Executable call;
+            Class<? extends Exception> expected = RuntimeException.class;
+            try {
+                switch (method) {
+                    case "fetchSearchPage" -> {
+                        SearchExtractor search = mock(SearchExtractor.class);
+                        doThrow(new IllegalStateException("parse bug")).when(search).fetchPage();
+                        call = () -> g.fetchSearchPage(search);
+                    }
+                    case "getSearchPage" -> {
+                        SearchExtractor search = mock(SearchExtractor.class);
+                        when(search.getPage(any())).thenThrow(new IllegalStateException("parse bug"));
+                        call = () -> g.getSearchPage(search, page);
+                    }
+                    case "fetchChannelInfo" -> call = () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g");
+                    case "fetchPlaylistInfo" -> call = () -> g.fetchPlaylistInfo(playlistId);
+                    case "getPlaylistMoreItems" -> call = () -> g.getPlaylistMoreItems(playlistId, page);
+                    case "fetchStreamInfo" -> {
+                        call = () -> g.fetchStreamInfo("eaOtcUNHDB8");
+                        expected = IOException.class;   // "Probe request failed: …" wraps the NullPointerException
+                    }
+                    default -> throw new IllegalArgumentException(method);
+                }
+
+                assertThrows(expected, call);
+                assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            } finally {
+                g.shutdown();
+            }
         }
 
         @Test
