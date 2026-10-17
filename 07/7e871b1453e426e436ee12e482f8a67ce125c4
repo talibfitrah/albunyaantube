@@ -1,0 +1,30 @@
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_a4dcb9877198f2 4847-4855
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemDto.java
+  s_dbb6b1f3671904::t_a4dcb9877198f2 40-44,217-231
+  s_dbb6b1f3671904::t_666c8c2dcc9ec0 232
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_0328028f8c1c3a 828-838
+  s_dbb6b1f3671904::t_447bdfb0c44372 827
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_dbb6b1f3671904::t_0328028f8c1c3a 414-432
+  s_dbb6b1f3671904::t_157ed9ff8876f0 413
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_a4dcb9877198f2 671-672,677-679,687-689,691,695,697-703
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "077e871b1453e426e436ee12e482f8a67ce125c4",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
