@@ -4844,6 +4844,15 @@ components:
           type: string
           nullable: true
           description: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+        # Search provenance (inner search, 2026-10-17): set only on videos found inside an approved source
+        sourceType:
+          type: string
+          nullable: true
+          description: CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
+        sourceId:
+          type: string
+          nullable: true
+          description: The YouTube id of that source (UC... or PL...); search results only
 
     LiveChannelLives:
       type: object

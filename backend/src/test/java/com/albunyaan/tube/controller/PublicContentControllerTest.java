@@ -411,6 +411,26 @@ public class PublicContentControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/v1/search - stream and inner hits carry sourceType/sourceId; catalog hits carry neither (R28)")
+    void testSearch_ProvenanceOnlyOnStreamAndInnerHits() throws Exception {
+        ContentItemDto inner = ContentItemDto.video("ilgiwqpcOC8", "Lezing", null, 2712, null, null,
+                "https://i.ytimg.com/vi/ilgiwqpcOC8/hqdefault.jpg", null, "Dawah Nederland", null);
+        inner.setSourceType("CHANNEL");
+        inner.setSourceId("UCfassTU6mGWIj-yb26_ADjQ");
+        ContentItemDto channel = ContentItemDto.channel("UCzakir", "Dr Zakir Naik", null, null, null, null, null, List.of());
+        when(contentService.search(eq("lezing"), any(), anyInt())).thenReturn(new SearchIndex.Hits(List.of(inner, channel), "exact"));
+
+        mockMvc.perform(get("/api/v1/search").param("q", "lezing"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].type").value("VIDEO"))
+                .andExpect(jsonPath("$[0].sourceType").value("CHANNEL"))
+                .andExpect(jsonPath("$[0].sourceId").value("UCfassTU6mGWIj-yb26_ADjQ"))
+                .andExpect(jsonPath("$[1].sourceType").doesNotExist())
+                .andExpect(jsonPath("$[1].sourceId").doesNotExist());
+    }
+
+    @Test
     @DisplayName("GET /api/v1/search - 503 + Retry-After while the index builds")
     void testSearch_NotReadyIs503() throws Exception {
         when(contentService.search(anyString(), any(), anyInt())).thenThrow(new SearchIndex.NotReadyException());

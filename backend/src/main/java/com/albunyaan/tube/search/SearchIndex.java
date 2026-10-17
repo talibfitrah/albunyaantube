@@ -668,12 +668,15 @@ public class SearchIndex {
                 trace.loaded++;
                 String id = doc.get("id");
                 if (allowedIds != null && !allowedIds.contains(id)) continue;
-                if (!visible(doc)) {
+                String keeper = keeper(doc);
+                if (!"CATALOG".equals(doc.get("source")) && keeper == null) {
                     trace.hidden++;
                     continue;
                 }
                 if (seen.add(id)) {
-                    out.add(dto(doc));
+                    ContentItemDto dto = dto(doc);
+                    if (keeper != null) provenance(dto, keeper);
+                    out.add(dto);
                     if (out.size() == want) return;
                 }
             }
@@ -681,17 +684,23 @@ public class SearchIndex {
         }
     }
 
-    /** Spec §4.2: a stream shows only if no Video document claims its id and an admitted source keeps it. */
-    private boolean visible(Document doc) {
-        if (!"STREAM".equals(doc.get("source"))) return true;
+    /** Spec §4.2, §8.1: the admitted source that keeps a STREAM document visible, or null (hidden or catalog). */
+    private String keeper(Document doc) {
+        if (!"STREAM".equals(doc.get("source"))) return null;
         String id = doc.get("id");
-        if (videoIds.contains(id)) return false;
+        if (videoIds.contains(id)) return null;
         Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
             Admitted source = sources.get(key);
-            if (source != null && !source.excluded().contains(id)) return true;
+            if (source != null && !source.excluded().contains(id)) return key;
         }
-        return false;
+        return null;
+    }
+
+    /** R28: a stream or inner hit names the source that keeps it. Installed apps ignore both fields (F31). */
+    private static void provenance(ContentItemDto dto, String sourceKey) {
+        dto.setSourceType(sourceKey.startsWith("channel:") ? "CHANNEL" : "PLAYLIST");
+        dto.setSourceId(sourceKey.substring(sourceKey.indexOf(':') + 1));
     }
 
     private static ContentItemDto dto(Document doc) throws IOException {

@@ -825,6 +825,18 @@ class SearchIndexTest {
     // ---- stream visibility (spec §4.2) ---------------------------------------------------------
 
     @Test
+    void aStreamHitNamesTheAdmittedSourceThatKeepsItAndACatalogHitNamesNone() throws Exception {
+        ContentItemDto stream = index.search("halal", "VIDEO", 50).items().get(0);
+        assertEquals("halal-ok", stream.getId());
+        assertEquals("CHANNEL", stream.getSourceType());
+        assertEquals("UChalal", stream.getSourceId());
+        ContentItemDto catalog = index.search("yasin", null, 50).items().get(0);
+        assertEquals("vYasin", catalog.getId());
+        assertNull(catalog.getSourceType());
+        assertNull(catalog.getSourceId());
+    }
+
+    @Test
     void aStreamShowsOnlyWhileAnAdmittedSourceKeepsItAndNoVideoDocumentClaimsIt() throws Exception {
         // archived / rejected / unavailable Video documents, a channel exclusion and a rejected-only source all hide
         assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", 50)));
