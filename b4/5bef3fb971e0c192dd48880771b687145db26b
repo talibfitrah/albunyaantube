@@ -1,0 +1,46 @@
+backend/src/test/java/com/albunyaan/tube/service/ImportExportServiceTest.java
+  s_dbb6b1f3671904::t_75dfd09d9e5090 1-60
+backend/src/main/java/com/albunyaan/tube/service/SimpleImportService.java
+  s_dbb6b1f3671904::t_5ecbec5622da81 60-71,171-174,307-310,436-439
+backend/src/test/java/com/albunyaan/tube/service/SimpleImportServiceTest.java
+  s_dbb6b1f3671904::t_adad88a31b6dc9 20,24,30,161-182
+  s_dbb6b1f3671904::t_05c280c2842109 183
+backend/src/main/java/com/albunyaan/tube/service/ContentImportService.java
+  s_dbb6b1f3671904::t_3e6670db47b003 20,212,220-225,355,363-368,490,498-503
+  s_dbb6b1f3671904::t_ee2835faa9ada8 133-134
+  s_dbb6b1f3671904::t_6b935efa35c355 243,383,518
+  s_dbb6b1f3671904::t_5ecbec5622da81 263,403,538
+backend/src/main/java/com/albunyaan/tube/controller/CategoryController.java
+  s_dbb6b1f3671904::t_a92fbb476bbfb6 136,190,194
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryGuardIT.java
+  s_dbb6b1f3671904::t_a45df0ecd1dfa1 584,610-686
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryGuardTest.java
+  s_dbb6b1f3671904::t_19439b07498c63 4,8,50-54,508-531
+  s_dbb6b1f3671904::t_08d94e97028af5 532
+backend/src/main/java/com/albunyaan/tube/service/ImportExportService.java
+  s_dbb6b1f3671904::t_f84a44770ebcc4 196-197,236-237,269-270,303-304
+  s_dbb6b1f3671904::t_a92fbb476bbfb6 6,21,24,137-143,145-156,160,162-163,169,171-172,178,180-181
+backend/src/main/java/com/albunyaan/tube/exception/LiveCategoryException.java
+  s_dbb6b1f3671904::t_a92fbb476bbfb6 34-40
+backend/src/test/java/com/albunyaan/tube/service/ContentImportServiceTest.java
+  s_dbb6b1f3671904::t_62c3a0a1ce53dd 646-648,652-657
+  s_dbb6b1f3671904::t_7e2e977c4f16ea 614,620-645,649-651,658-684
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryGuard.java
+  s_dbb6b1f3671904::t_3e6670db47b003 117-118,129-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "b45bef3fb971e0c192dd48880771b687145db26b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
