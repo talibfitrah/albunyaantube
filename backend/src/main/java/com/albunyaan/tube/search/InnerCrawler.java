@@ -195,6 +195,9 @@ public class InnerCrawler {
         }
         InnerState s = store.state();
         // R25 hand-off: FULL before any first page would run the whole initial crawl inside the 1,000/day cap (~17 days)
+        // ponytail: "any source first-paged", not "the first pass is done". If every first-paged source completed in one
+        // page, an early FULL still starts steady and fresh full crawls run inside the cap; only when §13 step 3's review
+        // is skipped. Check that no admitted source still has firstPageAt == 0 if that ever matters.
         if (u.mode() == InnerState.Mode.FULL && s.mode != InnerState.Mode.FULL
                 && s.sources.values().stream().noneMatch(src -> src.firstPageAt > 0)) {
             throw new IllegalArgumentException("mode FULL before any first pass: run FIRST_PASS first");
@@ -635,17 +638,23 @@ public class InnerCrawler {
         // their newest upload, so a backfill of old items never speeds the polls up
         if (removed > 0 || (added > 0 && firstPage != null)) src.lastChangeAt = now;
         else if (added > 0 || src.lastChangeAt == 0) src.lastChangeAt = Math.max(src.lastChangeAt, newest(all, now));
-        if (complete || capped) {
-            src.completeAt = now;
-            src.shortCrawl = false;
-            if (page.count() > 1_000) s.shortLargeRun = 0;
-        } else {
-            src.shortCrawl = true;
-            if (page.count() > 1_000 && ++s.shortLargeRun >= 3 && !s.backfillHeld) {
-                s.backfillHeld = true;
-                log.warn("inner-crawl: 3 short crawls in a row of sources over 1,000 items; backfill held (R32)");
-                store.save();
+        boolean held = false;
+        synchronized (s) { // update() releases the hold under this monitor: never undone by a stale read here
+            if (complete || capped) {
+                src.completeAt = now;
+                src.shortCrawl = false;
+                if (page.count() > 1_000) s.shortLargeRun = 0;
+            } else {
+                src.shortCrawl = true;
+                if (page.count() > 1_000 && ++s.shortLargeRun >= 3 && !s.backfillHeld) {
+                    s.backfillHeld = true;
+                    held = true;
+                }
             }
+        }
+        if (held) {
+            log.warn("inner-crawl: 3 short crawls in a row of sources over 1,000 items; backfill held (R32)");
+            store.save(); // never under the state monitor (ruling 5)
         }
         logJob("FULL", key, src, added, removed);
         return true;

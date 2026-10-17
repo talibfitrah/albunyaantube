@@ -1409,16 +1409,60 @@ class InnerCrawlerTest {
     }
 
     @Test
-    void theStatusNamesEverythingTheSpecListsAndNeverTheKeyStatus() throws Exception {
+    void theStatusNamesEverythingTheSpecListsAndNoTopLevelKeyStatus() throws Exception {
         admitted.put(CH, "x");
+        pacer.rateSignal("HTTP_429", "x", 429); // a Signal's own `status` field is legitimate
         crawler.boot();
         Map<String, Object> status = crawler.status();
         assertEquals(List.of("enabled", "mode", "stopFile", "serveInner", "streamGate", "backfillHeld", "capPerSource",
                 "breaker", "lastSignal", "signals", "requests", "memory", "truncatedInFirstPass", "sources", "index"),
                 List.copyOf(status.keySet()));
-        assertFalse(new com.fasterxml.jackson.databind.ObjectMapper().writeValueAsString(status).contains("\"status\""));
+        com.fasterxml.jackson.databind.JsonNode json = new com.fasterxml.jackson.databind.ObjectMapper().valueToTree(status);
+        assertFalse(json.has("status"), "the top level never has the key status");
+        assertEquals(429, json.get("lastSignal").get("status").asInt(), "a Signal's own field is not the top level");
         @SuppressWarnings("unchecked") Map<String, Object> idx = (Map<String, Object>) status.get("index");
         assertEquals(true, idx.get("ready"));
+    }
+
+    @Test
+    void aCapOfOneAndOfTenThousandIsAccepted() {
+        crawler.update(new InnerCrawler.Update(null, null, null, null, 1, null));
+        assertEquals(1, store.state().capPerSource);
+        crawler.update(new InnerCrawler.Update(null, null, null, null, 10_000, null));
+        assertEquals(10_000, store.state().capPerSource);
+    }
+
+    @Test
+    void theRuleOfThreeWaitsForTheStateMonitorSoAnAdminReleaseStands() throws Exception {
+        // update(backfillHeld=false) releases under the state monitor; the crawler's read-modify-write must take it too
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().shortLargeRun = 2;
+        admitted.put(CH, "x");
+        AtomicBoolean heldWhileLocked = new AtomicBoolean();
+        CountDownLatch locked = new CountDownLatch(1);
+        Thread admin = new Thread(() -> {
+            synchronized (store.state()) {
+                locked.countDown();
+                try {
+                    Thread.sleep(300); // long enough for an unlocked crawler to pass the rule of three
+                } catch (InterruptedException e) {
+                    Thread.currentThread().interrupt();
+                }
+                heldWhileLocked.set(store.state().backfillHeld);
+                store.state().shortLargeRun = 0; // as update(backfillHeld=false) does
+                store.state().backfillHeld = false;
+            }
+        });
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            admin.start();
+            locked.await();
+            return batch(5_000, items("lesson", 0, 100, "x"), false); // short: 100 of 5,000
+        });
+        step();
+        admin.join();
+        assertFalse(heldWhileLocked.get(), "the crawler waited for the monitor");
+        assertEquals(1, store.state().shortLargeRun, "counted after the release: a new run of one");
+        assertFalse(store.state().backfillHeld, "the admin's release stands");
     }
 
     @Test

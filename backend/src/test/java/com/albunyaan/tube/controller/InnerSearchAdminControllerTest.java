@@ -35,6 +35,7 @@ class InnerSearchAdminControllerTest {
         InnerCrawler.Update update = new InnerCrawler.Update(InnerState.Mode.FIRST_PASS, null, null, null, null, null);
         ResponseEntity<Map<String, Object>> answer = controller.update(update, admin);
         assertEquals(HttpStatus.OK, answer.getStatusCode());
+        assertEquals(Map.of("mode", InnerState.Mode.FIRST_PASS), answer.getBody());
         verify(crawler).update(update);
     }
 
