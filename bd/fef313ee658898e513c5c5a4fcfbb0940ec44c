@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/SyntheticHLS.swift
+  s_dbb6b1f3671904::t_30e77799e976c3 51-157
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/SyntheticHLSTests.swift
+  s_dbb6b1f3671904::t_30e77799e976c3 101-102,119-124
+  s_dbb6b1f3671904::t_828c3aadcbfe21 1-60,63-100,103-117,125-193
+  s_dbb6b1f3671904::t_782426c0444194 61-62,118
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bdfef313ee658898e513c5c5a4fcfbb0940ec44c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
