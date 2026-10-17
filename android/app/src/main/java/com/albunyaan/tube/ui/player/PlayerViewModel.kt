@@ -1964,6 +1964,14 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * §9.1 step 4 on screen (Main thread, while Loading): a live channel reconnects during an incident (an ended id
+     * opened cold included) or a load over a stream the player already played (a switch, a Retry). A first load is
+     * neither and stays as it was.
+     */
+    fun liveReconnecting(playerHasContent: Boolean): Boolean =
+        currentItem?.liveChannelId != null && (playerHasContent || liveIncident != null)
+
+    /**
      * Build a fresh PlaybackSelection maintaining current preferences.
      */
     private fun buildFreshSelection(

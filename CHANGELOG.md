@@ -18,6 +18,7 @@ stable release.
 - iOS: members-only, private, region-blocked and removed videos say "not available" with no Retry; every other failure keeps the retryable "There was a problem loading this video" message.
 - iOS: a temporary block from the video source no longer stops all playback for 1–24 hours; the app renews its session and retries at once, and repeated blocks wait at most 5 minutes.
 - iOS: after an automatic recovery the video resumes where it stopped, and keeps playing unless you had paused it; a stream that stops delivering data recovers within about 8 seconds instead of waiting for the system timeout.
+- Android: a live channel keeps playing past the stream link's ~6-hour expiry with no visible refresh (before, it rebuffered every 50 minutes); when a live stream ends or restarts under a new link, the player finds the channel's current stream instead of moving to the next video.
 
 ## [1.0.2] - 2026-10-13
 

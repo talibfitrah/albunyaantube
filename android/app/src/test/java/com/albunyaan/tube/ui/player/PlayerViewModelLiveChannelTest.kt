@@ -360,6 +360,39 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
+    /** Task 28: step 4 shows the fragment's reconnecting overlay; a first load and an ordinary video never do. */
+    @Test fun `only a reconnect shows the reconnecting state`() = runTest(dispatcher) {
+        val (vm, _, content) = setup(streams("pqC-1yfFvu8", isLive = false))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "pqC-1yfFvu8")                                    // an ordinary video, even over old content
+            assertFalse(vm.liveReconnecting(playerHasContent = true))
+
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+            vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)            // the first load: as it was
+            assertFalse(vm.liveReconnecting(playerHasContent = false))
+
+            advanceTimeBy(1_000); runCurrent()                                       // an ended id (a recording): step 4 waits
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertTrue(vm.liveReconnecting(playerHasContent = false))                // with nothing ever played
+        }
+    }
+
+    /** Task 28: a live load over a stream the player already played (a switch, a Retry) is a reconnect too. */
+    @Test fun `a live load over a played stream shows the reconnecting state`() = runTest(dispatcher) {
+        val (vm, _, _) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+
+            vm.retryCurrentStream()                                                  // no incident open
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertTrue(vm.liveReconnecting(playerHasContent = true))
+            assertFalse(vm.liveReconnecting(playerHasContent = false))
+        }
+    }
+
     /** Task 26's retry runs on a failed refresh; a refresh that is no longer live is the trigger's, not a retry. */
     @Test fun `a refresh that is no longer live asks the backend`() = runTest(dispatcher) {
         val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
