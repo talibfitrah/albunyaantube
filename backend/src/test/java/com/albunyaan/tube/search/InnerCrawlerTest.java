@@ -14,6 +14,8 @@ import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.io.TempDir;
+import org.apache.lucene.store.AlreadyClosedException;
+import org.mockito.InOrder;
 import org.mockito.stubbing.Answer;
 import org.opentest4j.AssertionFailedError;
 import org.schabi.newpipe.extractor.Page;
@@ -21,9 +23,11 @@ import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.slf4j.LoggerFactory;
+import org.springframework.context.annotation.AnnotationConfigApplicationContext;
 
 import java.io.IOException;
 import java.io.InterruptedIOException;
+import java.nio.channels.ClosedByInterruptException;
 import java.nio.file.Files;
 import java.nio.file.Path;
 import java.time.Clock;
@@ -34,7 +38,9 @@ import java.util.ArrayList;
 import java.util.HashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.Set;
 import java.util.TreeMap;
+import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
@@ -45,6 +51,7 @@ import java.util.concurrent.atomic.AtomicReference;
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
@@ -66,6 +73,7 @@ class InnerCrawlerTest {
     SearchIndex search;
     CategoryRepository categories;
     ChannelRepository channels;
+    InnerIndex index;
     InnerCrawler crawler;
     final Map<String, String> admitted = new HashMap<>();
     final ListAppender<ILoggingEvent> logs = new ListAppender<>();
@@ -91,9 +99,13 @@ class InnerCrawlerTest {
         fetcher = mock(UploadsFetcher.class);
         search = mock(SearchIndex.class);
         when(search.sources()).thenAnswer(inv -> new HashMap<>(admitted));
+        when(search.awaitBuilt(anyLong())).thenReturn(true);
         categories = mock(CategoryRepository.class);
         channels = mock(ChannelRepository.class);
-        crawler = new InnerCrawler(store, pacer, fetcher, search, categories, channels, clock);
+        index = new InnerIndex(tmp.resolve("base").toString(), store, clock);
+        index.sleeper = ms -> {};
+        index.refreshEveryMs = 0;
+        crawler = new InnerCrawler(store, pacer, fetcher, search, index, categories, channels, clock);
         logs.start();
         ((Logger) LoggerFactory.getLogger(InnerCrawler.class)).addAppender(logs);
     }
@@ -101,6 +113,7 @@ class InnerCrawlerTest {
     @AfterEach
     void tearDown() {
         ((Logger) LoggerFactory.getLogger(InnerCrawler.class)).detachAppender(logs);
+        index.close();
         assertFalse(savedUnderTheStateMonitor.get(), "ruling 5: no save() while holding the InnerState monitor");
     }
 
@@ -553,7 +566,7 @@ class InnerCrawlerTest {
 
     @Test
     void aKeyRejectedBeforeAnyRequestIsThatSourcesFailureNeverASignal() throws Exception {
-        crawler = new InnerCrawler(store, pacer, new UploadsFetcher(), search, categories, channels, clock); // the real rejections
+        crawler = new InnerCrawler(store, pacer, new UploadsFetcher(), search, index, categories, channels, clock); // the real rejections
         String shortId = "playlist:PLshort", noChannel = "channel:notAChannelId";
         admitted.put(shortId, "NewPipe: list id under 10 chars");
         admitted.put(noChannel, "UploadsFetcher.url: no UC id");
@@ -959,7 +972,7 @@ class InnerCrawlerTest {
         store.save();
         store = new InnerStore(tmp.resolve("inner").toString()); // a restart: the day's count is read back from state.json
         pacer = new CrawlPacer(store, mock(YouTubeThrottler.class), clock);
-        crawler = new InnerCrawler(store, pacer, fetcher, search, categories, channels, clock);
+        crawler = new InnerCrawler(store, pacer, fetcher, search, index, categories, channels, clock);
         assertTrue(step() > 0);
         verifyNoInteractions(fetcher);
         now.set(Instant.parse("2026-10-21T00:00:00Z"));
@@ -1146,5 +1159,134 @@ class InnerCrawlerTest {
         when(fetcher.first(eq(CH), anyString())).thenReturn(batch(290, items("lesson", 0, 100, "x"), true));
         step();
         assertFalse(source(CH).dirty, "it keeps more than a capped crawl lists, and a capped crawl never sweeps");
+    }
+
+    // ---- Task 21: the index -----------------------------------------------------------------------
+
+    @Test
+    void bootRebuildsFromTheCorpusBeforeAnyCrawl() throws Exception {
+        InnerCorpus.write(store.corpusFile(CH), items("lesson", 0, 3, "x"));
+        admitted.put(CH, "Dawah Nederland");
+        crawler.boot();
+        assertTrue(index.ready());
+        assertEquals(3, index.docs());
+        verifyNoInteractions(fetcher);
+    }
+
+    @Test
+    void crawledItemsReachTheIndexAndACompleteCrawlSweepsTheGoneOnes() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        crawler.boot();
+        store.state().mode = InnerState.Mode.FULL;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        step();
+        assertEquals(3, index.docs());
+        crawler.source(CH).dirty = true;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(2, items("lesson", 1, 2, "x"), false));
+        step();
+        assertEquals(2, index.docs());
+        assertFalse(index.has(CH, id("lesson", 0)));
+    }
+
+    @Test
+    void aMergeAddsAndUpdatesWithoutTouchingTheRest() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        crawled(CH, items("lesson", 0, 150, "x"), 150, 2);
+        crawler.boot();
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 1, "x"));
+        page.addAll(items("lesson", 0, 99, "x"));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(151, page, true));
+        store.state().mode = InnerState.Mode.FULL;
+        step();
+        assertEquals(151, index.docs());
+        assertEquals(List.of(), InnerCrawler.changed(items("lesson", 0, 2, "x"), items("lesson", 0, 2, "x")));
+        assertEquals(Set.of(id("lesson", 1)), InnerCrawler.removed(items("lesson", 0, 2, "x"), items("lesson", 0, 1, "x")));
+    }
+
+    @Test
+    void aRequestedRebuildRunsOnTheCrawlerThreadEvenWhileOff() throws Exception {
+        crawler.boot();
+        InnerCorpus.write(store.corpusFile(PL), items("story", 0, 4, "x"));
+        crawler.requestRebuild();
+        assertEquals(InnerCrawler.IDLE_MS, step()); // mode OFF
+        assertEquals(4, index.docs());
+    }
+
+    // ---- Task 21: the Task 20 review's hand-offs ---------------------------------------------------
+
+    @Test
+    void aLongPauseStillRefreshesTheIndexEveryIdleMs() throws Exception {
+        // hand-off 3/6: a pause of hours (or the daily cap's wait) never holds back refreshes, retirement or R31's sample
+        InnerIndex idx = mock(InnerIndex.class);
+        crawler = spy(new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock));
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        store.state().breaker.pausedUntil = now.get().toEpochMilli() + 5 * CrawlPacer.PAUSE_MS;
+        List<Long> waits = new CopyOnWriteArrayList<>();
+        CountDownLatch three = new CountDownLatch(3);
+        doAnswer(inv -> {
+            waits.add(inv.getArgument(0));
+            three.countDown();
+            if (three.getCount() == 0) Thread.sleep(10_000); // until stop()
+            return null;
+        }).when(crawler).idle(anyLong());
+        crawler.start();
+        assertTrue(three.await(10, TimeUnit.SECONDS));
+        crawler.stop();
+        assertEquals(List.of(InnerCrawler.IDLE_MS, InnerCrawler.IDLE_MS, InnerCrawler.IDLE_MS), waits);
+        verify(idx, times(3)).maybeRefresh();
+        verifyNoInteractions(fetcher);
+    }
+
+    @Test
+    void springStopsTheCrawlerBeforeItClosesTheIndex() {
+        // hand-off 5: the constructor makes the crawler a dependent of the index, and Spring destroys dependents first
+        InnerStore st = mock(InnerStore.class);
+        InnerIndex idx = mock(InnerIndex.class);
+        try (AnnotationConfigApplicationContext ctx = new AnnotationConfigApplicationContext()) {
+            ctx.registerBean(InnerCrawler.class); // first: without the dependency it is created first, so destroyed after the index
+            ctx.registerBean(InnerIndex.class, () -> idx);
+            ctx.registerBean(InnerStore.class, () -> st);
+            ctx.registerBean(CrawlPacer.class, () -> pacer);
+            ctx.registerBean(UploadsFetcher.class, () -> fetcher);
+            ctx.registerBean(SearchIndex.class, () -> search);
+            ctx.registerBean(CategoryRepository.class, () -> categories);
+            ctx.registerBean(ChannelRepository.class, () -> channels);
+            ctx.registerBean(Clock.class, () -> clock);
+            ctx.refresh();
+        }
+        InOrder order = inOrder(st, idx);
+        order.verify(st).save(); // the end of InnerCrawler.stop()
+        order.verify(idx).close();
+    }
+
+    @Test
+    void aClosedIndexWriterFailsTheJobAsAFullDiskDoesNeverAsAParseSignal() throws Exception {
+        // §12 "Disk full / tragic IndexWriter": the job fails with an ERROR; Lucene then throws AlreadyClosedException
+        InnerIndex tragic = mock(InnerIndex.class);
+        doThrow(new AlreadyClosedException("this IndexWriter is closed")).when(tragic).replaceSource(anyString(), any(), anyList());
+        doThrow(new AlreadyClosedException("this IndexWriter is closed")).when(tragic).maybeRefresh();
+        crawler = new InnerCrawler(store, pacer, fetcher, search, tragic, categories, channels, clock);
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FULL;
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            return batch(3, items("lesson", 0, 3, "x"), false);
+        });
+        step();
+        assertTrue(store.state().signals.isEmpty(), "never a PARSE signal");
+        assertTrue(store.state().breaker.pausedUntil > now.get().toEpochMilli(), "paused 1 h, as for a full disk");
+        assertNotEquals(now.get().toEpochMilli() + InnerCrawler.RETRY_MS, source(CH).retryAt, "not R33.6's 7-day wait");
+        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.ERROR));
+    }
+
+    @Test
+    void aRebuildEndedByShutdownIsNoError() throws Exception {
+        InnerIndex idx = mock(InnerIndex.class);
+        doThrow(new ClosedByInterruptException()).when(idx).rebuild(any(), anyInt()); // stop()'s interrupt inside Lucene's I/O
+        crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
+        crawler.stop();
+        crawler.boot();
+        verify(idx).rebuild(any(), anyInt());
+        assertTrue(logs.list.stream().noneMatch(e -> e.getLevel() == Level.ERROR), "no false ERROR");
     }
 }

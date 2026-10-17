@@ -9,6 +9,7 @@ import jakarta.annotation.PreDestroy;
 import org.apache.lucene.analysis.CharArraySet;
 import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.nl.DutchAnalyzer;
+import org.apache.lucene.store.AlreadyClosedException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
@@ -77,12 +78,14 @@ public class InnerCrawler {
     private final CrawlPacer pacer;
     private final UploadsFetcher fetcher;
     private final SearchIndex search;
+    private final InnerIndex index; // a constructor dependency: Spring stops this crawler before it closes the index
     private final CategoryRepository categories; // ruling 3, Firestore reads only: no path to the gateway or the breaker
     private final ChannelRepository channels;
     private final Clock clock;
     private final Object wake = new Object();
     private boolean woken; // guarded by wake
     private volatile boolean stopped;
+    private volatile boolean rebuildRequested;
     private Thread thread;
     private long lastSaveAt;
     private String lastDailyLog = "";
@@ -91,12 +94,13 @@ public class InnerCrawler {
     private long liveOnlyAt;
     private boolean steady;
 
-    public InnerCrawler(InnerStore store, CrawlPacer pacer, UploadsFetcher fetcher, SearchIndex search,
+    public InnerCrawler(InnerStore store, CrawlPacer pacer, UploadsFetcher fetcher, SearchIndex search, InnerIndex index,
                         CategoryRepository categories, ChannelRepository channels, Clock clock) {
         this.store = store;
         this.pacer = pacer;
         this.fetcher = fetcher;
         this.search = search;
+        this.index = index;
         this.categories = categories;
         this.channels = channels;
         this.clock = clock;
@@ -142,9 +146,7 @@ public class InnerCrawler {
 
     private void run() {
         try {
-            while (!stopped && !search.awaitBuilt(IDLE_MS)) {
-                // R14: nothing starts before the main index is built
-            }
+            boot();
             while (!stopped) {
                 long ms;
                 try {
@@ -153,8 +155,33 @@ public class InnerCrawler {
                     log.error("inner crawler step failed", e);
                     ms = IDLE_MS;
                 }
-                if (ms > 0) idle(ms);
+                if (ms > 0) idle(Math.min(ms, IDLE_MS)); // a pause or the daily cap never holds back refreshes and retirement
             }
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+        }
+    }
+
+    /** R14: after the main index logs "search index built", rebuild the inner index on this thread, before any crawl. */
+    void boot() throws InterruptedException {
+        while (!stopped && !search.awaitBuilt(IDLE_MS)) {
+            // nothing starts before the main index is built
+        }
+        rebuildIndex();
+    }
+
+    /** R31 / §9: a cap change (admin or the memory trigger) is a rebuild from the corpus, never a re-crawl. */
+    void requestRebuild() {
+        rebuildRequested = true;
+        wakeUp();
+    }
+
+    private void rebuildIndex() {
+        try {
+            index.rebuild(search.sources(), store.state().capPerSource);
+        } catch (IOException | RuntimeException e) {
+            if (stopped) return; // stop()'s interrupt (ClosedByInterruptException) ended it: not a failed rebuild
+            log.error("inner-index rebuild failed; the previous inner index (if any) keeps serving", e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
         }
@@ -163,6 +190,15 @@ public class InnerCrawler {
     /** One iteration of the loop (§6.2): the ms to wait before the next. Crawler thread only. */
     long step() {
         long now = clock.millis();
+        if (rebuildRequested) {
+            rebuildRequested = false;
+            rebuildIndex();
+        }
+        try {
+            index.maybeRefresh();
+        } catch (IOException | AlreadyClosedException e) { // a tragic writer: the job's own write then fails (§12)
+            log.warn("inner-index refresh failed", e);
+        }
         InnerState s = store.state();
         housekeeping(now);
         if (store.stopped() || s.mode == InnerState.Mode.OFF) return IDLE_MS;
@@ -430,7 +466,8 @@ public class InnerCrawler {
             return false;
         }
         boolean complete = complete(page.listed(), page.count(), page.next() == null);
-        writeCorpus(key, complete ? page.items() : mergeKeep(page.items(), corpus)); // first: a failed write changes no state
+        // first: a failed write changes no state
+        writeCorpus(key, name, complete ? page.items() : mergeKeep(page.items(), corpus), corpus, complete);
         if (!page.items().isEmpty()) src.hl = hl(titles(page.items())); // R21: the source's own language, kept from now on
         src.count = page.count();
         src.firstPageAt = now;
@@ -487,7 +524,7 @@ public class InnerCrawler {
         List<InnerCorpus.Item> stored = complete ? all
                 : capped && key.startsWith("channel:") ? mergeWindow(all, corpus) : mergeKeep(all, corpus);
         int added = added(all, corpus), removed = corpus.size() + added - stored.size();
-        writeCorpus(key, stored); // first: a failed write changes no state
+        writeCorpus(key, name, stored, corpus, complete); // first: a failed write changes no state
         src.count = page.count();
         src.capped = capped;
         src.lastPollAt = now;
@@ -529,7 +566,7 @@ public class InnerCrawler {
         if (key.startsWith("playlist:")) {
             List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), page.items().size())));
             if (page.count() == src.count && ids(page.items()).equals(top)) {
-                writeCorpus(key, mergeWindow(page.items(), corpus)); // titles refreshed
+                writeCorpus(key, name, mergeWindow(page.items(), corpus), corpus, false); // titles refreshed
                 src.lastPollAt = now;
                 logJob("POLL", key, src, 0, 0);
                 return true;
@@ -550,7 +587,7 @@ public class InnerCrawler {
         window = mergeKeep(window, List.of());
         List<InnerCorpus.Item> merged = mergeWindow(window, corpus);
         int added = added(window, corpus), removed = corpus.size() + added - merged.size();
-        writeCorpus(key, merged); // first: a failed write changes no state
+        writeCorpus(key, name, merged, corpus, false); // first: a failed write changes no state
         src.lastPollAt = now;
         if (added > 0 || removed > 0) src.lastChangeAt = now;
         src.count = page.count();
@@ -611,15 +648,30 @@ public class InnerCrawler {
         return null;
     }
 
-    /** Writes the source's corpus file (R15), cut to the R2 safety cap. */
-    private void writeCorpus(String key, List<InnerCorpus.Item> items) {
-        List<InnerCorpus.Item> kept = items.size() > InnerState.MAX_PER_SOURCE ? items.subList(0, InnerState.MAX_PER_SOURCE) : items;
+    /** Writes the source's corpus file (R15), cut to the R2 safety cap, then applies the same change to the inner index. */
+    private void writeCorpus(String key, String name, List<InnerCorpus.Item> next, List<InnerCorpus.Item> before, boolean sweep) {
+        List<InnerCorpus.Item> kept = next.size() > InnerState.MAX_PER_SOURCE ? next.subList(0, InnerState.MAX_PER_SOURCE) : next;
         try {
             InnerCorpus.write(store.corpusFile(key), kept);
+            if (sweep) index.replaceSource(key, name, kept);
+            else index.merge(key, name, changed(before, kept), removed(before, kept));
         } catch (IOException e) {
             throw new UncheckedIOException(e);
+        } catch (AlreadyClosedException e) { // §12 tragic IndexWriter: the job fails as on a full disk, never a parse signal
+            throw new UncheckedIOException(new IOException("inner-index write failed", e));
         }
         source(key).items = kept.size();
+    }
+
+    /** Items that are new or differ in any field (title, duration, day, uploader). */
+    static List<InnerCorpus.Item> changed(List<InnerCorpus.Item> before, List<InnerCorpus.Item> after) {
+        Set<InnerCorpus.Item> old = new HashSet<>(before);
+        return after.stream().filter(i -> !old.contains(i)).toList();
+    }
+
+    static Set<String> removed(List<InnerCorpus.Item> before, List<InnerCorpus.Item> after) {
+        Set<String> kept = after.stream().map(InnerCorpus.Item::id).collect(Collectors.toSet());
+        return before.stream().map(InnerCorpus.Item::id).filter(id -> !kept.contains(id)).collect(Collectors.toSet());
     }
 
     private void logJob(String job, String key, InnerState.Source src, int added, int removed) {
