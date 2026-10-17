@@ -1,0 +1,23 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/TVAdaptiveTests.swift
+  s_dbb6b1f3671904::t_9b96ab38fbbc87 1-120
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/TVAdaptive.swift
+  s_dbb6b1f3671904::t_9e1c857f58011b 1-149
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/ChallengeSolving.swift
+  s_dbb6b1f3671904::t_56ef49fa83b32b 1-12
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "68a003d65d236ba2c47fe6844ca39ae031bf5d53",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
