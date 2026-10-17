@@ -447,7 +447,7 @@ public class PublicContentControllerTest {
     @DisplayName("GET /api/v1/titles - known ids only, an hour of public caching; bad input 400; a cold index 503 (Task 24b)")
     void testTitles() throws Exception {
         when(contentService.titles(List.of("ilgiwqpcOC8", "cBjnzYHSV4M")))
-                .thenReturn(Map.of("ilgiwqpcOC8", "Lezing: 'De rechtvaardige kalief'"));
+                .thenReturn(new SearchIndex.Titles(Map.of("ilgiwqpcOC8", "Lezing: 'De rechtvaardige kalief'"), true));
         mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8,cBjnzYHSV4M,ilgiwqpcOC8")) // duplicates collapse
                 .andExpect(status().isOk())
                 .andExpect(header().string("Cache-Control", containsString("max-age=3600")))
@@ -465,6 +465,20 @@ public class PublicContentControllerTest {
         when(contentService.titles(any())).thenThrow(new SearchIndex.NotReadyException());
         mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8")).andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/titles - a partial answer (inner budget, failure, not serving yet) is shared-cached for a minute only")
+    void testTitles_PartialAnswerIsCachedForAMinute() throws Exception {
+        when(contentService.titles(List.of("ilgiwqpcOC8")))
+                .thenReturn(new SearchIndex.Titles(Map.of(), false));
+        mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "max-age=60, public"));
+        when(contentService.titles(List.of("cBjnzYHSV4M")))
+                .thenReturn(new SearchIndex.Titles(Map.of(), true));
+        mockMvc.perform(get("/api/v1/titles").param("ids", "cBjnzYHSV4M"))
+                .andExpect(header().string("Cache-Control", "max-age=3600, public"));
     }
 
     @Test

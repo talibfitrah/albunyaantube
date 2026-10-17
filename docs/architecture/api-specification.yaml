@@ -430,7 +430,9 @@ paths:
           description: id -> title, for the ids the server knows
           headers:
             Cache-Control:
-              description: public, max-age=3600
+              description: |
+                public, max-age=3600; public, max-age=60 for a partial answer (the server may find more
+                titles on a later ask)
               schema:
                 type: string
           content:

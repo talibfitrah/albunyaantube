@@ -1039,7 +1039,7 @@ public class PublicContentService {
     }
 
     /** Task 24b: original titles for the apps' channel and playlist rows (SearchIndex.titles); no Firestore read. */
-    public Map<String, String> titles(List<String> ids) throws IOException {
+    public SearchIndex.Titles titles(List<String> ids) throws IOException {
         return searchIndex.titles(ids);
     }
 

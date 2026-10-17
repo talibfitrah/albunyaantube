@@ -121,6 +121,12 @@ public class SearchIndex {
         }
     }
 
+    /**
+     * {@link #titles}' answer. `complete` is false when a later ask may find more originals: the inner budget ran out, the
+     * inner index failed, or it does not serve yet while some id still has no title. `/titles` then caches it briefly.
+     */
+    public record Titles(Map<String, String> map, boolean complete) {}
+
     /** The first catalog build has not finished: the API answers 503 + Retry-After (spec §7). */
     public static class NotReadyException extends RuntimeException {
         public NotReadyException() {
@@ -724,17 +730,18 @@ public class SearchIndex {
 
     /**
      * The inner title of `id` (Q17, and Task 24b's titles): the copy `preferredKey` lists if that source keeps it, else the
-     * first copy an admitted source keeps; null if none does. A source that is not admitted never names a video.
+     * first copy an admitted source keeps; null if none does. A source that is not admitted never names a video, nor
+     * does a blank title (as in the catalog path).
      */
     String innerTitle(IndexSearcher searcher, String id, String preferredKey) throws IOException {
         StoredFields fields = searcher.storedFields();
         String first = null;
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
-            String keeper = keeper(doc);
-            if (keeper == null) continue;
-            if (keeper.equals(preferredKey)) return doc.get("t");
-            if (first == null) first = doc.get("t");
+            String keeper = keeper(doc), title = doc.get("t");
+            if (keeper == null || title == null || title.isBlank()) continue;
+            if (keeper.equals(preferredKey)) return title;
+            if (first == null) first = title;
         }
         return first;
     }
@@ -844,7 +851,7 @@ public class SearchIndex {
      * - Never a stored stream's: the apps pushed those from their hl=en lists.
      * No Firestore read, no YouTube call. The map holds catalog titles, then inner ones, each in request order.
      */
-    public Map<String, String> titles(Collection<String> ids) throws IOException {
+    public Titles titles(Collection<String> ids) throws IOException {
         awaitReady();
         Map<String, String> out = new LinkedHashMap<>();
         IndexSearcher searcher = searchers.acquire();
@@ -864,27 +871,29 @@ public class SearchIndex {
         } finally {
             searchers.release(searcher);
         }
-        if (inner == null || !inner.serving()) return out;
+        if (out.keySet().containsAll(ids)) return new Titles(out, true); // nothing left for the inner index
+        if (inner == null || !inner.serving()) return new Titles(out, false); // its originals come later
         try {
             IndexSearcher shared = inner.acquire();
-            if (shared == null) return out;
+            if (shared == null) return new Titles(out, false);
             try {
                 QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
                 IndexSearcher budgeted = new IndexSearcher(shared.getIndexReader());
                 budgeted.setTimeout(timeout);
                 for (String id : ids) {
                     if (out.containsKey(id)) continue;
-                    if (timeout.shouldExit()) break;
+                    if (timeout.shouldExit()) return new Titles(out, false);
                     String title = innerTitle(budgeted, id, null);
                     if (title != null) out.put(id, title);
                 }
+                return new Titles(out, !budgeted.timedOut()); // Lucene may have cut a lookup short
             } finally {
                 inner.release(shared);
             }
         } catch (IOException | RuntimeException e) { // AlreadyClosedException included: as /search, never a 500 for the inner index
             log.warn("titles: inner lookup failed ({}); answering the catalog's", e.getClass().getName()); // the class only
+            return new Titles(out, false);
         }
-        return out;
     }
 
     /** API `type` (CHANNELS/PLAYLISTS/VIDEOS) -> index type; anything else (null, ALL, HOME) -> all types. */

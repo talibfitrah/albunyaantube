@@ -1207,13 +1207,17 @@ class SearchIndexTest {
         SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
                 List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")),
                 List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000, inner));
-        assertEquals(Map.of("vKahf", "Surah Al-Kahf", "lesson00001", "زبدة النور: الدرس الأول"),
-                idx.titles(List.of("vKahf", "lesson00001", "alafasy-live", "lesson99999")),
+        SearchIndex.Titles all = idx.titles(List.of("vKahf", "lesson00001", "alafasy-live", "lesson99999"));
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf", "lesson00001", "زبدة النور: الدرس الأول"), all.map(),
                 "catalog first, inner next, a stored stream's title never");
+        assertTrue(all.complete(), "every id looked up: an unknown id is a final answer");
         innerStore.state().serveInner = false;
-        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), idx.titles(List.of("vKahf", "lesson00001")),
+        SearchIndex.Titles off = idx.titles(List.of("vKahf", "lesson00001"));
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), off.map(),
                 "inner titles follow serveInner, which Task 35 opens after its title-language check");
-        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(null).titles(List.of("vKahf", "lesson00001")));
+        assertFalse(off.complete(), "fix round 1: not serving yet, so the originals come later");
+        assertTrue(idx.titles(List.of("vKahf")).complete(), "the catalog answered every id");
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(null).titles(List.of("vKahf", "lesson00001")).map());
     }
 
     @Test
@@ -1224,7 +1228,7 @@ class SearchIndexTest {
                 "channel:UCrejected", List.of(item("innerrejct1", "From a rejected source", 600))), Map.of());
         SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
         assertEquals(Map.of("innerhalal1", "Kept lesson"),
-                idx.titles(List.of("innerhalal1", "halal-excluded", "halal-rejected", "innerrejct1")));
+                idx.titles(List.of("innerhalal1", "halal-excluded", "halal-rejected", "innerrejct1")).map());
     }
 
     /** Hand-off: /titles has the title pass's 40 ms budget, checked per id; past it the rest are unknown ids, not a slow answer. */
@@ -1234,7 +1238,9 @@ class SearchIndexTest {
         SearchIndex idx = recitations(inner);
         idx.newTimeout = ms -> scripted(2, false); // the second inner lookup finds the budget spent
         int refs = refCount(inner);
-        assertEquals(Map.of("live-kahf", ORIGINAL.get("live-kahf")), idx.titles(List.of("live-kahf", "live-yasin")));
+        SearchIndex.Titles cut = idx.titles(List.of("live-kahf", "live-yasin"));
+        assertEquals(Map.of("live-kahf", ORIGINAL.get("live-kahf")), cut.map());
+        assertFalse(cut.complete(), "fix round 1: a budget cut is a partial answer");
         assertEquals(refs, refCount(inner), "the inner searcher is released");
     }
 
@@ -1261,12 +1267,35 @@ class SearchIndexTest {
                 }
             };
             SearchIndex idx = alafasy(closing);
-            assertEquals(Map.of("vKahf", "Surah Al-Kahf"),
-                    assertDoesNotThrow(() -> idx.titles(List.of("vKahf", "lesson00001"))), "closed at acquire: " + atAcquire);
+            SearchIndex.Titles failed = assertDoesNotThrow(() -> idx.titles(List.of("vKahf", "lesson00001")));
+            assertEquals(Map.of("vKahf", "Surah Al-Kahf"), failed.map(), "closed at acquire: " + atAcquire);
+            assertFalse(failed.complete(), "fix round 1: closed at acquire: " + atAcquire);
         }
         assertEquals(2, logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage)
                 .filter("titles: inner lookup failed (org.apache.lucene.store.AlreadyClosedException); answering the catalog's"::equals)
                 .count());
+    }
+
+    /** Fix round 1: a blank inner title never names a video, as a blank catalog title never does (rebuilds drop them; this guards the read). */
+    @Test
+    void aBlankInnerTitleIsNeverAnAnswer() throws Exception {
+        Directory blankDir = new ByteBuffersDirectory();
+        try (IndexWriter w = new IndexWriter(blankDir, new IndexWriterConfig())) {
+            w.addDocument(InnerIndex.doc(ALAFASY, "Alafasy", new InnerCorpus.Item("lesson00001", " ", 600, null, null, null)));
+        }
+        InnerStore store = new InnerStore(innerTmp.resolve("blank").toString());
+        InnerIndex blank = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            boolean serving() {
+                return true;
+            }
+
+            @Override
+            IndexSearcher acquire() throws IOException {
+                return new IndexSearcher(DirectoryReader.open(blankDir)); // release() closes it
+            }
+        };
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(blank).titles(List.of("vKahf", "lesson00001")).map());
     }
 
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------

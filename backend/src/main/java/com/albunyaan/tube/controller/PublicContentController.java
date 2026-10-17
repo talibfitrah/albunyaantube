@@ -207,9 +207,11 @@ public class PublicContentController {
         if (unique.isEmpty() || unique.size() > MAX_TITLE_IDS || !unique.stream().allMatch(id -> VIDEO_ID.matcher(id).matches())) {
             return ResponseEntity.badRequest().body(Map.of("error", "ids: 1 to " + MAX_TITLE_IDS + " YouTube video ids"));
         }
-        // Public and identical for every caller, as the home feed: shared caches may keep it for an hour.
-        return ResponseEntity.ok().cacheControl(CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic())
-                .body(contentService.titles(unique));
+        SearchIndex.Titles titles = contentService.titles(unique);
+        // Public and identical for every caller, as the home feed: shared caches may keep it for an hour, or a minute when
+        // partial (a later ask may find more originals; Cloudflare must not pin translated titles for an hour).
+        return ResponseEntity.ok().cacheControl(titles.complete() ? CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic()
+                : CacheControl.maxAge(1, TimeUnit.MINUTES).cachePublic()).body(titles.map());
     }
 
     /** Spec §7: the first index build has not finished; installed clients show their usual error state. */
