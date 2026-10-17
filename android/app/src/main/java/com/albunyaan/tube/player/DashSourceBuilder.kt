@@ -7,6 +7,8 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MimeTypes
 import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSource
+import androidx.media3.datasource.ResolvingDataSource
 import androidx.media3.exoplayer.dash.DashMediaSource
 import androidx.media3.exoplayer.hls.HlsMediaSource
 import androidx.media3.exoplayer.source.MediaSource
@@ -71,6 +73,7 @@ sealed interface SourceDecision {
 class DashSourceBuilder @Inject constructor(
     private val mpdGenerator: MultiRepresentationMpdGenerator,
     private val dataSourceFactoryProvider: SegmentDataSourceFactoryProvider,
+    private val livePlaylistRedirector: LivePlaylistRedirector,
 ) {
     companion object {
         private const val TAG = "DashSourceBuilder"
@@ -295,7 +298,15 @@ class DashSourceBuilder @Inject constructor(
 
             is SourceDecision.Hls -> {
                 if (BuildConfig.DEBUG) Log.d(TAG, "Building HLS MediaSource: ${decision.url}")
-                HlsMediaSource.Factory(factory)
+                // Spec §9.2(a): a live master's media playlists go through the redirector, so a refresh swaps their
+                // URLs in place. Every new live source starts from its own master (RV I10a: the map is cleared).
+                val hlsFactory: DataSource.Factory = if (resolved.isLive) {
+                    livePlaylistRedirector.clear(resolved.streamId)
+                    ResolvingDataSource.Factory(factory) { spec -> livePlaylistRedirector.resolve(resolved.streamId, spec) }
+                } else {
+                    factory
+                }
+                HlsMediaSource.Factory(hlsFactory)
                     .setAllowChunklessPreparation(true)
                     .createMediaSource(mediaItem(decision.url, MimeTypes.APPLICATION_M3U8))
             }

@@ -108,7 +108,8 @@ class DashSourceBuilderTest {
         // SegmentDataSourceFactoryProvider is NOT used by decide/subtitleMimeType — mock is fine.
         builder = DashSourceBuilder(
             mpdGenerator = MultiRepresentationMpdGenerator(),
-            dataSourceFactoryProvider = mock()
+            dataSourceFactoryProvider = mock(),
+            livePlaylistRedirector = LivePlaylistRedirector { _, _ -> null },
         )
     }
 
