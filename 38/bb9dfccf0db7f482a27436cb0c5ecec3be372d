@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_6c13a2d170eb11 33,36,39,57-58,69,166,206-288
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_b23403c17a823b 12,43,52-53,61
+  s_dbb6b1f3671904::t_86185318c9e4a0 33-34,170-175,299,326,334-356
+  s_dbb6b1f3671904::t_106f55d3e531ea 357
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "38bb9dfccf0db7f482a27436cb0c5ecec3be372d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
