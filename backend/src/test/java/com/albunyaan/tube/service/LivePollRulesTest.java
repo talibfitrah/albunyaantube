@@ -65,25 +65,66 @@ class LivePollRulesTest {
         assertThat(next.getMisses()).isEmpty();
     }
 
-    /** R10: after an hour unproven, hides apply, but nothing is ever counted toward a removal. */
+    /** R10: after an hour unproven, hides apply, but nothing is ever counted toward a removal (a count of 0 is no miss). */
     @Test
     void anUnprovenHideNeverCountsAMiss() {
         LivePollRules.Outcome o = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, empty(), false, true,
                 Set.of("pqC-1yfFvu8"), T0);
 
         assertThat(o.next().getStatus()).isEqualTo(LiveChannelState.OFFLINE);
-        assertThat(o.next().getMisses()).isEmpty();
+        assertThat(o.next().getMisses().values()).allMatch(m -> m.getCount() == 0);
         assertThat(o.ended()).isEmpty();
     }
 
-    /** D3: errors back off 10/20/40/80 min and change nothing else. */
+    /**
+     * R12c + R10 + R15: a live hidden by an unproven hide (after 1 h) stays tracked, so it still ends once proven
+     * cycles return; the 15-min window opens at the first PROVEN miss, so a restart double-poll right then cannot end it.
+     */
+    @Test
+    void aLiveHiddenByAnUnprovenHideStillEndsInLaterProvenCycles() {
+        LivePollRules.Outcome hide = LivePollRules.apply(liveState("old1"), ZAD, empty(), false, true, Set.of(), T0);
+        LivePollRules.Outcome stillUnproven = LivePollRules.apply(hide.next(), ZAD, empty(), false, true, Set.of(), T0 + 10 * MIN);
+        LivePollRules.Outcome first = LivePollRules.apply(stillUnproven.next(), ZAD, empty(), true, true, Set.of(), T0 + 60 * MIN);
+        LivePollRules.Outcome restart = LivePollRules.apply(first.next(), ZAD, empty(), true, true, Set.of(), T0 + 62 * MIN);
+        LivePollRules.Outcome later = LivePollRules.apply(restart.next(), ZAD, empty(), true, true, Set.of(), T0 + 80 * MIN);
+
+        assertThat(hide.next().getLives()).isEmpty();
+        assertThat(stillUnproven.next().getMisses().get("old1").getCount()).isZero();
+        assertThat(first.next().getMisses().get("old1").getCount()).isEqualTo(1);
+        assertThat(restart.ended()).isEmpty();
+        assertThat(later.ended()).containsExactly("old1");
+    }
+
+    /** R12c: the seed (D15) applies unproven; a live it replaces stays tracked at count 0 like an unproven hide. */
+    @Test
+    void anUnprovenReplacementKeepsTheDepartedLiveTracked() {
+        LiveChannelState next = LivePollRules.apply(liveState("old1"), ZAD, live("keep"), false, true, Set.of(), T0).next();
+
+        assertThat(ids(next)).containsExactly("keep");
+        assertThat(next.getMisses().get("old1").getCount()).isZero();
+    }
+
+    @Test
+    void aSecondHideKeepsTheFirstOfflineSince() {
+        LiveChannelState hidden = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, empty(), true, true, Set.of(), T0).next();
+        LiveChannelState next = LivePollRules.apply(hidden, ZAD, empty(), true, true, Set.of(), T0 + 10 * MIN).next();
+
+        assertThat(next.getOfflineSince()).isEqualTo(T0);
+    }
+
+    /** D3: errors back off 10/20/40/80 min and change nothing else; errorSince is the first error. */
     @Test
     void errorsKeepTheLivesAndBackOff() {
+        Set<String> links = Set.of("pqC-1yfFvu8");
         LiveChannelState s = liveState("eaOtcUNHDB8");
         long[] expected = {10, 20, 40, 80, 80};
         for (int i = 0; i < expected.length; i++) {
-            s = LivePollRules.apply(s, ZAD, LiveTabResult.error(1, "IOException: x"), true, true, Set.of(), T0).next();
-            assertThat(s.getNextPollAt()).isEqualTo(T0 + expected[i] * MIN);
+            long now = T0 + i * MIN;
+            LivePollRules.Outcome o = LivePollRules.apply(s, ZAD, LiveTabResult.error(1, "IOException: x"), true, true, links, now);
+            s = o.next();
+            assertThat(s.getNextPollAt()).isEqualTo(now + expected[i] * MIN);
+            assertThat(s.getMisses()).isEmpty();
+            assertThat(o.ended()).isEmpty();
         }
         assertThat(s.getErrorCount()).isEqualTo(5);
         assertThat(s.getErrorSince()).isEqualTo(T0);
@@ -101,11 +142,14 @@ class LivePollRulesTest {
     @Test
     void aBreakerResultChangesNothing() {
         LiveChannelState before = liveState("eaOtcUNHDB8");
-        LivePollRules.Outcome o = LivePollRules.apply(before, ZAD, LiveTabResult.breaker(0, "open"), true, true, Set.of(), T0);
+        LivePollRules.Outcome o = LivePollRules.apply(before, ZAD, LiveTabResult.breaker(0, "open"), true, true,
+                Set.of("pqC-1yfFvu8"), T0);
 
         assertThat(ids(o.next())).containsExactly("eaOtcUNHDB8");
         assertThat(o.next().getErrorCount()).isZero();
         assertThat(o.next().getNextPollAt()).isNull();
+        assertThat(o.next().getMisses()).isEmpty();
+        assertThat(o.ended()).isEmpty();
     }
 
     /**
@@ -137,6 +181,27 @@ class LivePollRulesTest {
 
         assertThat(next.getStatus()).isEqualTo(LiveChannelState.OFFLINE);
         assertThat(next.getReason()).isEqualTo(LiveChannelState.TERMINATED);
+    }
+
+    /** R10: TERMINATED is an empty read, so an unproven cycle keeps the lives and counts nothing. */
+    @Test
+    void aTerminatedReadInAnUnprovenCycleKeepsTheLives() {
+        LivePollRules.Outcome o = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD,
+                LiveTabResult.terminated(1, "This channel doesn't exist."), false, false, Set.of("pqC-1yfFvu8"), T0);
+
+        assertThat(o.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(ids(o.next())).containsExactly("eaOtcUNHDB8");
+        assertThat(o.next().getMisses()).isEmpty();
+        assertThat(o.ended()).isEmpty();
+    }
+
+    @Test
+    void aLaterOkReadClearsTheReason() {
+        LiveChannelState gone = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD,
+                LiveTabResult.terminated(1, "This channel doesn't exist."), true, true, Set.of(), T0).next();
+        LiveChannelState next = LivePollRules.apply(gone, ZAD, empty(), true, true, Set.of(), T0 + 10 * MIN).next();
+
+        assertThat(next.getReason()).isNull();
     }
 
     /** R15: missing in 2 proven polls 10 min apart is not enough; the third (20 min) ends it. */

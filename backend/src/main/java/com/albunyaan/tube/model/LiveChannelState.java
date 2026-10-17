@@ -31,7 +31,7 @@ public class LiveChannelState {
     private Long nextPollAt;
     private Map<String, Miss> misses = new HashMap<>();
     /** R12: ids this poller archived, with the validationStatus to restore ("" = none). */
-    // ponytail: never pruned (one ~25 B entry per archived registry doc); prune when a doc nears Firestore's 1 MiB.
+    // ponytail: never pruned by design (R12 restore-on-reappearance); move to a subcollection if a doc nears 1 MiB.
     private Map<String, String> archived = new HashMap<>();
     private Long updatedAt;
 

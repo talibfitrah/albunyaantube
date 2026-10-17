@@ -33,27 +33,33 @@ public final class LivePollRules {
     public static Outcome apply(LiveChannelState prev, String channelId, LiveTabResult read,
                                 boolean proven, boolean hideAllowed, Set<String> links, long now) {
         LiveChannelState next = prev == null ? LiveChannelState.unknown(channelId) : prev.copy();
-        if (read.outcome() == LiveTabResult.Outcome.BREAKER) {
-            return new Outcome(next, List.of(), Map.of());                       // never counted (RV M3)
-        }
-        if (read.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
-            // R7: YouTube pushed back, not this channel: no hide, miss or backoff. checkedAt advances so the
-            // oldest-first order rotates past it and one channel cannot sit first and starve the rest.
-            next.setCheckedAt(now);
-            return new Outcome(next, List.of(), Map.of());
-        }
-        if (read.outcome() == LiveTabResult.Outcome.ERROR) {
-            next.setErrorCount(next.getErrorCount() + 1);
-            if (next.getErrorSince() == null) {
-                next.setErrorSince(now);
+        // Fail-closed allow-list: only a real read may hide, count a miss or end an id. Exhaustive with no default,
+        // so a new LiveTabResult outcome does not compile until it picks its row here.
+        return switch (read.outcome()) {
+            case OK, TERMINATED -> applyRead(next, read, proven, hideAllowed, links, now);
+            case ERROR -> {
+                next.setErrorCount(next.getErrorCount() + 1);
+                if (next.getErrorSince() == null) {
+                    next.setErrorSince(now);
+                }
+                String error = read.error() == null ? "" : read.error();
+                next.setLastError(error.length() > ERROR_MAX ? error.substring(0, ERROR_MAX) : error);
+                next.setNextPollAt(now + BASE_BACKOFF_MS * (1L << Math.min(next.getErrorCount() - 1, 3)));
+                yield new Outcome(next, List.of(), Map.of());                    // D3: lives, status, misses unchanged
             }
-            String error = read.error() == null ? "" : read.error();
-            next.setLastError(error.length() > ERROR_MAX ? error.substring(0, ERROR_MAX) : error);
-            next.setNextPollAt(now + BASE_BACKOFF_MS * (1L << Math.min(next.getErrorCount() - 1, 3)));
-            return new Outcome(next, List.of(), Map.of());                       // lives, status, misses unchanged
-        }
+            case RATE_LIMITED -> {
+                // R7: YouTube pushed back, not this channel: no hide, miss or backoff. checkedAt advances so the
+                // oldest-first order rotates past it and one channel cannot sit first and starve the rest.
+                next.setCheckedAt(now);
+                yield new Outcome(next, List.of(), Map.of());
+            }
+            case BREAKER -> new Outcome(next, List.of(), Map.of());              // never counted (RV M3)
+        };
+    }
 
-        // OK, or TERMINATED (an empty read with a reason, D3).
+    /** OK, or TERMINATED (an empty read with a reason, D3). */
+    private static Outcome applyRead(LiveChannelState next, LiveTabResult read, boolean proven, boolean hideAllowed,
+                                     Set<String> links, long now) {
         List<String> newIds = read.lives().stream().map(LiveTabResult.LiveItem::id).toList();
         Set<String> prevIds = next.getLives().stream().map(LiveChannelState.Live::getVideoId)
                 .collect(Collectors.toCollection(LinkedHashSet::new));
@@ -86,7 +92,13 @@ public final class LivePollRules {
         }
 
         List<String> ended = new ArrayList<>();
-        if (proven) {
+        if (!proven) {
+            // R12c: a live that leaves `lives` unproven (the hour-late hide, or the seed's replacement) stays tracked at
+            // count 0, which is not a miss (R10); proven cycles then count it like any departed live.
+            Set<String> kept = next.getLives().stream().map(LiveChannelState.Live::getVideoId).collect(Collectors.toSet());
+            prevIds.stream().filter(id -> !kept.contains(id))
+                    .forEach(id -> next.getMisses().putIfAbsent(id, new LiveChannelState.Miss(0, now)));
+        } else {
             // Ids already being counted keep counting after they leave `lives` (a replaced or hidden live), so a
             // departed stream ends on its second proven miss even when the next read no longer lists it.
             Set<String> tracked = new LinkedHashSet<>(prevIds);
@@ -95,6 +107,9 @@ public final class LivePollRules {
             tracked.removeAll(newIds);
             for (String id : tracked) {
                 LiveChannelState.Miss miss = next.getMisses().computeIfAbsent(id, k -> new LiveChannelState.Miss(0, now));
+                if (miss.getCount() == 0) {
+                    miss.setSince(now);              // R15: the window opens at the first PROVEN miss, never unproven
+                }
                 miss.setCount(miss.getCount() + 1);
                 if (miss.getCount() >= MISSES_TO_END && now - miss.getSince() >= MISS_MIN_MS) {
                     next.getMisses().remove(id);
