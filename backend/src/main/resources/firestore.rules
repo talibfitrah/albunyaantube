@@ -73,25 +73,25 @@ service cloud.firestore {
 
     // Categories collection
     match /categories/{categoryId} {
-      allow read: if true; // Public read for mobile app
+      allow read: if isModerator(); // Apps and the public read through the backend API, never Firestore directly
       allow write: if isAdmin();
     }
 
     // Content collections
     match /channels/{channelId} {
-      allow read: if true;
+      allow read: if isModerator();
       allow create: if isModerator();
       allow update, delete: if isAdmin();
     }
 
     match /playlists/{playlistId} {
-      allow read: if true;
+      allow read: if isModerator();
       allow create: if isModerator();
       allow update, delete: if isAdmin();
     }
 
     match /videos/{videoId} {
-      allow read: if true;
+      allow read: if isModerator();
       allow create: if isModerator();
       allow update, delete: if isAdmin();
     }
