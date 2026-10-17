@@ -22,6 +22,8 @@ import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.mockito.InOrder;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
+import org.springframework.context.event.EventListener;
 
 import java.time.Clock;
 import java.time.Instant;
@@ -513,26 +515,34 @@ class LiveChannelPollerTest {
         saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
         when(states.findAll()).thenReturn(List.of(saved));
 
-        poller.loadAtBoot();
+        poller.afterSingletonsInstantiated();
 
         assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
         assertThat(live.entries()).containsKey(A);
         verify(reader, never()).read(anyString());
     }
 
-    /** Tomcat serves before ApplicationReadyEvent: a LIVE list cached from the empty snapshot must not outlive the load. */
+    /** The load runs inside context refresh: a Firestore failure logs and leaves the snapshot empty, never aborts startup. */
     @Test
-    void bootLoadEvictsWhatWasCachedBeforeIt() throws Exception {
+    void aFailedBootLoadNeverBlocksStartup() throws Exception {
         entries(A);
-        LiveChannelState saved = LiveChannelState.unknown(A);
-        saved.setStatus(LiveChannelState.LIVE);
-        saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
-        when(states.findAll()).thenReturn(List.of(saved));
-        List<Boolean> servedAtEviction = new ArrayList<>();
-        doAnswer(i -> servedAtEviction.add(live.served().containsKey(A))).when(caches).evictPublicContentCaches();
+        when(states.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"));
 
-        poller.loadAtBoot();
+        poller.afterSingletonsInstantiated();
 
-        assertThat(servedAtEviction).containsExactly(true);   // once, and only after the view holds the lives
+        assertThat(live.snapshot()).isEmpty();
+        assertThat(live.served()).isEmpty();
+    }
+
+    /**
+     * Fix round 2: the snapshot loads while the singletons are instantiated, before Tomcat opens the port (finishRefresh)
+     * and before @Scheduled tasks register (ContextRefreshedEvent); never on ApplicationReadyEvent.
+     */
+    @Test
+    void theBootLoadRunsBeforeThePortOpens() {
+        assertThat(SmartInitializingSingleton.class).isAssignableFrom(LiveChannelPoller.class);
+        assertThat(Arrays.stream(LiveChannelPoller.class.getDeclaredMethods())
+                .filter(m -> m.isAnnotationPresent(EventListener.class)).map(java.lang.reflect.Method::getName).toList())
+                .isEmpty();
     }
 }

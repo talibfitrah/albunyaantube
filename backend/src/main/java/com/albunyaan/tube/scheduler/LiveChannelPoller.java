@@ -16,9 +16,8 @@ import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.boot.context.event.ApplicationReadyEvent;
-import org.springframework.context.event.EventListener;
 import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
@@ -45,7 +44,7 @@ import java.util.concurrent.TimeUnit;
  * scales out (D7).
  */
 @Component
-public class LiveChannelPoller {
+public class LiveChannelPoller implements SmartInitializingSingleton {
 
     private static final Logger log = LoggerFactory.getLogger(LiveChannelPoller.class);
 
@@ -100,15 +99,16 @@ public class LiveChannelPoller {
 
     /**
      * D1: serve the last known lives from Firestore before the first cycle (Review Focus 1). No YouTube traffic.
-     * Tomcat serves before ApplicationReadyEvent, so a LIVE list rendered from the empty snapshot may already be cached
-     * (1 h): evict once the view holds the loaded lives.
+     * Runs while the singletons are instantiated: before Tomcat opens the port (finishRefresh) and before @Scheduled
+     * tasks register (ContextRefreshedEvent), so no request renders, and no cycle publishes, before the load. The
+     * caches are in-memory Caffeine (CacheConfig), empty at boot. Each read is bounded by the repositories' Firestore
+     * timeouts; a failure logs and never blocks startup.
      */
-    @EventListener(ApplicationReadyEvent.class)
-    public void loadAtBoot() {
+    @Override
+    public void afterSingletonsInstantiated() {
         try {
             live.loadStates(states.findAll());
             refreshView();
-            caches.evictPublicContentCaches();
         } catch (Exception e) {
             log.warn("live poller: boot load failed, serving nothing until the first cycle: {}", e.getMessage());
         }
