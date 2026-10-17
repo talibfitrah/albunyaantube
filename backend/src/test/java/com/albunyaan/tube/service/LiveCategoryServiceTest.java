@@ -231,6 +231,37 @@ class LiveCategoryServiceTest {
         }
     }
 
+    @Test
+    void statusShowsEachEntryAndEachLivesServing() throws Exception {
+        com.albunyaan.tube.model.Category cat = new com.albunyaan.tube.model.Category("Live", null);
+        cat.setId(CAT);
+        cat.setType("LIVE");
+        when(categoryRepository.findAll()).thenReturn(List.of(cat));
+        Channel kids = entry(ONE4KIDS, LiveChannelState.LIVE, "J3bDNstCnzE", "yee9gj7t8nQ", "bpvNfqWTXhw");
+        kids.getExcludedItems().setLiveStreams(List.of("yee9gj7t8nQ"));
+        registry.put("bpvNfqWTXhw", doc("bpvNfqWTXhw", "REJECTED", null));
+        Video withMiss = link("Rs7St51oDDc", "UCROKYPep-UuODNwyipe6JMw");
+        LiveChannelState sunnah = LiveChannelState.unknown("UCROKYPep-UuODNwyipe6JMw");
+        sunnah.getMisses().put("Rs7St51oDDc", new LiveChannelState.Miss(1, 1_792_200_000_000L));
+        states.add(sunnah);
+        live.loadStates(states);
+        link("PLkCnLrKN8Q", null);
+        live.setSuspectSince(1_792_200_000_000L);
+
+        Map<String, Object> status = service.status();
+
+        assertThat(status.get("suspectSince")).isEqualTo("2026-10-17T01:20:00Z");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> entries = (List<Map<String, Object>>) ((List<Map<String, Object>>) status.get("categories")).get(0).get("entries");
+        assertThat(entries.get(0)).containsEntry("contentType", "channel").containsEntry("status", "LIVE");
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lives = (List<Map<String, Object>>) entries.get(0).get("lives");
+        assertThat(lives).extracting(l -> l.get("served")).containsExactly("SERVED", "EXCLUDED", "BLOCKED");
+        assertThat(entries.get(1)).containsEntry("contentType", "video").containsEntry("status", "MISSING").containsEntry("misses", 1);
+        assertThat(entries.get(2)).containsEntry("status", "NO_CHANNEL");
+        assertThat(withMiss.getId()).isEqualTo(entries.get(1).get("contentId"));
+    }
+
     private static boolean publicFilter(Object service, Object doc) {
         return Boolean.TRUE.equals(org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "isApproved", doc))
                 && Boolean.TRUE.equals(org.springframework.test.util.ReflectionTestUtils.invokeMethod(service, "isAvailable", doc));

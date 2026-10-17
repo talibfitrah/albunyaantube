@@ -16,8 +16,10 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.springframework.stereotype.Service;
 
+import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
+import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
@@ -167,6 +169,79 @@ public class LiveCategoryService {
             return List.of();
         }
         return state.getLives().stream().filter(l -> served(channel, l.getVideoId(), docs) == Served.SERVED).toList();
+    }
+
+    /** Spec §4.2: per LIVE category, every channel entry's live state and every link's miss count, for the admin. */
+    public Map<String, Object> status() throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, LiveChannelState> snapshot = live.snapshot();   // one read: every entry sees the same states
+        List<Map<String, Object>> categoriesOut = new ArrayList<>();
+        for (String categoryId : liveCategoryIds()) {
+            Members m = members(categoryId);
+            Set<String> liveIds = new LinkedHashSet<>();
+            for (Channel c : m.channels()) {
+                LiveChannelState s = c.getYoutubeId() == null ? null : snapshot.get(c.getYoutubeId());
+                if (s != null) s.getLives().forEach(l -> liveIds.add(l.getVideoId()));
+            }
+            Map<String, Video> docs = liveIds.isEmpty() ? Map.of() : videos.findByYoutubeIds(liveIds);
+            List<Map<String, Object>> entries = new ArrayList<>();
+            for (Object member : m.ordered()) {
+                if (member instanceof Channel c) entries.add(channelEntry(c, docs, snapshot));
+                else if (member instanceof Video v) entries.add(linkEntry(v, snapshot));
+            }
+            Map<String, Object> category = new LinkedHashMap<>();
+            category.put("id", categoryId);
+            category.put("entries", entries);
+            categoriesOut.add(category);
+        }
+        Map<String, Object> out = new LinkedHashMap<>();
+        out.put("suspectSince", iso(live.suspectSince()));
+        out.put("categories", categoriesOut);
+        return out;
+    }
+
+    private Map<String, Object> channelEntry(Channel c, Map<String, Video> docs, Map<String, LiveChannelState> snapshot) {
+        LiveChannelState s = c.getYoutubeId() == null ? null : snapshot.get(c.getYoutubeId());
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("contentType", "channel");
+        e.put("contentId", c.getId());
+        e.put("channelId", c.getYoutubeId());
+        e.put("name", c.getName());
+        e.put("status", s == null ? LiveChannelState.UNKNOWN : s.getStatus());
+        e.put("reason", s == null ? null : s.getReason());
+        List<Map<String, Object>> lives = new ArrayList<>();
+        if (s != null) {
+            for (LiveChannelState.Live l : s.getLives()) {
+                Map<String, Object> item = new LinkedHashMap<>();
+                item.put("id", l.getVideoId());
+                item.put("title", l.getTitle());
+                item.put("served", served(c, l.getVideoId(), docs).name());
+                lives.add(item);
+            }
+        }
+        e.put("lives", lives);
+        e.put("checkedAt", iso(s == null ? null : s.getCheckedAt()));
+        e.put("offlineSince", iso(s == null ? null : s.getOfflineSince()));
+        e.put("errorSince", iso(s == null ? null : s.getErrorSince()));
+        e.put("lastError", s == null ? null : s.getLastError());
+        return e;
+    }
+
+    private Map<String, Object> linkEntry(Video v, Map<String, LiveChannelState> snapshot) {
+        Map<String, Object> e = new LinkedHashMap<>();
+        e.put("contentType", "video");
+        e.put("contentId", v.getId());
+        e.put("youtubeId", v.getYoutubeId());
+        e.put("channelId", v.getChannelId());
+        LiveChannelState s = v.getChannelId() == null ? null : snapshot.get(v.getChannelId());
+        LiveChannelState.Miss miss = s == null ? null : s.getMisses().get(v.getYoutubeId());
+        e.put("status", v.getChannelId() == null ? "NO_CHANNEL" : miss == null ? "LIVE" : "MISSING");
+        e.put("misses", miss == null ? 0 : miss.getCount());
+        e.put("missingSince", iso(miss == null ? null : miss.getSince()));
+        return e;
+    }
+
+    private static String iso(Long epochMs) {
+        return epochMs == null ? null : Instant.ofEpochMilli(epochMs).toString();
     }
 
     private static List<String> idsOf(List<CategoryContentOrder> rows, String type) {

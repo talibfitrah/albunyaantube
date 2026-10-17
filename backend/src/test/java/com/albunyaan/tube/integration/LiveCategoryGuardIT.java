@@ -695,4 +695,16 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(stored.getString("parentCategoryId")).isNull();
         assertThat(stored.getString("type")).isEqualTo("LIVE");
     }
+
+    @Test
+    void theAdminStatusIsAdminOnly() throws Exception {
+        as("moderator");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/admin/live-channels/status")
+                .header("Authorization", "Bearer t")).andExpect(status().isForbidden());
+        as("admin");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get("/api/admin/live-channels/status")
+                .header("Authorization", "Bearer t"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.categories[0].id").value(LIVE));
+    }
 }
