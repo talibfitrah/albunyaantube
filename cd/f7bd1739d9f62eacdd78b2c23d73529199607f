@@ -1,0 +1,42 @@
+backend/src/main/java/com/albunyaan/tube/config/SchedulerConfig.java
+  s_dbb6b1f3671904::t_9d03ccaa86441b 18,28
+backend/src/main/java/com/albunyaan/tube/repository/LiveChannelStateRepository.java
+  s_dbb6b1f3671904::t_eec1733f215fa9 1-37
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryService.java
+  s_dbb6b1f3671904::t_33d76a76c4a03e 6
+  s_dbb6b1f3671904::t_eec1733f215fa9 1-5,7-139
+backend/src/test/java/com/albunyaan/tube/service/LiveChannelServiceTest.java
+  s_dbb6b1f3671904::t_7cbdcd502f7ae2 1-151
+backend/src/test/resources/application-test.yml
+  s_dbb6b1f3671904::t_9d03ccaa86441b 44-46
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_eec1733f215fa9 1-139,147-220,227-235,237,239-240,247-248,255-272,274-317
+  s_dbb6b1f3671904::t_2f84610951b5f6 140-142,145
+  s_dbb6b1f3671904::t_7a7193a81e8dc6 143-144,146
+  s_dbb6b1f3671904::t_c50c4b164f7be6 273
+  s_dbb6b1f3671904::t_7c79c1d55baec3 221-226,236,238,241-246,249-254
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelPollerIT.java
+  s_dbb6b1f3671904::t_9473fe57e9682e 1-147
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_e66d5c92092256 1-248,250-378
+  s_dbb6b1f3671904::t_89044d22fb4a1f 249
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_eec1733f215fa9 1-74,77-79,81-82,85-143
+  s_dbb6b1f3671904::t_5bd6909057f915 75-76,80,83-84
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cdf7bd1739d9f62eacdd78b2c23d73529199607f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
