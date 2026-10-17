@@ -18,7 +18,6 @@ import java.util.UUID;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicLong;
 import java.util.concurrent.atomic.AtomicReference;
-import java.util.regex.Pattern;
 
 /**
  * Circuit breaker for YouTube API calls with Firestore-persisted state machine.
@@ -802,11 +801,6 @@ public class YouTubeCircuitBreaker {
         String className = exception.getClass().getSimpleName();
         String message = exception.getMessage();
 
-        // The short age gate contains "sign in to confirm" and "LOGIN_REQUIRED" but is a stable gate, never a limit
-        if (isAgeGate(message)) {
-            return false;
-        }
-
         // Check exception class name
         if (isRateLimitExceptionClass(className)) {
             return true;
@@ -827,18 +821,6 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
-     * NewPipe 0.26.5's message for YouTube's short age gate: LOGIN_REQUIRED "Sign in to confirm your age" without
-     * "inappropriate for some users", which NewPipe leaves untyped. The bot check ("Sign in to confirm you're not a
-     * bot") does not match and stays a rate limit.
-     */
-    private static final Pattern AGE_GATE =
-            Pattern.compile("Got error LOGIN_REQUIRED: \"Sign in to confirm your age\\.?\"");
-
-    static boolean isAgeGate(String message) {
-        return message != null && AGE_GATE.matcher(message).matches();
-    }
-
-    /**
      * Check if exception class name indicates rate limiting.
      */
     private boolean isRateLimitExceptionClass(String className) {
@@ -853,6 +835,16 @@ public class YouTubeCircuitBreaker {
 
     /**
      * Check if exception message indicates rate limiting.
+     *
+     * Sign-in wording is a rate limit ONLY for YouTube's bot check. Every LOGIN_REQUIRED message NewPipe 0.26.5
+     * produces comes from YoutubeStreamExtractor.checkPlayabilityStatus:
+     * - reason with "a bot": SignInConfirmNotBotException ("YouTube probably temporarily blocked anonymous watch
+     *   access with this IP , got error LOGIN_REQUIRED: …"): rate limit, by class name and by "not a bot";
+     * - reason with "inappropriate for some users": AgeRestrictedContentException: a gate, not a rate limit;
+     * - reason with "private": PrivateContentException ("This video is private"): gone, not a rate limit;
+     * - any other reason: Got error LOGIN_REQUIRED: "&lt;reason&gt;" ("Sign in to confirm your age", "Private video",
+     *   "Please sign in…"): not a rate limit.
+     * Channel and playlist ERROR alerts carry YouTube's text as Got error: "&lt;text&gt;"; only "not a bot" counts there.
      */
     private boolean isRateLimitMessage(String message) {
         if (message == null) {
@@ -861,13 +853,10 @@ public class YouTubeCircuitBreaker {
 
         String lowerMessage = message.toLowerCase();
 
-        return lowerMessage.contains("sign in to confirm") ||
-               lowerMessage.contains("not a bot") ||
-               lowerMessage.contains("confirm you're not a bot") ||
+        return lowerMessage.contains("not a bot") ||
                lowerMessage.contains("unusual traffic") ||
                lowerMessage.contains("too many requests") ||
                lowerMessage.contains("rate limit") ||
-               lowerMessage.contains("login_required") ||
                lowerMessage.contains("recaptcha") ||
                lowerMessage.contains("captcha") ||
                lowerMessage.contains("429");

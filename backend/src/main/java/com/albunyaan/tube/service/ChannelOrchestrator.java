@@ -64,12 +64,12 @@ public class ChannelOrchestrator {
 
     /**
      * NewPipe 0.26.5's "channel does not exist" messages: "This channel doesn't exist." (InnerTube JSON error 404,
-     * YoutubeChannelHelper), "Not found ("404 …")" (HTTP 404, YoutubeParsingHelper; a channel/UC… fetch makes only
-     * channel browse requests) and YouTube's own deleted-channel alert as defaultAlertsCheck words it. Any other or
-     * changed wording falls back to ERROR.
+     * YoutubeChannelHelper) and YouTube's own deleted-channel alert as defaultAlertsCheck words it. A bare HTTP 404
+     * ("Not found ("404 …")") is NOT one: getValidJsonResponseBody checks the 404 before the final URL, so a request
+     * that ended at /oops reads the same. Any other or changed wording falls back to ERROR.
      */
     private static final Pattern CHANNEL_NOT_FOUND = Pattern.compile(
-            "This channel doesn't exist\\.|Not found \\(\"404\\b.*|Got error: \"This channel does not exist\\.\"");
+            "This channel doesn't exist\\.|Got error: \"This channel does not exist\\.\"");
 
     /** Exact ERROR alert YouTube shows for a deleted playlist, as defaultAlertsCheck words it (owner ruling R3). */
     private static final Pattern PLAYLIST_NOT_FOUND = Pattern.compile("Got error: \"The playlist does not exist\\.\"");
@@ -79,7 +79,15 @@ public class ChannelOrchestrator {
      * unclassified non-OK status: Got error STATUS: "reason". These archive directly.
      */
     private static final Pattern VIDEO_REMOVED = Pattern.compile("Got error [A-Z_]+: \"(?:This video is private"
+            + "|Private video"
             + "|This video has been removed\\b.*|This video is no longer available\\b.*)\"");
+
+    /**
+     * YouTube's short age gate (LOGIN_REQUIRED "Sign in to confirm your age" without "inappropriate for some users"),
+     * which NewPipe 0.26.5 leaves untyped. A stable gate, archived like AgeRestrictedContentException.
+     */
+    private static final Pattern VIDEO_AGE_GATE =
+            Pattern.compile("Got error LOGIN_REQUIRED: \"Sign in to confirm your age\\.?\"");
 
     /**
      * Generic reasons that name no cause. YouTube can keep the real cause (e.g. a geo-block) in
@@ -122,7 +130,7 @@ public class ChannelOrchestrator {
                 || e instanceof YoutubeMusicPremiumContentException
                 || (e instanceof ContentNotAvailableException
                     && (VIDEO_REMOVED.matcher(String.valueOf(e.getMessage())).matches()
-                        || YouTubeCircuitBreaker.isAgeGate(e.getMessage())));
+                        || VIDEO_AGE_GATE.matcher(String.valueOf(e.getMessage())).matches()));
     }
 
     static boolean videoGenericUnavailable(ExtractionException e) {
@@ -132,17 +140,12 @@ public class ChannelOrchestrator {
 
     /**
      * The second signal a generic reason needs: oEmbed answers 404 only for a video YouTube no longer has. Any other
-     * answer (200 for a geo-blocked video, 401/403, 429, 5xx) or a failure is not proof. One throttled request, made
-     * only for a video whose extraction already ended in a generic reason.
+     * answer (200 for a geo-blocked video, 401/403, 429, 5xx), a failure or a refusing breaker is not proof. One
+     * request, through the gateway's throttle and breaker, made only for a video whose extraction already ended in
+     * a generic reason.
      */
     private boolean oEmbedSaysRemoved(String videoId) {
-        if (oEmbedClient == null) {
-            return false;
-        }
-        if (throttler != null && throttler.isEnabled()) {
-            throttler.throttle();
-        }
-        return oEmbedClient.videoStatus(videoId) == 404;
+        return oEmbedClient != null && gateway.fetchOEmbedVideoStatus(oEmbedClient, videoId) == 404;
     }
 
     private final YouTubeGateway gateway;

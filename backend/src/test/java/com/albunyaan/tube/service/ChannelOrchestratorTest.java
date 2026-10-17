@@ -64,18 +64,11 @@ class ChannelOrchestratorTest {
     @Mock
     private YouTubeGateway gateway;
 
-    @Mock
-    private YouTubeThrottler throttler;
-
-    @Mock
-    private YouTubeCircuitBreaker circuitBreaker;
-
     private ChannelOrchestrator orchestrator;
 
     @BeforeEach
     void setUp() {
-        // Pass null for throttler and circuitBreaker in most tests for backward compatibility
-        // The new batch validation tests will use the mocks
+        // No throttler or breaker here; ArchiveDecisionTests runs the real breaker through the real gateway
         orchestrator = new ChannelOrchestrator(gateway, null, null, null);
     }
 
@@ -377,8 +370,8 @@ class ChannelOrchestratorTest {
     }
 
     @Nested
-    @DisplayName("Error Message Classification")
-    class ErrorMessageClassificationTests {
+    @DisplayName("Free-text messages (mocked gateway)")
+    class FreeTextMessageTests {
 
         @Test
         @DisplayName("A channel is archived only on NewPipe's own gone signals, never on free-text messages")
@@ -412,7 +405,7 @@ class ChannelOrchestratorTest {
 
         @Test
         @DisplayName("Should NOT classify generic errors as notFound")
-        void isNotFoundErrorMessage_genericError_shouldBeError() throws Exception {
+        void genericError_isError() throws Exception {
             // Arrange - generic network error should be treated as transient
             when(gateway.fetchChannelInfo("UC_network"))
                     .thenThrow(new ExtractionException("Connection timed out"));
@@ -427,7 +420,7 @@ class ChannelOrchestratorTest {
 
         @Test
         @DisplayName("Should NOT classify parser errors as notFound")
-        void isNotFoundErrorMessage_parserError_shouldBeError() throws Exception {
+        void parserError_isError() throws Exception {
             // Arrange - parser error could be temporary due to YouTube changes
             when(gateway.fetchChannelInfo("UC_parser"))
                     .thenThrow(new ExtractionException("Could not parse JSON response"));
@@ -466,6 +459,8 @@ class ChannelOrchestratorTest {
         private Interceptor oEmbedAnswer = chain -> {
             throw new AssertionError("oEmbed must not be asked: " + chain.request().url());
         };
+        /** Runs just before each queued InnerTube reply (e.g. another caller tripping the shared breaker). */
+        private Runnable beforeReply = () -> { };
 
         @BeforeEach
         void setUp() {
@@ -481,6 +476,7 @@ class ChannelOrchestratorTest {
                                 "{\"responseContext\":{\"visitorData\":\"CgtWYWxpZGF0b3JUZXN0\"}}", request.url());
                     }
                     assertTrue(request.url().contains("/youtubei/v1/"), "unexpected request " + request.url());
+                    beforeReply.run();
                     return replies.remove();
                 }
             });
@@ -601,12 +597,15 @@ class ChannelOrchestratorTest {
         }
 
         @Test
-        @DisplayName("an HTTP 404 on the channel request is archived")
-        void http404_archives() {
-            var result = validate(404, "{}", BROWSE);
+        @DisplayName("R4 channel: a bare HTTP 404 is ERROR (NewPipe checks 404 before the final URL)")
+        void http404_isError() {
+            assertErrorNotArchived(validate(404, "{}", BROWSE), "Not found");
+        }
 
-            assertTrue(result.isNotFound(ID));
-            assertFalse(result.isError(ID));
+        @Test
+        @DisplayName("R4 channel: a request that ends at /oops with a 404 is ERROR, not archived (Codex repro)")
+        void oopsWith404_isError() {
+            assertErrorNotArchived(validate(404, "{}", "https://www.youtube.com/oops"), "Not found");
         }
 
         // ---- Round 2: channels ----
@@ -788,16 +787,103 @@ class ChannelOrchestratorTest {
         }
 
         @Test
-        @DisplayName("R3 video: the bot check stays a rate limit (ERROR, recorded by the breaker)")
+        @DisplayName("R3/R4 video: the bot check (both apostrophes) stays a rate limit, recorded once by the breaker")
         void videoBotCheck_staysARateLimit() {
-            YouTubeCircuitBreaker breaker = enabledBreaker();
+            for (String reason : new String[] {"Sign in to confirm you're not a bot",
+                    "Sign in to confirm you\u2019re not a bot"}) {
+                YouTubeCircuitBreaker breaker = enabledBreaker();
+                replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                        + "\"LOGIN_REQUIRED\",\"reason\":\"" + reason + "\"}}}", PLAYER));
+
+                var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
+
+                assertError(result, VIDEO, "Rate limit");
+                assertEquals(1, breaker.getStatusSnapshot().getTotalRateLimitErrors(), reason);
+            }
+        }
+
+        // ---- Round 4: only the bot check is a sign-in rate limit (breaker on, through the gateway) ----
+
+        private BatchValidationResult<StreamInfo> loginRequired(YouTubeCircuitBreaker breaker, String reason) {
             replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
-                    + "\"LOGIN_REQUIRED\",\"reason\":\"Sign in to confirm you're not a bot\"}}}", PLAYER));
+                    + "\"LOGIN_REQUIRED\",\"reason\":\"" + reason + "\"}}}", PLAYER));
+            return withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
+        }
+
+        @Test
+        @DisplayName("R4 video: a private video archives and is never recorded as a rate limit")
+        void videoPrivate_archivesAndIsNotARateLimit() {
+            for (String reason : new String[] {"Private video", "This video is private"}) {
+                YouTubeCircuitBreaker breaker = enabledBreaker();
+
+                assertArchived(loginRequired(breaker, reason), VIDEO, reason);
+                assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors(), reason);
+            }
+        }
+
+        @Test
+        @DisplayName("R4 video: any other LOGIN_REQUIRED reason is ERROR and never recorded as a rate limit")
+        void videoOtherLoginRequired_isErrorNotARateLimit() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+
+            assertError(loginRequired(breaker, "Please sign in to continue."), VIDEO, "Please sign in to continue.");
+            assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+        }
+
+        /** A generic reason, so the validator asks oEmbed for its second signal. */
+        private void queueGenericUnavailable() {
+            replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                    + "\"ERROR\",\"reason\":\"Video unavailable\"}}}", PLAYER));
+        }
+
+        @Test
+        @DisplayName("R4 video: oEmbed 429s go through the shared breaker; the threshold opens it and the rest is skipped")
+        void oEmbed429_opensTheBreakerAndSkipsTheRest() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            oEmbedAnswer = oEmbedStatus(429);
+            List<String> ids = List.of("validatorT1", "validatorT2", "validatorT3", "validatorT4");
+            for (int i = 0; i < 3; i++) {
+                queueGenericUnavailable();
+            }
+
+            var result = withBreaker(breaker).batchValidateVideosWithDetails(ids);
+
+            assertEquals(3, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, breaker.getCurrentState());
+            assertEquals(3, oEmbedUrls.size());
+            for (String id : ids.subList(0, 3)) {
+                assertError(result, id, "Video unavailable");
+            }
+            assertTrue(result.isSkipped("validatorT4"), "items after the breaker opens are skipped");
+        }
+
+        @Test
+        @DisplayName("R4 video: with the breaker open, oEmbed is not asked and the generic reason is ERROR")
+        void oEmbedRefusedByAnOpenBreaker_isErrorWithNoCall() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            beforeReply = () -> {   // another caller trips the shared breaker while this item is extracted
+                for (int i = 0; i < 3; i++) {
+                    breaker.recordRateLimitError(new IOException("HTTP 429 elsewhere"));
+                }
+            };
+            queueGenericUnavailable();
 
             var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
 
-            assertError(result, VIDEO, "Rate limit");
-            assertEquals(1, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+            assertError(result, VIDEO, "Video unavailable");
+            assertTrue(oEmbedUrls.isEmpty(), "oEmbed must not be asked while the breaker is open");
+        }
+
+        @Test
+        @DisplayName("R4 channel: a sign-in alert that is not the bot check is ERROR and never a rate limit")
+        void channelSignInAlert_isErrorNotARateLimit() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            replies.add(new Response(200, "", Map.of(), alert("Sign in to confirm your age"), BROWSE));
+
+            var result = withBreaker(breaker).batchValidateChannelsWithDetails(List.of(ID));
+
+            assertErrorNotArchived(result, "Sign in to confirm your age");
+            assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors());
         }
     }
 
