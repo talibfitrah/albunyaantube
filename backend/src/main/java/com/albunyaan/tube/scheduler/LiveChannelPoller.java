@@ -298,7 +298,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     }
 
     /** R12: APPROVED, no category outside the LIVE ones, and not already UNAVAILABLE or ARCHIVED. */
-    private static boolean archivable(Video doc, Set<String> liveCategoryIds) {
+    public static boolean archivable(Video doc, Set<String> liveCategoryIds) {
         ValidationStatus vs = doc.getValidationStatus();
         return "APPROVED".equals(doc.getStatus())
                 && (doc.getCategoryIds() == null || liveCategoryIds.containsAll(doc.getCategoryIds()))

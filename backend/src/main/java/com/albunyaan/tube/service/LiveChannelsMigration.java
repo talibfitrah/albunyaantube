@@ -5,6 +5,7 @@ import com.albunyaan.tube.model.AuditLog;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.CategoryContentOrder;
 import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.LiveChannelState;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
@@ -79,7 +80,8 @@ public class LiveChannelsMigration {
         this.clock = clock;
     }
 
-    public Map<String, Object> run(Plan plan, String actorUid, String actorEmail) throws Exception {
+    /** Synchronized: a retry while an APPLY still runs (a proxy 524) waits, then resumes; it never writes a second backup. */
+    public synchronized Map<String, Object> run(Plan plan, String actorUid, String actorEmail) throws Exception {
         boolean apply = "APPLY".equals(plan.mode());
         if (!apply && !"DRY_RUN".equals(plan.mode())) {
             throw new IllegalArgumentException("mode must be DRY_RUN or APPLY");
@@ -101,6 +103,10 @@ public class LiveChannelsMigration {
         int requests = 0;
         boolean proven = false;
         for (PlanChannel pc : planChannels) {
+            if (polls.containsKey(pc.channelId())) {
+                blockers.add("channel " + pc.channelId() + " is listed twice");
+                continue;
+            }
             Channel doc = channels.findByYoutubeId(pc.channelId()).orElse(null);
             LiveTabResult r = live.readFresh(pc.channelId());              // §10: a fresh poll on every run
             polls.put(pc.channelId(), r);
@@ -151,6 +157,7 @@ public class LiveChannelsMigration {
             row.put("youtubeId", pv.youtubeId());
             row.put("docId", doc == null ? null : doc.getId());
             row.put("inCategory", inCategory);
+            row.put("categoryIds", doc == null ? null : doc.getCategoryIds());   // R12: another category keeps the doc
             row.put("liveNow", liveNow);
             row.put("action", action);
             videoRows.add(row);
@@ -258,21 +265,33 @@ public class LiveChannelsMigration {
                 category.setType(Category.TYPE_LIVE);
                 categories.save(category);
             }
-            // Step 7: the 6 links leave; the 2 ended docs are archived (R12b); the 4 live docs stay public.
+            // Step 7: the 6 links leave; the 2 ended docs are archived (R12b); the 4 live docs stay public. Always called:
+            // both halves (the doc's categoryIds, then the order row) skip what is done, so a run cut short between
+            // them still loses its orphan row on the re-run.
             for (PlanVideo pv : plan.removeVideos()) {
-                Video doc = videos.findById(videoDocs.get(pv.youtubeId()).getId()).orElseThrow();
-                if (doc.getCategoryIds() != null && doc.getCategoryIds().contains(categoryId)) {
-                    sortOrder.removeContentFromCategoryAndUpdate(categoryId, doc.getId(), "video");
-                }
+                sortOrder.removeContentFromCategoryAndUpdate(categoryId, videoDocs.get(pv.youtubeId()).getId(), "video");
             }
             for (PlanVideo pv : plan.removeVideos()) {
                 if (!"ARCHIVE".equals(actions.get(pv.youtubeId()))) continue;
                 Video doc = videos.findById(videoDocs.get(pv.youtubeId()).getId()).orElseThrow();
-                if (doc.getValidationStatus() != ValidationStatus.ARCHIVED) {
-                    doc.setValidationStatus(ValidationStatus.ARCHIVED);
-                    videos.save(doc);
-                    audit.logSystem("live_stream_archived_ended", "video", doc.getId(), "live-channels-migration");
+                if (doc.getValidationStatus() == ValidationStatus.ARCHIVED) continue;          // done on an earlier run
+                if (!LiveChannelPoller.archivable(doc, Set.of(categoryId))) {                // R12, the poller's rule
+                    warnings.add("kept: " + pv.youtubeId() + " " + (doc.getCategoryIds() != null && !doc.getCategoryIds().isEmpty()
+                            ? "holds categories " + doc.getCategoryIds()
+                            : "is " + (doc.getValidationStatus() == ValidationStatus.UNAVAILABLE ? "UNAVAILABLE" : doc.getStatus())));
+                    continue;
                 }
+                // R12's restore record first, as the poller writes it: if the id reappears live, the poller restores it.
+                synchronized (live.stateLock()) {
+                    LiveChannelState s = live.state(pv.channelId());
+                    LiveChannelState next = s == null ? LiveChannelState.unknown(pv.channelId()) : s.copy();
+                    ValidationStatus vs = doc.getValidationStatus();
+                    next.getArchived().put(pv.youtubeId(), vs == null ? "" : vs.name());
+                    live.put(next);
+                }
+                doc.setValidationStatus(ValidationStatus.ARCHIVED);
+                videos.save(doc);
+                audit.logSystem("live_stream_archived_ended", "video", doc.getId(), "live-channels-migration");
             }
             // Step 8: positions 0..n in plan order.
             Map<String, Integer> position = new HashMap<>();

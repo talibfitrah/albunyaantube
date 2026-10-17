@@ -52,6 +52,7 @@ class LiveChannelsMigrationIT extends BaseIntegrationTest {
     @MockBean YouTubeGateway gateway;          // spec §12: no request ever leaves a test
     @SpyBean SortOrderService sortOrder;
     @Autowired LiveChannelService live;
+    @Autowired com.albunyaan.tube.scheduler.LiveChannelPoller poller;
     @Autowired com.albunyaan.tube.search.SearchIndex searchIndex;
     @Autowired ObjectMapper json;
     @Autowired VideoRepository videos;
@@ -118,9 +119,13 @@ class LiveChannelsMigrationIT extends BaseIntegrationTest {
     }
 
     private ResultActions run(String mode) throws Exception {
+        return run(plan(mode));
+    }
+
+    private ResultActions run(Map<String, Object> body) throws Exception {
         return mvc.perform(post("/api/admin/migrations/live-channels").header("Authorization", "Bearer t")
                 .header("X-Confirm-Migration", "run-live-channels").contentType(MediaType.APPLICATION_JSON)
-                .content(json.writeValueAsString(plan(mode))));
+                .content(json.writeValueAsString(body)));
     }
 
     @Test
@@ -140,12 +145,74 @@ class LiveChannelsMigrationIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.videos[?(@.youtubeId=='PLkCnLrKN8Q')].action").value(contains("ARCHIVE")))
                 .andExpect(jsonPath("$.videos[?(@.youtubeId=='pqC-1yfFvu8')].action").value(contains("ARCHIVE")))
                 .andExpect(jsonPath("$.videos[?(@.youtubeId=='Rs7St51oDDc')].action").value(contains("WRITE_CHANNEL_ID")))
+                .andExpect(jsonPath("$.videos[0].categoryIds", contains(CAT)))    // R12: the controller sees them first
                 .andExpect(jsonPath("$.resolverCheck.match").value(true))
                 .andExpect(jsonPath("$.servedAfter[*].id", contains("eC4LfEVxvKg", "Rs7St51oDDc", "J3bDNstCnzE",
                         "yee9gj7t8nQ", "bpvNfqWTXhw", "eaOtcUNHDB8")));
         assertThat(firestore.collection("categories").document(CAT).get().get().getString("type")).isNull();
         assertThat(videos.findByYoutubeId("PLkCnLrKN8Q").orElseThrow().getCategoryIds()).containsExactly(CAT);
+        assertThat(videos.findByYoutubeId("Rs7St51oDDc").orElseThrow().getChannelId()).isNull();
         assertThat(countDocuments("live_channel_state")).isZero();
+        assertThat(countDocuments("audit_logs")).isZero();
+    }
+
+    @Test
+    void aChannelListedTwiceIsABlockerAndIsPolledOnce() throws Exception {
+        Map<String, Object> body = new HashMap<>(plan("APPLY"));
+        body.put("channels", List.of(Map.of("channelId", QURAN, "position", 0), Map.of("channelId", SUNNAH, "position", 1),
+                Map.of("channelId", KIDS, "position", 2), Map.of("channelId", ZAD, "position", 3),
+                Map.of("channelId", SUNNAH, "position", 4)));
+
+        run(body).andExpect(status().isConflict())
+                .andExpect(jsonPath("$.blockers", hasItem("channel " + SUNNAH + " is listed twice")));
+
+        verify(reader).read(SUNNAH);
+        assertThat(countDocuments("audit_logs")).isZero();
+    }
+
+    /** Review I1: a crash between the doc write and the row delete leaves the row; the re-run must still delete it. */
+    @Test
+    void aRemovalCutShortBetweenItsTwoWritesLeavesNoOrphanRow() throws Exception {
+        write("videos", "doc-PLkCnLrKN8Q", Map.of("youtubeId", "PLkCnLrKN8Q", "title", "stored PLkCnLrKN8Q",
+                "status", "APPROVED", "validationStatus", "ERROR", "categoryIds", List.of()));   // its row stays
+
+        run("APPLY").andExpect(status().isOk());
+
+        assertThat(documentExists("category_content_order", CAT + "_video_doc-PLkCnLrKN8Q")).isFalse();
+        assertThat(countDocuments("category_content_order")).isEqualTo(4);
+    }
+
+    /** Review I2, R12: an ended doc that also sits in another category is kept, never archived, and named. */
+    @Test
+    void anEndedDocInAnotherCategoryIsKeptWithAWarning() throws Exception {
+        write("videos", "doc-pqC-1yfFvu8", Map.of("youtubeId", "pqC-1yfFvu8", "title", "stored pqC-1yfFvu8",
+                "status", "APPROVED", "validationStatus", "ERROR", "categoryIds", List.of(CAT, "other-cat")));
+
+        run("APPLY").andExpect(status().isOk())
+                .andExpect(jsonPath("$.warnings", hasItem("kept: pqC-1yfFvu8 holds categories [other-cat]")));
+
+        var doc = videos.findByYoutubeId("pqC-1yfFvu8").orElseThrow();
+        assertThat(doc.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
+        assertThat(doc.getCategoryIds()).containsExactly("other-cat");
+        assertThat(live.state(ZAD).getArchived()).doesNotContainKey("pqC-1yfFvu8");
+    }
+
+    /** Review I3, R12: the migration's archive leaves the poller's restore record, so a reappearing id heals. */
+    @Test
+    void anArchivedDocIsRestoredWhenItsIdReappearsOnItsChannel() throws Exception {
+        run("APPLY").andExpect(status().isOk());
+
+        assertThat(live.state(QURAN).getArchived()).containsEntry("PLkCnLrKN8Q", "ERROR");
+        assertThat(live.state(ZAD).getArchived()).containsEntry("pqC-1yfFvu8", "ERROR");
+        assertThat(firestore.collection("live_channel_state").document(QURAN).get().get().get("archived"))
+                .isEqualTo(Map.of("PLkCnLrKN8Q", "ERROR"));                 // persisted: survives a restart
+
+        when(reader.read(QURAN)).thenReturn(lives("eC4LfEVxvKg", "PLkCnLrKN8Q"));
+        live.readFresh(QURAN);                                              // the cycle below reuses this read (memo)
+        poller.cycle(System.currentTimeMillis());
+
+        assertThat(videos.findByYoutubeId("PLkCnLrKN8Q").orElseThrow().getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
+        assertThat(live.state(QURAN).getArchived()).doesNotContainKey("PLkCnLrKN8Q");
     }
 
     @Test
