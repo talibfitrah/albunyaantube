@@ -48,6 +48,8 @@ class LivePlaylistRedirector internal constructor(
     private val requested = ConcurrentHashMap<String, MutableSet<Int>>()
     /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it. */
     private val generations = ConcurrentHashMap<String, Long>()
+    /** The client whose URLs (and so UA) each stream's current source was built from; guarded by `this`. */
+    private val clients = HashMap<String, ExtractionClient>()
 
     /** The `ResolvingDataSource` hook. */
     fun resolve(streamId: String, spec: DataSpec): DataSpec =
@@ -65,10 +67,11 @@ class LivePlaylistRedirector internal constructor(
         return mapped
     }
 
-    /** A new source for [streamId] starts from its own master: never redirected to an older one. */
-    fun clear(streamId: String) {
+    /** A new source for [streamId], built from [client]'s URLs, starts from its own master: never redirected to an older one. */
+    fun clear(streamId: String, client: ExtractionClient) {
         synchronized(this) {
             generations[streamId] = (generations[streamId] ?: 0L) + 1
+            clients[streamId] = client
             maps.remove(streamId)
             requested.remove(streamId)
         }
@@ -80,10 +83,12 @@ class LivePlaylistRedirector internal constructor(
      * is missing, or the fetch failed).
      */
     suspend fun refresh(current: ResolvedStreams, fresh: ResolvedStreams): Boolean {
-        if (fresh.extractionClient != current.extractionClient) return false       // RV I10b
-        val master = fresh.hlsUrl ?: return false
         val id = current.streamId
-        val generation = generations[id]
+        // RV I10b against the source playing now: a recovery may have rebuilt it on the other client while the caller
+        // re-extracted, leaving `current` stale. An unchanged generation after the fetch means an unchanged client.
+        val (generation, client) = synchronized(this) { generations[id] to (clients[id] ?: current.extractionClient) }
+        if (fresh.extractionClient != client) return false
+        val master = fresh.hlsUrl ?: return false
         val map = variantMap(fetchText(master, fresh.extractionClient) ?: return false)
         // Short and never taken by loader threads (rewrite reads lock-free): only clear() contends.
         synchronized(this) {

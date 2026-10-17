@@ -301,7 +301,7 @@ class DashSourceBuilder @Inject constructor(
                 // Spec §9.2(a): a live master's media playlists go through the redirector, so a refresh swaps their
                 // URLs in place. Every new live source starts from its own master (RV I10a: the map is cleared).
                 val hlsFactory: DataSource.Factory = if (resolved.isLive) {
-                    livePlaylistRedirector.clear(resolved.streamId)
+                    livePlaylistRedirector.clear(resolved.streamId, resolved.extractionClient)
                     ResolvingDataSource.Factory(factory) { spec -> livePlaylistRedirector.resolve(resolved.streamId, spec) }
                 } else {
                     factory

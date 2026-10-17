@@ -82,7 +82,7 @@ class LivePlaylistRedirectorTest {
     @Test fun `clear forgets the map`() = runTest {
         val r = redirector(master(e2))
         r.refresh(streams(e1), streams(e2))
-        r.clear("Rs7St51oDDc")
+        r.clear("Rs7St51oDDc", ExtractionClient.NEWPIPE_IOS)
 
         assertNull(r.rewrite("Rs7St51oDDc", url(230, e1)))
     }
@@ -109,9 +109,22 @@ class LivePlaylistRedirectorTest {
     /** RV I10a: a source rebuilt while the fresh master is in flight starts from its own master; the late map is dropped. */
     @Test fun `a clear during the master fetch drops that refresh`() = runTest {
         lateinit var r: LivePlaylistRedirector
-        r = LivePlaylistRedirector { _, _ -> r.clear("Rs7St51oDDc"); master(e2) }
+        r = LivePlaylistRedirector { _, _ -> r.clear("Rs7St51oDDc", ExtractionClient.NEWPIPE_IOS); master(e2) }
 
         assertFalse(r.refresh(streams(e1), streams(e2)))
+        assertNull(r.rewrite("Rs7St51oDDc", url(230, e1)))
+    }
+
+    /**
+     * RV I10b: a recovery may rebuild the stream on the other client while the caller re-extracts (seconds, before
+     * refresh() runs). The caller's `current` is then stale; the map must match the client of the source now playing.
+     */
+    @Test fun `a rebuild on another client before the refresh drops that refresh`() = runTest {
+        val r = redirector(master(e2))
+        r.clear("Rs7St51oDDc", ExtractionClient.NEWPIPE_IOS)          // the source the caller is refreshing
+        r.clear("Rs7St51oDDc", ExtractionClient.NEWPIPE_ANDROID)      // a recovery rebuilt it during the re-extraction
+
+        assertFalse(r.refresh(streams(e1, ExtractionClient.NEWPIPE_IOS), streams(e2, ExtractionClient.NEWPIPE_IOS)))
         assertNull(r.rewrite("Rs7St51oDDc", url(230, e1)))
     }
 
