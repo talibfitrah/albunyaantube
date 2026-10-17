@@ -25,6 +25,7 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.QueryTimeoutImpl;
 import org.apache.lucene.index.StoredFields;
 import org.apache.lucene.index.Term;
 import org.apache.lucene.search.BooleanClause.Occur;
@@ -55,6 +56,8 @@ import java.io.IOException;
 import java.io.UncheckedIOException;
 import java.nio.file.Files;
 import java.nio.file.Path;
+import java.time.LocalDate;
+import java.time.ZoneOffset;
 import java.util.ArrayList;
 import java.util.Arrays;
 import java.util.Collection;
@@ -96,6 +99,10 @@ public class SearchIndex {
     private static final int MAX_SNAPSHOTS = 64;
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
+    /** R30: the inner pass's time budget per search; partial hits on expiry. */
+    static final long INNER_TIMEOUT_MS = 40;
+    /** R35: an item this long or shorter is a Short. */
+    private static final int SHORT_MAX_SECONDS = 60;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger log = LoggerFactory.getLogger(SearchIndex.class);
 
@@ -131,6 +138,10 @@ public class SearchIndex {
     /** The searcher each in-tab search's first page ran on, by reader version: its later pages run there too. Tests swap it. */
     SearcherLifetimeManager snapshots = new SearcherLifetimeManager();
     private final long readyWaitMs;
+    /** Null where no inner index exists (tests); never null in the app context. */
+    private final InnerIndex inner;
+    /** Tests lower it to force a timeout. */
+    long innerTimeoutMs = INNER_TIMEOUT_MS;
     private final CountDownLatch ready = new CountDownLatch(1);
     private final CountDownLatch built = new CountDownLatch(1);
     private final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, runnable -> {
@@ -158,15 +169,20 @@ public class SearchIndex {
      */
     @Autowired
     public SearchIndex(ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
-                       SearchableStreamRepository streams, @Value("${search.index.base-dir:}") String baseDir)
-            throws IOException {
+                       SearchableStreamRepository streams, @Value("${search.index.base-dir:}") String baseDir,
+                       InnerIndex inner) throws IOException {
         this(FSDirectory.open(Files.createTempDirectory(Files.createDirectories(
                         Path.of(baseDir.isEmpty() ? System.getProperty("java.io.tmpdir") : baseDir)), "fitrahtube-search-")),
-                channels, playlists, videos, streams, 5_000);
+                channels, playlists, videos, streams, 5_000, inner);
     }
 
     SearchIndex(Directory dir, ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
                 SearchableStreamRepository streams, long readyWaitMs) throws IOException {
+        this(dir, channels, playlists, videos, streams, readyWaitMs, null);
+    }
+
+    SearchIndex(Directory dir, ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
+                SearchableStreamRepository streams, long readyWaitMs, InnerIndex inner) throws IOException {
         this.channels = channels;
         this.playlists = playlists;
         this.videos = videos;
@@ -175,6 +191,7 @@ public class SearchIndex {
         this.writer = new IndexWriter(dir, new IndexWriterConfig(SearchText.INDEX));
         this.searchers = new SearcherManager(writer, null);
         this.readyWaitMs = readyWaitMs;
+        this.inner = inner;
     }
 
     /** Context close: stop the writer thread, drop the uncommitted index and delete its directory. */
@@ -524,14 +541,144 @@ public class SearchIndex {
         awaitReady();
         long started = System.nanoTime();
         Trace trace = new Trace();
-        IndexSearcher searcher = searchers.acquire();
         try {
-            return ladder(searcher, query, type, false, want, null, trace);
+            Ladder today;
+            IndexSearcher searcher = searchers.acquire();
+            try {
+                today = ladder(searcher, query, type, false, want, null, trace);
+            } finally {
+                searchers.release(searcher);
+            }
+            return withInner(today, type, want, trace);
         } finally {
-            searchers.release(searcher);
             long ms = (System.nanoTime() - started) / 1_000_000;
             if (ms > slowSearchMs) log.info(trace.line(ms, want, type));
         }
+    }
+
+    /**
+     * Spec §7.1: C (today's list) is unchanged. Inner tier-1–2 hits go in at h = max(3, |C tier ≤ 2|), so C's first h
+     * items and the header stay today's, and every curated tier ≤ 2 hit stays ahead of every inner hit. Never for
+     * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Any failure of the inner
+     * pass (an inner index closing under it, at a rebuild swap or shutdown) answers C: it never fails a search.
+     */
+    private Hits withInner(Ladder today, String type, int want, Trace trace) {
+        Hits plain = new Hits(today.items(), today.match());
+        if (inner == null || !inner.serving() || today.tokens().isEmpty() || "CHANNEL".equals(type) || "PLAYLIST".equals(type)) {
+            return plain;
+        }
+        int at = Math.min(Math.max(MIN_CONFIDENT_HITS, today.upToTier2()), today.items().size());
+        int need = want - at; // = want − min(h, |C|); ≤ 0 also covers "≥ 50 exact or approximate hits"
+        if (need <= 0) return plain;
+        Set<String> seen = new HashSet<>();
+        Map<String, ContentItemDto> streams = new HashMap<>();
+        for (ContentItemDto item : today.items()) {
+            seen.add(item.getId()); // dedupe: C's copy keeps its place (a stored stream takes the inner title, Q17)
+            if (item.getSourceType() != null) streams.put(item.getId(), item); // in C only a stored stream names a source
+        }
+        List<Tiered> found;
+        try {
+            found = innerLadder(today.tokens(), need, seen, streams, trace);
+        } catch (IOException | RuntimeException e) { // AlreadyClosedException included
+            // The class only: a Lucene message can quote query terms, and no search log carries the query (search spec §10).
+            log.warn("inner search failed ({}); answering today's list", e.getClass().getName());
+            return plain;
+        }
+        if (found.isEmpty()) return plain;
+        List<ContentItemDto> out = new ArrayList<>(today.items().subList(0, at));
+        for (Tiered t : found) out.add(t.item());
+        out.addAll(today.items().subList(at, today.items().size())); // only C's tier-3 hits can sit here
+        String match = today.items().isEmpty() ? TIER_NAMES[found.get(0).tier()] : today.match();
+        return new Hits(List.copyOf(out.subList(0, Math.min(want, out.size()))), match);
+    }
+
+    /**
+     * Tiers 1–2 on the inner index (R17), score order, longer videos before Shorts in each tier (R35), within 40 ms (R30).
+     * First Q17: each stored stream in `streams` that the inner index also lists shows the inner copy's title, which is
+     * in its source's own `hl`; the stored streams came from `hl=en` lists, so theirs are often machine-translated.
+     */
+    private List<Tiered> innerLadder(List<String> tokens, int need, Set<String> seen, Map<String, ContentItemDto> streams,
+                                     Trace trace) throws IOException {
+        long started = System.nanoTime();
+        IndexSearcher shared = inner.acquire();
+        if (shared == null) return List.of();
+        List<Tiered> out = new ArrayList<>();
+        QueryTimeoutImpl timeout = new QueryTimeoutImpl(innerTimeoutMs);
+        try {
+            IndexSearcher searcher = new IndexSearcher(shared.getIndexReader()); // per query: its own timeout
+            searcher.setTimeout(timeout);
+            // ponytail: one TermQuery per stream (≤ want); one TermInSetQuery if it ever shows in the inner ms
+            for (ContentItemDto stream : streams.values()) {
+                TopDocs copy = searcher.search(new TermQuery(new Term("id", stream.getId())), 1);
+                if (copy.scoreDocs.length > 0) stream.setTitle(searcher.storedFields().document(copy.scoreDocs[0].doc).get("t"));
+            }
+            Map<Query, Query> rewritten = new HashMap<>();
+            UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
+                try {
+                    return searcher.rewrite(q);
+                } catch (IOException e) {
+                    throw new UncheckedIOException(e);
+                }
+            });
+            for (int tier = 1; tier <= 2 && out.size() < need && !trace.innerTimedOut; tier++) {
+                List<ContentItemDto> longer = new ArrayList<>(), shorts = new ArrayList<>();
+                collectInner(searcher, SearchText.tier(tier, tokens, once), need - out.size(), seen, longer, shorts, timeout, trace);
+                for (ContentItemDto item : longer) out.add(new Tiered(item, tier));
+                for (ContentItemDto item : shorts) if (out.size() < need) out.add(new Tiered(item, tier));
+            }
+            if (searcher.timedOut()) trace.innerTimedOut = true;
+            if (trace.innerTimedOut) inner.timedOut();
+        } finally {
+            inner.release(shared);
+        }
+        trace.innerMs = (System.nanoTime() - started) / 1_000_000;
+        trace.innerHits = Math.min(out.size(), need);
+        return out.size() > need ? out.subList(0, need) : out;
+    }
+
+    /** Pages one inner tier in score order until `want` longer videos are found, the hits run out, or the budget ends. */
+    private void collectInner(IndexSearcher searcher, Query query, int want, Set<String> seen, List<ContentItemDto> longer,
+                              List<ContentItemDto> shorts, QueryTimeoutImpl timeout, Trace trace) throws IOException {
+        ScoreDoc after = null;
+        long n = Math.max(10, 2L * want);
+        while (longer.size() < want) {
+            if (timeout.shouldExit()) {
+                trace.innerTimedOut = true;
+                return;
+            }
+            TopDocs top = after == null ? searcher.search(query, (int) n) : searcher.searchAfter(after, query, (int) n);
+            if (top.scoreDocs.length == 0) return;
+            StoredFields fields = searcher.storedFields();
+            for (ScoreDoc hit : top.scoreDocs) {
+                Document doc = fields.document(hit.doc);
+                trace.loaded++;
+                String keeper = keeper(doc);
+                if (keeper == null) {
+                    trace.hidden++;
+                    continue;
+                }
+                if (!seen.add(doc.get("id"))) continue;
+                IndexableField d = doc.getField("d");
+                int seconds = d == null ? 0 : d.numericValue().intValue();
+                (seconds > 0 && seconds <= SHORT_MAX_SECONDS ? shorts : longer).add(innerDto(doc, keeper));
+                if (longer.size() == want) return;
+            }
+            if (top.scoreDocs.length < n) return; // the tier has no more hits (or the search timed out)
+            after = top.scoreDocs[top.scoreDocs.length - 1];
+            n = Math.min(2 * n, Integer.MAX_VALUE);
+        }
+    }
+
+    /** R28: the stream DTO's shape from an INNER document's stored fields, naming the source that keeps it. */
+    static ContentItemDto innerDto(Document doc, String keeper) {
+        String id = doc.get("id");
+        IndexableField seconds = doc.getField("d"), day = doc.getField("a");
+        Integer daysAgo = day == null ? null
+                : (int) Math.max(0, LocalDate.now(ZoneOffset.UTC).toEpochDay() - day.numericValue().longValue());
+        ContentItemDto dto = ContentItemDto.video(id, doc.get("t"), null, seconds == null ? 0 : seconds.numericValue().intValue(),
+                daysAgo, null, "https://i.ytimg.com/vi/" + id + "/hqdefault.jpg", null, doc.get("c"), null);
+        provenance(dto, keeper);
+        return dto;
     }
 
     /**
@@ -553,7 +700,7 @@ public class SearchIndex {
                 int[] kept = {0}; // the pruner sees the snapshots newest first
                 snapshots.prune((ageSec, s) -> ageSec > SNAPSHOT_TTL_SEC || ++kept[0] > MAX_SNAPSHOTS);
             }
-            Hits hits = ladder(searcher, query, type, true, want, allowedIds, new Trace());
+            Ladder hits = ladder(searcher, query, type, true, want, allowedIds, new Trace());
             return new Hits(hits.items(), hits.match(), snapshot);
         } finally {
             if (pinned != null) snapshots.release(pinned); else searchers.release(searcher);
@@ -566,15 +713,16 @@ public class SearchIndex {
      * related, the noisiest, runs only while fewer than {@link #MIN_CONFIDENT_HITS} items are found. `catalogOnly`
      * drops streams (in-tab lists); `allowedIds` (null = all) restricts membership for filtered in-tab search (§4.7).
      */
-    private Hits ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
-                        Set<String> allowedIds, Trace trace) throws IOException {
+    private Ladder ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
+                          Set<String> allowedIds, Trace trace) throws IOException {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
         trace.tokens = tokens.size();
-        if (tokens.isEmpty()) return Hits.NONE;
+        if (tokens.isEmpty()) return new Ladder(List.of(), "none", List.of(), 0);
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String match = "none";
+        int upToTier2 = 0;
         // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
         Map<Query, Query> rewritten = new HashMap<>();
         UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
@@ -593,9 +741,15 @@ public class SearchIndex {
             trace.tierMs[tier] = (System.nanoTime() - t0) / 1_000_000;
             trace.tierHits[tier] = out.size() - before;
             if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
+            if (tier <= 2) upToTier2 = out.size();
         }
-        return new Hits(out, match);
+        return new Ladder(out, match, tokens, upToTier2);
     }
+
+    /** One run of the ladder: the items, the header tier, the query's tokens, and how many items tiers 1–2 found (§7.1). */
+    private record Ladder(List<ContentItemDto> items, String match, List<String> tokens, int upToTier2) {}
+
+    private record Tiered(ContentItemDto item, int tier) {}
 
     /** Exact YouTube-id lookup for pasted URLs and ids (spec §4.4); no Firestore read. */
     public Hits byId(String youtubeId, String type) throws IOException {
@@ -684,9 +838,10 @@ public class SearchIndex {
         }
     }
 
-    /** Spec §4.2, §8.1: the admitted source that keeps a STREAM document visible, or null (hidden or catalog). */
+    /** Spec §4.2, §8.1: the admitted source that keeps a STREAM or INNER document visible, or null (hidden or catalog). */
     private String keeper(Document doc) {
-        if (!"STREAM".equals(doc.get("source"))) return null;
+        String kind = doc.get("source");
+        if (!"STREAM".equals(kind) && !"INNER".equals(kind)) return null;
         String id = doc.get("id");
         if (videoIds.contains(id)) return null;
         Map<String, Admitted> sources = admittedSources;
