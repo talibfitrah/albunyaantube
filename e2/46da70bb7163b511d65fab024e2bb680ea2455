@@ -1,0 +1,26 @@
+backend/src/main/java/com/albunyaan/tube/controller/PlaybackSolverController.java
+  s_dbb6b1f3671904::t_00f7206d21e05f 1-55
+backend/src/test/java/com/albunyaan/tube/integration/PlaybackSolveIT.java
+  s_dbb6b1f3671904::t_fcf396eb210ce6 7,46
+  s_dbb6b1f3671904::t_10fe9d9a39d335 138-143,209,214,218-219,221,228-230
+  s_dbb6b1f3671904::t_4d39196128e266 144,146-147,149-153
+  s_dbb6b1f3671904::t_2ae4f0613cf6f0 1-6,8-45,47-137,145,148,154-208,210-213,215-217,220,222-227,231-241
+backend/src/main/java/com/albunyaan/tube/security/SecurityConfig.java
+  s_dbb6b1f3671904::t_e6830fb0bf7474 137-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e246da70bb7163b511d65fab024e2bb680ea2455",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
