@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/search/InnerCorpus.java
+  s_dbb6b1f3671904::t_6c8198c168ba56 1-98
+backend/src/main/java/com/albunyaan/tube/search/InnerStore.java
+  s_dbb6b1f3671904::t_76d8359c9bf845 67-70
+backend/src/test/java/com/albunyaan/tube/search/InnerCorpusTest.java
+  s_dbb6b1f3671904::t_88dfec5bacb4c3 1-94
+backend/src/test/java/com/albunyaan/tube/search/InnerStoreTest.java
+  s_dbb6b1f3671904::t_a8e49ffd14023a 155-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f1594927d2f731ef8e0a93edfc3757c155c3548f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
