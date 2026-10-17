@@ -512,4 +512,33 @@ class BulkSubmissionServiceSubmitTest {
         verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean());
         assertEquals("UCROKYPep-UuODNwyipe6JMw", written.getValue().channelId());   // the gateway stub says "UCauth"
     }
+
+    /** Fix round 1: a failed categories read inside the guard is a retryable 503, not a 409, and nothing is written. */
+    @Test
+    void aFailedLiveCategoryCheckIs503CheckUnavailable() throws Exception {
+        when(liveCategoryGuard.checkAll(anyBoolean(), any()))
+                .thenThrow(new java.util.concurrent.ExecutionException("categories read failed", null));
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var e = assertThrows(com.albunyaan.tube.exception.LiveCategoryException.class,
+                () -> svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true));
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, e.getStatus());
+        assertEquals(com.albunyaan.tube.exception.LiveCategoryException.CHECK_UNAVAILABLE, e.getCode());
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void anInterruptedLiveCategoryCheckIs503AndKeepsTheFlag() throws Exception {
+        when(liveCategoryGuard.checkAll(anyBoolean(), any())).thenThrow(new InterruptedException());
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var e = assertThrows(com.albunyaan.tube.exception.LiveCategoryException.class,
+                () -> svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true));
+
+        assertTrue(Thread.interrupted());                                     // also clears it for the next test
+        assertEquals(com.albunyaan.tube.exception.LiveCategoryException.CHECK_UNAVAILABLE, e.getCode());
+    }
 }

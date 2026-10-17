@@ -1459,24 +1459,49 @@ public class ContentLibraryController {
         return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
     }
 
-    /** §7 rows 12–13 (D9): one Change per library item, read from its stored doc; missing docs are skipped. */
+    /**
+     * §7 rows 12–13 (D9): one Change per library item, read from its stored doc (one batched read per type); missing
+     * docs are skipped. A non-null {@code newStatus} is row 13's bulk approve, which also forces PUBLIC: a doc that
+     * isn't PUBLIC is new to the public listing, so it goes in with no "before" and counts as a publish.
+     */
     private List<LiveCategoryGuard.Change> liveChanges(List<BulkActionItem> items, List<String> newIds, String newStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Channel> channels = channelRepository.findAllByIds(idsOfType(items, "channel"));
+        Map<String, Playlist> playlists = playlistRepository.findAllByIds(idsOfType(items, "playlist"));
+        Map<String, Video> videos = videoRepository.findAllByIds(idsOfType(items, "video"));
         List<LiveCategoryGuard.Change> changes = new ArrayList<>();
         for (BulkActionItem item : items) {
             String type = item.type.toLowerCase(Locale.ROOT);
             String ref = type + ":" + item.id;
             switch (type) {
-                case "channel" -> channelRepository.findById(item.id).ifPresent(c -> changes.add(LiveCategoryGuard.Change.of(ref, c, c,
-                        newIds != null ? newIds : c.getCategoryIds(), newStatus != null ? newStatus : c.getStatus())));
-                case "playlist" -> playlistRepository.findById(item.id).ifPresent(p -> changes.add(LiveCategoryGuard.Change.of(ref, p, p,
-                        newIds != null ? newIds : p.getCategoryIds(), newStatus != null ? newStatus : p.getStatus())));
-                case "video" -> videoRepository.findById(item.id).ifPresent(v -> changes.add(LiveCategoryGuard.Change.of(ref, v, v,
-                        newIds != null ? newIds : v.getCategoryIds(), newStatus != null ? newStatus : v.getStatus())));
+                case "channel" -> {
+                    Channel c = channels.get(item.id);
+                    if (c != null) changes.add(LiveCategoryGuard.Change.of(ref, c, before(c, c.getVisibility(), newStatus),
+                            newIds != null ? newIds : c.getCategoryIds(), newStatus != null ? newStatus : c.getStatus()));
+                }
+                case "playlist" -> {
+                    Playlist p = playlists.get(item.id);
+                    if (p != null) changes.add(LiveCategoryGuard.Change.of(ref, p, before(p, p.getVisibility(), newStatus),
+                            newIds != null ? newIds : p.getCategoryIds(), newStatus != null ? newStatus : p.getStatus()));
+                }
+                case "video" -> {
+                    Video v = videos.get(item.id);
+                    if (v != null) changes.add(LiveCategoryGuard.Change.of(ref, v, before(v, v.getVisibility(), newStatus),
+                            newIds != null ? newIds : v.getCategoryIds(), newStatus != null ? newStatus : v.getStatus()));
+                }
                 default -> { }
             }
         }
         return changes;
+    }
+
+    private static List<String> idsOfType(List<BulkActionItem> items, String type) {
+        return items.stream().filter(i -> type.equalsIgnoreCase(i.type)).map(i -> i.id).distinct().toList();
+    }
+
+    /** The doc as its own "before", or null on a status change (bulk approve) of a doc that isn't PUBLIC yet. */
+    private static <T> T before(T doc, String visibility, String newStatus) {
+        return newStatus != null && !VisibilityPolicy.isPublic(visibility) ? null : doc;
     }
 
     /** Writes the guard's verified channel ids onto video docs (D13), keyed "video:<docId>". */

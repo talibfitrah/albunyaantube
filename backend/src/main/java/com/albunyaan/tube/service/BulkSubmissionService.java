@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.registry.*;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.VideoType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -126,18 +127,29 @@ public class BulkSubmissionService {
         }
 
         // Reject ALL before the row loop so we return 400,
-        // not 500 from the switch default arm.
+        // not 500 from the switch default arm. Reject a duplicate rowIndex too: it keys the live guard's
+        // offenders and verified channels.
+        java.util.Set<Integer> rowIndexes = new java.util.HashSet<>();
         for (SubmitRow row : req.rows()) {
             if (row.detectedType() == YouTubeContentType.ALL) {
                 throw new org.springframework.web.server.ResponseStatusException(
                         org.springframework.http.HttpStatus.BAD_REQUEST,
                         "detectedType ALL is not supported in bulk submit");
             }
+            if (!rowIndexes.add(row.rowIndex())) {
+                // IllegalArgumentException, not ResponseStatusException: GlobalExceptionHandler renders it as 400,
+                // while its catch-all turns a ResponseStatusException into a 500.
+                throw new IllegalArgumentException("duplicate rowIndex " + row.rowIndex() + " in bulk submit");
+            }
         }
 
         // D9: the whole request is refused on any live-category violation, before any slot or write is spent.
+        // A row that fails the URL round-trip is never written, so the guard neither seeds nor counts it.
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         for (SubmitRow row : req.rows()) {
+            if (roundTripError(row, parser.parse(row.originalUrl())) != null) {
+                continue;
+            }
             liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
                     row.detectedType().name().toLowerCase(java.util.Locale.ROOT), row.metadata().youtubeId(),
                     row.metadata().channelId(), List.of(), null, row.categoryIds(), resolvedStatus));
@@ -145,11 +157,11 @@ public class BulkSubmissionService {
         Map<String, String> verifiedChannels;
         try {
             verifiedChannels = liveCategoryGuard.checkAll(isAdmin, liveChanges);
-        } catch (ExecutionException | TimeoutException e) {
-            throw new IllegalStateException("live-category check failed", e);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            throw new IllegalStateException("interrupted during the live-category check", e);
+        } catch (ExecutionException | TimeoutException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("bulk-submit live-category check failed: {}", e.toString());
+            throw new LiveCategoryException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                    LiveCategoryException.CHECK_UNAVAILABLE, "Couldn't run the live-category check; try again", Map.of());
         }
 
         // Row-count-aware rate-limit consumption. The
@@ -197,26 +209,11 @@ public class BulkSubmissionService {
         java.util.Set<String> invalidCategoryIds = new java.util.HashSet<>();
 
         for (SubmitRow row : req.rows()) {
-            // Verify client-supplied metadata.youtubeId + detectedType
-            // round-trip from row.originalUrl. Prevents tampered submit bodies pointing at a
-            // different entity than the moderator previewed (mass assignment via metadata).
             YouTubeUrlParseResult parsed = parser.parse(row.originalUrl());
-            if (parsed.errorCode() != null) {
+            String roundTripError = roundTripError(row, parsed);
+            if (roundTripError != null) {
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "INVALID_URL"));
-                failed++;
-                continue;
-            }
-            if (parsed.type() != row.detectedType()) {
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "TYPE_MISMATCH"));
-                failed++;
-                continue;
-            }
-            if (row.metadata() == null
-                    || !java.util.Objects.equals(parsed.youtubeId(), row.metadata().youtubeId())) {
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "YOUTUBE_ID_MISMATCH"));
+                        SubmitStatus.FAILED, roundTripError));
                 failed++;
                 continue;
             }
@@ -410,6 +407,20 @@ public class BulkSubmissionService {
                 actorUid, req.rows().size(), added, failed, System.currentTimeMillis() - start);
 
         return new BulkSubmitResponse(req.rows().size(), added, failed, results);
+    }
+
+    /**
+     * Verify client-supplied metadata.youtubeId + detectedType round-trip from row.originalUrl. Prevents tampered
+     * submit bodies pointing at a different entity than the moderator previewed (mass assignment via metadata).
+     * Returns the row's failure code, or null when it round-trips.
+     */
+    private static String roundTripError(SubmitRow row, YouTubeUrlParseResult parsed) {
+        if (parsed.errorCode() != null) return "INVALID_URL";
+        if (parsed.type() != row.detectedType()) return "TYPE_MISMATCH";
+        if (row.metadata() == null || !java.util.Objects.equals(parsed.youtubeId(), row.metadata().youtubeId())) {
+            return "YOUTUBE_ID_MISMATCH";
+        }
+        return null;
     }
 
     /** Synth-row for previews that didn't complete inside the 180s batch budget. */

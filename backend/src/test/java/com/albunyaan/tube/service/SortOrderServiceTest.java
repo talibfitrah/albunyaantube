@@ -303,7 +303,7 @@ class SortOrderServiceTest {
         Category cat = makeCategory("cat1", "Quran", 0);
         when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
 
-        // Channel exists (returned for contentExists, addCategoryIdToContent, resolveContentInfo)
+        // Channel exists (returned for the Phase-1 read, addCategoryIdToContent, resolveContentInfo)
         Channel ch = new Channel();
         ch.setId("ch1");
         ch.setName("Test Channel");
@@ -491,10 +491,10 @@ class SortOrderServiceTest {
         verify(cacheService).evictPublicContentCaches();
     }
 
-    // --- contentExists ---
+    // --- addMultipleContentToCategory Phase 1: existence ---
 
     @Test
-    void contentExists_channel() throws Exception {
+    void addMultiple_existingChannelPassesAndMissingOneFails() throws Exception {
         Channel ch = new Channel();
         ch.setId("ch1");
         when(channelRepository.findById("ch1")).thenReturn(Optional.of(ch));
@@ -505,7 +505,6 @@ class SortOrderServiceTest {
 
         // Existing channel passes validation
         List<String[]> items = Collections.singletonList(new String[]{"ch1", "channel"});
-        // contentExists is private, test via addMultipleContentToCategory validation
         // If validation fails, it throws
         // Setup remaining mocks for the full method
         String docId = CategoryContentOrder.generateId("cat1", "channel", "ch1");
@@ -526,7 +525,7 @@ class SortOrderServiceTest {
     }
 
     @Test
-    void contentExists_unknownTypeFails() throws Exception {
+    void addMultiple_unknownTypeFails() throws Exception {
         Category cat = makeCategory("cat1", "Quran", 0);
         when(categoryRepository.findById("cat1")).thenReturn(Optional.of(cat));
 

@@ -418,4 +418,107 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
         assertThat(playlists.findById("pl-r14").orElseThrow().getCategoryIds()).isEmpty();
     }
+
+    // ---- Fix round 1 ----
+
+    /** Row 10 is the only row here a moderator reaches: a LIVE row refuses the whole submit, and nothing is written. */
+    @Test
+    void row10_aModeratorBulkSubmitWithALiveRowIs403AndWritesNothing() throws Exception {
+        as("moderator");
+        Map<String, Object> row = Map.of("rowIndex", 0,
+                "originalUrl", "https://www.youtube.com/channel/" + uc("r10m"), "detectedType", "CHANNEL",
+                "metadata", Map.of("youtubeId", uc("r10m"), "title", "C"), "categoryIds", List.of(LIVE));
+        send(post("/api/admin/registry/bulk/submit"), Map.of("rows", List.of(row)))
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_ADMIN_ONLY"));
+        assertThat(countDocuments("channels")).isZero();
+    }
+
+    /** A row that fails the URL round-trip is never written, so the guard neither seeds nor counts it. */
+    @Test
+    void row10_aHandleUrlRowSeedsNoState() throws Exception {
+        as("admin");
+        liveOn(uc("r10h"), "it1r10hlive");
+        Map<String, Object> row = Map.of("rowIndex", 0,
+                "originalUrl", "https://www.youtube.com/@it1r10h", "detectedType", "CHANNEL",
+                "metadata", Map.of("youtubeId", uc("r10h"), "title", "C"), "categoryIds", List.of(LIVE));
+        send(post("/api/admin/registry/bulk/submit"), Map.of("rows", List.of(row), "status", "APPROVED"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.results[0].errorCode").value("INVALID_URL"));
+        verify(reader, never()).read(uc("r10h"));
+        assertThat(live.state(uc("r10h"))).isNull();
+    }
+
+    /** The guard's offender refs and verified channels are keyed by rowIndex, so it must be unique. */
+    @Test
+    void row10_aDuplicateRowIndexIs400() throws Exception {
+        as("admin");
+        Map<String, Object> first = Map.of("rowIndex", 0,
+                "originalUrl", "https://www.youtube.com/channel/" + uc("r10d1"), "detectedType", "CHANNEL",
+                "metadata", Map.of("youtubeId", uc("r10d1"), "title", "C"), "categoryIds", List.of(PLAIN));
+        Map<String, Object> second = Map.of("rowIndex", 0,
+                "originalUrl", "https://www.youtube.com/channel/" + uc("r10d2"), "detectedType", "CHANNEL",
+                "metadata", Map.of("youtubeId", uc("r10d2"), "title", "C"), "categoryIds", List.of(PLAIN));
+        send(post("/api/admin/registry/bulk/submit"), Map.of("rows", List.of(first, second)))
+                .andExpect(status().isBadRequest());
+        assertThat(countDocuments("channels")).isZero();
+    }
+
+    /** D13: approving a live video stores the verified channel. */
+    @Test
+    void row11_approvingALiveVideoStoresTheVerifiedChannel() throws Exception {
+        doc("videos", "doc-r11v", Map.of("youtubeId", "it1r11vid01", "title", "V", "status", "PENDING",
+                "submittedBy", "moderator-uid", "categoryIds", List.of(LIVE)));
+        as("admin");
+        when(reader.resolveChannelId("it1r11vid01")).thenReturn(Optional.of(uc("r11v")));
+        liveOn(uc("r11v"), "it1r11vid01");
+        send(post("/api/admin/approvals/doc-r11v/approve"), Map.of()).andExpect(status().isOk());
+        Video stored = videos.findById("doc-r11v").orElseThrow();
+        assertThat(stored.getChannelId()).isEqualTo(uc("r11v"));
+        assertThat(stored.getStatus()).isEqualTo("APPROVED");
+    }
+
+    /** D13: assigning LIVE to a live stored video with no channel stores the verified one. */
+    @Test
+    void row12_assigningALiveStoredVideoWithNoChannelStoresTheVerifiedOne() throws Exception {
+        doc("videos", "doc-r12b", Map.of("youtubeId", "it1r12bvid1", "title", "V", "status", "APPROVED",
+                "categoryIds", List.of(PLAIN)));
+        as("admin");
+        when(reader.resolveChannelId("it1r12bvid1")).thenReturn(Optional.of(uc("r12b")));
+        liveOn(uc("r12b"), "it1r12bvid1");
+        send(post("/api/admin/content/bulk/assign-categories"), Map.of(
+                "items", List.of(Map.of("type", "video", "id", "doc-r12b")), "categoryIds", List.of(LIVE)))
+                .andExpect(status().isOk());
+        Video stored = videos.findById("doc-r12b").orElseThrow();
+        assertThat(stored.getChannelId()).isEqualTo(uc("r12b"));
+        assertThat(stored.getCategoryIds()).containsExactly(LIVE);
+    }
+
+    /** Bulk approve forces PUBLIC, so an APPROVED but PERSONAL doc holding LIVE is a publish. */
+    @Test
+    void row13_bulkApprovingAPersonalPlaylistInLiveIs400() throws Exception {
+        doc("playlists", "pl-r13p", Map.of("youtubeId", "PLit1r13p000000000000000000000000", "title", "P",
+                "status", "APPROVED", "visibility", "PERSONAL", "categoryIds", List.of(LIVE)));
+        as("admin");
+        send(post("/api/admin/content/bulk/approve"), Map.of("items", List.of(Map.of("type", "playlist", "id", "pl-r13p"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(playlists.findById("pl-r13p").orElseThrow().getVisibility()).isEqualTo("PERSONAL");
+    }
+
+    /** D13: a sort-screen add of a live video stores the verified channel. */
+    @Test
+    void row14_aSortAddOfALiveVideoStoresTheVerifiedChannel() throws Exception {
+        doc("videos", "doc-r14v", Map.of("youtubeId", "it1r14vid01", "title", "V", "status", "APPROVED",
+                "categoryIds", List.of()));
+        as("admin");
+        when(reader.resolveChannelId("it1r14vid01")).thenReturn(Optional.of(uc("r14v")));
+        liveOn(uc("r14v"), "it1r14vid01");
+        send(post("/api/admin/sort/categories/" + LIVE + "/content/add"),
+                Map.of("items", List.of(Map.of("contentId", "doc-r14v", "contentType", "video"))))
+                .andExpect(status().isOk());
+        Video stored = videos.findById("doc-r14v").orElseThrow();
+        assertThat(stored.getChannelId()).isEqualTo(uc("r14v"));
+        assertThat(stored.getCategoryIds()).containsExactly(LIVE);
+    }
 }
