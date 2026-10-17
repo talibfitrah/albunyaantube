@@ -1,0 +1,24 @@
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_dbb6b1f3671904::t_ce11f174c397a4 410-441
+  s_dbb6b1f3671904::t_84cf5adbf092b5 409
+backend/src/main/java/com/albunyaan/tube/service/ChannelOrchestrator.java
+  s_dbb6b1f3671904::t_ced1b1ce0c71fa 1176-1178
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_dbb6b1f3671904::t_5320dbe0f405f2 856-858,860-862
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5e2f3643c519f386bc6db2cda8c0c8475369a5f8",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
