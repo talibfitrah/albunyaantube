@@ -392,6 +392,20 @@ import Testing
         #expect(liveData.isLiveNow)
     }
 
+    /// Owner issue 1: the player shows the source's own title (`videoDetails.title`), never a list's translation.
+    @Test func okHlsFixtureCarriesTheOriginalTitle() throws {
+        guard case .ok(let streaming) = try parser.parse(loadFixture("player-ok-hls")).playability else {
+            Issue.record("expected .ok"); return
+        }
+        #expect(streaming.title == "جزء عم المعلم مشاري راشد العفاسي")
+    }
+
+    @Test func anOKResponseWithoutATitleHasNoTitle() throws {
+        let body = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{}}"#.utf8)
+        guard case .ok(let streaming) = try parser.parse(body).playability else { Issue.record("expected .ok"); return }
+        #expect(streaming.title == nil)
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)

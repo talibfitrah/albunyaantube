@@ -254,8 +254,9 @@ public actor BrowseClient {
         let request = requestBuilder.build(
             browseId: browseId, params: params, continuation: continuation,
             // English, whatever the device language (Android parity, `EnglishCounts`): counts and
-            // ages are pre-rendered prose, and only English is read back into numbers. Titles and
-            // names are the uploader's own either way (probed live 2026-09-24).
+            // ages are pre-rendered prose, and only English is read back into numbers. Titles are NOT
+            // always the uploader's own: browse may machine-translate one into English (`browse-playlist.json`
+            // `cPaCJL5JCUY`; owner issue 1). The player's `videoDetails.title` is the original.
             context: context, visitorData: visitorData, locale: InnerTubeLocale(hl: "en", gl: locale.gl))
         let response = try await transport.send(request)
         // Cubic r3 #5 (defensive): an HTTP-level browse block. Unobserved live -- real

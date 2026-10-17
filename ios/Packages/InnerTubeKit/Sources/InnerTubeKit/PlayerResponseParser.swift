@@ -20,6 +20,9 @@ public struct StreamingData: Sendable, Equatable {
     public var isLive: Bool
     public var isLiveNow: Bool
     public var captionTracks: [CaptionTrack]
+    /// `videoDetails.title`: the uploader's own title, untranslated at hl=en, ar and nl (VISIONOS live probes 2026-08-23
+    /// and 2026-10-17). Owner issue 1: the player shows this, never a list's translation.
+    public var title: String?
 
     public init(
         hlsManifestURL: URL? = nil,
@@ -28,7 +31,8 @@ public struct StreamingData: Sendable, Equatable {
         expiresInSeconds: Int? = nil,
         isLive: Bool = false,
         isLiveNow: Bool = false,
-        captionTracks: [CaptionTrack] = []
+        captionTracks: [CaptionTrack] = [],
+        title: String? = nil
     ) {
         self.hlsManifestURL = hlsManifestURL
         self.itag18URL = itag18URL
@@ -37,6 +41,7 @@ public struct StreamingData: Sendable, Equatable {
         self.isLive = isLive
         self.isLiveNow = isLiveNow
         self.captionTracks = captionTracks
+        self.title = title
     }
 }
 
@@ -108,7 +113,8 @@ public struct PlayerResponseParser: Sendable {
             expiresInSeconds: wire.streamingData?.expiresInSeconds.flatMap(Int.init),
             isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
             isLiveNow: wire.videoDetails?.isLive == true,
-            captionTracks: captionTracks(from: wire.captions)
+            captionTracks: captionTracks(from: wire.captions),
+            title: wire.videoDetails?.title
         )
     }
 
@@ -215,6 +221,7 @@ public struct PlayerResponseParser: Sendable {
         struct VideoDetails: Decodable {
             var isLive: Bool?
             var isLiveContent: Bool?
+            var title: String?
         }
         struct ResponseContext: Decodable {
             var visitorData: String?

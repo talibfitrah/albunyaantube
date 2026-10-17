@@ -278,7 +278,8 @@ public actor StreamResolver {
         let model = try TVAdaptive.synthetic(selection, answers: answers)
         let now = wallClock.wallNow
         // VOD only: a live stream has no byte ranges, so `select` never picks it (R7). `isLive` and `isLiveNow` stay
-        // false; a future live HD path must not wrap this one.
+        // false; a future live HD path must not wrap this one. No `title`: TVHTML5 answers carry no `videoDetails.title`,
+        // so the app keeps the title it adopted from the 360p walk.
         let resolved = Resolved(
             stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!, isLive: false,
                          audioOnlyURL: model.audio.first?.url, captionTracks: streaming.captionTracks, synthetic: model),
@@ -496,12 +497,13 @@ public actor StreamResolver {
                 return .resolved(Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    isLiveNow: streaming.isLiveNow))
+                    isLiveNow: streaming.isLiveNow, title: streaming.title))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
                 return .resolved(Resolved(
                     stream: .progressive(url: itag18, label: "360p"),
-                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
+                    title: streaming.title))
             }
             return .advance
         case .unplayable:

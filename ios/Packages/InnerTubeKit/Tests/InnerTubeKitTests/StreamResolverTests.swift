@@ -196,6 +196,33 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
+    // MARK: - owner issue 1: the source's own title rides on the Resolved
+
+    @Test func theVisionosRungCarriesTheTitleAndTheCacheKeepsIt() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let first = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let second = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        #expect(first.title == "جزء عم المعلم مشاري راشد العفاسي")
+        #expect(second.title == "جزء عم المعلم مشاري راشد العفاسي")
+        #expect(transport.callCount == 1)
+    }
+
+    @Test func theAndroidRungCarriesTheTitle() async throws {
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"title":"T-android"}}
+        """.utf8))
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), android])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(resolved.title == "T-android")
+    }
+
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
 
     /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,
