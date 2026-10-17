@@ -1,0 +1,29 @@
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelsMigration.java
+  s_dbb6b1f3671904::t_c860f9ca74a289 83-84
+  s_dbb6b1f3671904::t_11f1165d52232f 106-109
+  s_dbb6b1f3671904::t_4559e5c9e995fb 268-270,272,277-290,292-294
+  s_dbb6b1f3671904::t_d05b459d7b978b 160
+  s_dbb6b1f3671904::t_951a45823713a2 8
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelsMigrationIT.java
+  s_dbb6b1f3671904::t_cdd2a32ca0b204 122-125,128
+  s_dbb6b1f3671904::t_a850ecdcb66dab 55
+  s_dbb6b1f3671904::t_9a789bbd2dd352 148,154,156-215
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_e67b35b2738749 301
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1ae1dc90b2938ed9a8462238553ca0cff475f96c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
