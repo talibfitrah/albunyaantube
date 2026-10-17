@@ -248,7 +248,8 @@ const strings = (value) => Array.isArray(value) && value.every((x) => typeof x =
 export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
   const server = http.createServer((req, res) => {
     const send = (status, payload) => {
-      res.writeHead(status, { 'content-type': 'application/json' });
+      // Task 6: never leave a socket a pooling client could reuse after Node's 5 s keep-alive closes it (a lost POST).
+      res.writeHead(status, { 'content-type': 'application/json', connection: 'close' });
       res.end(JSON.stringify(payload));
     };
     if (req.method === 'GET' && req.url === '/player') {

@@ -387,6 +387,26 @@ test('an oversize /solve body is refused at once with connection: close, and the
   }
 });
 
+test('every answer closes its connection, so a pooled client never reuses one the sidecar timed out (Task 6)', async () => {
+  const solver = createSolver({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  const server = serve(solver, { host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  const agent = new http.Agent({ keepAlive: true });                  // a pooling client, like the JDK's
+  try {
+    for (const [method, path, body] of [['GET', '/player'], ['GET', '/health'],
+      ['POST', '/solve', '{"playerId":"0229cd64","n":["ABCDEFGHIJKLMNOP"],"s":[]}']]) {
+      const req = http.request({ host: '127.0.0.1', port: server.address().port, method, path, agent });
+      req.end(body);
+      const [res] = await once(req, 'response');
+      res.resume();
+      assert.equal(res.headers.connection, 'close', `${method} ${path}`);
+    }
+  } finally {
+    agent.destroy();
+    server.close();
+  }
+});
+
 test('a player with no usable sts is refused BEFORE a held player is evicted (M5)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
   const dir = tempDir();
