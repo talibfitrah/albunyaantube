@@ -1018,7 +1018,7 @@ public class PublicContentService {
             boolean bareToken = identifier.type == YouTubeIdentifier.Type.VIDEO && identifier.id.equals(q);
             if (!byId.items().isEmpty() || !bareToken) return byId;
         }
-        return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, false, limit, null);
+        return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, limit);
     }
 
     /** What `/content?type=X&q=` returns: the page plus the `X-Search-Match` tier. */
@@ -1026,7 +1026,8 @@ public class PublicContentService {
 
     /**
      * In-tab search (spec §4.7): the ladder over catalog documents of one type, relevance-ordered (the
-     * tab's `sort` is ignored, owner ruling Q4), paged with the existing Base64 offset cursor. Returns
+     * tab's `sort` is ignored, owner ruling Q4), paged with a Base64 `offset:snapshot` cursor: every page runs on
+     * the index snapshot of the first (SearchIndex.searchPage); a bare offset cursor starts a new snapshot. Returns
      * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list.
      */
     public SearchPage searchContent(String type, String cursor, int limit, String category,
@@ -1054,10 +1055,11 @@ public class PublicContentService {
             allowedIds = members.stream().map(ContentItemDto::getId).collect(Collectors.toSet());
         }
         long end = offset + limit; // long: never overflows (F2)
-        SearchIndex.Hits hits = searchIndex.search(q, docType, true, Math.toIntExact(end + 1), allowedIds);
+        SearchIndex.Hits hits = searchIndex.searchPage(q, docType, Math.toIntExact(end + 1), allowedIds, cursorSnapshot(cursor));
         List<ContentItemDto> all = hits.items();
         List<ContentItemDto> page = all.subList((int) Math.min(offset, all.size()), (int) Math.min(end, all.size()));
-        String next = all.size() > end ? encodeCursor((int) end) : null;
+        // The next page runs on this page's index snapshot, so it cuts the same ranking (Cubic P3, 1.0.4).
+        String next = all.size() > end ? encodeCursor(end + ":" + hits.snapshot()) : null;
         return new SearchPage(new CursorPageDto<>(page, next), hits.match());
     }
 
@@ -1372,7 +1374,8 @@ public class PublicContentService {
     // Membership read for filtered in-tab search (searchContent, spec §4.7).
     private static final int MAX_SEARCH_FETCH = 1000;
 
-    private String encodeCursor(int offset) {
+    /** `offset`, or `offset:snapshot` for in-tab search (SearchIndex.searchPage). */
+    private String encodeCursor(Object offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
     }
 
@@ -1380,8 +1383,19 @@ public class PublicContentService {
     private static long parseCursorOffset(String cursor) {
         if (cursor == null || cursor.isEmpty()) return 0;
         try {
-            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)));
+            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)).split(":")[0]);
             return offset >= 0 ? offset : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** The index snapshot an in-tab search cursor names; -1 (a new snapshot) for none, a bare offset or garbage. */
+    private static long cursorSnapshot(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return -1;
+        try {
+            String[] parts = new String(Base64.getDecoder().decode(cursor)).split(":");
+            return parts.length == 2 ? Long.parseLong(parts[1]) : -1;
         } catch (Exception e) {
             return -1;
         }

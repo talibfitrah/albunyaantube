@@ -9,13 +9,18 @@ import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.CategoryContentOrderRepository;
+import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.PublicContentService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.SearcherLifetimeManager;
+import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FilterDirectory;
@@ -229,7 +234,7 @@ class SearchIndexTest {
     }
 
     private List<String> ids(String query) throws Exception {
-        return ids(index.search(query, null, false, 50, null));
+        return ids(index.search(query, null, 50));
     }
 
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
@@ -292,14 +297,14 @@ class SearchIndexTest {
             "story of yusuf, vYusuf, exact"
     })
     void firstHitAndMatchTier(String query, String firstId, String match) throws Exception {
-        SearchIndex.Hits hits = index.search(query, null, false, 50, null);
+        SearchIndex.Hits hits = index.search(query, null, 50);
         assertEquals(firstId, ids(hits).get(0));
         assertEquals(match, hits.match());
     }
 
     @Test
     void anExactWordPutsBothZakirChannelsFirstAndNeverShowsUnadmittedOnes() throws Exception {
-        SearchIndex.Hits hits = index.search("zakir", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("zakir", null, 50);
         List<String> ids = ids(hits);
         assertEquals("exact", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids.subList(0, 2)));
@@ -308,14 +313,14 @@ class SearchIndexTest {
 
     @Test
     void aPrefixWhileTypingFindsTheChannelAndItsVideos() throws Exception {
-        SearchIndex.Hits hits = index.search("alafa", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("alafa", null, 50);
         assertEquals("exact", hits.match());
         assertTrue(ids(hits).containsAll(List.of("UCalafasy", "vKahf")));
     }
 
     @Test
     void apostrophesFoldAndShortTitlesOutrankKeywordOnlyMatches() throws Exception {
-        SearchIndex.Hits hits = index.search("quran", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("quran", null, 50);
         List<String> ids = ids(hits);
         assertEquals("exact", hits.match());
         assertTrue(ids.contains("UCksaQuran"), "KSA Qur’an TV must match quran");
@@ -324,14 +329,14 @@ class SearchIndexTest {
 
     @Test
     void aTransliterationReachesItsConceptAsRelated() throws Exception {
-        SearchIndex.Hits hits = index.search("koran", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("koran", null, 50);
         assertEquals("related", hits.match());
         assertTrue(ids(hits).contains("UCquranTv"));
     }
 
     @Test
     void aDutchWordFindsItsConceptAcrossScripts() throws Exception {
-        SearchIndex.Hits hits = index.search("gebed", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("gebed", null, 50);
         assertEquals("related", hits.match());
         assertTrue(Set.of("vSalahClip", "vPrayerKey").contains(ids(hits).get(0)));
     }
@@ -343,7 +348,7 @@ class SearchIndexTest {
                 List.of(with(video("vSalahTagged", "كيفية الصلاة", null), v -> v.setKeywords(List.of("صلاة", "prayer", "gebed"))),
                         video("vStoryTime", "Story Time", null)),
                 List.of(), 5_000));
-        SearchIndex.Hits hits = corpus.search("prayr", null, false, 50, null);
+        SearchIndex.Hits hits = corpus.search("prayr", null, 50);
         assertEquals(List.of("vSalahTagged"), ids(hits));
         assertEquals("approximate", hits.match());
     }
@@ -354,16 +359,46 @@ class SearchIndexTest {
         SearchIndex corpus = started(newIndex(List.of(), List.of(),
                 List.of(video("vStoryTime", "Story Time", null), video("vBookOf", "Book of Knowledge", null)),
                 List.of(), 5_000));
-        SearchIndex.Hits hits = corpus.search("story of xqzv", null, false, 50, null);
+        SearchIndex.Hits hits = corpus.search("story of xqzv", null, 50);
         assertEquals(List.of("vStoryTime"), ids(hits));
         assertEquals("related", hits.match());
         // A query made only of stopwords still matches on them.
-        assertEquals(List.of("vBookOf"), ids(corpus.search("of", null, false, 50, null)));
+        assertEquals(List.of("vBookOf"), ids(corpus.search("of", null, 50)));
+    }
+
+    @Test
+    void anUthmaniSpellingAndThePlainSpellingFindEachOtherInTheExactTier() throws Exception {
+        // Cubic P3 (1.0.4): Quranic marks U+06D6-06ED stayed in the words; fuzzy allows only one edit at this length.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(),
+                List.of(video("vUthmani", "ٱلۡحَمۡدُ لِلَّهِ", null), video("vPlain", "سورة الكهف", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits plainQuery = corpus.search("الحمد", null, 50);
+        assertEquals(List.of("vUthmani"), ids(plainQuery));
+        assertEquals("exact", plainQuery.match());
+        SearchIndex.Hits uthmaniQuery = corpus.search("ٱلۡكَهۡفِ", null, 50);
+        assertEquals(List.of("vPlain"), ids(uthmaniQuery));
+        assertEquals("exact", uthmaniQuery.match());
+    }
+
+    @Test
+    void openTanweenAndHonorificSignsDoNotHideATitleFromItsPlainSpelling() throws Exception {
+        // Round 2 ruling (1.0.4): marks in U+0610-061A and U+08D3-08FF stayed in the words like U+06D6-06ED did.
+        // The marked words are never the last query token: its prefix clause would match them anyway.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(), List.of(
+                        video("vOpenTanween", "إِنَّ ٱللَّهَ كَانَ غَفُور\u08F0ا رَّحِيم\u08F0ا", null),
+                        video("vHonorific", "سيرة محمد\u0610", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits tanween = corpus.search("غفورا رحيما", null, 50);
+        assertEquals(List.of("vOpenTanween"), ids(tanween));
+        assertEquals("exact", tanween.match());
+        SearchIndex.Hits honorific = corpus.search("محمد سيرة", null, 50);
+        assertEquals(List.of("vHonorific"), ids(honorific));
+        assertEquals("exact", honorific.match());
     }
 
     @Test
     void nonsenseFindsNothing() throws Exception {
-        SearchIndex.Hits hits = index.search("xqzvbnm", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("xqzvbnm", null, 50);
         assertTrue(hits.items().isEmpty());
         assertEquals("none", hits.match());
     }
@@ -468,7 +503,7 @@ class SearchIndexTest {
 
     @Test
     void bothZakirChannelsOutrankTheMainChannelsOwnUploads() throws Exception {
-        SearchIndex.Hits hits = liveShaped().search("zakir", null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search("zakir", null, 50);
         assertEquals("exact", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
     }
@@ -477,14 +512,14 @@ class SearchIndexTest {
     @CsvSource({"zakit", "zaikr"})
     void aTypoOfTheNamePutsBothZakirChannelsFirst(String query) throws Exception {
         // Ruling: which Zakir channel leads is not a defect; both must beat the main channel's own uploads.
-        SearchIndex.Hits hits = liveShaped().search(query, null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search(query, null, 50);
         assertEquals("approximate", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
     }
 
     @Test
     void wordsOutOfOrderPutTheKidsPlaylistInTheTopTen() throws Exception {
-        SearchIndex.Hits hits = liveShaped().search("arabic learn", null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search("arabic learn", null, 50);
         assertEquals("exact", hits.match());
         int rank = ids(hits).indexOf("PLarabicKids");
         assertTrue(rank >= 0 && rank < 10, ids(hits).toString());
@@ -494,15 +529,24 @@ class SearchIndexTest {
 
     @Test
     void inTabSearchCoversTitleDescriptionAndNameCaseInsensitivelyAndSkipsStreams() throws Exception {
-        assertEquals(List.of("PLtafsir"), ids(index.search("TAFSIR", "PLAYLIST", true, 20, null)));
-        assertEquals(List.of("PLideeen"), ids(index.search("activiteiten", "PLAYLIST", true, 20, null)));
-        assertEquals(List.of("UChalal"), ids(index.search("kitchen", "CHANNEL", true, 20, null)));
-        assertTrue(ids(index.search("halal", "VIDEO", true, 20, null)).isEmpty());
+        assertEquals(List.of("PLtafsir"), ids(index.searchPage("TAFSIR", "PLAYLIST", 20, null, -1)));
+        assertEquals(List.of("PLideeen"), ids(index.searchPage("activiteiten", "PLAYLIST", 20, null, -1)));
+        assertEquals(List.of("UChalal"), ids(index.searchPage("kitchen", "CHANNEL", 20, null, -1)));
+        assertTrue(ids(index.searchPage("halal", "VIDEO", 20, null, -1)).isEmpty());
+    }
+
+    @Test
+    void inTabSearchNeverListsAStreamEvenOneAnAdmittedSourcePosts() throws Exception {
+        // Review M2 (1.0.4): tab lists hold catalog documents only (spec §4.7), while global search shows the stream.
+        index.upsertStreams(List.of(stream("posted-zanzibar", "Zanzibar Street Food", "channel:UChalal")), "channel:UChalal");
+        index.awaitWrites();
+        assertEquals(List.of("posted-zanzibar"), ids(index.search("zanzibar", "VIDEO", 20)));
+        assertTrue(ids(index.searchPage("zanzibar", "VIDEO", 20, null, -1)).isEmpty());
     }
 
     @Test
     void filteredInTabSearchKeepsOnlyTheAllowedMembers() throws Exception {
-        assertEquals(List.of("vYasin"), ids(index.search("surah", "VIDEO", true, 20, Set.of("vYasin"))));
+        assertEquals(List.of("vYasin"), ids(index.searchPage("surah", "VIDEO", 20, Set.of("vYasin"), -1)));
     }
 
     @Test
@@ -511,15 +555,84 @@ class SearchIndexTest {
         List<Channel> tied = List.of(channel("UCtieA", "Tied Name"), channel("UCtieB", "Tied Name"),
                 channel("UCtieC", "Tied Name"), channel("UCtieD", "Tied Name"));
         SearchIndex paged = started(newIndex(tied, List.of(), List.of(), List.of(), 5_000));
-        List<String> firstPage = ids(paged.search("tied", "CHANNEL", true, 3, null)).subList(0, 2);
+        List<String> firstPage = ids(paged.searchPage("tied", "CHANNEL", 3, null, -1)).subList(0, 2);
 
         when(channelRepo.findById("doc-UCtieA")).thenReturn(Optional.of(tied.get(0))); // saved, unchanged
         paged.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCtieA", false));
         paged.awaitWrites();
-        List<String> secondPage = ids(paged.search("tied", "CHANNEL", true, 5, null)).subList(2, 4);
+        List<String> secondPage = ids(paged.searchPage("tied", "CHANNEL", 5, null, -1)).subList(2, 4);
 
         assertEquals(List.of("UCtieA", "UCtieB"), firstPage);
         assertEquals(List.of("UCtieC", "UCtieD"), secondPage);
+    }
+
+    @Test
+    void inTabSearchPagesCutOneRankingWhileStreamPostsMoveTheScores() throws Exception {
+        // Cubic P3 (1.0.4): each page re-ran the ranking on the newest index and cut it at an offset. Stream posts
+        // share `title`, so they move BM25 statistics, and two close items swapped places between page fetches.
+        SearchIndex paged = started(newIndex(List.of(), List.of(), List.of(
+                        video("vInTitle", "Ramadan Night", "Masjid Alpha"), video("vInChannel", "Night Talk", "Ramadan Studio")),
+                List.of(), 5_000));
+        PublicContentService service = new PublicContentService(channelRepo, playlistRepo, videoRepo,
+                mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged);
+        PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night");
+
+        List<SearchableStream> posted = new ArrayList<>();
+        for (int i = 0; i < 200; i++) posted.add(stream("posted-" + i, "Ramadan Reminder " + i, "channel:UCposted"));
+        paged.upsertStreams(posted, "channel:UCposted");
+        paged.awaitWrites();
+        // The posts flipped the ranking: a new search now puts the other item first.
+        assertEquals(List.of("vInChannel"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night")));
+
+        PublicContentService.SearchPage second = service.searchContent("VIDEOS",
+                first.page().getPageInfo().getNextCursor(), 1, null, null, null, "ramadan night");
+        assertEquals(List.of("vInTitle", "vInChannel"),
+                java.util.stream.Stream.concat(pageIds(first).stream(), pageIds(second).stream()).toList());
+    }
+
+    private static List<String> pageIds(PublicContentService.SearchPage page) {
+        return page.page().getData().stream().map(ContentItemDto::getId).toList();
+    }
+
+    @Test
+    void atMostTheNewest64InTabSnapshotsAreKept() throws Exception {
+        // Review I1 (1.0.4): a snapshot aged out only 600 s after a newer one was recorded, so stream posts (public,
+        // unthrottled) each followed by a first page kept thousands of readers alive. Ruling: keep the newest 64.
+        List<Long> recorded = new ArrayList<>();
+        for (int i = 0; i < 70; i++) {
+            index.upsertStreams(List.of(stream("burst-" + i, "Burst " + i, "channel:UChalal")), "channel:UChalal");
+            index.awaitWrites();
+            recorded.add(index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot());
+        }
+        assertEquals(70, new HashSet<>(recorded).size(), "every first page ran on a new index version");
+        index.upsertStreams(List.of(stream("after-burst", "After Burst", "channel:UChalal")), "channel:UChalal");
+        index.awaitWrites(); // a page whose snapshot is gone now records a version none of them had
+
+        for (long kept : List.of(recorded.get(69), recorded.get(6))) { // the newest and the oldest of the 64
+            SearchIndex.Hits page = index.searchPage("tafsir", "PLAYLIST", 20, null, kept);
+            assertEquals(kept, page.snapshot());
+            assertEquals(List.of("PLtafsir"), ids(page));
+        }
+        for (long gone : recorded.subList(0, 6)) {
+            assertNotEquals(gone, index.searchPage("tafsir", "PLAYLIST", 20, null, gone).snapshot());
+        }
+    }
+
+    @Test
+    void closeStillReleasesTheWriterAndDirectoryWhenClosingTheSnapshotsThrows() throws Exception {
+        // Review M1 (1.0.4): a first page that records while close() runs makes SearcherLifetimeManager.close() throw
+        // IllegalStateException, and close() then skipped searchers.close(), writer.rollback() and dir.close().
+        Directory dir = new ByteBuffersDirectory();
+        SearchIndex closing = started(new SearchIndex(dir, channelRepo, playlistRepo, videoRepo, streamRepo, 5_000));
+        closing.snapshots = new SearcherLifetimeManager() {
+            @Override
+            public synchronized void close() {
+                throw new IllegalStateException("another thread called record while this SearcherLifetimeManager"
+                        + " instance was being closed; not all searchers were closed");
+            }
+        };
+        assertDoesNotThrow(closing::close);
+        assertThrows(AlreadyClosedException.class, dir::listAll); // its last step ran, so the writer rollback before it did
     }
 
     // ---- stream visibility (spec §4.2) ---------------------------------------------------------
@@ -527,12 +640,12 @@ class SearchIndexTest {
     @Test
     void aStreamShowsOnlyWhileAnAdmittedSourceKeepsItAndNoVideoDocumentClaimsIt() throws Exception {
         // archived / rejected / unavailable Video documents, a channel exclusion and a rejected-only source all hide
-        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", false, 50, null)));
+        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", 50)));
     }
 
     @Test
     void aStreamWithAVideoDocumentIsAnsweredByTheCatalogDocument() throws Exception {
-        List<ContentItemDto> items = index.search("yusuf", null, false, 50, null).items();
+        List<ContentItemDto> items = index.search("yusuf", null, 50).items();
         assertEquals(1, items.size());
         assertEquals("vYusuf", items.get(0).getId());
         assertEquals(10, items.get(0).getUploadedDaysAgo());
@@ -540,7 +653,7 @@ class SearchIndexTest {
 
     @Test
     void aStreamWithoutAVideoDocumentHasNoUploadAge() throws Exception {
-        List<ContentItemDto> items = index.search("orphan", "VIDEO", false, 50, null).items();
+        List<ContentItemDto> items = index.search("orphan", "VIDEO", 50).items();
         assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
         assertNull(items.get(0).getUploadedDaysAgo(), "unknown upload date must stay null, never 'Today'");
     }
@@ -557,12 +670,12 @@ class SearchIndexTest {
         });
         slow.onReady();
 
-        assertEquals("UCzakir", ids(slow.search("zakit", null, false, 10, null)).get(0));
-        assertTrue(ids(slow.search("late", "VIDEO", false, 10, null)).isEmpty());
+        assertEquals("UCzakir", ids(slow.search("zakit", null, 10)).get(0));
+        assertTrue(ids(slow.search("late", "VIDEO", 10)).isEmpty());
 
         release.countDown();
         slow.awaitWrites();
-        assertEquals(List.of("late"), ids(slow.search("late", "VIDEO", false, 10, null)));
+        assertEquals(List.of("late"), ids(slow.search("late", "VIDEO", 10)));
     }
 
     @Test
@@ -577,13 +690,13 @@ class SearchIndexTest {
                 .thenReturn(docs(List.of(stream("s0500", "Synthetic stream 500", "channel:UChalal"))));
         started(paged);
 
-        assertEquals(501, paged.search("synthetic", "VIDEO", false, 1000, null).items().size());
+        assertEquals(501, paged.search("synthetic", "VIDEO", 1000).items().size());
     }
 
     @Test
     void aSearchBeforeTheFirstCatalogBuildIsNotReady() throws Exception {
         SearchIndex cold = newIndex(channels(), playlists(), videos(), streams(), 50);
-        assertThrows(SearchIndex.NotReadyException.class, () -> cold.search("zakir", null, false, 10, null));
+        assertThrows(SearchIndex.NotReadyException.class, () -> cold.search("zakir", null, 10));
     }
 
     @Test
@@ -605,7 +718,7 @@ class SearchIndexTest {
         first.close();
         assertFalse(Files.exists(firstDir), "closing a context deletes its own directory");
         assertTrue(Files.isDirectory(secondDir), "and only its own");
-        assertEquals("UCzakir", ids(second.search("zakit", null, false, 10, null)).get(0));
+        assertEquals("UCzakir", ids(second.search("zakit", null, 10)).get(0));
 
         second.close();
         assertFalse(Files.exists(secondDir));
@@ -677,7 +790,7 @@ class SearchIndexTest {
         IndexSearcher.setMaxClauseCount(1024);
         SearchIndex.Hits hits;
         try {
-            hits = big.search(query, null, false, 20, null);
+            hits = big.search(query, null, 20);
         } finally {
             IndexSearcher.setMaxClauseCount(raised);
         }
@@ -706,12 +819,12 @@ class SearchIndexTest {
 
     @Test
     void aDeleteRemovesTheDocumentAndHidesItsStreams() throws Exception {
-        assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", false, 10, null)));
+        assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", 10)));
         when(channelRepo.findById("doc-UCalafasy")).thenReturn(Optional.empty());
         index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false));
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty());
     }
 
     @Test
@@ -719,7 +832,7 @@ class SearchIndexTest {
         Channel rejected = with(channel("UChalal", "Halal Kitchen"), c -> c.setStatus("REJECTED"));
         saved(rejected);
         index.awaitWrites();
-        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("halal", "VIDEO", 10)).isEmpty());
         assertFalse(ids("kitchen").contains("UChalal"), "the rejected channel's own document is gone too");
     }
 
@@ -730,7 +843,7 @@ class SearchIndexTest {
                 c -> c.getExcludedItems().setVideos(List.of("halal-excluded", "halal-ok")));
         saved(kitchen);
         index.awaitWrites();
-        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("halal", "VIDEO", 10)).isEmpty());
     }
 
     @Test
@@ -740,7 +853,7 @@ class SearchIndexTest {
         renamed.getExcludedItems().setVideos(List.of("halal-excluded"));
         saved(renamed);
         index.awaitWrites();
-        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", false, 10, null)));
+        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", 10)));
         assertEquals("UChalal", ids("renamed").get(0));
     }
 
@@ -748,7 +861,7 @@ class SearchIndexTest {
     void aPlaylistEventIsIndexedByItsOwnType() throws Exception {
         saved(playlist("PLseerah", "Seerah of the Prophet"));
         index.awaitWrites();
-        assertEquals(List.of("PLseerah"), ids(index.search("seerah", "PLAYLIST", true, 10, null)));
+        assertEquals(List.of("PLseerah"), ids(index.searchPage("seerah", "PLAYLIST", 10, null, -1)));
     }
 
     @Test
@@ -769,7 +882,7 @@ class SearchIndexTest {
         index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false)); // the save's event, late
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty(), "its streams stay hidden");
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty(), "its streams stay hidden");
     }
 
     @Test
@@ -780,7 +893,7 @@ class SearchIndexTest {
         index.awaitWrites();
         verify(channelRepo, times(4)).findById("doc-UCalafasy"); // the read, then 3 retries
         assertFalse(ids("alafa").contains("UCalafasy"), "fails closed");
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty(), "its streams hide too");
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty(), "its streams hide too");
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getThrowableProxy() != null
                 && ExecutionException.class.getName().equals(e.getThrowableProxy().getClassName())));
     }
@@ -822,7 +935,7 @@ class SearchIndexTest {
     @Test
     void aVideoDocumentThatCannotBeMappedStillHidesItsStream() throws Exception {
         // B3: toObject threw before admit(), so the id never reached videoIds and the stream showed (fail open).
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         QueryDocumentSnapshot unmappable = mock(QueryDocumentSnapshot.class, inv -> switch (inv.getMethod().getName()) {
             case "getId" -> "doc-orphan-lecture";
             case "toObject" -> throw new RuntimeException("Could not deserialize object");
@@ -834,30 +947,30 @@ class SearchIndexTest {
         videoDocs.add(unmappable);
         when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
         started(fresh);
-        assertFalse(ids(fresh.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(fresh.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
     void aNewVideoThatCannotBeMappedOnTheEventPathStillHidesItsStream() throws Exception {
         // R1: findById threw in toObject on every re-read, so the event path never learned the id (fail open for 6 h).
         index.rereadRetryMs = new long[]{0, 0, 0};
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new RuntimeException("Could not deserialize object"));
         index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
         index.awaitWrites();
-        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
     void aNewVideoWhoseRereadsAllFailStillHidesItsStream() throws Exception {
         // R1: all 4 re-reads failed, so applyCatalogChange(event, null) ran with no id to block.
         index.rereadRetryMs = new long[]{0, 0, 0};
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new ExecutionException("firestore down", new RuntimeException()));
         index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
         index.awaitWrites();
         verify(videoRepo, times(4)).findById("doc-orphan-lecture"); // the read, then 3 retries
-        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
@@ -865,7 +978,7 @@ class SearchIndexTest {
         // R1 positive control: the event's id changes nothing for a Video that maps.
         saved(with(video("orphan-lecture", "Orphan Lecture", null), v -> v.setUploadedAt(daysAgo(3))));
         index.awaitWrites();
-        List<ContentItemDto> items = index.search("orphan", "VIDEO", false, 10, null).items();
+        List<ContentItemDto> items = index.search("orphan", "VIDEO", 10).items();
         assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
         assertEquals(3, items.get(0).getUploadedDaysAgo(), "answered by the catalog document, not the stream");
     }
@@ -875,21 +988,21 @@ class SearchIndexTest {
         SearchableStream fresh = stream("fresh-1", "Fresh Seerah Lesson");
         index.upsertStreams(List.of(fresh), "channel:UChalal");
         index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", 10)));
 
         index.upsertStreams(List.of(fresh), "channel:UCalafasy");  // a second source merges in
         index.removeSource("channel:UChalal");                    // one source left: still shown
         index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", 10)));
 
         index.removeSource("channel:UCalafasy");                  // none left: deleted
         index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("fresh", "VIDEO", 10)).isEmpty());
 
         index.upsertStreams(List.of(fresh), "channel:UCquranTv");
         index.removeStream("fresh-1");                            // archived video
         index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("fresh", "VIDEO", 10)).isEmpty());
     }
 
     // ---- build and swap hardening (B3 review) --------------------------------------------------
@@ -961,7 +1074,7 @@ class SearchIndexTest {
 
         SearchIndex tolerant = started(newIndex(cs, playlists(), videos(), streams(), 5_000));
 
-        assertEquals("UCzakir", ids(tolerant.search("zakit", null, false, 10, null)).get(0));
+        assertEquals("UCzakir", ids(tolerant.search("zakit", null, 10)).get(0));
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getFormattedMessage().contains("doc-UCcorrupt")
                 && e.getThrowableProxy() != null));
         assertTrue(logged(Level.INFO).stream().anyMatch(e -> e.getFormattedMessage().startsWith("search index catalog:")
@@ -978,7 +1091,7 @@ class SearchIndexTest {
 
         SearchIndex tolerant = started(newIndex(channels(), playlists(), videos(), page, 5_000));
 
-        assertEquals(List.of("halal-ok"), ids(tolerant.search("halal", "VIDEO", false, 50, null)));
+        assertEquals(List.of("halal-ok"), ids(tolerant.search("halal", "VIDEO", 50)));
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getFormattedMessage().contains("corrupt-stream")
                 && e.getThrowableProxy() != null));
         assertTrue(logged(Level.INFO).stream().anyMatch(e -> e.getFormattedMessage().startsWith("search index built:")

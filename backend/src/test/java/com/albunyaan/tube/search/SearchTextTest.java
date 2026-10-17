@@ -56,6 +56,57 @@ class SearchTextTest {
     }
 
     @Test
+    void quranicMarksFromU06D6ToU06EDNormaliseLikeThePlainSpelling() {
+        // Cubic P3 (1.0.4): the map stripped only U+0653-065F, U+0670 and U+0671, so these stayed inside the words.
+        assertEquals(tokens(BASE, "الحمد"), tokens(BASE, "ٱلۡحَمۡدُ")); // U+06E1 Uthmani sukun
+        assertEquals(tokens(BASE, "انه به"), tokens(BASE, "إِنَّهُۥ بِهِۦ")); // U+06E5/U+06E6: a long vowel the plain spelling omits
+        assertEquals(tokens(BASE, "الرحيم ١"), tokens(BASE, "ٱلرَّحِيمِ۝١")); // U+06DD end of ayah ends the word
+        for (char c = '\u06D6'; c <= '\u06ED'; c++) {
+            // Marks and the small waw/yeh vanish; the end-of-ayah sign and the two symbols (U+06DE, U+06E9) split.
+            String plain = c == '\u06DD' || c == '\u06DE' || c == '\u06E9' ? "به م" : "بهم";
+            assertEquals(tokens(BASE, plain), tokens(BASE, "به" + c + "م"), String.format("U+%04X", (int) c));
+        }
+    }
+
+    @Test
+    void arabicMarksFromU0610ToU061AAndU08D3ToU08FFNormaliseLikeThePlainSpelling() {
+        // Round 2 ruling (1.0.4): the same gap outside U+06D6-06ED: open tanween (KFGQPC Uthmani), honorific signs.
+        assertEquals(tokens(BASE, "غفورا رحيما"), tokens(BASE, "غَفُور\u08F0ا رَّحِيم\u08F0ا")); // U+08F0 open fathatan
+        assertEquals(tokens(BASE, "محمد"), tokens(BASE, "محمد\u0610")); // U+0610 sallallahou alayhe wassallam
+        assertEquals(tokens(BASE, "الرحيم ١"), tokens(BASE, "الرحيم\u08E2١")); // U+08E2 disputed end of ayah ends the word
+        for (int[] range : new int[][]{{0x0610, 0x061A}, {0x08D3, 0x08FF}}) {
+            for (char c = (char) range[0]; c <= range[1]; c++) {
+                String plain = c == '\u08E2' ? "به م" : "بهم";
+                assertEquals(tokens(BASE, plain), tokens(BASE, "به" + c + "م"), String.format("U+%04X", (int) c));
+            }
+        }
+    }
+
+    @Test
+    void bidiMarksVanishWithoutJoiningWordsASpaceSeparates() {
+        // Round 3 ruling (1.0.4): LRM, RLM and ALM are format characters the tokenizer kept inside the word, so a title
+        // carrying "الله" + RLM never matched the query "الله".
+        for (char mark : new char[]{'\u200E', '\u200F', '\u061C'}) {
+            String name = String.format("U+%04X", (int) mark);
+            assertEquals(tokens(BASE, "قال الله"), tokens(BASE, "قال" + mark + " " + mark + "الله" + mark), name);
+            assertEquals(tokens(BASE, "quran tv"), tokens(BASE, "quran" + mark + " tv"), name);
+            assertEquals(tokens(BASE, "abcd"), tokens(BASE, "ab" + mark + "cd"), name); // invisible: it never split a word
+        }
+    }
+
+    @Test
+    void directionalEmbeddingsIsolatesAndTheBomVanishWithoutJoiningWordsASpaceSeparates() {
+        // Round 4 ruling (1.0.4): an embedding (RLE...PDF) or isolate (LRI...PDI) pair kept its controls inside the words.
+        assertEquals(tokens(BASE, "تفسير ابن كثير سورة الكهف"),
+                tokens(BASE, "\u202Bتفسير \u2066ابن كثير\u2069 سورة الكهف\u202C"));
+        for (char c : "\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\uFEFF".toCharArray()) {
+            String name = String.format("U+%04X", (int) c);
+            assertEquals(tokens(BASE, "قال الله"), tokens(BASE, "قال" + c + " " + c + "الله" + c), name);
+            assertEquals(tokens(BASE, "abcd"), tokens(BASE, "ab" + c + "cd"), name); // invisible: it never split a word
+        }
+    }
+
+    @Test
     void tatweelIsRemoved() {
         // رمـــضان -> رمضان
         assertEquals(List.of("رمضان"),

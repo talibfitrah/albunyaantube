@@ -29,7 +29,7 @@ class SearchIndexReadsIT extends BaseIntegrationTest {
     }
 
     private List<String> channelIds(String query) throws Exception {
-        return searchIndex.search(query, "CHANNEL", true, 10, null).items().stream().map(ContentItemDto::getId).toList();
+        return searchIndex.searchPage(query, "CHANNEL", 10, null, -1).items().stream().map(ContentItemDto::getId).toList();
     }
 
     @Test

@@ -32,6 +32,7 @@ import org.apache.lucene.search.BooleanQuery;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.Query;
 import org.apache.lucene.search.ScoreDoc;
+import org.apache.lucene.search.SearcherLifetimeManager;
 import org.apache.lucene.search.SearcherManager;
 import org.apache.lucene.search.Sort;
 import org.apache.lucene.search.SortField;
@@ -40,6 +41,7 @@ import org.apache.lucene.search.TopDocs;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FSDirectory;
 import org.apache.lucene.util.BytesRef;
+import org.apache.lucene.util.IOUtils;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -88,14 +90,25 @@ public class SearchIndex {
     private static final String[] TIER_NAMES = {"", "exact", "approximate", "related"};
     /** Relevance, then `key`: tied hits keep one order across page fetches even when a save re-appends one (F9). */
     private static final Sort RELEVANCE = new Sort(SortField.FIELD_SCORE, new SortField("key", SortField.Type.STRING));
+    /** How long a superseded in-tab search snapshot stays usable for later pages; then they run on the current index. */
+    private static final double SNAPSHOT_TTL_SEC = 600;
+    /** At most this many snapshots are kept, newest first: index writes are public and unthrottled (review I1). */
+    private static final int MAX_SNAPSHOTS = 64;
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final Logger log = LoggerFactory.getLogger(SearchIndex.class);
 
-    /** One answer: the items and the tier of the first one (`exact`/`approximate`/`related`/`none`). */
-    public record Hits(List<ContentItemDto> items, String match) {
+    /**
+     * One answer: the items, the tier of the first one (`exact`/`approximate`/`related`/`none`), and the index
+     * snapshot {@link #searchPage} ran on (-1 for {@link #search}).
+     */
+    public record Hits(List<ContentItemDto> items, String match, long snapshot) {
         public static final Hits NONE = new Hits(List.of(), "none");
+
+        public Hits(List<ContentItemDto> items, String match) {
+            this(items, match, -1);
+        }
     }
 
     /** The first catalog build has not finished: the API answers 503 + Retry-After (spec §7). */
@@ -112,6 +125,8 @@ public class SearchIndex {
     private final Directory dir;
     private final IndexWriter writer;
     private final SearcherManager searchers;
+    /** The searcher each in-tab search's first page ran on, by reader version: its later pages run there too. Tests swap it. */
+    SearcherLifetimeManager snapshots = new SearcherLifetimeManager();
     private final long readyWaitMs;
     private final CountDownLatch ready = new CountDownLatch(1);
     private final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, runnable -> {
@@ -165,6 +180,7 @@ public class SearchIndex {
         executor.shutdownNow();
         try {
             executor.awaitTermination(5, TimeUnit.SECONDS);
+            IOUtils.closeWhileHandlingException(snapshots); // throws if a first page records meanwhile; the rest must still run
             searchers.close();
             writer.rollback(); // nothing to keep: the index is rebuilt at every start
             dir.close();
@@ -478,38 +494,71 @@ public class SearchIndex {
     // ---- search (spec §4.4) --------------------------------------------------------------------
 
     /**
-     * The ladder: exact, then approximate, then related, each appended (deduplicated by id) while
-     * fewer than {@link #MIN_CONFIDENT_HITS} items are found. `type` is CHANNEL/PLAYLIST/VIDEO or
-     * null; `catalogOnly` drops streams (in-tab lists); `allowedIds` (null = all) restricts membership
-     * for filtered in-tab search (spec §4.7).
+     * Global search (`/search`): the ladder over catalog items and visible streams. `type` is CHANNEL/PLAYLIST/VIDEO
+     * or null (all types).
      */
-    public Hits search(String query, String type, boolean catalogOnly, int want, Set<String> allowedIds)
+    public Hits search(String query, String type, int want) throws IOException {
+        awaitReady();
+        IndexSearcher searcher = searchers.acquire();
+        try {
+            return ladder(searcher, query, type, false, want, null);
+        } finally {
+            searchers.release(searcher);
+        }
+    }
+
+    /**
+     * In-tab search (spec §4.7) for one page: catalog only, on the searcher `snapshot` names, so every page of one
+     * search cuts the same ranking. BM25 statistics move whenever any document changes (stream posts share `title`
+     * and `channel`), and re-ranking between page fetches repeated or skipped items (Cubic P3, 1.0.4). An unknown or
+     * pruned snapshot (-1 for a first page) runs on the current searcher and pins it; the result names the one used.
+     */
+    public Hits searchPage(String query, String type, int want, Set<String> allowedIds, long snapshot)
             throws IOException {
         awaitReady();
+        IndexSearcher pinned = snapshots.acquire(snapshot);
+        IndexSearcher searcher = pinned != null ? pinned : searchers.acquire();
+        try {
+            if (pinned == null) {
+                snapshot = snapshots.record(searcher);
+                // ponytail: a snapshot starts ageing only when a newer first page records a newer one, so on an idle
+                // server one paging session can see an old snapshot; carry the first page's time in the cursor if that matters.
+                int[] kept = {0}; // the pruner sees the snapshots newest first
+                snapshots.prune((ageSec, s) -> ageSec > SNAPSHOT_TTL_SEC || ++kept[0] > MAX_SNAPSHOTS);
+            }
+            Hits hits = ladder(searcher, query, type, true, want, allowedIds);
+            return new Hits(hits.items(), hits.match(), snapshot);
+        } finally {
+            if (pinned != null) snapshots.release(pinned); else searchers.release(searcher);
+        }
+    }
+
+    /**
+     * The ladder (spec §4.4): exact, then approximate, then related, each appended (deduplicated by id) while fewer
+     * than {@link #MIN_CONFIDENT_HITS} items are found. `catalogOnly` drops streams (in-tab lists); `allowedIds`
+     * (null = all) restricts membership for filtered in-tab search (spec §4.7).
+     */
+    private Hits ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
+                        Set<String> allowedIds) throws IOException {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
         if (tokens.isEmpty()) return Hits.NONE;
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
         String match = "none";
-        IndexSearcher searcher = searchers.acquire();
-        try {
-            // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
-            Map<Query, Query> rewritten = new HashMap<>();
-            UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
-                try {
-                    return searcher.rewrite(q);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-            for (int tier = 1; tier <= 3 && out.size() < Math.min(want, MIN_CONFIDENT_HITS); tier++) {
-                boolean wasEmpty = out.isEmpty();
-                collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen);
-                if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
+        // Each fuzzy clause is rewritten (its automaton built) once per search, then shared by tiers 2 and 3 (F1).
+        Map<Query, Query> rewritten = new HashMap<>();
+        UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
+            try {
+                return searcher.rewrite(q);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
-        } finally {
-            searchers.release(searcher);
+        });
+        for (int tier = 1; tier <= 3 && out.size() < Math.min(want, MIN_CONFIDENT_HITS); tier++) {
+            boolean wasEmpty = out.isEmpty();
+            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen);
+            if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
         }
         return new Hits(out, match);
     }

@@ -87,6 +87,24 @@ final class SearchText {
         b.add("ٱ", "ا"); // alef wasla -> alef
         b.add("ٰ", "");       // superscript alef
         for (char c = 'ٓ'; c <= 'ٟ'; c++) b.add(String.valueOf(c), "");
+        // Arabic signs U+0610-061A, Quranic signs U+06D6-06ED and Arabic Extended-A U+08D3-08FF: the marks (Mn) and the
+        // small waw/yeh (U+06E5/06E6, Lm: a long vowel the plain spelling omits, لَهُۥ = له) go. The two end-of-ayah
+        // signs (U+06DD, U+08E2) are format characters the tokenizer glues to both neighbours: they end the word.
+        // The two symbols (U+06DE, U+06E9) already split words.
+        for (char[] range : new char[][]{{'\u0610', '\u061A'}, {'\u06D6', '\u06ED'}, {'\u08D3', '\u08FF'}}) {
+            for (char c = range[0]; c <= range[1]; c++) {
+                int type = Character.getType(c);
+                if (type == Character.NON_SPACING_MARK || type == Character.MODIFIER_LETTER) b.add(String.valueOf(c), "");
+            }
+        }
+        b.add("\u06DD", " ");
+        b.add("\u08E2", " ");
+        // Directional controls (LRM, RLM, ALM, the embeddings/overrides U+202A-202E, the isolates U+2066-2069) and the
+        // BOM: invisible format characters the tokenizer keeps inside the word. They never separate words, so they go
+        // without a space. ZWNJ/ZWJ stay: they carry meaning inside Persian words.
+        for (char c : "\u200E\u200F\u061C\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\uFEFF".toCharArray()) {
+            b.add(String.valueOf(c), "");
+        }
         return b.build();
     }
 
