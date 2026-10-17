@@ -622,8 +622,7 @@ class NewPipeExtractorClient(
         }
 
         // Detect live streams (LIVE_STREAM or AUDIO_LIVE_STREAM)
-        val isLiveStream = streamType == StreamType.LIVE_STREAM ||
-            streamType == StreamType.AUDIO_LIVE_STREAM
+        val isLiveStream = isLiveStreamType(streamType)
 
         val subtitleTracks = subtitles.mapNotNull { sub ->
             val code = sub.languageTag?.takeIf { it.isNotBlank() } ?: return@mapNotNull null
@@ -990,6 +989,10 @@ class NewPipeExtractorClient(
     }
 
     companion object {
+        /** RV I11: live means LIVE_STREAM/AUDIO_LIVE_STREAM only; an ended broadcast reads VIDEO_STREAM. */
+        internal fun isLiveStreamType(type: StreamType): Boolean =
+            type == StreamType.LIVE_STREAM || type == StreamType.AUDIO_LIVE_STREAM
+
         /**
          * Resolve the audio track list, falling back to a MUXED video track's embedded
          * audio when YouTube exposes no separate audio stream.

@@ -10,6 +10,7 @@ import com.albunyaan.tube.data.model.ContentType
 import com.albunyaan.tube.data.model.CursorResponse
 import com.albunyaan.tube.data.model.HomeFeedResult
 import com.albunyaan.tube.data.model.HomeSection
+import com.albunyaan.tube.data.source.api.ChannelLives
 import kotlin.math.min
 
 class FakeContentService : ContentService {
@@ -201,4 +202,13 @@ class FakeContentService : ContentService {
         // this method cannot accidentally pass while the real gate is broken.
         // Tests that need `true` (channel is approved) must mock ContentService.
         false
+
+    /** Scripted lives per channel; a channel with none answers like an unreachable backend. */
+    val channelLives = mutableMapOf<String, ChannelLives>()
+    val channelLivesCalls = mutableListOf<String>()
+
+    override suspend fun fetchChannelLives(channelId: String): ChannelLives {
+        channelLivesCalls += channelId
+        return channelLives[channelId] ?: throw java.io.IOException("no lives scripted for $channelId")
+    }
 }

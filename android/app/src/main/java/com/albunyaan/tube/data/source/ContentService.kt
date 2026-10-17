@@ -87,4 +87,11 @@ interface ContentService {
      * approval before exposing a lateral discovery surface.
      */
     suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean
+
+    /**
+     * Spec §9.2(b): the backend's current lives for a live-category channel. A default body so the test fakes that
+     * never play a live-channel item need no change; RetrofitContentService is the only production implementation.
+     */
+    suspend fun fetchChannelLives(channelId: String): com.albunyaan.tube.data.source.api.ChannelLives =
+        throw UnsupportedOperationException("fetchChannelLives is RetrofitContentService's")
 }

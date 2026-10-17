@@ -800,6 +800,7 @@ class PlayerViewModel @Inject constructor(
         durationSeconds: Int = 0,
         viewCount: Long? = null,
         sourceChannelId: String? = null,
+        liveChannelId: String? = null,
     ) {
         // 1.0.4 R3, local-first: Home, Search, Favorites, History, Me, channel tabs and deep links all
         // open one video here, so a saved copy plays from its file as it does from Downloads. The
@@ -812,7 +813,7 @@ class PlayerViewModel @Inject constructor(
             viewModelScope.launch(dispatcher) {
                 // ponytail: a load slower than this streams; raise it if real devices list files slower.
                 withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
-                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId)
+                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId)
             }
             return
         }
@@ -845,6 +846,7 @@ class PlayerViewModel @Inject constructor(
             description = description,
             viewCount = viewCount,
             sourceChannelId = sourceChannelId,
+            liveChannelId = liveChannelId,
         )
 
         currentItem = item
@@ -2236,6 +2238,7 @@ data class UpNextItem(
     val description: String? = null,
     val viewCount: Long? = null,
     val sourceChannelId: String? = null,
+    val liveChannelId: String? = null,
 )
 
 sealed class StreamState {

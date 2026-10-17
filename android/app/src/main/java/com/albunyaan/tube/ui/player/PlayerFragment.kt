@@ -416,6 +416,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val durationSeconds = arguments?.getInt("durationSeconds", 0) ?: 0
         val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
         val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
+        val liveChannelId = arguments?.getString("liveChannelId")?.takeIf { it.isNotBlank() }
 
         val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
 
@@ -439,6 +440,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     durationSeconds = durationSeconds,
                     viewCount = viewCount,
                     sourceChannelId = sourceChannelId,
+                    liveChannelId = liveChannelId,
                 )
             }
             // If no arguments, ViewModel will use default stub queue (for testing)
@@ -4313,6 +4315,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "description" to video.description,
             "durationSeconds" to video.durationSeconds,
             "viewCount" to (video.viewCount ?: -1L),
+            "channelId" to video.liveChannelId,
+            "liveChannelId" to video.liveChannelId,
         )
 
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"

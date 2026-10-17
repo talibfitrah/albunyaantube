@@ -29,4 +29,17 @@ class PlayerArgsTest {
         assertEquals(1800, args.getInt("durationSeconds"))
         assertEquals(12L, args.getLong("viewCount"))
     }
+
+    /** Spec §9.2(b): a live-category item opens in live-channel mode, and the gate checks its channel. */
+    @Test fun `a live category item carries its channel into the player`() {
+        val video = ContentItem.Video(
+            id = "eaOtcUNHDB8", title = "Zad", category = "Live", durationSeconds = 0,
+            uploadedDaysAgo = null, description = "", channelName = "Zad TV", liveChannelId = "UCOll3M-P7oKs5cSrQ9ytt6g",
+        )
+
+        val args = PlayerFragment.argsFor(video)
+
+        assertEquals("UCOll3M-P7oKs5cSrQ9ytt6g", args.getString("liveChannelId"))
+        assertEquals("UCOll3M-P7oKs5cSrQ9ytt6g", args.getString("channelId"))
+    }
 }
