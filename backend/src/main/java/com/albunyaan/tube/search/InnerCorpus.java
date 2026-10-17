@@ -37,8 +37,8 @@ final class InnerCorpus {
     private static final Logger log = LoggerFactory.getLogger(InnerCorpus.class);
     private static final ObjectMapper JSON = new ObjectMapper();
     private static final String SUFFIX = ".jsonl.gz";
-    /** A source key is `channel:` or `playlist:` plus a YouTube id (UC/UU/PL + base64url): it can never form a path out of the dir. */
-    private static final Pattern SOURCE_KEY = Pattern.compile("(channel|playlist):(UC|UU|PL)[A-Za-z0-9_-]*");
+    /** `channel:` or `playlist:` plus a YouTube id (UC/UU/PL/OL/RD/LL...): the id alphabet is the path-traversal guard, the cap keeps the file name legal. */
+    private static final Pattern SOURCE_KEY = Pattern.compile("(channel|playlist):[A-Za-z0-9_-]{1,64}");
 
     /** `d` seconds (0 = unknown or live); `a` approximate upload day (days since epoch); `c`/`u` only for playlist sources. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
@@ -82,17 +82,21 @@ final class InnerCorpus {
     /** Temp file + force + atomic move: a crash leaves the old file or the new one, never half of one. */
     static void write(Path file, List<Item> items) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
-        try (FileChannel ch = FileChannel.open(tmp, CREATE, TRUNCATE_EXISTING, WRITE)) {
-            GZIPOutputStream gz = new GZIPOutputStream(Channels.newOutputStream(ch), 65_536);
-            Writer w = new OutputStreamWriter(gz, StandardCharsets.UTF_8);
-            for (Item it : items) {
-                w.write(JSON.writeValueAsString(it));
-                w.write('\n');
+        try {
+            try (FileChannel ch = FileChannel.open(tmp, CREATE, TRUNCATE_EXISTING, WRITE)) {
+                GZIPOutputStream gz = new GZIPOutputStream(Channels.newOutputStream(ch), 65_536);
+                Writer w = new OutputStreamWriter(gz, StandardCharsets.UTF_8);
+                for (Item it : items) {
+                    w.write(JSON.writeValueAsString(it));
+                    w.write('\n');
+                }
+                w.flush();
+                gz.finish();
+                ch.force(true);
             }
-            w.flush();
-            gz.finish();
-            ch.force(true);
+            Files.move(tmp, file, ATOMIC_MOVE, REPLACE_EXISTING);
+        } finally {
+            Files.deleteIfExists(tmp); // gone after a successful move; a failed write leaves no stale .tmp
         }
-        Files.move(tmp, file, ATOMIC_MOVE, REPLACE_EXISTING);
     }
 }

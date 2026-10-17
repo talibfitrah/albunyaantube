@@ -77,7 +77,7 @@ class InnerCorpusTest {
     @Test
     void aSourceKeyThatCouldEscapeTheDirIsRefused() {
         for (String bad : new String[]{"channel:../x", "channel:UC/../../x", "channel:UC\\x", "playlist:", "video:UCa",
-                "channel:XXa", "../channel:UCa", "channel:UCa\0", "", "UCa"}) {
+                "channel:", "playlist:PL" + "a".repeat(63), "playlist:PL/a", "../channel:UCa", "channel:UCa\0", "", "UCa"}) {
             assertThrows(IllegalArgumentException.class, () -> InnerCorpus.file(dir, bad), bad);
         }
         assertEquals(dir, InnerCorpus.file(dir, "channel:UUab-_9").getParent());
@@ -90,5 +90,21 @@ class InnerCorpusTest {
             out.write("{\"id\":\"lesson00001\",\"t\":\"x\",\"d\":1,\"future\":true}\n".getBytes(StandardCharsets.UTF_8));
         }
         assertEquals(List.of(new InnerCorpus.Item("lesson00001", "x", 1, null, null, null)), InnerCorpus.read(f));
+    }
+
+    @Test
+    void otherPlaylistIdFamiliesAreAcceptedAndOverLongOnesAreNot() {
+        for (String ok : new String[]{"playlist:OLAK5uy_abc", "playlist:RDabc-_9", "playlist:LL", "channel:UC" + "a".repeat(62)}) {
+            assertEquals(dir, InnerCorpus.file(dir, ok).getParent(), ok);
+        }
+        assertThrows(IllegalArgumentException.class, () -> InnerCorpus.file(dir, "playlist:" + "a".repeat(65)));
+    }
+
+    @Test
+    void aFailedWriteLeavesNoTempFile() throws IOException {
+        Path f = InnerCorpus.file(dir, "channel:UCa");
+        Files.createDirectories(f.resolve("blocker")); // the move onto a non-empty directory fails
+        assertThrows(IOException.class, () -> InnerCorpus.write(f, List.of()));
+        assertFalse(Files.exists(f.resolveSibling(f.getFileName() + ".tmp")));
     }
 }
