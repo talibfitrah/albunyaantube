@@ -35,11 +35,6 @@ service cloud.firestore {
       return isAuthenticated() && request.auth.uid == userId;
     }
 
-    function isActiveAccount() {
-      return isAuthenticated() &&
-             get(/databases/$(database)/documents/users/$(request.auth.uid)).data.status == 'active';
-    }
-
     // Users collection
     match /users/{userId} {
       allow read: if isSelf(userId) || isAdmin();
