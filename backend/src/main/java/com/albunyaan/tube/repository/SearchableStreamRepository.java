@@ -3,8 +3,6 @@ package com.albunyaan.tube.repository;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.SearchableStream;
 import com.google.cloud.firestore.*;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Repository;
 
 import java.util.*;
@@ -15,7 +13,6 @@ import java.util.concurrent.TimeoutException;
 @Repository
 public class SearchableStreamRepository {
 
-    private static final Logger log = LoggerFactory.getLogger(SearchableStreamRepository.class);
     private static final String COLLECTION_NAME = "searchable_streams";
 
     private final Firestore firestore;

@@ -720,12 +720,12 @@ class SearchIndexTest {
     }
 
     @Test
-    void inTabSearchNeverListsAStreamEvenOneAnAdmittedSourcePosts() throws Exception {
+    void inTabSearchNeverListsAStreamThatGlobalSearchShows() throws Exception {
         // Review M2 (1.0.4): tab lists hold catalog documents only (spec §4.7), while global search shows the stream.
-        index.upsertStreams(List.of(stream("posted-zanzibar", "Zanzibar Street Food", "channel:UChalal")), "channel:UChalal");
-        index.awaitWrites();
-        assertEquals(List.of("posted-zanzibar"), ids(index.search("zanzibar", "VIDEO", 20)));
-        assertTrue(ids(index.searchPage("zanzibar", "VIDEO", 20, null, -1)).isEmpty());
+        SearchIndex withStream = started(newIndex(channels(), playlists(), videos(),
+                List.of(stream("posted-zanzibar", "Zanzibar Street Food", "channel:UChalal")), 5_000));
+        assertEquals(List.of("posted-zanzibar"), ids(withStream.search("zanzibar", "VIDEO", 20)));
+        assertTrue(ids(withStream.searchPage("zanzibar", "VIDEO", 20, null, -1)).isEmpty());
     }
 
     @Test
@@ -751,27 +751,28 @@ class SearchIndexTest {
     }
 
     @Test
-    void inTabSearchPagesCutOneRankingWhileStreamPostsMoveTheScores() throws Exception {
-        // Cubic P3 (1.0.4): each page re-ran the ranking on the newest index and cut it at an offset. Stream posts
-        // share `title`, so they move BM25 statistics, and two close items swapped places between page fetches.
+    void inTabSearchPagesCutOneRankingWhileTheIndexChangesBetweenFetches() throws Exception {
+        // Cubic P3 (1.0.4): each page re-ran the ranking on the newest index and cut it at an offset. Any index change
+        // moves BM25 statistics; here a non-admitted source's 200 streams leave, and two close items swap places.
+        List<SearchableStream> posted = new ArrayList<>();
+        for (int i = 0; i < 200; i++) posted.add(stream("posted-" + i, "Ramadan Reminder " + i, "channel:UCposted"));
         SearchIndex paged = started(newIndex(List.of(), List.of(), List.of(
                         video("vInTitle", "Ramadan Night", "Masjid Alpha"), video("vInChannel", "Night Talk", "Ramadan Studio")),
-                List.of(), 5_000));
+                posted, 5_000));
         PublicContentService service = new PublicContentService(channelRepo, playlistRepo, videoRepo,
                 mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged,
                 mock(LiveCategoryService.class));
         PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night");
+        assertEquals(List.of("vInChannel"), pageIds(first)); // the 200 streams are in the statistics
 
-        List<SearchableStream> posted = new ArrayList<>();
-        for (int i = 0; i < 200; i++) posted.add(stream("posted-" + i, "Ramadan Reminder " + i, "channel:UCposted"));
-        paged.upsertStreams(posted, "channel:UCposted");
+        paged.removeSource("channel:UCposted"); // their segment is fully deleted, so it drops out of the statistics
         paged.awaitWrites();
-        // The posts flipped the ranking: a new search now puts the other item first.
-        assertEquals(List.of("vInChannel"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night")));
+        assertEquals(List.of("vInTitle"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night")),
+                "the removal flipped the ranking for a new search");
 
         PublicContentService.SearchPage second = service.searchContent("VIDEOS",
                 first.page().getPageInfo().getNextCursor(), 1, null, null, null, "ramadan night");
-        assertEquals(List.of("vInTitle", "vInChannel"),
+        assertEquals(List.of("vInChannel", "vInTitle"),
                 java.util.stream.Stream.concat(pageIds(first).stream(), pageIds(second).stream()).toList());
     }
 
@@ -781,16 +782,16 @@ class SearchIndexTest {
 
     @Test
     void atMostTheNewest64InTabSnapshotsAreKept() throws Exception {
-        // Review I1 (1.0.4): a snapshot aged out only 600 s after a newer one was recorded, so stream posts (public,
-        // unthrottled) each followed by a first page kept thousands of readers alive. Ruling: keep the newest 64.
+        // Review I1 (1.0.4): a snapshot aged out only 600 s after a newer one was recorded, so frequent index writes, each followed by a first page, kept thousands of readers alive. Ruling: keep the newest 64.
+        Channel kitchen = channels().get(7); // "Halal Kitchen": every re-save is a new index version
         List<Long> recorded = new ArrayList<>();
         for (int i = 0; i < 70; i++) {
-            index.upsertStreams(List.of(stream("burst-" + i, "Burst " + i, "channel:UChalal")), "channel:UChalal");
+            saved(kitchen);
             index.awaitWrites();
             recorded.add(index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot());
         }
         assertEquals(70, new HashSet<>(recorded).size(), "every first page ran on a new index version");
-        index.upsertStreams(List.of(stream("after-burst", "After Burst", "channel:UChalal")), "channel:UChalal");
+        saved(kitchen);
         index.awaitWrites(); // a page whose snapshot is gone now records a version none of them had
 
         for (long kept : List.of(recorded.get(69), recorded.get(6))) { // the newest and the oldest of the 64
@@ -1169,25 +1170,24 @@ class SearchIndexTest {
     }
 
     @Test
-    void streamHooksAddMergeAndRemove() throws Exception {
-        SearchableStream fresh = stream("fresh-1", "Fresh Seerah Lesson");
-        index.upsertStreams(List.of(fresh), "channel:UChalal");
-        index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", 10)));
+    void streamHooksRemoveASourceThenAStream() throws Exception {
+        SearchIndex hooks = started(newIndex(channels(), playlists(), videos(), List.of(
+                stream("fresh-1", "Fresh Zubdah Lesson", "channel:UChalal", "channel:UCalafasy"),
+                stream("fresh-2", "Fresh Quxtar Lesson", "channel:UCquranTv")), 5_000));
+        assertEquals(List.of("fresh-1"), ids(hooks.search("zubdah", "VIDEO", 10)));
 
-        index.upsertStreams(List.of(fresh), "channel:UCalafasy");  // a second source merges in
-        index.removeSource("channel:UChalal");                    // one source left: still shown
-        index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", 10)));
+        hooks.removeSource("channel:UChalal");   // one source left: still shown
+        hooks.awaitWrites();
+        assertEquals(List.of("fresh-1"), ids(hooks.search("zubdah", "VIDEO", 10)));
 
-        index.removeSource("channel:UCalafasy");                  // none left: deleted
-        index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", 10)).isEmpty());
+        hooks.removeSource("channel:UCalafasy"); // none left: deleted
+        hooks.awaitWrites();
+        assertTrue(ids(hooks.search("zubdah", "VIDEO", 10)).isEmpty());
 
-        index.upsertStreams(List.of(fresh), "channel:UCquranTv");
-        index.removeStream("fresh-1");                            // archived video
-        index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", 10)).isEmpty());
+        assertEquals(List.of("fresh-2"), ids(hooks.search("quxtar", "VIDEO", 10)));
+        hooks.removeStream("fresh-2");           // archived video
+        hooks.awaitWrites();
+        assertTrue(ids(hooks.search("quxtar", "VIDEO", 10)).isEmpty());
     }
 
     // ---- build and swap hardening (B3 review) --------------------------------------------------
@@ -1199,7 +1199,7 @@ class SearchIndexTest {
         assertThrows(IllegalArgumentException.class, () -> index.replaceCatalog());
 
         // Any later refresh would expose whatever the failed swap left pending.
-        index.upsertStreams(List.of(stream("after", "After The Swap", "channel:UChalal")), "channel:UChalal");
+        index.removeStream("halal-ok"); // a real index change, so the refresh after it is a new reader
         index.awaitWrites();
         assertEquals("UCzakir", ids("zakit").stream().findFirst().orElse("<empty>"), "the last good catalog is still served");
     }
@@ -1332,7 +1332,7 @@ class SearchIndexTest {
         diskFails.set(true);
 
         for (int i = 0; i < 3; i++) {
-            broken.upsertStreams(List.of(stream("tragic-" + i, "Tragic " + i, "channel:UChalal")), "channel:UChalal");
+            broken.reconcile(); // re-adds the catalog; the flush needs a new file, which the disk refuses
         }
         broken.awaitWrites();
 

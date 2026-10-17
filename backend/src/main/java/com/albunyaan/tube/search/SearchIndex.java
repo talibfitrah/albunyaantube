@@ -92,7 +92,7 @@ public class SearchIndex {
     private static final Sort RELEVANCE = new Sort(SortField.FIELD_SCORE, new SortField("key", SortField.Type.STRING));
     /** How long a superseded in-tab search snapshot stays usable for later pages; then they run on the current index. */
     private static final double SNAPSHOT_TTL_SEC = 600;
-    /** At most this many snapshots are kept, newest first: index writes are public and unthrottled (review I1). */
+    /** At most this many snapshots are kept, newest first (review I1). */
     private static final int MAX_SNAPSHOTS = 64;
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
@@ -316,7 +316,7 @@ public class SearchIndex {
         return counts;
     }
 
-    /** Safety net (spec §5.4): catalog only; streams have one fully hooked writer and are re-read at boot. */
+    /** Safety net (spec §5.4): catalog only; streams are read once at boot and only removed after (StreamIndexService hooks). */
     @Scheduled(fixedDelay = 6, initialDelay = 6, timeUnit = TimeUnit.HOURS)
     public void reconcile() {
         executor.execute(() -> {
@@ -404,18 +404,6 @@ public class SearchIndex {
             case "PLAYLIST" -> playlists.findById(docId).orElse(null);
             default -> videos.findById(docId).orElse(null);
         };
-    }
-
-    /** After StreamIndexService upserted these streams for `sourceKey`; merges with stored source keys. */
-    public void upsertStreams(List<SearchableStream> written, String sourceKey) {
-        if (written.isEmpty()) return;
-        submit("upsertStreams " + sourceKey, () -> {
-            for (SearchableStream s : written) {
-                Set<String> keys = new LinkedHashSet<>(storedValues("STREAM:" + s.getStreamId(), "sourceKey"));
-                keys.add(sourceKey);
-                writer.updateDocument(streamKey(s.getStreamId()), streamDoc(streamDto(s), keys));
-            }
-        });
     }
 
     /** After StreamIndexService.removeSource: drop the key from every stream; delete streams left with none. */
