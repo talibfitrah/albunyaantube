@@ -1,0 +1,32 @@
+frontend/src/services/http.ts
+  s_dbb6b1f3671904::t_77f91aa88bea97 31,43-45,52-54,60-95,115-116,121,151,160,168
+frontend/src/locales/messages.ts
+  s_dbb6b1f3671904::t_091b6b7ae3cc9b 5-13,264-268,371-383,1409,1648-1656,1903-1907,2009-2011,2013-2025,3072-3080,3325-3329,3431-3433,3435-3447
+frontend/tests/liveChannelsAdmin.spec.ts
+  s_dbb6b1f3671904::t_e8105148b40873 2,5,7,10-116,132-133
+  s_dbb6b1f3671904::t_ba34051a52b31c 1,3-4,6,8-9,117-131
+frontend/src/services/liveChannels.ts
+  s_dbb6b1f3671904::t_281309ed77a413 1-64
+frontend/src/services/categoryService.ts
+  s_dbb6b1f3671904::t_13895af921f73d 22,77,112
+  s_dbb6b1f3671904::t_84451103c6a688 92-94
+  s_dbb6b1f3671904::t_eee1a3e69f63aa 95
+frontend/src/stores/bulkSubmissionStore.ts
+  s_dbb6b1f3671904::t_13895af921f73d 6,17
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4b771ae2998f30d5886267d0f9e2e47b90e58571",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
