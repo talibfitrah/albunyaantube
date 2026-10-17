@@ -2,7 +2,6 @@ package com.albunyaan.tube.repository;
 
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.SearchableStream;
-import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.*;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -29,32 +28,6 @@ public class SearchableStreamRepository {
 
     private CollectionReference getCollection() {
         return firestore.collection(COLLECTION_NAME);
-    }
-
-    /**
-     * Upsert stream data — merge so sourceKeys are accumulated via arrayUnion.
-     * Call addSource() separately to add the sourceKey atomically.
-     */
-    public void upsert(SearchableStream stream, String sourceKey)
-            throws ExecutionException, InterruptedException, TimeoutException {
-        Map<String, Object> data = new HashMap<>();
-        data.put("title", stream.getTitle());
-        data.put("titleNorm", stream.getTitleNorm());
-        data.put("thumbnailUrl", stream.getThumbnailUrl());
-        data.put("channelId", stream.getChannelId());
-        data.put("channelName", stream.getChannelName());
-        data.put("streamType", stream.getStreamType());
-        data.put("durationSeconds", stream.getDurationSeconds());
-        data.put("viewCount", stream.getViewCount());
-        data.put("searchTokens", stream.getSearchTokens());
-        data.put("sourceKeys", FieldValue.arrayUnion(sourceKey));
-        data.put("visible", true);
-        data.put("indexedAt", Timestamp.now());
-        data.put("lastSeenAt", Timestamp.now());
-
-        getCollection().document(stream.getStreamId())
-                .set(data, SetOptions.merge())
-                .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
 
     /**

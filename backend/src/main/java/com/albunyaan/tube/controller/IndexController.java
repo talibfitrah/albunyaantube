@@ -1,131 +1,21 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.dto.IndexStreamsRequest;
-import com.albunyaan.tube.dto.StreamItemDto;
-import com.albunyaan.tube.service.StreamIndexService;
-import org.slf4j.Logger;
-import org.slf4j.LoggerFactory;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
-import org.springframework.web.bind.annotation.*;
-
-import com.github.benmanes.caffeine.cache.Cache;
-import com.github.benmanes.caffeine.cache.Caffeine;
-import jakarta.servlet.http.HttpServletRequest;
-import jakarta.validation.Valid;
-import java.net.URL;
-import java.util.*;
-import java.util.concurrent.CompletableFuture;
-import java.util.concurrent.TimeUnit;
-import java.util.regex.Pattern;
-import java.util.stream.Collectors;
+import org.springframework.web.bind.annotation.PostMapping;
+import org.springframework.web.bind.annotation.RequestMapping;
+import org.springframework.web.bind.annotation.RestController;
 
 @RestController
 @RequestMapping("/api/v1")
 public class IndexController {
 
-    private static final Logger log = LoggerFactory.getLogger(IndexController.class);
-
-    // YouTube video IDs are exactly 11 alphanumeric/dash/underscore chars
-    private static final Pattern STREAM_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{11}$");
-    // YouTube channel IDs: "UC" + 22 chars = 24 total
-    private static final Pattern CHANNEL_ID_PATTERN = Pattern.compile("^UC[A-Za-z0-9_-]{22}$");
-    // Playlist IDs vary in length and prefix
-    private static final Pattern PLAYLIST_ID_PATTERN = Pattern.compile("^[A-Za-z0-9_-]{10,50}$");
-    private static final Set<String> ALLOWED_THUMBNAIL_HOSTS = Set.of(
-            "i.ytimg.com", "i9.ytimg.com", "yt3.ggpht.com", "yt3.googleusercontent.com"
-    );
-    private static final int MAX_ITEMS = 50;
-    private static final long REQUEST_DEDUPE_MS = 30_000L; // suppress exact retries, not distinct pages
-
-    // Compound key: sourceKey + ":" + deviceId + ":" + item ids → recent request timestamp.
-    // Channel/playlist pagination sends one distinct batch per page; dedupe exact
-    // retries only so deep pages can still be indexed for global search.
-    private final Cache<String, Long> requestDedupeCache = Caffeine.newBuilder()
-            .maximumSize(10_000)
-            .expireAfterWrite(REQUEST_DEDUPE_MS, TimeUnit.MILLISECONDS)
-            .build();
-
-    private final StreamIndexService streamIndexService;
-
-    public IndexController(StreamIndexService streamIndexService) {
-        this.streamIndexService = streamIndexService;
-    }
-
+    /**
+     * Retired (ruling R18, 2026-10-17): client-posted streams were never checked against their channel or
+     * playlist, so anyone could put any video into search under an approved source. The route stays and
+     * answers 202 so installed apps, which fire and forget, see no change; the body is not read.
+     */
     @PostMapping("/index/streams")
-    public ResponseEntity<Void> indexStreams(
-            @RequestHeader(value = "X-Device-Id", required = false) String deviceId,
-            @Valid @RequestBody IndexStreamsRequest request,
-            HttpServletRequest httpRequest) {
-
-        if (!"CHANNEL".equals(request.getSourceType()) && !"PLAYLIST".equals(request.getSourceType())) {
-            return ResponseEntity.badRequest().build();
-        }
-        if (!isValidSourceId(request.getSourceType(), request.getSourceId())) {
-            return ResponseEntity.badRequest().build();
-        }
-        List<StreamItemDto> items = request.getItems() == null ? List.of() : request.getItems().stream()
-                .limit(MAX_ITEMS)
-                .filter(this::isValidItem)
-                .collect(Collectors.toList());
-
-        String sourceId = request.getSourceId();
-        String sourceType = request.getSourceType();
-        String effectiveKey = (deviceId != null && !deviceId.isBlank()) ? deviceId : httpRequest.getRemoteAddr();
-        if (!items.isEmpty() && isDuplicateRequest(sourceType + ":" + sourceId, effectiveKey, items)) {
-            return ResponseEntity.status(HttpStatus.TOO_MANY_REQUESTS).build();
-        }
-
-        CompletableFuture.runAsync(() -> {
-            try {
-                if ("CHANNEL".equals(sourceType)) {
-                    streamIndexService.indexFromChannel(sourceId, items);
-                } else {
-                    streamIndexService.indexFromPlaylist(sourceId, items);
-                }
-            } catch (Exception e) {
-                log.warn("Async indexing failed for {} {}: {}", sourceType, sourceId, e.getMessage());
-            }
-        });
-
+    public ResponseEntity<Void> indexStreams() {
         return ResponseEntity.accepted().build();
-    }
-
-    private boolean isValidSourceId(String sourceType, String id) {
-        if (id == null) return false;
-        return "CHANNEL".equals(sourceType)
-                ? CHANNEL_ID_PATTERN.matcher(id).matches()
-                : PLAYLIST_ID_PATTERN.matcher(id).matches();
-    }
-
-    private boolean isValidItem(StreamItemDto item) {
-        if (item.getId() == null || !STREAM_ID_PATTERN.matcher(item.getId()).matches()) return false;
-        if (item.getName() == null || item.getName().isBlank() || item.getName().length() > 300) return false;
-        if (item.getThumbnailUrl() != null) {
-            try {
-                String host = new URL(item.getThumbnailUrl()).getHost();
-                if (!ALLOWED_THUMBNAIL_HOSTS.contains(host)) return false;
-            } catch (Exception e) {
-                return false;
-            }
-        }
-        return true;
-    }
-
-    private boolean isDuplicateRequest(String sourceKey, String deviceId, List<StreamItemDto> items) {
-        String itemSignature = items.stream()
-                .map(StreamItemDto::getId)
-                .sorted()
-                .collect(Collectors.joining(","));
-        String key = sourceKey + ":" + deviceId + ":" + itemSignature;
-        boolean[] duplicate = {false};
-        requestDedupeCache.asMap().compute(key, (k, last) -> {
-            if (last != null) {
-                duplicate[0] = true;
-                return last;
-            }
-            return System.currentTimeMillis();
-        });
-        return duplicate[0];
     }
 }
