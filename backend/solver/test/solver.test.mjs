@@ -3,6 +3,7 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
+import { spawnSync } from 'node:child_process';
 import { buildPlayer, newContext, selfTest, solveAll } from '../server.mjs';
 
 const SPIKE = new URL('../../../.superpowers/sdd/2026-10-14-playback-phase2/spike/out/', import.meta.url).pathname;
@@ -28,6 +29,44 @@ test('the self-test rejects identity, [object Object] and enhanced_except functi
   // the player's own n-failure fallback: inside the alphabet and different from the input, so only the prefix gives it away
   assert.equal(selfTest(fns("({ n: (x) => 'enhanced_except_' + x, sig: (x) => x.slice(1) })"), 1000), false);
   assert.equal(selfTest(fns("({ n: (x) => x.split('').reverse().join('') + 'A', sig: (x) => x.slice(1) })"), 1000), true);
+});
+
+test('the self-test leaves no helper globals and gives the player no path to process (fix 1, 3)', () => {
+  const ctx = newContext();
+  const player = { ctx, ...vm.runInContext("({ n: (x) => { try { globalThis.leak = (typeof __probe === 'undefined' ? __probeIn : __probe.inputs).constructor.constructor('return typeof process')(); } catch { globalThis.leak = 'blocked'; } return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
+  selfTest(player, 1000);
+  assert.notEqual(vm.runInContext('globalThis.leak', ctx), 'object');
+  assert.equal(vm.runInContext('typeof __probe + typeof __probeN + typeof __probeS + typeof __probeIn + typeof __player', ctx), 'undefined'.repeat(5));
+});
+
+test('a failed build leaves no __player behind (fix 3)', () => {
+  const ctx = newContext();
+  assert.throws(() => buildPlayer(ctx, 'not a player at all ((('));
+  assert.equal(vm.runInContext('typeof __player', ctx), 'undefined');
+});
+
+// Runs in a child process: terminating a microtask drain inside node:test's own async scope corrupts the runner's async-hook stack.
+test('a microtask loop scheduled by the player hits the timeout (fix 2)', { timeout: 30_000 }, () => {
+  const script = `import vm from 'node:vm'; import { newContext, selfTest } from ${JSON.stringify(new URL('../server.mjs', import.meta.url).href)};
+    const ctx = newContext();
+    const player = { ctx, ...vm.runInContext("({ n: (x) => { Promise.resolve().then(() => { for (;;) {} }); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
+    try { selfTest(player, 300); console.log('no timeout'); } catch (e) { console.log(e.code); }`;
+  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 20_000 });
+  assert.equal(r.stdout.trim(), 'ERR_SCRIPT_EXECUTION_TIMEOUT');
+});
+
+test('the self-test rejects a constant function (fix 5)', () => {
+  const ctx = newContext();
+  const fns = (source) => ({ ctx, ...vm.runInContext(source, ctx) });
+  assert.equal(selfTest(fns("({ n: () => 'ConstantAnswer', sig: (x) => x.slice(1) })"), 1000), false);
+  assert.equal(selfTest(fns("({ n: (x) => x + 'A', sig: () => 'ConstantAnswer' })"), 1000), false);
+});
+
+test('one good function with one identity function still fails (fix 6)', () => {
+  const ctx = newContext();
+  const fns = (source) => ({ ctx, ...vm.runInContext(source, ctx) });
+  assert.equal(selfTest(fns("({ n: (x) => x + 'A', sig: (x) => x })"), 1000), false);
+  assert.equal(selfTest(fns("({ n: (x) => x, sig: (x) => x.slice(1) })"), 1000), false);
 });
 
 test('a throwing or misshapen answer omits only that challenge', () => {

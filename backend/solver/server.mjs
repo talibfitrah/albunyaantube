@@ -17,7 +17,7 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 
 /** A fresh realm holding EJS and nothing of Node's (R40). One per player, so eviction drops it whole. */
 export function newContext(timeoutMs = 10_000) {
-  const ctx = vm.createContext({});
+  const ctx = vm.createContext({}, { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
   vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs });
   return ctx;
 }
@@ -25,13 +25,15 @@ export function newContext(timeoutMs = 10_000) {
 /** Preprocesses one base.js and pulls out its n/sig functions, entirely inside `ctx` under the vm timeout (R27). */
 export function buildPlayer(ctx, playerText, timeoutMs = 10_000) {
   ctx.__player = playerText;
-  const fns = vm.runInContext(`(() => {
-    const pre = jsc({ type: 'player', player: __player, requests: [], output_preprocessed: true }).preprocessed_player;
-    const r = { n: null, sig: null };
-    Function('_result', pre)(r);
-    delete globalThis.__player;
-    return r;
-  })()`, ctx, { timeout: timeoutMs });
+  let fns;
+  try {
+    fns = vm.runInContext(`(() => {
+      const pre = jsc({ type: 'player', player: __player, requests: [], output_preprocessed: true }).preprocessed_player;
+      const r = { n: null, sig: null };
+      Function('_result', pre)(r);
+      return r;
+    })()`, ctx, { timeout: timeoutMs });
+  } finally { delete ctx.__player; }
   if (typeof fns?.n !== 'function' || typeof fns?.sig !== 'function') throw new Error('no n/sig functions in this player');
   return { ctx, n: fns.n, sig: fns.sig };
 }
@@ -46,10 +48,17 @@ const changed = (output, input) => usable(output) && output !== input;
  *  Catches identity functions and the `[object Object]` class NewPipe 0.26.5 hit. Runs under the vm timeout. */
 export function selfTest(player, timeoutMs = 10_000) {
   const inputs = Array.from({ length: 10 }, () => [random(16), random(108)]);
-  player.ctx.__probe = { n: player.n, sig: player.sig, inputs };
-  const outputs = vm.runInContext('__probe.inputs.map(([n, s]) => [__probe.n(n), __probe.sig(s)])', player.ctx, { timeout: timeoutMs });
-  delete player.ctx.__probe;
-  return inputs.every(([n, s], i) => changed(outputs[i][0], n) && changed(outputs[i][1], s));
+  // Only the player's own (in-realm) functions and one JSON string cross in: no main-realm object is reachable (R40).
+  player.ctx.__probeN = player.n;
+  player.ctx.__probeS = player.sig;
+  player.ctx.__probeIn = JSON.stringify(inputs);
+  let outputs;
+  try {
+    outputs = JSON.parse(vm.runInContext('JSON.stringify(JSON.parse(__probeIn).map(([n, s]) => [__probeN(n), __probeS(s)]))', player.ctx, { timeout: timeoutMs }));
+  } finally { delete player.ctx.__probeN; delete player.ctx.__probeS; delete player.ctx.__probeIn; }
+  // distinct inputs must give distinct outputs, which rejects constant functions
+  const distinct = (k) => new Set(outputs.map((o) => o[k])).size === outputs.length;
+  return distinct(0) && distinct(1) && inputs.every(([n, s], i) => changed(outputs[i][0], n) && changed(outputs[i][1], s));
 }
 
 /** The held functions, called directly to keep a solve near 1 ms; no timeout (R40's accepted residual).
