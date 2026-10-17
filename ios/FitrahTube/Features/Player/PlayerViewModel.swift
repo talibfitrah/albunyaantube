@@ -365,6 +365,13 @@ extension StreamState {
     /// Injected so the live refresh timer is testable without waiting hours.
     private let sleep: @Sendable (Duration) async throws -> Void
     private var liveRefreshTask: Task<Void, Never>?
+    /// Spec §9.1: the live-channel incident in progress (one per video id) and its step 4 wait.
+    private var liveIncident: LiveChannelRecovery?
+    private var liveRetryTask: Task<Void, Never>?
+    /// Set by `performResolve` to its generation when a live-channel resolve did not land live now; `resolve` acts on it.
+    private var liveMissGeneration: Int?
+    /// Live-channel mode needs the lookup too: an offline player built from a live item's args has none.
+    private var isLiveChannelMode: Bool { args.liveChannelId != nil && liveLookup != nil }
     /// The proactive refresh in flight (the live timer's or the foreground check's). The other one joins it: two forced
     /// walks for one expiry trip the limiter's 30 s interval, and the second's generation bump discards the first's
     /// answer. Superseded by a user action it can still be in flight; a join then only skips a refresh the fresh
@@ -474,6 +481,10 @@ extension StreamState {
         #if DEBUG
         playToEndCalls += 1
         #endif
+        if args.liveChannelId != nil {          // §9.1: never advance the queue in live-channel mode
+            await liveChannelTrigger(.ended)
+            return
+        }
         // `isAdvancing`: one advance per end -- a second end posted for the same ended item (a
         // `.resume` playing it while the advance is out) must not skip a lecture.
         guard !safeMode, !queue.items.isEmpty, !isAdvancing else { return }
@@ -677,6 +688,9 @@ extension StreamState {
         let token = UUID()
         recoveryToken = token
         defer { if recoveryToken == token { recoveryToken = nil } }
+        // §9.1 step 1: in live-channel mode an incident first asks the backend; the same id falls through to the
+        // existing recovery below (step 3).
+        if args.liveChannelId != nil, liveIncident?.currentId != args.videoId, await liveChannelTrigger(.failure) { return }
         // Spec R43: any failure or stall of the HD stream drops back to the 360p it replaced, at the live position (the
         // host's replace-and-seek; `fire` already recorded the resume intent), before the budget machine runs and spending
         // nothing. HD is off for this video (R41). The 360p's own later incidents get Phase 1's full ladder.
@@ -707,6 +721,8 @@ extension StreamState {
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
+            // §9.1 step 3: in live-channel mode a spent budget goes to step 4 (false: not live-channel mode).
+            if await liveChannelTrigger(.ended) { return }
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
             // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
             // so Retry starts at the next rung instead of walking the one that kept failing. Not
@@ -748,6 +764,69 @@ extension StreamState {
     /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`).
     func recordPlaybackProgress() {
         recoveryBudget.recordPlaybackProgress()
+    }
+
+    // MARK: - Live-channel mode (spec §9.1)
+
+    /// Spec §9.1: ask the backend for the channel's current lives, then switch, recover the same id (returns false:
+    /// the caller runs the same-id recovery), wait in the existing loading state, or give up into the error state.
+    /// Returns false outside live-channel mode too.
+    @discardableResult
+    func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger, now: Date = Date()) async -> Bool {
+        guard let channel = args.liveChannelId, let liveLookup else { return false }
+        if liveIncident?.currentId != args.videoId {     // an incident belongs to one video id
+            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.title, startedAt: now)
+        }
+        let incidentId = liveIncident?.id
+        var lives: [LiveChannelLives.Live]?
+        var notFound = false
+        do {
+            lives = try await liveLookup(channel).lives
+        } catch is LiveChannelNotFound {
+            notFound = true                     // not a servable live channel: stop, never ten minutes of waits
+        } catch {}                              // anything else is no answer: retry
+        // The incident ended while the lookup was out (a resolve landed live, a switch, a give-up).
+        guard var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId else { return true }
+        let step: LiveChannelRecovery.Step = notFound ? .giveUp : incident.next(trigger, lives: lives, now: Date())
+        liveIncident = incident
+        switch step {
+        case .sameId:
+            return false
+        case .switchTo(let id, let title):
+            await switchLive(to: id, title: title, channel: channel)
+        case .wait(let seconds):
+            generation += 1                     // supersedes any resolve still in flight
+            resolveTask?.cancel()
+            state = .loading                    // the existing loading/reconnecting state (§9)
+            liveRetryTask?.cancel()
+            let videoId = args.videoId
+            liveRetryTask = Task { [weak self, sleep = self.sleep] in
+                try? await sleep(.seconds(seconds))
+                // A wait stops with its incident and its stream, or it would wake over a healthy one.
+                guard !Task.isCancelled, let self, self.liveIncident?.id == incidentId, self.args.videoId == videoId else { return }
+                // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
+                if await !self.liveChannelTrigger(trigger) {
+                    await self.resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
+                }
+            }
+        case .giveUp:
+            liveIncident = nil
+            generation += 1
+            resolveTask?.cancel()
+            state = .error(messageKey: "player_error_message")
+        }
+        return true
+    }
+
+    /// §9.1 step 2: a new broadcast is a new timeline (a 1-3 s transition in the existing loading state).
+    private func switchLive(to id: String, title: String, channel: String) async {
+        liveIncident = nil
+        var next = PlayerArgs(videoId: id, title: title, channelName: args.channelName,
+                              thumbnailURL: URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault_live.jpg"), channelId: channel)
+        next.liveChannelId = channel
+        args = next
+        currentTime = 0
+        await resolve(forceRefresh: false, kind: .player)
     }
 
     // MARK: - HD upgrade (spec R43)
@@ -1212,6 +1291,13 @@ extension StreamState {
         return TimeInterval(arguments[i + 1])
     }
 
+    /// DEBUG only (L5): `-fitrah-live-force-end-seconds N` forces an end N s after a live-channel item plays.
+    static var debugLiveForceEndSeconds: TimeInterval? {
+        let arguments = LaunchArguments.debug
+        guard let i = arguments.firstIndex(of: "-fitrah-live-force-end-seconds"), arguments.indices.contains(i + 1) else { return nil }
+        return TimeInterval(arguments[i + 1])
+    }
+
     /// Fix round 1: a refresh that does not land (a blip, a cooldown, not live now) is retried this often inside the
     /// lead (Android parity), so one blip at T − 10 min does not bring back the 6 h cut.
     static let liveRefreshRetry: TimeInterval = 120
@@ -1287,6 +1373,10 @@ extension StreamState {
         }
         resolveTask = task
         await task.value
+        if myGeneration == generation, liveMissGeneration == generation {
+            liveMissGeneration = nil
+            await liveChannelTrigger(.ended)    // §9.1: not live now, or failed (F3): step 4, never a recording or an error
+        }
         return myGeneration == generation
     }
 
@@ -1305,6 +1395,13 @@ extension StreamState {
         // own resolve starts -- either signal alone is enough to discard a late/stale completion,
         // matching `HomeViewModel.fetchFirstPage`'s belt-and-suspenders check.
         guard !Task.isCancelled, generation == self.generation else { return }
+        // §9.1 / RV I11: live-channel mode only lands a stream that is live now. A recording (from any resolve, a
+        // proactive refresh included) and a failed resolve (F3: an ended 24/7 id fails to resolve) are step 4's, never
+        // played or shown as an error; `resolve` runs the trigger. A failed silent refresh keeps the stream (below).
+        if isLiveChannelMode, !result.isLiveNow, result.isPlayable || !silent {
+            liveMissGeneration = generation
+            return
+        }
         // A silent (proactive TTL) refresh runs WHILE a healthy stream is playing -- that is why it
         // skips the `.loading` hop. It must therefore never apply a non-playable result: a
         // `RateLimitedResolver` cooldown or a network blip on foreground would otherwise knock a
@@ -1321,14 +1418,27 @@ extension StreamState {
         resolvedVideoId = videoId
         // Owner issue 1: the source's own title (videoDetails.title), never the list row's hl=en translation.
         // Before `state`: the host republishes Now Playing from `args` on the pass the state change triggers.
-        // Replace-only: a titleless resolve (offline, TV) keeps what the row gave.
-        if let title = result.resolved?.title, !title.isEmpty { args.title = title }
+        // Replace-only: a titleless resolve (offline, TV) keeps what the row gave. Not in live-channel mode: D12's title
+        // match compares against the backend's list, so the item keeps the backend's title (Android 4d3951bf).
+        if args.liveChannelId == nil, let title = result.resolved?.title, !title.isEmpty { args.title = title }
         // Spec §4.9: the kept 360p goes only when a resolve replaces the stream on screen. A silent refresh that never
         // lands (it failed, or is still out) keeps it, so the HD stream still drops back and never reaches `decide`,
         // whose step-down would demote `.tvSamsung`.
         standardBeforeUpgrade = nil
         state = result
         scheduleLiveRefresh()
+        if isLiveChannelMode, result.isPlayable {
+            liveIncident = nil                  // live again: the incident is over, and its wait stops
+            #if DEBUG
+            if let seconds = Self.debugLiveForceEndSeconds {
+                Task { [weak self] in
+                    try? await Task.sleep(for: .seconds(seconds))
+                    guard self?.args.videoId == videoId else { return }
+                    await self?.liveChannelTrigger(.ended)
+                }
+            }
+            #endif
+        }
         // Spec R43: 360p is on screen; ask for HD in the background.
         if case .rung2Progressive = result { startUpgrade(videoId: videoId, generation: generation) }
     }

@@ -154,7 +154,8 @@ struct PlayerScreen: View {
                 vm = PlayerViewModel(resolver: Self.resolver(container: container),
                                      settings: container.settings, args: args,
                                      queueSource: Self.queueSource(container: container),
-                                     cast: container.castController)
+                                     cast: container.castController,
+                                     liveLookup: { [catalog = container.catalog] id in try await catalog.liveChannel(id: id) })
             }
             model = vm
             // Minor 1 (r8 review): the model is live from here and `open()` can take seconds — a
