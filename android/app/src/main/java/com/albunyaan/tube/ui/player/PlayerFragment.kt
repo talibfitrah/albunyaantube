@@ -4302,6 +4302,20 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         /** Nav arg: id of a completed download to play from its local file (see [PlayerViewModel.loadDownload]). */
         const val ARG_DOWNLOAD_ID = "downloadId"
 
+        /**
+         * Nav args that open a list's [video] in the player: Home, Search, Featured and the Videos tab.
+         * The channel is the video's own (1.0.4: these four passed the category, so the player showed "General").
+         */
+        fun argsFor(video: com.albunyaan.tube.data.model.ContentItem.Video): Bundle = androidx.core.os.bundleOf(
+            "videoId" to video.id,
+            "title" to video.title,
+            "channelName" to video.channelName,
+            "thumbnailUrl" to video.thumbnailUrl,
+            "description" to video.description,
+            "durationSeconds" to video.durationSeconds,
+            "viewCount" to (video.viewCount ?: -1L),
+        )
+
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"
         private const val DEFAULT_VIDEO_MIME = "video/mp4"
 

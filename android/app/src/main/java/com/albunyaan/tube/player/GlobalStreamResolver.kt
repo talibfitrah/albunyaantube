@@ -83,6 +83,12 @@ class GlobalStreamResolver private constructor(
         private const val DEFAULT_TIMEOUT_MS = 20_000L // 20s default timeout
 
         /**
+         * The tap-prefetch's caller tag. It caches a result nobody waits on yet, so it is not
+         * counted in [InFlight.awaiters]: a player or download arriving replaces it outright.
+         */
+        const val PREFETCH_CALLER = "prefetch"
+
+        /**
          * Create a GlobalStreamResolver with a custom resolution provider for testing.
          *
          * @param provider The stream resolution provider to use
@@ -166,7 +172,18 @@ class GlobalStreamResolver private constructor(
     private data class InFlight(
         val deferred: Deferred<ResolvedStreams?>,
         val priority: Priority,
-    )
+        /** Callers that need [deferred]'s result and await it now (a prefetch is not counted). */
+        val awaiters: java.util.concurrent.atomic.AtomicInteger = java.util.concurrent.atomic.AtomicInteger(),
+    ) {
+        /**
+         * The one rule for replacing a resolve, whether a forced refresh or a higher-priority
+         * caller replaces it: cancel it only when no caller that needs it is waiting. A download
+         * awaiting it keeps it (1.0.4: the player's 403 recovery and escalation both cancelled a
+         * download's resolve, which then failed NO_STREAM); a prefetch alone does not.
+         */
+        fun cancelUnlessAwaited(): Boolean =
+            (deferred.isActive && awaiters.get() == 0).also { if (it) deferred.cancel() }
+    }
 
     // In-flight resolve jobs by videoId - any caller can join
     private val inFlightJobs = ConcurrentHashMap<String, InFlight>()
@@ -211,7 +228,7 @@ class GlobalStreamResolver private constructor(
      * Resolve streams for a videoId with single-flight semantics.
      *
      * If a resolve is already in-flight for this videoId and forceRefresh=false, joins that job.
-     * If forceRefresh=true and a job exists, cancels it and starts a new one.
+     * If forceRefresh=true, starts a new one; an existing job is cancelled only if no caller awaits it.
      * Otherwise, starts a new resolve and registers it for others to join.
      *
      * ## Priority escalation (ANDROID-PERSONAL-02 round 2 [Bug B])
@@ -220,18 +237,17 @@ class GlobalStreamResolver private constructor(
      * could trap a later PLAYER caller behind the rate-limit + cooldown
      * gates of the prefetch's lane — exactly what spec D1 forbids
      * ("playback must never block on a refresh-thread bucket"). To prevent
-     * that, when a higher-priority caller arrives we **cancel the existing
-     * in-flight job and start a new one** at the higher priority. The lower-
-     * priority caller's `await()` returns null (cancellation result); that
-     * caller is expected to be null-tolerant. Currently
-     * [com.albunyaan.tube.player.StreamPrefetchService] is null-tolerant
-     * (logs and continues); future callers must be too.
+     * that, when a higher-priority caller arrives we **start a new job** at
+     * the higher priority. The existing one is cancelled unless a caller that
+     * needs its result awaits it ([InFlight.cancelUnlessAwaited]); a cancelled
+     * prefetch's `await()` returns null, and
+     * [com.albunyaan.tube.player.StreamPrefetchService] is null-tolerant.
      *
      * Same-priority and lower-priority arrivals continue to join (no
      * cancellation, no duplicate work).
      *
      * @param videoId The YouTube video ID to resolve
-     * @param forceRefresh If true, cancels any in-flight job and forces fresh extraction
+     * @param forceRefresh If true, forces a fresh extraction (an awaited in-flight job runs on for its callers)
      * @param timeoutMs Maximum time to wait for resolution (default 20s)
      * @param caller A tag identifying who is calling (for logging: "prefetch", "player", etc.)
      * @param priority The rate-limit / cooldown lane this caller belongs to
@@ -257,6 +273,7 @@ class GlobalStreamResolver private constructor(
         priority: Priority = Priority.USER_FOREGROUND,
         sourceChannelId: String? = null,
     ): ResolvedStreams? {
+        val needsResult = caller != PREFETCH_CALLER
         // Fast path: check if there's already an in-flight job we can join (only if not forceRefresh)
         // Note: We skip the isActive check since the job state can change immediately after.
         // Just try to await the job if it exists - if it completed/cancelled, await returns quickly.
@@ -268,6 +285,7 @@ class GlobalStreamResolver private constructor(
             val existing = inFlightJobs[videoId]
             if (existing != null && priority.rank() <= existing.priority.rank()) {
                 Log.d(TAG, "[$caller] joined in-flight resolve for $videoId (priority=$priority, existing=${existing.priority})")
+                if (needsResult) existing.awaiters.incrementAndGet()
                 return try {
                     withTimeoutOrNull(timeoutMs) {
                         existing.deferred.await()
@@ -294,6 +312,8 @@ class GlobalStreamResolver private constructor(
                 } catch (e: Exception) {
                     Log.w(TAG, "[$caller] in-flight resolve failed for $videoId: ${e.message}")
                     null
+                } finally {
+                    if (needsResult) existing.awaiters.decrementAndGet()
                 }
             }
         }
@@ -302,12 +322,12 @@ class GlobalStreamResolver private constructor(
         // OR a higher-priority caller is escalating an existing lower-priority job).
         // Use synchronized block to prevent race between check and put.
         val job = synchronized(lock) {
-            // If forceRefresh, cancel any existing in-flight job first
+            // forceRefresh gets its own resolve, which replaces the in-flight one in the map; the old
+            // one is cancelled only by the rule in [InFlight.cancelUnlessAwaited].
             if (forceRefresh) {
                 inFlightJobs.remove(videoId)?.let { existing ->
-                    if (existing.deferred.isActive) {
+                    if (existing.cancelUnlessAwaited()) {
                         Log.d(TAG, "[$caller] cancelling cached resolve for $videoId due to forceRefresh=true")
-                        existing.deferred.cancel()
                     }
                 }
             } else {
@@ -320,28 +340,26 @@ class GlobalStreamResolver private constructor(
                             TAG,
                             "[$caller] joined in-flight resolve for $videoId (after lock; priority=$priority, existing=${doubleCheck.priority})",
                         )
-                        return@synchronized doubleCheck.deferred
+                        return@synchronized doubleCheck.also { if (needsResult) it.awaiters.incrementAndGet() }
                     }
                     // ANDROID-PERSONAL-02 round 2 [Bug B]: priority escalation.
                     // The existing job runs at a strictly lower priority than
                     // this caller demands. Joining would trap us behind the
-                    // wrong rate-limit / cooldown lane (spec D1). Cancel the
-                    // existing job and let the new-job path below recreate
-                    // it at the higher priority. Lower-priority callers
-                    // already awaiting that Deferred will get a
-                    // CancellationException, which the existing await() catch
-                    // converts to null (they must be null-tolerant — see
-                    // KDoc above).
+                    // wrong rate-limit / cooldown lane (spec D1). The new-job
+                    // path below recreates it at the higher priority; the
+                    // existing job is cancelled only by the rule in
+                    // [InFlight.cancelUnlessAwaited] (a download awaiting it
+                    // keeps it; a prefetch alone does not).
                     //
                     // NOTE: invokeOnCompletion uses remove(key, value), so
-                    // when the cancelled job's completion handler fires it
+                    // when the old job's completion handler fires it
                     // will not yank the replacement job out of the map.
                     Log.d(
                         TAG,
-                        "[$caller] escalating priority for $videoId (was=${doubleCheck.priority}, now=$priority); cancelling existing job",
+                        "[$caller] escalating priority for $videoId (was=${doubleCheck.priority}, now=$priority)",
                     )
                     inFlightJobs.remove(videoId)
-                    doubleCheck.deferred.cancel()
+                    doubleCheck.cancelUnlessAwaited()
                 }
             }
 
@@ -417,12 +435,12 @@ class GlobalStreamResolver private constructor(
                     onJobCleanup?.invoke(videoId)
                 }
             }
-            newJob
+            inFlight.also { if (needsResult) it.awaiters.incrementAndGet() }
         }
 
         val result = try {
             withTimeoutOrNull(timeoutMs) {
-                job.await()
+                job.deferred.await()
             }
         } catch (e: kotlinx.coroutines.CancellationException) {
             // Distinguish between caller cancellation vs shared job cancellation:
@@ -447,6 +465,8 @@ class GlobalStreamResolver private constructor(
         } catch (e: Exception) {
             Log.w(TAG, "[$caller] resolve failed for $videoId: ${e.message}")
             null
+        } finally {
+            if (needsResult) job.awaiters.decrementAndGet()
         }
 
         if (result == null) {

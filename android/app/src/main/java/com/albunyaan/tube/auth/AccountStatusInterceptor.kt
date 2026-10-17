@@ -42,6 +42,7 @@ class AccountStatusInterceptor @Inject constructor(
 
     override fun intercept(chain: Interceptor.Chain): Response {
         val request = chain.request()
+        val asked = firebaseAuth.currentUser?.uid
         val response = chain.proceed(request)
         if (response.code != 403) return response
 
@@ -108,6 +109,12 @@ class AccountStatusInterceptor @Inject constructor(
             "ACCOUNT_DELETED" -> AccountStatusEvent.Deleted
             else -> return response
         }
+
+        // Stage 5 F4: the request left for the account signed in then. If another account signed
+        // in while it stalled, this verdict is not about it: signing it out, or wiping its library
+        // and downloads on ACCOUNT_DELETED, would hit the wrong person.
+        val now = firebaseAuth.currentUser?.uid
+        if (now != null && now != asked) return response
 
         // Cubic R7 P2 — comment correction.
         //

@@ -197,7 +197,7 @@ class DefaultStreamPrefetchService @Inject constructor(
                     videoId = videoId,
                     forceRefresh = false,
                     timeoutMs = PREFETCH_TIMEOUT_MS,
-                    caller = "prefetch",
+                    caller = GlobalStreamResolver.PREFETCH_CALLER,
                     priority = Priority.BACKGROUND_REFRESH,
                 )
                 if (resolved != null) {

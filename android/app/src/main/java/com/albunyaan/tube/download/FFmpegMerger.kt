@@ -77,14 +77,39 @@ class FFmpegMerger @Inject constructor() {
         ).joinToString(" ")
 
         Log.d(TAG, "Starting FFmpeg merge: $command")
+        execute(command, outputFile)
+        onProgress?.invoke(100)
+    }
 
+    /**
+     * The audio track of [inputFile] alone, stream-copied (no re-encode) into an MP4 [outputFile]:
+     * an audio-only download taken out of a muxed file (DownloadWorker's 360p fallback).
+     *
+     * @throws FFmpegMergeException if the input is missing or FFmpeg fails
+     */
+    suspend fun extractAudio(inputFile: File, outputFile: File): Unit = withContext(Dispatchers.IO) {
+        if (!inputFile.exists()) throw FFmpegMergeException("Input file does not exist: ${inputFile.absolutePath}")
+        val command = arrayOf(
+            "-i", inputFile.absolutePath,
+            "-vn",
+            "-c:a", "copy",
+            "-f", "mp4",
+            "-movflags", "+faststart",
+            "-y",
+            outputFile.absolutePath
+        ).joinToString(" ")
+        Log.d(TAG, "Starting FFmpeg audio extraction: $command")
+        execute(command, outputFile)
+    }
+
+    /** Runs [command]; on failure deletes [outputFile] and throws [FFmpegMergeException]. */
+    private fun execute(command: String, outputFile: File) {
         val session = FFmpegKit.execute(command)
         val returnCode = session.returnCode
 
         when {
             ReturnCode.isSuccess(returnCode) -> {
-                Log.i(TAG, "Merge completed successfully: ${outputFile.absolutePath}")
-                onProgress?.invoke(100)
+                Log.i(TAG, "FFmpeg completed successfully: ${outputFile.absolutePath}")
             }
             ReturnCode.isCancel(returnCode) -> {
                 Log.w(TAG, "Merge cancelled")

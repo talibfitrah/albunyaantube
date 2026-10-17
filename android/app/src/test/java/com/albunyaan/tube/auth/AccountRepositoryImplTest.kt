@@ -562,6 +562,31 @@ class AccountRepositoryImplTest {
         verify(store, never()).write(any())
     }
 
+    // Stage 5 F4: A's /me stalls on a bad network; A signs out and B signs in; A's signed 401
+    // then lands. It must not sign B out.
+    @Test fun `a late signed 401 for the restored account never signs out the account signed in since`() = runTest(dispatcher) {
+        val store = mock<LastKnownAccountStore>()
+        val accountB = restored.copy(uid = "uid-2", email = "b@b.com")
+        whenever(store.read("uid-1")).thenReturn(restored)
+        whenever(store.read("uid-2")).thenReturn(accountB)
+        val auth = authFake()
+        var firebaseUid: String? = "uid-1"
+        val repo = AccountRepositoryImpl(
+            service, backoffMs = 0L, lastKnown = store, auth = auth, currentFirebaseUid = { firebaseUid },
+        )
+        repo.restoreLastKnown("uid-1")
+        doAnswer {
+            repo.signOut(); firebaseUid = null      // A signs out…
+            firebaseUid = "uid-2"; repo.restoreLastKnown("uid-2") // …and B signs in
+            throw httpError(401, signed = true)
+        }.whenever(service).getMe()
+
+        repo.revalidateRestored()
+
+        assertEquals(accountB, repo.accountState.value)
+        verifyBlocking(auth, never()) { signOut() }
+    }
+
     @Test fun `a Firebase-initiated sign-out deletes the record`() = runTest(dispatcher) {
         val store = mock<LastKnownAccountStore>()
         val authState = MutableStateFlow<AuthState>(AuthState.SignedIn(mock(), "uid-1"))

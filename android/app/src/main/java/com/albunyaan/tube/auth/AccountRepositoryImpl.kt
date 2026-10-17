@@ -176,6 +176,14 @@ class AccountRepositoryImpl(
                     cause = null,
                 )
                 return Result.failure(e)
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A malformed 2xx (Moshi's JsonDataException) or an empty 200 (Retrofit's
+                // KotlinNullPointerException): not retryable. A process-death restore runs this on
+                // appScope, which has no handler, so an escape killed the process.
+                _state.value = AccountState.Failed(httpCode = null, message = e.message, cause = e)
+                return Result.failure(e)
             }
         }
         val cause = lastError ?: IOException("unknown fetch failure")
@@ -286,11 +294,15 @@ class AccountRepositoryImpl(
      */
     override suspend fun revalidateRestored() {
         if (!restoredOffline || !revalidating.compareAndSet(false, true)) return
+        val asked = currentFirebaseUid?.invoke()
         try {
             val loaded = try {
                 service.getMe().toLoaded()
             } catch (e: HttpException) {
-                if (e.isTerminalAccountFailure()) {
+                // Stage 5 F4: a verdict on the account that asked never signs out another one
+                // signed in since (sign-out and sign-in while this /me stalled).
+                val now = currentFirebaseUid?.invoke()
+                if (e.isTerminalAccountFailure() && (now == null || now == asked)) {
                     signOut()
                     auth?.signOut()
                 }

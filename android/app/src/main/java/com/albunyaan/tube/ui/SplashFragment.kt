@@ -140,10 +140,12 @@ class SplashFragment : Fragment(R.layout.fragment_splash) {
             // before touching cursors and a failed push leaves rows dirty on
             // SyncManager's backoff, so it just resumes online.
             val accountStatusDeferred: Deferred<AccountStatus?> = async {
-                val user = firebaseAuth.currentUser
+                // A local: the callback outlives this fragment in appScope, so it must not hold `this`.
+                val auth = firebaseAuth
+                val user = auth.currentUser
                 if (user == null) null
                 else SplashRouter.launchAccountStatus(
-                    accountRepository, user.uid, appScope, { firebaseAuth.currentUser?.uid }, syncManager::bind,
+                    accountRepository, user.uid, appScope, { auth.currentUser?.uid }, syncManager::bind,
                 )
             }
 

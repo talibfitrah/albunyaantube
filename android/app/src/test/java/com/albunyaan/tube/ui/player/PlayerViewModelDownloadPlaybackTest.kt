@@ -1,37 +1,12 @@
 package com.albunyaan.tube.ui.player
 
 import com.albunyaan.tube.R
-import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.analytics.PlaybackMetricsCollector
-import com.albunyaan.tube.data.extractor.ChannelMetadata
-import com.albunyaan.tube.data.extractor.ExtractorClient
-import com.albunyaan.tube.data.extractor.PlaylistMetadata
-import com.albunyaan.tube.data.extractor.Priority
-import com.albunyaan.tube.data.extractor.ResolvedStreams
-import com.albunyaan.tube.data.extractor.VideoMetadata
-import com.albunyaan.tube.data.local.FavoriteVideo
-import com.albunyaan.tube.data.local.FavoritesRepository
-import com.albunyaan.tube.data.model.ContentType
-import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
-import com.albunyaan.tube.data.playlist.PlaylistPage
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadFileMetadata
-import com.albunyaan.tube.download.DownloadPolicy
-import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadStatus
-import com.albunyaan.tube.download.PlaylistDownloadItem
-import com.albunyaan.tube.player.ExtractionRateLimiter
-import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.player.StreamPrefetchService
-import com.albunyaan.tube.player.SyntheticDashMpdRegistry
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -65,8 +40,8 @@ class PlayerViewModelDownloadPlaybackTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private val testDispatcher = StandardTestDispatcher()
-    private val streams = CountingPlayerRepository()
-    private val metadata = CountingExtractorClient()
+    private val streams = FakePlayerRepository()
+    private val metadata = FakeExtractorClient()
     private val downloads = FakeDownloadRepository()
     private val favorites = FakeFavoritesRepository()
 
@@ -274,139 +249,77 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals(Triple("v10", "Lecturer", 1800), favorites.toggled.single())
     }
 
-    private fun createViewModel() = PlayerViewModel(
-        repository = streams,
-        downloadRepository = downloads,
-        playlistDetailRepository = FakePlaylistDetailRepository(),
-        rateLimiter = ExtractionRateLimiter(),
-        prefetchService = FakePrefetchService(),
-        favoritesRepository = favorites,
-        metricsReporter = FakeExtractorMetricsReporter(),
-        playbackMetrics = PlaybackMetricsCollector(),
-        mpdRegistry = SyntheticDashMpdRegistry(),
-        extractorClient = metadata,
-        dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
-        dubAudioResolver = com.albunyaan.tube.data.extractor.DubAudioResolver(
-            com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
-            com.albunyaan.tube.data.extractor.NoOpPoTokenProvider,
-            com.albunyaan.tube.data.extractor.nsig.NsigSolver(
-                androidx.test.core.app.ApplicationProvider.getApplicationContext()
-            ),
-        ),
-        contentService = com.albunyaan.tube.data.source.FakeContentService(),
+    // 1.0.4 A9 (R3 local-first): Home, Search, Favorites, History, Me, a channel tab and a deep link
+    // all open a single video through loadVideo. A saved copy plays from its file, as from Downloads.
+    @Test fun `opening a saved video from any entry point plays the local file`() = runTest {
+        val file = tmp.newFile("v11.mp4")
+        downloads.entries.value = listOf(completed("d11", "v11", file))
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v11", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+
+        val ready = vm.state.value.streamState as StreamState.Ready
+        assertTrue(vm.state.value.playingDownload)
+        assertEquals(file.toURI().toString(), ready.selection.video?.url)
+        noNetwork()
+    }
+
+    // The first open of a process (Home after launch, a cold deep link, a restored player) comes
+    // before DefaultDownloadRepository's startup load has listed the saved files.
+    @Test fun `the first open of a process waits for the saved files to be listed`() = runTest {
+        val file = tmp.newFile("v14.mp4")
+        val load = kotlinx.coroutines.CompletableDeferred<Unit>()
+        downloads.startupLoad = load
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v14")
+        downloads.entries.value = listOf(completed("d14", "v14", file)) // what the startup load finds
+        load.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.playingDownload)
+        noNetwork()
+    }
+
+    // 1.0.4 round 2: a copy saved before the channel name was kept (or saved blank from a
+    // standalone playlist) lost the heart once Home opened it locally. The entry point knows the name.
+    @Test fun `a local-first open keeps the entry point's channel and duration for the favourite`() = runTest {
+        downloads.entries.value = listOf(completed("d15", "v15", tmp.newFile("v15.mp4")))
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v15", title = "From Home", channelName = "Lecturer", durationSeconds = 1800)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.playingDownload)
+        assertEquals("the heart shows for a known channel", "Lecturer", vm.state.value.currentItem?.channelName)
+
+        vm.toggleFavorite()
+        advanceUntilIdle()
+
+        assertEquals(Triple("v15", "Lecturer", 1800), favorites.toggled.single())
+    }
+
+    @Test fun `a saved video copy wins over an audio-only one, and a missing file streams`() = runTest {
+        val video = tmp.newFile("v12.mp4")
+        downloads.entries.value = listOf(
+            completed("audio", "v12", tmp.newFile("v12.m4a"), audioOnly = true),
+            completed("video", "v12", video),
+            completed("gone", "v13", File(tmp.root, "v13.mp4")),
+        )
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v12")
+        advanceUntilIdle()
+        assertEquals(video.toURI().toString(), (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
+
+        val streaming = createViewModel()
+        streaming.loadVideo(videoId = "v13")
+        advanceUntilIdle()
+        assertFalse("a deleted file never blocks the stream", streaming.state.value.playingDownload)
+        assertTrue(streams.resolveCallCount > 0)
+    }
+
+    private fun createViewModel() = playerViewModel(
+        repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
     )
-
-    // ── Fakes ────────────────────────────────────────────────────────────
-
-    private class CountingPlayerRepository : PlayerRepository {
-        var resolveCallCount = 0
-        override suspend fun resolveStreams(
-            videoId: String,
-            forceRefresh: Boolean,
-            priority: Priority,
-            sourceChannelId: String?,
-        ): ResolvedStreams? {
-            resolveCallCount++
-            return null
-        }
-    }
-
-    private class CountingExtractorClient : ExtractorClient {
-        var calls = 0
-        override suspend fun fetchVideoMetadata(ids: List<String>): Map<String, VideoMetadata> {
-            calls++
-            return emptyMap()
-        }
-        override suspend fun fetchChannelMetadata(ids: List<String>): Map<String, ChannelMetadata> = emptyMap()
-        override suspend fun fetchPlaylistMetadata(ids: List<String>): Map<String, PlaylistMetadata> = emptyMap()
-    }
-
-    private class FakeDownloadRepository : DownloadRepository {
-        val entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
-        /** What the repository's startup load finds on disk, published only once it completes. */
-        var listedOnRefresh: List<DownloadEntry>? = null
-        override val downloads: StateFlow<List<DownloadEntry>> = entries
-        override suspend fun refreshPersistedDownloads() {
-            listedOnRefresh?.let { entries.value = it }
-        }
-        val enqueued = mutableListOf<DownloadRequest>()
-        override fun enqueue(request: DownloadRequest) { enqueued += request }
-        override fun pause(requestId: String) {}
-        override fun resume(requestId: String) {}
-        override fun cancel(requestId: String) {}
-        override fun remove(requestId: String) {}
-        override fun retry(requestId: String) {}
-        override fun delete(requestId: String): Boolean = true
-        override fun enqueuePlaylist(
-            playlistId: String,
-            playlistTitle: String,
-            qualityLabel: String,
-            items: List<PlaylistDownloadItem>,
-            audioOnly: Boolean,
-            targetHeight: Int?,
-        ): Int = 0
-        override fun isPlaylistDownloading(playlistId: String, qualityLabel: String) = false
-    }
-
-    private class FakePlaylistDetailRepository : PlaylistDetailRepository {
-        override suspend fun getHeader(
-            playlistId: String,
-            forceRefresh: Boolean,
-            category: String?,
-            excluded: Boolean,
-            downloadPolicy: DownloadPolicy,
-        ): com.albunyaan.tube.data.playlist.PlaylistHeader = error("not used")
-
-        override suspend fun getItems(
-            playlistId: String,
-            page: com.albunyaan.tube.data.channel.Page?,
-            itemOffset: Int,
-        ): PlaylistPage<com.albunyaan.tube.data.playlist.PlaylistItem> = PlaylistPage(emptyList(), null)
-
-        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
-    }
-
-    private class FakePrefetchService : StreamPrefetchService {
-        override fun triggerPrefetch(videoId: String, scope: kotlinx.coroutines.CoroutineScope) {}
-        override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? = null
-        override fun consumePrefetch(videoId: String): ResolvedStreams? = null
-        override fun isPrefetchInFlight(videoId: String): Boolean = false
-        override fun cancelPrefetch(videoId: String) {}
-        override fun clearPrefetchState() {}
-        override fun clearAll() {}
-    }
-
-    private class FakeFavoritesRepository : FavoritesRepository {
-        override fun getAllFavorites(): Flow<List<FavoriteVideo>> = flowOf(emptyList())
-        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = emptyFlow()
-        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = emptyFlow()
-        override fun isFavorite(videoId: String): Flow<Boolean> = flowOf(false)
-        override suspend fun isFavoriteOnce(videoId: String): Boolean = false
-        override suspend fun addFavorite(
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-        ) {}
-        override suspend fun removeFavorite(videoId: String) {}
-        val toggled = mutableListOf<Triple<String, String, Int>>()
-        override suspend fun toggleFavorite(
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-        ): Boolean { toggled += Triple(videoId, channelName, durationSeconds); return true }
-        override fun getFavoriteCount(): Flow<Int> = flowOf(0)
-        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
-        override suspend fun addImportedFavorite(
-            uid: String,
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-            approvalStatus: String, source: String?, importedAt: Long?,
-        ) {}
-        override suspend fun clearAll() {}
-    }
-
-    private class FakeExtractorMetricsReporter : ExtractorMetricsReporter {
-        override fun onCacheHit(type: ContentType, hitCount: Int) {}
-        override fun onCacheMiss(type: ContentType, missCount: Int) {}
-        override fun onFetchSuccess(type: ContentType, fetchedCount: Int, durationMillis: Long) {}
-        override fun onFetchFailure(type: ContentType, ids: List<String>, throwable: Throwable) {}
-    }
 }

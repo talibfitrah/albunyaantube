@@ -190,6 +190,9 @@ class PlayerViewModel @Inject constructor(
     /** Set by [loadDownload]: this player plays that download's local file and never resolves online. */
     private var playingDownloadId: String? = null
 
+    /** [loadVideo] waits for the download list's startup load once per player. */
+    private var waitedForStartupLoad = false
+
     /**
      * Cached prefetch result paired with the wall-clock timestamp at which it
      * was stored. Drives the [PREFETCH_CACHE_TTL_MS] eviction inside
@@ -321,7 +324,9 @@ class PlayerViewModel @Inject constructor(
      * Emits UI event on failure for toast/snackbar display.
      */
     fun toggleFavorite() {
-        val item = _state.value.currentItem ?: return
+        // S7-N5: the raw item, not the shown one. A standalone playlist blanks the channel on screen
+        // (gateChannelName), and a blank channelName is a 400 that sync then drops for good.
+        val item = currentItem ?: return
         viewModelScope.launch(dispatcher) {
             try {
                 val isNowFavorite = favoritesRepository.toggleFavorite(
@@ -796,6 +801,23 @@ class PlayerViewModel @Inject constructor(
         viewCount: Long? = null,
         sourceChannelId: String? = null,
     ) {
+        // 1.0.4 R3, local-first: Home, Search, Favorites, History, Me, channel tabs and deep links all
+        // open one video here, so a saved copy plays from its file as it does from Downloads. The
+        // first open of a process can come before the repository's startup load has listed the
+        // files; it waits for that once. A playlist keeps its streaming queue.
+        val startupLoad = downloadRepository.startupLoad
+        if (startupLoad != null && !startupLoad.isCompleted && !waitedForStartupLoad) {
+            waitedForStartupLoad = true
+            updateState { it.copy(streamState = StreamState.Loading) }
+            viewModelScope.launch(dispatcher) {
+                // ponytail: a load slower than this streams; raise it if real devices list files slower.
+                withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
+                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId)
+            }
+            return
+        }
+        savedCopyOf(videoId)?.let { loadDownload(it.request.id, channelName, durationSeconds); return }
+
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
@@ -853,8 +875,11 @@ class PlayerViewModel @Inject constructor(
      * or dub lookup runs, and there is no queue, so Up Next and paging stay off. Every
      * re-resolve (retry, refresh, auto-recovery) re-reads the file through
      * [resolveDownload]; a deleted or expired file ends in the error state.
+     *
+     * [knownChannelName] and [knownDurationSeconds]: what the entry point knows (local-first from
+     * Home, search, a channel), used when the saved copy has none, so its favourite stays valid.
      */
-    fun loadDownload(downloadId: String) {
+    fun loadDownload(downloadId: String, knownChannelName: String = "", knownDurationSeconds: Int = 0) {
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
         liveRefreshJob?.cancel()
@@ -875,19 +900,20 @@ class PlayerViewModel @Inject constructor(
             // A player restored after process death gets here before the repository's startup
             // load has listed the files; refreshPersistedDownloads() waits for that load.
             if (completedDownload(downloadId) == null) downloadRepository.refreshPersistedDownloads()
-            startDownload(downloadId)
+            startDownload(downloadId, knownChannelName, knownDurationSeconds)
         }
     }
 
-    private fun startDownload(downloadId: String) {
+    private fun startDownload(downloadId: String, knownChannelName: String, knownDurationSeconds: Int) {
         val entry = completedDownload(downloadId)
         currentItem = entry?.let {
             UpNextItem(
                 id = it.request.videoId,
                 title = it.metadata?.title ?: it.request.title,
-                // Blank for downloads that predate these fields; the fragment then hides Favorite.
-                channelName = it.request.channelName.orEmpty(),
-                durationSeconds = it.request.durationSeconds ?: 0,
+                // Blank only when neither the saved copy nor the entry point knows it (a download that
+                // predates these fields, opened from Downloads); the fragment then hides Favorite.
+                channelName = it.request.channelName?.takeIf { name -> name.isNotBlank() } ?: knownChannelName,
+                durationSeconds = it.request.durationSeconds?.takeIf { seconds -> seconds > 0 } ?: knownDurationSeconds,
                 streamId = it.request.videoId,
                 thumbnailUrl = it.metadata?.thumbnailUrl ?: it.request.thumbnailUrl,
             )
@@ -901,6 +927,15 @@ class PlayerViewModel @Inject constructor(
         publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
         resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
     }
+
+    /** A completed download of [videoId] whose file is on disk; a video copy before an audio-only one. */
+    private fun savedCopyOf(videoId: String): DownloadEntry? =
+        downloadRepository.downloads.value
+            .filter {
+                it.request.videoId == videoId && it.status == DownloadStatus.COMPLETED &&
+                    it.filePath?.let(::File)?.isFile == true
+            }
+            .minByOrNull { it.request.audioOnly }
 
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
@@ -1875,6 +1910,8 @@ class PlayerViewModel @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
+        /** Longest a first open waits for the download list's startup load before it streams. */
+        private const val STARTUP_LOAD_WAIT_MS = 2_000L
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
 
         // PR6.6: Playlist paging constants

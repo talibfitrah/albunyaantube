@@ -25,6 +25,7 @@ import com.albunyaan.tube.databinding.FragmentHomeNewBinding
 import javax.inject.Inject
 import com.albunyaan.tube.ui.adapters.HomeSectionAdapter
 import com.albunyaan.tube.util.showIcons
+import com.albunyaan.tube.ui.player.PlayerFragment
 import kotlinx.coroutines.launch
 
 @AndroidEntryPoint
@@ -149,18 +150,7 @@ class HomeFragment : Fragment(R.layout.fragment_home_new) {
 
     private fun navigateToPlayer(video: ContentItem.Video) {
         prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
-        findNavController().navigate(
-            R.id.action_global_playerFragment,
-            bundleOf(
-                "videoId" to video.id,
-                "title" to video.title,
-                "channelName" to video.category,
-                "thumbnailUrl" to video.thumbnailUrl,
-                "description" to video.description,
-                "durationSeconds" to video.durationSeconds,
-                "viewCount" to (video.viewCount ?: -1L)
-            )
-        )
+        findNavController().navigate(R.id.action_global_playerFragment, PlayerFragment.argsFor(video))
     }
 
     private fun setupRecyclerView(binding: FragmentHomeNewBinding) {

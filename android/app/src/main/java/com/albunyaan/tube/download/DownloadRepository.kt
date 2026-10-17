@@ -29,6 +29,9 @@ import kotlinx.coroutines.withContext
 interface DownloadRepository {
     val downloads: StateFlow<List<DownloadEntry>>
 
+    /** The startup load that first lists the saved files; null when there is none to wait for. */
+    val startupLoad: kotlinx.coroutines.Job? get() = null
+
     /**
      * Reconcile the in-memory download list with files already committed to storage.
      *
@@ -115,14 +118,12 @@ class DefaultDownloadRepository(
 
     override val downloads: StateFlow<List<DownloadEntry>> = entries.asStateFlow()
 
-    init {
-        scope.launch {
-            reconcileMutex.withLock {
-                cleanupExpiredDownloadsLocked()
-                restoreRunningDownloads()
-                refreshPersistedDownloadsLocked()
-                android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
-            }
+    override val startupLoad: kotlinx.coroutines.Job = scope.launch {
+        reconcileMutex.withLock {
+            cleanupExpiredDownloadsLocked()
+            restoreRunningDownloads()
+            refreshPersistedDownloadsLocked()
+            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
         }
     }
 

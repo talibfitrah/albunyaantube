@@ -83,7 +83,7 @@ class GlobalStreamResolverTest {
     }
 
     @Test
-    fun `forceRefresh cancels in-flight job and starts new one`() = runTest {
+    fun `forceRefresh starts a new job beside the in-flight one`() = runTest {
         val gate1 = CompletableDeferred<Unit>()
         val gate2 = CompletableDeferred<Unit>()
         val result1 = createMockStreams("video1-first")
@@ -109,7 +109,7 @@ class GlobalStreamResolverTest {
         // Wait for second extraction to actually start (deterministic, replaces delay)
         fakeProvider.waitForExtractionStart("video1")
 
-        // Complete the first extraction (should be cancelled/ignored)
+        // Complete the first extraction (its waiting caller keeps it)
         gate1.complete(Unit)
 
         // Wait for first job to finish (deterministic cleanup)
@@ -123,6 +123,34 @@ class GlobalStreamResolverTest {
 
         // Verify two extractions were made
         assertEquals("Should have 2 extraction calls", 2, fakeProvider.getCallCount("video1"))
+    }
+
+    // 1.0.4 round 2: the player's 403 recovery forced a refresh while a download awaited the same
+    // video's resolve. The cancel handed the download null, and it failed NO_STREAM (seen live).
+    @Test
+    fun `a forced refresh never cancels a resolve another caller is awaiting`() = runTest {
+        val gate1 = CompletableDeferred<Unit>()
+        val gate2 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("video1", gate1)
+        fakeProvider.setResult("video1", createMockStreams("video1"))
+        var downloadResult: ResolvedStreams? = null
+        val download = launch {
+            downloadResult = resolver.resolveStreams("video1", forceRefresh = true, caller = "download")
+        }
+        fakeProvider.waitForExtractionStart("video1")
+
+        fakeProvider.setGate("video1", gate2)
+        val player = launch {
+            resolver.resolveStreams("video1", forceRefresh = true, caller = "player", priority = Priority.PLAYER)
+        }
+        fakeProvider.waitForExtractionStart("video1")
+        gate1.complete(Unit)
+        gate2.complete(Unit)
+        download.join()
+        player.join()
+
+        assertNotNull("the download keeps its own resolve", downloadResult)
+        assertEquals("the refresh still extracts afresh", 2, fakeProvider.getCallCount("video1"))
     }
 
     /**
@@ -159,7 +187,7 @@ class GlobalStreamResolverTest {
         fakeProvider.setGate("video1", gate2)
         fakeProvider.setResult("video1", createMockStreams("new"))
 
-        // Start new request with forceRefresh=true (cancels old job)
+        // Start new request with forceRefresh=true (replaces the old job in the map)
         val newJob = launch { resolver.resolveStreams("video1", forceRefresh = true, caller = "new") }
 
         // Wait for new extraction to actually start (deterministic, replaces delay)
@@ -175,8 +203,8 @@ class GlobalStreamResolverTest {
         oldJob.join()
 
         // Wait deterministically for the old job's cleanup to complete (uses listener, not timing)
-        // NOTE: The old job was cancelled by forceRefresh, so its cleanup only runs if it was in the map
-        // The forceRefresh path removes the old job from the map BEFORE creating the new job,
+        // NOTE: forceRefresh took the old job out of the map (it runs on for its waiting caller),
+        // so its cleanup only runs if it was in the map. The forceRefresh path removes it BEFORE creating the new job,
         // so the old job's invokeOnCompletion won't find itself in the map and won't call the listener.
         // We just need to ensure sufficient time has passed for any lingering cleanup attempts.
         kotlinx.coroutines.yield()
@@ -559,6 +587,62 @@ class GlobalStreamResolverTest {
         )
     }
 
+    // 1.0.4 round 3: a download (USER_FOREGROUND, through PlayerRepository) awaits its resolve and
+    // the player arrives at PLAYER priority. Escalation must not cancel what the download needs.
+    @Test
+    fun `escalation never cancels a resolve a download is awaiting`() = runTest {
+        val gate1 = CompletableDeferred<Unit>()
+        val gate2 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("videoDl", gate1)
+        fakeProvider.setResult("videoDl", createMockStreams("videoDl"))
+        var downloadResult: ResolvedStreams? = null
+        val download = launch {
+            downloadResult = resolver.resolveStreams(
+                "videoDl", forceRefresh = true, caller = "player", priority = Priority.USER_FOREGROUND,
+            )
+        }
+        fakeProvider.waitForExtractionStart("videoDl")
+
+        fakeProvider.setGate("videoDl", gate2)
+        val player = launch { resolver.resolveStreams("videoDl", caller = "player", priority = Priority.PLAYER) }
+        fakeProvider.waitForExtractionStart("videoDl")
+        gate1.complete(Unit)
+        gate2.complete(Unit)
+        download.join()
+        player.join()
+
+        assertNotNull("the download keeps its own resolve", downloadResult)
+        assertEquals("the player still escalates to its own PLAYER resolve", Priority.PLAYER, fakeProvider.getObservedPriority("videoDl"))
+    }
+
+    // A tap-prefetch caches a result nobody waits on yet, so it never keeps a resolve alive: a
+    // tap-to-play whose prefetch is still running replaces it and only one extraction runs to the end.
+    @Test
+    fun `a tap-to-play with a pending prefetch runs a single extraction`() = runTest {
+        val gate1 = CompletableDeferred<Unit>()
+        val gate2 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("videoTap", gate1)
+        fakeProvider.setResult("videoTap", createMockStreams("videoTap"))
+        val prefetch = launch {
+            resolver.resolveStreams("videoTap", caller = "prefetch", priority = Priority.BACKGROUND_REFRESH)
+        }
+        fakeProvider.waitForExtractionStart("videoTap")
+
+        fakeProvider.setGate("videoTap", gate2)
+        var played: ResolvedStreams? = null
+        val player = launch {
+            played = resolver.resolveStreams("videoTap", caller = "prefetch_await", priority = Priority.PLAYER)
+        }
+        fakeProvider.waitForExtractionStart("videoTap")
+        gate1.complete(Unit)
+        gate2.complete(Unit)
+        prefetch.join()
+        player.join()
+
+        assertNotNull(played)
+        assertEquals("only the player's extraction runs to the end", 1, fakeProvider.getCompletedCount("videoTap"))
+    }
+
     /**
      * Same-priority arrivals continue to join the in-flight job — the
      * escalation logic must not regress the de-duplication contract.
@@ -858,6 +942,7 @@ class GlobalStreamResolverTest {
         private val gates = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
         private val results = ConcurrentHashMap<String, ResolvedStreams>()
         private val callCounts = ConcurrentHashMap<String, AtomicInteger>()
+        private val completedCounts = ConcurrentHashMap<String, AtomicInteger>()
         private val extractionStarted = ConcurrentHashMap<String, CompletableDeferred<Unit>>()
         // Last priority observed by the provider for each videoId.
         // AtomicReference is overkill for the in-test single-thread case
@@ -887,6 +972,9 @@ class GlobalStreamResolverTest {
             return callCounts[videoId]?.get() ?: 0
         }
 
+        /** Extractions that ran to the end (a cancelled one stops at its gate). */
+        fun getCompletedCount(videoId: String): Int = completedCounts[videoId]?.get() ?: 0
+
         fun getObservedPriority(videoId: String): Priority? {
             return observedPriorities[videoId]?.get()
         }
@@ -900,6 +988,7 @@ class GlobalStreamResolverTest {
             observedPriorities.computeIfAbsent(videoId) { AtomicReference<Priority?>(null) }.set(priority)
             extractionStarted[videoId]?.complete(Unit)
             gates[videoId]?.await()
+            completedCounts.computeIfAbsent(videoId) { AtomicInteger(0) }.incrementAndGet()
             return results[videoId]
         }
     }
