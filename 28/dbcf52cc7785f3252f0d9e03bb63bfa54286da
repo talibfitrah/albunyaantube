@@ -1,0 +1,41 @@
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 803,816,849,2241
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerArgsTest.kt
+  s_dbb6b1f3671904::t_2e88d10093973f 32-44
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 625,992-995
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 419,443,4318-4319
+android/app/src/test/java/com/albunyaan/tube/data/source/FakeContentService.kt
+  s_dbb6b1f3671904::t_ac662de903b72a 13,205-213
+android/app/src/test/java/com/albunyaan/tube/data/extractor/LiveStreamTypeTest.kt
+  s_dbb6b1f3671904::t_1e11ff938d4be5 1-16
+android/app/src/test/java/com/albunyaan/tube/data/model/mappers/ApiMappersLiveChannelTest.kt
+  s_dbb6b1f3671904::t_1e11ff938d4be5 1-26
+android/app/src/main/java/com/albunyaan/tube/data/model/ContentItem.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 14-16
+android/app/src/main/java/com/albunyaan/tube/data/source/api/ContentApi.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 54-57,69-74
+android/app/src/main/java/com/albunyaan/tube/data/source/ContentService.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 90-96
+android/app/src/main/java/com/albunyaan/tube/data/model/mappers/ApiMappers.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 49-50
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_dbb6b1f3671904::t_0dbe7ef747648c 162-163
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28dbcf52cc7785f3252f0d9e03bb63bfa54286da",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
