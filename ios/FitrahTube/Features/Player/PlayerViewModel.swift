@@ -372,12 +372,14 @@ extension StreamState {
     }
 
     func open() async {
+        seedQueue()                                   // issue 2: the screen's own rows, no network, before the resolve
         await resolve(forceRefresh: false, kind: .player)
         // ponytail: sequential, deliberately. Android defers its prefetch to the first `isPlaying`
         // (`PlayerFragment.kt:1167-1168`) to keep it off the critical path; awaiting the player's
-        // own resolve first achieves the same with no observer and no timer. Ceiling: the queue
-        // (and Up Next) appears only after the current video resolved, never before.
-        await loadQueue()
+        // own resolve first achieves the same with no observer and no timer. Ceiling: on the
+        // fallback path (nothing seeded) the queue (and Up Next) appears only after the current
+        // video resolved; a seeded queue is already in place before it.
+        if queue.items.isEmpty { await loadQueue() }  // fallback: nothing was passed (deep link, Play All mid-reload)
         // A launch that already lands within `pageThreshold` of the page end (a row tap near the
         // bottom of a page, a `targetVideoId` there) needs its next page NOW, not on the first
         // advance -- otherwise Up Next lists a truncated tail, or nothing at all (ruling 33 hides
@@ -387,6 +389,13 @@ extension StreamState {
     }
 
     // MARK: - Queue (B5 task 2)
+
+    /// Owner issue 2: what the playlist screen already loaded. Same guards as `loadQueue`.
+    private func seedQueue() {
+        guard args.playlistId != nil, queueSource != nil, let items = args.queueItems, !items.isEmpty else { return }
+        queue = PlayerQueue.start(items: items, targetVideoId: args.targetVideoId, startIndex: args.startIndex,
+                                  shuffled: args.shuffled, cursor: args.queueContinuation)
+    }
 
     /// Page 1, then the bounded deep scan for `targetVideoId` (`PlayerViewModel.kt:904-1031`,
     /// bounds `:1782-1785`: 250 items / 3 s). Any throw leaves the queue empty and the state

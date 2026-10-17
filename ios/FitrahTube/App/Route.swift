@@ -123,6 +123,11 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// Additive with a nil default so every existing construction — deep links included
     /// (CF-C-9's all-optionals-nil equality) — is untouched.
     var offlineItemId: String? = nil
+    /// Owner issue 2 (1.0.4): the playlist screen's already-loaded rows and its next-page token. Set, the player
+    /// seeds its queue from them before the resolve, with no network call; nil (a deep link, Play All during a
+    /// reload) keeps the one-shot fetch. Consumed at open like `targetVideoId`: `swapArgs` builds fresh args.
+    var queueItems: [ContentItem]? = nil
+    var queueContinuation: String? = nil
 }
 
 extension PlayerArgs {

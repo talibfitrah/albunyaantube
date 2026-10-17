@@ -274,6 +274,51 @@ struct PlaylistDetailViewModelTests {
         #expect(args?.videoId == "0-0")
     }
 
+    // MARK: - Owner issue 2: the player's queue seed
+
+    @Test func aRowTapSeedsTheLoadedRowsAndTheNextPageToken() async {
+        let vm = makeVM()
+        await vm.load()
+        let args = vm.playerArgs(for: vm.rows[3])
+        #expect(args.queueItems?.map(\.id) == ["0-0", "0-1", "0-2", "0-3", "0-4"])
+        #expect(args.queueContinuation == "1")
+    }
+
+    /// `items`, never `visible`: filtering nils `visible`'s continuation and hides rows.
+    @Test func aFilteredRowTapStillSeedsTheWholeListAndItsToken() async {
+        let vm = makeVM()
+        await vm.load()
+        vm.query = "Item 3"
+        #expect(vm.rows.count == 1)
+        let args = vm.playerArgs(for: vm.rows[0])
+        #expect(args.queueItems?.map(\.id) == ["0-0", "0-1", "0-2", "0-3", "0-4"])
+        #expect(args.queueContinuation == "1")
+        #expect(args.startIndex == 3)
+    }
+
+    @Test func playAllSeedsTheLoadedRows() async {
+        let vm = makeVM()
+        await vm.load()
+        #expect(vm.playAllArgs(shuffled: false)?.queueItems?.count == 5)
+    }
+
+    /// Mid-reload there are no rows to seed, so the player takes its one-shot fetch.
+    @Test func playAllDuringAReloadSeedsNothing() async {
+        let source = FakeSource()
+        let vm = makeVM(source: source)
+        await vm.load()
+        let gate = FakeSource.Gate()
+        source.gate = gate
+        let reload = Task { await vm.load() }
+        while vm.items != .loadingInitial { await Task.yield() }
+        let args = vm.playAllArgs(shuffled: false)
+        #expect(args?.videoId == "0-0")
+        #expect(args?.queueItems == nil)
+        #expect(args?.queueContinuation == nil)
+        gate.release()
+        await reload.value
+    }
+
     // MARK: - Search
 
     @Test func searchFiltersLoadedItemsAndSuppressesPagination() async {

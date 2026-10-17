@@ -2495,6 +2495,32 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "detail-c6-ipad-en-light-playlist-a11y3", into: directory)
     }
 
+    /// Owner issue 2 (1.0.4): a playlist row tap seeds Up Next from the screen's own rows. The fixture
+    /// queue source serves `fixture-*` ids and the playlist screen `item-*`, so a first row of
+    /// `item-0-3` proves the player listed what the screen passed. en-light then ar-dark, on
+    /// whichever device runs it (iPhone: one column; iPad: the grid).
+    func testIssue2PlaylistRowTapSeedsUpNext() throws {
+        let directory = try shotsDirectory()
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let app = launch(playlistScreen(), locale: locale, extraArguments: [])
+            XCTAssertTrue(any(app, "playlist.row.3").waitForExistence(timeout: 20), "issue 2 \(locale.key): rows never appeared")
+            any(app, "playlist.row.3").tap()
+            let header = app.staticTexts["player.upNext.header"]
+            XCTAssertTrue(header.waitForExistence(timeout: 20), "issue 2 \(locale.key): Up Next never appeared")
+            XCTAssertEqual(upNextRows(app).first?.identifier, "player.upNext.row.3.item-0-3",
+                           "issue 2 \(locale.key): Up Next is not the playlist's own rows")
+            if locale.key == "ar" {
+                XCTAssertGreaterThan(header.frame.midX, app.windows.firstMatch.frame.midX, "issue 2 ar: the header must lead from the right")
+            }
+            settleFrame(header)
+            try write(named: "issue2-\(locale.key)-\(locale.theme)-rowtap", into: directory)
+            drag(app, up: true)
+            settleFrame(header)
+            try write(named: "issue2-\(locale.key)-\(locale.theme)-rowtap-list", into: directory)
+        }
+    }
+
     // MARK: - Phase 3 Task 6: the Saved screen (plan 2026-09-01-ios-phase3-offline-cast)
 
     /// `-fitrah-seed-offline` inserts one row per `OfflineStatus`, so one screen shows the full

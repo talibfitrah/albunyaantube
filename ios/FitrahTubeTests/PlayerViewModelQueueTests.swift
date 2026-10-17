@@ -569,4 +569,60 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
         #expect(vm.queue.items.isEmpty)
     }
+
+    // MARK: - Owner issue 2: the playlist screen's rows seed the queue
+
+    private func seed(_ ids: [String]) -> [ContentItem] {
+        ids.map { ContentItem(video: VideoItem(id: $0, title: "T-\($0)", channelName: "Ch",
+                                               durationSeconds: 120, thumbnailURL: nil)) }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aSeededQueueIsInPlaceBeforeTheResolveAndFetchesNoPage() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)          // any page call fails
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL", targetVideoId: "a",
+                                                   queueItems: seed(["a", "b", "c"])), source: source)
+        resolver.hold("a")
+        let opening = Task { await vm.open() }
+        await resolver.waitUntilCalled(count: 1)
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c"])           // while the resolve is held
+        resolver.release(id: "a")
+        await opening.value
+        #expect(source.pageCalls == 0)
+        #expect(vm.state.isPlayable)
+    }
+
+    /// §4 path 1: a `.task` cancelled mid-open must not leave Up Next empty.
+    @Test(.timeLimit(.minutes(1))) func aCancelledOpenKeepsTheSeededQueue() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL", targetVideoId: "a",
+                                                   queueItems: seed(["a", "b", "c"])),
+                                       source: FakeQueueSource(pages: [], failFrom: 0))
+        resolver.hold("a")
+        let opening = Task { await vm.open() }
+        await resolver.waitUntilCalled(count: 1)
+        opening.cancel()
+        resolver.release(id: "a")
+        await opening.value
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c"])
+    }
+
+    @Test func aSeededQueuePagesOnFromThePassedToken() async {
+        let source = FakeQueueSource(pages: [(ids: ["g", "h"], next: nil)])
+        let (vm, _) = makeModel(args: .init(videoId: "e", playlistId: "PL", targetVideoId: "e",
+                                            queueItems: seed(["a", "b", "c", "d", "e", "f"]),
+                                            queueContinuation: "P2"), source: source)
+        await vm.open()
+        #expect(source.continuations == ["P2"])
+        #expect(vm.queue.upcoming.map(\.id) == ["f", "g", "h"])
+    }
+
+    @Test func aSeededShufflePinsTheStartAndNeverPages() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL", shuffled: true,
+                                            queueItems: seed(["a", "b", "c", "d", "e", "f"]),
+                                            queueContinuation: "P2"), source: source)
+        await vm.open()
+        #expect(vm.queue.current?.id == "a")
+        #expect(vm.queue.hasMorePages == false)
+        #expect(source.pageCalls == 0)
+    }
 }

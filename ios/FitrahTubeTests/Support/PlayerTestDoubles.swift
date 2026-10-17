@@ -212,8 +212,11 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     private let gateFrom: Int?
     private var _pageCalls = 0
     private var _permits = 0
+    private var _continuations: [String?] = []
 
     var pageCalls: Int { lock.withLock { _pageCalls } }
+    /// Owner issue 2: the token each page call was asked with, in call order.
+    var continuations: [String?] { lock.withLock { _continuations } }
 
     init(pages: [(ids: [String], next: String?)], failFrom: Int? = nil, gateFrom: Int? = nil) {
         self.pages = pages
@@ -240,6 +243,7 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
         -> (items: [ContentItem], continuation: String?) {
         let index = lock.withLock { () -> Int in
             defer { _pageCalls += 1 }
+            _continuations.append(continuation)
             return _pageCalls
         }
         if let gateFrom, index >= gateFrom {
