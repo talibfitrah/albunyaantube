@@ -1,15 +1,21 @@
 package com.albunyaan.tube.data.me
 
+import com.albunyaan.tube.data.source.OriginalTitles
+import com.albunyaan.tube.data.source.api.ContentApi
 import kotlinx.coroutines.test.runTest
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
+import org.mockito.kotlin.any
+import org.mockito.kotlin.mock
+import org.mockito.kotlin.whenever
 import org.schabi.newpipe.extractor.Page
 import org.schabi.newpipe.extractor.ServiceList
 import org.schabi.newpipe.extractor.stream.StreamInfoItem
 import org.schabi.newpipe.extractor.stream.StreamType
+import retrofit2.Response
 
 /**
  * ANDROID-PERSONAL-03 / T1: tests the [ChannelDeepPaginator] in isolation
@@ -44,6 +50,29 @@ class ChannelDeepPaginatorTest {
         assertEquals("https://www.youtube.com/continuation/2", page.nextPage!!.url)
         // Fake observed null page on first call (no token).
         assertEquals(listOf<Page?>(null), fake.calls.map { it.second })
+    }
+
+    @Test
+    fun `deep page items take the original titles the server knows`() = runTest {
+        // Owner issue 1(b): older weeks are listed at en-US like every NewPipe page; the Atom weeks above are originals.
+        val api: ContentApi = mock()
+        whenever(api.fetchTitles(any())).thenReturn(Response.success(mapOf("AAAAAAAAAAA" to "الدرس الأول")))
+        val fake = FakePageProvider(
+            pages = listOf(
+                ChannelDeepPaginator.PageProvider.Raw(
+                    items = listOf(
+                        infoItem("https://www.youtube.com/watch?v=AAAAAAAAAAA", "Lesson 1"),
+                        infoItem("https://www.youtube.com/watch?v=BBBBBBBBBBB", "Lesson 2"),
+                    ),
+                    nextPage = null,
+                ),
+            ),
+        )
+        val paginator = ChannelDeepPaginator(newPipeInit = null, pageProvider = fake, originalTitles = OriginalTitles(api) { 1_000L })
+
+        val page = paginator.fetchNextPage("https://yt/UC1", nextPageToken = null) as ChannelDeepPaginator.DeepPageResult.Page
+
+        assertEquals(listOf("الدرس الأول", "Lesson 2"), page.items.map { it.title })
     }
 
     @Test

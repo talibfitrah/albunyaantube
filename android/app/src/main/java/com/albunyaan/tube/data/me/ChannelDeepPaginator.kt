@@ -4,6 +4,7 @@ import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NewPipePriorityContext
 import com.albunyaan.tube.data.extractor.Priority
+import com.albunyaan.tube.data.source.OriginalTitles
 import javax.inject.Inject
 import javax.inject.Singleton
 import kotlinx.coroutines.CancellationException
@@ -43,11 +44,14 @@ class ChannelDeepPaginator @VisibleForTesting internal constructor(
     private val newPipeInit: NewPipeExtractorClient?,
     // Test seam. Defaults to the real NewPipe-backed implementation.
     private val pageProvider: PageProvider,
+    // Owner issue 1(b): older weeks list at en-US like every NewPipe page; null in tests that do not care.
+    private val originalTitles: OriginalTitles? = null,
 ) {
 
-    @Inject constructor(newPipeInit: NewPipeExtractorClient) : this(
+    @Inject constructor(newPipeInit: NewPipeExtractorClient, originalTitles: OriginalTitles) : this(
         newPipeInit = newPipeInit,
         pageProvider = RealPageProvider,
+        originalTitles = originalTitles,
     )
 
     /**
@@ -75,6 +79,7 @@ class ChannelDeepPaginator @VisibleForTesting internal constructor(
                 val items = raw.items
                     .mapNotNull { it.toFeedItem() }
                     .filter { it.videoId.isNotEmpty() }
+                    .let { list -> originalTitles?.retitle(list, { it.videoId }) { i, t -> i.copy(title = t) } ?: list }
                 if (items.isEmpty() && raw.nextPage == null) {
                     DeepPageResult.EndOfChannel
                 } else {

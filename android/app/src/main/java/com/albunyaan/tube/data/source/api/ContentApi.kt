@@ -55,6 +55,10 @@ interface ContentApi {
     /** Spec §4.1: a live-category channel's current lives (1.0.4 live-channel mode). */
     @GET("api/v1/live/channels/{id}")
     suspend fun fetchLiveChannel(@Path("id") id: String): ChannelLives
+
+    /** Owner issue 1(b): the original titles the server knows for up to 50 video ids (comma-joined); unknown ids are left out. */
+    @GET("api/v1/titles")
+    suspend fun fetchTitles(@Query("ids") ids: String): Response<Map<String, String>>
 }
 
 /**

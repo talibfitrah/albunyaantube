@@ -5,6 +5,7 @@ import com.albunyaan.tube.data.channel.NewPipeChannelDetailRepository
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import dagger.Module
 import dagger.Provides
@@ -29,12 +30,14 @@ object ChannelDetailRepositoryModule {
         indexRepository: IndexRepository,
         telemetry: StreamRequestTelemetry,
         channelVideoCacheDao: ChannelVideoCacheDao,
+        originalTitles: OriginalTitles,
     ): ChannelDetailRepository {
         return NewPipeChannelDetailRepository(
             extractorClient,
             indexRepository,
             telemetry,
             channelVideoCacheDao,
+            originalTitles,
         )
     }
 }
