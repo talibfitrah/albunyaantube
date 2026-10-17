@@ -439,10 +439,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldAutoApprove_whenSubmittedByAdmin() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus(null);
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -459,9 +459,9 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldPendApproval_whenSubmittedByModerator() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -477,11 +477,11 @@ class RegistryControllerTest {
     @Test
     void addVideo_moderatorCannotSelfApprove_statusForcedToPending() throws Exception {
         // Arrange - moderator sends status: APPROVED in request body
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("APPROVED");
         newVideo.setApprovedBy("fake-admin-uid");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -497,10 +497,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_adminCanExplicitlySetStatus() throws Exception {
         // Arrange - admin sends status: PENDING explicitly
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("PENDING");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -516,10 +516,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_adminExplicitApproved_setsApprovedBy() throws Exception {
         // Arrange - admin explicitly sends APPROVED
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("APPROVED");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -534,8 +534,8 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldReturnConflict_whenVideoAlreadyExists() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video existingVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.of(existingVideo));
+        com.albunyaan.tube.model.Video existingVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.of(existingVideo));
 
         // Act
         ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(existingVideo, adminUser);
@@ -548,7 +548,7 @@ class RegistryControllerTest {
     @Test
     void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         video.setStatus("APPROVED");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
@@ -565,7 +565,7 @@ class RegistryControllerTest {
     @Test
     void toggleVideoStatus_shouldToggleFromPendingToApproved() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         video.setStatus("PENDING");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
@@ -690,7 +690,7 @@ class RegistryControllerTest {
     @Test
     void deleteVideo_shouldDeleteVideo_whenExists() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
 

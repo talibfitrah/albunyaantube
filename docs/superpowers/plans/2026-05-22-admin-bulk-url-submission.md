@@ -1502,7 +1502,7 @@ class BulkSubmissionServicePreviewTest {
         when(batch.findExisting(any(), any())).thenReturn(Optional.empty());
         when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq("xc7keR2piUM"), any()))
                 .thenReturn(PreviewFetchResult.ok(
-                        new PreviewMetadata("xc7keR2piUM", "Rick Astley", "thumb.jpg", "Rick", "UC1", null, null, 213L, 1000L),
+                        new PreviewMetadata("xc7keR2piUM", "Visiting the Ill - Mufti Menk", "thumb.jpg", "Mufti Menk", "UC1", null, null, 213L, 1000L),
                         VideoType.STANDARD));
 
         var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=xc7keR2piUM"), List.of("cat-1"));
@@ -1513,7 +1513,7 @@ class BulkSubmissionServicePreviewTest {
         assertEquals(RowStatus.OK, row.status());
         assertEquals(YouTubeContentType.VIDEO, row.detectedType());
         assertEquals(VideoType.STANDARD, row.videoType());
-        assertEquals("Rick Astley", row.metadata().title());
+        assertEquals("Visiting the Ill - Mufti Menk", row.metadata().title());
         assertNull(row.error());
     }
 

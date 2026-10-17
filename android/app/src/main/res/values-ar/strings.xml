@@ -37,7 +37,7 @@
     <string name="player_status_audio_only">تشغيل الصوت فقط.</string>
     <string name="player_status_video_playing">تشغيل الفيديو.</string>
     <string name="player_status_initializing">تهيئة المشغل…</string>
-    <string name="player_status_resolving">حل البث…</string>
+    <string name="player_status_resolving">جارٍ تحميل البث…</string>
     <string name="player_stream_error">التشغيل غير متاح. يرجى المحاولة لاحقاً.</string>
     <string name="player_stream_unavailable">هذا الفيديو غير متاح للتشغيل.</string>
     <string name="player_resize_mode_zoom">ملء الشاشة</string>

@@ -11,31 +11,31 @@ class YouTubeUrlParserTest {
 
     @Test
     void watchUrl_resolvesToVideo() {
-        var r = parser.parse("https://www.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/watch?v=sCQwxFEMlZ4");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
         assertNull(r.errorCode());
     }
 
     @Test
     void youtuBeShort_resolvesToVideo() {
-        var r = parser.parse("https://youtu.be/dQw4w9WgXcQ");
+        var r = parser.parse("https://youtu.be/sCQwxFEMlZ4");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
     }
 
     @Test
     void shortsUrl_isUnsupported() {
-        var r = parser.parse("https://www.youtube.com/shorts/dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/shorts/sCQwxFEMlZ4");
         assertNull(r.type());
         assertEquals(PreviewErrorCode.UNSUPPORTED_SHORTS, r.errorCode());
     }
 
     @Test
     void liveUrl_resolvesToVideo() {
-        var r = parser.parse("https://www.youtube.com/live/dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com/live/sCQwxFEMlZ4");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
     }
 
     @Test
@@ -74,14 +74,14 @@ class YouTubeUrlParserTest {
 
     @Test
     void mobilePrefix_isStripped() {
-        var r = parser.parse("https://m.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://m.youtube.com/watch?v=sCQwxFEMlZ4");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
     }
 
     @Test
     void musicSubdomain_isUnsupported() {
-        var r = parser.parse("https://music.youtube.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://music.youtube.com/watch?v=sCQwxFEMlZ4");
         assertEquals(PreviewErrorCode.UNSUPPORTED_TYPE, r.errorCode());
     }
 
@@ -93,23 +93,23 @@ class YouTubeUrlParserTest {
 
     @Test
     void nonYoutubeHost_isRejected() {
-        var r = parser.parse("https://example.com/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://example.com/watch?v=sCQwxFEMlZ4");
         assertEquals(PreviewErrorCode.NOT_YOUTUBE_URL, r.errorCode());
     }
 
     @Test
     void whitespaceAndBom_areTrimmed() {
-        var r = parser.parse("  ﻿https://www.youtube.com/watch?v=dQw4w9WgXcQ  ");
+        var r = parser.parse("  ﻿https://www.youtube.com/watch?v=sCQwxFEMlZ4  ");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
     }
 
     @Test
     void zeroWidthChars_inUrl_areSanitized() {
         // U+200B zero-width space injected after host
-        var r = parser.parse("https://www.youtube.com​/watch?v=dQw4w9WgXcQ");
+        var r = parser.parse("https://www.youtube.com​/watch?v=sCQwxFEMlZ4");
         assertEquals(YouTubeContentType.VIDEO, r.type());
-        assertEquals("dQw4w9WgXcQ", r.youtubeId());
+        assertEquals("sCQwxFEMlZ4", r.youtubeId());
     }
 
     @Test

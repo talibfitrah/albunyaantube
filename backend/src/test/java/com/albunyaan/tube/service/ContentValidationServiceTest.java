@@ -685,12 +685,12 @@ class ContentValidationServiceTest {
         @Test
         @DisplayName("Should evict public-content caches when at least one video is archived")
         void validateVideos_anyArchives_evictsPublicContentCaches() throws Exception {
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -702,13 +702,13 @@ class ContentValidationServiceTest {
         @Test
         @DisplayName("Should NOT evict public-content caches when no videos are archived")
         void validateVideos_noArchives_doesNotEvictCaches() throws Exception {
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             // Video is valid on YouTube — no archive happens
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addValid("dQw4w9WgXcQ", new StreamDetailsDto());
+            result.addValid("sCQwxFEMlZ4", new StreamDetailsDto());
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -777,12 +777,12 @@ class ContentValidationServiceTest {
         @DisplayName("Run must complete and video must be archived even when cache eviction throws")
         void validateVideos_evictionThrows_runStillCompletes() throws Exception {
             // Arrange: a video that YouTube doesn't know about → will be archived.
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -848,12 +848,12 @@ class ContentValidationServiceTest {
         @DisplayName("Should call markStreamArchived() when video is archived")
         void validateVideos_archivedVideo_callsMarkStreamArchived() throws Exception {
             // Arrange: video that YouTube reports as not found
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -861,7 +861,7 @@ class ContentValidationServiceTest {
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
 
             // Assert: stream index entry must be marked archived for this video
-            verify(streamIndexService).markStreamArchived("dQw4w9WgXcQ");
+            verify(streamIndexService).markStreamArchived("sCQwxFEMlZ4");
         }
     }
 

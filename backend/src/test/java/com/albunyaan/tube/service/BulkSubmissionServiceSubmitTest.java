@@ -19,7 +19,7 @@ class BulkSubmissionServiceSubmitTest {
     // Real UC-shaped channel id (22 chars after UC) so the parser accepts /channel/UC...
     private static final String CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw";
     private static final String CHANNEL_URL = "https://www.youtube.com/channel/" + CHANNEL_ID;
-    private static final String VIDEO_ID = "dQw4w9WgXcQ";
+    private static final String VIDEO_ID = "sCQwxFEMlZ4";
     private static final String VIDEO_URL = "https://www.youtube.com/live/" + VIDEO_ID;
     private static final String PLAYLIST_ID = "PLxxxxxxxxxxxxxxxxxxxxxx";
     private static final String PLAYLIST_URL = "https://www.youtube.com/playlist?list=" + PLAYLIST_ID;

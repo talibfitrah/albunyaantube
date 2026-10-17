@@ -39,7 +39,7 @@
     <string name="player_status_audio_only">Alleen audio afspelen.</string>
     <string name="player_status_video_playing">Video afspelen.</string>
     <string name="player_status_initializing">Speler initialiseren…</string>
-    <string name="player_status_resolving">Stream oplossen…</string>
+    <string name="player_status_resolving">Stream laden…</string>
     <string name="player_stream_error">Afspelen niet beschikbaar. Probeer het later opnieuw.</string>
     <string name="player_stream_unavailable">Deze video is niet beschikbaar voor afspelen.</string>
     <string name="player_resize_mode_zoom">Scherm vullen</string>

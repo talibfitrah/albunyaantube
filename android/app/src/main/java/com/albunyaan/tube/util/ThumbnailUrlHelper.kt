@@ -171,10 +171,10 @@ object ThumbnailUrlHelper {
      * Normalizes a YouTube video ID from various formats.
      *
      * Handles:
-     * - Plain ID: "dQw4w9WgXcQ"
-     * - Watch URL: "https://www.youtube.com/watch?v=dQw4w9WgXcQ"
-     * - Short URL: "https://youtu.be/dQw4w9WgXcQ"
-     * - Shorts URL: "https://www.youtube.com/shorts/dQw4w9WgXcQ"
+     * - Plain ID: "sCQwxFEMlZ4"
+     * - Watch URL: "https://www.youtube.com/watch?v=sCQwxFEMlZ4"
+     * - Short URL: "https://youtu.be/sCQwxFEMlZ4"
+     * - Shorts URL: "https://www.youtube.com/shorts/sCQwxFEMlZ4"
      */
     fun normalizeVideoId(input: String?): String? {
         if (input.isNullOrBlank()) return null
