@@ -50,6 +50,19 @@ class FirestoreRulesActiveStatusTest {
                 "Without this, a blocked moderator's ID token still passes isModerator() until token expiry.");
     }
 
+    /** Hotfix guard: catalog collections must not be publicly readable straight from Firestore. */
+    @Test
+    void firestoreRules_catalogCollectionsReadableOnlyByModerators() throws Exception {
+        String rules = loadRules();
+        for (String c : new String[] {"categories", "channels", "playlists", "videos"}) {
+            assertTrue(Pattern.compile("match\\s+/" + c + "/\\{\\w+\\}\\s*\\{[^}]*?allow\\s+read:\\s*if\\s+isModerator\\(\\)\\s*;")
+                            .matcher(rules).find(),
+                    "/" + c + "/ MUST be 'allow read: if isModerator();'");
+        }
+        assertFalse(Pattern.compile("allow\\s+read:\\s*if\\s+true").matcher(rules).find(),
+                "No 'allow read: if true' (public Firestore read) may appear in firestore.rules");
+    }
+
     private String loadRules() throws Exception {
         try (InputStream in = new ClassPathResource("firestore.rules").getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
