@@ -17,7 +17,7 @@ test('the solver realm has no process, fetch or require (R40)', () => {
 
 test('a hanging build stops at the vm timeout (R27, R40)', () => {
   const ctx = newContext();
-  vm.runInContext('globalThis.jsc = () => { for (;;) {} }', ctx);
+  vm.runInContext('globalThis.jsc = () => { const e = Date.now() + 2000; while (Date.now() < e) {} }', ctx);
   assert.throws(() => buildPlayer(ctx, 'player text', 200), { code: 'ERR_SCRIPT_EXECUTION_TIMEOUT' });
 });
 
@@ -105,9 +105,11 @@ async function origin(hashes) {
   const server = http.createServer((req, res) => {
     hits.push(req.url);
     if (req.url === '/iframe_api') return res.end(iframeText(hashes[Math.min(next++, hashes.length - 1)]));
+    if (req.url.startsWith('/s/player/ffffffff/')) return res.end('x'.repeat(9_000_000));
     if (/^\/s\/player\/[0-9a-f]{8}\/player_ias\.vflset\/en_US\/base\.js$/.test(req.url)) return res.end(`var cfg={signatureTimestamp:${today()}};`);
     res.writeHead(404); res.end();
   }).listen(0, '127.0.0.1');
+  server.unref();
   await once(server, 'listening');
   return { url: `http://127.0.0.1:${server.address().port}`, downloads: () => hits.filter((h) => h.endsWith('base.js')).length, close: () => server.close() };
 }
@@ -267,11 +269,11 @@ test('/solve validates, answers 409 for an unknown player, and /player and /heal
 });
 
 // ---- rulings: timeouts throw, solves are bounded, the server outlives a hung build
-const hangingBuild = () => { const ctx = newContext(); vm.runInContext('globalThis.jsc = () => { for (;;) {} }', ctx); return buildPlayer(ctx, 'x', 200); };
+const hangingBuild = () => { const ctx = newContext(); vm.runInContext('globalThis.jsc = () => { const e = Date.now() + 2000; while (Date.now() < e) {} }', ctx); return buildPlayer(ctx, 'x', 200); };
 
 test('a solve with a synchronous loop stops at the vm timeout (ruling 2)', () => {
   const ctx = newContext();
-  const player = { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') for (;;) {} return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
+  const player = { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') { const e = Date.now() + 2000; while (Date.now() < e) {} } return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
   assert.throws(() => solveAll(player, ['abc', 'spin'], ['xyz'], 200), { code: 'ERR_SCRIPT_EXECUTION_TIMEOUT' });
   assert.deepEqual(solveAll(player, ['abc'], ['xyz'], 200), { n: { abc: 'abcA' }, s: { xyz: 'yz' } });   // the realm is reusable
 });
@@ -282,7 +284,7 @@ test('a solve that times out evicts only that player and answers 500 (ruling 1)'
   const spin = () => {
     builds.push(1);
     const ctx = newContext();
-    return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') for (;;) {} return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
+    return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') { const e = Date.now() + 2000; while (Date.now() < e) {} } return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
   };
   const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: spin, log: quiet, solveTimeoutMs: 200 });
   await solver.poll(); await solver.poll();
@@ -322,9 +324,100 @@ test('a selfTest that throws is a failed build too, and the WARN names the step 
   const yt = await origin(['aaaaaaaa']);
   const warnings = [];
   const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) }, selfTestTimeoutMs: 100,
-    build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: () => { for (;;) {} }, sig: (x) => x })", ctx) }; } });
+    build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: () => { const e = Date.now() + 2000; while (Date.now() < e) {} }, sig: (x) => x })", ctx) }; } });
   await solver.poll();
   assert.match(warnings[0], /^WARN poll failed at self-test/);
   assert.equal(solver.health().status, 'warming');
+  yt.close();
+});
+
+// ---- fix round 1
+test('a player that fails to build, has no sts or fails the self-test is deleted from the cache and downloaded again (fix 2)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  let calls = 0;
+  const good = fakeBuild();
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: quiet, build: (t) => { if (calls++ === 0) throw new Error('bad build'); return good(t); } });
+  await solver.poll();
+  assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), false);
+  await solver.poll();
+  assert.equal(yt.downloads(), 2);
+  assert.equal(solver.health().status, 'ok');
+  assert.deepEqual(fs.readdirSync(dir).filter((f) => f.endsWith('.tmp')), []);
+  yt.close();
+});
+
+test('a fetch-log write failure reports no-cache (M1)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  fs.mkdirSync(path.join(dir, 'fetch-log.json.tmp'));          // the atomic write cannot create its temp file
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await solver.poll();
+  assert.equal(yt.downloads(), 0);
+  assert.deepEqual([solver.health().status, solver.health().cacheWritable], ['no-cache', false]);
+  yt.close();
+});
+
+test('a fetch log with non-numeric entries fails closed (M2)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, 'fetch-log.json'), '["x", null]');
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await solver.poll();
+  assert.equal(yt.downloads(), 0);
+  assert.equal(solver.health().status, 'no-cache');
+  yt.close();
+});
+
+test('an oversize /solve body is refused at once with connection: close, and the server has a request timeout (M4)', async () => {
+  const solver = createSolver({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  const server = serve(solver, { host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  try {
+    assert.equal(server.requestTimeout, 5000);
+    const req = http.request({ host: '127.0.0.1', port: server.address().port, method: 'POST', path: '/solve' });
+    req.on('error', () => {});
+    req.write('x'.repeat(70_000));                              // never ends the request: only an early answer can respond
+    const [res] = await once(req, 'response');
+    assert.equal(res.statusCode, 400);
+    assert.equal(res.headers.connection, 'close');
+    req.destroy();
+  } finally {
+    server.close();
+  }
+});
+
+test('a player with no usable sts is refused BEFORE a held player is evicted (M5)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, 'cccccccc.js'), 'no timestamp here');
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  for (let i = 0; i < 3; i++) await solver.poll();
+  assert.deepEqual(solver.health().held, ['aaaaaaaa', 'bbbbbbbb']);
+  assert.equal(solver.health().lastPoll.step, 'sts');
+  assert.equal(fs.existsSync(path.join(dir, 'cccccccc.js')), false);
+  yt.close();
+});
+
+test('a base.js over 8 MB is refused and not cached (M6)', async () => {
+  const yt = await origin(['ffffffff']);
+  const dir = tempDir();
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await solver.poll();
+  assert.equal(solver.health().lastPoll.step, 'download');
+  assert.equal(fs.existsSync(path.join(dir, 'ffffffff.js')), false);
+  yt.close();
+});
+
+test('poll is single-flight: concurrent callers share one run (M9)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const builds = [];
+  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
+  const a = solver.poll();
+  const b = solver.poll();
+  assert.equal(a, b);
+  await a;
+  assert.equal(yt.downloads(), 1);
+  assert.equal(builds.length, 1);
   yt.close();
 });

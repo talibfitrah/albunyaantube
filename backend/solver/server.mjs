@@ -124,7 +124,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   function fetchLog() {
     try {
       const log = JSON.parse(fs.readFileSync(logFile, 'utf8'));
-      if (!Array.isArray(log)) throw new Error('fetch log is not a list');
+      if (!Array.isArray(log) || !log.every(Number.isFinite)) throw new Error('fetch log is not a list of times');
       logBroken = false;
       return log;
     } catch (error) {
@@ -133,21 +133,29 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       throw error;
     }
   }
-  async function text(url, headers = {}) {
+  async function text(url, headers = {}, maxBytes = 8_000_000) {      // M6: base.js is ~3 MB
     const response = await fetch(url, { headers, signal: AbortSignal.timeout(20_000) });
     if (!response.ok) throw new Error(`HTTP ${response.status}`);
-    return response.text();
+    const parts = [];
+    let size = 0;
+    for await (const chunk of response.body) {
+      size += chunk.length;
+      if (size > maxBytes) throw new Error(`body over ${maxBytes} bytes`);
+      parts.push(chunk);
+    }
+    return Buffer.concat(parts).toString('utf8');
   }
 
   async function pollOnce() {
     let step = 'iframe_api';
+    let file = null;
     try {
       const hash = playerHash(await text(`${origin}/iframe_api`));
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
       step = 'cache';
-      const file = path.join(cacheDir, `${hash}.js`);
+      file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
       if (playerText === null) {
         step = 'fetch-budget';
@@ -156,20 +164,23 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
         const recent = fetchLog().filter((t) => now() - t < HOUR_MS);
         throttled = recent.length >= 3;
         if (throttled) throw new Error('3 downloads in the last hour');
-        fs.writeFileSync(`${logFile}.tmp`, JSON.stringify([...recent, now()]));   // recorded BEFORE the download,
-        fs.renameSync(`${logFile}.tmp`, logFile);                                   // atomically: a crash cannot corrupt it
+        try {
+          fs.writeFileSync(`${logFile}.tmp`, JSON.stringify([...recent, now()]));   // recorded BEFORE the download,
+          fs.renameSync(`${logFile}.tmp`, logFile);                                   // atomically: a crash cannot corrupt it
+        } catch (error) { cacheWritable = false; throw error; }                     // R39: unwritable log = no download
         step = 'download';
         playerText = await text(`${origin}/s/player/${hash}/player_ias.vflset/en_US/base.js`, { 'accept-encoding': 'br, gzip' });
-        fs.writeFileSync(file, playerText);
+        fs.writeFileSync(`${file}.tmp`, playerText);
+        fs.renameSync(`${file}.tmp`, file);                                  // atomic: no half file is ever read back
       }
+      step = 'sts';
+      const sts = signatureTimestamp(playerText, now());                     // before any eviction (M5)
+      if (sts === null) throw new Error('sts missing or more than 60 days from today');
       step = 'evict';
       if (held.size >= 2) held.delete(held.keys().next().value);          // BEFORE the build (R27)
       step = 'build';
       const cpu0 = process.cpuUsage();
       const player = build(playerText);
-      step = 'sts';
-      const sts = signatureTimestamp(playerText, now());
-      if (sts === null) throw new Error('sts missing or more than 60 days from today');
       step = 'self-test';
       if (!selfTest(player, selfTestTimeoutMs)) throw new Error('self-test failed');
       held.set(hash, { sts, player });
@@ -180,6 +191,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     } catch (error) {
       log.warn(`WARN poll failed at ${step}: ${error.message}`);
       lastPoll = { at: now(), ok: false, step };
+      // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again
+      if (file && ['sts', 'build', 'self-test'].includes(step)) fs.rmSync(file, { force: true });
     }
   }
 
@@ -233,7 +246,7 @@ const strings = (value) => Array.isArray(value) && value.every((x) => typeof x =
 
 /** The three routes (spec §4.5 table). Bound to 127.0.0.1 by the unit; never logs a body. */
 export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
-  return http.createServer((req, res) => {
+  const server = http.createServer((req, res) => {
     const send = (status, payload) => {
       res.writeHead(status, { 'content-type': 'application/json' });
       res.end(JSON.stringify(payload));
@@ -249,16 +262,24 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
     if (req.method !== 'POST' || req.url !== '/solve') return send(404, { error: 'not found' });
     const chunks = [];
     let size = 0;
-    req.on('data', (chunk) => { size += chunk.length; if (size <= 65_536) chunks.push(chunk); });
+    req.on('data', (chunk) => {
+      size += chunk.length;
+      if (size <= 65_536) return chunks.push(chunk);
+      if (res.headersSent) return;
+      res.setHeader('connection', 'close');                                   // M4: answer at once, stop reading
+      send(400, { error: 'body over 64 KB' });
+      req.destroy();
+    });
     req.on('end', () => {
-      if (size > 65_536) return send(400, { error: 'body over 64 KB' });
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { error: 'malformed' }); }
       if (typeof body?.playerId !== 'string' || !strings(body.n) || !strings(body.s)) return send(400, { error: 'malformed' });
       const [status, payload] = solver.solve(body);
       send(status, payload);
     });
-  }).listen(port, host);
+  });
+  server.requestTimeout = 5000;
+  return server.listen(port, host);
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
