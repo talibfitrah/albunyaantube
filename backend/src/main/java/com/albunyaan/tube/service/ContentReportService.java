@@ -9,6 +9,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.ContentReportRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.SearchIndex;
 import com.github.benmanes.caffeine.cache.Cache;
 import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
@@ -29,6 +30,8 @@ public class ContentReportService {
     private static final Logger log = LoggerFactory.getLogger(ContentReportService.class);
     private static final int RATE_LIMIT_MAX = 5;
     private static final String ANONYMOUS_DEVICE_KEY = "ANONYMOUS_DEVICE";
+    /** R34: how long a resolve waits for the search index's first build, as long as a search waits for its catalog. */
+    private static final long INDEX_WAIT_MS = 5_000;
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
@@ -37,6 +40,7 @@ public class ContentReportService {
     private final PlaylistRepository playlistRepository;
     private final PublicContentCacheService publicContentCacheService;
     private final StreamIndexService streamIndexService;
+    private final SearchIndex searchIndex;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
@@ -45,7 +49,8 @@ public class ContentReportService {
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             PublicContentCacheService publicContentCacheService,
-            StreamIndexService streamIndexService) {
+            StreamIndexService streamIndexService,
+            SearchIndex searchIndex) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
         this.videoRepository = videoRepository;
@@ -53,6 +58,7 @@ public class ContentReportService {
         this.playlistRepository = playlistRepository;
         this.publicContentCacheService = publicContentCacheService;
         this.streamIndexService = streamIndexService;
+        this.searchIndex = searchIndex;
     }
 
     public ContentReport submitReport(
@@ -161,11 +167,12 @@ public class ContentReportService {
      * succeeded), false otherwise (caller should fall back to archive).
      */
     private boolean addReportTargetToParentExclusionList(ContentReport report) {
-        ReportTargetType parentType = report.getParentType();
-        String parentId = report.getParentId();
-        ReportTargetType targetType = report.getTargetType();
-        String targetId = report.getTargetId();
-        String contentSubType = report.getContentSubType();
+        return excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
+                report.getTargetId(), report.getContentSubType());
+    }
+
+    private boolean excludeFromParent(ReportTargetType parentType, String parentId, ReportTargetType targetType,
+                                      String targetId, String contentSubType) {
         if (parentType == null || parentId == null || targetId == null || targetType == null) return false;
 
         try {
@@ -289,7 +296,7 @@ public class ContentReportService {
                         streamIndexService.markStreamArchived(opt.get().getYoutubeId());
                         archived = true;
                     } else {
-                        log.warn("Cannot archive video {}: not found in database", targetId);
+                        archived = excludeEverywhereListed(targetId);
                     }
                 }
                 case CHANNEL -> {
@@ -316,11 +323,36 @@ public class ContentReportService {
                 }
             }
         } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
             log.warn("Failed to archive {} {}: {}", targetType, targetId, e.getMessage());
         }
         if (archived) {
             publicContentCacheService.evictPublicContentCaches();
         }
+    }
+
+    /**
+     * Inner-search R34. A report opened from search carries no parent, and an inner or stream video has no Video
+     * document, so archiving finds nothing to archive. Exclude it instead on every admitted source that lists it:
+     * channels -> excludedItems.videos, playlists -> excludedVideoIds. Each repository save fires CatalogChanged, so
+     * search hides it at once. Works for every installed app; a later app may send sourceType/sourceId as the parent.
+     * Before the index's first build (catalog and stored streams) an empty listing would mean "not loaded", so it waits.
+     */
+    private boolean excludeEverywhereListed(String videoId) throws java.io.IOException, InterruptedException {
+        if (!searchIndex.awaitBuilt(INDEX_WAIT_MS)) {
+            log.warn("Cannot exclude video {}: the search index is still building; exclude it by hand", videoId);
+            return false;
+        }
+        List<String> keys = searchIndex.sourcesListing(videoId);
+        if (keys.isEmpty()) {
+            log.warn("Cannot archive video {}: not in the database and no approved source lists it", videoId);
+            return false;
+        }
+        List<String> excluded = keys.stream().filter(key -> excludeFromParent(
+                key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
+                key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null)).toList();
+        log.info("Report resolved: video {} excluded on {} of {}", videoId, excluded, keys);
+        return !excluded.isEmpty();
     }
 
     public ReportStats getStats() throws ExecutionException, InterruptedException, TimeoutException {

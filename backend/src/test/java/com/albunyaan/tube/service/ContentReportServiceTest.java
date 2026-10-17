@@ -30,10 +30,13 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,6 +54,8 @@ class ContentReportServiceTest {
     PublicContentCacheService publicContentCacheService;
     @Mock
     StreamIndexService streamIndexService;
+    @Mock
+    com.albunyaan.tube.search.SearchIndex searchIndex;
 
     Cache<String, AtomicInteger> rateLimitCache;
     ContentReportService service;
@@ -61,7 +66,7 @@ class ContentReportServiceTest {
     @BeforeEach
     void setUp() {
         rateLimitCache = Caffeine.newBuilder().build();
-        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService, streamIndexService);
+        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService, streamIndexService, searchIndex);
     }
 
     @Test
@@ -158,6 +163,7 @@ class ContentReportServiceTest {
         service.resolveReport("report-v1", ReportStatus.RESOLVED, "admin", null);
 
         verify(streamIndexService).markStreamArchived("ytv-1");
+        verifyNoInteractions(searchIndex);
     }
 
     @Test
@@ -196,5 +202,88 @@ class ContentReportServiceTest {
         service.resolveReport("report-pl1", ReportStatus.RESOLVED, "admin", null);
 
         verify(streamIndexService).removeSource("PLAYLIST", "PLxyz");
+    }
+
+    // --- inner-search R34: a report opened from search has no parent ----------------------------
+
+    @Test
+    void aParentlessReportOnAnInnerVideoExcludesItEverywhereItIsListed() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-inner")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of(
+                "channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        Playlist pl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pl));
+
+        service.resolveReport("report-inner", ReportStatus.RESOLVED, "admin", null);
+
+        verify(channelRepository).save(ch);
+        verify(playlistRepository).save(pl);
+        assertThat(ch.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
+        assertThat(pl.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
+        verify(publicContentCacheService).evictPublicContentCaches();
+        verify(videoRepository, never()).save(any());
+    }
+
+    @Test
+    void aParentlessReportOnAVideoNoSourceListsOnlyLogs() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("lesson99999");
+        when(reportRepository.findById("report-none")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("lesson99999")).thenReturn(Optional.empty());
+        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.sourcesListing("lesson99999")).thenReturn(List.of());
+
+        service.resolveReport("report-none", ReportStatus.RESOLVED, "admin", null);
+
+        verify(channelRepository, never()).save(any());
+        verify(playlistRepository, never()).save(any());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
+    }
+
+    @Test
+    void aReportWithAParentStillExcludesOnThatParentOnly() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        report.setParentType(ReportTargetType.CHANNEL);
+        report.setParentId("UCfassTU6mGWIj-yb26_ADjQ");
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        when(reportRepository.findById("report-parent")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+
+        service.resolveReport("report-parent", ReportStatus.RESOLVED, "admin", null);
+
+        verify(channelRepository).save(ch);
+        verifyNoInteractions(searchIndex);
+    }
+
+    /** Hand-off: before the index has its catalog and stored streams, an empty listing would mean "not loaded", not "none". */
+    @Test
+    void aParentlessReportBeforeTheIndexIsBuiltExcludesNothingAndStillResolves() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-cold")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.awaitBuilt(anyLong())).thenReturn(false);
+
+        assertThat(service.resolveReport("report-cold", ReportStatus.RESOLVED, "admin", null)).isSameAs(report);
+
+        verify(searchIndex, never()).sourcesListing(anyString());
+        verify(channelRepository, never()).save(any());
+        verify(playlistRepository, never()).save(any());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
     }
 }
