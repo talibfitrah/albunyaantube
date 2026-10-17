@@ -494,16 +494,50 @@ public class SearchIndex {
     // ---- search (spec §4.4) --------------------------------------------------------------------
 
     /**
+     * Per-search counters for the slow-search line (inner-search spec §7.3 step 2a): tiers run, ms and hits per tier,
+     * stored documents loaded, hidden hits skipped. Never the query text (search spec §10 promises no query logging).
+     */
+    static final class Trace {
+        int tokens;
+        final long[] tierMs = new long[4];
+        final int[] tierHits = new int[4];
+        final boolean[] tierRan = new boolean[4];
+        int loaded, hidden;
+        long innerMs = -1;
+        int innerHits;
+        boolean innerTimedOut;
+
+        String line(long totalMs, int want, String type) {
+            StringBuilder tiers = new StringBuilder();
+            for (int t = 1; t <= 3; t++) {
+                if (!tierRan[t]) continue;
+                if (!tiers.isEmpty()) tiers.append(',');
+                tiers.append(t).append(':').append(tierMs[t]).append("ms:").append(tierHits[t]);
+            }
+            return "slow search: ms=" + totalMs + " tokens=" + tokens + " want=" + want + " type=" + type
+                    + " tiers=" + tiers + " loaded=" + loaded + " hidden=" + hidden
+                    + (innerMs < 0 ? "" : " inner=" + innerMs + "ms:" + innerHits + (innerTimedOut ? ":timeout" : ""));
+        }
+    }
+
+    /** Server-side ms above which `/search` logs its slow-search line. Tests and the local harness set -1 (every search). */
+    long slowSearchMs = 150;
+
+    /**
      * Global search (`/search`): the ladder over catalog items and visible streams. `type` is CHANNEL/PLAYLIST/VIDEO
      * or null (all types).
      */
     public Hits search(String query, String type, int want) throws IOException {
         awaitReady();
+        long started = System.nanoTime();
+        Trace trace = new Trace();
         IndexSearcher searcher = searchers.acquire();
         try {
-            return ladder(searcher, query, type, false, want, null);
+            return ladder(searcher, query, type, false, want, null, trace);
         } finally {
             searchers.release(searcher);
+            long ms = (System.nanoTime() - started) / 1_000_000;
+            if (ms > slowSearchMs) log.info(trace.line(ms, want, type));
         }
     }
 
@@ -526,7 +560,7 @@ public class SearchIndex {
                 int[] kept = {0}; // the pruner sees the snapshots newest first
                 snapshots.prune((ageSec, s) -> ageSec > SNAPSHOT_TTL_SEC || ++kept[0] > MAX_SNAPSHOTS);
             }
-            Hits hits = ladder(searcher, query, type, true, want, allowedIds);
+            Hits hits = ladder(searcher, query, type, true, want, allowedIds, new Trace());
             return new Hits(hits.items(), hits.match(), snapshot);
         } finally {
             if (pinned != null) snapshots.release(pinned); else searchers.release(searcher);
@@ -540,9 +574,10 @@ public class SearchIndex {
      * drops streams (in-tab lists); `allowedIds` (null = all) restricts membership for filtered in-tab search (§4.7).
      */
     private Hits ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
-                        Set<String> allowedIds) throws IOException {
+                        Set<String> allowedIds, Trace trace) throws IOException {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
+        trace.tokens = tokens.size();
         if (tokens.isEmpty()) return Hits.NONE;
         List<ContentItemDto> out = new ArrayList<>();
         Set<String> seen = new HashSet<>();
@@ -558,7 +593,12 @@ public class SearchIndex {
         });
         for (int tier = 1; tier <= 3 && out.size() < Math.min(want, tier < 3 ? want : MIN_CONFIDENT_HITS); tier++) {
             boolean wasEmpty = out.isEmpty();
-            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen);
+            int before = out.size();
+            long t0 = System.nanoTime();
+            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen, trace);
+            trace.tierRan[tier] = true;
+            trace.tierMs[tier] = (System.nanoTime() - t0) / 1_000_000;
+            trace.tierHits[tier] = out.size() - before;
             if (wasEmpty && !out.isEmpty()) match = TIER_NAMES[tier];
         }
         return new Hits(out, match);
@@ -570,7 +610,7 @@ public class SearchIndex {
         List<ContentItemDto> out = new ArrayList<>();
         IndexSearcher searcher = searchers.acquire();
         try {
-            collect(searcher, filtered(new TermQuery(new Term("id", youtubeId)), type, false), 1, null, out, new HashSet<>());
+            collect(searcher, filtered(new TermQuery(new Term("id", youtubeId)), type, false), 1, null, out, new HashSet<>(), new Trace());
         } finally {
             searchers.release(searcher);
         }
@@ -610,7 +650,7 @@ public class SearchIndex {
      * doubles each round, so many hidden hits cost a few query runs, not one per page (M7).
      */
     private void collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds,
-                         List<ContentItemDto> out, Set<String> seen) throws IOException {
+                         List<ContentItemDto> out, Set<String> seen, Trace trace) throws IOException {
         ScoreDoc after = null;
         long n = Math.max(10, 2L * (want - out.size()));
         for (; out.size() < want; n = Math.min(2 * n, Integer.MAX_VALUE)) {
@@ -620,8 +660,14 @@ public class SearchIndex {
             StoredFields fields = searcher.storedFields();
             for (ScoreDoc hit : top.scoreDocs) {
                 Document doc = fields.document(hit.doc);
+                trace.loaded++;
                 String id = doc.get("id");
-                if ((allowedIds == null || allowedIds.contains(id)) && visible(doc) && seen.add(id)) {
+                if (allowedIds != null && !allowedIds.contains(id)) continue;
+                if (!visible(doc)) {
+                    trace.hidden++;
+                    continue;
+                }
+                if (seen.add(id)) {
                     out.add(dto(doc));
                     if (out.size() == want) return;
                 }

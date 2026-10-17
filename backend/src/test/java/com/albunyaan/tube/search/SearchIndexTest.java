@@ -423,6 +423,38 @@ class SearchIndexTest {
         assertEquals("none", hits.match());
     }
 
+    // ---- slow-search line (inner-search spec §7.3 step 2a) ----------------------------------------
+
+    @Test
+    void aSlowSearchLogsOneLineWithItsTiersAndNeverTheQueryText() throws Exception {
+        index.slowSearchMs = -1; // every search counts as slow
+        index.search("halal kitchen", null, 50);
+        List<String> lines = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).toList();
+        assertEquals(1, lines.size(), lines.toString());
+        String line = lines.get(0);
+        assertTrue(line.matches("slow search: ms=\\d+ tokens=2 want=50 type=null tiers=1:\\d+ms:\\d+(,[23]:\\d+ms:\\d+)*"
+                + " loaded=\\d+ hidden=\\d+"), line);
+        String lower = line.toLowerCase(java.util.Locale.ROOT);
+        assertFalse(lower.contains("halal") || lower.contains("kitchen"), "no query text: " + line);
+    }
+
+    @Test
+    void noLogOutputCarriesTheQueryText() throws Exception {
+        index.slowSearchMs = -1;
+        index.search("zxmarkerqq vvmarkerzz", null, 50);
+        String all = new ArrayList<>(logs.list).stream().map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.joining("\n")).toLowerCase(java.util.Locale.ROOT);
+        assertTrue(all.contains("slow search:"), "the line was logged: " + all);
+        assertFalse(all.contains("zxmarkerqq") || all.contains("vvmarkerzz"), "query text leaked: " + all);
+    }
+
+    @Test
+    void aFastSearchLogsNoSlowLine() throws Exception {
+        index.search("halal kitchen", null, 50); // the fixture answers in a few ms, under the 150 ms default
+        assertTrue(logged(Level.INFO).stream().noneMatch(e -> e.getFormattedMessage().startsWith("slow search:")));
+    }
+
     // ---- P1: live-shaped ranking (probe 2026-10-14 06:26Z) ------------------------------------
 
     /**
