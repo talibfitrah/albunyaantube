@@ -1,0 +1,60 @@
+frontend/public/samples/sample-bulk-urls.json
+  s_dbb6b1f3671904::t_4a346c21d458ad 5
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServicePreviewTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 46,51,59,75,78,92,95,109
+  s_dbb6b1f3671904::t_b94911533a2504 48
+android/app/src/test/java/com/albunyaan/tube/data/youtube/YouTubeImportRemoteSourceTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 168-169,266,268,271-272
+android/app/src/test/java/com/albunyaan/tube/data/importflow/ImportApiTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 66-67,84,163,214
+android/app/src/test/java/com/albunyaan/tube/util/ThumbnailUrlHelperTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 23-24,29-30,41,46,51,56,61,95,101,113,122-123,131,141,161-162,165,171-172,174,181-182,190-191,202
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 688,693,705,711,780,785,851,856,864
+backend/src/test/java/com/albunyaan/tube/service/YouTubeUrlParserTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 14,16,22,24,29,36,38,77,79,84,96,102,104,110,112
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 442,445,462,464,480,484,500,503,519,522,537-538,551,568,693
+android/app/src/test/java/com/albunyaan/tube/ui/me/suggest/SuggestContentViewModelTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 89-90,93,99
+android/app/src/test/java/com/albunyaan/tube/data/youtube/YouTubeImportApiTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 144-145,147,285,287,290-291
+  s_dbb6b1f3671904::t_b94911533a2504 152,298
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 22
+android/app/src/main/java/com/albunyaan/tube/util/ThumbnailUrlHelper.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 174-177
+backend/src/test/java/com/albunyaan/tube/service/ApprovalGraduationWiringTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 137,147
+frontend/public/samples/sample-bulk-urls.csv
+  s_dbb6b1f3671904::t_4a346c21d458ad 4
+android/app/src/test/java/com/albunyaan/tube/data/me/YouTubeVideoIdRegexTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 21-22,29-30,69-70
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryBulkGraduationTest.java
+  s_dbb6b1f3671904::t_4a346c21d458ad 182,186
+docs/superpowers/plans/2026-05-22-admin-bulk-url-submission.md
+  s_dbb6b1f3671904::t_b66972afca5f2c 1505
+  s_dbb6b1f3671904::t_4a346c21d458ad 1516
+android/app/src/test/java/com/albunyaan/tube/data/shorts/ShortsFeedRepositoryTest.kt
+  s_dbb6b1f3671904::t_4a346c21d458ad 178-179
+android/app/src/main/res/values-ar/strings.xml
+  s_dbb6b1f3671904::t_41ed25d1ea9185 40
+android/app/src/main/res/values-nl/strings.xml
+  s_dbb6b1f3671904::t_32b805a2361d3d 42
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2219504f644569c1534e29b1f662e96e21c9884e",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
