@@ -70,8 +70,22 @@ describe('live channels: coded errors from both transports (F20)', () => {
     expect(text).toContain(`PLabc: ${lookup('en', 'apiErrors.LIVE_CATEGORY_TYPE_NOT_ALLOWED')}`);
   });
 
-  it('leaves an uncoded error as it was', () => {
-    expect(apiErrorToMessage(new Error('boom'), t, 'fallback')).toBe('boom');
+  it("gives an uncoded error the caller's localized fallback, never transport English", () => {
+    const fallback = lookup('en', 'contentSearch.addError');
+    const axios500 = Object.assign(new Error('Request failed with status code 500'), { response: { status: 500, data: {} } });
+    expect(apiErrorToMessage(axios500, t, 'contentSearch.addError')).toBe(fallback);
+    expect(apiErrorToMessage(new ApiError('Request failed with status 500', 500), t, 'contentSearch.addError')).toBe(fallback);
+    expect(apiErrorToMessage(new TypeError('Failed to fetch'), t, 'contentSearch.addError')).toBe(fallback);
+  });
+
+  it('translates the submission rate limit (429 RATE_LIMIT on single and bulk adds)', () => {
+    const err = Object.assign(new Error('Request failed with status code 429'),
+      { response: { status: 429, data: { code: 'RATE_LIMIT', message: 'Daily submission limit reached. Try again later.' } } });
+    expect(apiErrorToMessage(err, t, 'contentSearch.addError')).toBe(lookup('en', 'apiErrors.RATE_LIMIT'));
+    for (const locale of ['ar', 'nl'] as const) {
+      expect(typeof lookup(locale, 'apiErrors.RATE_LIMIT'), locale).toBe('string');
+      expect(lookup(locale, 'apiErrors.RATE_LIMIT'), locale).not.toBe(lookup('en', 'apiErrors.RATE_LIMIT'));
+    }
   });
 });
 

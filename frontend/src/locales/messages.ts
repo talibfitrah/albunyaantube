@@ -10,7 +10,8 @@ export const messages = {
       LIVE_CHECK_UNAVAILABLE: "Couldn't confirm the stream is live. Try again in a minute.",
       LIVE_CATEGORY_FULL: 'The live category is full. Remove an entry first.',
       LIVE_CATEGORY_SHAPE: "A live category can't have a parent category or subcategories.",
-      LIVE_CATEGORY_MEMBERS_INVALID: "This category holds items that aren't channels or live streams. Remove them first."
+      LIVE_CATEGORY_MEMBERS_INVALID: "This category holds items that aren't channels or live streams. Remove them first.",
+      RATE_LIMIT: 'Daily submission limit reached. Try again later.'
     },
     auth: {
       title: 'FitrahTube Admin',
@@ -1653,7 +1654,8 @@ export const messages = {
       LIVE_CHECK_UNAVAILABLE: 'تعذّر التأكد من أن البث مباشر. حاول مرة أخرى بعد دقيقة.',
       LIVE_CATEGORY_FULL: 'فئة البث المباشر ممتلئة. احذف عنصرًا أولًا.',
       LIVE_CATEGORY_SHAPE: 'لا يمكن أن تكون لفئة البث المباشر فئة رئيسية أو فئات فرعية.',
-      LIVE_CATEGORY_MEMBERS_INVALID: 'تحتوي هذه الفئة على عناصر ليست قنوات أو بثًا مباشرًا. احذفها أولًا.'
+      LIVE_CATEGORY_MEMBERS_INVALID: 'تحتوي هذه الفئة على عناصر ليست قنوات أو بثًا مباشرًا. احذفها أولًا.',
+      RATE_LIMIT: 'تم بلوغ الحد اليومي للإرسال. حاول مرة أخرى لاحقًا.'
     },
     auth: {
       title: 'إدارة فطرة تيوب',
@@ -3077,7 +3079,8 @@ export const messages = {
       LIVE_CHECK_UNAVAILABLE: 'Kon niet bevestigen dat de stream live is. Probeer het over een minuut opnieuw.',
       LIVE_CATEGORY_FULL: 'De livecategorie is vol. Verwijder eerst een item.',
       LIVE_CATEGORY_SHAPE: 'Een livecategorie kan geen bovenliggende categorie of subcategorieën hebben.',
-      LIVE_CATEGORY_MEMBERS_INVALID: 'Deze categorie bevat items die geen kanalen of livestreams zijn. Verwijder ze eerst.'
+      LIVE_CATEGORY_MEMBERS_INVALID: 'Deze categorie bevat items die geen kanalen of livestreams zijn. Verwijder ze eerst.',
+      RATE_LIMIT: 'Daglimiet voor inzendingen bereikt. Probeer het later opnieuw.'
     },
     auth: {
       title: 'FitrahTube Beheer',

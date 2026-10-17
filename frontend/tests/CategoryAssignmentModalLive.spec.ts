@@ -43,6 +43,15 @@ describe('CategoryAssignmentModal and the live category (spec §8)', () => {
     expect(screen.getByText('Live category: channels and live streams only')).toBeInTheDocument();
   });
 
+  it('ignores a click on a disabled row', async () => {
+    auth.isAdmin = true;
+    renderModal('playlist');
+    const label = await screen.findByText('Channels Live');
+    await fireEvent.click(label);
+    expect(label.closest('label')!.querySelector('input[type=checkbox]')).not.toBeChecked();
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled(); // nothing selected
+  });
+
   it('keeps it selectable for a video (the server checks live)', async () => {
     auth.isAdmin = true;
     renderModal('video');
@@ -65,6 +74,19 @@ describe('CategoryAssignmentModal and the live category (spec §8)', () => {
   });
 });
 
+/** Opens the edit dialog for `name`, picks Live channels, and saves. */
+async function saveAsLive(name: string) {
+  render(CategoriesView, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages })] } });
+  const row = (await screen.findByText(name)).closest('.category-row') as HTMLElement;
+  await fireEvent.click(within(row).getByTitle('Edit'));
+  const select = screen.getByLabelText('Type') as HTMLSelectElement;
+  select.selectedIndex = 1; // Live channels
+  await fireEvent.change(select);
+  await fireEvent.submit(select.closest('form')!);
+}
+
+const formError = () => document.querySelector('.form-error')?.textContent;
+
 describe('CategoriesView and the category type (spec §8, R18)', () => {
   it('shows the chip, and sends type null when a live category goes back to standard', async () => {
     render(CategoriesView, { global: { plugins: [createI18n({ legacy: false, locale: 'en', messages })] } });
@@ -81,5 +103,24 @@ describe('CategoriesView and the category type (spec §8, R18)', () => {
 
     // An omitted type keeps LIVE on the server, so clearing must be an explicit null.
     await waitFor(() => expect(service.updateCategory).toHaveBeenCalledWith('live', expect.objectContaining({ type: null })));
+  });
+
+  it('lists each offending member when the flip to LIVE is refused (MEMBERS_INVALID)', async () => {
+    service.updateCategory.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { code: 'LIVE_CATEGORY_MEMBERS_INVALID', message: 'members invalid',
+        details: { offenders: [{ ref: 'PLabc', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }
+    }));
+    await saveAsLive('Quran');
+
+    const en = messages.en.apiErrors;
+    await waitFor(() => expect(formError()).toBe(`${en.LIVE_CATEGORY_MEMBERS_INVALID}\nPLabc: ${en.LIVE_CATEGORY_TYPE_NOT_ALLOWED}`));
+  });
+
+  it('shows the localized fallback, not axios English, for an uncoded failure', async () => {
+    service.updateCategory.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed with status code 500'), { response: { status: 500, data: {} } }));
+    await saveAsLive('Quran');
+
+    await waitFor(() => expect(formError()).toBe(messages.en.categories.dialog.error));
   });
 });

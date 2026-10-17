@@ -42,7 +42,8 @@ interface ErrorResponseBody {
  *
  * If err carries a code (an ApiError, or an axios error whose body has one: F20),
  * the helper looks up i18n key {@code apiErrors.<CODE>} (falling back to the server message).
- * An uncoded Error keeps its message; anything else falls back to {@code t(fallbackKey)}.
+ * Anything uncoded gets {@code t(fallbackKey)}: its message is English transport text
+ * (axios's "Request failed with status code 500", fetch's "Failed to fetch").
  */
 export function apiErrorToMessage(
   err: unknown,
@@ -53,7 +54,6 @@ export function apiErrorToMessage(
   if (code) {
     return t('apiErrors.' + code, apiErrorServerMessage(err) ?? (err instanceof Error ? err.message : code));
   }
-  if (err instanceof Error) return err.message;
   return t(fallbackKey);
 }
 
