@@ -44,9 +44,13 @@ public class LiveTabReader {
         this.channels = channels;
     }
 
+    static boolean isChannelId(String id) {
+        return id != null && UC_ID.matcher(id).matches();
+    }
+
     /** The channel's current lives, in Live-tab order. Never throws (D3). */
     public LiveTabResult read(String ucId) {
-        if (ucId == null || !UC_ID.matcher(ucId).matches()) {
+        if (!isChannelId(ucId)) {
             return LiveTabResult.error(0, "not a channel id: " + ucId);
         }
         int requests = 0;
@@ -100,9 +104,11 @@ public class LiveTabReader {
 
     /**
      * D10's last source: oEmbed author (bypasses the throttle) → handle → channel details (cached, throttled) → UC id.
-     * 2–3 requests when unknown; empty when any step fails.
+     * 2–3 requests when unknown; empty when a step answers with no channel. A channel-details IOException (breaker,
+     * rate limit, network, or an extraction failure NewPipe gives no definitive reason for) is no signal (R7): it
+     * reaches the caller, which must not read it as "no channel".
      */
-    public Optional<String> resolveChannelId(String videoId) {
+    public Optional<String> resolveChannelId(String videoId) throws IOException {
         try {
             Optional<String> author = oEmbed.authorUrl(videoId);
             if (author.isEmpty()) {
@@ -112,13 +118,13 @@ public class LiveTabReader {
             if (handleOrId == null) {
                 return Optional.empty();
             }
-            if (UC_ID.matcher(handleOrId).matches()) {
+            if (isChannelId(handleOrId)) {
                 return Optional.of(handleOrId);
             }
             String id = channels.getChannelDetails(handleOrId).getId();
-            return id != null && UC_ID.matcher(id).matches() ? Optional.of(id) : Optional.empty();
-        } catch (IOException | RuntimeException e) {
-            return Optional.empty();
+            return isChannelId(id) ? Optional.of(id) : Optional.empty();
+        } catch (RuntimeException e) {
+            return Optional.empty();                                // a crash, not a transient: a retry finds nothing
         }
     }
 

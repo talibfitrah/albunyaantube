@@ -375,4 +375,18 @@ class CategoryControllerTest {
         assertThrows(LiveCategoryException.class, () -> categoryController.updateCategory("kids", live("Live Kids", null), adminUser));
         verify(categoryRepository, never()).save(any());
     }
+
+    /** Row 17 runs only when LIVE is newly set: editing a category that is already LIVE never re-checks its members. */
+    @Test
+    void editingALiveCategoryNeverRechecksItsMembers() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("live-1")).thenReturn(List.of());
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        categoryController.updateCategory("live-1", live("Live Channels", null), adminUser);
+
+        verifyNoInteractions(liveCategoryGuard);
+    }
 }

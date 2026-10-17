@@ -377,8 +377,18 @@ class LiveTabReaderTest {
         assertThat(reader.resolveChannelId("eaOtcUNHDB8")).isEmpty();
     }
 
+    /** R7: a breaker (or rate limit) in the channel lookup is no signal; it reaches the caller instead of "no channel". */
     @Test
-    void noAuthorMeansNoChannel() {
+    void aBreakerDuringTheChannelLookupReachesTheCaller() throws IOException {
+        when(oEmbed.authorUrl("eaOtcUNHDB8")).thenReturn(Optional.of("https://www.youtube.com/@ZadTVchannel"));
+        when(channels.getChannelDetails("@ZadTVchannel")).thenThrow(new YouTubeGateway.CircuitOpenException("open"));
+
+        org.junit.jupiter.api.Assertions.assertThrows(YouTubeGateway.CircuitOpenException.class,
+                () -> reader.resolveChannelId("eaOtcUNHDB8"));
+    }
+
+    @Test
+    void noAuthorMeansNoChannel() throws IOException {
         when(oEmbed.authorUrl("eC4LfEVxvKg")).thenReturn(Optional.empty());
 
         assertThat(reader.resolveChannelId("eC4LfEVxvKg")).isEmpty();

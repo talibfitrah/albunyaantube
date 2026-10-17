@@ -5,6 +5,7 @@ import com.albunyaan.tube.model.LiveChannelState;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Clock;
 import java.util.Collection;
 import java.util.HashMap;
@@ -67,7 +68,8 @@ public class LiveChannelService {
         return livesNow(ucId);
     }
 
-    public Optional<String> resolveChannelId(String videoId) {
+    /** D10: empty = no channel; an IOException = no signal (R7), see {@link LiveTabReader#resolveChannelId}. */
+    public Optional<String> resolveChannelId(String videoId) throws IOException {
         return reader.resolveChannelId(videoId);
     }
 
