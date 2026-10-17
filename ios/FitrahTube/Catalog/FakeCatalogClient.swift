@@ -71,7 +71,7 @@ nonisolated struct FakeCatalogClient: CatalogClient {
     func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: searchResultsStore) }
 
     func liveChannel(id: String) async throws -> LiveChannelLives {
-        guard let lives = liveChannelsStore[id] else { throw LiveChannelUnsupported() }
+        guard let lives = liveChannelsStore[id] else { throw LiveChannelNotFound() }  // the live client's 404
         return lives
     }
 

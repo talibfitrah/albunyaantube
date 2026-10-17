@@ -240,4 +240,40 @@ struct LiveCatalogClientTests {
         #expect(PlayerArgs(item: page.items[0]).liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
         #expect(PlayerArgs(item: page.items[0]).channelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
     }
+
+    /// The backend's 404 (GlobalExceptionHandler's body): not a servable live channel, stop asking.
+    @Test func aLiveChannel404IsNotFound() async {
+        let json = Data(#"{"timestamp":"2026-10-17T15:00:00","status":404,"error":"Not Found","message":"LiveChannel not found","path":"/api/v1/live/channels/UCx"}"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+        transport.status = .notFound
+
+        await #expect(throws: LiveChannelNotFound.self) { try await sut.liveChannel(id: "UCx") }
+    }
+
+    /// Anything else is "no answer": retryable, never mistaken for a 404.
+    @Test func aLiveChannel503IsNotNotFound() async {
+        let (sut, transport) = makeClient(responseBody: Data())
+        transport.status = .serviceUnavailable
+
+        let error = await #expect(throws: (any Error).self) { try await sut.liveChannel(id: "UCx") }
+        #expect(error != nil && !(error is LiveChannelNotFound))
+        #expect((error as? LiveChannelUnexpectedStatus)?.statusCode == 503)
+    }
+
+    @Test func theFakeAnswersAnUnknownChannelLikeThe404() async throws {
+        let lives = LiveChannelLives(channelId: "UCa", status: "OFFLINE", lives: [])
+        let fake = FakeCatalogClient(liveChannels: ["UCa": lives])
+
+        #expect(try await fake.liveChannel(id: "UCa") == lives)
+        await #expect(throws: LiveChannelNotFound.self) { try await fake.liveChannel(id: "UCx") }
+    }
+
+    @Test func aNonLiveItemOpensThePlayerWithNoChannel() {
+        let item = ContentItem(id: "v1", type: .video, title: "Video One", category: "Quran", description: nil,
+                               thumbnailURL: nil, durationSeconds: 120, uploadedDaysAgo: 2, viewCount: 100,
+                               channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil)
+
+        #expect(PlayerArgs(item: item).channelId == nil)
+        #expect(PlayerArgs(item: item).liveChannelId == nil)
+    }
 }

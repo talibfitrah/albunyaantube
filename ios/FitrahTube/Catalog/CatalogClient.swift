@@ -13,6 +13,13 @@ nonisolated protocol CatalogClient: Sendable {
 /// answer" and retries (spec §9.1 step 4). `LiveCatalogClient` and `FakeCatalogClient` implement it.
 nonisolated struct LiveChannelUnsupported: Error {}
 
+/// The backend's 404: the channel is not a servable live channel. Live-channel mode stops instead of retrying
+/// (Android: 404 stops, IO or JSON errors retry).
+nonisolated struct LiveChannelNotFound: Error {}
+
+/// Any other answer (a 5xx, an undocumented status): retryable, never a `LiveChannelNotFound`.
+nonisolated struct LiveChannelUnexpectedStatus: Error { let statusCode: Int }
+
 extension CatalogClient {
     func liveChannel(id: String) async throws -> LiveChannelLives { throw LiveChannelUnsupported() }
 }
