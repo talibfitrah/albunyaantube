@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/controller/WatchPageControllerTest.java
+  s_dbb6b1f3671904::t_dc4963cabeb773 3-4,21-23,33,36-39,44-45,61,71-72,102-105,107-119,122-123,127-130,132-134,136-156,160-190,208-210,214-227,234-246,249-250,252-254,258-263,267-269,271-274,276-280,284-286,288,290-291,295-297,299-302,304-308,312-314,316-319,321-326,329-330,332,334,345-347,351-353,355-385,415-417,419-420,422-432,434-438,441-442,444-446,448-451,455-461,463,465-507
+backend/src/main/java/com/albunyaan/tube/controller/WatchPageController.java
+  s_dbb6b1f3671904::t_6ef0377e6d42c7 3-4,11-13,48-49,66,68-74,76,80,102,105,107,119,133,145,160,179-183,185-199,201-205,207,209,227-229,274,397-399
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "28240f9aae2f617fd17b64ca224a0126de4401c7",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
