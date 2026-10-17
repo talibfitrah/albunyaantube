@@ -5,10 +5,10 @@ import android.view.ViewGroup
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
-import coil.load
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.channel.ChannelPlaylist
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 
 /**
  * Adapter for playlists in the Playlists tab.
@@ -53,12 +53,8 @@ class ChannelPlaylistsAdapter(
                 metaText
             }
 
-            // Load thumbnail
-            binding.playlistThumbnail.load(playlist.thumbnailUrl) {
-                placeholder(R.drawable.thumbnail_placeholder)
-                error(R.drawable.thumbnail_placeholder)
-                crossfade(true)
-            }
+            // Load thumbnail (owner issue 3: the playlist glyph when no picture is coming)
+            binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl, error = R.drawable.playlist_thumbnail_placeholder)
 
             // Set accessibility content description for the entire card
             binding.root.contentDescription = binding.root.context.getString(

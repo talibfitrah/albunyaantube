@@ -33,6 +33,7 @@ object ImageLoading {
         crossfade: Boolean = true
     ) {
         val placeholder = getPlaceholderForItem(item)
+        val error = getErrorForItem(item)
         val url = getUrlForItem(item)
 
         when (item) {
@@ -43,7 +44,8 @@ object ImageLoading {
                     videoId = item.id,
                     isShort = false,
                     placeholder = placeholder,
-                    crossfade = crossfade
+                    crossfade = crossfade,
+                    error = error
                 )
             }
             is ContentItem.Playlist -> {
@@ -55,11 +57,12 @@ object ImageLoading {
                         videoId = videoId,
                         isShort = false,
                         placeholder = placeholder,
-                        crossfade = crossfade
+                        crossfade = crossfade,
+                        error = error
                     )
                 } else {
                     // No video ID extractable — simple loading
-                    loadThumbnailUrl(url, placeholder, crossfade = crossfade)
+                    loadThumbnailUrl(url, placeholder, crossfade = crossfade, error = error)
                 }
             }
             is ContentItem.Channel -> {
@@ -89,16 +92,17 @@ object ImageLoading {
         url: String?,
         placeholder: Int = R.drawable.thumbnail_placeholder,
         circleCrop: Boolean = false,
-        crossfade: Boolean = true
+        crossfade: Boolean = true,
+        error: Int = placeholder
     ) {
-        if (url.isNullOrBlank()) {
-            setImageResource(placeholder)
+        if (!isUrlValid(url)) {
+            setImageResource(error)
             return
         }
 
         load(url) {
             placeholder(placeholder)
-            error(placeholder)
+            error(error)
             if (crossfade) crossfade(true)
             if (circleCrop) {
                 transformations(CircleCropTransformation())
@@ -130,18 +134,20 @@ object ImageLoading {
      * @param isShort Whether this is a YouTube Short (uses 9:16 aspect ratio)
      * @param placeholder Placeholder drawable while loading
      * @param crossfade Whether to use crossfade animation
+     * @param error What shows when no picture is coming (no URL, every fallback failed)
      */
     fun ImageView.loadYouTubeThumbnail(
         primaryUrl: String?,
         videoId: String?,
         isShort: Boolean = false,
         placeholder: Int = R.drawable.thumbnail_placeholder,
-        crossfade: Boolean = true
+        crossfade: Boolean = true,
+        error: Int = placeholder
     ) {
         val fallbackUrls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, videoId, isShort)
 
         if (fallbackUrls.isEmpty()) {
-            setImageResource(placeholder)
+            setImageResource(error)
             setTag(FALLBACK_REQUEST_TAG_KEY, null)
             return
         }
@@ -152,7 +158,7 @@ object ImageLoading {
         setTag(FALLBACK_REQUEST_TAG_KEY, requestTag)
 
         // Start loading with fallback chain
-        loadWithFallback(fallbackUrls, 0, placeholder, crossfade, requestTag)
+        loadWithFallback(fallbackUrls, 0, placeholder, error, crossfade, requestTag)
     }
 
     /**
@@ -165,13 +171,14 @@ object ImageLoading {
         urls: List<String>,
         index: Int,
         placeholder: Int,
+        error: Int,
         crossfade: Boolean,
         requestTag: String
     ) {
         if (index >= urls.size) {
-            // All URLs failed, show placeholder (only if still the same request)
+            // All URLs failed, show the error drawable (only if still the same request)
             if (getTag(FALLBACK_REQUEST_TAG_KEY) == requestTag) {
-                setImageResource(placeholder)
+                setImageResource(error)
             }
             return
         }
@@ -192,7 +199,7 @@ object ImageLoading {
             // matches; the unconditional Coil error() paint is what
             // backstops the stale-callback race) without the mid-chain
             // flash.
-            if (isTerminalAttempt) error(placeholder)
+            if (isTerminalAttempt) error(error)
             if (crossfade && index == 0) crossfade(true) // Only crossfade on first attempt
             memoryCachePolicy(CachePolicy.ENABLED)
             diskCachePolicy(CachePolicy.ENABLED)
@@ -220,14 +227,14 @@ object ImageLoading {
                                 "Thumbnail failed (${result.throwable.message}), trying fallback ${index + 2}/${urls.size}"
                             )
                         }
-                        imageView.loadWithFallback(urls, index + 1, placeholder, false, requestTag)
+                        imageView.loadWithFallback(urls, index + 1, placeholder, error, false, requestTag)
                     } else {
                         if (BuildConfig.DEBUG) {
                             android.util.Log.d("ImageLoading", "All ${urls.size} thumbnail URLs failed")
                         }
-                        // Only set placeholder if this request is still valid for this view
+                        // Only set the error drawable if this request is still valid for this view
                         if (imageView.getTag(FALLBACK_REQUEST_TAG_KEY) == requestTag) {
-                            imageView.setImageResource(placeholder)
+                            imageView.setImageResource(error)
                         }
                     }
                 }
@@ -246,6 +253,10 @@ object ImageLoading {
         }
     }
 
+    /** Owner issue 3: what a tile shows when no picture is coming. Only playlists differ from the loading placeholder. */
+    fun getErrorForItem(item: ContentItem): Int =
+        if (item is ContentItem.Playlist) R.drawable.playlist_thumbnail_placeholder else getPlaceholderForItem(item)
+
     /**
      * Extract thumbnail URL from a content item.
      * Exposed for testing.
@@ -259,12 +270,10 @@ object ImageLoading {
     }
 
     /**
-     * Check if a URL is valid (not null or blank).
+     * Not null or blank, and not YouTube's grey no_thumbnail image (backend ThumbnailUrls.isBrokenPlaylistThumbnail).
      * Exposed for testing.
      */
-    fun isUrlValid(url: String?): Boolean {
-        return !url.isNullOrBlank()
-    }
+    fun isUrlValid(url: String?): Boolean = !url.isNullOrBlank() && !url.contains("/img/no_thumbnail")
 
     /**
      * Determine if circle crop transformation should be applied.

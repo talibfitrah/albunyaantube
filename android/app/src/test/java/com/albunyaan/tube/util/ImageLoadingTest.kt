@@ -40,6 +40,17 @@ class ImageLoadingTest {
     }
 
     @Test
+    fun `getErrorForItem returns the playlist placeholder for Playlist`() {
+        assertEquals(R.drawable.playlist_thumbnail_placeholder, ImageLoading.getErrorForItem(createPlaylist("1", "Test Playlist")))
+    }
+
+    @Test
+    fun `getErrorForItem keeps the loading placeholder for Video and Channel`() {
+        assertEquals(R.drawable.home_thumbnail_bg, ImageLoading.getErrorForItem(createVideo("1", "Test Video")))
+        assertEquals(R.drawable.home_channel_avatar_bg, ImageLoading.getErrorForItem(createChannel("1", "Test Channel")))
+    }
+
+    @Test
     fun `getUrlForItem returns thumbnailUrl for Video`() {
         val video = createVideo("1", "Test Video", thumbnailUrl = "https://example.com/video.jpg")
         val url = ImageLoading.getUrlForItem(video)
@@ -81,6 +92,11 @@ class ImageLoadingTest {
     @Test
     fun `isUrlValid returns true for valid URL`() {
         assertTrue(ImageLoading.isUrlValid("https://example.com/image.jpg"))
+    }
+
+    @Test
+    fun `isUrlValid returns false for YouTube's no_thumbnail image`() {
+        assertFalse(ImageLoading.isUrlValid("https://i.ytimg.com/img/no_thumbnail.jpg"))
     }
 
     @Test

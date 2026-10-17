@@ -132,9 +132,11 @@ class FeaturedListAdapter(
 
             val playlistVideoId = ThumbnailUrlHelper.extractVideoId(playlist.thumbnailUrl)
             if (playlistVideoId != null) {
-                binding.playlistThumbnail.loadYouTubeThumbnail(playlist.thumbnailUrl, playlistVideoId)
+                binding.playlistThumbnail.loadYouTubeThumbnail(
+                    playlist.thumbnailUrl, playlistVideoId, error = R.drawable.playlist_thumbnail_placeholder
+                )
             } else {
-                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl, error = R.drawable.playlist_thumbnail_placeholder)
             }
 
             binding.categoryChipsContainer.removeAllViews()

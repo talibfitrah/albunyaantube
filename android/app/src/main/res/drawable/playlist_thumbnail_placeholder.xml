@@ -1,0 +1,11 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Owner issue 3: a playlist with no usable picture (no URL, a failed load, YouTube's no_thumbnail.jpg).
+     The 16:9 base size gives centerCrop an intrinsic size to scale, so the glyph grows with the card
+     (about 15% of its width) instead of being stretched to fill it. -->
+<layer-list xmlns:android="http://schemas.android.com/apk/res/android">
+    <item android:width="160dp" android:height="90dp">
+        <color android:color="@color/surface_variant" />
+    </item>
+    <item android:width="24dp" android:height="24dp" android:gravity="center"
+        android:drawable="@drawable/ic_chip_playlist_inline" />
+</layer-list>
