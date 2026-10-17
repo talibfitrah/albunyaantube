@@ -123,6 +123,21 @@ struct RateLimitedResolver: StreamResolving {
     }
 }
 
+/// Playback Phase 2 (spec R43): the background HD upgrade of a 360p stream. Three closures rather than a protocol: the
+/// live set forwards to `StreamResolver`; the simulator hook and the tests script their own.
+nonisolated struct HDUpgrade: Sendable {
+    var upgrade: @Sendable (_ videoId: String) async -> Resolved?
+    /// R41: no HD for that video.
+    var failed: @Sendable (_ videoId: String) async -> Void
+    /// R42 (revision 4): a `sidx` 403 after its retry -- the 30-minute `tv_samsung` pause.
+    var refused: @Sendable () async -> Void
+
+    static func live(_ resolver: StreamResolver) -> HDUpgrade {
+        HDUpgrade(upgrade: { await resolver.upgrade($0) }, failed: { await resolver.hdFailed($0) },
+                  refused: { await resolver.hdRefused() })
+    }
+}
+
 extension StreamState {
     /// The `Resolved` behind the two states that share `PlayerScreen`'s single playable `switch`
     /// branch, `nil` for every other state. M5 (fix round 1): this was three copies of the same
@@ -324,6 +339,14 @@ extension StreamState {
     /// `allowsExternalPlayback` write would otherwise turn the dead route back on.
     private(set) var airPlayFellBack = false
 
+    /// Spec R43: the HD stream `PlayerHostView` should stage for the 360p on screen. Set when `hd.upgrade` answers;
+    /// cleared by every new resolve, by the commit, by a failure and by the screen going away.
+    private(set) var pendingUpgrade: Resolved?
+    /// The 360p stream a committed HD replaced, kept for R43's drop-back while `.ready` shows that HD stream.
+    private var standardBeforeUpgrade: Resolved?
+    private let hd: HDUpgrade?
+    private var upgradeTask: Task<Void, Never>?
+
     /// The app's ONE cast seam (spec §10), or nil for a player that has no cast affordance: Shorts
     /// (the cast button is the main player's toolbar only) and every test that is not about
     /// casting. `reconcile(_:)` is then a no-op -- the same "no cast at all" posture a container
@@ -334,12 +357,13 @@ extension StreamState {
     /// reaches favorites through the environment container on its own, and nothing in the player
     /// touches the catalog.
     init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
-         queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil) {
+         queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil, hd: HDUpgrade? = nil) {
         self.resolver = resolver
         self.settings = settings
         self.args = args
         self.queueSource = queueSource
         self.cast = cast
+        self.hd = hd
         self.audioOnly = settings.audioOnly
     }
 
@@ -631,6 +655,18 @@ extension StreamState {
         let token = UUID()
         recoveryToken = token
         defer { if recoveryToken == token { recoveryToken = nil } }
+        // Spec R43: any failure or stall of the HD stream drops back to the 360p it replaced, at the live position (the
+        // host's replace-and-seek; `fire` already recorded the resume intent), before the budget machine runs and spending
+        // nothing. HD is off for this video (R41). The 360p's own later incidents get Phase 1's full ladder.
+        if resolved.client == .tvSamsung, let standard = standardBeforeUpgrade {
+            standardBeforeUpgrade = nil
+            state = .rung2Progressive(standard)
+            if let hd { await hd.failed(hostVideoId) }
+            return
+        }
+        // Plan review I4 (spec R43 revision 4): an incident on the 360p while HD stages means the link cannot carry
+        // both. No HD for this video; the 360p then gets Phase 1's recovery exactly as in 1.0.3.
+        if pendingUpgrade != nil { upgradeFailed() }
         // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
         // an item that failed while an external route was playing it is the plan's IP-binding
         // risk, not a broken stream. Drop external playback so the same re-resolve mirrors from
@@ -689,6 +725,56 @@ extension StreamState {
     /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`).
     func recordPlaybackProgress() {
         recoveryBudget.recordPlaybackProgress()
+    }
+
+    // MARK: - HD upgrade (spec R43)
+
+    /// R8: only the stream on screen, never a saved file. The answer is dropped if anything moved on meanwhile.
+    private func startUpgrade(videoId: String, generation: Int) {
+        guard let hd, !isOfflinePlayback else { return }
+        upgradeTask = Task {
+            let upgrade = await hd.upgrade(videoId)
+            guard let upgrade, !Task.isCancelled, generation == self.generation, resolvedVideoId == videoId else { return }
+            pendingUpgrade = upgrade
+        }
+    }
+
+    /// The host's hand-over, asked synchronously right before it swaps the item: true = the HD stream is still wanted for
+    /// the 360p on screen, and `state` is now `.ready` with it (the update pass then reuses the swapped item, whose URL
+    /// matches). False for the pending upgrade = it is dropped and denied.
+    func commitUpgrade(_ masterURL: URL) -> Bool {
+        guard let pending = pendingUpgrade, case .hls(let url, _, _, _, _) = pending.stream, url == masterURL else { return false }
+        // Pre-flight scan: an upgrade this view model can no longer take (an error card, recovery exhausted) is dropped
+        // and HD is denied for that video (R41), or the host would stage it again every second.
+        guard case .rung2Progressive(let standard) = state, resolvedVideoId == args.videoId else {
+            upgradeFailed()
+            return false
+        }
+        pendingUpgrade = nil
+        standardBeforeUpgrade = standard
+        state = .ready(pending)
+        return true
+    }
+
+    /// The staged HD item failed, never buffered, or the 360p had an incident while it staged: stay on 360p; no HD for
+    /// this video (R41).
+    func upgradeFailed() {
+        guard pendingUpgrade != nil else { return }
+        pendingUpgrade = nil
+        let videoId = hostVideoId
+        if let hd { Task { await hd.failed(videoId) } }
+    }
+
+    /// R42 (revision 4): the staged item's `sidx` was still refused after its retry.
+    func upgradeRefused() {
+        if let hd { Task { await hd.refused() } }
+    }
+
+    /// Plan review M11: a screen that went away stops asking for HD.
+    /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
+    func stopUpgrade() {
+        upgradeTask?.cancel()
+        pendingUpgrade = nil
     }
 
     // MARK: - Cast (Task 8, spec §10)
@@ -1101,6 +1187,10 @@ extension StreamState {
         generation += 1
         let myGeneration = generation
         resolveTask?.cancel()
+        // Spec R43: an upgrade belongs to the stream that asked for it; whatever this resolve lands, it is not that one.
+        upgradeTask?.cancel()
+        pendingUpgrade = nil
+        standardBeforeUpgrade = nil
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
         // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
         // own re-resolves must not refill their own budget.
@@ -1150,6 +1240,8 @@ extension StreamState {
         // Replace-only: a titleless resolve (offline, TV) keeps what the row gave.
         if let title = result.resolved?.title, !title.isEmpty { args.title = title }
         state = result
+        // Spec R43: 360p is on screen; ask for HD in the background.
+        if case .rung2Progressive = result { startUpgrade(videoId: videoId, generation: generation) }
     }
 
     /// No Safe Mode branch: owner directive 2026-08-27 removed the YouTube hand-off outright, so

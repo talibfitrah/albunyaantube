@@ -23,6 +23,7 @@ struct NoYouTubePlayerTests {
     private static let banned = [
         "youtube-nocookie", "iframe_api", "player_api", "yt.player", "/embed/", "youtube.com/embed", "embedrung", "embed.html",
         "javascriptcore", "jscontext",
+        "ytplayerview", "youtube-ios-player-helper", "youtubeplayerkit", "youtubeiosplayerhelper",
     ]
 
     /// `YouTubeURLParser` recognises `youtube-nocookie.com` as a host of the links a user PASTES into
@@ -87,6 +88,10 @@ struct NoYouTubePlayerTests {
         "https://www.YouTube-NoCookie.com/x",
         "import JavaScriptCore",
         "let context = JSContext()",
+        "let player = YTPlayerView(frame: .zero)",
+        "pod 'youtube-ios-player-helper', '~> 1.0.4'",
+        "import YouTubePlayerKit",
+        "import YouTubeiOSPlayerHelper",
     ])
     func theMatchCatchesEveryPlayerSpellingInAnyCase(_ planted: String) {
         #expect(!Self.offenders(in: planted, at: "FitrahTube/Planted.swift").isEmpty, "\(planted) must be caught")
