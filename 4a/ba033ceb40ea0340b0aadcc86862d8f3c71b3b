@@ -1,0 +1,42 @@
+ios/FitrahTube/Catalog/FakeCatalogClient.swift
+  s_dbb6b1f3671904::t_9f58dd55119a47 47,52-53,58,73-76
+  s_dbb6b1f3671904::t_d8872b23959238 77
+ios/Packages/FitrahAPI/Sources/FitrahAPI/openapi-generator-config.yaml
+  s_dbb6b1f3671904::t_6db43ace68dabd 12
+ios/FitrahTube/Catalog/PublicHeaders.swift
+  s_dbb6b1f3671904::t_84a1421cee31c2 7-10
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Client.swift
+  s_dbb6b1f3671904::t_91cde62a992562 392,476,560,583-673
+  s_dbb6b1f3671904::t_4a5fb9e16c291a 674
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_dbb6b1f3671904::t_3946329184dd02 66-71,93,108-109
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_dbb6b1f3671904::t_e7120de599f927 9-17
+ios/FitrahTube/App/Route.swift
+  s_dbb6b1f3671904::t_9f58dd55119a47 119-120,137-138
+ios/FitrahTube/Catalog/Models.swift
+  s_dbb6b1f3671904::t_e7120de599f927 32-44
+ios/FitrahTubeTests/PublicHeadersTests.swift
+  s_dbb6b1f3671904::t_081e4934c05133 7
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_dbb6b1f3671904::t_8d84b76f7908cd 218-242
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Types.swift
+  s_dbb6b1f3671904::t_91cde62a992562 53-57,153-165,527-531,533-537,540-541,543-544,546-547,550-551,554-558,560-562,564-566,568-573,576-578,581-584,586-589,591-594,597-600,603-605,607,609-611,613,615,617,619,621,623-625,628,632,634-635,638,644,666-668,670-682,685-690,692-697,699-704,707-712,715-717,719-729,732-736,738-742,744-748,751-755,820-823,841,856-857,873,890-951,1687,1692,1711,1868,1873,1892,2049,2054,2073,2146-2338,2340-2342,2344-2347
+  s_dbb6b1f3671904::t_c99bab4d7a1f88 2339,2343
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "4aba033ceb40ea0340b0aadcc86862d8f3c71b3b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
