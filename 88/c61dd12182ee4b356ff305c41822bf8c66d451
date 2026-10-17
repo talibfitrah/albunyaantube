@@ -1,0 +1,48 @@
+CHANGELOG.md
+  s_dbb6b1f3671904::t_5b04a5cabe30af 9
+frontend/src/views/BulkImportExportView.vue
+  s_dbb6b1f3671904::t_6a8244bf26d76b 279,503-506,552-557,816
+frontend/tests/liveErrorsInViews.spec.ts
+  s_dbb6b1f3671904::t_2a6e6df74d649c 8-9,14,113-121
+  s_dbb6b1f3671904::t_28d043b00d4652 1-7,10-13,15-107,109-112,122-123
+  s_dbb6b1f3671904::t_a1698080133a05 108
+frontend/tests/bulkSubmissionStore.spec.ts
+  s_dbb6b1f3671904::t_a1698080133a05 5,93-130
+  s_dbb6b1f3671904::t_3310e79fa8d29b 131
+frontend/src/views/ContentLibraryView.vue
+  s_dbb6b1f3671904::t_6a8244bf26d76b 594,951,957-961,1078,1106
+frontend/src/locales/messages.ts
+  s_dbb6b1f3671904::t_38df96c9aa493a 1632-1634,3003-3005,4428-4430
+frontend/tests/PendingApprovalsView.spec.ts
+  s_dbb6b1f3671904::t_a1698080133a05 18,45,216-235
+  s_dbb6b1f3671904::t_d5d97557d6ff9f 236
+frontend/src/views/PendingApprovalsView.vue
+  s_dbb6b1f3671904::t_0c7f1e560c5e1a 431,842-847,873
+frontend/src/services/bulkSubmissionService.ts
+  s_dbb6b1f3671904::t_2d5ee64a70412c 29
+  s_dbb6b1f3671904::t_6a8244bf26d76b 31
+frontend/src/stores/bulkSubmissionStore.ts
+  s_dbb6b1f3671904::t_6a8244bf26d76b 18
+  s_dbb6b1f3671904::t_f2c8a019a26b70 9-12
+frontend/src/views/ContentSortingView.vue
+  s_dbb6b1f3671904::t_518510e9b7514f 337,837
+frontend/tests/ContentLibraryCategoryModal.spec.ts
+  s_dbb6b1f3671904::t_a1698080133a05 8,195-215
+  s_dbb6b1f3671904::t_8a704b9e3c6395 216
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88c61dd12182ee4b356ff305c41822bf8c66d451",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
