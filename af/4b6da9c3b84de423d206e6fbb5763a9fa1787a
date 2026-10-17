@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/search/InnerStore.java
+  s_dbb6b1f3671904::t_6570a9afa4e240 39
+  s_dbb6b1f3671904::t_6dd57975708fc6 80-84,87-95,97,104,106-107
+  s_dbb6b1f3671904::t_f331fc0d82d36d 36
+  s_dbb6b1f3671904::t_caef69afacfe22 96
+  s_dbb6b1f3671904::t_29158133be9930 37-38
+backend/src/test/java/com/albunyaan/tube/search/CrawlPacerTest.java
+  s_dbb6b1f3671904::t_ccd334e8a38fbc 13,26-27,78,303-358
+  s_dbb6b1f3671904::t_650a65cd11a3b0 359
+backend/src/test/java/com/albunyaan/tube/config/NewPipeDownloaderPacerTest.java
+  s_dbb6b1f3671904::t_03821b2a5836fa 100-116,120,124,140-153,165
+backend/src/main/java/com/albunyaan/tube/search/CrawlPacer.java
+  s_dbb6b1f3671904::t_a521af2bc1d0bb 103-108
+  s_dbb6b1f3671904::t_1c3a1953bd19bf 43,282,289-290,292,295
+  s_dbb6b1f3671904::t_b08f585b399d65 86,96
+backend/src/main/java/com/albunyaan/tube/search/InnerState.java
+  s_dbb6b1f3671904::t_81a5d6d164fab0 13-14
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "af4b6da9c3b84de423d206e6fbb5763a9fa1787a",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
