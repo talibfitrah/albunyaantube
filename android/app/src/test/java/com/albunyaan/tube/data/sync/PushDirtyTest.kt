@@ -162,6 +162,41 @@ class PushDirtyTest {
         assertEquals("A's rows must not go out once A has signed out", 0, pushes.get())
     }
 
+    /** Row one fails with [failure]; the drain must go on and push row two (review m4, m6). */
+    private suspend fun assertDrainGoesOnAfter(failure: () -> Response<SubscriptionSyncDto>) {
+        db.subscribedChannelDao().upsert(SubscribedChannel("UC6", "u", "n", null, user_id = "uid", dirty = true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec2", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.putSubResponse = { _, _ -> failure() }
+        api.putFavoriteResponse = { id, req ->
+            Response.success(FavoriteSyncDto(id, false, 999L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+
+        sm.pushDirty("uid")
+        sm.unbind()
+
+        assertTrue("the failed row stays dirty", db.subscribedChannelDao().selectDirty("uid").any { it.channelId == "UC6" })
+        assertFalse("the rows after it still push", db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec2" })
+    }
+
+    // Round 4 (review m4): Moshi reads an empty or truncated 2xx body as EOFException, an
+    // IOException. It is one bad row, not "offline": the drain must not stop at it every cycle.
+    @Test fun anEmptyOrTruncatedBodyFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { throw java.io.EOFException("End of input") }
+    }
+
+    @Test fun aJsonEncodingExceptionFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { throw com.squareup.moshi.JsonEncodingException("Use JsonReader.setLenient(true)") }
+    }
+
+    @Test fun aFiveXxFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { Response.error(503, "".toResponseBody("application/json".toMediaType())) }
+    }
+
+    @Test fun a429FailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { Response.error(429, "".toResponseBody("application/json".toMediaType())) }
+    }
+
     @Test fun offlineBindWithDirtyRowDoesNotThrow() = runTest {
         db.accountBindingDao().upsert(AccountBindingEntity("uid", 0L, true))
         db.favoriteVideoDao().upsertFavorite(

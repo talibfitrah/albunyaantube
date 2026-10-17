@@ -639,7 +639,10 @@ class SyncManager @Inject constructor(
         } catch (e: Exception) {
             android.util.Log.w("SyncManager", "Push failure — retry on backoff", e)
             // JsonEncodingException is the IOException Moshi throws for a body it cannot parse.
-            return if (e is java.io.IOException && e !is com.squareup.moshi.JsonEncodingException) {
+            // EOFException: Moshi on an empty or truncated body, one bad row; a dropped connection
+            // surfaces as ProtocolException or SocketException instead.
+            return if (e is java.io.IOException && e !is com.squareup.moshi.JsonEncodingException &&
+                e !is java.io.EOFException) {
                 PushOutcome.OFFLINE
             } else {
                 PushOutcome.TRANSIENT_FAILURE

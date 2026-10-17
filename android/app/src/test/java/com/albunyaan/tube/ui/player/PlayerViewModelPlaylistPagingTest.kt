@@ -678,6 +678,7 @@ class PlayerViewModelPlaylistPagingTest {
         viewModel.loadPlaylist("PL123", startIndexHint = 0)
         advanceUntilIdle()
         assertEquals("the gate is active", "", viewModel.state.value.currentItem?.channelName)
+        assertTrue("the raw name keeps the heart (round 4, m3)", viewModel.state.value.canFavorite)
 
         viewModel.toggleFavorite()
         advanceUntilIdle()

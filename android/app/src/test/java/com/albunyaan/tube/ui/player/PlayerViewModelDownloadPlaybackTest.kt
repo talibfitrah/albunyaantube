@@ -299,6 +299,39 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals(Triple("v15", "Lecturer", 1800), favorites.toggled.single())
     }
 
+    // Round 4 (review m3): with no channel name anywhere (Home's live cards carry none), a favourite
+    // would be sent blank, rejected with a 400 and dropped by sync. The 1.0.3 rule hides the heart.
+    @Test fun `a streamed item with no channel name anywhere offers no favourite`() = runTest {
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "live1", title = "Live")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertFalse("no channel name is known", vm.state.value.canFavorite)
+
+        val named = createViewModel()
+        named.loadVideo(videoId = "lec21", title = "Lecture", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertTrue(named.state.value.canFavorite)
+    }
+
+    // Round 4 (review m6): the first open waits for the startup load at most 2 s, then streams.
+    @Test fun `a startup load that never ends holds the first open for 2 s at most`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() // never completes
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v22")
+        testScheduler.advanceTimeBy(1_999)
+        testScheduler.runCurrent()
+        assertEquals("still waiting", 0, streams.resolveCallCount)
+        testScheduler.advanceTimeBy(2)
+        testScheduler.runCurrent()
+
+        assertTrue("streams after the 2 s cap", streams.resolveCallCount > 0)
+        assertFalse(vm.state.value.playingDownload)
+    }
+
     @Test fun `a saved video copy wins over an audio-only one, and a missing file streams`() = runTest {
         val video = tmp.newFile("v12.mp4")
         downloads.entries.value = listOf(

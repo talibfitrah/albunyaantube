@@ -1548,8 +1548,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.castButton.isVisible = !state.playingDownload
             binding.upNextHeader.isVisible = !state.playingDownload
             // The server rejects a favourite with no channel, and older downloads have none.
-            binding.favoriteButton.isVisible =
-                !state.playingDownload || currentItem?.channelName?.isNotBlank() == true
+            binding.favoriteButton.isVisible = state.canFavorite
             // Audio does nothing on a local file with no video track, or with no file at all.
             binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
             upNextAdapter.submitList(state.upNext)

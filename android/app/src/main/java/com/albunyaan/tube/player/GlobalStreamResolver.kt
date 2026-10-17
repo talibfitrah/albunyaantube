@@ -83,12 +83,6 @@ class GlobalStreamResolver private constructor(
         private const val DEFAULT_TIMEOUT_MS = 20_000L // 20s default timeout
 
         /**
-         * The tap-prefetch's caller tag. It caches a result nobody waits on yet, so it is not
-         * counted in [InFlight.awaiters]: a player or download arriving replaces it outright.
-         */
-        const val PREFETCH_CALLER = "prefetch"
-
-        /**
          * Create a GlobalStreamResolver with a custom resolution provider for testing.
          *
          * @param provider The stream resolution provider to use
@@ -172,7 +166,7 @@ class GlobalStreamResolver private constructor(
     private data class InFlight(
         val deferred: Deferred<ResolvedStreams?>,
         val priority: Priority,
-        /** Callers that need [deferred]'s result and await it now (a prefetch is not counted). */
+        /** Callers that need [deferred]'s result and await it now (a BACKGROUND_REFRESH prefetch is not counted). */
         val awaiters: java.util.concurrent.atomic.AtomicInteger = java.util.concurrent.atomic.AtomicInteger(),
     ) {
         /**
@@ -273,7 +267,9 @@ class GlobalStreamResolver private constructor(
         priority: Priority = Priority.USER_FOREGROUND,
         sourceChannelId: String? = null,
     ): ResolvedStreams? {
-        val needsResult = caller != PREFETCH_CALLER
+        // The tap prefetch and the Up Next prefetch, the only BACKGROUND_REFRESH callers, cache a
+        // result nobody waits on yet: a player or download arriving replaces them outright.
+        val needsResult = priority != Priority.BACKGROUND_REFRESH
         // Fast path: check if there's already an in-flight job we can join (only if not forceRefresh)
         // Note: We skip the isActive check since the job state can change immediately after.
         // Just try to await the job if it exists - if it completed/cancelled, await returns quickly.

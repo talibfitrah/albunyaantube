@@ -22,6 +22,11 @@ import javax.inject.Singleton
 @Singleton
 class FFmpegMerger @Inject constructor() {
 
+    /** Runs FFmpeg with one array element per argument. A test seam over FFmpegKit. */
+    @androidx.annotation.VisibleForTesting
+    internal var runFfmpeg: (Array<String>) -> com.arthenica.ffmpegkit.FFmpegSession =
+        { FFmpegKit.executeWithArguments(it) }
+
     /**
      * Merge video and audio files into a single MP4.
      *
@@ -74,9 +79,9 @@ class FFmpegMerger @Inject constructor() {
             "-movflags", "+faststart",
             "-y",
             outputFile.absolutePath
-        ).joinToString(" ")
+        )
 
-        Log.d(TAG, "Starting FFmpeg merge: $command")
+        Log.d(TAG, "Starting FFmpeg merge: ${command.joinToString(" ")}")
         execute(command, outputFile)
         onProgress?.invoke(100)
     }
@@ -97,14 +102,18 @@ class FFmpegMerger @Inject constructor() {
             "-movflags", "+faststart",
             "-y",
             outputFile.absolutePath
-        ).joinToString(" ")
-        Log.d(TAG, "Starting FFmpeg audio extraction: $command")
+        )
+        Log.d(TAG, "Starting FFmpeg audio extraction: ${command.joinToString(" ")}")
         execute(command, outputFile)
     }
 
-    /** Runs [command]; on failure deletes [outputFile] and throws [FFmpegMergeException]. */
-    private fun execute(command: String, outputFile: File) {
-        val session = FFmpegKit.execute(command)
+    /**
+     * Runs [args], one element per FFmpeg argument; on failure deletes [outputFile] and throws
+     * [FFmpegMergeException]. Never a joined string: FFmpegKit.execute(String) splits at every
+     * space, and a playlist "Audio Only" download's paths hold one (1.0.4 review I1).
+     */
+    private fun execute(args: Array<String>, outputFile: File) {
+        val session = runFfmpeg(args)
         val returnCode = session.returnCode
 
         when {

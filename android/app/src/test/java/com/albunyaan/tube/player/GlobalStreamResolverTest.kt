@@ -159,7 +159,7 @@ class GlobalStreamResolverTest {
      *
      * Scenario:
      * 1. Request A starts for videoId
-     * 2. Request B starts with forceRefresh=true, cancels A's job and starts new job
+     * 2. Request B starts with forceRefresh=true and starts a new job (A's runs on for its waiting caller)
      * 3. Request A's job completion triggers cleanup
      * 4. BUG (before fix): A's cleanup removes B's job from map
      * 5. FIX: Using remove(key, value) ensures A only removes its own job
@@ -529,15 +529,15 @@ class GlobalStreamResolverTest {
             prefetchResult = resolver.resolveStreams(
                 videoId = "videoEsc",
                 caller = "prefetch",
-                priority = Priority.USER_FOREGROUND,
+                priority = Priority.BACKGROUND_REFRESH,
             )
         }
 
         // Wait for the first extraction to actually start.
         fakeProvider.waitForExtractionStart("videoEsc")
         assertEquals(
-            "First extraction should run at USER_FOREGROUND",
-            Priority.USER_FOREGROUND,
+            "First extraction should run at BACKGROUND_REFRESH",
+            Priority.BACKGROUND_REFRESH,
             fakeProvider.getObservedPriority("videoEsc"),
         )
 
@@ -641,6 +641,33 @@ class GlobalStreamResolverTest {
 
         assertNotNull(played)
         assertEquals("only the player's extraction runs to the end", 1, fakeProvider.getCompletedCount("videoTap"))
+    }
+
+    // Round 4 (review m1): "speculative" is decided by priority, not by caller name. The Up Next
+    // prefetch goes through PlayerRepository as caller "player" at BACKGROUND_REFRESH; the player
+    // tapping Next must replace it, as it replaces the tap prefetch.
+    @Test
+    fun `a queue prefetch at background priority never keeps a resolve alive`() = runTest {
+        val gate1 = CompletableDeferred<Unit>()
+        val gate2 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("videoNext", gate1)
+        fakeProvider.setResult("videoNext", createMockStreams("videoNext"))
+        var prefetched: ResolvedStreams? = createMockStreams("not-yet")
+        val queuePrefetch = launch {
+            prefetched = resolver.resolveStreams("videoNext", caller = "player", priority = Priority.BACKGROUND_REFRESH)
+        }
+        fakeProvider.waitForExtractionStart("videoNext")
+
+        fakeProvider.setGate("videoNext", gate2)
+        val player = launch { resolver.resolveStreams("videoNext", caller = "player", priority = Priority.PLAYER) }
+        fakeProvider.waitForExtractionStart("videoNext")
+        gate1.complete(Unit)
+        gate2.complete(Unit)
+        queuePrefetch.join()
+        player.join()
+
+        assertNull("the queue prefetch's resolve was replaced", prefetched)
+        assertEquals("only the player's extraction runs to the end", 1, fakeProvider.getCompletedCount("videoNext"))
     }
 
     /**

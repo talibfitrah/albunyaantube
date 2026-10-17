@@ -437,7 +437,7 @@ class PlayerViewModel @Inject constructor(
             audioOnly = audioOnly,
             targetHeight = targetHeight,
             thumbnailUrl = item.thumbnailUrl,
-            channelName = item.channelName,
+            channelName = currentItem?.channelName ?: item.channelName, // raw, as toggleFavorite (A7)
             durationSeconds = item.durationSeconds
         )
         downloadRepository.enqueue(request)
@@ -1342,6 +1342,9 @@ class PlayerViewModel @Inject constructor(
         updateState { state ->
             state.copy(
                 currentItem = currentItem?.gateChannelName(),
+                // Round 4 (m3): one rule in both modes, from the raw name (a standalone playlist
+                // shows none but keeps its heart, A7); no name anywhere means no heart.
+                canFavorite = currentItem?.channelName?.isNotBlank() == true,
                 upNext = queue.map { it.gateChannelName() },
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty() || hasMorePages,
@@ -2217,6 +2220,8 @@ data class PlayerState(
     val isFavorite: Boolean = false,
     /** True while a completed download plays from its local file (see [PlayerViewModel.loadDownload]). */
     val playingDownload: Boolean = false,
+    /** Whether the heart is offered: the server rejects a favourite with no channel name (400). */
+    val canFavorite: Boolean = false,
 )
 
 data class UpNextItem(

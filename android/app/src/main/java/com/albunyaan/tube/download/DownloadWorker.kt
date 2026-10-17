@@ -288,14 +288,15 @@ class DownloadWorker @AssistedInject constructor(
             try {
                 executeDownload(freshStream, downloadId, title, audioOnly)
             } catch (again: DownloadHttpException) {
-                // Still 403 with a fresh URL: a made-for-kids video, whose adaptive formats come only
-                // from the IOS client (no PO token this app can mint). ANDROID's itag 18 still serves.
+                // A 403 that persists after a re-resolve (seen on made-for-kids videos, whose adaptive
+                // formats come only from the IOS client, with no PO token this app can mint).
+                // ANDROID's itag 18 still serves.
                 // ponytail: the user gets 360p (itag 18) instead of the chosen quality, and an
                 // audio-only copy carries itag 18's AAC; drop this once a client serves these
                 // videos' adaptive formats.
                 val muxed = muxedFallbackUrl
                 if (!again.isForbidden || muxed == null) throw again
-                Log.w(TAG, "Still 403 for $videoId after re-resolving; saving the 360p muxed file")
+                Log.w(TAG, "A 403 persists for $videoId after re-resolving (seen on made-for-kids videos); saving the 360p muxed file")
                 downloadMuxedFallback(muxed, downloadId, title, audioOnly)
             }
         }
@@ -630,7 +631,9 @@ class DownloadWorker @AssistedInject constructor(
                 } catch (e: IOException) {
                     // ponytail: a fixed CHUNK_RETRIES, CHUNK_RETRY_PAUSE_MS apart; add backoff if devices still lose downloads.
                     val transient = e !is RangeRefusedException && (e !is DownloadHttpException || e.isServerError)
+                    if (downloaded > start) failures = 0 // review m5: only attempts that make no progress count
                     if (!transient || ++failures > CHUNK_RETRIES) throw e
+                    output.channel.position(downloaded) // a write that failed part-way must not leave stray bytes
                     Log.w(TAG, "Chunk at $downloaded failed (${e.message}); retry $failures of $CHUNK_RETRIES")
                     delay(CHUNK_RETRY_PAUSE_MS)
                 }

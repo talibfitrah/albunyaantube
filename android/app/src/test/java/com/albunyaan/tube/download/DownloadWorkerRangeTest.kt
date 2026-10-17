@@ -323,6 +323,26 @@ class DownloadWorkerRangeTest {
         assertArrayEquals(body, file.readBytes())
     }
 
+    // Round 4 (review m5): a connection that keeps dropping but moves forward each time must not
+    // run out of retries; only attempts that make no progress count against the cap.
+    @Test
+    fun `a connection that drops five times but always progresses still finishes`() = runTest {
+        var drops = 0
+        answer = { request ->
+            val response = googlevideo(request)
+            if (drops < 5) {
+                drops++
+                response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            } else response
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed after $drops drops: $result", result is ListenableWorker.Result.Success)
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(body, file.readBytes())
+    }
+
     @Test
     fun `a chunk that keeps failing gives up after three retries`() = runTest {
         answer = { MockResponse().setResponseCode(503) }
@@ -459,6 +479,24 @@ class DownloadWorkerRangeTest {
         val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
         assertTrue(file.name.endsWith(".m4a"))
         assertArrayEquals(audio, file.readBytes())
+    }
+
+    // Round 4 (review m6): FFmpeg failing on the fallback ends in MERGE and leaves no temp behind.
+    @Test
+    fun `an FFmpeg failure on the audio fallback ends in MERGE with no temp left`() = runTest {
+        answer = ::kidsCdn
+        val merger = org.mockito.kotlin.mock<FFmpegMerger> {
+            onBlocking { extractAudio(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer {
+                throw FFmpegMergeException("FFmpeg merge failed with return code 1", returnCode = 1)
+            }
+        }
+
+        val result = runDownload(audioOnly = true, kids = true, merger = merger)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.MERGE, result.outputData.getString(KEY_ERROR_REASON))
+        val dir = DownloadStorage(context).targetFile("lecture_1", audioOnly = true).parentFile!!
+        assertTrue("no temp left: ${dir.list()?.toList()}", dir.listFiles().orEmpty().none { it.name.startsWith("lecture_1.") })
     }
 
     @Test
