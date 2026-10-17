@@ -181,6 +181,17 @@ class LegalPagesControllerTest {
         lacks(privacy, "not from your device", "no device fingerprinting", "BotGuard");
     }
 
+    /** The device identifier only limits content reports now (the stream-post retirement and the share-page hotfix retired the others). */
+    @Test
+    void privacyPage_saysTheDeviceIdOnlyLimitsContentReports() throws Exception {
+        String privacy = page("/privacy");
+        has(privacy,
+                "We use it only to limit how many content reports one installation can send.",
+                "otherwise it lives in an in-memory counter for one hour and is never written to disk.",
+                "to limit how many content reports one installation can send.");
+        lacks(privacy, "de-duplicate", "60&nbsp;seconds");
+    }
+
     /**
      * Unknown imported items go to moderators WITH the importer's name and email
      * (ApprovalService submitter label), so "only to provide the import" was false.
