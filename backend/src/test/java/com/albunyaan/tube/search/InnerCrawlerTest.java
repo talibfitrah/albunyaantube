@@ -107,6 +107,7 @@ class InnerCrawlerTest {
         index.sleeper = ms -> {};
         index.refreshEveryMs = 0;
         crawler = new InnerCrawler(store, pacer, fetcher, search, index, categories, channels, clock);
+        crawler.meminfo = tmp.resolve("no-meminfo"); // never the host's /proc/meminfo: R31 tests point it at a fake
         logs.start();
         ((Logger) LoggerFactory.getLogger(InnerCrawler.class)).addAppender(logs);
     }
@@ -1508,5 +1509,100 @@ class InnerCrawlerTest {
         crawler = new InnerCrawler(store, pacer, fetcher, search, idx, categories, channels, clock);
         @SuppressWarnings("unchecked") Map<String, Object> racing = (Map<String, Object>) crawler.status().get("index");
         assertEquals(false, racing.get("ready"));
+    }
+
+    // ---- Task 28: R31 ---------------------------------------------------------------------------
+
+    void meminfo(long availableKb) throws IOException {
+        Path fake = tmp.resolve("meminfo");
+        Files.writeString(fake, "MemTotal:        4009000 kB\nMemFree:          200000 kB\nMemAvailable:   " + availableKb + " kB\n");
+        crawler.meminfo = fake;
+    }
+
+    void hour() throws Exception {
+        step();
+        now.set(now.get().plusSeconds(3_600));
+    }
+
+    @Test
+    void threeLowHourlySamplesCapEachSourceAtTwoThousandAndRebuildFromTheCorpus() throws Exception {
+        InnerCorpus.write(store.corpusFile(CH), items("lesson", 0, 2_500, "x"));
+        crawler.boot();
+        assertEquals(2_500, index.docs());
+        meminfo(500_000); // 488 MiB available, minus the index: below 512
+        hour();
+        hour();
+        assertEquals(10_000, store.state().capPerSource, "two samples are not enough");
+        hour();
+        assertEquals(2_000, store.state().capPerSource);
+        step(); // the rebuild runs on the crawler thread
+        assertEquals(2_000, index.docs());
+        assertEquals(2_500, corpus(CH).size(), "the corpus keeps everything");
+        assertEquals(2_000, new InnerStore(tmp.resolve("inner").toString()).state().capPerSource, "saved at once");
+        assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.WARN && e.getFormattedMessage().contains("memory")));
+    }
+
+    @Test
+    void oneHighSampleBreaksTheRun() throws Exception {
+        crawler.boot();
+        meminfo(500_000);
+        hour();
+        hour();
+        meminfo(1_500_000);
+        hour();
+        meminfo(500_000);
+        hour();
+        assertEquals(10_000, store.state().capPerSource);
+    }
+
+    @Test
+    void withoutProcMeminfoThereIsNoTrigger() throws Exception {
+        crawler.meminfo = tmp.resolve("absent");
+        crawler.boot();
+        for (int i = 0; i < 4; i++) hour();
+        assertTrue(store.state().memory.isEmpty());
+        assertEquals(10_000, store.state().capPerSource);
+    }
+
+    @Test
+    void samplesAreHourlyAndTheLastSeventyTwoAreKept() throws Exception {
+        crawler.boot();
+        meminfo(3_000_000);
+        step();
+        step(); // the same hour: one sample
+        assertEquals(1, store.state().memory.size());
+        for (int i = 0; i < 80; i++) hour();
+        assertEquals(72, store.state().memory.size());
+        assertEquals(2_929, store.state().memory.get(71).availableMinusIndexMiB()); // 3,000,000 kB = 2,929 MiB, empty index
+    }
+
+    @Test
+    void memAvailableIsReadInKilobytes() throws IOException {
+        Path fake = tmp.resolve("m");
+        Files.writeString(fake, "MemTotal: 10 kB\nMemAvailable:    1721344 kB\n");
+        assertEquals(1_721_344L, InnerCrawler.memAvailableKb(fake));
+        assertNull(InnerCrawler.memAvailableKb(tmp.resolve("none")));
+    }
+
+    @Test
+    void theDailyCapAPauseAndOffNeverHoldBackTheHourlySample() throws Exception {
+        // hand-off 2: housekeeping samples before any of the loop's waits, so the trigger fires through all three
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2); // a due poll, steady
+        today(999);
+        meminfo(500_000);
+        assertEquals(Instant.parse("2026-10-21T00:00:00Z").toEpochMilli() - now.get().toEpochMilli(), step(), "the daily cap");
+        now.set(now.get().plusSeconds(3_600));
+        store.state().breaker.pausedUntil = now.get().toEpochMilli() + 5 * CrawlPacer.PAUSE_MS;
+        assertEquals(5 * CrawlPacer.PAUSE_MS, step(), "paused");
+        now.set(now.get().plusSeconds(3_600));
+        store.state().mode = InnerState.Mode.OFF;
+        assertEquals(InnerCrawler.IDLE_MS, step(), "off");
+        assertEquals(3, store.state().memory.size(), "one sample an hour all the same");
+        assertEquals(2_000, store.state().capPerSource);
+        verifyNoInteractions(fetcher);
+        assertTrue(logs.list.stream().anyMatch(e -> e.getFormattedMessage().startsWith("inner-crawl daily:")
+                && e.getFormattedMessage().contains("memory=488 MiB")), "§10: the daily line carries the metric");
     }
 }

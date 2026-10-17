@@ -21,6 +21,8 @@ import org.springframework.stereotype.Component;
 
 import java.io.IOException;
 import java.io.UncheckedIOException;
+import java.nio.file.Files;
+import java.nio.file.Path;
 import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
@@ -53,6 +55,8 @@ public class InnerCrawler {
     static final long LIVE_REFRESH_MS = 3_600_000;
     static final int LIVE_CHANNELS_MAX = 500;
     static final int DAILY_CAP = 1_000;
+    static final long MEMORY_FLOOR_MIB = 512, HOUR_MS = 3_600_000;
+    static final int MEMORY_CAP = 2_000, MEMORY_SAMPLES = 3, MEMORY_KEPT = 72;
     /**
      * R21's language markers (I-1): stop words that only one of the two languages uses. Dutch is Lucene's Dutch stop set
      * minus its English one (in, is, of, was) minus English words and Arabic transliteration particles (al, die, door,
@@ -94,6 +98,11 @@ public class InnerCrawler {
     private volatile Set<String> liveOnly; // channel keys whose every category is LIVE; null until first read
     private long liveOnlyAt;
     private boolean steady;
+    /** Linux only; off Linux the file is absent and there is no trigger (R31). Tests point it at a fake. */
+    Path meminfo = Path.of("/proc/meminfo");
+    // ponytail: the hour restarts with the process, so restarts minutes apart sample minutes apart (the safe direction:
+    // an earlier cap). Seed it from the last stored sample's `at` if restarts under memory pressure ever matter.
+    private long lastMemoryAt = Long.MIN_VALUE / 2;
 
     public InnerCrawler(InnerStore store, CrawlPacer pacer, UploadsFetcher fetcher, SearchIndex search, InnerIndex index,
                         CategoryRepository categories, ChannelRepository channels, Clock clock) {
@@ -323,6 +332,7 @@ public class InnerCrawler {
             store.save(); // R15: every 5 min; signals, modes and caps save themselves at once
             lastSaveAt = now;
         }
+        sampleMemory(now); // before every wait in step(): the daily cap, a pause and OFF never hold it back
         String today = Instant.ofEpochMilli(now).atZone(ZoneOffset.UTC).toLocalDate().toString();
         if (!today.equals(lastDailyLog)) {
             lastDailyLog = today;
@@ -338,8 +348,58 @@ public class InnerCrawler {
             Map.Entry<String, TreeMap<String, Long>> day = s.requestsByDay.lowerEntry(today);
             previous = day == null ? "none" : day.getKey() + " " + day.getValue();
         }
-        log.info("inner-crawl daily: mode={} interval={}s requests[{}] sources={}", s.mode, s.breaker.intervalMs / 1000,
-                previous, counts());
+        log.info("inner-crawl daily: mode={} interval={}s requests[{}] sources={} docs={} bytes={} timeouts={} memory={}",
+                s.mode, s.breaker.intervalMs / 1000, previous, counts(), docsOrMinusOne(), index.bytes(), index.timeouts(),
+                s.memory.isEmpty() ? "none" : s.memory.get(s.memory.size() - 1).availableMinusIndexMiB() + " MiB"); // its only writer's thread
+    }
+
+    private int docsOrMinusOne() {
+        try {
+            return index.docs();
+        } catch (IOException | AlreadyClosedException e) {
+            return -1;
+        }
+    }
+
+    /**
+     * R31, hourly: MemAvailable minus the inner index's bytes is the memory left if every index page stays resident.
+     * Three samples in a row under 512 MiB → capPerSource 2,000 (the newest 2,000 per source) and a rebuild. The corpus
+     * keeps everything, so lifting the cap later is a rebuild, never a re-crawl. The check and the set share one monitor
+     * hold, so an admin cap set meanwhile is never raised back to 2,000; then, as update(): save, then the rebuild.
+     */
+    private void sampleMemory(long now) {
+        if (now - lastMemoryAt < HOUR_MS) return;
+        lastMemoryAt = now;
+        Long availableKb = memAvailableKb(meminfo);
+        if (availableKb == null) return;
+        long metric = availableKb / 1024 - index.bytes() / (1024 * 1024);
+        InnerState s = store.state();
+        boolean trip;
+        synchronized (s) {
+            s.memory.add(new InnerState.Memory(now, metric));
+            while (s.memory.size() > MEMORY_KEPT) s.memory.remove(0);
+            int n = s.memory.size();
+            trip = s.capPerSource > MEMORY_CAP && n >= MEMORY_SAMPLES
+                    && s.memory.subList(n - MEMORY_SAMPLES, n).stream().allMatch(m -> m.availableMinusIndexMiB() < MEMORY_FLOOR_MIB);
+            if (trip) s.capPerSource = MEMORY_CAP;
+        }
+        if (trip) {
+            store.save(); // never under the state monitor (ruling 5)
+            log.warn("inner-index memory: MemAvailable minus the index under {} MiB in {} hourly samples; capPerSource {} and a rebuild (R31)",
+                    MEMORY_FLOOR_MIB, MEMORY_SAMPLES, MEMORY_CAP);
+            requestRebuild();
+        }
+    }
+
+    static Long memAvailableKb(Path meminfo) {
+        try {
+            for (String line : Files.readAllLines(meminfo)) {
+                if (line.startsWith("MemAvailable:")) return Long.parseLong(line.replaceAll("\\D+", ""));
+            }
+        } catch (IOException | NumberFormatException e) {
+            // not Linux, or unreadable: no sample
+        }
+        return null;
     }
 
     /**
