@@ -137,6 +137,44 @@ class SyncControllerIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.subscriptions.items").isEmpty());
     }
 
+    // ── Test 4: timestamp-only cursor (no id half) is ">= since", not a 400 ───
+
+    @Test
+    void timestampOnlyCursorReturnsRowsAtOrAfterSince() throws Exception {
+        String uid = seedActiveUser("dave@test");
+        stubAuthAs(uid, "user");
+
+        PutSubscriptionRequest put = new PutSubscriptionRequest();
+        put.setChannelUrl("u");
+        put.setName("n");
+        put.setSubscribedAt(0L);
+        mvc.perform(put("/api/account/subscriptions/UC1")
+                        .header("Authorization", "Bearer fake")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(put)))
+                .andExpect(status().isOk());
+
+        String body = mvc.perform(get("/api/account/sync").header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long cursor = json.readTree(body).path("subscriptions").path("nextCursor").asLong();
+
+        // since == the row's own updatedAt, no subs_id: documented ">= since" re-delivers it.
+        mvc.perform(get("/api/account/sync")
+                        .param("subs", String.valueOf(cursor))
+                        .header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions.items[0].entityId").value("UC1"));
+
+        // blank id half behaves the same.
+        mvc.perform(get("/api/account/sync")
+                        .param("subs", String.valueOf(cursor))
+                        .param("subs_id", "")
+                        .header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions.items[0].entityId").value("UC1"));
+    }
+
     // ── Helpers ───────────────────────────────────────────────────────────────
 
     /**

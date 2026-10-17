@@ -51,8 +51,8 @@ public class SyncRepository {
      * specific tied row even when multiple rows share the same {@code updatedAt}
      * millisecond — previously the legacy {@code whereGreaterThan("updatedAt", since)}
      * dropped every same-ms row on page boundaries (cubic R3/R4 P1 data-loss
-     * surface). Legacy callers that pass only {@code since} still fall through
-     * to the strict-greater-than path until they migrate.
+     * surface). Callers that pass only {@code since} get {@code startAt(sinceTs)}
+     * (updatedAt &gt;= since).
      */
     public List<RawRow> pull(String uid, String type, long since, String lastDocId, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -70,19 +70,12 @@ public class SyncRepository {
             if (lastDocId != null && !lastDocId.isBlank()) {
                 q = q.startAfter(sinceTs, lastDocId);
             } else {
-                // Cubic R-final7 P1 — legacy null-cursorId path no longer drops
-                // same-millisecond ties. Pre-fix `whereGreaterThan("updatedAt",
-                // sinceTs)` excluded any row whose updatedAt equalled the
-                // cursor's timestamp; under continuous writes at the same
-                // millisecond, those rows silently never reached the client.
-                // startAfter(sinceTs, "") with the (updatedAt, __name__) order
-                // by means: rows where (updatedAt, docId) > (sinceTs, "").
-                // Since "" sorts before any valid docId, this includes every
-                // row with updatedAt > sinceTs AND every row with
-                // updatedAt == sinceTs (any docId). The client deduplicates on
-                // entityId upsert, so the small over-pull at exact-cursor
-                // millisecond is harmless; dropping rows is not.
-                q = q.startAfter(sinceTs, "");
+                // Timestamp-only cursor: documented "updatedAt >= since". Firestore
+                // rejects startAfter(ts, "") (empty document id), so use a one-value
+                // startAt on the first orderBy field. The boundary row(s) are
+                // re-delivered; the client dedupes on entityId upsert, and
+                // dropping same-ms rows would be worse.
+                q = q.startAt(sinceTs);
             }
         }
         QuerySnapshot snap = q.limit(limit).get().get(timeouts.getBulkQuery(), TimeUnit.SECONDS);
