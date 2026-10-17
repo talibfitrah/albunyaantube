@@ -1,6 +1,7 @@
 import Foundation
 import SwiftUI
 import Testing
+import UIKit
 @testable import FitrahTube
 
 /// Phase 3 Task 6: the Saved screen's pure seams. Sort (alphabetical by title) is already pinned
@@ -31,6 +32,32 @@ struct SavedScreenTests {
         await SavedRowAction.perform(.open, id: "row-1", manager: spy, open: { opened = true })
         #expect(opened)
         #expect(await spy.calls.isEmpty)
+    }
+
+    // MARK: - Offline thumbnails (1.0.4 I9)
+
+    /// The Saved row's image reads the save's own copy, with no network: the https URL here answers
+    /// nothing (the discard port), so only the copy can produce the image. Without a copy the row
+    /// fetches as every other image does.
+    @Test func aSavedRowShowsItsThumbnailCopyWithoutTheNetwork() async throws {
+        let copy = FileManager.default.temporaryDirectory.appending(path: "SavedScreenTests-\(UUID().uuidString).jpg")
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let jpeg = try #require(UIGraphicsImageRenderer(size: CGSize(width: 4, height: 4))
+            .jpegData(withCompressionQuality: 0.8) { context in
+                UIColor.red.setFill()
+                context.fill(CGRect(x: 0, y: 0, width: 4, height: 4))
+            })
+        try jpeg.write(to: copy)
+        let unreachable = URL(string: "https://127.0.0.1:9/thumb-\(UUID().uuidString).jpg")!
+
+        #expect(await RemoteImage.cachedImage(for: unreachable, savedCopy: copy) != nil, "the copy was not shown")
+        let none = FileManager.default.temporaryDirectory.appending(path: "SavedScreenTests-\(UUID().uuidString).jpg")
+        #expect(await RemoteImage.cachedImage(for: unreachable, savedCopy: none) == nil)
+
+        // Round 3 (review m5): decoded once, then from the decoded-image cache -- a long Saved list
+        // read and decoded every row from disk on the main actor as it scrolled.
+        try FileManager.default.removeItem(at: copy)
+        #expect(await RemoteImage.cachedImage(for: unreachable, savedCopy: copy) != nil, "the copy was read from disk again")
     }
 
     // MARK: - Row captions (status/error keys, running → "saving")

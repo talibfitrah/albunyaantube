@@ -180,6 +180,18 @@ struct PlaybackRecoveryTests {
         #expect(PlaybackRecovery.decide(event: .playbackError, httpStatus: status, state: budget) == .stepDownRung)
     }
 
+    /// 1.0.4 I7 (Task 6 Minor 4, stage 5 F8; spec R4): an expired, revoked or IP-bound URL before the
+    /// first frame -- a cached or prefetched manifest after Wi-Fi -> cellular -- is no proof against
+    /// the rung, so it gets the class's one fresh same-rung URL before the sticky step-down to 360p.
+    @Test(arguments: [403, 404, 410])
+    func aRefusedURLBeforeTheFirstFrameGetsOneSameRungReResolveFirst(_ status: Int) {
+        var budget = RecoveryBudget()
+        let first = PlaybackRecovery.decide(event: .failedBeforeFirstFrame, httpStatus: status, state: budget)
+        budget.apply(first, for: .failedBeforeFirstFrame)
+        #expect(first == .reResolveSameRung)
+        #expect(PlaybackRecovery.decide(event: .failedBeforeFirstFrame, httpStatus: status, state: budget) == .stepDownRung)
+    }
+
     @Test func a401StillRespectsTheRetryBudget() {
         var budget = RecoveryBudget()
         for _ in 0..<RecoveryBudget.maxRetries { budget.apply(.stepDownRung, for: .playbackError) }

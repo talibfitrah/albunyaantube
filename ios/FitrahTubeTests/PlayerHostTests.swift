@@ -263,6 +263,58 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus != .paused, "a waiting player's stall replacement was built paused")
     }
 
+    /// 1.0.4 I7 (Cubic B5, stage 5 F8): a failure while the network is down says nothing about the
+    /// rung, yet a first-frame failure stepped down at once -- a demotion sticky for the session, so a
+    /// brief drop between resolve and load kept the video at 360p. Offline, recovery waits instead;
+    /// back online it fetches a fresh URL from the same rung and demotes nothing.
+    @Test(.timeLimit(.minutes(1))) func aFailureWhileOfflineWaitsForTheNetworkThenRetriesTheSameRung() async throws {
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(), args: PlayerArgs(videoId: "fixture-1"))
+        await model.open()
+        try #require(resolver.calls.count == 1)
+        let player = try #require(PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.isOnline = { false }
+        coordinator.lastVideoId = "fixture-1"
+        let item = try #require(player.currentItem)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+
+        let deadline = ContinuousClock.now + .seconds(10)   // the discard port refuses: no first frame
+        while coordinator.failedItem !== item, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.failedItem === item, "the item never failed")
+        try await Task.sleep(for: .milliseconds(300))        // room for a recovery that would start
+        #expect(resolver.calls.count == 1, "recovery re-resolved while offline")
+        #expect(resolver.demotions.isEmpty, "an outage demoted the rung")
+
+        coordinator.isOnline = { true }
+        // The path monitor's REAL handler (round 3, m3), so the hook itself is pinned, not just
+        // `networkChanged`: without it a parked failure waits forever on a dead item.
+        coordinator.monitor.pathUpdateHandler?(coordinator.monitor.currentPath)
+        await resolver.waitUntilCalled(count: 2)
+        #expect(resolver.calls.last?.forceRefresh == true)
+        #expect(resolver.calls.last?.kind == .autoRecovery)
+        #expect(resolver.demotions.isEmpty, "the outage's failure stepped down once the network was back")
+        coordinator.monitor.pathUpdateHandler?(coordinator.monitor.currentPath)   // spent: runs nothing
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(resolver.calls.count == 2)
+    }
+
+    /// 1.0.4 round 3 (review m6): the live rig's probe says whether the open is the saved file, so
+    /// "no Save button" can no longer pass for a streaming open whose Save is hidden.
+    @Test func theRouteProbeSaysWhetherTheOpenIsTheSavedFile() {
+        var args = PlayerArgs(videoId: "fixture-1")
+        args.offlineItemId = "row-1"
+        let saved = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(), args: args)
+        let streaming = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                        args: PlayerArgs(videoId: "fixture-1"))
+        let cast = AppContainer.sharedFake.castController
+        #expect(AirPlayRouteProbe.ProbeView(model: saved, cast: cast).accessibilityValue?.contains("offline=true") == true)
+        #expect(AirPlayRouteProbe.ProbeView(model: streaming, cast: cast).accessibilityValue?.contains("offline=false") == true)
+    }
+
     /// Fix round 2 (pre-existing P1, same cause as I1): the stall watchdog was fed by the same
     /// item-timeline observer, so a REAL stall never fired `.stall` and recovery waited for
     /// AVFoundation's own timeout. The server hands AVPlayer the clip's metadata (`.readyToPlay`,
@@ -865,8 +917,9 @@ struct PlayerHostTests {
 /// Fix round 2: a localhost HTTP server for REAL AVPlayer waits. It serves `body` by byte range but
 /// never sends a byte at or past `withheldFrom`: a request reaching that far gets what comes before
 /// it and is then held open, unanswered (`withheldFrom: 0` accepts and never answers at all). Main
-/// queue throughout -- this target is MainActor by default.
-private final class StallingServer {
+/// queue throughout -- this target is MainActor by default. Not private: the interruption tests
+/// (`BackgroundPlaybackControllerTests`) need a real wait too.
+final class StallingServer {
     private let listener: NWListener
     private var connections: [NWConnection] = []
 

@@ -93,8 +93,12 @@ enum PlaybackRecovery {
         // through: an expired or revoked URL is exactly what one same-rung re-resolve fixes.
         if httpStatus == 401 { return .stepDownRung }
         // spec §10: a `.failed` status before the first frame goes straight to the next rung -- this
-        // rung has proven it can't produce one, so re-resolving it is a wasted attempt.
-        guard event != .failedBeforeFirstFrame else { return .stepDownRung }
+        // rung has proven it can't produce one, so re-resolving it is a wasted attempt. Not for a
+        // refused URL (1.0.4 I7; Task 6 Minor 4, spec R4): a cached or prefetched manifest after a
+        // network change answers 403 for the new IP and proves nothing about the rung, so it gets
+        // the class's one fresh same-rung URL before the step-down that is sticky for the session.
+        let refusedURL = httpStatus.map { [403, 404, 410].contains($0) } ?? false
+        guard event != .failedBeforeFirstFrame || refusedURL else { return .stepDownRung }
         guard !state.sameRungUsed.contains(event), state.reResolves < RecoveryBudget.maxReResolves else {
             return .stepDownRung
         }

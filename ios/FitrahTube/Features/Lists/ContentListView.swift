@@ -151,8 +151,14 @@ struct ContentListView: View {
     /// Shared chrome with `SearchView` (gate wave-2 W9); no auto-focus -- it is one element of a
     /// header. Typing fetches after the debounce; the keyboard's Search key fetches at once.
     private var searchBar: some View {
+        // The Search key reloads page 1 like pull-to-refresh, a query change and a filter change, so
+        // it resets the guard as they do (1.0.4 I6, Cubic): a reload landing the same count behind a
+        // cancelled auto-load otherwise failed guard 5's progress check for good on iPad.
         SearchField(text: queryBinding, accessibilityLabel: String(localized: "cd_search_icon"),
-                    onSubmit: { Task { await viewModel?.submit() } })
+                    onSubmit: {
+                        paginationGuard.reset()
+                        Task { await viewModel?.submit() }
+                    })
     }
 
     /// Only over content, like `SearchView`'s: a flag still set for the frame after a failure lands

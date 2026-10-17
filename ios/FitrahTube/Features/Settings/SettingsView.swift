@@ -321,7 +321,7 @@ struct SettingsView: View {
             actionRow(row, value: nil) { router.push(.offline) }
         case .storage:
             valueRow(row, value: OfflineStorage.storageValue(
-                used: OfflineStorage.usedBytes(items: container.offlineStore.items),
+                used: OfflineStorage.usedBytes(items: container.offlineStore.items, base: container.offlineBase),
                 available: OfflineStorage.availableBytes(cached: availableBytes, base: container.offlineBase),
                 locale: locale))
         case .clearOffline:

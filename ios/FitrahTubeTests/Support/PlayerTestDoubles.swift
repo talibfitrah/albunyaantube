@@ -141,13 +141,20 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
             return _outcomes[videoId] ?? _outcome
         }
         // ponytail: a 1 ms poll, same as `waitUntilCalled` above -- a continuation registry would
-        // be more code than the whole helper for a test-only gate. Ceiling: the test must call
-        // `release()` or it spins until the 60 s per-test limit kills it.
+        // be more code than the whole helper for a test-only gate. 1.0.4 I11: bounded and
+        // cancellation-safe like the per-id hold below -- the `try?` swallowed a cancelled task's
+        // immediate throw and spun hot until a release its cancelled caller never sends.
         if holdsUntilReleased {
-            while lock.withLock({ () -> Bool in
-                if _permits > 0 { _permits -= 1; return false }
-                return true
-            }) { try? await Task.sleep(for: .milliseconds(1)) }
+            var released = false
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
+                if lock.withLock({ () -> Bool in
+                    if _permits > 0 { _permits -= 1; return true }
+                    return false
+                }) { released = true; break }
+                do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
+            }
+            #expect(released || Task.isCancelled, "held resolve of \(videoId) was never released")
         }
         // CF-G-15: bounded like `waitUntilCalled` (a 10 s deadline; fix r4: 2000 polls, ~2 s, ran
         // out under load while the offline tests' own waits held the release back), and
@@ -217,12 +224,13 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     /// Lets one gated page call proceed (no-op when `gateFrom` is nil).
     func release() { lock.withLock { _permits += 1 } }
 
-    /// Suspends until `pageCalls >= count`, or fails after ~2 s (same shape as
-    /// `RecordingResolver.waitUntilCalled`).
+    /// Suspends until `pageCalls >= count`, or fails after a 10 s deadline, left at once by a
+    /// cancelled task -- the shape of `RecordingResolver.waitUntilCalled` (1.0.4 I11: this one was
+    /// still 2000 polls, ~2 s, which runs out under load).
     func waitUntilPageCalled(count: Int, sourceLocation: SourceLocation = #_sourceLocation) async {
-        for _ in 0..<2000 {
-            if pageCalls >= count { return }
-            try? await Task.sleep(for: .milliseconds(1))
+        let deadline = ContinuousClock.now + .seconds(10)
+        while pageCalls < count, ContinuousClock.now < deadline {
+            do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
         }
         #expect(pageCalls >= count, "page was called \(pageCalls) times, expected \(count)",
                 sourceLocation: sourceLocation)
@@ -235,10 +243,17 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
             return _pageCalls
         }
         if let gateFrom, index >= gateFrom {
-            while lock.withLock({ () -> Bool in
-                if _permits > 0 { _permits -= 1; return false }
-                return true
-            }) { try? await Task.sleep(for: .milliseconds(1)) }
+            // Bounded and cancellation-safe, like `RecordingResolver`'s holds (1.0.4 I11).
+            var released = false
+            let deadline = ContinuousClock.now + .seconds(10)
+            while ContinuousClock.now < deadline {
+                if lock.withLock({ () -> Bool in
+                    if _permits > 0 { _permits -= 1; return true }
+                    return false
+                }) { released = true; break }
+                do { try await Task.sleep(for: .milliseconds(1)) } catch { break }
+            }
+            #expect(released || Task.isCancelled, "gated page \(index) was never released")
         }
         if let failFrom, index >= failFrom { throw ExtractionError.transport("fake page failure") }
         guard index < pages.count else { return ([], nil) }

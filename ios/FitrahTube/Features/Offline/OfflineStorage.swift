@@ -20,14 +20,24 @@ enum OfflineStorage {
         "\(itemId).\(kind.rawValue)"
     }
 
+    /// 1.0.4 I9: the save's own copy of its thumbnail, next to the file, so the Saved row shows it
+    /// offline. Derived from the id like the file's name, never stored.
+    nonisolated static func thumbnailName(itemId: String) -> String {
+        "\(itemId).jpg"
+    }
+
     nonisolated static func fileURL(relativePath: String, base: URL) -> URL {
         directoryURL(base: base).appending(path: relativePath)
     }
 
     /// Per-item accounting for the footer. No quota — device storage is the natural limit
-    /// (`DownloadStorage.kt:61-67`).
-    static func usedBytes(items: [OfflineItem]) -> Int64 {
-        items.reduce(0) { $0 + $1.bytesWritten }
+    /// (`DownloadStorage.kt:61-67`). Each row's thumbnail copy counts too (1.0.4 round 2: I9's
+    /// copies are ~150 KB each, on disk next to the files).
+    static func usedBytes(items: [OfflineItem], base: URL) -> Int64 {
+        items.reduce(0) { total, item in
+            let copy = fileURL(relativePath: thumbnailName(itemId: item.id), base: base)
+            return total + item.bytesWritten + Int64((try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
     }
 
     /// The Saved screen's storage footer — "%lld saved • %@ used • %@ available", digits and

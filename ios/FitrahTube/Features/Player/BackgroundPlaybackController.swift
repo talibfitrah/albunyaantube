@@ -21,15 +21,31 @@ import UIKit
     /// reported (fix r4 N-2): its end decides, through `resumeIntentPending` below, and an end
     /// without `.shouldResume` reports `.pause` (fix r5 N4-1).
     var onPolicyAction: ((PlaybackPolicyAction) -> Void)?
-    /// True while the host owes recovery's replacement a play (`Coordinator.resumeOnNextItem`): the
-    /// failure already paused the player, so the player alone reads "not playing" at an interruption
-    /// that begins during the re-resolve, and the end of the interruption would never resume it.
+    /// True while the host owes recovery's replacement a play (`Coordinator.resumeOnNextItem`), or an
+    /// auto-advance is in flight (round 3, m1): the failure, or the ended item, already left the
+    /// player paused, so the player alone reads "not playing" at an interruption that begins then,
+    /// and the end of the interruption would never resume it.
     var resumeIntentPending: (() -> Bool)?
     /// True from an interruption's begin to its end (fix r5 N4-1): recovery's replacement must not
     /// play meanwhile (`Coordinator.observe`); the end's `.resume` plays it when iOS says
     /// `.shouldResume`. iOS does not promise the end (Apple: treat the user's Play as one), so the
-    /// host's sampler also clears it once the player is seen playing.
-    var interrupted = false
+    /// host's sampler also clears it once the player is seen wanting to play.
+    var interrupted = false {
+        didSet { if oldValue, !interrupted { Self.sessionInterrupted = false } }   // a Play ends it for all
+    }
+    /// 1.0.4 round 2: the same interruption for EVERY player -- one `AVAudioSession` per process. A
+    /// host rebuilt mid-interruption (an auto-skip past an error state) has a controller that never
+    /// saw the begin; it reads this before its player plays (`PlayerHostView.makeUIViewController`)
+    /// and before `attach` activates the session. Kept by one process-wide observer, so an end that
+    /// lands with no player mounted still clears it. Per-player `interrupted` stays as it was.
+    private(set) static var sessionInterrupted = false
+
+    /// Round 3 (review m2, ruling): a user's open, Short or Up Next tap is the user's Play (Apple:
+    /// treat Play as the interruption's end). Another media app started from Control Center sends a
+    /// begin and never an end, so without this every later open waited for a tap. Never called for
+    /// an automatic start: an advance, or an auto-skip's rebuild inside the same screen.
+    static func userAskedToPlay() { sessionInterrupted = false }
+    private static var sessionObserver: NSObjectProtocol?
     /// CF-B1-3: the pre-emptive TTL re-resolve (`PlayerViewModel.reResolveIfExpiring`). AWAITED
     /// before the foreground lifecycle policy runs -- see `willEnterForeground()`.
     var onWillEnterForeground: (() async -> Void)?
@@ -63,7 +79,8 @@ import UIKit
         let session = AVAudioSession.sharedInstance()
         do {
             try session.setCategory(.playback, mode: .moviePlayback)
-            try session.setActive(true)
+            // Not mid-interruption: activating would take the audio from the app that has it.
+            if !sessionInterrupted { try session.setActive(true) }
         } catch {
             #if DEBUG
             print("[BackgroundPlaybackController] audio session activation failed: \(error)")
@@ -80,6 +97,8 @@ import UIKit
         guard player !== self.player else { return }
         detach()
         self.player = player
+        Self.observeSessionInterruptions()
+        if Self.sessionInterrupted { interrupted = true }
         Self.configureAudioSession()
         applyBackgroundPolicy()
         let center = NotificationCenter.default
@@ -112,6 +131,21 @@ import UIKit
             }
         ]
         installRemoteCommands()
+    }
+
+    /// Registered once, on the first attach (an inactive session gets no interruptions), for the life
+    /// of the process.
+    private static func observeSessionInterruptions() {
+        guard sessionObserver == nil else { return }
+        sessionObserver = NotificationCenter.default.addObserver(
+            forName: AVAudioSession.interruptionNotification, object: nil, queue: .main) { note in
+            let type = (note.userInfo?[AVAudioSessionInterruptionTypeKey] as? UInt)
+                .flatMap(AVAudioSession.InterruptionType.init(rawValue:))
+            MainActor.assumeIsolated {
+                if type == .began { BackgroundPlaybackController.sessionInterrupted = true }
+                if type == .ended { BackgroundPlaybackController.sessionInterrupted = false }
+            }
+        }
     }
 
     func detach() {

@@ -48,12 +48,16 @@ func videoAccessibilityLabel(_ item: ContentItem, locale: Locale, position: Int6
 struct RemoteImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// 1.0.4 I9: a saved item's own copy of this image (`OfflineStorage.thumbnailName`), read instead
+    /// of the network -- so it is there offline.
+    var savedCopy: URL?
 
     @State private var image: UIImage?
 
-    init(url: URL?, contentMode: ContentMode = .fill) {
+    init(url: URL?, contentMode: ContentMode = .fill, savedCopy: URL? = nil) {
         self.url = url
         self.contentMode = contentMode
+        self.savedCopy = savedCopy
     }
 
     /// Bounded (gate cso-F4 / A-M6): with neither limit set, decoded bitmaps accumulated until the
@@ -114,12 +118,11 @@ struct RemoteImage: View {
 
     private func load() async {
         // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
-        if let url, let cached = Self.cache.object(forKey: url as NSURL) {
-            image = cached
-            return
+        for key in [savedCopy, url].compactMap({ $0 }) {
+            if let cached = Self.cache.object(forKey: key as NSURL) { image = cached; return }
         }
         image = nil
-        let loaded = await Self.cachedImage(for: url)
+        let loaded = await Self.cachedImage(for: url, savedCopy: savedCopy)
         // Cubic #13: `.task(id: url)` cancels this task on cell reuse, but a cancelled task still
         // resumes past the await -- without this guard its stale result (or nil) overwrote the
         // image the replacement task had already committed for the NEW url.
@@ -136,7 +139,21 @@ struct RemoteImage: View {
     /// an image. Enforced here rather than at the `LiveCatalogClient` mapping boundary because
     /// every image fetch in the app funnels through this one call -- including the favorites
     /// store's own persisted thumbnail strings, which never pass through that mapper.
-    static func cachedImage(for url: URL?) async -> UIImage? {
+    ///
+    /// `savedCopy` (1.0.4 I9) is read first: a file the app itself wrote under its own container,
+    /// at a path derived from a local id -- never a backend-supplied URL, so it is not what the rule
+    /// above guards against.
+    static func cachedImage(for url: URL?, savedCopy: URL? = nil) async -> UIImage? {
+        if let savedCopy {
+            // Round 3 (review m5): decoded once into the same cache, and read off the main actor -- a
+            // long Saved list read and decoded every row from disk on it as it scrolled.
+            if let cached = cache.object(forKey: savedCopy as NSURL) { return cached }
+            let path = savedCopy.path(percentEncoded: false)
+            if let copy = await Task.detached(priority: .userInitiated, operation: { UIImage(contentsOfFile: path) }).value {
+                cache.setObject(copy, forKey: savedCopy as NSURL, cost: copy.cgImage.map { $0.bytesPerRow * $0.height } ?? 0)
+                return copy
+            }
+        }
         guard let url, url.scheme?.lowercased() == "https" else { return nil }
         if let cached = cache.object(forKey: url as NSURL) { return cached }
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
@@ -145,6 +162,11 @@ struct RemoteImage: View {
               let decoded = UIImage(data: data) else { return nil }
         let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
         cache.setObject(decoded, forKey: url as NSURL, cost: cost)
+        // Round 3 (review m4): a save made before 1.0.4 has no copy; the first online load of its
+        // thumbnail keeps one (the downloaded bytes, already checked as an image).
+        // ponytail: only the Saved row passes `savedCopy`; a row deleted while its picture loads can
+        // leave this one small file, and nothing enumerates the directory to sweep it.
+        if let savedCopy { Task.detached(priority: .utility) { try? data.write(to: savedCopy, options: .atomic) } }
         return decoded
     }
 

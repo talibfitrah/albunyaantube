@@ -419,9 +419,18 @@ extension StreamState {
         #if DEBUG
         playToEndCalls += 1
         #endif
-        guard !safeMode, !queue.items.isEmpty else { return }
+        // `isAdvancing`: one advance per end -- a second end posted for the same ended item (a
+        // `.resume` playing it while the advance is out) must not skip a lecture.
+        guard !safeMode, !queue.items.isEmpty, !isAdvancing else { return }
+        isAdvancing = true
+        defer { isAdvancing = false }
         await advance()
     }
+
+    /// 1.0.4 round 3 (review m1): an auto-advance is in flight. The ended item leaves the player
+    /// paused, so an interruption that begins now would read "not playing" and its `.shouldResume`
+    /// would leave the next lecture paused; the host counts this as playing (`resumeIntentPending`).
+    private(set) var isAdvancing = false
 
     private func advance() async {
         #if DEBUG

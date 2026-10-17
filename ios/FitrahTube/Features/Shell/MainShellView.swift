@@ -179,7 +179,8 @@ struct MainShellView: View {
         case .playlist(let id, let title, let category, let count, let thumbnailURL):
             PlaylistDetailScreen(id: id, title: title, category: category, count: count, thumbnailURL: thumbnailURL)
         case .player(let args):
-            PlayerScreen(args: args)
+            // 1.0.4 I10: local-first -- every entry point reaches the player through here.
+            PlayerScreen(args: args.preferringSavedCopy(store: container.offlineStore, base: container.offlineBase))
         case .shorts(let args):
             ShortsScreen(args: args)
         case .featured(let categoryId, let categoryName):

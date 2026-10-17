@@ -773,6 +773,28 @@ struct ContentListViewModelTests {
 
     /// Stage 3a S3-3 (Android parity): emptying the field brings the full list back at once --
     /// only a typed query waits out the debounce.
+    /// 1.0.4 I5 (stage 5 run 2 R2-4): in an EMPTY category, type `zz`, delete to `z` (under the
+    /// 2-character floor: the plain list, stored with `isSearchActive` true), clear. The cleared field
+    /// asks for the list already on screen, so nothing reloads -- but the stored flag must follow the
+    /// field, or the empty state keeps the search wording. The mirror: one typed character over the
+    /// plain list is a search the empty state must say so for.
+    @Test func theEmptyStateFollowsTheFieldWhenNothingReloads() async {
+        let vm = ContentListViewModel(type: .videos, catalog: RecordingCatalogClient(pages: []),
+                                      filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        vm.query = "zz"
+        await vm.searchTask?.value
+        vm.query = "z"
+        await vm.searchTask?.value
+        vm.query = ""
+        await vm.searchTask?.value
+        #expect(vm.state == .content(items: [], hasMore: false, paginationError: false, isSearchActive: false))
+
+        vm.query = "z"
+        await vm.searchTask?.value
+        #expect(vm.state == .content(items: [], hasMore: false, paginationError: false, isSearchActive: true))
+    }
+
     @Test func emptyingTheFieldReloadsTheFullListWithoutTheDebounce() async {
         let recorder = SleepRecorder()
         let client = QueryEchoClient()

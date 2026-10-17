@@ -48,8 +48,15 @@ import Foundation
             loadTask?.cancel()
             // Back on the query whose results are on screen: nothing to reload. Unless a refresh or a
             // reload asked for those rows again and none has landed: the debounce must run it.
-            if case .content = state, itemsFilter == filter.state, itemsQuery == queryParam, !reloadPending {
+            if case .content(let items, let hasMore, let paginationError, let wasSearch) = state,
+               itemsFilter == filter.state, itemsQuery == queryParam, !reloadPending {
                 isSearching = false
+                // The same list, but the empty state reads the flag stored with it (1.0.4 I5, R2-4):
+                // `z` -> cleared over an empty category kept "No results".
+                if wasSearch != isSearchActive {
+                    state = .content(items: items, hasMore: hasMore, paginationError: paginationError,
+                                     isSearchActive: isSearchActive)
+                }
                 return
             }
             // A failed refresh leaves its list on screen with the banner; it stays there under the

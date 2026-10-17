@@ -47,6 +47,7 @@ struct ShortsScreen: View {
         .onDisappear { OrientationLock.release() }
         .task {
             guard model == nil else { return }
+            BackgroundPlaybackController.userAskedToPlay()   // round 3 m2: the user's open
             let vm = PlayerViewModel(resolver: PlayerScreen.resolver(container: container),
                                      settings: container.settings, args: args)
             model = vm
@@ -88,7 +89,7 @@ struct ShortsScreen: View {
             // Task 4: on the black surface, with the dark palette's text -- the card used to paint
             // the app's light `Color.background` over the stage.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: args.thumbnailURL, background: .black) { Task { await model.retry() } }
+                            thumbnailURL: args.thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
                 .environment(\.colorScheme, .dark)
                 .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
         }

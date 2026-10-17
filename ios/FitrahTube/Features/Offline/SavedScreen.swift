@@ -50,7 +50,7 @@ struct SavedScreen: View {
     private var footer: some View {
         let items = container.offlineStore.items
         return Text(OfflineStorage.footer(count: items.count,
-                                          used: OfflineStorage.usedBytes(items: items),
+                                          used: OfflineStorage.usedBytes(items: items, base: container.offlineBase),
                                           available: OfflineStorage.availableBytes(
                                               cached: availableBytes, base: container.offlineBase),
                                           locale: locale))
@@ -75,7 +75,9 @@ private struct SavedRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            RemoteImage(url: item.thumbnailUrl.flatMap(URL.init))
+            RemoteImage(url: item.thumbnailUrl.flatMap(URL.init),
+                         savedCopy: OfflineStorage.fileURL(relativePath: OfflineStorage.thumbnailName(itemId: item.id),
+                                                           base: container.offlineBase))
                 .frame(width: 104, height: 104 * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -152,6 +154,28 @@ extension PlayerArgs {
         self.init(videoId: item.videoId, title: item.title, channelName: item.channelName,
                   thumbnailURL: item.thumbnailUrl.flatMap(URL.init), durationSeconds: item.durationSeconds)
         offlineItemId = item.id
+    }
+
+    /// 1.0.4 I10 (offline-downloads R3, local-first): what every `.player` route opens
+    /// (`MainShellView.destination`) -- the saved copy when this video is saved in full, through the
+    /// same offline path the Saved row's Open takes, whichever screen opened it. The caller's
+    /// metadata rides along; what it lacks (a deep link carries only an id) comes from the row.
+    /// ponytail: a playlist open keeps streaming -- the offline path has no queue (`PlayerScreen`
+    /// gives it no queue source, `OfflineResolver` answers one row); a queue-aware local resolver
+    /// would play saved items inside a playlist too.
+    @MainActor func preferringSavedCopy(store: OfflineStore, base: URL) -> PlayerArgs {
+        guard offlineItemId == nil, playlistId == nil, let item = store.item(videoId: videoId),
+              item.status == OfflineStatus.completed.rawValue, let localPath = item.localPath,
+              FileManager.default.fileExists(
+                atPath: OfflineStorage.fileURL(relativePath: localPath, base: base).path(percentEncoded: false))
+        else { return self }
+        var args = self
+        args.offlineItemId = item.id
+        args.title = title ?? item.title
+        args.channelName = channelName ?? item.channelName
+        args.thumbnailURL = thumbnailURL ?? item.thumbnailUrl.flatMap(URL.init)
+        args.durationSeconds = durationSeconds ?? item.durationSeconds
+        return args
     }
 }
 

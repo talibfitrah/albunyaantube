@@ -100,6 +100,27 @@ struct AppContainerTests {
         #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
     }
 
+    /// 1.0.4 I3 (stage 5 run 2 R2-1): a disk-full open -- the V7 -> V8 migration on a full device,
+    /// say -- fails twice like a corrupt store, and the rebuild used to delete the Saved library,
+    /// favorites and subscriptions to make room. SwiftData does not say why an open failed, so the
+    /// volume does: too little free space for the store keeps it, on the in-memory stand-in.
+    @Test func aStoreThatCannotOpenOnAFullDiskIsKept() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        let bytes = Data("a store whose migration ran out of disk".utf8)
+        try bytes.write(to: url)
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+
+        let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url, freeBytes: { _ in 0 })
+
+        #expect((try? Data(contentsOf: url)) == bytes, "the store was deleted on a full disk")
+        #expect(container.configurations.allSatisfy { $0.isStoredInMemoryOnly }, "the fallback reopened the on-disk store")
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+    }
+
     /// The store opens on first USE, never while the container is built: `FitrahTubeApp` builds it
     /// on every launch, one before the first unlock included, where an open can only fail.
     @Test func buildingTheContainerDoesNotOpenTheStore() {

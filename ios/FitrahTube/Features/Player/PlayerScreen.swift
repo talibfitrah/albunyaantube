@@ -140,6 +140,7 @@ struct PlayerScreen: View {
         }
         .task {
             guard model == nil else { return }
+            BackgroundPlaybackController.userAskedToPlay()   // round 3 m2: the user's open
             // Task 7 (reconciliation note 5): an offline open builds the SAME VM over
             // `OfflineResolver` — no network, no player fork — and passes NO queue source, so
             // Up Next/queue paging are disabled by construction (`loadQueue` guards on it).
@@ -210,6 +211,18 @@ struct PlayerScreen: View {
         // mounts the player (Task 7's identity note keeps both playable rungs in the switch case
         // below). `.onChange` fires only on a real transition, so entering it announces exactly once.
         .rungAnnouncements(model: model)
+    }
+
+    /// The error card's Retry, on both screens: a user tap, so the user's Play (round 4), then the retry.
+    static func retryTapped(_ model: PlayerViewModel) {
+        BackgroundPlaybackController.userAskedToPlay()
+        Task { await model.retry() }
+    }
+
+    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump.
+    private static func playUpNext(_ model: PlayerViewModel, at index: Int) {
+        BackgroundPlaybackController.userAskedToPlay()
+        Task { await model.play(at: index) }
     }
 
     /// The Save button's gate question: the channel playback's own check asks about, so Save never
@@ -422,7 +435,7 @@ struct PlayerScreen: View {
             // in this app calls `UIApplication.open` with a YouTube URL, in any Safe Mode setting.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
                             thumbnailURL: model.args.thumbnailURL) {
-                Task { await model.retry() }
+                Self.retryTapped(model)
             }
         }
     }
@@ -441,14 +454,14 @@ struct PlayerScreen: View {
         // address a row by video.
         if columns == 1 {
             ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
-                VideoRow(item: item, subtitle: item.channelTitle) { Task { await model.play(at: index) } }
+                VideoRow(item: item, subtitle: item.channelTitle) { Self.playUpNext(model, at: index) }
                     .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
             }
         } else {
             LazyVGrid(columns: Array(repeating: GridItem(.flexible(), spacing: GridRules.cardGap(widthClass)),
                                      count: columns), spacing: GridRules.cardGap(widthClass)) {
                 ForEach(Array(zip(model.queue.upcoming.indices, model.queue.upcoming)), id: \.0) { index, item in
-                    VideoGridCell(item: item, subtitle: item.channelTitle) { Task { await model.play(at: index) } }
+                    VideoGridCell(item: item, subtitle: item.channelTitle) { Self.playUpNext(model, at: index) }
                         .accessibilityIdentifier("player.upNext.row.\(index).\(item.id)")
                 }
             }
