@@ -873,8 +873,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
         // auto-advance or an Up Next tap) means neither applies -- the next video starts at 0.
-        let live = existing?.currentTime().seconds
-        let resume = continuesCurrentVideo ? ((live?.isFinite == true ? live : nil) ?? resumeFallback) : 0
+        let resume = Self.resumePosition(isLive: state.isLiveNow, continuesCurrentVideo: continuesCurrentVideo,
+                                         live: existing?.currentTime().seconds, fallback: resumeFallback)
         let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
@@ -954,6 +954,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     static func assetOptions(userAgent: String) -> [String: Any] {
         [AVURLAssetHTTPUserAgentKey: userAgent]
+    }
+
+    /// Where a replacement item starts. A live stream starts at its live edge: a refreshed or recovered live item
+    /// has a new timeline, and the old item's clock would land at a stale DVR offset (spec §9.3(a)). Anything else
+    /// resumes at the live player's clock, else the hoisted fallback; a different video starts at 0. The caller
+    /// passes `StreamState.isLiveNow`: an ended broadcast (F28) is a recording and keeps its clock.
+    static func resumePosition(isLive: Bool, continuesCurrentVideo: Bool, live: TimeInterval?, fallback: TimeInterval) -> TimeInterval {
+        guard continuesCurrentVideo, !isLive else { return 0 }
+        return (live?.isFinite == true ? live : nil) ?? fallback
     }
 
     /// Not private: `PlayerHostTests` pins the audio-only selection directly.

@@ -160,6 +160,10 @@ extension StreamState {
         guard let resolved, case .hls(_, let isLive, _, _, _) = resolved.stream else { return false }
         return isLive
     }
+
+    /// A live HLS that is live NOW (spec §9.1, RV I11). `isLive` alone is also true for an ended broadcast (F28), which
+    /// plays as a recording: no live refresh timer, and its replacement keeps its clock.
+    var isLiveNow: Bool { isLive && resolved?.isLiveNow == true }
 }
 
 /// Android's `PlayerViewModel` resolve pipeline (`player.md` §2.2), the InnerTubeKit-backed slice
@@ -356,17 +360,32 @@ extension StreamState {
     /// whose `GCKCastContext` could not be created already has.
     private let cast: CastController?
 
+    /// Spec §9.1 (Task 32): the backend's current lives for a live-category channel; nil = no live-channel mode.
+    private let liveLookup: (@Sendable (String) async throws -> LiveChannelLives)?
+    /// Injected so the live refresh timer is testable without waiting hours.
+    private let sleep: @Sendable (Duration) async throws -> Void
+    private var liveRefreshTask: Task<Void, Never>?
+    /// The proactive refresh in flight (the live timer's or the foreground check's). The other one joins it: two forced
+    /// walks for one expiry trip the limiter's 30 s interval, and the second's generation bump discards the first's
+    /// answer. Superseded by a user action it can still be in flight; a join then only skips a refresh the fresh
+    /// stream does not need.
+    private var proactiveRefresh: Task<Void, Never>?
+
     /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
     /// reaches favorites through the environment container on its own, and nothing in the player
     /// touches the catalog.
     init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
-         queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil, hd: HDUpgrade? = nil) {
+         queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil, hd: HDUpgrade? = nil,
+         liveLookup: (@Sendable (String) async throws -> LiveChannelLives)? = nil,
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
         self.resolver = resolver
         self.settings = settings
         self.args = args
         self.queueSource = queueSource
         self.cast = cast
         self.hd = hd
+        self.liveLookup = liveLookup
+        self.sleep = sleep
         self.audioOnly = settings.audioOnly
     }
 
@@ -1174,14 +1193,60 @@ extension StreamState {
         // with no error surface and no retry. The recovery owns the stream until it finishes; the
         // refresh gets its next chance on the following foreground.
         guard !isRecovering, Self.shouldPreemptivelyReResolve(state, now: now) else { return }
+        await refreshInPlace()
+    }
+
+    /// Spec §9.3(a), R13: re-resolve 10 min before a live stream's URLs expire (~6 h, F11) and replace the item at
+    /// the live edge: one ~1-3 s rebuffer per ~5 h 50 m instead of a failure at ~6 h. This revisits RULINGS ruling
+    /// 20; its cost note ("rare long-session stall -> re-add the timer") anticipated it.
+    static let liveRefreshLead: TimeInterval = 600
+
+    static func liveRefreshDelay(expiresAt: Date, now: Date) -> TimeInterval {
+        max(0, expiresAt.timeIntervalSince(now) - liveRefreshLead)
+    }
+
+    /// DEBUG only (L3, L5): `-fitrah-live-refresh-seconds N`. `LaunchArguments.debug` is empty in Release.
+    static var debugLiveRefreshSeconds: TimeInterval? {
+        let arguments = LaunchArguments.debug
+        guard let i = arguments.firstIndex(of: "-fitrah-live-refresh-seconds"), arguments.indices.contains(i + 1) else { return nil }
+        return TimeInterval(arguments[i + 1])
+    }
+
+    /// Re-armed by every landed resolve; anything but a stream that is live now disarms it (a recording, a VOD, HD).
+    private func scheduleLiveRefresh() {
+        liveRefreshTask?.cancel()
+        liveRefreshTask = nil
+        guard state.isLiveNow, let expiresAt = state.resolved?.expiresAt else { return }
+        let delay = Self.debugLiveRefreshSeconds ?? Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
+        liveRefreshTask = Task { [weak self, sleep = self.sleep] in
+            try? await sleep(.seconds(delay))
+            guard !Task.isCancelled else { return }
+            await self?.refreshLiveStream()
+        }
+    }
+
+    /// The timer's re-resolve: `reResolveIfExpiring`'s in-place path without its "within 60 s of expiry" condition.
+    /// A timer does not fire while the app is suspended and paused, so the foreground check stays (R13).
+    func refreshLiveStream() async {
+        guard !isRecovering, state.isLiveNow else { return }
+        await refreshInPlace()
+    }
+
+    /// The one proactive refresh path (`proactiveRefresh` above): a second caller joins the walk in flight.
+    private func refreshInPlace() async {
+        if let proactiveRefresh { return await proactiveRefresh.value }
         // `showLoading: false` + `silent: true` are both load-bearing and are NOT the same flag:
         // `showLoading: false` holds the playable branch on the way IN (a `.loading` hop dismantles
         // PlayerHostView and drops the AVPlayer whose `currentTime()` carries the position);
         // `silent: true` holds it on the way OUT (see `performResolve`). `handleRecoveryEvent` passes
         // the first and not the second, because a genuine playback failure SHOULD surface.
         // `resetBudget: false` so a pre-emptive refresh cannot refill the recovery budget.
-        await resolve(forceRefresh: true, kind: .proactiveTTLRefresh,
-                      resetBudget: false, showLoading: false, silent: true)
+        let refresh = Task {
+            _ = await resolve(forceRefresh: true, kind: .proactiveTTLRefresh, resetBudget: false, showLoading: false, silent: true)
+        }
+        proactiveRefresh = refresh
+        await refresh.value
+        proactiveRefresh = nil
     }
 
     /// Returns whether this resolve is still the current one when it finishes (review F1): `false`
@@ -1238,6 +1303,8 @@ extension StreamState {
         // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
         // because by then the stream has actually stopped working.
         if silent, !result.isPlayable { return }
+        // §9.3(a): a proactive refresh of a live stream only ever replaces it with a stream that is still live now.
+        if silent, state.isLiveNow, !result.isLiveNow { return }
         // Together, always: `.error`/`.contentUnavailable` results move it too --
         // the state on screen is now THIS video's, whatever it says.
         resolvedVideoId = videoId
@@ -1250,6 +1317,7 @@ extension StreamState {
         // whose step-down would demote `.tvSamsung`.
         standardBeforeUpgrade = nil
         state = result
+        scheduleLiveRefresh()
         // Spec R43: 360p is on screen; ask for HD in the background.
         if case .rung2Progressive = result { startUpgrade(videoId: videoId, generation: generation) }
     }

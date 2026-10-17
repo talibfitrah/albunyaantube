@@ -769,6 +769,14 @@ struct PlayerHostTests {
         #expect(result == nil)
         #expect(player?.rate == 0) // paused, not left running detached from any view
     }
+
+    /// Review Focus 3 (spec §9.3(a)): a live replacement starts at the live edge, never at the old item's clock.
+    @Test func aLiveStreamResumesAtTheLiveEdgeNotTheOldClock() {
+        #expect(PlayerHostView.resumePosition(isLive: true, continuesCurrentVideo: true, live: 1234, fallback: 99) == 0)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: true, live: 1234, fallback: 99) == 1234)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: true, live: nil, fallback: 99) == 99)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: false, live: 1234, fallback: 99) == 0)
+    }
 }
 
 // MARK: - B4 Task 2: `PlayerPresentation` -- the pure knob table behind `PlayerHostView.presentation`
