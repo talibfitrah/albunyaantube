@@ -116,7 +116,9 @@ data class ResolvedStreams(
      * ANDROID_VR so it no longer points at a client nothing produces. Both map to the Android
      * User-Agent, so this default carries the exact UA behaviour the old one did.
      */
-    val extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID
+    val extractionClient: ExtractionClient = ExtractionClient.NEWPIPE_ANDROID,
+    /** Wall-clock ms when the URLs were minted; with [urlGeneratedAt] it turns `/expire/<t>/` into a monotonic deadline. */
+    val urlGeneratedAtWallMs: Long = System.currentTimeMillis()
 ) {
     companion object {
         /**
@@ -126,14 +128,13 @@ data class ResolvedStreams(
          */
         const val URL_TTL_MS = 60 * 60 * 1000L // 1 hour
 
-        /**
-         * For live streams, proactively refresh URLs before they expire.
-         * This allows fetching new URLs in the background while playback continues,
-         * enabling seamless handoff without interruption.
-         *
-         * Set to 50 minutes - gives 10 minutes buffer before the 1-hour TTL.
-         */
-        const val LIVE_PROACTIVE_REFRESH_MS = 50 * 60 * 1000L // 50 minutes
+        /** Spec §9.2(a): refresh 10 min before the live URLs expire (~6 h after extraction, F11). */
+        const val LIVE_REFRESH_LEAD_MS = 10 * 60 * 1000L
+        const val LIVE_LIFETIME_MIN_MS = 30 * 60 * 1000L
+        const val LIVE_LIFETIME_MAX_MS = 6 * 60 * 60 * 1000L
+        /** No `/expire/` in the URL: resolvedAt + 5 h 50 m. */
+        const val LIVE_REFRESH_FALLBACK_MS = (5 * 60 + 50) * 60 * 1000L
+        private val EXPIRE = Regex("/expire/(\\d+)/")
 
         /** Timebase version for urlGeneratedAt timestamps. */
         const val URL_TIMEBASE_VERSION = 1
@@ -153,31 +154,17 @@ data class ResolvedStreams(
         return (nowMs - urlGeneratedAt) > URL_TTL_MS
     }
 
-    /**
-     * For live streams, check if we should proactively refresh URLs before expiration.
-     * This allows fetching new URLs in the background for seamless handoff.
-     * @param nowMs Current monotonic time in milliseconds
-     * @return true if this is a live stream and URLs should be proactively refreshed
-     */
-    fun shouldProactivelyRefresh(nowMs: Long = SystemClock.elapsedRealtime()): Boolean {
-        if (!isLive) return false
-        if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return true
-        if (nowMs < urlGeneratedAt) return true
-        return (nowMs - urlGeneratedAt) > LIVE_PROACTIVE_REFRESH_MS
+    /** Spec §9.2(a): when to refresh this live stream, on the monotonic clock; null when it is not live. */
+    fun liveRefreshAtElapsedMs(): Long? {
+        if (!isLive) return null
+        val expireSeconds = hlsUrl?.let { EXPIRE.find(it)?.groupValues?.get(1)?.toLongOrNull() }
+            ?: return urlGeneratedAt + LIVE_REFRESH_FALLBACK_MS
+        val lifetime = (expireSeconds * 1000 - urlGeneratedAtWallMs).coerceIn(LIVE_LIFETIME_MIN_MS, LIVE_LIFETIME_MAX_MS)
+        return urlGeneratedAt + lifetime - LIVE_REFRESH_LEAD_MS
     }
 
-    /**
-     * Time remaining until proactive refresh is needed (for live streams).
-     * Returns null for non-live streams, or 0L if refresh is already needed.
-     */
-    fun timeUntilProactiveRefreshMs(nowMs: Long = SystemClock.elapsedRealtime()): Long? {
-        if (!isLive) return null
-        if (urlTimebaseVersion != URL_TIMEBASE_VERSION) return 0L
-        if (nowMs < urlGeneratedAt) return 0L
-        val elapsed = nowMs - urlGeneratedAt
-        val remaining = LIVE_PROACTIVE_REFRESH_MS - elapsed
-        return if (remaining > 0) remaining else 0L
-    }
+    fun timeUntilLiveRefreshMs(nowMs: Long = SystemClock.elapsedRealtime()): Long? =
+        liveRefreshAtElapsedMs()?.let { (it - nowMs).coerceAtLeast(0L) }
 }
 
 /**

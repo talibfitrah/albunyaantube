@@ -244,6 +244,9 @@ class PlayerViewModel @Inject constructor(
     // Live stream proactive refresh: job that schedules URL refresh before expiration
     private var liveRefreshJob: Job? = null
 
+    /** DEBUG only: L2/L3 shorten the refresh (PlayerFragment reads Settings.Global "fitrah_live_refresh_ms"). */
+    var debugLiveRefreshOverrideMs: Long? = null
+
     // Playlist playback state
     private var isPlaylistMode: Boolean = false
 
@@ -1718,7 +1721,7 @@ class PlayerViewModel @Inject constructor(
         // Only schedule for live streams
         if (!resolved.isLive) return
 
-        val delayMs = resolved.timeUntilProactiveRefreshMs() ?: return
+        val delayMs = debugLiveRefreshOverrideMs ?: resolved.timeUntilLiveRefreshMs() ?: return
         if (delayMs <= 0) {
             // Already time to refresh - do it immediately in a coroutine
             android.util.Log.d("PlayerViewModel", "Live stream: immediate proactive refresh needed")
