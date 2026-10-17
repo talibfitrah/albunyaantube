@@ -475,6 +475,7 @@ public actor StreamResolver {
         switch strategy {
         case "visionosHLS": return .visionos
         case "androidItag18": return .android
+        case "tvSamsungAdaptive": return .tvSamsung
         default: return nil
         }
     }

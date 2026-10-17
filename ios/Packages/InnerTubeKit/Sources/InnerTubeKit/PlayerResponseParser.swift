@@ -223,3 +223,77 @@ public struct PlayerResponseParser: Sendable {
         var videoDetails: VideoDetails?
     }
 }
+
+/// One `adaptiveFormats` entry with the fields the `tv_samsung` upgrade reads (spec §4.2 Parser).
+struct AdaptiveFormat: Sendable, Equatable {
+    var itag: Int
+    var url: String?
+    var signatureCipher: String?
+    var mimeType: String
+    var bitrate: Int
+    var averageBitrate: Int?
+    var width: Int?
+    var height: Int?
+    var fps: Int?
+    var initRange: ClosedRange<Int>?
+    var indexRange: ClosedRange<Int>?
+    var contentLength: Int?
+    var isDrc: Bool
+    var xtags: String?
+    var audioTrackId: String?
+    var audioTrackName: String?
+    var audioIsDefault: Bool
+    var hasDRM: Bool
+}
+
+extension PlayerResponseParser {
+    /// `streamingData.adaptiveFormats` with byte ranges and track fields, for the TV rung only. A separate decode on
+    /// purpose: no field this rung needs can ever break the VISIONOS/ANDROID parse above. Entries without an itag,
+    /// mimeType or bitrate are dropped.
+    func adaptiveFormats(_ body: Data) throws -> [AdaptiveFormat] {
+        try JSONDecoder().decode(AdaptiveWire.self, from: body).streamingData?.adaptiveFormats?.compactMap(\.format) ?? []
+    }
+}
+
+private struct AdaptiveWire: Decodable {
+    struct Range: Decodable { var start: String; var end: String }
+    struct Track: Decodable { var id: String?; var displayName: String?; var audioIsDefault: Bool? }
+    /// Present in any shape counts: `drmFamilies` is never decoded, only noticed.
+    struct Present: Decodable { init(from decoder: Decoder) {} }
+    struct Format: Decodable {
+        var itag: Int?
+        var url: String?
+        var signatureCipher: String?
+        var mimeType: String?
+        var bitrate: Int?
+        var averageBitrate: Int?
+        var width: Int?
+        var height: Int?
+        var fps: Int?
+        var initRange: Range?
+        var indexRange: Range?
+        var contentLength: String?
+        var isDrc: Bool?
+        var xtags: String?
+        var audioTrack: Track?
+        var drmFamilies: Present?
+
+        var format: AdaptiveFormat? {
+            guard let itag, let mimeType, let bitrate else { return nil }
+            return AdaptiveFormat(
+                itag: itag, url: url, signatureCipher: signatureCipher, mimeType: mimeType, bitrate: bitrate,
+                averageBitrate: averageBitrate, width: width, height: height, fps: fps,
+                initRange: Self.closed(initRange), indexRange: Self.closed(indexRange),
+                contentLength: contentLength.flatMap(Int.init), isDrc: isDrc ?? false, xtags: xtags,
+                audioTrackId: audioTrack?.id, audioTrackName: audioTrack?.displayName,
+                audioIsDefault: audioTrack?.audioIsDefault ?? false, hasDRM: drmFamilies != nil)
+        }
+
+        private static func closed(_ range: Range?) -> ClosedRange<Int>? {
+            guard let range, let lower = Int(range.start), let upper = Int(range.end), lower <= upper else { return nil }
+            return lower...upper
+        }
+    }
+    struct StreamingData: Decodable { var adaptiveFormats: [Format]? }
+    var streamingData: StreamingData?
+}

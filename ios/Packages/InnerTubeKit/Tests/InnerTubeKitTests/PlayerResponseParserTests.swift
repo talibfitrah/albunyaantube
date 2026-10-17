@@ -355,6 +355,29 @@ import Testing
         }
     }
 
+    // MARK: - Playback Phase 2: the TV rung's adaptive fields (spec §4.2 Parser)
+
+    @Test func aTVCaptureDecodesTheAdaptiveFields() throws {
+        let formats = try parser.adaptiveFormats(loadFixture("player-tv-Ix7uzPm3cU8"))
+        let top = try #require(formats.first { $0.itag == 137 })
+        #expect(top.initRange == 0...741)
+        #expect(top.indexRange == 742...4457)
+        #expect(top.contentLength == 176_807_396)
+        #expect([top.width, top.height, top.fps] == [1920, 1080, 25])
+        #expect(top.averageBitrate == 766_893)
+        #expect(top.mimeType == #"video/mp4; codecs="avc1.640028""#)
+        let audio = formats.filter { $0.itag == 140 }
+        #expect(audio.map(\.bitrate) == [132_171, 132_175, 132_207])
+        #expect(audio.map(\.isDrc) == [false, true, false])
+        #expect(audio.map(\.xtags) == [nil, "CggKA2RyYxIBMQ", "CgcKAnZiEgEx"])
+    }
+
+    @Test func aTVCaptureStillParsesThroughTheUnchangedPath() throws {
+        guard case .ok = try parser.parse(loadFixture("player-tv-uZT3McCJHzQ")).playability else {
+            Issue.record("expected .ok"); return
+        }
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)

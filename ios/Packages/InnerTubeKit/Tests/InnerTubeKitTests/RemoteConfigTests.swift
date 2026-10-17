@@ -269,6 +269,32 @@ import Testing
         #expect(await relaunched.current().isDownloadsEnabled == false)
     }
 
+    // MARK: - Playback Phase 2 (spec R2, R3)
+
+    @Test func theTVRungIsKnownAndTheBundledDefaultCarriesItsContextButNotTheRung() throws {
+        #expect(RemoteConfig.knownResolverStrategies.contains("tvSamsungAdaptive"))
+        let tv = try #require(RemoteConfig.bundledDefault.clients["tvSamsung"])
+        #expect(tv.clientName == "TVHTML5")
+        #expect(tv.clientNameId == 7)
+        #expect(tv.userAgent == "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1")
+        #expect(RemoteConfig.bundledDefault.resolverOrder == ["visionosHLS", "androidItag18"])
+    }
+
+    @Test func aPublishedTVRungIsKeptAndAMisnamedTVContextIsDropped() async {
+        var config = RemoteConfig.bundledDefault
+        config.resolverOrder = ["visionosHLS", "androidItag18", "tvSamsungAdaptive"]
+        config.clients["tvSamsung"]?.clientName = "WEB"
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: try! JSONEncoder().encode(config)))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        let sanitized = await store.current()
+        #expect(sanitized.resolverOrder == ["visionosHLS", "androidItag18", "tvSamsungAdaptive"])
+        #expect(sanitized.clients["tvSamsung"] == nil)
+    }
+
     @Test func semVerComparesNumericSegmentsNotLexicographically() {
         #expect(SemVer.compare("1.0.0", "1.0.10") == .orderedAscending)
         #expect(SemVer.compare("1.2.0", "1.10.0") == .orderedAscending)

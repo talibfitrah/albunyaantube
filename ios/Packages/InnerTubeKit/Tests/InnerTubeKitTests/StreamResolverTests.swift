@@ -634,6 +634,36 @@ import Testing
         }
     }
 
+    /// Spec R8/R43: wherever a published order lists the TV rung, a walk never POSTs for it.
+    @Test func aWalkNeverPostsForThePublishedTVRung() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["visionosHLS", "tvSamsungAdaptive", "androidItag18"]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected the 360p"); return }
+        #expect(transport.callCount == 2)
+        #expect(transport.recorded.allSatisfy { $0.url.host() == "youtubei.googleapis.com" })
+    }
+
+    /// Fix (pre-review): an order with no rung a walk POSTs for would advance past every rung, so every resolve would fail.
+    /// It falls back to the bundled order, like an empty one.
+    @Test func anOrderOfOnlyTheTVRungWalksTheDefaultRungs() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let (resolver, _) = makeResolver(transport: transport, configStore: configStore(resolverOrder: ["tvSamsungAdaptive"]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected the 360p"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3"])
+    }
+
+    /// The fallback fires only when NO walk rung is left: one walk rung is a valid order, and the walk keeps it.
+    @Test func anOrderWithOneWalkRungBesideTheTVRungWalksThatRungOnly() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["tvSamsungAdaptive", "visionosHLS"]))
+        _ = try? await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101"])
+    }
+
     /// Review F3. A demotion is per VIDEO, not per lane: a prefetch, a cast's muxed walk and a save's
     /// muxed walk all start after the failed rung. (A muxed walk skips VISIONOS without a POST either
     /// way, so those two pin the observable result: one POST, ANDROID's.)
