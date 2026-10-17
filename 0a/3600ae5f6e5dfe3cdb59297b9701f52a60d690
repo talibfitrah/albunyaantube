@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_dbb6b1f3671904::t_4310f175f529ec 65-81
+backend/src/test/java/com/albunyaan/tube/exception/GlobalExceptionHandlerLiveCategoryTest.java
+  s_dbb6b1f3671904::t_4310f175f529ec 1-31,33-34
+  s_dbb6b1f3671904::t_91d0fe7a35af26 32
+backend/src/main/java/com/albunyaan/tube/exception/LiveCategoryException.java
+  s_dbb6b1f3671904::t_4310f175f529ec 1-45
+backend/src/main/java/com/albunyaan/tube/model/Category.java
+  s_dbb6b1f3671904::t_4310f175f529ec 5,64-74,99-123
+  s_dbb6b1f3671904::t_c3e0a8b950db6e 124
+backend/src/main/java/com/albunyaan/tube/controller/CategoryController.java
+  s_dbb6b1f3671904::t_4310f175f529ec 4,22,120-123,130-135,164-169,185-192,200,282-283
+  s_dbb6b1f3671904::t_c659273a680811 278-281
+backend/src/test/java/com/albunyaan/tube/controller/CategoryControllerTest.java
+  s_dbb6b1f3671904::t_14ec0a36775c07 3,262-360
+backend/src/test/java/com/albunyaan/tube/model/CategoryModelTest.java
+  s_dbb6b1f3671904::t_ec5350845b3fe7 3,35-51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0a3600ae5f6e5dfe3cdb59297b9701f52a60d690",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
