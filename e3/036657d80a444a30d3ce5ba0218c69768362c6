@@ -1,0 +1,73 @@
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryBulkGraduationTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 72
+backend/src/main/java/com/albunyaan/tube/controller/ApprovalController.java
+  s_dbb6b1f3671904::t_f19620aa794316 222-223
+backend/src/test/java/com/albunyaan/tube/service/ApprovalSourceFieldTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 67-68
+backend/src/test/java/com/albunyaan/tube/service/ApprovalCategoryOptionalTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 70-71
+backend/src/main/java/com/albunyaan/tube/service/ApprovalService.java
+  s_dbb6b1f3671904::t_f19620aa794316 53,64-65,76,1232-1235,1327-1330,1528-1533,1740-1743
+  s_dbb6b1f3671904::t_349328f2aa13da 1744-1745
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_dbb6b1f3671904::t_b0f448f1e431ac 14,72,85-86,99,1213,1376,1462-1493
+  s_dbb6b1f3671904::t_974ffb9a739626 1494
+backend/src/test/java/com/albunyaan/tube/service/PendingQueueSourceSplitTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 61
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_dbb6b1f3671904::t_b63a44cda4744f 299-300
+  s_dbb6b1f3671904::t_14cd39ec32b832 33,75,85-86,500-513
+  s_dbb6b1f3671904::t_a2c3a96a155ed4 514
+backend/src/test/java/com/albunyaan/tube/controller/ApprovedPickerTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 53
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServicePaginationTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 84-85
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServiceTest.java
+  s_dbb6b1f3671904::t_2a1d91e8b6640d 50-51
+backend/src/main/java/com/albunyaan/tube/service/SortOrderService.java
+  s_dbb6b1f3671904::t_cbcf1972e1503b 40,48-49,57,274-275,278,283-284,287-296,338-339,342-355,359-362
+  s_dbb6b1f3671904::t_acde2853b2a38c 363-364
+backend/src/test/java/com/albunyaan/tube/service/ApprovalGraduationWiringTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 62-63
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryDeleteReachesDevicesTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 64
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryMarkPendingTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 61
+backend/src/test/java/com/albunyaan/tube/service/SortOrderServiceTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 47-48
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryOfflineAllowedTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 42
+backend/src/main/java/com/albunyaan/tube/controller/SortOrderController.java
+  s_dbb6b1f3671904::t_cbcf1972e1503b 140-141
+backend/src/test/java/com/albunyaan/tube/service/ApprovalServiceRequestChangesTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 74-75
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryPagingAndTotalsTest.java
+  s_dbb6b1f3671904::t_a3668c20721d07 49-50
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryGuardIT.java
+  s_dbb6b1f3671904::t_a3668c20721d07 50
+  s_dbb6b1f3671904::t_19a38ff0ba14c4 342-420
+backend/src/test/java/com/albunyaan/tube/service/PendingSubmittersTest.java
+  s_dbb6b1f3671904::t_0729d7209057ef 56
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryVisibilityTest.java
+  s_dbb6b1f3671904::t_9a6a4a861864a9 48
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_dbb6b1f3671904::t_1259339f2bbaba 14,40,48-49,59,138-154,327-332
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServicePreviewTest.java
+  s_dbb6b1f3671904::t_438a55962085cc 39-40
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e3036657d80a444a30d3ce5ba0218c69768362c6",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
