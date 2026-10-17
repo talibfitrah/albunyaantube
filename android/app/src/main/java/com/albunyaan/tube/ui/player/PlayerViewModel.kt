@@ -260,6 +260,7 @@ class PlayerViewModel @Inject constructor(
     // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
     private var liveIncident: LiveChannelRecovery? = null
     private var liveRetryJob: Job? = null
+    private var liveForceEndJob: Job? = null
     /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
     var debugLiveForceEndMs: Long? = null
 
@@ -864,7 +865,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel()
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -1702,6 +1703,8 @@ class PlayerViewModel @Inject constructor(
                     // All retries exhausted - try auto-skip in playlist mode
                     playbackMetrics.onPlaybackFailed(item.streamId, "extraction_timeout")
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    // §9.1: a spent budget is step 4 (ENDED: a same-id retry here has no budget and would loop).
+                    if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED); return }
                     if (handleStreamResolutionFailure(item)) {
                         return  // Auto-skipped to next item
                     }
@@ -1720,6 +1723,8 @@ class PlayerViewModel @Inject constructor(
                     // All retries exhausted - try auto-skip in playlist mode
                     playbackMetrics.onPlaybackFailed(item.streamId, "stream_null")
                     publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
+                    // §9.1: a spent budget is step 4 (F3: an ended 24/7 id fails to resolve rather than turning into a recording).
+                    if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED); return }
                     if (handleStreamResolutionFailure(item)) {
                         return  // Auto-skipped to next item
                     }
@@ -1754,9 +1759,10 @@ class PlayerViewModel @Inject constructor(
             // Schedule proactive URL refresh for live streams
             scheduleLiveStreamRefresh(resolved)
             debugLiveForceEndMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG && item.liveChannelId != null }?.let { ms ->
-                viewModelScope.launch(dispatcher) {
+                liveForceEndJob?.cancel()                                 // one arming, for this item only
+                liveForceEndJob = viewModelScope.launch(dispatcher) {
                     kotlinx.coroutines.delay(ms)
-                    onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                    if (currentItem?.streamId == item.streamId) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
                 }
             }
 
@@ -1905,7 +1911,8 @@ class PlayerViewModel @Inject constructor(
                 notLiveChannel = (e as? retrofit2.HttpException)?.code() == 404
                 null
             }
-            if (currentItem?.streamId != incident.currentId) return@launch       // the user moved on
+            // The incident ended (a live resolve, a give-up, a new load) or the user moved on.
+            if (liveIncident !== incident || currentItem?.streamId != incident.currentId) return@launch
             val step = if (notLiveChannel) LiveChannelRecovery.Step.GiveUp
             else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime())
             when (step) {
@@ -1914,7 +1921,8 @@ class PlayerViewModel @Inject constructor(
                 is LiveChannelRecovery.Step.Wait -> {
                     updateState { it.copy(streamState = StreamState.Loading) }   // the existing reconnecting state
                     kotlinx.coroutines.delay(step.seconds * 1_000L)
-                    // The same trigger again: a failure the backend could not answer still gets its same-id recovery.
+                    if (liveIncident !== incident) return@launch
+                    // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
                     onLiveChannelTrigger(trigger, onSameId)
                 }
                 LiveChannelRecovery.Step.GiveUp -> {

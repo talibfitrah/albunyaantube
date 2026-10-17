@@ -48,4 +48,24 @@ class LiveChannelRecoveryTest {
         assertEquals(Step.Wait(120), r.next(Trigger.ENDED, null, at(225)))
         assertEquals(Step.GiveUp, r.next(Trigger.ENDED, null, at(600)))
     }
+
+    /** Fix round 1: the title wait ends at 2 min and the give-up comes at 10 min, not a 120 s backoff later. */
+    @Test fun `each wait ends by the next deadline`() {
+        val siblings = listOf(LiveItem("kazwa000001", "Kazwa & Bilal"), LiveItem("zaky0000001", "A Day With Zaky"))
+        val r = recovery()
+        listOf(0, 15, 45).forEach { r.next(Trigger.ENDED, siblings, at(it)) }          // 15, 30, 60
+        assertEquals(Step.Wait(15), r.next(Trigger.ENDED, siblings, at(105)))
+
+        val g = recovery()
+        listOf(0, 15, 45).forEach { g.next(Trigger.ENDED, null, at(it)) }
+        assertEquals(Step.Wait(10), g.next(Trigger.ENDED, null, at(590)))
+    }
+
+    /** Ruling (fix round 1): with the backend unreachable a failure gets one same-id try per incident, then the waits. */
+    @Test fun `an unreachable backend gets one same-id try per incident`() {
+        val r = recovery()
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, null, at(0)))
+        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, null, at(1)))
+        assertEquals(Step.Wait(15), recovery().next(Trigger.FAILURE, emptyList(), at(0)))   // an answer of none is no blind try
+    }
 }

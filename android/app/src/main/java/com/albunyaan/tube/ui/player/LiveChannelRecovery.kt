@@ -18,18 +18,25 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
     }
 
     private var waits = 0
+    private var blindSameIdTried = false
 
     fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
         val elapsed = nowMs - startedAtMs
+        var deadline = GIVE_UP_MS
         if (!lives.isNullOrEmpty() && lives.none { it.id == currentId }) {
             if (lives.size == 1) return Step.SwitchTo(lives[0].id, lives[0].title)
             lives.firstOrNull { it.title == currentTitle }?.let { return Step.SwitchTo(it.id, it.title) }
             if (elapsed >= TITLE_WAIT_MS) return Step.SwitchTo(lives[0].id, lives[0].title)
-        } else if (trigger == Trigger.FAILURE && lives?.any { it.id == currentId } == true) {
-            return Step.SameId
+            deadline = TITLE_WAIT_MS
+        } else if (trigger == Trigger.FAILURE) {
+            if (lives?.any { it.id == currentId } == true) return Step.SameId
+            // No answer: one same-id try per incident (the gate fails open; the live check keeps recordings out).
+            if (lives == null && !blindSameIdTried) { blindSameIdTried = true; return Step.SameId }
         }
         if (elapsed >= GIVE_UP_MS) return Step.GiveUp
-        return Step.Wait(BACKOFF_S[minOf(waits++, BACKOFF_S.lastIndex)])
+        // A wait ends by the next deadline: the D12 title wait at 2 min, the give-up at 10 min.
+        val untilDeadline = ((deadline - elapsed + 999) / 1000).toInt()
+        return Step.Wait(minOf(BACKOFF_S[minOf(waits++, BACKOFF_S.lastIndex)], untilDeadline))
     }
 
     companion object {

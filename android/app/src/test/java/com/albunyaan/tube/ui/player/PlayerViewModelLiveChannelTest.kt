@@ -204,8 +204,28 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
-    /** §9.1 step 3: a failure the backend could not answer still gets the same-id recovery once it answers. */
+    /** §9.1 step 3: a failure that waits (nothing live yet) still gets the same-id recovery once the id is listed. */
     @Test fun `a failure retries as a failure`() = runTest(dispatcher) {
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+
+            assertTrue(vm.forceRefreshForAutoRecovery())
+            runCurrent()
+            assertEquals(1, repository.resolveCallCount)                          // nothing listed: wait
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+
+            advanceClocks(15_000)
+
+            assertEquals(2, repository.resolveCallCount)
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+        }
+    }
+
+    /** Ruling (fix round 1): a backend outage must not turn the 6 h expiry's 403 into 10 min of waiting and an error. */
+    @Test fun `an unreachable backend still gets one same-id refresh`() = runTest(dispatcher) {
         val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
@@ -213,13 +233,130 @@ class PlayerViewModelLiveChannelTest {
 
             assertTrue(vm.forceRefreshForAutoRecovery())
             runCurrent()
-            assertEquals(1, repository.resolveCallCount)                          // the backend is unreachable: wait
+
+            assertEquals(listOf(channel), content.channelLivesCalls)
+            assertEquals(2, repository.resolveCallCount)
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+        }
+    }
+
+    /** §9.1: a failure acts at once when the backend answers: the same id is recovered, a new id is switched to. */
+    @Test fun `a failure recovers the same id or switches at once`() = runTest(dispatcher) {
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
             content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+
+            vm.forceRefreshForAutoRecovery()
+            runCurrent()
+            assertEquals(2, repository.resolveCallCount)
+            assertEquals("Rs7St51oDDc", (vm.state.value.streamState as StreamState.Ready).streamId)
+
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            vm.forceRefreshForAutoRecovery()
+            runCurrent()
+            assertEquals("newSunnah01", (vm.state.value.streamState as StreamState.Ready).streamId)
+        }
+    }
+
+    /** Extra 3: a refresh the limiter refuses (4 cycles 31 s apart) goes to step 4, never a stopped player left Ready. */
+    @Test fun `a refused same-id refresh goes to the step 4 retries`() = runTest(dispatcher) {
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+
+            repeat(3) {
+                assertTrue(vm.forceRefreshForAutoRecovery())
+                runCurrent()
+                assertTrue(vm.state.value.streamState is StreamState.Ready)
+                advanceClocks(31_000)
+            }
+            assertEquals(4, repository.resolveCallCount)
+
+            vm.forceRefreshForAutoRecovery()
+            runCurrent()
+
+            assertEquals(4, repository.resolveCallCount)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+        }
+    }
+
+    /** §9.1 step 3: when the fragment's same-id budget runs out, the step 4 retries run, not the manual-retry overlay. */
+    @Test fun `an exhausted recovery goes to the step 4 retries`() = runTest(dispatcher) {
+        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+
+            vm.setRecoveryExhaustedState()
+            runCurrent()
+
+            assertEquals(listOf(channel), content.channelLivesCalls)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+        }
+    }
+
+    /** Important 1: a resolve that fails (F3: an ended 24/7 id) asks the backend, which lists the new live. */
+    @Test fun `a failed resolve asks the backend and switches`() = runTest(dispatcher) {
+        val repository = FakePlayerRepository().apply {
+            failNextResolve = true                                                   // 3 nulls, then the next call
+            resolvedStreamsAfterFailure = streams("newSunnah01", isLive = true)
+        }
+        val content = FakeContentService()
+        val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(4_000); runCurrent()
+
+            assertEquals(listOf("Rs7St51oDDc", "Rs7St51oDDc", "Rs7St51oDDc", "newSunnah01"), repository.resolvedVideoIds)
+            assertEquals("newSunnah01", (vm.state.value.streamState as StreamState.Ready).streamId)
+        }
+    }
+
+    /** Important 2: a wait that outlives its incident never puts a recovered stream back into reconnecting. */
+    @Test fun `a recovered stream stays playing`() = runTest(dispatcher) {
+        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+            vm.markCurrentComplete()
+            runCurrent()
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+
+            vm.retryCurrentStream()                                                  // live again
+            runCurrent()
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
 
             advanceClocks(15_000)
 
-            assertEquals(2, repository.resolveCallCount)
             assertTrue(vm.state.value.streamState is StreamState.Ready)
+            assertEquals(1, content.channelLivesCalls.size)
+        }
+    }
+
+    /** Minor 3: the DEBUG force-end belongs to the item it was armed for. */
+    @Test fun `the debug force-end follows the item`() = runTest(dispatcher) {
+        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            vm.debugLiveForceEndMs = 60_000
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(30_000); runCurrent()
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)   // reopened
+            runCurrent()
+
+            advanceTimeBy(31_000); runCurrent()
+            assertTrue("the first arming was cancelled", content.channelLivesCalls.isEmpty())
+            advanceTimeBy(30_000); runCurrent()
+            assertEquals(listOf(channel), content.channelLivesCalls)
         }
     }
 
