@@ -319,6 +319,38 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /v1/live/channels/{channelId}:
+    get:
+      summary: Current live streams of a live-category channel
+      operationId: getLiveChannel
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: YouTube channel ID (UC…)
+      responses:
+        '200':
+          description: The channel's current lives, filtered so every id plays; OFFLINE with no lives when none
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: max-age=15, public
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveChannelLives'
+        '404':
+          description: Not a channel entry of a live category
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+
   /v1/search:
     get:
       summary: Search across all content types
@@ -4807,6 +4839,32 @@ components:
           type: integer
           nullable: true
           description: Number of items (playlists only)
+        # Live categories (spec 2026-10-17 §4.1)
+        liveChannelId:
+          type: string
+          nullable: true
+          description: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+
+    LiveChannelLives:
+      type: object
+      description: A live-category channel's current lives (spec 2026-10-17 §4.1)
+      required: [channelId, status, lives]
+      properties:
+        channelId:
+          type: string
+        status:
+          type: string
+          enum: [LIVE, OFFLINE]
+        lives:
+          type: array
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
 
     ContentDto:
       type: object

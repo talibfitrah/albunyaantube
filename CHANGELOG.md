@@ -5,6 +5,7 @@ stable release.
 
 ## [Unreleased]
 
+- Live channels: the "Channels Live" category shows each channel's current live stream (a channel with several shows all of them), hides a channel while it is off air, and drops a link to a specific stream once that stream ends; ended streams also leave search and the video lists. Only admins can add to it: channels, or streams that are live right now. Installed apps get this with no update.
 - Search (both apps): forgives typos, shows the closest or related results when nothing matches, and updates smoothly while you type; on iOS, VoiceOver announces the result count.
 - iOS: captions are off by default and turn on only when you pick a language; Off is always in the captions menu, as on Android; iPad fullscreen keeps auto-generated captions (to turn them off there, leave fullscreen and choose Off).
 - iOS: no embedded YouTube player anywhere, and description links never open YouTube (both apps follow one shared link rule).
