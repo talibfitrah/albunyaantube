@@ -1,13 +1,16 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.exception.ContentGoneException;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
-import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.factory.annotation.Value;
+import org.springframework.http.CacheControl;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.MediaType;
 import org.springframework.http.ResponseEntity;
 import org.springframework.stereotype.Controller;
@@ -18,7 +21,6 @@ import org.springframework.web.bind.annotation.ResponseBody;
 
 import jakarta.servlet.http.HttpServletRequest;
 
-import java.util.List;
 import java.util.Locale;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
@@ -43,7 +45,8 @@ public class WatchPageController {
     private static final Logger log = LoggerFactory.getLogger(WatchPageController.class);
 
     private static final int DESCRIPTION_MAX_CHARS = 300;
-    private static final String PUBLIC_SHARE_HOST = "app.fitrahtube.com";
+    /** The FitrahTube logo card the landing site already serves as its own og:image (landing/build.py), 1200x630. */
+    private static final String GENERIC_CARD_IMAGE = "https://fitrahtube.com/og.png";
 
     /**
      * Allowed shape for the {@code videoId} path variable. Firestore document IDs and
@@ -58,18 +61,23 @@ public class WatchPageController {
     );
     private static final Pattern YOUTUBE_AVATAR_SIZE_PATTERN = Pattern.compile("=s\\d+(?=-|$)");
     private static final Pattern HTTPS_URL_PATTERN = Pattern.compile("^https://[^\\s\"'<>]+$", Pattern.CASE_INSENSITIVE);
-    private static final Pattern SAFE_HOST_PATTERN = Pattern.compile("^[A-Za-z0-9.-]+(?::[0-9]{1,5})?$");
 
     private final PublicContentService contentService;
-    private final SearchIndex searchIndex;
+    private final String publicBaseUrl;
 
-    public WatchPageController(PublicContentService contentService, SearchIndex searchIndex) {
+    /**
+     * {@code publicBaseUrl} is the only origin og:url and canonical links ever use; request Host and
+     * X-Forwarded-* headers never reach the page. Its default lives here, not in application.yml, because prod's
+     * application-prod.yml replaces the classpath yml.
+     */
+    public WatchPageController(PublicContentService contentService,
+                               @Value("${app.public-base-url:https://app.fitrahtube.com}") String publicBaseUrl) {
         this.contentService = contentService;
-        this.searchIndex = searchIndex;
+        this.publicBaseUrl = publicBaseUrl.replaceAll("/+$", "");
     }
 
     /**
-     * Retired: share pages render only server-known text (registry rows, else the search index's title), so what
+     * Retired: share pages render only server-known text (registry rows, else one generic card), so what
      * a caller posts here is never shown. The route stays authenticated and answers 204, so installed Android apps,
      * which post on every share and only log a non-2xx, see no change. The body is not read.
      */
@@ -91,16 +99,13 @@ public class WatchPageController {
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This video is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
+        String canonicalUrl = canonicalUrl(request, "watch", videoId);
         try {
             Video video = contentService.getVideoDetails(videoId);
-            if (video != null) {
-                return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildHtml(video, canonicalUrl));
-            }
+            return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildHtml(video, canonicalUrl));
         } catch (Exception e) {
-            log.warn("Watch page fallback for videoId={}: {}", videoId, e.getMessage());
+            return fallback(e, "video", videoId, canonicalUrl);
         }
-        return videoFallback(videoId, canonicalUrl);
     }
 
     @GetMapping(value = {"/channel/{channelId}", "/api/channel/{channelId}"}, produces = MediaType.TEXT_HTML_VALUE)
@@ -111,7 +116,7 @@ public class WatchPageController {
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This channel is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
+        String canonicalUrl = canonicalUrl(request, "channel", channelId);
         try {
             Channel channel = contentService.getChannelDetails(channelId);
             String html = buildShareHtml(
@@ -125,8 +130,7 @@ public class WatchPageController {
                     "profile");
             return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
-            log.warn("Channel share page fallback for channelId={}: {}", channelId, e.getMessage());
-            return notAvailable(channelId, canonicalUrl, "albunyaantube://channel/" + channelId, "channel");
+            return fallback(e, "channel", channelId, canonicalUrl);
         }
     }
 
@@ -138,7 +142,7 @@ public class WatchPageController {
                     .contentType(MediaType.TEXT_HTML)
                     .body(buildUnavailableHtml("", "", "", "FitrahTube", "This playlist is not available.", ""));
         }
-        String canonicalUrl = buildCanonicalUrl(request);
+        String canonicalUrl = canonicalUrl(request, "playlist", playlistId);
         try {
             Playlist playlist = contentService.getPlaylistDetails(playlistId);
             String itemCount = playlist.getItemCount() == null ? "FitrahTube playlist" : playlist.getItemCount() + " videos";
@@ -153,8 +157,7 @@ public class WatchPageController {
                     "website");
             return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
         } catch (Exception e) {
-            log.warn("Playlist share page fallback for playlistId={}: {}", playlistId, e.getMessage());
-            return notAvailable(playlistId, canonicalUrl, "albunyaantube://playlist/" + playlistId, "playlist");
+            return fallback(e, "playlist", playlistId, canonicalUrl);
         }
     }
 
@@ -173,41 +176,37 @@ public class WatchPageController {
     }
 
     /**
-     * A video id outside the registry: the title and channel the search index holds for it (stored streams, and inner
-     * videos once served), else the generic card. Never text a caller supplied (backlog fix, inner-search plan Task 5).
+     * Why the registry lookup failed decides the page:
+     * - not in the catalog, or not public yet (the service's 404): one generic, server-authored card. It never carries
+     *   a per-id title or thumbnail, so a fitrahtube.com link can't be dressed up as arbitrary content;
+     * - blocked (the service's 410): what it answered before the fix, a video's 200 card, a channel's or playlist's 404;
+     * - anything else is a registry error: 503 no-store, so an unfurler never caches a stand-in for a catalog item.
      */
-    private ResponseEntity<String> videoFallback(String videoId, String canonicalUrl) {
-        if (!YOUTUBE_ID_PATTERN.matcher(videoId).matches()) {
-            return notAvailable(videoId, canonicalUrl, "albunyaantube://video/" + videoId, "video");
+    private ResponseEntity<String> fallback(Exception e, String kind, String id, String canonicalUrl) {
+        String deepLink = "albunyaantube://" + kind + "/" + id;
+        String label = kind.substring(0, 1).toUpperCase(Locale.ROOT) + kind.substring(1);
+        if (!(e instanceof ResourceNotFoundException) && !(e instanceof ContentGoneException)) {
+            log.warn("Share page registry error for {} {}: {}", kind, id, e.getMessage());
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).cacheControl(CacheControl.noStore())
+                    .contentType(MediaType.TEXT_HTML)
+                    .body(buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
+                            "This " + kind + " is temporarily unavailable. Please try again shortly.", "Temporarily unavailable"));
         }
-        ContentItemDto indexed = known(videoId);
-        String html = buildShareHtml(
-                indexed != null ? firstNonBlank(indexed.getTitle(), "FitrahTube Video") : "FitrahTube Video",
-                indexed != null ? nullSafe(indexed.getChannelTitle(), "") : "",
-                "Watch this video in FitrahTube.",
-                stableYoutubeThumbnail(videoId),
+        boolean card = "video".equals(kind) ? YOUTUBE_ID_PATTERN.matcher(id).matches() : e instanceof ResourceNotFoundException;
+        if (!card) {
+            return ResponseEntity.status(HttpStatus.NOT_FOUND).contentType(MediaType.TEXT_HTML)
+                    .body(buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
+                            "This " + kind + " is not available.", label + " not found"));
+        }
+        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildShareHtml(
+                "FitrahTube " + label,
+                "",
+                "Open this " + kind + " in the FitrahTube app.",
+                GENERIC_CARD_IMAGE,
                 canonicalUrl,
-                "albunyaantube://video/" + videoId,
+                deepLink,
                 "Open in FitrahTube",
-                "video.other");
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(html);
-    }
-
-    /** The visible hit the search index holds for this id, or null (absent, or the index is still building). */
-    private ContentItemDto known(String videoId) {
-        try {
-            List<ContentItemDto> items = searchIndex.byId(videoId, "VIDEO").items();
-            return items.isEmpty() ? null : items.get(0);
-        } catch (Exception e) {
-            return null;
-        }
-    }
-
-    private ResponseEntity<String> notAvailable(String id, String canonicalUrl, String deepLink, String itemType) {
-        String html = buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
-                "This " + itemType + " is not available.", itemType.substring(0, 1).toUpperCase(Locale.ROOT)
-                        + itemType.substring(1) + " not found");
-        return ResponseEntity.status(404).contentType(MediaType.TEXT_HTML).body(html);
+                "website"));
     }
 
     private String buildShareHtml(
@@ -225,8 +224,9 @@ public class WatchPageController {
         String description = escapeHtml(truncate(nullSafe(rawDescription, ""), DESCRIPTION_MAX_CHARS));
         String thumbnail = escapeAttr(nullSafe(rawThumbnail, ""));
         boolean profileImage = "profile".equals(ogType);
-        int imageWidth = profileImage ? 512 : 480;
-        int imageHeight = profileImage ? 512 : 360;
+        boolean genericImage = GENERIC_CARD_IMAGE.equals(rawThumbnail);
+        int imageWidth = genericImage ? 1200 : profileImage ? 512 : 480;
+        int imageHeight = genericImage ? 630 : profileImage ? 512 : 360;
 
         StringBuilder html = new StringBuilder(4096);
         html.append("<!DOCTYPE html>\n<html lang=\"en\"><head>\n");
@@ -271,7 +271,7 @@ public class WatchPageController {
         html.append("display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}\n");
         html.append(".card{max-width:640px;width:100%;background:#13161d;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)}\n");
         html.append(".thumb{width:100%;aspect-ratio:")
-                .append(profileImage ? "1/1" : "16/9")
+                .append(genericImage ? "1200/630" : profileImage ? "1/1" : "16/9")
                 .append(";object-fit:cover;background:#000;display:block}\n");
         html.append(".body{padding:20px}\n");
         html.append("h1{margin:0 0 8px;font-size:20px;line-height:1.3}\n");
@@ -394,82 +394,9 @@ public class WatchPageController {
         return "https://i.ytimg.com/vi/" + youtubeId + "/hqdefault.jpg";
     }
 
-    private static String buildCanonicalUrl(HttpServletRequest request) {
-        return buildCanonicalUrl(request, false);
-    }
-
-    private static String buildCanonicalUrl(HttpServletRequest request, boolean includeQueryString) {
-        String host = firstHeaderValue(request, "X-Forwarded-Host");
-        if (host.isEmpty()) {
-            host = firstHeaderValue(request, "Host");
-        }
-        if (host.isEmpty()) {
-            host = request.getServerName();
-            int port = request.getServerPort();
-            if (port > 0 && port != 80 && port != 443) {
-                host += ":" + port;
-            }
-        }
-        host = sanitizeHost(host, request.getServerName());
-
-        String scheme = firstHeaderValue(request, "X-Forwarded-Proto");
-        String cfScheme = extractCloudflareScheme(request.getHeader("CF-Visitor"));
-        if ("https".equals(cfScheme)) {
-            scheme = "https";
-        }
-        if ("https".equalsIgnoreCase(scheme)) {
-            scheme = "https";
-        } else if ("http".equalsIgnoreCase(scheme)) {
-            scheme = "http";
-        } else {
-            scheme = request.isSecure() ? "https" : nullSafe(request.getScheme(), "http");
-        }
-        if ("http".equals(scheme) && hostWithoutPort(host).equalsIgnoreCase(PUBLIC_SHARE_HOST)) {
-            scheme = "https";
-        }
-
-        String url = scheme + "://" + host + request.getRequestURI();
-        String query = request.getQueryString();
-        if (includeQueryString && query != null && !query.isBlank()) {
-            url += "?" + query;
-        }
-        return url;
-    }
-
-    private static String firstHeaderValue(HttpServletRequest request, String name) {
-        String value = request.getHeader(name);
-        if (value == null || value.isBlank()) {
-            return "";
-        }
-        int comma = value.indexOf(',');
-        return (comma >= 0 ? value.substring(0, comma) : value).trim();
-    }
-
-    private static String sanitizeHost(String host, String fallback) {
-        String value = host == null ? "" : host.trim();
-        if (SAFE_HOST_PATTERN.matcher(value).matches()) {
-            return value;
-        }
-        return (fallback == null || fallback.isBlank()) ? PUBLIC_SHARE_HOST : fallback;
-    }
-
-    private static String hostWithoutPort(String host) {
-        int colon = host.indexOf(':');
-        return colon >= 0 ? host.substring(0, colon) : host;
-    }
-
-    private static String extractCloudflareScheme(String cfVisitor) {
-        if (cfVisitor == null) {
-            return "";
-        }
-        String compact = cfVisitor.replaceAll("\\s+", "").toLowerCase(Locale.ROOT);
-        if (compact.contains("\"scheme\":\"https\"")) {
-            return "https";
-        }
-        if (compact.contains("\"scheme\":\"http\"")) {
-            return "http";
-        }
-        return "";
+    /** The configured origin, the matched route ("/api" alias kept) and the validated id: never request headers. */
+    private String canonicalUrl(HttpServletRequest request, String route, String id) {
+        return publicBaseUrl + (request.getRequestURI().startsWith("/api/") ? "/api/" : "/") + route + "/" + id;
     }
 
     private static String escapeHtml(String s) {
