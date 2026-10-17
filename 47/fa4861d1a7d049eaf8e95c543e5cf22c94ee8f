@@ -1,0 +1,28 @@
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryServiceTest.java
+  s_dbb6b1f3671904::t_2e9599abdeb91b 265-313
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryGuardIT.java
+  s_dbb6b1f3671904::t_2e9599abdeb91b 706-708
+  s_dbb6b1f3671904::t_11b05e8e92d27a 700-705
+  s_dbb6b1f3671904::t_adb79870680862 699
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryService.java
+  s_dbb6b1f3671904::t_2e9599abdeb91b 209,218,238
+backend/src/test/java/com/albunyaan/tube/exception/GlobalExceptionHandlerStatusTest.java
+  s_dbb6b1f3671904::t_2e9599abdeb91b 58-61,83-85
+  s_dbb6b1f3671904::t_b733f35e736f16 86-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "47fa4861d1a7d049eaf8e95c543e5cf22c94ee8f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
