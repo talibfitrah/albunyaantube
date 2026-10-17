@@ -296,6 +296,158 @@ class ContentValidationServiceTest {
             assertEquals("Updated Title", savedPlaylist.getTitle());
             assertEquals(50, savedPlaylist.getItemCount());
         }
+
+        private static final String GOOD_THUMB = "https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg";
+        private static final String PLC_THUMB =
+                "https://i.ytimg.com/pl_c/PL5Iqua6mGO0ZTG6qfW5oyUVlxA5IvcBoG/studio_square_thumbnail.jpg?sqp=CJzKwdYG&rs=AOn4CL";
+
+        private PlaylistDetailsDto dtoWithThumbnail(String url) {
+            PlaylistDetailsDto dto = new PlaylistDetailsDto();
+            dto.setThumbnailUrl(url);
+            return dto;
+        }
+
+        private Playlist playlistAt(String youtubeId, String thumbnailUrl, Instant lastValidated) {
+            Playlist p = createPlaylist(youtubeId, youtubeId, ValidationStatus.VALID);
+            p.setThumbnailUrl(thumbnailUrl);
+            p.setLastValidatedAt(Timestamp.ofTimeSecondsAndNanos(lastValidated.getEpochSecond(), 0));
+            return p;
+        }
+
+        /** Serves the rows the way Firestore does (lastValidatedAt ASC), honouring the query limit. */
+        private void stubApprovedPlaylists(List<Playlist> firestoreOrder) throws Exception {
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt()))
+                    .thenAnswer(inv -> firestoreOrder.subList(0,
+                            Math.min(inv.<Integer>getArgument(1), firestoreOrder.size())));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt()))
+                    .thenReturn(Collections.emptyList());
+        }
+
+        @SuppressWarnings("unchecked")
+        private List<String> pickedIds(int limit) throws Exception {
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList()))
+                    .thenReturn(new BatchValidationResult<>());
+            service.validatePlaylists("SCHEDULED", null, "Playlist Validation Scheduler", limit);
+            ArgumentCaptor<List<String>> ids = ArgumentCaptor.forClass(List.class);
+            verify(channelOrchestrator).batchValidatePlaylistsDtoWithDetails(ids.capture());
+            return ids.getValue();
+        }
+
+        @Test
+        @DisplayName("Refresh never stores a broken thumbnail, a usable one heals a broken stored value, and the run counts it")
+        void refreshPlaylistMetadata_neverWritesBrokenThumbnail_healsBrokenStored() throws Exception {
+            Instant twoDaysAgo = Instant.now().minus(2, ChronoUnit.DAYS);
+            Playlist keeps = playlistAt("PLkeepsGoodThumbnail", GOOD_THUMB, twoDaysAgo);
+            Playlist noThumb = playlistAt("PLkeepsOnNoThumbnail", GOOD_THUMB, twoDaysAgo);
+            Playlist heals = playlistAt("PLhealsBrokenThumbnail", PLC_THUMB, twoDaysAgo);
+            Playlist staysBroken = playlistAt("PLstaysBroken", PLC_THUMB, twoDaysAgo);
+            stubApprovedPlaylists(List.of(keeps, noThumb, heals, staysBroken));
+
+            BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("PLkeepsGoodThumbnail", dtoWithThumbnail(PLC_THUMB));
+            result.addValid("PLkeepsOnNoThumbnail", dtoWithThumbnail("https://i.ytimg.com/img/no_thumbnail.jpg"));
+            result.addValid("PLhealsBrokenThumbnail", dtoWithThumbnail(GOOD_THUMB));
+            result.addValid("PLstaysBroken", dtoWithThumbnail(null));
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+
+            ValidationRun run = service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
+
+            assertEquals(GOOD_THUMB, keeps.getThumbnailUrl());
+            assertEquals(GOOD_THUMB, noThumb.getThumbnailUrl());
+            assertEquals(GOOD_THUMB, heals.getThumbnailUrl());
+            assertEquals(PLC_THUMB, staysBroken.getThumbnailUrl());
+            assertEquals(2, run.getDetails().get("brokenThumbnailsPicked"));
+            assertEquals(1, run.getDetails().get("brokenThumbnailsHealed"));
+        }
+
+        @Test
+        @DisplayName("Playlists with a broken stored thumbnail are validated first, still within the run cap")
+        void validatePlaylists_brokenThumbnailsFirst_withinCap() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            // Firestore's order (lastValidatedAt ASC): 50 healthy, long-unvalidated rows ahead of 3 broken,
+            // recently validated ones, so the broken rows sit past any page the old oldest-first fetch read.
+            List<Playlist> firestoreOrder = new ArrayList<>();
+            for (int i = 0; i < 50; i++) {
+                firestoreOrder.add(playlistAt(String.format("PLhealthy%02d", i), GOOD_THUMB, base.plusSeconds(i)));
+            }
+            List<String> brokenUrls = Arrays.asList(PLC_THUMB, "https://i.ytimg.com/img/no_thumbnail.jpg", null);
+            for (int i = 0; i < brokenUrls.size(); i++) {
+                firestoreOrder.add(playlistAt("PLbroken" + i, brokenUrls.get(i),
+                        Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+            }
+            stubApprovedPlaylists(firestoreOrder);
+
+            List<String> ids = pickedIds(20);
+
+            assertEquals(20, ids.size());
+            assertEquals(List.of("PLbroken0", "PLbroken1", "PLbroken2"), ids.subList(0, 3));
+            assertEquals(List.of("PLhealthy00", "PLhealthy16"), List.of(ids.get(3), ids.get(19)),
+                    "the rest stay oldest-first");
+        }
+
+        @Test
+        @DisplayName("Broken-first takes at most half the run, so rows that never heal cannot starve routine checks")
+        void validatePlaylists_brokenFirstCappedAtHalf() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            List<Playlist> firestoreOrder = new ArrayList<>();
+            for (int i = 0; i < 30; i++) {
+                firestoreOrder.add(playlistAt(String.format("PLhealthy%02d", i), GOOD_THUMB, base.plusSeconds(i)));
+            }
+            for (int i = 0; i < 30; i++) {
+                firestoreOrder.add(playlistAt(String.format("PLbroken%02d", i), PLC_THUMB,
+                        Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+            }
+            stubApprovedPlaylists(firestoreOrder);
+
+            List<String> ids = pickedIds(20);
+
+            assertEquals(20, ids.size());
+            assertEquals(10, ids.stream().filter(id -> id.startsWith("PLbroken")).count(), ids.toString());
+            assertEquals(10, ids.stream().filter(id -> id.startsWith("PLhealthy")).count(), ids.toString());
+        }
+
+        @Test
+        @DisplayName("Only broken rows a fetch could heal jump the queue; empty and ERROR rows keep their oldest-first turn")
+        void validatePlaylists_onlyHealableBrokenRowsJumpTheQueue() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            List<Playlist> firestoreOrder = new ArrayList<>();
+            List<String> expectedFill = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                firestoreOrder.add(playlistAt("PLhealthyOld" + i, GOOD_THUMB, base.plusSeconds(i)));
+            }
+            for (int i = 0; i < 11; i++) {
+                Playlist p = playlistAt(String.format("PLcantHeal%02d", i), PLC_THUMB, base.plusSeconds(10 + i));
+                if (i % 2 == 0) {
+                    p.setItemCount(0);                                  // empty: nothing to borrow from
+                } else {
+                    p.setValidationStatus(ValidationStatus.ERROR);      // keeps failing to fetch
+                }
+                firestoreOrder.add(p);
+            }
+            for (int i = 0; i < 10; i++) {
+                firestoreOrder.add(playlistAt("PLhealthyNew" + i, GOOD_THUMB, base.plusSeconds(30 + i)));
+            }
+            firestoreOrder.forEach(p -> expectedFill.add(p.getYoutubeId()));
+            Playlist healable = playlistAt("PLhealable", PLC_THUMB, Instant.now().minus(2, ChronoUnit.DAYS));
+            healable.setItemCount(12);
+            firestoreOrder.add(healable);
+            stubApprovedPlaylists(firestoreOrder);
+
+            List<String> ids = pickedIds(20);
+
+            assertEquals("PLhealable", ids.get(0));
+            assertEquals(expectedFill.subList(0, 19), ids.subList(1, 20), "the rest fill oldest-first");
+        }
+
+        @Test
+        @DisplayName("A broken row validated within 24h is still skipped")
+        void validatePlaylists_brokenRowRespects24hSkip() throws Exception {
+            stubApprovedPlaylists(List.of(
+                    playlistAt("PLhealthyOld", GOOD_THUMB, Instant.now().minus(3, ChronoUnit.DAYS)),
+                    playlistAt("PLbrokenRecent", PLC_THUMB, Instant.now().minus(1, ChronoUnit.HOURS))));
+
+            assertEquals(List.of("PLhealthyOld"), pickedIds(20));
+        }
     }
 
     @Nested

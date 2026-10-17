@@ -22,14 +22,13 @@ import java.util.regex.Pattern;
 /**
  * Resolves a stable playlist thumbnail via YouTube's public oEmbed endpoint.
  *
- * <p>NewPipe v0.25.2 cannot parse current YouTube playlist item lists
- * ({@code lockupViewModel}), so {@code PlaylistInfo.getRelatedItems()} comes
- * back empty and the only thumbnail it exposes is the signed, dated
- * {@code /pl_c/…/studio_square_thumbnail.jpg} URL that expires (HTTP 404).
- * oEmbed sidesteps that: for a playlist it returns the first video's
- * {@code i.ytimg.com/vi/{videoId}/hqdefault.jpg} image — stable, never-expiring,
- * and fallback-ladderable by the client. This avoids a NewPipe major bump that
- * would also disturb the live dub-poToken extraction path.
+ * <p>NewPipe's playlist header thumbnail for a custom-thumbnail playlist is the
+ * signed, dated {@code /pl_c/…/studio_square_thumbnail.jpg} URL that expires
+ * (HTTP 404). {@code ChannelOrchestrator.mapToPlaylistDetailsDto} replaces it with
+ * the first item's {@code /vi/} image from the same fetch; this client is the
+ * fallback when that page has no items. For a playlist oEmbed returns the first
+ * video's {@code i.ytimg.com/vi/{videoId}/hqdefault.jpg} image — stable,
+ * never-expiring, and fallback-ladderable by the client.
  */
 @Service
 public class YouTubeOEmbedClient {

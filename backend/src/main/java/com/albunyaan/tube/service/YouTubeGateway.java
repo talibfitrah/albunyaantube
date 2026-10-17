@@ -4,6 +4,7 @@ import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.registry.PreviewErrorCode;
 import com.albunyaan.tube.dto.registry.PreviewMetadata;
 import com.albunyaan.tube.model.VideoType;
+import com.albunyaan.tube.util.ThumbnailUrls;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor;
@@ -745,7 +746,7 @@ public class YouTubeGateway {
         var m = new PreviewMetadata(
                 youtubeId,
                 info.getName(),
-                pickThumb(info.getThumbnails()),
+                ThumbnailUrls.playlistThumbnail(pickThumb(info.getThumbnails()), info.getRelatedItems()),
                 info.getUploaderName(),
                 deriveChannelIdFromUrl(info.getUploaderUrl()),
                 null,

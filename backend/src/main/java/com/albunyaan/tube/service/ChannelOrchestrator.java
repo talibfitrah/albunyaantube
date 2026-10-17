@@ -1173,14 +1173,10 @@ public class ChannelOrchestrator {
             return null;
         }
         PlaylistDetailsDto dto = mapToPlaylistDetailsDto(info);
-        // Import hardening (single-item path only): NewPipe v0.25.2 yields the
-        // volatile /pl_c/ playlist thumbnail that expires; resolve a stable /vi/
-        // thumbnail via oEmbed so imports never persist a URL that will rot. The
-        // batch validators (scheduler / bulk import) deliberately skip this to
-        // avoid a per-item network round-trip; stale rows they store are healed
-        // by the re-runnable thumbnail-repair migration.
-        if (dto != null && oEmbedClient != null
-                && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
+        // Admin JSON import only (SimpleImportService, real run and dry run): when mapping found no usable
+        // thumbnail (no items to borrow one from), ask oEmbed. ponytail: one unthrottled request per such
+        // playlist in a file, admin-initiated and rare; the scheduled and bulk paths never call it.
+        if (oEmbedClient != null && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
             oEmbedClient.playlistThumbnailUrl(youtubeId).ifPresent(dto::setThumbnailUrl);
         }
         return dto;
@@ -1349,9 +1345,10 @@ public class ChannelOrchestrator {
         dto.setUploaderUrl(playlist.getUploaderUrl());
         dto.setStreamCount(playlist.getStreamCount());
 
-        if (playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()) {
-            dto.setThumbnailUrl(playlist.getThumbnails().get(0).getUrl());
-        }
+        dto.setThumbnailUrl(ThumbnailUrls.playlistThumbnail(
+                playlist.getThumbnails() != null && !playlist.getThumbnails().isEmpty()
+                        ? playlist.getThumbnails().get(0).getUrl() : null,
+                playlist.getRelatedItems()));
 
         if (playlist.getRelatedItems() != null) {
             List<StreamItemDto> streamItems = playlist.getRelatedItems().stream()
