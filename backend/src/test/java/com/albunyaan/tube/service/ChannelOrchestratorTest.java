@@ -32,6 +32,7 @@ import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.schabi.newpipe.extractor.stream.StreamType;
 
 import java.io.IOException;
 import java.util.ArrayDeque;
@@ -156,6 +157,7 @@ class ChannelOrchestratorTest {
             when(plc.getUrl()).thenReturn(
                     "https://i.ytimg.com/pl_c/" + playlistId + "/studio_square_thumbnail.jpg?days_since_epoch=20603");
             PlaylistInfo playlistInfo = mock(PlaylistInfo.class);
+            when(playlistInfo.getUrl()).thenReturn("https://www.youtube.com/playlist?list=" + playlistId);
             when(playlistInfo.getThumbnails()).thenReturn(List.of(plc));
             when(gateway.fetchPlaylistInfo(playlistId)).thenReturn(playlistInfo);
 
@@ -167,6 +169,47 @@ class ChannelOrchestratorTest {
             PlaylistDetailsDto dto = hardened.validateAndFetchPlaylistDto(playlistId);
 
             assertNotNull(dto);
+            assertEquals("https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg", dto.getThumbnailUrl());
+        }
+
+        private PlaylistInfo playlistWithHeader(String playlistId, String headerUrl) {
+            Image header = mock(Image.class);
+            when(header.getUrl()).thenReturn(headerUrl);
+            PlaylistInfo playlistInfo = mock(PlaylistInfo.class);
+            when(playlistInfo.getUrl()).thenReturn("https://www.youtube.com/playlist?list=" + playlistId);
+            when(playlistInfo.getThumbnails()).thenReturn(List.of(header));
+            return playlistInfo;
+        }
+
+        @Test
+        @DisplayName("Mapping swaps an expiring /pl_c/ header for the first video's /vi/ thumbnail, with no extra request")
+        void mapToPlaylistDetailsDto_brokenHeader_usesFirstVideoThumbnail() {
+            String playlistId = "PLlZazEh_c4nScNCvGBn8OEf6ujk-sDUpg";
+            PlaylistInfo playlistInfo = playlistWithHeader(playlistId, "https://i.ytimg.com/pl_c/" + playlistId
+                    + "/studio_square_thumbnail.jpg?sqp=CJzKwdYG-oaymwEICKoDEPABSFqi85f_AwYI0sG4xAY=&rs=AOn4CL");
+            when(playlistInfo.getRelatedItems()).thenReturn(List.of(
+                    new StreamInfoItem(0, "https://www.youtube.com/watch?v=5ZMMARhgvsw", "Part 1", StreamType.VIDEO_STREAM),
+                    new StreamInfoItem(0, "https://www.youtube.com/watch?v=c_zD7w_HLf4", "Part 2", StreamType.VIDEO_STREAM)));
+            YouTubeOEmbedClient oEmbed = mock(YouTubeOEmbedClient.class);
+
+            PlaylistDetailsDto dto = new ChannelOrchestrator(gateway, null, null, oEmbed).mapToPlaylistDetailsDto(playlistInfo);
+
+            assertEquals("https://i.ytimg.com/vi/5ZMMARhgvsw/hqdefault.jpg", dto.getThumbnailUrl());
+            verifyNoInteractions(oEmbed);
+        }
+
+        @Test
+        @DisplayName("Mapping a broken header with no items falls back to oEmbed")
+        void mapToPlaylistDetailsDto_brokenHeaderNoItems_fallsBackToOEmbed() {
+            String playlistId = "PLmO7YhDrrq7CEwJKpdMVEpjUS--rtfzcy";
+            PlaylistInfo playlistInfo = playlistWithHeader(playlistId, "https://i.ytimg.com/img/no_thumbnail.jpg");
+            when(playlistInfo.getRelatedItems()).thenReturn(List.of());
+            YouTubeOEmbedClient oEmbed = mock(YouTubeOEmbedClient.class);
+            when(oEmbed.playlistThumbnailUrl(playlistId))
+                    .thenReturn(Optional.of("https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg"));
+
+            PlaylistDetailsDto dto = new ChannelOrchestrator(gateway, null, null, oEmbed).mapToPlaylistDetailsDto(playlistInfo);
+
             assertEquals("https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg", dto.getThumbnailUrl());
         }
     }

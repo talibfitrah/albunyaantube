@@ -14,6 +14,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.ValidationRunRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.util.ThumbnailUrls;
 import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -803,9 +804,11 @@ public class ContentValidationService {
     }
 
     private List<Playlist> getPlaylistsForValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        // Fetch with Firestore-level limit to avoid loading entire collection
-        // Multiply by 2 to account for filtering (some may be recently validated)
-        List<Playlist> allPlaylists = fetchApprovedPlaylists(limit * 2);
+        // Reads every approved playlist so one with a broken stored thumbnail can jump the oldest-first
+        // queue: Firestore cannot query "thumbnailUrl contains /pl_c/". The YouTube budget stays `limit`.
+        // ponytail: one doc read per approved playlist per run (~450/day); store a broken-thumbnail flag
+        // and query it instead if the catalog grows into the tens of thousands.
+        List<Playlist> allPlaylists = fetchApprovedPlaylists(Integer.MAX_VALUE);
         Instant oneDayAgo = Instant.now().minus(1, ChronoUnit.DAYS);
 
         List<Playlist> result = allPlaylists.stream()
@@ -833,10 +836,9 @@ public class ContentValidationService {
                     // Include ERROR items if validated more than 24h ago (retry after cooling off)
                     return lastValidatedInstant.isBefore(oneDayAgo);
                 })
-                .sorted(Comparator.comparing(
-                        Playlist::getLastValidatedAt,
-                        Comparator.nullsFirst(Comparator.naturalOrder())
-                ))
+                // Broken stored thumbnail first (false sorts before true), then oldest-validated first
+                .sorted(Comparator.comparing((Playlist p) -> !ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl()))
+                        .thenComparing(Playlist::getLastValidatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
                 .limit(limit)
                 .collect(Collectors.toList());
 
@@ -1187,7 +1189,9 @@ public class ContentValidationService {
         if (dto.getDescription() != null) {
             playlist.setDescription(dto.getDescription());
         }
-        if (dto.getThumbnailUrl() != null && !dto.getThumbnailUrl().isBlank()) {
+        // Never store an unrenderable thumbnail (blank, no_thumbnail, expiring /pl_c/): keep what is stored.
+        // A usable one always wins, which is also what heals a broken stored value.
+        if (!ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
             playlist.setThumbnailUrl(dto.getThumbnailUrl());
         }
         if (dto.getStreamCount() != null && dto.getStreamCount() >= 0) {
@@ -1265,7 +1269,7 @@ public class ContentValidationService {
 
     /**
      * Fetch approved playlists with Firestore-level limit, tolerating both uppercase and lowercase status values.
-     * Uses limit parameter to avoid loading entire collection into memory.
+     * The validator reads them all (see {@link #getPlaylistsForValidation}).
      * Orders by lastValidatedAt ascending to prevent validation starvation - items that haven't
      * been validated recently are prioritized over recently validated items.
      */

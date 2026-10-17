@@ -1169,21 +1169,7 @@ public class ChannelOrchestrator {
      */
     public PlaylistDetailsDto validateAndFetchPlaylistDto(String youtubeId) {
         PlaylistInfo info = validateAndFetchPlaylist(youtubeId);
-        if (info == null) {
-            return null;
-        }
-        PlaylistDetailsDto dto = mapToPlaylistDetailsDto(info);
-        // Import hardening (single-item path only): NewPipe v0.25.2 yields the
-        // volatile /pl_c/ playlist thumbnail that expires; resolve a stable /vi/
-        // thumbnail via oEmbed so imports never persist a URL that will rot. The
-        // batch validators (scheduler / bulk import) deliberately skip this to
-        // avoid a per-item network round-trip; stale rows they store are healed
-        // by the re-runnable thumbnail-repair migration.
-        if (dto != null && oEmbedClient != null
-                && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
-            oEmbedClient.playlistThumbnailUrl(youtubeId).ifPresent(dto::setThumbnailUrl);
-        }
-        return dto;
+        return info != null ? mapToPlaylistDetailsDto(info) : null;
     }
 
     /**
@@ -1359,6 +1345,19 @@ public class ChannelOrchestrator {
                     .filter(Objects::nonNull)
                     .collect(Collectors.toList());
             dto.setRelatedStreams(streamItems);
+        }
+
+        // A custom-thumbnail playlist's header is a signed /pl_c/ URL that 404s within days (or it is
+        // no_thumbnail.jpg). Use the first video's stable /vi/ image from this same fetch; oEmbed only
+        // when the page has no items. Every path (validator, bulk, single add) maps through here.
+        if (ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
+            String firstVideo = dto.getRelatedStreams() == null || dto.getRelatedStreams().isEmpty() ? null
+                    : "https://i.ytimg.com/vi/" + dto.getRelatedStreams().get(0).getId() + "/hqdefault.jpg";
+            if (!ThumbnailUrls.isBrokenPlaylistThumbnail(firstVideo)) {
+                dto.setThumbnailUrl(firstVideo);
+            } else if (oEmbedClient != null) {
+                oEmbedClient.playlistThumbnailUrl(dto.getId()).ifPresent(dto::setThumbnailUrl);
+            }
         }
 
         return dto;

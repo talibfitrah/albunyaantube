@@ -34,7 +34,8 @@ import java.util.concurrent.TimeUnit;
  *   inside {@code batchValidatePlaylistsDtoWithDetails} — 20 items ≈ 80s.
  * - Circuit breaker auto-pauses on rate-limit detection.
  * - {@code max-items-per-run} caps each run.
- * - {@code getPlaylistsForValidation} skips items validated within 24h.
+ * - {@code getPlaylistsForValidation} skips items validated within 24h, and
+ *   takes playlists with a broken stored thumbnail first so the run heals them.
  * - Staggered 30 min after the channel validator (1 hour after video) so the
  *   three never overlap.
  *
