@@ -98,13 +98,9 @@ public class SecurityConfig {
                         .requestMatchers(HttpMethod.HEAD, "/watch/**").permitAll()
                         .requestMatchers(HttpMethod.GET, "/api/watch/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/api/watch/**").permitAll()
-                        // Plan F+ hardening: POST /api/share-metadata is no longer
-                        // anonymous. An attacker rotating X-Device-Id could otherwise
-                        // poison cached og:title/og:description for any non-registry
-                        // video, channel or playlist ID — a phishing-grade preview
-                        // spoofing primitive. Requiring a valid Firebase ID token
-                        // forces the poisoner to mint accounts and ties writes to a
-                        // UID that the per-device rate limiter still buckets.
+                        // POST /api/share-metadata is a no-op since inner-search Task 5: share pages render only
+                        // server-known text, never what a caller posts. It stays authenticated, as before, so its
+                        // shape is unchanged for installed apps.
                         .requestMatchers(HttpMethod.POST, "/api/share-metadata/**").authenticated()
                         .requestMatchers(HttpMethod.GET, "/channel/**").permitAll()
                         .requestMatchers(HttpMethod.HEAD, "/channel/**").permitAll()
