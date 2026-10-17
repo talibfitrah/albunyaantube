@@ -30,6 +30,7 @@ class BulkSubmissionServiceSubmitTest {
     private com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private YouTubeGateway gateway;
     private SubmissionRateLimiter submissionRateLimiter;
+    private LiveCategoryGuard liveCategoryGuard;
     private BulkSubmissionService svc;
 
     @BeforeEach
@@ -71,6 +72,7 @@ class BulkSubmissionServiceSubmitTest {
         submissionRateLimiter = mock(SubmissionRateLimiter.class);
         when(submissionRateLimiter.tryAcquire(any(), anyInt())).thenReturn(null);
 
+        liveCategoryGuard = mock(LiveCategoryGuard.class);   // checkAll answers an empty map: no LIVE row
         svc = new BulkSubmissionService(
                 new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 gateway,
@@ -80,7 +82,8 @@ class BulkSubmissionServiceSubmitTest {
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
                 categoryRepository,
-                submissionRateLimiter);
+                submissionRateLimiter,
+                liveCategoryGuard);
     }
 
     @Test
@@ -293,7 +296,8 @@ class BulkSubmissionServiceSubmitTest {
                 mock(PublicContentCacheService.class),
                 sortOrderMock,
                 categoryRepository,
-                submissionRateLimiter);
+                submissionRateLimiter,
+                liveCategoryGuard);
 
         var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
                 new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
@@ -492,5 +496,20 @@ class BulkSubmissionServiceSubmitTest {
         // per-submit dedupe cache works and a 25-row × 10-categoryId batch doesn't
         // hammer Firestore with 250 redundant lookups.
         verify(categoryRepository, times(1)).existsById("cat-shared");
+    }
+
+    /** D13 / pre-flight M5: a live-category video row is written with the guard's verified channel, not the fetched one. */
+    @Test
+    void aLiveCategoryVideoRowIsWrittenWithTheVerifiedChannel() throws Exception {
+        when(liveCategoryGuard.checkAll(eq(true), any())).thenReturn(java.util.Map.of("0", "UCROKYPep-UuODNwyipe6JMw"));
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean())).thenReturn("doc-v-live");
+        var row = new SubmitRow(0, "https://www.youtube.com/watch?v=Rs7St51oDDc", YouTubeContentType.VIDEO, null,
+                new PreviewMetadata("Rs7St51oDDc", "Sunnah", null, null, null, null, null, null, null), List.of("cat-live"));
+
+        svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true);
+
+        var written = org.mockito.ArgumentCaptor.forClass(PreviewMetadata.class);
+        verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean());
+        assertEquals("UCROKYPep-UuODNwyipe6JMw", written.getValue().channelId());   // the gateway stub says "UCauth"
     }
 }

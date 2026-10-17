@@ -69,6 +69,7 @@ class ContentLibraryBulkGraduationTest {
     @Mock private ImportGraduationService graduationService;
     @Mock private com.albunyaan.tube.repository.UserRepository userRepository;
     @Mock private ApplicationEventPublisher events;
+    @Mock private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks private ContentLibraryController controller;
 

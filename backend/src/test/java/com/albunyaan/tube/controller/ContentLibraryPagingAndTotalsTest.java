@@ -46,6 +46,8 @@ class ContentLibraryPagingAndTotalsTest {
     private com.albunyaan.tube.service.SortOrderService sortOrderService;
     @Mock
     private com.albunyaan.tube.service.TagEnrichmentService tagEnrichmentService;
+    @Mock
+    private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks
     private ContentLibraryController controller;

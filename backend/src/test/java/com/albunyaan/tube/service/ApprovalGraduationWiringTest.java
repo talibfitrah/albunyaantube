@@ -59,7 +59,8 @@ class ApprovalGraduationWiringTest {
                 sortOrderService,
                 streamIndexService,
                 userRepository,
-                graduationService
+                graduationService,
+                org.mockito.Mockito.mock(LiveCategoryGuard.class)
         );
     }
 

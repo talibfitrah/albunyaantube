@@ -36,7 +36,8 @@ class BulkSubmissionServicePreviewTest {
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
                 mock(com.albunyaan.tube.repository.CategoryRepository.class),
-                mock(SubmissionRateLimiter.class));
+                mock(SubmissionRateLimiter.class),
+                mock(LiveCategoryGuard.class));
     }
 
     @Test

@@ -61,6 +61,7 @@ class ContentLibraryDeleteReachesDevicesTest {
     @Mock private ImportGraduationService importGraduationService;
     @Mock private UserRepository userRepository;
     @Mock private ApplicationEventPublisher events;
+    @Mock private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks
     private ContentLibraryController controller;

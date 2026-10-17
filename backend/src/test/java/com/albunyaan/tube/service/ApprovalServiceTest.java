@@ -47,7 +47,8 @@ class ApprovalServiceTest {
         MockitoAnnotations.openMocks(this);
         service = new ApprovalService(channelRepository, playlistRepository, videoRepository,
                 categoryRepository, approvalRepository, auditLogService, sortOrderService,
-                streamIndexService, userRepository, importGraduationService);
+                streamIndexService, userRepository, importGraduationService,
+                org.mockito.Mockito.mock(LiveCategoryGuard.class));
     }
 
     @Test

@@ -137,6 +137,8 @@ public class SortOrderController {
             List<ContentSortDto> result = sortOrderService.addMultipleContentToCategory(
                     categoryId, serviceItems);
             return ResponseEntity.ok(result);
+        } catch (com.albunyaan.tube.exception.LiveCategoryException e) {
+            throw e;                                   // rendered by GlobalExceptionHandler with its code (§4.2)
         } catch (IllegalArgumentException e) {
             log.warn("Add content to category failed: {}", e.getMessage());
             return ResponseEntity.badRequest().build();

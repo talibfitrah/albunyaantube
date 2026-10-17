@@ -44,7 +44,8 @@ class SortOrderServiceTest {
         service = new SortOrderService(
                 categoryRepository, orderRepository,
                 channelRepository, playlistRepository, videoRepository,
-                cacheService
+                cacheService,
+                org.mockito.Mockito.mock(LiveCategoryGuard.class)
         );
     }
 

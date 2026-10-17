@@ -53,7 +53,7 @@ class PendingSubmittersTest {
         approvalService = new ApprovalService(
                 channelRepository, playlistRepository, videoRepository, categoryRepository,
                 approvalRepository, auditLogService, sortOrderService, streamIndexService,
-                userRepository, graduationService);
+                userRepository, graduationService, org.mockito.Mockito.mock(LiveCategoryGuard.class));
     }
 
     private static ApprovalRepository.PendingSubmitterRow row(String uid, String source) {

@@ -11,6 +11,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.ImportGraduationService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.service.TagEnrichmentService;
@@ -68,6 +69,7 @@ public class ContentLibraryController {
     private final ImportGraduationService importGraduationService;
     private final UserRepository userRepository;
     private final ApplicationEventPublisher events;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -80,7 +82,8 @@ public class ContentLibraryController {
             TagEnrichmentService tagEnrichmentService,
             ImportGraduationService importGraduationService,
             UserRepository userRepository,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -93,6 +96,7 @@ public class ContentLibraryController {
         this.importGraduationService = importGraduationService;
         this.userRepository = userRepository;
         this.events = events;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -1206,6 +1210,7 @@ public class ContentLibraryController {
                 .getContext().getAuthentication().getName();
         log.info("Bulk approve started: user={}, itemCount={}", username, request.items.size());
 
+        writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges(request.items, null, "APPROVED")));   // row 13
         BulkActionResponse response = executeBulkStatusUpdate(request.items, "APPROVED", "approving");
 
         // Add newly approved items to category sort order (only for items that succeeded)
@@ -1368,6 +1373,7 @@ public class ContentLibraryController {
     public ResponseEntity<BulkActionResponse> bulkAssignCategories(@NotNull @Valid @RequestBody BulkCategoryAssignmentRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges(request.items, request.categoryIds, null))); // row 12
         int successCount = 0;
         List<String> errors = new ArrayList<>();
 
@@ -1451,6 +1457,39 @@ public class ContentLibraryController {
 
         publicContentCacheService.evictPublicContentCaches();
         return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    /** §7 rows 12–13 (D9): one Change per library item, read from its stored doc; missing docs are skipped. */
+    private List<LiveCategoryGuard.Change> liveChanges(List<BulkActionItem> items, List<String> newIds, String newStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<LiveCategoryGuard.Change> changes = new ArrayList<>();
+        for (BulkActionItem item : items) {
+            String type = item.type.toLowerCase(Locale.ROOT);
+            String ref = type + ":" + item.id;
+            switch (type) {
+                case "channel" -> channelRepository.findById(item.id).ifPresent(c -> changes.add(LiveCategoryGuard.Change.of(ref, c, c,
+                        newIds != null ? newIds : c.getCategoryIds(), newStatus != null ? newStatus : c.getStatus())));
+                case "playlist" -> playlistRepository.findById(item.id).ifPresent(p -> changes.add(LiveCategoryGuard.Change.of(ref, p, p,
+                        newIds != null ? newIds : p.getCategoryIds(), newStatus != null ? newStatus : p.getStatus())));
+                case "video" -> videoRepository.findById(item.id).ifPresent(v -> changes.add(LiveCategoryGuard.Change.of(ref, v, v,
+                        newIds != null ? newIds : v.getCategoryIds(), newStatus != null ? newStatus : v.getStatus())));
+                default -> { }
+            }
+        }
+        return changes;
+    }
+
+    /** Writes the guard's verified channel ids onto video docs (D13), keyed "video:<docId>". */
+    private void writeVerifiedChannels(Map<String, String> verified)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        for (Map.Entry<String, String> e : verified.entrySet()) {
+            if (!e.getKey().startsWith("video:")) continue;
+            Video v = videoRepository.findById(e.getKey().substring("video:".length())).orElse(null);
+            if (v != null && !e.getValue().equals(v.getChannelId())) {
+                v.setChannelId(e.getValue());
+                videoRepository.save(v);
+            }
+        }
     }
 
     /**

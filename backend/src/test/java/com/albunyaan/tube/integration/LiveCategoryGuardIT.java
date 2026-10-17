@@ -47,6 +47,7 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
 
     @MockBean FirebaseAuth firebaseAuth;
     @MockBean LiveTabReader reader;
+    @MockBean com.albunyaan.tube.service.YouTubeGateway gateway;   // no NewPipe fetch ever leaves a test (row 10's submit)
     @Autowired ObjectMapper json;
     @Autowired ChannelRepository channels;
     @Autowired PlaylistRepository playlists;
@@ -337,5 +338,84 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         Video stored = videos.findById("doc-r9b").orElseThrow();
         assertThat(stored.getChannelId()).isEqualTo(uc("r9b"));
         assertThat(stored.getStatus()).isEqualTo("APPROVED");
+    }
+
+    // ---- Row 10: bulk submit (whole request, D9) ----
+
+    @Test
+    void row10_oneBadRowRefusesTheWholeBulkSubmitAndListsIt() throws Exception {
+        as("admin");
+        liveOn(uc("r10"), "it1r10live1");
+        String playlistId = "PLit1r1000000000000000000000000000";
+        Map<String, Object> channelRow = Map.of("rowIndex", 0,
+                "originalUrl", "https://www.youtube.com/channel/" + uc("r10"), "detectedType", "CHANNEL",
+                "metadata", Map.of("youtubeId", uc("r10"), "title", "C"), "categoryIds", List.of(LIVE));
+        Map<String, Object> playlistRow = Map.of("rowIndex", 1,
+                "originalUrl", "https://www.youtube.com/playlist?list=" + playlistId, "detectedType", "PLAYLIST",
+                "metadata", Map.of("youtubeId", playlistId, "title", "P"), "categoryIds", List.of(LIVE));
+        send(post("/api/admin/registry/bulk/submit"), Map.of("rows", List.of(channelRow, playlistRow), "status", "APPROVED"))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"))
+                .andExpect(jsonPath("$.details.offenders[0].ref").value("1"));
+        assertThat(countDocuments("channels")).isZero();
+        assertThat(countDocuments("playlists")).isZero();
+    }
+
+    // ---- Row 11: approve with categoryOverride ----
+
+    @Test
+    void row11_approvingAPlaylistIntoLiveIs400AndItStaysPending() throws Exception {
+        doc("playlists", "pl-r11", Map.of("youtubeId", "PLit1r1100000000000000000000000000", "title", "P",
+                "status", "PENDING", "submittedBy", "moderator-uid", "categoryIds", List.of(PLAIN)));
+        as("admin");
+        send(post("/api/admin/approvals/pl-r11/approve"), Map.of("categoryOverride", LIVE))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(playlists.findById("pl-r11").orElseThrow().getStatus()).isEqualTo("PENDING");
+    }
+
+    // ---- Row 12: library bulk assign (whole request) ----
+
+    @Test
+    void row12_aNonLiveVideoRefusesTheWholeAssign() throws Exception {
+        doc("channels", "ch-r12", Map.of("youtubeId", uc("r12c"), "name", "C", "status", "APPROVED", "categoryIds", List.of(PLAIN)));
+        doc("videos", "doc-r12", Map.of("youtubeId", "it1r12vid01", "title", "V", "status", "APPROVED",
+                "channelId", uc("r12v"), "categoryIds", List.of(PLAIN)));
+        as("admin");
+        liveOn(uc("r12c"), "it1r12live1");
+        liveOn(uc("r12v"), "it1r12other");
+        send(post("/api/admin/content/bulk/assign-categories"), Map.of(
+                "items", List.of(Map.of("type", "channel", "id", "ch-r12"), Map.of("type", "video", "id", "doc-r12")),
+                "categoryIds", List.of(LIVE)))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_LINK_NOT_LIVE"));
+        assertThat(channels.findById("ch-r12").orElseThrow().getCategoryIds()).containsExactly(PLAIN);
+    }
+
+    // ---- Row 13: library bulk approve (raw status batch) ----
+
+    @Test
+    void row13_bulkApprovingAPendingPlaylistInLiveIs400AndNothingIsApproved() throws Exception {
+        doc("playlists", "pl-r13", Map.of("youtubeId", "PLit1r1300000000000000000000000000", "title", "P",
+                "status", "PENDING", "categoryIds", List.of(LIVE)));
+        as("admin");
+        send(post("/api/admin/content/bulk/approve"), Map.of("items", List.of(Map.of("type", "playlist", "id", "pl-r13"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(playlists.findById("pl-r13").orElseThrow().getStatus()).isEqualTo("PENDING");
+    }
+
+    // ---- Row 14: sort screen "add to category" ----
+
+    @Test
+    void row14_addingAPlaylistToLiveOnTheSortScreenIs400WithItsCode() throws Exception {
+        doc("playlists", "pl-r14", Map.of("youtubeId", "PLit1r1400000000000000000000000000", "title", "P",
+                "status", "APPROVED", "categoryIds", List.of()));
+        as("admin");
+        send(post("/api/admin/sort/categories/" + LIVE + "/content/add"),
+                Map.of("items", List.of(Map.of("contentId", "pl-r14", "contentType", "playlist"))))
+                .andExpect(status().isBadRequest())
+                .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
+        assertThat(playlists.findById("pl-r14").orElseThrow().getCategoryIds()).isEmpty();
     }
 }

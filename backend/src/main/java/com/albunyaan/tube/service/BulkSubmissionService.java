@@ -11,6 +11,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 
@@ -36,6 +37,7 @@ public class BulkSubmissionService {
     private final SortOrderService sortOrderService;
     private final com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private final SubmissionRateLimiter submissionRateLimiter;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public BulkSubmissionService(YouTubeUrlParser parser, YouTubeGateway gateway,
                                   RegistryDuplicateChecker dedupe, RegistrySubmissionWriter writer,
@@ -43,7 +45,8 @@ public class BulkSubmissionService {
                                   PublicContentCacheService publicContentCacheService,
                                   SortOrderService sortOrderService,
                                   com.albunyaan.tube.repository.CategoryRepository categoryRepository,
-                                  SubmissionRateLimiter submissionRateLimiter) {
+                                  SubmissionRateLimiter submissionRateLimiter,
+                                  LiveCategoryGuard liveCategoryGuard) {
         this.parser = parser;
         this.gateway = gateway;
         this.dedupe = dedupe;
@@ -53,6 +56,7 @@ public class BulkSubmissionService {
         this.sortOrderService = sortOrderService;
         this.categoryRepository = categoryRepository;
         this.submissionRateLimiter = submissionRateLimiter;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     public BulkPreviewResponse preview(BulkPreviewRequest req) {
@@ -129,6 +133,23 @@ public class BulkSubmissionService {
                         org.springframework.http.HttpStatus.BAD_REQUEST,
                         "detectedType ALL is not supported in bulk submit");
             }
+        }
+
+        // D9: the whole request is refused on any live-category violation, before any slot or write is spent.
+        List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
+        for (SubmitRow row : req.rows()) {
+            liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
+                    row.detectedType().name().toLowerCase(java.util.Locale.ROOT), row.metadata().youtubeId(),
+                    row.metadata().channelId(), List.of(), null, row.categoryIds(), resolvedStatus));
+        }
+        Map<String, String> verifiedChannels;
+        try {
+            verifiedChannels = liveCategoryGuard.checkAll(isAdmin, liveChanges);
+        } catch (ExecutionException | TimeoutException e) {
+            throw new IllegalStateException("live-category check failed", e);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            throw new IllegalStateException("interrupted during the live-category check", e);
         }
 
         // Row-count-aware rate-limit consumption. The
@@ -303,7 +324,12 @@ public class BulkSubmissionService {
                 failed++;
                 continue;
             }
-            PreviewMetadata trustedMetadata = authoritative.metadata();
+            // D13: a live-category video row is stored with the guard's verified channel, not the fetched one.
+            String verifiedChannel = verifiedChannels.get(String.valueOf(row.rowIndex()));
+            PreviewMetadata fetched = authoritative.metadata();
+            PreviewMetadata trustedMetadata = verifiedChannel == null ? fetched : new PreviewMetadata(fetched.youtubeId(),
+                    fetched.title(), fetched.thumbnailUrl(), fetched.channelName(), verifiedChannel, fetched.subscribers(),
+                    fetched.itemCount(), fetched.durationSeconds(), fetched.viewCount());
             VideoType trustedVideoType = authoritative.videoType();
 
             try {

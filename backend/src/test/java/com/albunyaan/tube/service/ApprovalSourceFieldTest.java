@@ -64,7 +64,8 @@ class ApprovalSourceFieldTest {
                 sortOrderService,
                 streamIndexService,
                 userRepository,
-                graduationService
+                graduationService,
+                org.mockito.Mockito.mock(LiveCategoryGuard.class)
         );
     }
 
