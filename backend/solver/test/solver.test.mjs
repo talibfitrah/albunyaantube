@@ -421,3 +421,22 @@ test('poll is single-flight: concurrent callers share one run (M9)', async () =>
   assert.equal(builds.length, 1);
   yt.close();
 });
+
+test('a failed cache delete in a read-only directory leaves poll resolving and /health answering (fix round 2)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  fs.writeFileSync(path.join(dir, 'aaaaaaaa.js'), 'no timestamp here');
+  fs.chmodSync(dir, 0o500);
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const server = serve(solver, { host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  try {
+    await assert.doesNotReject(solver.poll());
+    assert.equal(solver.health().lastPoll.step, 'sts');
+    assert.equal((await fetch(`http://127.0.0.1:${server.address().port}/health`)).status, 503);
+  } finally {
+    fs.chmodSync(dir, 0o700);
+    server.close();
+    yt.close();
+  }
+});

@@ -192,7 +192,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       log.warn(`WARN poll failed at ${step}: ${error.message}`);
       lastPoll = { at: now(), ok: false, step };
       // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again
-      if (file && ['sts', 'build', 'self-test'].includes(step)) fs.rmSync(file, { force: true });
+      if (file && ['sts', 'build', 'self-test'].includes(step)) try { fs.rmSync(file, { force: true }); } catch { /* the WARN above names the step */ }
     }
   }
 
@@ -271,6 +271,7 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
       req.destroy();
     });
     req.on('end', () => {
+      if (res.headersSent) return;
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { error: 'malformed' }); }
       if (typeof body?.playerId !== 'string' || !strings(body.n) || !strings(body.s)) return send(400, { error: 'malformed' });
@@ -286,6 +287,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const solver = createSolver({ origin: process.env.SOLVER_ORIGIN || undefined,
                                 cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });
-  solver.poll();
-  setInterval(() => solver.poll(), 30 * 60_000);     // at startup and every 30 min (§4.5)
+  const pollSafely = () => solver.poll().catch((e) => console.warn(`WARN poll rejected: ${e.message}`));   // never kill the process
+  pollSafely();
+  setInterval(pollSafely, 30 * 60_000);     // at startup and every 30 min (§4.5)
 }
