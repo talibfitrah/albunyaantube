@@ -56,7 +56,10 @@ struct RemoteImage: View {
     var missingSymbol: String?
 
     @State private var image: UIImage?
-    @State private var missing = false
+    /// The URL a load last ended with no picture for (fix round 1, A2). The glyph shows only while that is still `url`:
+    /// a new URL never inherits the old verdict, and a re-appearing cell keeps its glyph instead of flickering
+    /// through the skeleton. Double optional: `.some(nil)` is "no URL, decided"; `nil` is "nothing decided yet".
+    @State private var missingFor: URL??
 
     init(url: URL?, contentMode: ContentMode = .fill, savedCopy: URL? = nil, missingSymbol: String? = nil) {
         self.url = url
@@ -117,8 +120,10 @@ struct RemoteImage: View {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
                 Color.skeleton.overlay {
-                    if missing, let missingSymbol {
-                        Image(systemName: missingSymbol).font(.title2).foregroundStyle(Color.textSecondary).accessibilityHidden(true)
+                    if missingFor == .some(url), let missingSymbol {
+                        // Decorative: Dynamic Type grows it only to xxxLarge, so it never fills an 80 pt square.
+                        Image(systemName: missingSymbol).font(.title2).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                            .foregroundStyle(Color.textSecondary).accessibilityHidden(true)
                     }
                 }
             }
@@ -128,7 +133,6 @@ struct RemoteImage: View {
     }
 
     private func load() async {
-        missing = false // a reused cell or a new URL starts clean
         // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
         if let savedCopy, let cached = Self.cache.object(forKey: savedCopy as NSURL) { image = cached; return }
         if let url, let cached = Self.cache.object(forKey: url as NSURL) {
@@ -143,7 +147,7 @@ struct RemoteImage: View {
         // image the replacement task had already committed for the NEW url.
         guard !Task.isCancelled else { return }
         image = loaded
-        missing = loaded == nil
+        missingFor = loaded == nil ? .some(url) : nil
     }
 
     /// The one image fetch in the app, shared with `BackgroundPlaybackController`'s Now Playing
@@ -170,8 +174,9 @@ struct RemoteImage: View {
                 return copy
             }
         }
-        // Owner issue 3: YouTube's grey "no thumbnail" image is no picture (backend `ThumbnailUrls.isBrokenPlaylistThumbnail`);
-        // checked before the cache, so a copy cached earlier never comes back.
+        // Owner issue 3: YouTube's grey "no thumbnail" image is no picture (backend `ThumbnailUrls.isBrokenPlaylistThumbnail`).
+        // Refused before this URL's cache lookup and the network, so it is never fetched or cached here; a saved
+        // item's own copy, read above, still wins.
         guard let url, url.scheme?.lowercased() == "https", !url.path.contains("/img/no_thumbnail") else { return nil }
         if let cached = cache.object(forKey: url as NSURL) {
             if let savedCopy { backfill(cached, to: savedCopy) }

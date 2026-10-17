@@ -500,6 +500,19 @@ struct PlaylistDetailViewModelTests {
         #expect((body?["items"] as? [[String: Any]])?.first?["name"] as? String == RoutingTransport.original)
     }
 
+    /// Fix round 1, A1: a deep link's header has no picture until `load()` ends (gate, browse, up to 1.5 s of
+    /// `/titles`), so the hero's glyph waits for a finished load: no glyph, skeleton, picture flash.
+    @Test func theHeroGlyphWaitsForAFinishedLoad() {
+        let symbol = Tab.playlists.symbolName
+        #expect(PlaylistDetailScreen.heroMissingSymbol(nil) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.idle) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.loadingInitial) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.loaded(items: [VideoItem(id: "lesson00001", title: "L")], continuation: nil,
+                                                               isAppending: false, showsLoadMore: false)) == symbol)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.empty(messageKey: "playlist_empty_state")) == symbol)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.errorInitial(messageKey: "x")) == symbol)
+    }
+
     // MARK: - Live-source harness
 
     /// Routes by request: the gate's HEAD, the browse POST (InnerTubeKit's own `browse-playlist.json`,
