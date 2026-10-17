@@ -1,0 +1,31 @@
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_632663f60c21b4 153
+  s_dbb6b1f3671904::t_6a06c68c1dfb6f 61,70-72,169,236,273,276-278,280,284,286-305,307,309,311,313-314,316-364,367-370
+backend/src/main/java/com/albunyaan/tube/config/CacheConfig.java
+  s_dbb6b1f3671904::t_63fa9b3bbc6dd9 153-154
+backend/src/main/java/com/albunyaan/tube/exception/GlobalExceptionHandler.java
+  s_dbb6b1f3671904::t_63fa9b3bbc6dd9 429-437
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_5a41fdccce671d 42,52-53,62
+  s_dbb6b1f3671904::t_63fa9b3bbc6dd9 136-142,158,161,163,167-171,300-301,303,314,343,348-354,362,364-370,375,377,380-382
+  s_dbb6b1f3671904::t_93a1cbfe66cda2 165-166
+backend/src/test/java/com/albunyaan/tube/controller/ContentReportControllerTest.java
+  s_dbb6b1f3671904::t_6a06c68c1dfb6f 25,27,138-149
+  s_dbb6b1f3671904::t_de150ab32a72ec 150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "776d621c2b7842bfe2a4db9182b3a187aec16c45",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
