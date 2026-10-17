@@ -314,8 +314,10 @@ public class ContentValidationService {
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
-            logger.info("Playlist validation completed - checked: {}, archived: {}",
-                    validationRun.getPlaylistsChecked(), validationRun.getPlaylistsMarkedArchived());
+            logger.info("Playlist validation completed - checked: {}, archived: {}, brokenThumbnailsPicked: {}, healed: {}",
+                    validationRun.getPlaylistsChecked(), validationRun.getPlaylistsMarkedArchived(),
+                    validationRun.getDetails().getOrDefault("brokenThumbnailsPicked", 0),
+                    validationRun.getDetails().getOrDefault("brokenThumbnailsHealed", 0));
 
         } catch (Exception e) {
             logger.error("Playlist validation failed", e);
@@ -541,6 +543,9 @@ public class ContentValidationService {
                 channelOrchestrator.batchValidatePlaylistsDtoWithDetails(youtubeIds);
         List<String> archivedPlaylistIds = new ArrayList<>();
         List<String> errorPlaylistIds = new ArrayList<>();
+        int brokenThumbnailsPicked = (int) playlistsToValidate.stream()
+                .filter(p -> ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl())).count();
+        int brokenThumbnailsHealed = 0;
 
         int skippedCount = 0;
         for (Playlist playlist : playlistsToValidate) {
@@ -564,11 +569,15 @@ public class ContentValidationService {
 
                     // Refresh cached metadata from YouTube
                     PlaylistDetailsDto dto = validationResult.getContent(youtubeId);
+                    boolean wasBroken = ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl());
                     if (dto != null) {
                         refreshPlaylistMetadata(playlist, dto);
                     }
 
                     playlistRepository.save(playlist);
+                    if (wasBroken && !ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl())) {
+                        brokenThumbnailsHealed++;
+                    }
                     logger.debug("Playlist validated as VALID - youtubeId: {}", youtubeId);
 
                 } else if (validationResult.isNotFound(youtubeId)) {
@@ -632,6 +641,8 @@ public class ContentValidationService {
         if (skippedCount > 0) {
             run.addDetail("skippedPlaylistsCount", skippedCount);
         }
+        run.addDetail("brokenThumbnailsPicked", brokenThumbnailsPicked);
+        run.addDetail("brokenThumbnailsHealed", brokenThumbnailsHealed);
     }
 
     private void validateVideosInternal(ValidationRun run, String actorName, int limit)
@@ -808,10 +819,10 @@ public class ContentValidationService {
         // queue: Firestore cannot query "thumbnailUrl contains /pl_c/". The YouTube budget stays `limit`.
         // ponytail: one doc read per approved playlist per run (~450/day); store a broken-thumbnail flag
         // and query it instead if the catalog grows into the tens of thousands.
-        List<Playlist> allPlaylists = fetchApprovedPlaylists(Integer.MAX_VALUE);
+        List<Playlist> allPlaylists = fetchApprovedPlaylists();
         Instant oneDayAgo = Instant.now().minus(1, ChronoUnit.DAYS);
 
-        List<Playlist> result = allPlaylists.stream()
+        List<Playlist> eligible = allPlaylists.stream()
                 .filter(p -> {
                     ValidationStatus status = p.getValidationStatus();
 
@@ -836,11 +847,22 @@ public class ContentValidationService {
                     // Include ERROR items if validated more than 24h ago (retry after cooling off)
                     return lastValidatedInstant.isBefore(oneDayAgo);
                 })
-                // Broken stored thumbnail first (false sorts before true), then oldest-validated first
-                .sorted(Comparator.comparing((Playlist p) -> !ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl()))
-                        .thenComparing(Playlist::getLastValidatedAt, Comparator.nullsFirst(Comparator.naturalOrder())))
-                .limit(limit)
+                .sorted(Comparator.comparing(
+                        Playlist::getLastValidatedAt,
+                        Comparator.nullsFirst(Comparator.naturalOrder())
+                ))
                 .collect(Collectors.toList());
+
+        // Broken stored thumbnails jump the queue, capped at half the run so rows that never heal (empty,
+        // always ERROR) cannot starve routine checks and archiving; the rest fill oldest-first.
+        List<Playlist> result = eligible.stream()
+                .filter(p -> ThumbnailUrls.isBrokenPlaylistThumbnail(p.getThumbnailUrl()))
+                .limit(limit / 2)
+                .collect(Collectors.toCollection(ArrayList::new));
+        eligible.stream()
+                .filter(p -> !result.contains(p))
+                .limit(limit - result.size())
+                .forEach(result::add);
 
         // Log breakdown for debugging
         long neverValidated = result.stream().filter(p -> p.getValidationStatus() == null).count();
@@ -1268,14 +1290,13 @@ public class ContentValidationService {
     }
 
     /**
-     * Fetch approved playlists with Firestore-level limit, tolerating both uppercase and lowercase status values.
-     * The validator reads them all (see {@link #getPlaylistsForValidation}).
-     * Orders by lastValidatedAt ascending to prevent validation starvation - items that haven't
-     * been validated recently are prioritized over recently validated items.
+     * Fetch every approved playlist, tolerating both uppercase and lowercase status values, ordered by
+     * lastValidatedAt ascending. Reads them all so broken thumbnails can be found (see
+     * {@link #getPlaylistsForValidation}).
      */
-    private List<Playlist> fetchApprovedPlaylists(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+    private List<Playlist> fetchApprovedPlaylists() throws ExecutionException, InterruptedException, TimeoutException {
         List<Playlist> merged = new ArrayList<>();
-        int perCaseLimit = limit;
+        int perCaseLimit = Integer.MAX_VALUE; // no effective limit: the query API takes one
         // Query both cases - playlists historically used lowercase, but controllers may set uppercase
         // Order by lastValidatedAt ASC to prioritize oldest-validated items (prevents starvation)
         merged.addAll(playlistRepository.findByStatusOrderByLastValidatedAtAsc("approved", perCaseLimit));

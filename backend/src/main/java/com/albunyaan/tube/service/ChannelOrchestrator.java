@@ -1169,7 +1169,16 @@ public class ChannelOrchestrator {
      */
     public PlaylistDetailsDto validateAndFetchPlaylistDto(String youtubeId) {
         PlaylistInfo info = validateAndFetchPlaylist(youtubeId);
-        return info != null ? mapToPlaylistDetailsDto(info) : null;
+        if (info == null) {
+            return null;
+        }
+        PlaylistDetailsDto dto = mapToPlaylistDetailsDto(info);
+        // Interactive single add only: when mapping found no usable thumbnail (no items to borrow one
+        // from), ask oEmbed. Batch paths never do, so they stay inside the throttle and breaker.
+        if (oEmbedClient != null && ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
+            oEmbedClient.playlistThumbnailUrl(youtubeId).ifPresent(dto::setThumbnailUrl);
+        }
+        return dto;
     }
 
     /**
@@ -1348,15 +1357,15 @@ public class ChannelOrchestrator {
         }
 
         // A custom-thumbnail playlist's header is a signed /pl_c/ URL that 404s within days (or it is
-        // no_thumbnail.jpg). Use the first video's stable /vi/ image from this same fetch; oEmbed only
-        // when the page has no items. Every path (validator, bulk, single add) maps through here.
-        if (ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())) {
-            String firstVideo = dto.getRelatedStreams() == null || dto.getRelatedStreams().isEmpty() ? null
-                    : "https://i.ytimg.com/vi/" + dto.getRelatedStreams().get(0).getId() + "/hqdefault.jpg";
+        // no_thumbnail.jpg). Use the first video's stable /vi/ image from this same fetch, no extra request.
+        // With no items or an unusable id the broken header stays: the validator's refresh then keeps the
+        // stored value and single add asks oEmbed. Maps here: the validator, bulk import, single add,
+        // report lookup. Admin add-for-approval and edits store the client's URL and rely on the daily heal.
+        if (ThumbnailUrls.isBrokenPlaylistThumbnail(dto.getThumbnailUrl())
+                && dto.getRelatedStreams() != null && !dto.getRelatedStreams().isEmpty()) {
+            String firstVideo = "https://i.ytimg.com/vi/" + dto.getRelatedStreams().get(0).getId() + "/hqdefault.jpg";
             if (!ThumbnailUrls.isBrokenPlaylistThumbnail(firstVideo)) {
                 dto.setThumbnailUrl(firstVideo);
-            } else if (oEmbedClient != null) {
-                oEmbedClient.playlistThumbnailUrl(dto.getId()).ifPresent(dto::setThumbnailUrl);
             }
         }
 
