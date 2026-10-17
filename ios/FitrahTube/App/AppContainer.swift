@@ -690,6 +690,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `gateTransport`: a real session live, a canned 503 in a fixture, which must write nothing
     /// (`AppContainerTests.theFakeContainerPushesNoIndexBatches`).
     private(set) lazy var index = IndexClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    /// Owner issue 1(b): the original titles for browse rows. Same `gateTransport` rule as `index`: a fixture asks
+    /// nothing (`AppContainerTests.theFakeContainerAsksNoTitles`).
+    private(set) lazy var titles = TitlesClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
     /// Plan C Task 3: the hand-written `POST /api/v1/reports` (same seam, awaited by `ReportSheet`).
     private(set) lazy var report: ReportClient = {
         #if DEBUG
@@ -707,6 +710,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         atom: innerTube.atom,
         latch: DegradedLatch(store: UserDefaultsKeyValueStore(defaults: userDefaults)),
         index: index,
+        titles: titles,
         gate: BackendAvailabilityGate(baseURL: apiBaseURL),
         degradedHeader: degradedHeader
     )

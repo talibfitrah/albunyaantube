@@ -60,8 +60,9 @@ struct DegradedLatch: Sendable {
 /// Production `BrowseSource`: gate → browse → `BrowseFallback.decide` on throw → substitute →
 /// push to the index. **Untested by design** (the rule B1 applies to `LiveStreamResolver` and B5
 /// to `LivePlaylistQueueSource`): everything decidable lives in `BrowseFallback`, `DegradedLatch`,
-/// `IndexClient` and `BackendAvailabilityGate`, all tested; this is a pass-through whose behaviour
-/// is the clients' own.
+/// `IndexClient`, `TitlesClient` and `BackendAvailabilityGate`, all tested; this is a pass-through whose
+/// behaviour is the clients' own. Live rows take their original titles (`TitlesClient`, owner issue 1(b))
+/// before the push and the return; Atom rows already carry them.
 ///
 /// Degraded mode is three different substitutions, not one (plan Task 2 table): the header comes
 /// from the backend's `Channel` DTO, Videos from the Atom feed (15 newest, no pagination), and
@@ -72,6 +73,7 @@ struct LiveBrowseSource: BrowseSource {
     let atom: AtomFeedFetcher
     let latch: DegradedLatch
     let index: IndexClient
+    let titles: TitlesClient
     let gate: BackendAvailabilityGate
     /// `getPublicChannel` mapped to a header; nil (fake containers) means no header substitute.
     let degradedHeader: (@Sendable (String) async throws -> ChannelHeader)?
@@ -85,8 +87,9 @@ struct LiveBrowseSource: BrowseSource {
 
     func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         try await attempt({
-            let page = try await client.channelVideos(id, continuation: continuation)
-            Task { await index.push(sourceType: .channel, sourceId: id, items: page.items) }
+            var page = try await client.channelVideos(id, continuation: continuation)
+            page.items = await titles.retitle(page.items)
+            Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
             return page
         }, degraded: {
             // The feed is one page; a continuation request in degraded mode has nothing to add.
@@ -97,8 +100,9 @@ struct LiveBrowseSource: BrowseSource {
 
     func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         try await attempt({
-            let page = try await client.channelTab(id, tab: tab, continuation: continuation)
-            Task { await index.push(sourceType: .channel, sourceId: id, items: page.items) }
+            var page = try await client.channelTab(id, tab: tab, continuation: continuation)
+            page.items = await titles.retitle(page.items)
+            Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
             return page
         }, degraded: nil)
     }
@@ -110,8 +114,9 @@ struct LiveBrowseSource: BrowseSource {
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         if continuation == nil, await !gate.verify(playlistId: playlistId) { throw BrowseSourceError.unavailable }
         return try await attempt({
-            let page = try await client.playlistItems(playlistId, continuation: continuation)
-            Task { await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
+            var page = try await client.playlistItems(playlistId, continuation: continuation)
+            page.items = await titles.retitle(page.items)
+            Task { [page] in await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
             return page
         }, degraded: nil)
     }

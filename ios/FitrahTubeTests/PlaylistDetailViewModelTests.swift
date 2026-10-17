@@ -485,12 +485,29 @@ struct PlaylistDetailViewModelTests {
         #expect((body?["items"] as? [Any])?.count == min(vm.items.items.count, IndexClient.batchSize))
     }
 
+    @Test func aPlaylistPageShowsTheOriginalTitlesTheServerKnows() async {
+        // Owner issue 1(b): browse runs at hl=en, so YouTube machine-translates; `/api/v1/titles` swaps the original back
+        // in before the page reaches the screen and the index push. The route answers the first id it is asked for.
+        let transport = RoutingTransport(head: .status(200))
+        let vm = PlaylistDetailViewModel(playlistId: "PL1", title: nil, category: nil, count: nil,
+                                         browse: Self.liveSource(transport), saved: FakeSaved(), fetchHeader: nil)
+        await vm.load()
+        #expect(vm.items.items.count > 1)
+        #expect(vm.items.items.first?.title == RoutingTransport.original)
+        #expect(vm.items.items.dropFirst().allSatisfy { $0.title != RoutingTransport.original })
+        for _ in 0..<50 where transport.indexPushes.isEmpty { await Task.yield() }
+        let body = transport.indexPushes.first?.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        #expect((body?["items"] as? [[String: Any]])?.first?["name"] as? String == RoutingTransport.original)
+    }
+
     // MARK: - Live-source harness
 
     /// Routes by request: the gate's HEAD, the browse POST (InnerTubeKit's own `browse-playlist.json`,
-    /// read off disk), the index push (recorded), and everything else (remote config) throws.
+    /// read off disk), the index push (recorded), `/titles` (the first asked id gets `original`), and everything else
+    /// (remote config) throws.
     private nonisolated final class RoutingTransport: HTTPTransport, @unchecked Sendable {
         enum Head { case throwing, status(Int) }
+        static let original = "العنوان الأصلي"
         private let head: Head
         private let lock = NSLock()
         private var pushes: [HTTPRequest] = []
@@ -518,6 +535,11 @@ struct PlaylistDetailViewModelTests {
                 lock.withLock { pushes.append(request) }
                 return HTTPResponse(status: 200, headers: [:], body: Data())
             }
+            if request.url.path.hasSuffix("api/v1/titles") {
+                let first = URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first { $0.name == "ids" }?.value?.split(separator: ",").first.map(String.init)
+                return HTTPResponse(status: 200, headers: [:], body: try JSONEncoder().encode(first.map { [$0: Self.original] } ?? [:]))
+            }
             if request.url.host() == "youtubei.googleapis.com" {
                 lock.withLock { browse += 1 }
                 return HTTPResponse(status: 200, headers: [:], body: Self.fixture)
@@ -543,6 +565,7 @@ struct PlaylistDetailViewModelTests {
             atom: AtomFeedFetcher(transport: transport, keyValueStore: store),
             latch: DegradedLatch(store: store),
             index: IndexClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "test-device")),
+            titles: TitlesClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "test-device")),
             gate: BackendAvailabilityGate(transport: transport, baseURL: base),
             degradedHeader: nil)
     }

@@ -123,10 +123,12 @@ extension ContentItem {
 /// `PlayerQueue`; this is a pass-through whose behaviour is the network client's own.
 struct LivePlaylistQueueSource: PlaylistQueueSource {
     let client: BrowseClient
+    let titles: TitlesClient
 
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {
         let page = try await client.playlistItems(playlistId, continuation: continuation)
-        return (page.items.map { ContentItem(video: $0) }, page.nextContinuation)
+        let items = await titles.retitle(page.items) // owner issue 1(b): original titles
+        return (items.map { ContentItem(video: $0) }, page.nextContinuation)
     }
 }

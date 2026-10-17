@@ -477,6 +477,11 @@ struct AppContainerTests {
                 "a fake container's index push reached the network")
     }
 
+    /// Owner issue 1(b): the same rule for the `/titles` read.
+    @Test func theFakeContainerAsksNoTitles() {
+        #expect(AppContainer.fake().titles.transport is FixedStatusTransport, "a fake container's title lookup reached the network")
+    }
+
     @Test func theFakeContainerAnswersTheOfflineGateWithoutTheNetwork() async {
         let container = AppContainer.fake()
         #expect(container.gateTransport is FixedStatusTransport,
