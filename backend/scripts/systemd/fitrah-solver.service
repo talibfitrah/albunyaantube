@@ -1,0 +1,29 @@
+[Unit]
+Description=FitrahTube playback challenge solver (yt-dlp-ejs 0.8.0, Node 22)
+After=network-online.target
+Wants=network-online.target
+StartLimitIntervalSec=3600
+StartLimitBurst=4
+
+[Service]
+Type=simple
+DynamicUser=yes
+CacheDirectory=fitrah-solver
+WorkingDirectory=/opt/fitrah-solver
+Environment=SOLVER_BIND=127.0.0.1 SOLVER_PORT=4417
+ExecStart=/opt/fitrah-solver/node/bin/node --permission \
+  --allow-fs-read=/opt/fitrah-solver/ --allow-fs-read=/var/cache/fitrah-solver/ \
+  --allow-fs-write=/var/cache/fitrah-solver/ \
+  --max-old-space-size=256 /opt/fitrah-solver/app/server.mjs
+MemoryMax=384M
+CPUWeight=20
+Restart=on-failure
+RestartSec=60
+ProtectHome=yes
+InaccessiblePaths=-/opt/albunyaan
+PrivateDevices=yes
+CapabilityBoundingSet=
+RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+
+[Install]
+WantedBy=multi-user.target
