@@ -198,7 +198,7 @@ public class WatchPageController {
                     .body(buildUnavailableHtml(id, canonicalUrl, deepLink, "FitrahTube",
                             "This " + kind + " is not available.", label + " not found"));
         }
-        return ResponseEntity.ok().contentType(MediaType.TEXT_HTML).body(buildShareHtml(
+        return ResponseEntity.ok().header("X-Robots-Tag", "noindex").contentType(MediaType.TEXT_HTML).body(buildShareHtml(
                 "FitrahTube " + label,
                 "",
                 "Open this " + kind + " in the FitrahTube app.",
@@ -224,15 +224,17 @@ public class WatchPageController {
         String description = escapeHtml(truncate(nullSafe(rawDescription, ""), DESCRIPTION_MAX_CHARS));
         String thumbnail = escapeAttr(nullSafe(rawThumbnail, ""));
         boolean profileImage = "profile".equals(ogType);
-        boolean genericImage = GENERIC_CARD_IMAGE.equals(rawThumbnail);
-        int imageWidth = genericImage ? 1200 : profileImage ? 512 : 480;
-        int imageHeight = genericImage ? 630 : profileImage ? 512 : 360;
+        boolean genericCard = GENERIC_CARD_IMAGE.equals(rawThumbnail);
+        int imageWidth = genericCard ? 1200 : profileImage ? 512 : 480;
+        int imageHeight = genericCard ? 630 : profileImage ? 512 : 360;
 
         StringBuilder html = new StringBuilder(4096);
         html.append("<!DOCTYPE html>\n<html lang=\"en\"><head>\n");
         html.append("<meta charset=\"utf-8\">\n");
         html.append("<meta name=\"viewport\" content=\"width=device-width,initial-scale=1\">\n");
-        html.append("<meta name=\"robots\" content=\"index,follow,max-image-preview:large\">\n");
+        // The generic card answers for any made-up id: keep it out of search indexes. Catalog pages stay indexable.
+        html.append("<meta name=\"robots\" content=\"")
+                .append(genericCard ? "noindex" : "index,follow,max-image-preview:large").append("\">\n");
         html.append("<title>").append(title).append(" — FitrahTube</title>\n");
         html.append("<meta name=\"description\" content=\"").append(description).append("\">\n");
         html.append("<link rel=\"canonical\" href=\"").append(escapeAttr(canonicalUrl)).append("\">\n");
@@ -271,7 +273,7 @@ public class WatchPageController {
         html.append("display:flex;flex-direction:column;align-items:center;justify-content:center;padding:24px}\n");
         html.append(".card{max-width:640px;width:100%;background:#13161d;border-radius:12px;overflow:hidden;box-shadow:0 8px 32px rgba(0,0,0,.4)}\n");
         html.append(".thumb{width:100%;aspect-ratio:")
-                .append(genericImage ? "1200/630" : profileImage ? "1/1" : "16/9")
+                .append(genericCard ? "1200/630" : profileImage ? "1/1" : "16/9")
                 .append(";object-fit:cover;background:#000;display:block}\n");
         html.append(".body{padding:20px}\n");
         html.append("h1{margin:0 0 8px;font-size:20px;line-height:1.3}\n");

@@ -326,6 +326,23 @@ class WatchPageControllerTest {
                 .andExpect(content().string(not(containsString("example.com"))));
     }
 
+    @Test
+    @DisplayName("The generic card is noindex (meta + X-Robots-Tag); a catalog page carries neither")
+    void genericCardIsNoindexAndCatalogPageIsNot() throws Exception {
+        when(contentService.getVideoDetails("MissingVid1")).thenThrow(new ResourceNotFoundException("Video", "MissingVid1"));
+        when(contentService.getVideoDetails("EnfgPg0Ey3I")).thenReturn(video);
+
+        mockMvc.perform(get("/api/watch/{videoId}", "MissingVid1"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("X-Robots-Tag", "noindex"))
+                .andExpect(content().string(containsString("<meta name=\"robots\" content=\"noindex\">")));
+        mockMvc.perform(get("/api/watch/{videoId}", "EnfgPg0Ey3I"))
+                .andExpect(status().isOk())
+                .andExpect(header().doesNotExist("X-Robots-Tag"))
+                .andExpect(content().string(containsString("<meta name=\"robots\" content=\"index,follow,max-image-preview:large\">")))
+                .andExpect(content().string(not(containsString("noindex"))));
+    }
+
     // --- POST /api/share-metadata is a no-op (fail on revert) ---
 
     @Test
