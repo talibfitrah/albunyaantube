@@ -25,6 +25,7 @@ import org.apache.lucene.document.TextField;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
 import org.apache.lucene.index.IndexableField;
+import org.apache.lucene.index.QueryTimeout;
 import org.apache.lucene.index.QueryTimeoutImpl;
 import org.apache.lucene.index.StoredFields;
 import org.apache.lucene.index.Term;
@@ -76,6 +77,7 @@ import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.ScheduledThreadPoolExecutor;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.function.LongFunction;
 import java.util.function.UnaryOperator;
 import java.util.stream.Stream;
 
@@ -142,6 +144,8 @@ public class SearchIndex {
     private final InnerIndex inner;
     /** Tests lower it to force a timeout. */
     long innerTimeoutMs = INNER_TIMEOUT_MS;
+    /** A budget of `innerTimeoutMs`; tests script one that runs out at a chosen check. */
+    LongFunction<QueryTimeout> newTimeout = QueryTimeoutImpl::new;
     private final CountDownLatch ready = new CountDownLatch(1);
     private final CountDownLatch built = new CountDownLatch(1);
     private final ScheduledThreadPoolExecutor executor = new ScheduledThreadPoolExecutor(1, runnable -> {
@@ -559,31 +563,43 @@ public class SearchIndex {
     /**
      * Spec §7.1: C (today's list) is unchanged. Inner tier-1–2 hits go in at h = max(3, |C tier ≤ 2|), so C's first h
      * items and the header stay today's, and every curated tier ≤ 2 hit stays ahead of every inner hit. Never for
-     * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Any failure of the inner
-     * pass (an inner index closing under it, at a rebuild swap or shutdown) answers C: it never fails a search.
+     * CHANNEL/PLAYLIST searches, while serveInner is off, or before the inner index is built. Then, on every search while
+     * serving, broad ones too, Q17 on the answer. Any failure of the inner work (an inner index closing under it, at a
+     * rebuild swap or shutdown) answers C: it never fails a search.
      */
     private Hits withInner(Ladder today, String type, int want, Trace trace) {
         Hits plain = new Hits(today.items(), today.match());
         if (inner == null || !inner.serving() || today.tokens().isEmpty() || "CHANNEL".equals(type) || "PLAYLIST".equals(type)) {
             return plain;
         }
-        int at = Math.min(Math.max(MIN_CONFIDENT_HITS, today.upToTier2()), today.items().size());
-        int need = want - at; // = want − min(h, |C|); ≤ 0 also covers "≥ 50 exact or approximate hits"
-        if (need <= 0) return plain;
-        Set<String> seen = new HashSet<>();
-        Map<String, ContentItemDto> streams = new HashMap<>();
-        for (ContentItemDto item : today.items()) {
-            seen.add(item.getId()); // dedupe: C's copy keeps its place (a stored stream takes the inner title, Q17)
-            if (item.getSourceType() != null) streams.put(item.getId(), item); // in C only a stored stream names a source
-        }
-        List<Tiered> found;
         try {
-            found = innerLadder(today.tokens(), need, seen, streams, trace);
+            IndexSearcher shared = inner.acquire();
+            if (shared == null) return plain;
+            try {
+                Set<String> todays = new HashSet<>();
+                for (ContentItemDto item : today.items()) todays.add(item.getId());
+                Hits answer = merged(shared, today, todays, want, trace);
+                // In C only a stored stream names a source; inner hits never share an id with C.
+                originalTitles(shared, answer.items().stream()
+                        .filter(item -> item.getSourceType() != null && todays.contains(item.getId())).toList());
+                return answer;
+            } finally {
+                inner.release(shared);
+            }
         } catch (IOException | RuntimeException e) { // AlreadyClosedException included
             // The class only: a Lucene message can quote query terms, and no search log carries the query (search spec §10).
             log.warn("inner search failed ({}); answering today's list", e.getClass().getName());
             return plain;
         }
+    }
+
+    /** The §7.1 merge: C, or C[0:h] ++ I ++ C[h:] cut to `want`. `todays` holds C's ids. */
+    private Hits merged(IndexSearcher shared, Ladder today, Set<String> todays, int want, Trace trace) throws IOException {
+        Hits plain = new Hits(today.items(), today.match());
+        int at = Math.min(Math.max(MIN_CONFIDENT_HITS, today.upToTier2()), today.items().size());
+        int need = want - at; // = want − min(h, |C|); ≤ 0 also covers "≥ 50 exact or approximate hits"
+        if (need <= 0) return plain;
+        List<Tiered> found = innerLadder(shared, today.tokens(), need, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
         if (found.isEmpty()) return plain;
         List<ContentItemDto> out = new ArrayList<>(today.items().subList(0, at));
         for (Tiered t : found) out.add(t.item());
@@ -594,43 +610,37 @@ public class SearchIndex {
 
     /**
      * Tiers 1–2 on the inner index (R17), score order, longer videos before Shorts in each tier (R35), within 40 ms (R30).
-     * First Q17: each stored stream in `streams` that the inner index also lists shows the inner copy's title, which is
-     * in its source's own `hl`; the stored streams came from `hl=en` lists, so theirs are often machine-translated.
+     * ponytail: the budget is checked per page, per document and per tier, and Lucene checks it between scoring ranges;
+     * weight-time work (fuzzy and prefix rewrites, term seeks) is not bounded, so one such step can overrun 40 ms.
+     * ExitableDirectoryReader would bound it, if Task 30's max inner ms ever says so.
      */
-    private List<Tiered> innerLadder(List<String> tokens, int need, Set<String> seen, Map<String, ContentItemDto> streams,
-                                     Trace trace) throws IOException {
+    private List<Tiered> innerLadder(IndexSearcher shared, List<String> tokens, int need, Set<String> seen, Trace trace)
+            throws IOException {
         long started = System.nanoTime();
-        IndexSearcher shared = inner.acquire();
-        if (shared == null) return List.of();
         List<Tiered> out = new ArrayList<>();
-        QueryTimeoutImpl timeout = new QueryTimeoutImpl(innerTimeoutMs);
-        try {
-            IndexSearcher searcher = new IndexSearcher(shared.getIndexReader()); // per query: its own timeout
-            searcher.setTimeout(timeout);
-            // ponytail: one TermQuery per stream (≤ want); one TermInSetQuery if it ever shows in the inner ms
-            for (ContentItemDto stream : streams.values()) {
-                TopDocs copy = searcher.search(new TermQuery(new Term("id", stream.getId())), 1);
-                if (copy.scoreDocs.length > 0) stream.setTitle(searcher.storedFields().document(copy.scoreDocs[0].doc).get("t"));
+        QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
+        IndexSearcher searcher = new IndexSearcher(shared.getIndexReader()); // per query: its own timeout
+        searcher.setTimeout(timeout);
+        Map<Query, Query> rewritten = new HashMap<>();
+        UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
+            try {
+                return searcher.rewrite(q);
+            } catch (IOException e) {
+                throw new UncheckedIOException(e);
             }
-            Map<Query, Query> rewritten = new HashMap<>();
-            UnaryOperator<Query> once = fuzzy -> rewritten.computeIfAbsent(fuzzy, q -> {
-                try {
-                    return searcher.rewrite(q);
-                } catch (IOException e) {
-                    throw new UncheckedIOException(e);
-                }
-            });
-            for (int tier = 1; tier <= 2 && out.size() < need && !trace.innerTimedOut; tier++) {
-                List<ContentItemDto> longer = new ArrayList<>(), shorts = new ArrayList<>();
-                collectInner(searcher, SearchText.tier(tier, tokens, once), need - out.size(), seen, longer, shorts, timeout, trace);
-                for (ContentItemDto item : longer) out.add(new Tiered(item, tier));
-                for (ContentItemDto item : shorts) if (out.size() < need) out.add(new Tiered(item, tier));
+        });
+        for (int tier = 1; tier <= 2 && out.size() < need; tier++) {
+            if (trace.innerTimedOut || timeout.shouldExit()) { // before the tier's rewrites
+                trace.innerTimedOut = true;
+                break;
             }
-            if (searcher.timedOut()) trace.innerTimedOut = true;
-            if (trace.innerTimedOut) inner.timedOut();
-        } finally {
-            inner.release(shared);
+            List<ContentItemDto> longer = new ArrayList<>(), shorts = new ArrayList<>();
+            collectInner(searcher, SearchText.tier(tier, tokens, once), need - out.size(), seen, longer, shorts, timeout, trace);
+            for (ContentItemDto item : longer) out.add(new Tiered(item, tier));
+            for (ContentItemDto item : shorts) if (out.size() < need) out.add(new Tiered(item, tier));
+            if (searcher.timedOut()) trace.innerTimedOut = true; // Lucene stopped scoring mid-tier: no next tier
         }
+        if (trace.innerTimedOut) inner.timedOut();
         trace.innerMs = (System.nanoTime() - started) / 1_000_000;
         trace.innerHits = Math.min(out.size(), need);
         return out.size() > need ? out.subList(0, need) : out;
@@ -638,7 +648,7 @@ public class SearchIndex {
 
     /** Pages one inner tier in score order until `want` longer videos are found, the hits run out, or the budget ends. */
     private void collectInner(IndexSearcher searcher, Query query, int want, Set<String> seen, List<ContentItemDto> longer,
-                              List<ContentItemDto> shorts, QueryTimeoutImpl timeout, Trace trace) throws IOException {
+                              List<ContentItemDto> shorts, QueryTimeout timeout, Trace trace) throws IOException {
         ScoreDoc after = null;
         long n = Math.max(10, 2L * want);
         while (longer.size() < want) {
@@ -650,6 +660,10 @@ public class SearchIndex {
             if (top.scoreDocs.length == 0) return;
             StoredFields fields = searcher.storedFields();
             for (ScoreDoc hit : top.scoreDocs) {
+                if (timeout.shouldExit()) {
+                    trace.innerTimedOut = true;
+                    return;
+                }
                 Document doc = fields.document(hit.doc);
                 trace.loaded++;
                 String keeper = keeper(doc);
@@ -667,6 +681,43 @@ public class SearchIndex {
             after = top.scoreDocs[top.scoreDocs.length - 1];
             n = Math.min(2 * n, Integer.MAX_VALUE);
         }
+    }
+
+    /**
+     * Q17: each stored stream shown takes its inner copy's title, which is in its source's own `hl` (the stored titles came
+     * from `hl=en` lists, so they are often machine-translated), and keeps its place. Its own budget, checked before each
+     * lookup: past it (a cold page cache, say) the rest keep their stored titles.
+     */
+    private void originalTitles(IndexSearcher shared, List<ContentItemDto> stored) throws IOException {
+        if (stored.isEmpty()) return;
+        QueryTimeout timeout = newTimeout.apply(innerTimeoutMs);
+        IndexSearcher searcher = new IndexSearcher(shared.getIndexReader());
+        searcher.setTimeout(timeout);
+        for (ContentItemDto item : stored) {
+            if (timeout.shouldExit()) return;
+            String title = innerTitle(searcher, item.getId(), item.getSourceType().toLowerCase(Locale.ROOT) + ":" + item.getSourceId());
+            if (title != null) item.setTitle(title);
+        }
+    }
+
+    /** A video's copies looked at for its inner title; one video is rarely listed by more sources. */
+    private static final int TITLE_COPIES = 16;
+
+    /**
+     * The inner title of `id` (Q17, and Task 24b's titles): the copy `preferredKey` lists if that source keeps it, else the
+     * first copy an admitted source keeps; null if none does. A source that is not admitted never names a video.
+     */
+    String innerTitle(IndexSearcher searcher, String id, String preferredKey) throws IOException {
+        StoredFields fields = searcher.storedFields();
+        String first = null;
+        for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
+            Document doc = fields.document(hit.doc);
+            String keeper = keeper(doc);
+            if (keeper == null) continue;
+            if (keeper.equals(preferredKey)) return doc.get("t");
+            if (first == null) first = doc.get("t");
+        }
+        return first;
     }
 
     /** R28: the stream DTO's shape from an INNER document's stored fields, naming the source that keeps it. */

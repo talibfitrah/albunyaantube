@@ -22,6 +22,7 @@ import com.google.cloud.firestore.QueryDocumentSnapshot;
 import org.apache.lucene.index.DirectoryReader;
 import org.apache.lucene.index.IndexWriter;
 import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.QueryTimeout;
 import org.apache.lucene.search.IndexSearcher;
 import org.apache.lucene.search.SearcherLifetimeManager;
 import org.apache.lucene.store.AlreadyClosedException;
@@ -322,6 +323,49 @@ class SearchIndexTest {
 
     private InnerIndex zubdahnoor() throws Exception {
         return inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+    }
+
+    /** The inner reader's reference count, net of this call's own acquire. */
+    private static int refCount(InnerIndex inner) throws IOException {
+        IndexSearcher s = inner.acquire();
+        try {
+            return s.getIndexReader().getRefCount() - 1;
+        } finally {
+            inner.release(s);
+        }
+    }
+
+    private static Map<String, String> titles(SearchIndex.Hits hits) {
+        return hits.items().stream().collect(Collectors.toMap(ContentItemDto::getId, ContentItemDto::getTitle));
+    }
+
+    /**
+     * A scripted inner budget. SearchIndex's own checks find it spent from the `ownExpiry`-th on (0 = never). Lucene's
+     * TimeLimitingBulkScorer, which polls only between scoring ranges, finds it spent only on its first poll if `scorerBlip`.
+     */
+    private static QueryTimeout scripted(int ownExpiry, boolean scorerBlip) {
+        int[] own = {0}, scorer = {0};
+        return () -> {
+            boolean byScorer = StackWalker.getInstance().walk(frames ->
+                    frames.anyMatch(f -> f.getClassName().endsWith(".TimeLimitingBulkScorer")));
+            if (byScorer) return scorerBlip && scorer[0]++ == 0;
+            return ownExpiry > 0 && ++own[0] >= ownExpiry;
+        };
+    }
+
+    private static final Map<String, String> RECITED = Map.of("live-kahf", "Recitation Kahf", "live-yasin", "Recitation Yasin");
+    private static final Map<String, String> ORIGINAL = Map.of("live-kahf", "تلاوة الكهف", "live-yasin", "تلاوة يس");
+
+    /** Two stored streams under Alafasy, `hl=en` titles; their inner copies carry the original ones. */
+    private SearchIndex recitations(InnerIndex inner) throws Exception {
+        return started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(), List.of(
+                stream("live-kahf", RECITED.get("live-kahf"), ALAFASY), stream("live-yasin", RECITED.get("live-yasin"), ALAFASY)),
+                5_000, inner));
+    }
+
+    private InnerIndex originals() throws Exception {
+        return inner(Map.of(ALAFASY, List.of(item("live-kahf", ORIGINAL.get("live-kahf"), 600),
+                item("live-yasin", ORIGINAL.get("live-yasin"), 600))), Map.of(ALAFASY, "Alafasy"));
     }
 
     private String lastSlowLine() {
@@ -872,9 +916,105 @@ class SearchIndexTest {
         InnerIndex inner = zubdahnoor();
         SearchIndex idx = alafasy(inner);
         idx.innerTimeoutMs = 0;
+        idx.slowSearchMs = -1;
+        int refs = refCount(inner);
         SearchIndex.Hits hits = assertDoesNotThrow(() -> idx.search("zubdahnoor", null, 50));
         assertTrue(hits.items().size() <= 1);
         assertTrue(inner.timeouts() >= 1);
+        assertTrue(lastSlowLine().endsWith(":timeout"), lastSlowLine());
+        assertEquals(refs, refCount(inner), "the inner reader is released");
+    }
+
+    /** I1: a tier-1 search that ran out of budget mid-scoring starts no tier 2 (its fuzzy rewrites would overrun). */
+    @Test
+    void aTier1TimeoutStartsNoTier2() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600),
+                item("lesson00002", "Zubdahmoor talk", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = alafasy(inner);
+        idx.slowSearchMs = -1;
+        idx.newTimeout = ms -> scripted(0, true);
+        assertEquals(List.of(), ids(idx.search("zubdahnoor", null, 50)));
+        assertEquals(1, inner.timeouts());
+        assertTrue(lastSlowLine().endsWith(":timeout"), lastSlowLine());
+    }
+
+    /** I1: the budget is checked before each stored document of a page, not only before each page. */
+    @Test
+    void aBudgetThatEndsMidPageStopsAtTheNextDocument() throws Exception {
+        List<InnerCorpus.Item> five = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) five.add(item("lesson0000" + i, "Zubdahnoor lesson " + i, 600));
+        InnerIndex inner = inner(Map.of(ALAFASY, five), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = alafasy(inner);
+        idx.newTimeout = ms -> scripted(3, false);
+        assertTrue(ids(idx.search("zubdahnoor", null, 50)).size() < 5);
+        assertEquals(1, inner.timeouts());
+    }
+
+    /** I1: the Q17 lookups have their own budget, checked before each one: past it the rest keep their stored titles. */
+    @Test
+    void theTitleLookupsStopWhenTheirBudgetEnds() throws Exception {
+        SearchIndex idx = recitations(originals());
+        idx.newTimeout = ms -> scripted(2, false); // the second lookup finds the budget spent
+        List<ContentItemDto> items = idx.search("recitation", null, 2).items();
+        assertEquals(ORIGINAL.get(items.get(0).getId()), items.get(0).getTitle());
+        assertEquals(RECITED.get(items.get(1).getId()), items.get(1).getTitle());
+    }
+
+    /** I3: a broad query (≥ want tier-1–2 hits: no inner pass) still shows a stored stream's inner title; the lookup's searcher is released. */
+    @Test
+    void aBroadQueryStillShowsTheInnerTitleOfAStoredStream() throws Exception {
+        InnerIndex inner = originals();
+        SearchIndex idx = recitations(inner);
+        idx.slowSearchMs = -1;
+        int refs = refCount(inner);
+        SearchIndex.Hits hits = idx.search("recitation", null, 2); // need = 2 - min(3, 2) = 0
+        assertFalse(lastSlowLine().contains(" inner="), lastSlowLine());
+        assertEquals(ORIGINAL, titles(hits));
+        assertEquals(refs, refCount(inner));
+    }
+
+    /** I2: of several inner copies, the stored stream's own source's copy names it, whatever the docID order. */
+    @Test
+    void aStoredStreamTakesTheTitleOfItsOwnSourcesInnerCopy() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                ALAFASY, List.of(item("tafsir-clip", "Channel hl title", 600)), // channel_… sorts first: the lower docID
+                "playlist:PLtafsir", List.of(item("tafsir-clip", "Playlist hl title", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(),
+                List.of(stream("tafsir-clip", "Zubdahnoor tafsir clip", "playlist:PLtafsir")), 5_000, inner));
+        ContentItemDto hit = idx.search("zubdahnoor", null, 50).items().get(0);
+        assertEquals("tafsir-clip", hit.getId());
+        assertEquals("PLtafsir", hit.getSourceId());
+        assertEquals("Playlist hl title", hit.getTitle());
+    }
+
+    /** I2: a copy listed only by a source that is not admitted never names a stored stream; else the first admitted copy does. */
+    @Test
+    void aCopyFromASourceThatIsNotAdmittedNeverNamesAStoredStream() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UCaaunknown", List.of(item("live-one", "Unadmitted title one", 600), item("live-two", "Unadmitted title two", 600)),
+                "playlist:PLtafsir", List.of(item("live-two", "Admitted playlist title", 600))), Map.of());
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(), List.of(
+                        stream("live-one", "Zubdahnoor recitation one", ALAFASY),
+                        stream("live-two", "Zubdahnoor recitation two", ALAFASY)), 5_000, inner));
+        Map<String, String> titles = titles(idx.search("zubdahnoor", null, 50));
+        assertEquals("Zubdahnoor recitation one", titles.get("live-one"), "no admitted copy: the stored title stays");
+        assertEquals("Admitted playlist title", titles.get("live-two"), "its own source has no copy: the first admitted one");
+    }
+
+    /** M6: inner hits go in at h, ahead of C's tier-3 tail (an append-at-the-end merge fails here). */
+    @Test
+    void innerHitsGoAheadOfTodaysRelatedTail() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(
+                video("vZub", "Surah Zubdahnoor", "Alafasy"), video("vKahf", "Surah Al-Kahf", "Alafasy"),
+                video("vYasin", "Surah Yasin", "Alafasy"), video("vMaryam", "Surah Maryam", "Alafasy"),
+                video("vTaha", "Surah Taha", "Alafasy")), List.of(), 5_000, inner));
+        List<String> ids = ids(idx.search("surah zubdahnoor", null, 50));
+        assertEquals("vZub", ids.get(0), ids.toString());
+        assertEquals(3, ids.indexOf("lesson00001"), ids.toString());
+        assertEquals(6, ids.size(), ids.toString());
     }
 
     /** Hand-off (Task 20/21 reviews): an inner index closing under a search (rebuild swap, shutdown) never fails it. */
@@ -1015,6 +1155,9 @@ class SearchIndexTest {
         int firstInner = java.util.stream.IntStream.range(0, onIds.size()).filter(i -> innerOnly.contains(onIds.get(i)))
                 .findFirst().orElse(onIds.size());
         assertTrue(firstInner >= Math.min(3, offIds.size()), row + ": an inner hit above #4 -> " + onIds);
+        if (Set.of("surah al ikhlaas", "mohammad hijab").contains(query)) { // E25, E27: the pins must face inner hits
+            assertFalse(innerOnly.isEmpty(), row + ": no inner hit, so the pin proves nothing");
+        }
         for (String id : expected.split(" ")) assertEquals(offIds.indexOf(id), onIds.indexOf(id), row + ": " + id + " moved");
     }
 
