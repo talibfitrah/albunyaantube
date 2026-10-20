@@ -417,6 +417,81 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
+    /**
+     * Stage 3 I1: the fragment stops the player right after a failure's refresh is accepted. Left Ready(old) while the
+     * backend is asked, the stopped player's video-size reset re-prepared the failed source and spent the budget twice.
+     */
+    @Test fun `a live failure is Loading until the backend answers`() = runTest(dispatcher) {
+        val answer = kotlinx.coroutines.CompletableDeferred<ChannelLives>()
+        val later = object : ContentService by FakeContentService() {
+            override suspend fun fetchChannelLives(channelId: String): ChannelLives = answer.await()
+        }
+        val (vm, repository, _) = setup(streams("Rs7St51oDDc", isLive = true), later)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+
+            assertTrue(vm.forceRefreshForAutoRecovery())
+            assertEquals("no Ready(old) for the stopped player to rebuild", StreamState.Loading, vm.state.value.streamState)
+            runCurrent()
+            assertEquals("still no answer", StreamState.Loading, vm.state.value.streamState)
+            assertEquals(1, repository.resolveCallCount)
+
+            answer.complete(ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah"))))
+            runCurrent()
+
+            assertEquals("one same-id refresh", 2, repository.resolveCallCount)
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+        }
+    }
+
+    /** Stage 3 M4: a rotated live with no title keeps a title on screen and drops the old broadcast's details. */
+    @Test fun `a switch to an untitled live keeps the title and drops the old details`() = runTest(dispatcher) {
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(
+                videoId = "Rs7St51oDDc", title = "Sunnah", channelName = "Lecturer", description = "Old broadcast",
+                viewCount = 1234, sourceChannelId = channel, liveChannelId = channel,
+            )
+            advanceTimeBy(1_000); runCurrent()
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "")))   // the backend's null title
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+
+            vm.markCurrentComplete()
+            runCurrent()
+
+            val item = vm.state.value.currentItem!!
+            assertEquals("newSunnah01", item.streamId)
+            assertEquals("Sunnah", item.title)
+            assertEquals(null, item.description)
+            assertEquals(null, item.viewCount)
+        }
+    }
+
+    /** Codex C2: NewPipe's title may replace the display title; D12 recovery still matches the backend's. */
+    @Test fun `hydration never changes which broadcast recovery picks`() = runTest(dispatcher) {
+        val translated = object : com.albunyaan.tube.data.extractor.ExtractorClient by FakeExtractorClient() {
+            override suspend fun fetchVideoMetadata(ids: List<String>) =
+                ids.associateWith { com.albunyaan.tube.data.extractor.VideoMetadata(title = "Sunnah (translated)") }
+        }
+        val repository = FakePlayerRepository().apply { resolvedStreams = streams("Rs7St51oDDc", isLive = true) }
+        val content = FakeContentService()
+        val vm = playerViewModel(repository = repository, contentService = content, extractorClient = translated, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", title = "Sunnah", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            assertEquals("display metadata hydrates", "Sunnah (translated)", vm.state.value.currentItem?.title)
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("otherShow01", "Other"), LiveItem("newSunnah01", "Sunnah")))
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("D12 matches the backend's title at once", "newSunnah01", vm.state.value.currentItem?.streamId)
+        }
+    }
+
     /** Task 26's retry runs on a failed refresh; a refresh that is no longer live is the trigger's, not a retry. */
     @Test fun `a refresh that is no longer live asks the backend`() = runTest(dispatcher) {
         val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))

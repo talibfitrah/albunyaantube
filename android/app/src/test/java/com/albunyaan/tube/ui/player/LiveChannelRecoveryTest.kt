@@ -68,4 +68,18 @@ class LiveChannelRecoveryTest {
         assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, null, at(1)))
         assertEquals(Step.Wait(15), recovery().next(Trigger.FAILURE, emptyList(), at(0)))   // an answer of none is no blind try
     }
+
+    /** Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer. */
+    @Test fun `a malformed backend id is no answer`() {
+        val bad = listOf(LiveItem("../x?y=1", "Laith & Layla"))
+        assertEquals(Step.Wait(15), recovery().next(Trigger.ENDED, bad, at(0)))
+        assertEquals(Step.SameId, recovery().next(Trigger.FAILURE, bad, at(0)))                // the blind try, as with no answer
+        assertEquals(Step.Wait(15), recovery().next(Trigger.ENDED, listOf(LiveItem("new0000000", "x")), at(0)))  // 10 chars
+    }
+
+    /** Stage 3 M4: the backend sends "" for an unknown title; a blank title identifies no show, so D12 still waits. */
+    @Test fun `a blank title matches no sibling`() {
+        val siblings = listOf(LiveItem("kazwa000001", ""), LiveItem("zaky0000001", "A Day With Zaky"))
+        assertEquals(Step.Wait(15), LiveChannelRecovery("old0000000a", "", t0).next(Trigger.ENDED, siblings, at(0)))
+    }
 }

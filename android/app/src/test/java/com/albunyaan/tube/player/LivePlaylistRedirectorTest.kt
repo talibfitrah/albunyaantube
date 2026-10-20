@@ -68,6 +68,22 @@ class LivePlaylistRedirectorTest {
         assertNull(r.rewrite("Rs7St51oDDc", url(230, e1, ip = "203.0.113.7")))
     }
 
+    /** Stage 4 S1: a tampered master must not send the player's media playlists (and so its segments) to another host. */
+    @Test fun `a mapping on another host is never used`() = runTest {
+        val r = redirector(master(e2).replace("https://manifest.googlevideo.com/", "https://evil.example/"))
+        r.refresh(streams(e1), streams(e2))
+
+        assertNull(r.rewrite("Rs7St51oDDc", url(230, e1)))
+    }
+
+    /** Codex C3: after an egress-IP change rewrite() refuses every mapping, so refresh() must say so and take the rebuild. */
+    @Test fun `a fresh master on another ip falls back to the rebuild`() = runTest {
+        val r = redirector(master(e2, ip = "198.51.100.9"))
+        r.rewrite("Rs7St51oDDc", url(230, e1))                       // the player reads its playlist on the old ip
+
+        assertFalse(r.refresh(streams(e1), streams(e2)))
+    }
+
     @Test fun `segments, unknown itags and other streams pass through`() = runTest {
         val r = redirector(master(e2))
         r.refresh(streams(e1), streams(e2))

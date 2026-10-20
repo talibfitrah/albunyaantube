@@ -34,6 +34,7 @@
     <string name="playlist_detail_download_hint">التنزيلات تحترم سياسة AC-DL-001. سيصبح المحتوى متاحاً دون اتصال بعد الاكتمال.</string>
     <string name="detail_excluded_banner">هذا العنصر غير متاح حالياً بسبب قيود السياسة.</string>
     <string name="player_audio_only_label">صوت فقط</string>
+    <!-- Unused on Android since 1.0.4; kept because iOS reads it through ios/scripts/convert-strings.py (PlayerScreen.swift). -->
     <string name="player_status_audio_only">تشغيل الصوت فقط.</string>
     <string name="player_status_resolving">جارٍ تحميل البث…</string>
     <string name="player_stream_error">التشغيل غير متاح. يرجى المحاولة لاحقاً.</string>

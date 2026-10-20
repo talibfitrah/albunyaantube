@@ -8,6 +8,7 @@ import androidx.lifecycle.viewModelScope
 import com.albunyaan.tube.player.LivePlaylistRedirector
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.async
 import kotlinx.coroutines.cancel
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -147,6 +148,39 @@ class PlayerViewModelLiveRefreshTest {
         assertTrue(events.any { it is PlayerUiEvent.LiveStreamRefreshReady })
         assertNull("no swap behind an audio-only source", redirector.rewrite("Rs7St51oDDc", playlist(230, e1)))
         assertEquals(fresh, (vm.state.value.streamState as StreamState.Ready).selection.resolved)
+    }
+
+    /**
+     * Codex C1 / stage 3 M1: the toggle lands while the fresh master is in flight, so it rebuilds an audio source from
+     * Ready's old URLs. The swap that completes afterwards must not be taken as a refresh of that source.
+     */
+    @Test fun `an audio-only toggle during the master fetch rebuilds on the fresh urls`() = runTest(dispatcher) {
+        val repository = FakePlayerRepository().apply { resolvedStreams = live(e1) }
+        val fetch = kotlinx.coroutines.CompletableDeferred<String?>()
+        val vm = playerViewModel(
+            repository = repository,
+            livePlaylistRedirector = LivePlaylistRedirector { _, _ -> fetch.await() },
+            ioDispatcher = dispatcher,
+        )
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc")
+            runCurrent()
+            val ready = vm.state.value.streamState as StreamState.Ready
+            val events = mutableListOf<PlayerUiEvent>()
+            backgroundScope.launch(UnconfinedTestDispatcher(testScheduler)) { vm.uiEvents.collect { events += it } }
+            val fresh = live(e2)
+            repository.resolvedStreams = fresh
+
+            val refresh = async { vm.performLiveStreamRefresh("Rs7St51oDDc", ready.selection) }
+            runCurrent()                                       // re-extracted; the master fetch is in flight
+            vm.setAudioOnly(true)                              // rebuilds the audio source from e1
+            fetch.complete(master(e2))
+            runCurrent()
+
+            assertTrue(refresh.await())
+            assertTrue("the audio source is rebuilt", events.any { it is PlayerUiEvent.LiveStreamRefreshReady })
+            assertEquals(fresh, (vm.state.value.streamState as StreamState.Ready).selection.resolved)
+        }
     }
 
     /**

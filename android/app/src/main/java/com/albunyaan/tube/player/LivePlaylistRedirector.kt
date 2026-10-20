@@ -22,7 +22,8 @@ import javax.inject.Singleton
  * so the player never rebuilds. Segments are absolute URLs inside the playlists and pass through untouched.
  *
  * A rewrite needs, all at once (RV I10a): an `hls_playlist` URL with an `/itag/`, a mapping for that itag, a later
- * `/expire/`, and the same `/ip/`. The map is cleared whenever a new live source is built (DashSourceBuilder).
+ * `/expire/`, the same `/ip/` and the same host (stage 4 S1). The map is cleared whenever a new live source is built
+ * (DashSourceBuilder).
  */
 @OptIn(UnstableApi::class)
 @Singleton
@@ -44,8 +45,8 @@ class LivePlaylistRedirector internal constructor(
     })
 
     private val maps = ConcurrentHashMap<String, Map<Int, String>>()
-    /** The itags the player has asked for since the source was built: a fresh master must cover all of them. */
-    private val requested = ConcurrentHashMap<String, MutableSet<Int>>()
+    /** itag → the URL the player asked for, since the source was built: a fresh master must replace every one. */
+    private val requested = ConcurrentHashMap<String, ConcurrentHashMap<Int, String>>()
     /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it; guarded by `this`. */
     private val generations = HashMap<String, Long>()
     /** The client whose URLs (and so UA) each stream's current source was built from; guarded by `this`. */
@@ -59,12 +60,8 @@ class LivePlaylistRedirector internal constructor(
     fun rewrite(streamId: String, url: String): String? {
         if (!url.contains(PLAYLIST_PATH)) return null
         val itag = itag(url) ?: return null
-        requested.getOrPut(streamId) { ConcurrentHashMap.newKeySet() }.add(itag)
-        val mapped = maps[streamId]?.get(itag) ?: return null
-        val have = ResolvedStreams.expireSeconds(url) ?: return null
-        val fresh = ResolvedStreams.expireSeconds(mapped) ?: return null
-        if (fresh <= have || ip(mapped) != ip(url)) return null
-        return mapped
+        requested.getOrPut(streamId) { ConcurrentHashMap() }[itag] = url
+        return maps[streamId]?.get(itag)?.takeIf { replaces(url, it) }
     }
 
     /** A new source for [streamId], built from [client]'s URLs, starts from its own master: never redirected to an older one. */
@@ -80,7 +77,7 @@ class LivePlaylistRedirector internal constructor(
     /**
      * Spec §9.2(a), the refresh: fetch the fresh master once through the matching client's data source and map
      * itag → media-playlist URL. false = the caller takes today's rebuild (another client, an itag the player uses
-     * is missing, or the fetch failed).
+     * is missing or would not pass [rewrite], e.g. after an IP change (Codex C3), or the fetch failed).
      */
     suspend fun refresh(current: ResolvedStreams, fresh: ResolvedStreams): Boolean {
         val id = current.streamId
@@ -93,7 +90,7 @@ class LivePlaylistRedirector internal constructor(
         // Short and never taken by loader threads (rewrite reads lock-free): only clear() contends.
         synchronized(this) {
             if (generations[id] != generation) return false                       // a new source was built meanwhile
-            if (map.isEmpty() || !map.keys.containsAll(requested[id].orEmpty())) return false
+            if (map.isEmpty() || requested[id].orEmpty().any { (itag, url) -> map[itag]?.let { replaces(url, it) } != true }) return false
             maps[id] = map
         }
         if (BuildConfig.DEBUG) Log.d(TAG, "swap $id: ${map.size} renditions -> expire ${ResolvedStreams.expireSeconds(master)}")
@@ -109,6 +106,14 @@ class LivePlaylistRedirector internal constructor(
 
         private fun itag(url: String): Int? = ITAG.find(url)?.groupValues?.get(1)?.toIntOrNull()
         private fun ip(url: String): String? = IP.find(url)?.groupValues?.get(1)
+        private fun host(url: String): String? = runCatching { java.net.URI(url).host }.getOrNull()
+
+        /** RV I10a + S1: [mapped] may stand in for [url] — a later `/expire/`, the same `/ip/`, the same host. */
+        private fun replaces(url: String, mapped: String): Boolean {
+            val have = ResolvedStreams.expireSeconds(url) ?: return false
+            val fresh = ResolvedStreams.expireSeconds(mapped) ?: return false
+            return fresh > have && ip(mapped) == ip(url) && host(url) != null && host(mapped) == host(url)
+        }
 
         /**
          * itag → media-playlist URL from a master's variant lines and `EXT-X-MEDIA URI="…"` attributes.

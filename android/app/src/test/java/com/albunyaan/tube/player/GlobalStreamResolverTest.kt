@@ -11,9 +11,15 @@ import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
+import kotlinx.coroutines.async
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
+import kotlinx.coroutines.runBlocking
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
+import kotlinx.coroutines.withTimeoutOrNull
+import kotlin.concurrent.thread
 import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
@@ -150,6 +156,43 @@ class GlobalStreamResolverTest {
 
         assertNotNull("the download keeps its own resolve", downloadResult)
         assertEquals("the refresh still extracts afresh", 2, fakeProvider.getCallCount("video1"))
+    }
+
+    /** A map whose next lookup runs [onGet] after reading the entry and before returning it. */
+    private class HookedJobs : ConcurrentHashMap<String, Any>() {
+        @Volatile var onGet: (() -> Unit)? = null
+        override fun get(key: String): Any? = super.get(key).also { onGet?.let { hook -> onGet = null; hook() } }
+    }
+
+    // Stage 3 M2: the fast-path join counted its awaiter outside the lock. A forced refresh landing between the
+    // lookup and the count saw no awaiter, cancelled the job, and the joining download got null (NO_STREAM).
+    @Test
+    fun `a join is counted before a forced refresh can cancel the job`() = runTest {
+        val jobs = HookedJobs()
+        GlobalStreamResolver::class.java.getDeclaredField("inFlightJobs").apply { isAccessible = true }.set(resolver, jobs)
+        val gate1 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("video1", gate1)
+        fakeProvider.setResult("video1", createMockStreams("video1"))
+        val first = launch { resolver.resolveStreams("video1", caller = "player") }
+        fakeProvider.waitForExtractionStart("video1")
+        first.cancelAndJoin()                                         // the job runs on with nobody counted on it
+
+        val gate2 = CompletableDeferred<Unit>()
+        fakeProvider.setGate("video1", gate2)
+        var refresh: Thread? = null
+        jobs.onGet = {
+            refresh = thread { runBlocking { resolver.resolveStreams("video1", forceRefresh = true, caller = "refresh") } }
+            // Until the refresh has made its cancel decision, or (fixed) is held at the lock the join holds.
+            runBlocking { withTimeoutOrNull(500) { fakeProvider.waitForExtractionStart("video1") } }
+        }
+        val download = async { resolver.resolveStreams("video1", caller = "download") }
+        runCurrent()
+        gate1.complete(Unit)
+        val result = download.await()
+        gate2.complete(Unit)
+        refresh?.join()
+
+        assertNotNull("the download keeps the resolve it joined", result)
     }
 
     /**

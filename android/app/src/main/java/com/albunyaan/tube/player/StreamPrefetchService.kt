@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.model.ContentItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,6 +20,14 @@ import javax.inject.Singleton
  */
 interface StreamPrefetchService {
     fun triggerPrefetch(videoId: String, scope: CoroutineScope)
+
+    /**
+     * A tap on a list row that opens the player (Home, Videos, Featured, Search). A live-channel item never reads a
+     * prefetch (it always resolves through the live check, RV I11), and the player's resolve would cancel it half done.
+     */
+    fun triggerTapPrefetch(video: ContentItem.Video, scope: CoroutineScope) {
+        if (video.liveChannelId == null) triggerPrefetch(video.id, scope)
+    }
     suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams?
     fun consumePrefetch(videoId: String): ResolvedStreams?
     fun isPrefetchInFlight(videoId: String): Boolean

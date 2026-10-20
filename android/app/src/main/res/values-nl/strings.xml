@@ -36,6 +36,7 @@
     <string name="playlist_detail_download_hint">Downloads volgen beleid AC-DL-001. Inhoud wordt offline beschikbaar na voltooiing.</string>
     <string name="detail_excluded_banner">Dit item is momenteel niet beschikbaar vanwege beleidsregels.</string>
     <string name="player_audio_only_label">Alleen audio</string>
+    <!-- Unused on Android since 1.0.4; kept because iOS reads it through ios/scripts/convert-strings.py (PlayerScreen.swift). -->
     <string name="player_status_audio_only">Alleen audio afspelen.</string>
     <string name="player_status_resolving">Stream laden…</string>
     <string name="player_stream_error">Afspelen niet beschikbaar. Probeer het later opnieuw.</string>

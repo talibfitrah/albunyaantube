@@ -99,16 +99,29 @@ class PlayerViewModelOriginalTitleTest {
         }
     }
 
-    @Test fun `a live channel keeps the backend title its recovery matches on`() = runTest(dispatcher) {
-        // LiveChannelRecovery's D12 match compares currentItem.title with the backend's live-tab titles.
+    @Test fun `a live channel shows the original title and recovers on the backend's`() = runTest(dispatcher) {
+        // Codex C2: LiveChannelRecovery's D12 match compares the backend's own title field, never the display title.
         repository.resolvedStreams = streams(id = "live1", isLive = true)
-        val vm = playerViewModel(repository = repository, ioDispatcher = dispatcher)
+        val content = com.albunyaan.tube.data.source.FakeContentService()
+        val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
         vm.cancelAfter {
             vm.loadVideo(videoId = "live1", title = LIST_TITLE, sourceChannelId = "UCx", liveChannelId = "UCx")
             runCurrent()
-
             assertTrue(vm.state.value.streamState is StreamState.Ready)
-            assertEquals(LIST_TITLE, vm.state.value.currentItem?.title)
+            assertEquals(ORIGINAL, vm.state.value.currentItem?.title)
+
+            content.channelLives["UCx"] = com.albunyaan.tube.data.source.api.ChannelLives(listOf(
+                com.albunyaan.tube.data.source.api.LiveItem("otherShow01", ORIGINAL),
+                com.albunyaan.tube.data.source.api.LiveItem("liveSunnah2", LIST_TITLE),
+            ))
+            // Two languages: an 11-character id would otherwise send maybeEnumerateDubs to MWEB.
+            repository.resolvedStreams = streams(id = "liveSunnah2", isLive = true).let {
+                it.copy(audioTracks = it.audioTracks + AudioTrack("https://a.test/ar", "audio/mp4", 48_000, "mp4a", language = "ar"))
+            }
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("liveSunnah2", vm.state.value.currentItem?.streamId)
         }
     }
 

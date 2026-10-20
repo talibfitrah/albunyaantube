@@ -29,6 +29,30 @@ class StreamPrefetchServiceTest {
         mpdRegistry = SyntheticDashMpdRegistry()
     }
 
+    // Stage 3 M3: a live-channel item never reads a prefetch (it always resolves through the live check, RV I11), and
+    // the player's PLAYER-lane resolve cancels it half done. Home, Videos, Featured and Search tap through this overload.
+    @Test
+    fun `a tap on a live-channel item never prefetches`() {
+        val prefetched = mutableListOf<String>()
+        val service = object : StreamPrefetchService {
+            override fun triggerPrefetch(videoId: String, scope: kotlinx.coroutines.CoroutineScope) { prefetched += videoId }
+            override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? = null
+            override fun consumePrefetch(videoId: String): ResolvedStreams? = null
+            override fun isPrefetchInFlight(videoId: String) = false
+            override fun cancelPrefetch(videoId: String) {}
+        }
+        fun video(id: String, liveChannelId: String? = null) = com.albunyaan.tube.data.model.ContentItem.Video(
+            id = id, title = "t", category = "c", durationSeconds = 0, uploadedDaysAgo = null, description = "",
+            liveChannelId = liveChannelId,
+        )
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job())
+
+        service.triggerTapPrefetch(video("Rs7St51oDDc", liveChannelId = "UCROKYPep-UuODNwyipe6JMw"), scope)
+        service.triggerTapPrefetch(video("lecture0001"), scope)
+
+        assertEquals(listOf("lecture0001"), prefetched)
+    }
+
     // --- MPD Generation Eligibility Tests ---
 
     @Test

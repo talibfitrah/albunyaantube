@@ -5,6 +5,7 @@ import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadFileMetadata
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadStatus
+import com.albunyaan.tube.util.NetworkMonitor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -22,6 +23,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -352,7 +355,30 @@ class PlayerViewModelDownloadPlaybackTest {
         assertTrue(streams.resolveCallCount > 0)
     }
 
+    // Stage 3 M6: R3 is about saving, not about forcing audio. Online an audio-only copy would hide the video, its
+    // quality, cast and Up Next; it stands in for the video only when nothing can stream.
+    @Test fun `an audio-only copy plays only offline, and online the video streams`() = runTest {
+        downloads.entries.value = listOf(completed("d16", "v16", tmp.newFile("v16.m4a"), audioOnly = true))
+
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v16", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertFalse("online, the video streams", vm.state.value.playingDownload)
+        assertTrue(streams.resolveCallCount > 0)
+
+        online = false
+        val offline = createViewModel()
+        offline.loadVideo(videoId = "v16", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertTrue("offline, the saved audio plays", offline.state.value.playingDownload)
+        assertTrue(offline.state.value.audioOnly)
+    }
+
+    private var online = true
+    private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
+
     private fun createViewModel() = playerViewModel(
         repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
+        networkMonitor = network,
     )
 }

@@ -77,6 +77,7 @@ class PlayerViewModel @Inject constructor(
     @javax.inject.Named("real") private val contentService: com.albunyaan.tube.data.source.ContentService,
     private val livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector,
     @javax.inject.Named("io") private val ioDispatcher: CoroutineDispatcher,
+    private val networkMonitor: com.albunyaan.tube.util.NetworkMonitor,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -372,10 +373,11 @@ class PlayerViewModel @Inject constructor(
 
     fun setAudioOnly(audioOnly: Boolean) {
         if (_state.value.audioOnly == audioOnly) return
-        // The toggle rebuilds the source from Ready.
-        val ready = (_state.value.streamState as? StreamState.Ready)
-            ?.let { StreamState.Ready(it.streamId, rebuildSelection(it)) }
-        updateState { it.copy(audioOnly = audioOnly, streamState = ready ?: it.streamState) }
+        // The toggle rebuilds the source from Ready, read inside the update so no Ready written meanwhile is lost (M1).
+        updateState { s ->
+            val ready = (s.streamState as? StreamState.Ready)?.let { StreamState.Ready(it.streamId, rebuildSelection(it)) }
+            s.copy(audioOnly = audioOnly, streamState = ready ?: s.streamState)
+        }
     }
 
     /**
@@ -841,7 +843,10 @@ class PlayerViewModel @Inject constructor(
             }
             return
         }
-        savedCopyOf(videoId)?.let { loadDownload(it.request.id, channelName, durationSeconds); return }
+        // Stage 3 M6: R3 is about saving, not about forcing audio. An audio-only copy stands in for the video only offline;
+        // online it would hide the video, its quality, cast and Up Next.
+        savedCopyOf(videoId)?.takeIf { !it.request.audioOnly || !networkMonitor.isCurrentlyOnline() }
+            ?.let { loadDownload(it.request.id, channelName, durationSeconds); return }
 
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
@@ -872,6 +877,7 @@ class PlayerViewModel @Inject constructor(
             viewCount = viewCount,
             sourceChannelId = sourceChannelId,
             liveChannelId = liveChannelId,
+            liveTitle = title.takeIf { liveChannelId != null },   // the entry point's title is the backend's live title
         )
 
         currentItem = item
@@ -1301,13 +1307,12 @@ class PlayerViewModel @Inject constructor(
     /**
      * Owner issue 1: the resolved stream's title (StreamInfo.name = videoDetails.title, the uploader's original), never
      * the list row's hl=en translation. Called BEFORE the Ready emission: the prepare-time MediaSession sync reads
-     * state.currentItem. A live-channel item keeps the backend's title: LiveChannelRecovery's D12 match compares it
-     * with the backend's live-tab titles.
+     * state.currentItem. A live-channel item too: its D12 recovery matches [UpNextItem.liveTitle], never this one.
      */
     private fun adoptOriginalTitle(resolved: ResolvedStreams) {
         val title = resolved.title ?: return
         val current = currentItem ?: return
-        if (current.liveChannelId != null || current.streamId != resolved.streamId || current.title == title) return
+        if (current.streamId != resolved.streamId || current.title == title) return
         currentItem = current.copy(title = title)
         applyQueueState()
     }
@@ -1389,6 +1394,9 @@ class PlayerViewModel @Inject constructor(
         if (currentItem?.liveChannelId != null && liveIncident?.currentId != currentItem?.streamId) {
             // §9.1 step 1: ask the backend first; the same id runs today's recovery (step 3). A refused refresh is a
             // spent budget: step 4, never a stopped player waiting for a Ready that never comes.
+            // Stage 3 I1: Loading at once, as resolveStreamFor sets it. The caller stops the player next, and a Ready(old)
+            // left up while the backend answers would make the fragment re-prepare the failed source (a second permit).
+            updateState { it.copy(streamState = StreamState.Loading) }
             onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE) {
                 if (!forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)) {
                     onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
@@ -1778,6 +1786,8 @@ class PlayerViewModel @Inject constructor(
      */
     internal suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection): Boolean {
         android.util.Log.d("PlayerViewModel", "Live stream: proactively refreshing URLs for $streamId")
+        // The source this refresh is for. Any Ready written after this (an audio-only toggle, a recovery) built another.
+        val source = _state.value.streamState
 
         try {
             // Force refresh to get new URLs. Pass sourceChannelId so channel-sourced live
@@ -1791,48 +1801,55 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.w("PlayerViewModel", "Live stream: refresh failed")
                 return false
             }
-            if (!freshStreams.isLive) {
-                android.util.Log.w("PlayerViewModel", "Live stream: no longer live")
-                // This runs on the IO dispatcher; the trigger touches currentItem, the queue state and the resolve job.
-                kotlinx.coroutines.withContext(dispatcher) {
-                    if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
-                }
-                return true
-            }
             // Spec §9.2(a): swap the media-playlist URLs in place. No event, no setMediaSource, no prepare, no seek,
             // so it also lands while the fragment's view is gone (background audio, F13). An audio-only player plays
             // a progressive audio URL the redirector never sees, so it takes the rebuild below.
-            if (!_state.value.audioOnly && livePlaylistRedirector.refresh(currentSelection.resolved, freshStreams)) {
+            val swapped = freshStreams.isLive && !_state.value.audioOnly &&
+                livePlaylistRedirector.refresh(currentSelection.resolved, freshStreams)
+            // Stage 3 M1: this runs on the IO dispatcher. What follows touches Main-only state (currentItem, the resolve
+            // job, liveRefreshJob, liveSourceStreams, Ready), so it runs on Main, where every other writer runs.
+            return kotlinx.coroutines.withContext(dispatcher) {
+                if (!freshStreams.isLive) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: no longer live")
+                    if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                    return@withContext true
+                }
+                // Codex C1: the master fetch suspends. A Ready written meanwhile (an audio-only toggle) rebuilt the source
+                // from the old URLs, which the swap does not reach: that source takes the rebuild on the fresh ones.
+                if (swapped && _state.value.streamState === source && !_state.value.audioOnly) {
+                    scheduleLiveStreamRefresh(freshStreams)
+                    liveSourceStreams = freshStreams
+                    return@withContext true
+                }
+                // Fallback (another client, a vanished itag, a failed master fetch, a source rebuilt meanwhile): today's
+                // rebuild at the live edge.
+                val freshSelection = buildFreshSelection(freshStreams, currentSelection)
+                if (freshSelection == null) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
+                    return@withContext false
+                }
+                android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")   // L2/soak criterion (Task 34)
+                _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
+                // Ready follows the rebuilt source: the event is posted before the state collector resumes, so the
+                // fragment's next state pass is a cache hit, never a rebuild from the old URLs (if the order ever flipped,
+                // both rebuilds would use fresh URLs).
+                updateState { s ->
+                    if ((s.streamState as? StreamState.Ready)?.streamId != streamId) s
+                    else s.copy(streamState = StreamState.Ready(streamId, freshSelection))
+                }
                 scheduleLiveStreamRefresh(freshStreams)
-                liveSourceStreams = freshStreams
-                return true
+                true
             }
-            // Fallback (another client, a vanished itag, a failed master fetch): today's rebuild at the live edge.
-            val freshSelection = buildFreshSelection(freshStreams, currentSelection)
-            if (freshSelection == null) {
-                android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
-                return false
-            }
-            android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")   // L2/soak criterion (Task 34)
-            _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
-            // Ready follows the rebuilt source: the event is posted before the state collector resumes, so the
-            // fragment's next state pass is a cache hit, never a rebuild from the old URLs (if the order ever flipped,
-            // both rebuilds would use fresh URLs).
-            updateState { s ->
-                if ((s.streamState as? StreamState.Ready)?.streamId != streamId) s
-                else s.copy(streamState = StreamState.Ready(streamId, freshSelection))
-            }
-            scheduleLiveStreamRefresh(freshStreams)
-            return true
         } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
             // Live stream became unavailable mid-broadcast (channel removed, video
             // archived, geo-changed). Surface ContentUnavailable instead of an
             // opaque error — same as the regular resolve path. No need to schedule
             // another refresh attempt.
             android.util.Log.i("PlayerViewModel", "Live stream: ${cu.videoId} now unavailable per backend; emitting ContentUnavailable")
-            updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+            kotlinx.coroutines.withContext(dispatcher) { updateState { it.copy(streamState = StreamState.ContentUnavailable) } }
             return true
         } catch (e: Exception) {
+            // Includes the cancellation a refresh's own scheduleLiveStreamRefresh (Main) gives the job it runs in.
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
             return false
@@ -1849,7 +1866,7 @@ class PlayerViewModel @Inject constructor(
         liveStarted = true
         // An incident belongs to one stream id: a stale one (the user picked another item) never blocks this one.
         val incident = liveIncident?.takeIf { it.currentId == item.streamId }
-            ?: LiveChannelRecovery(item.streamId, item.title, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
+            ?: LiveChannelRecovery(item.streamId, item.liveTitle, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
         liveRetryJob?.cancel()
         liveRetryJob = viewModelScope.launch(dispatcher) {
             var notLiveChannel = false
@@ -1884,16 +1901,22 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    /** §9.1 step 2: a new broadcast is a new timeline; the item's id and title are replaced in place. */
+    /**
+     * §9.1 step 2: a new broadcast is a new timeline; the item's id and titles are replaced in place. Stage 3 M4: the
+     * backend sends "" for an unknown title, so the screen keeps the old one until the stream's own arrives, and the
+     * old broadcast's details go. Recovery keeps the backend's [title] as it is (Codex C2).
+     */
     private fun switchLive(newId: String, title: String) {
         val item = currentItem ?: return
         liveIncident = null
         pendingRefreshJob?.cancel()
         liveRefreshJob?.cancel()
-        val next = item.copy(id = newId, streamId = newId, title = title,
-            thumbnailUrl = "https://i.ytimg.com/vi/$newId/hqdefault_live.jpg")
+        val next = item.copy(id = newId, streamId = newId, title = title.ifBlank { item.title }, liveTitle = title,
+            thumbnailUrl = "https://i.ytimg.com/vi/$newId/hqdefault_live.jpg",
+            description = null, viewCount = null, durationSeconds = 0)
         currentItem = next
         applyQueueState()
+        hydrateCurrentItemMetadataIfNeeded(next)
         resolveStreamFor(next)
     }
 
@@ -2120,7 +2143,7 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun updateState(transform: (PlayerState) -> PlayerState) {
-        _state.update { transform(it) }   // atomic: the live refresh writes from the IO thread while Main writes too
+        _state.update { transform(it) }   // every writer runs on Main (stage 3 M1: the live refresh too), so this never retries
     }
 
     private fun advanceToNext(): Boolean {
@@ -2345,6 +2368,8 @@ data class UpNextItem(
     val viewCount: Long? = null,
     val sourceChannelId: String? = null,
     val liveChannelId: String? = null,
+    /** Live-channel mode: the backend's title for this live, which D12 recovery matches. Display metadata never writes it. */
+    val liveTitle: String? = null,
 )
 
 sealed class StreamState {

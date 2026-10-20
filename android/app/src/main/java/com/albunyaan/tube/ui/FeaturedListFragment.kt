@@ -66,7 +66,7 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
-                prefetchService.triggerPrefetch(item.id, lifecycleScope)
+                prefetchService.triggerTapPrefetch(item, lifecycleScope)
                 findNavController().navigate(R.id.action_global_playerFragment, PlayerFragment.argsFor(item))
             }
             is ContentItem.Playlist -> {

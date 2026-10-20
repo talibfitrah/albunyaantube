@@ -278,10 +278,14 @@ class GlobalStreamResolver private constructor(
         // NOT join a lower-priority in-flight job — fall through to the
         // synchronized block so the escalation path can replace the job.
         if (!forceRefresh) {
-            val existing = inFlightJobs[videoId]
-            if (existing != null && priority.rank() <= existing.priority.rank()) {
+            // Stage 3 M2: look up and count under the lock that every cancel takes, or a forced refresh or escalation
+            // between the two sees no awaiter and cancels the job this caller is about to await.
+            val existing = synchronized(lock) {
+                inFlightJobs[videoId]?.takeIf { priority.rank() <= it.priority.rank() }
+                    ?.also { if (needsResult) it.awaiters.incrementAndGet() }
+            }
+            if (existing != null) {
                 Log.d(TAG, "[$caller] joined in-flight resolve for $videoId (priority=$priority, existing=${existing.priority})")
-                if (needsResult) existing.awaiters.incrementAndGet()
                 return try {
                     withTimeoutOrNull(timeoutMs) {
                         existing.deferred.await()

@@ -21,11 +21,18 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
     private var blindSameIdTried = false
 
     fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
+        val step = decide(trigger, lives, nowMs)
+        // Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer.
+        return if (step is Step.SwitchTo && !VIDEO_ID.matches(step.id)) decide(trigger, null, nowMs) else step
+    }
+
+    private fun decide(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
         val elapsed = nowMs - startedAtMs
         var deadline = GIVE_UP_MS
         if (!lives.isNullOrEmpty() && lives.none { it.id == currentId }) {
             if (lives.size == 1) return Step.SwitchTo(lives[0].id, lives[0].title)
-            lives.firstOrNull { it.title == currentTitle }?.let { return Step.SwitchTo(it.id, it.title) }
+            // A blank title (the backend sends "" for none) identifies no show (stage 3 M4).
+            lives.firstOrNull { it.title == currentTitle?.ifBlank { null } }?.let { return Step.SwitchTo(it.id, it.title) }
             if (elapsed >= TITLE_WAIT_MS) return Step.SwitchTo(lives[0].id, lives[0].title)
             deadline = TITLE_WAIT_MS
         } else if (trigger == Trigger.FAILURE) {
@@ -41,6 +48,7 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
 
     companion object {
         private val BACKOFF_S = listOf(15, 30, 60, 120)
+        private val VIDEO_ID = Regex("[A-Za-z0-9_-]{11}")
         /** D12: a multi-live channel gets up to 2 min for the ended show to restart under its title. */
         const val TITLE_WAIT_MS = 2 * 60_000L
         const val GIVE_UP_MS = 10 * 60_000L
