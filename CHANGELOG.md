@@ -19,6 +19,9 @@ stable release.
 - iOS: a temporary block from the video source no longer stops all playback for 1–24 hours; the app renews its session and retries at once, and repeated blocks wait at most 5 minutes.
 - iOS: after an automatic recovery the video resumes where it stopped, and keeps playing unless you had paused it; a stream that stops delivering data recovers within about 8 seconds instead of waiting for the system timeout.
 - Android: a live channel keeps playing past the stream link's ~6-hour expiry with no visible refresh (before, it rebuffered every 50 minutes); when a live stream ends or restarts under a new link, the player finds the channel's current stream instead of moving to the next video.
+- Search (server; no app update needed): can also find videos inside approved channels and playlists, not only the channels and playlists themselves. Results are ordinary videos, with longer videos before Shorts, and they are switched on step by step after measurement.
+- Share links: a link preview never shows a title, text or image that the sharer supplied. Anything outside the catalog shows a plain FitrahTube card.
+- Video titles (server; for the next app release): channel and playlist pages can show each video's original title instead of an English machine translation.
 
 ## [1.0.2] - 2026-10-13
 
