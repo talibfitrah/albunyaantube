@@ -1,0 +1,52 @@
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_dbb6b1f3671904::t_7a6803d1e21201 933,969-974,979,1009-1010
+  s_dbb6b1f3671904::t_57f187eba3476a 980
+backend/src/test/java/com/albunyaan/tube/service/RegistrySubmissionWriterTest.java
+  s_dbb6b1f3671904::t_67013618febdb3 20-21,98,115,122-131
+  s_dbb6b1f3671904::t_5a4751060a2315 132-133
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_dbb6b1f3671904::t_5ef76a1bf34b34 1159-1165
+backend/src/main/java/com/albunyaan/tube/model/Video.java
+  s_dbb6b1f3671904::t_5ef76a1bf34b34 96
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_dbb6b1f3671904::t_67013618febdb3 116,127-143,150,524,531
+backend/src/main/java/com/albunyaan/tube/service/RegistrySubmissionWriter.java
+  s_dbb6b1f3671904::t_7a6803d1e21201 178,183-184,191-192,195,217
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_dbb6b1f3671904::t_6edded117f62d0 25,176-220
+  s_dbb6b1f3671904::t_fcbb955034d11d 221
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_46736830a745b2 246,250-266
+  s_dbb6b1f3671904::t_169a44c3bb4b0f 267-268
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_dbb6b1f3671904::t_5ef76a1bf34b34 1001
+  s_dbb6b1f3671904::t_21dae31603ffc9 979-1000,1002-1005
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_dbb6b1f3671904::t_57f187eba3476a 560,570
+  s_dbb6b1f3671904::t_15456df3070684 548-559,561-569,571-573
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dbb6b1f3671904::t_9c151c3ca87d7b 115-125,166,169,171-174,849
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_dbb6b1f3671904::t_7a6803d1e21201 334,343-344,360
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_5ef76a1bf34b34 34-36,313-316,361-363,368,372-374
+  s_dbb6b1f3671904::t_22ec6d22bbd9de 375-376
+backend/src/test/java/com/albunyaan/tube/repository/VideoRepositoryPreferredTest.java
+  s_dbb6b1f3671904::t_c73065e7c9bcfb 1-28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5f0c0e32573429ac5a9acffb9ea9977554879d84",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
