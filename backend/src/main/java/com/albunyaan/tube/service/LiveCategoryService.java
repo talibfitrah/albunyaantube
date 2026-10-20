@@ -135,15 +135,16 @@ public class LiveCategoryService {
 
     /** The public filters (PublicContentService.isApproved && isAvailable): APPROVED, public, not UNAVAILABLE/ARCHIVED. */
     public static boolean servable(Channel c) {
-        return "APPROVED".equals(c.getStatus()) && VisibilityPolicy.isPublic(c.getVisibility())
-                && c.getValidationStatus() != ValidationStatus.UNAVAILABLE
-                && c.getValidationStatus() != ValidationStatus.ARCHIVED;
+        return servable(c.getStatus(), c.getVisibility(), c.getValidationStatus());
     }
 
     public static boolean servable(Video v) {
-        return "APPROVED".equals(v.getStatus()) && VisibilityPolicy.isPublic(v.getVisibility())
-                && v.getValidationStatus() != ValidationStatus.UNAVAILABLE
-                && v.getValidationStatus() != ValidationStatus.ARCHIVED;
+        return servable(v.getStatus(), v.getVisibility(), v.getValidationStatus());
+    }
+
+    private static boolean servable(String status, String visibility, ValidationStatus validation) {
+        return "APPROVED".equals(status) && VisibilityPolicy.isPublic(visibility)
+                && validation != ValidationStatus.UNAVAILABLE && validation != ValidationStatus.ARCHIVED;
     }
 
     /** F15: the public gate answers 410 for a registry doc that is not APPROVED, or is UNAVAILABLE/ARCHIVED. */

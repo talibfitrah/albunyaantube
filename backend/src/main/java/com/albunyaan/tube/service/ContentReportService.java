@@ -156,7 +156,8 @@ public class ContentReportService {
             // working.
             boolean excluded = false;
             if (parented) {
-                excluded = addReportTargetToParentExclusionList(report);
+                excluded = excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
+                        report.getTargetId(), report.getContentSubType());
             }
             String miss = null;
             if (!excluded) {
@@ -175,15 +176,10 @@ public class ContentReportService {
     }
 
     /**
-     * Add the report's target to its parent's exclusion list.
+     * Add the target to its parent's exclusion list.
      * Returns true if the exclusion was applied (parent existed and add
      * succeeded), false otherwise (caller should fall back to archive).
      */
-    private boolean addReportTargetToParentExclusionList(ContentReport report) {
-        return excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
-                report.getTargetId(), report.getContentSubType());
-    }
-
     private boolean excludeFromParent(ReportTargetType parentType, String parentId, ReportTargetType targetType,
                                       String targetId, String contentSubType) {
         if (parentType == null || parentId == null || targetId == null || targetType == null) return false;

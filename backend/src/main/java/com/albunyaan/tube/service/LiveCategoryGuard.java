@@ -19,7 +19,6 @@ import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
 import java.util.Map;
-import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -173,16 +172,24 @@ public class LiveCategoryGuard {
             throw new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.MEMBERS_INVALID,
                     "This category holds items that aren't channels or live streams", e.getDetails());
         }
-        for (Video v : m.videos()) {                                           // D13: a link needs its channel id
-            String channel = verified.get(v.getId());
-            if (channel != null && !channel.equals(v.getChannelId())) {
-                // Re-read: the members were read before the YouTube checks; only channelId changes.
-                // ponytail: read-then-set, not a transaction; a single-field update if this ever races in practice.
-                Optional<Video> fresh = videos.findById(v.getId());
-                if (fresh.isPresent()) {
-                    fresh.get().setChannelId(channel);
-                    videos.save(fresh.get());
-                }
+        for (Video v : m.videos()) {                                           // D13: a link needs its channel id;
+            verified.remove(v.getId(), v.getChannelId());                      // one already on it costs no re-read
+        }
+        writeVerifiedChannels(verified);
+    }
+
+    /**
+     * D13: writes each verified channel id (video doc id -> UC id) onto its video doc. Re-read: the docs were read
+     * before the YouTube checks; only channelId changes.
+     * ponytail: read-then-set, not a transaction; a single-field update if this ever races in practice.
+     */
+    public void writeVerifiedChannels(Map<String, String> verified)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        for (Map.Entry<String, String> e : verified.entrySet()) {
+            Video v = videos.findById(e.getKey()).orElse(null);
+            if (v != null && !e.getValue().equals(v.getChannelId())) {
+                v.setChannelId(e.getValue());
+                videos.save(v);
             }
         }
     }

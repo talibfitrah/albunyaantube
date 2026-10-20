@@ -287,14 +287,7 @@ public class SortOrderService {
             liveChanges.add(change);
         }
         // The route is ADMIN-only (SortOrderController's class-level @PreAuthorize).
-        Map<String, String> verified = liveCategoryGuard.checkAll(true, liveChanges);
-        for (Map.Entry<String, String> e : verified.entrySet()) {          // D13: write the verified channel id
-            Video v = videoRepository.findById(e.getKey()).orElse(null);
-            if (v != null && !e.getValue().equals(v.getChannelId())) {
-                v.setChannelId(e.getValue());
-                videoRepository.save(v);
-            }
-        }
+        liveCategoryGuard.writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges));   // D13
 
         // Phase 2: Write sort-order entries and update categoryIds with rollback on failure
         List<String[]> writtenSortOrders = new ArrayList<>();

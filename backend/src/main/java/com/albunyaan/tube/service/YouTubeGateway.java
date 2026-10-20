@@ -169,7 +169,7 @@ public class YouTubeGateway {
             // isOpen() returned true - either OPEN with cooldown or HALF_OPEN with probe in progress
             YouTubeCircuitBreaker.State currentState = circuitBreaker.getCurrentState();
             if (currentState == YouTubeCircuitBreaker.State.HALF_OPEN) {
-                // HALF_OPEN and isOpen() returned true means probeInProgress is true
+                // HALF_OPEN and isOpen() returned true means a probe is in flight
                 throw new CircuitOpenException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
                         "Waiting for probe result before allowing more requests.");
             } else {

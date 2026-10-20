@@ -137,8 +137,7 @@ public class BulkSubmissionService {
                         "detectedType ALL is not supported in bulk submit");
             }
             if (!rowIndexes.add(row.rowIndex())) {
-                // IllegalArgumentException, not ResponseStatusException: GlobalExceptionHandler renders it as 400,
-                // while its catch-all turns a ResponseStatusException into a 500.
+                // GlobalExceptionHandler renders an IllegalArgumentException as 400.
                 throw new IllegalArgumentException("duplicate rowIndex " + row.rowIndex() + " in bulk submit");
             }
         }

@@ -20,7 +20,6 @@ public class InnerState {
     /** R2: the per-source safety cap. */
     public static final int MAX_PER_SOURCE = 10_000;
 
-    public int v = 2;
     public volatile Mode mode = Mode.OFF;
     public volatile boolean serveInner;
     public volatile boolean streamGate;
@@ -38,7 +37,7 @@ public class InnerState {
     /** The crawler's own breaker (R12, R13): never the shared YouTubeCircuitBreaker. */
     @JsonIgnoreProperties(ignoreUnknown = true)
     public static class Breaker {
-        public long intervalMs = 30_000; // CrawlPacer.FIRST_PASS_INTERVAL_MS
+        public long intervalMs = CrawlPacer.FIRST_PASS_INTERVAL_MS;
         public long pausedUntil;
         public long cleanRequestsAtInterval;
         public int transportPauses;

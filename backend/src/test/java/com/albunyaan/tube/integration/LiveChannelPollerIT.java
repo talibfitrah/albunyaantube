@@ -13,6 +13,7 @@ import com.albunyaan.tube.service.LiveTabReader;
 import com.albunyaan.tube.service.LiveTabResult;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
+import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -42,6 +43,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
     @Autowired AuditLogService audit;
     @Autowired PublicContentCacheService caches;
     @Autowired CategoryContentOrderRepository orders;
+    final YouTubeCircuitBreaker closedBreaker = mock(YouTubeCircuitBreaker.class); // isOpen() is false
 
     static final String LIVE_CAT = "it3-live";
     static final long T0 = 1_792_200_000_000L, MIN = 60_000L;
@@ -53,7 +55,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
     }
 
     private LiveChannelPoller freshPoller() {
-        return new LiveChannelPoller(liveCategories, videos, states, live, sortOrder, audit, caches, null,
+        return new LiveChannelPoller(liveCategories, videos, states, live, sortOrder, audit, caches, closedBreaker,
                 Clock.systemUTC(), false);
     }
 
@@ -118,7 +120,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         seed(uc, "it3link001d", List.of(LIVE_CAT));
         PublicContentCacheService spyCaches = mock(PublicContentCacheService.class);   // counts evictions only
         LiveChannelPoller poller = new LiveChannelPoller(liveCategories, videos, states, live, sortOrder, audit, spyCaches,
-                null, Clock.systemUTC(), false);
+                closedBreaker, Clock.systemUTC(), false);
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Morning")), 1));
         poller.cycle(T0);
         verify(spyCaches, times(1)).evictPublicContentCaches();

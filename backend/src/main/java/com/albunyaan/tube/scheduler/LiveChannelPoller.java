@@ -18,7 +18,6 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
-import org.springframework.lang.Nullable;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -64,7 +63,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     private final SortOrderService sortOrder;
     private final AuditLogService audit;
     private final PublicContentCacheService caches;
-    @Nullable private final YouTubeCircuitBreaker breaker;
+    private final YouTubeCircuitBreaker breaker;
     private final Clock clock;
     private final boolean enabled;
 
@@ -76,7 +75,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     public LiveChannelPoller(LiveCategoryService liveCategories, VideoRepository videos,
                              LiveChannelStateRepository states, LiveChannelService live, SortOrderService sortOrder,
                              AuditLogService audit, PublicContentCacheService caches,
-                             @Nullable YouTubeCircuitBreaker breaker, Clock clock,
+                             YouTubeCircuitBreaker breaker, Clock clock,
                              @Value("${app.live-channels.poller.enabled:true}") boolean enabled) {
         this.liveCategories = liveCategories;
         this.videos = videos;
@@ -115,7 +114,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     }
 
     public synchronized void cycle(long now) {
-        if (breaker != null && breaker.isOpen()) {
+        if (breaker.isOpen()) {
             log.info("live poller: circuit breaker open, cycle skipped");
             return;
         }

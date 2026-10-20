@@ -135,6 +135,16 @@ class InnerStoreTest {
     }
 
     @Test
+    void aFileWithTheRemovedVersionFieldStillLoads() throws IOException {
+        Path dir = Files.createDirectories(tmp.resolve("inner"));
+        Files.writeString(dir.resolve("state.json"), "{\"v\":2,\"mode\":\"FIRST_PASS\",\"capPerSource\":2000}");
+        InnerState s = new InnerStore(dir.toString()).state();
+        assertEquals(InnerState.Mode.FIRST_PASS, s.mode);
+        assertEquals(2_000, s.capPerSource);
+        assertFalse(Files.exists(dir.resolve("state.json.corrupt")));
+    }
+
+    @Test
     void aCorruptStateIsKeptBesideTheNewOne() throws IOException {
         Path dir = Files.createDirectories(tmp.resolve("inner"));
         Files.writeString(dir.resolve("state.json"), "{not json");

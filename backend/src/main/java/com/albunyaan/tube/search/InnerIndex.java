@@ -50,17 +50,13 @@ public class InnerIndex {
     private static final long RETIRE_MS = 60_000;
     private static final String PREFIX = "fitrahtube-inner-";
 
-    interface Sleeper {
-        void sleep(long ms) throws InterruptedException;
-    }
-
     /** `cap`: the per-source cut this index was built with (R31). */
     private record Live(Path path, Directory dir, IndexWriter writer, SearcherManager searchers, int cap) {}
 
     private final Path base;
     private final InnerStore store;
     private final Clock clock;
-    Sleeper sleeper = Thread::sleep;
+    CrawlPacer.Sleeper sleeper = Thread::sleep;
     long refreshEveryMs = 60_000;
     private volatile Live live;
     private Live retired;
@@ -170,7 +166,7 @@ public class InnerIndex {
     }
 
     void release(IndexSearcher searcher) throws IOException {
-        if (searcher != null) searcher.getIndexReader().decRef();
+        searcher.getIndexReader().decRef();
     }
 
     boolean ready() {

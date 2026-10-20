@@ -450,6 +450,5 @@ class CrawlPacerTest {
     @Test
     void thePacerNeverHoldsTheSharedBreakerOrGateway() {
         neverHoldsTheSharedBreaker(CrawlPacer.class);
-        assertEquals(CrawlPacer.FIRST_PASS_INTERVAL_MS, new InnerState().breaker.intervalMs);
     }
 }

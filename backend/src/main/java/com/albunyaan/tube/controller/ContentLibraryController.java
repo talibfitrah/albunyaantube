@@ -1504,17 +1504,14 @@ public class ContentLibraryController {
         return newStatus != null && !VisibilityPolicy.isPublic(visibility) ? null : doc;
     }
 
-    /** Writes the guard's verified channel ids onto video docs (D13), keyed "video:<docId>". */
+    /** Writes the guard's verified channel ids onto video docs (D13); this path keys them "video:<docId>". */
     private void writeVerifiedChannels(Map<String, String> verified)
             throws ExecutionException, InterruptedException, TimeoutException {
-        for (Map.Entry<String, String> e : verified.entrySet()) {
-            if (!e.getKey().startsWith("video:")) continue;
-            Video v = videoRepository.findById(e.getKey().substring("video:".length())).orElse(null);
-            if (v != null && !e.getValue().equals(v.getChannelId())) {
-                v.setChannelId(e.getValue());
-                videoRepository.save(v);
-            }
-        }
+        Map<String, String> byDocId = new LinkedHashMap<>();
+        verified.forEach((ref, channel) -> {
+            if (ref.startsWith("video:")) byDocId.put(ref.substring("video:".length()), channel);
+        });
+        liveCategoryGuard.writeVerifiedChannels(byDocId);
     }
 
     /**
