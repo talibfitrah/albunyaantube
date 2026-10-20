@@ -54,16 +54,10 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(await screen.findByText(/يرى المستخدمون البث المباشر الحالي/)).toBeInTheDocument();
   });
 
-  it('a 500 from the status call says live status is unavailable; a 403 stays silent (F-M9)', async () => {
+  it('a 500 from the status call says live status is unavailable (F-M9)', async () => {
     status.fn.mockImplementation(() => Promise.reject({ response: { status: 500 } }));
-    const { unmount } = mount();
-    expect(await screen.findByText('Live status unavailable right now.')).toBeInTheDocument();
-    unmount();
-
-    status.fn.mockImplementation(() => Promise.reject({ response: { status: 403 } }));
     mount();
-    await screen.findByText('Channels Live');
-    expect(screen.queryByText('Live status unavailable right now.')).toBeNull();
+    expect(await screen.findByText('Live status unavailable right now.')).toBeInTheDocument();
   });
 
   it('a failed status call (moderator 403) shows no live UI and still lists the rows', async () => {

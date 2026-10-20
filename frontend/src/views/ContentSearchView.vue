@@ -187,7 +187,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
-import { apiErrorCode, apiErrorToMessage } from '@/services/http';
+import { apiErrorToMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
@@ -401,7 +401,7 @@ async function checkExistingItems() {
     existingPlaylistIds.value = new Set(response.data.existingPlaylists);
     existingVideoIds.value = new Set(response.data.existingVideos);
   } catch (err: any) {
-    console.error('Failed to check existing items', apiErrorCode(err) ?? err?.message);
+    console.error('Failed to check existing items', err);
   }
 }
 
@@ -492,7 +492,7 @@ async function handleCategoryAssignment(categoryIds: string[]) {
     isCategoryModalOpen.value = false;
     pendingContent.value = null;
   } catch (err: any) {
-    console.error('Failed to add content for approval', apiErrorCode(err) ?? err?.message);
+    console.error('Failed to add content for approval', err);
     if (err.response?.status === 409) {
       toast.error(t('contentSearch.alreadyExists'));
     } else {
@@ -533,7 +533,7 @@ async function loadMoreResults() {
 
     currentPage.value++;
   } catch (err: any) {
-    console.error('Failed to load more results', apiErrorCode(err) ?? err?.message);
+    console.error('Failed to load more results', err);
     hasMoreResults.value = false;
   } finally {
     isLoadingMore.value = false;
