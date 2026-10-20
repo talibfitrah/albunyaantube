@@ -112,35 +112,6 @@ class ImportExportService {
   }
 
   /**
-   * Import content from simple format JSON file.
-   * Validates YouTube IDs still exist and skips duplicates.
-   *
-   * @param file JSON file in simple format
-   * @param defaultStatus Default approval status (APPROVED or PENDING)
-   * @returns Import results with counts and errors
-   */
-  async importSimple(
-    file: File,
-    defaultStatus: 'APPROVED' | 'PENDING' = 'APPROVED'
-  ): Promise<SimpleImportResponse> {
-    const formData = new FormData()
-    formData.append('file', file)
-    formData.append('defaultStatus', defaultStatus)
-
-    const response = await api.post<SimpleImportResponse>(
-      `${this.BASE_PATH}/import/simple`,
-      formData,
-      {
-        headers: {
-          'Content-Type': 'multipart/form-data'
-        }
-      }
-    )
-
-    return response.data
-  }
-
-  /**
    * Validate simple format import file without actually importing (dry-run).
    *
    * @param file JSON file in simple format

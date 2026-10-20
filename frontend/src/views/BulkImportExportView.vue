@@ -276,7 +276,7 @@ import { useI18n } from 'vue-i18n'
 import importExportService, { type SimpleImportItemResult } from '@/services/importExportService'
 import type { ValidationRun } from '@/types/validation'
 import ProgressPanel from '@/components/common/ProgressPanel.vue'
-import { apiErrorCode, apiErrorWithOffenders } from '@/services/http'
+import { ApiError, apiErrorCode, apiErrorWithOffenders } from '@/services/http'
 
 const { t } = useI18n()
 
@@ -552,7 +552,7 @@ async function pollImportProgress() {
         // Pre-flight M8: a refused async import is a FAILED run whose details carry the code and offenders (D9).
         const d = response.run.details
         importError.value = typeof d?.code === 'string' && d.code.startsWith('LIVE_')
-          ? apiErrorWithOffenders({ response: { data: { code: d.code, message: d.errorMessage, details: { offenders: d.offenders } } } },
+          ? apiErrorWithOffenders(new ApiError(d.errorMessage ?? d.code, 0, d.code, { offenders: d.offenders }),
               t, 'bulkImportExport.import.importFailed')
           : t('bulkImportExport.import.importFailed')
       }
