@@ -100,6 +100,80 @@ class PlayerViewModelLiveChannelTest {
 
     private fun http(code: Int) = HttpException(Response.error<Any>(code, "".toResponseBody(null)))
 
+    /** A backend answer that arrives only when the test completes it. */
+    private fun later(answer: kotlinx.coroutines.CompletableDeferred<ChannelLives>) = object : ContentService by FakeContentService() {
+        override suspend fun fetchChannelLives(channelId: String): ChannelLives = answer.await()
+    }
+
+    /** A resolve that fails on the network [failures] times, then answers [live]. */
+    private class Offline(private val live: ResolvedStreams, private var failures: Int) :
+        com.albunyaan.tube.player.PlayerRepository by FakePlayerRepository() {
+        var calls = 0
+        override suspend fun resolveStreams(
+            videoId: String, forceRefresh: Boolean, priority: com.albunyaan.tube.data.extractor.Priority, sourceChannelId: String?,
+        ): ResolvedStreams? {
+            calls++
+            if (failures > 0) { failures--; throw java.io.IOException("offline") }
+            return live
+        }
+    }
+
+    /** Stage 9 r3 (Cubic): a resolve that fails on the network is no answer, not an end: the listed id is re-resolved. */
+    @Test fun `a network failure re-resolves the listed id`() = runTest(dispatcher) {
+        val repository = Offline(streams("Rs7St51oDDc", isLive = true), failures = 3)
+        val answer = kotlinx.coroutines.CompletableDeferred<ChannelLives>()
+        val vm = playerViewModel(repository = repository, contentService = later(answer), ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(4_000); runCurrent()                                       // 3 attempts fail; the backend is asked
+            assertEquals(3, repository.calls)
+
+            answer.complete(ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah"))))  // still listed
+            runCurrent()
+
+            assertEquals("the same id again", 4, repository.calls)
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
+        }
+    }
+
+    /** ...within the same-id budget (AUTO_RECOVERY permits): once it is spent, step 4 waits and never loops on the id. */
+    @Test fun `network failures retry within the same-id budget, then step 4`() = runTest(dispatcher) {
+        val repository = Offline(streams("Rs7St51oDDc", isLive = true), failures = Int.MAX_VALUE)
+        val content = FakeContentService().apply { channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah"))) }
+        val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceClocks(3 * 60_000L)
+            val spent = repository.calls
+            assertTrue("same-id re-resolves ran ($spent)", spent > 3)
+
+            advanceClocks(5 * 60_000L)
+            assertEquals("a spent budget never re-resolves", spent, repository.calls)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+
+            advanceClocks(3 * 60_000L)
+            assertTrue(vm.state.value.streamState is StreamState.Error)
+        }
+    }
+
+    /** Stage 9 r3 (Cubic): the reconnect overlay reads the state flow, so an incident over an unchanged Loading reaches it. */
+    @Test fun `a reconnect reaches the state flow while the backend is asked`() = runTest(dispatcher) {
+        val answer = kotlinx.coroutines.CompletableDeferred<ChannelLives>()
+        val (vm, _, _) = setup(streams("pqC-1yfFvu8", isLive = false), later(answer))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
+            assertFalse("a first load", vm.state.value.liveReconnecting)
+            runCurrent()                                                             // an ended id opened cold: the backend is asked
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertTrue(vm.state.value.liveReconnecting)
+
+            answer.complete(ChannelLives(listOf(LiveItem("pqC-1yfFvu8", "Sunnah"))))  // still listed: step 4 waits
+            runCurrent()
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertTrue(vm.state.value.liveReconnecting)
+        }
+    }
+
     @Test fun `an end never advances the queue and asks the backend`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
@@ -402,16 +476,16 @@ class PlayerViewModelLiveChannelTest {
             vm.loadVideo(videoId = "pqC-1yfFvu8")                                    // an ordinary video plays first
             advanceTimeBy(1_000); runCurrent()
             assertTrue(vm.state.value.streamState is StreamState.Ready)
-            assertFalse(vm.liveReconnecting())
+            assertFalse(vm.state.value.liveReconnecting)
 
             content.channelLives[channel] = ChannelLives(emptyList())
             vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
             assertEquals(StreamState.Loading, vm.state.value.streamState)            // the first load: as it was
-            assertFalse(vm.liveReconnecting())
+            assertFalse(vm.state.value.liveReconnecting)
 
             advanceTimeBy(1_000); runCurrent()                                       // an ended id (a recording): step 4 waits
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertTrue(vm.liveReconnecting())                                        // with nothing ever played
+            assertTrue(vm.state.value.liveReconnecting)                                        // with nothing ever played
         }
     }
 
@@ -425,11 +499,11 @@ class PlayerViewModelLiveChannelTest {
 
             vm.retryCurrentStream()                                                  // no incident open
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertTrue(vm.liveReconnecting())
+            assertTrue(vm.state.value.liveReconnecting)
 
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertFalse(vm.liveReconnecting())
+            assertFalse(vm.state.value.liveReconnecting)
         }
     }
 
@@ -448,7 +522,7 @@ class PlayerViewModelLiveChannelTest {
 
             assertEquals("newSunnah01", vm.state.value.currentItem?.streamId)
             assertEquals(StreamState.Loading, vm.state.value.streamState)
-            assertTrue(vm.liveReconnecting())
+            assertTrue(vm.state.value.liveReconnecting)
         }
     }
 

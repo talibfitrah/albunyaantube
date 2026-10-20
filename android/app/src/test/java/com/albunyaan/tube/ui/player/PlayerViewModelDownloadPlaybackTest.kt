@@ -388,6 +388,30 @@ class PlayerViewModelDownloadPlaybackTest {
         assertTrue(offline.state.value.audioOnly)
     }
 
+    // Stage 9 r3 (Cubic): loadDownload's local-file flag outlived it, so a later stream (the view recreated after the
+    // saved copy was deleted) re-read the gone file: "not available", with Retry, Cast, Quality and Up Next hidden.
+    @Test fun `a stream after a local file plays the stream`() = runTest {
+        val file = tmp.newFile("v17.mp4")
+        downloads.entries.value = listOf(completed("d17", "v17", file))
+        streams.resolvedStreams = com.albunyaan.tube.data.extractor.ResolvedStreams(
+            streamId = "v17",
+            videoTracks = listOf(com.albunyaan.tube.data.extractor.VideoTrack("https://v.test/v17", "video/mp4", 640, 360, 1, "360p", 30, isVideoOnly = false)),
+            audioTracks = listOf(com.albunyaan.tube.data.extractor.AudioTrack("https://a.test/v17", "audio/mp4", 128_000, "mp4a.40.2")),
+            durationSeconds = 60,
+        )
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v17")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.playingDownload)
+
+        file.delete()
+        vm.loadVideo(videoId = "v17")                                    // the view recreated: no copy, so it streams
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertEquals("https://v.test/v17", (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
+    }
+
     private var online = true
     private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
 
