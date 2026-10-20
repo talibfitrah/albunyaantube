@@ -4,6 +4,7 @@ import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.*;
 import com.albunyaan.tube.model.*;
 import com.albunyaan.tube.repository.*;
+import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import com.google.cloud.Timestamp;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -13,6 +14,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.junit.jupiter.params.ParameterizedTest;
 import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.ArgumentCaptor;
+import org.mockito.InOrder;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
@@ -63,6 +65,9 @@ class ContentValidationServiceTest {
     @Mock
     private StreamIndexService streamIndexService;
 
+    @Mock
+    private ThumbnailRepairMigration thumbnailRepair;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -81,7 +86,8 @@ class ContentValidationServiceTest {
                 validationRunRepository,
                 validationProperties,
                 publicContentCacheService,
-                streamIndexService
+                streamIndexService,
+                thumbnailRepair
         );
     }
 
@@ -862,6 +868,61 @@ class ContentValidationServiceTest {
 
             // Assert: stream index entry must be marked archived for this video
             verify(streamIndexService).markStreamArchived("dQw4w9WgXcQ");
+        }
+    }
+
+    /**
+     * The oEmbed thumbnail heal runs at the shared playlist-load entry, in the run's own thread,
+     * before any playlist doc is loaded: a doc loaded first would full-save its stale /pl_c/ back
+     * over a concurrent heal's /vi/. Its failure never stops validation.
+     */
+    @Nested
+    @DisplayName("Thumbnail Heal Tests")
+    class ThumbnailHealTests {
+
+        @Test
+        void validatePlaylists_healsAndEvicts_beforeLoadingDocs() throws Exception {
+            when(thumbnailRepair.repairBrokenPlaylistThumbnails()).thenReturn(2);
+
+            ValidationRun run = service.validatePlaylists("SCHEDULED", null, "Scheduler", 20);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+            InOrder order = inOrder(thumbnailRepair, publicContentCacheService, playlistRepository);
+            order.verify(thumbnailRepair).repairBrokenPlaylistThumbnails();
+            order.verify(publicContentCacheService).evictPublicContentCaches();
+            order.verify(playlistRepository).findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt());
+        }
+
+        @Test
+        void validateAllContent_alsoHealsBeforeLoadingPlaylists() throws Exception {
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            ValidationRun run = service.validateAllContent("MANUAL", "admin", "Admin", 9);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+            InOrder order = inOrder(thumbnailRepair, playlistRepository);
+            order.verify(thumbnailRepair).repairBrokenPlaylistThumbnails();
+            order.verify(playlistRepository).findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt());
+        }
+
+        @Test
+        void validatePlaylists_healReturnsZero_doesNotEvict() throws Exception {
+            when(thumbnailRepair.repairBrokenPlaylistThumbnails()).thenReturn(0);
+
+            service.validatePlaylists("SCHEDULED", null, "Scheduler", 20);
+
+            verify(publicContentCacheService, never()).evictPublicContentCaches();
+        }
+
+        @Test
+        void validatePlaylists_healThrows_validationStillRuns() throws Exception {
+            when(thumbnailRepair.repairBrokenPlaylistThumbnails())
+                    .thenThrow(new ExecutionException("firestore down", new RuntimeException()));
+
+            ValidationRun run = service.validatePlaylists("SCHEDULED", null, "Scheduler", 20);
+
+            assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+            verify(playlistRepository).findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt());
         }
     }
 

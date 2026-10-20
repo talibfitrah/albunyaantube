@@ -60,6 +60,9 @@ public class PlaylistValidationScheduler {
     /** Default lock TTL in seconds if config is not available. Matches video. */
     private static final int DEFAULT_LOCK_TTL_SECONDS = 7200; // 2 hours
 
+    /** Lock TTL for a heal-only pass: its 90 s deadline + one 8 s oEmbed call + Firestore, with margin. */
+    private static final int HEAL_LOCK_TTL_SECONDS = 300;
+
     private final ContentValidationService contentValidationService;
     private final PublicContentCacheService publicContentCacheService;
     private final ValidationProperties validationProperties;
@@ -179,8 +182,6 @@ public class PlaylistValidationScheduler {
             return;
         }
 
-        healBrokenThumbnails(trigger);
-
         if (circuitBreaker.isOpen()) {
             YouTubeCircuitBreaker.CircuitBreakerStatus status = circuitBreaker.getStatus();
             logger.warn("Playlist validation skipped - circuit breaker is OPEN. " +
@@ -188,6 +189,9 @@ public class PlaylistValidationScheduler {
                     status.getRemainingCooldownMs() / 60000,
                     status.getLastErrorType(),
                     status.getLastErrorMessage());
+            // The heal uses no NewPipe, so it never waits on the breaker. A closed-breaker run
+            // heals inside validatePlaylists instead.
+            healUnderLock(trigger, instanceId);
             return;
         }
 
@@ -240,7 +244,9 @@ public class PlaylistValidationScheduler {
     /**
      * Heals once after each boot, so a deploy fixes dead thumbnails the same day
      * instead of at the next 07:00 run. Off the request threads; tests keep it off
-     * through the scheduler's enabled flag (application-test.yml).
+     * through the scheduler's enabled flag (application-test.yml). Its own lock holder
+     * id keeps it exclusive even against a run on this same instance (the lock is
+     * re-entrant per holder).
      */
     @Async("validationExecutor")
     @EventListener(ApplicationReadyEvent.class)
@@ -249,20 +255,29 @@ public class PlaylistValidationScheduler {
             logger.info("Playlist validation scheduler is DISABLED - skipping boot thumbnail heal");
             return;
         }
-        healBrokenThumbnails("boot");
+        healUnderLock("boot", instanceId + "-boot");
     }
 
     /**
-     * oEmbed heal of broken playlist thumbnails. It uses no NewPipe, so it runs even
-     * when the breaker is OPEN, and the validator's NewPipe items often come back
-     * empty. It must run before {@code validatePlaylists} in the same thread: the
-     * validator full-saves the docs it loaded, so a doc loaded before the heal
-     * would write the dead /pl_c/ URL back.
+     * Lock, heal, evict, release, so two instances never double-heal. When the lock is
+     * held, skip: the holder is a validation run, which heals before it loads any doc.
      */
+    private void healUnderLock(String trigger, String holder) {
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, holder, HEAL_LOCK_TTL_SECONDS)) {
+            logger.info("{} playlist thumbnail heal skipped - the lock holder heals", trigger);
+            return;
+        }
+        try {
+            healBrokenThumbnails(trigger);
+        } finally {
+            systemSettingsRepository.releaseLock(LOCK_KEY, holder);
+        }
+    }
+
+    /** oEmbed heal of broken playlist thumbnails (no NewPipe); evicts when it repaired any. */
     private void healBrokenThumbnails(String trigger) {
         try {
             int healed = thumbnailRepair.repairBrokenPlaylistThumbnails();
-            logger.info("{} playlist thumbnail heal: {} repaired via oEmbed", trigger, healed);
             if (healed > 0) {
                 evictPublicContentCaches();
             }
