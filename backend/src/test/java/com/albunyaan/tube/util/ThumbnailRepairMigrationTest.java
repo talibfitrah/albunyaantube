@@ -133,6 +133,37 @@ class ThumbnailRepairMigrationTest {
     }
 
     @Test
+    void repairBrokenPlaylistThumbnails_healsPlcViaOEmbed_noNewPipe() throws Exception {
+        Playlist broken = playlist("pl-broken", BROKEN_PL_ID,
+                "https://i.ytimg.com/pl_c/" + BROKEN_PL_ID + "/studio_square_thumbnail.jpg?sqp=CI7erNYG");
+        Playlist healthy = playlist("pl-good", GOOD_PL_ID, "https://i.ytimg.com/vi/ABCDEFGHIJK/hqdefault.jpg");
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(broken, healthy));
+        when(oEmbedClient.playlistThumbnailUrl(BROKEN_PL_ID))
+                .thenReturn(Optional.of("https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg"));
+
+        assertEquals(1, migration.repairBrokenPlaylistThumbnails());
+
+        verify(playlistRepository).updateThumbnailUrl("pl-broken", "https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg");
+        verify(playlistRepository, never()).updateThumbnailUrl(eq("pl-good"), anyString());
+        verify(oEmbedClient, never()).playlistThumbnailUrl(GOOD_PL_ID);
+        // No NewPipe, no channel pass: the circuit breaker can never block this heal.
+        verifyNoInteractions(orchestrator, channelRepository);
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_oEmbedEmpty_leavesRowAndReturnsZero() throws Exception {
+        Playlist broken = playlist("pl-broken", BROKEN_PL_ID,
+                "https://i.ytimg.com/pl_c/" + BROKEN_PL_ID + "/studio_square_thumbnail.jpg?sqp=CI7erNYG");
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(broken));
+        // setUp stubs oEmbed to Optional.empty() for every id.
+
+        assertEquals(0, migration.repairBrokenPlaylistThumbnails());
+
+        verify(oEmbedClient).playlistThumbnailUrl(BROKEN_PL_ID);
+        verify(playlistRepository, never()).updateThumbnailUrl(anyString(), anyString());
+    }
+
+    @Test
     void run_recordsFailedId_whenReExtractionReturnsNull() throws Exception {
         Channel broken = channel("ch-broken", ZAD_ID, "https://yt3.ggpht.com/ytc/" + ZAD_ID, "stub");
         when(channelRepository.findByStatus("APPROVED")).thenReturn(List.of(broken));

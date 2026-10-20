@@ -6,8 +6,12 @@ import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
+import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -61,6 +65,7 @@ public class PlaylistValidationScheduler {
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
     private final SystemSettingsRepository systemSettingsRepository;
+    private final ThumbnailRepairMigration thumbnailRepair;
 
     private final String instanceId;
     private final ScheduledExecutorService heartbeatExecutor;
@@ -70,12 +75,14 @@ public class PlaylistValidationScheduler {
             PublicContentCacheService publicContentCacheService,
             ValidationProperties validationProperties,
             YouTubeCircuitBreaker circuitBreaker,
-            SystemSettingsRepository systemSettingsRepository) {
+            SystemSettingsRepository systemSettingsRepository,
+            ThumbnailRepairMigration thumbnailRepair) {
         this.contentValidationService = contentValidationService;
         this.publicContentCacheService = publicContentCacheService;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
+        this.thumbnailRepair = thumbnailRepair;
         this.instanceId = generateInstanceId();
         this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "playlist-lock-heartbeat");
@@ -172,6 +179,8 @@ public class PlaylistValidationScheduler {
             return;
         }
 
+        healBrokenThumbnails(trigger);
+
         if (circuitBreaker.isOpen()) {
             YouTubeCircuitBreaker.CircuitBreakerStatus status = circuitBreaker.getStatus();
             logger.warn("Playlist validation skipped - circuit breaker is OPEN. " +
@@ -225,6 +234,43 @@ public class PlaylistValidationScheduler {
         } finally {
             stopLockHeartbeat(heartbeat);
             systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
+        }
+    }
+
+    /**
+     * Heals once after each boot, so a deploy fixes dead thumbnails the same day
+     * instead of at the next 07:00 run. Off the request threads; tests keep it off
+     * through the scheduler's enabled flag (application-test.yml).
+     */
+    @Async("validationExecutor")
+    @EventListener(ApplicationReadyEvent.class)
+    public void healThumbnailsOnBoot() {
+        if (!validationProperties.getPlaylist().getScheduler().isEnabled()) {
+            logger.info("Playlist validation scheduler is DISABLED - skipping boot thumbnail heal");
+            return;
+        }
+        healBrokenThumbnails("boot");
+    }
+
+    /**
+     * oEmbed heal of broken playlist thumbnails. It uses no NewPipe, so it runs even
+     * when the breaker is OPEN, and the validator's NewPipe items often come back
+     * empty. It must run before {@code validatePlaylists} in the same thread: the
+     * validator full-saves the docs it loaded, so a doc loaded before the heal
+     * would write the dead /pl_c/ URL back.
+     */
+    private void healBrokenThumbnails(String trigger) {
+        try {
+            int healed = thumbnailRepair.repairBrokenPlaylistThumbnails();
+            logger.info("{} playlist thumbnail heal: {} repaired via oEmbed", trigger, healed);
+            if (healed > 0) {
+                evictPublicContentCaches();
+            }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.warn("{} playlist thumbnail heal failed: {}", trigger, e.getMessage());
         }
     }
 
