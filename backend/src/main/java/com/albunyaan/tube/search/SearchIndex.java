@@ -935,6 +935,22 @@ public class SearchIndex {
         };
     }
 
+    /**
+     * Tier-1 words over a text outside the index (a LIVE category's current lives, L3): every query token is a word of
+     * `text`, the last one also as a prefix, through the index's analyzer (case, Arabic and digit folding).
+     * ponytail: no stems, fuzzy, concepts or stopword slack; run the ladder on a temporary index if those lists grow.
+     */
+    public static boolean matches(String query, String text) {
+        List<String> words = SearchText.tokens(SearchText.BASE, text);
+        List<String> tokens = SearchText.tokens(SearchText.BASE, query);
+        for (int i = 0; i < tokens.size(); i++) {
+            String token = tokens.get(i);
+            boolean last = i == tokens.size() - 1;
+            if (words.stream().noneMatch(w -> w.equals(token) || last && w.startsWith(token))) return false;
+        }
+        return !tokens.isEmpty();
+    }
+
     /** Admitted source keys ("channel:UC…", "playlist:PL…") and their names, now (inner-search R23, R24). */
     public Map<String, String> sources() {
         Map<String, String> out = new HashMap<>();

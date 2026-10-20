@@ -3,6 +3,7 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.LiveChannelState;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
+import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
 import java.time.Clock;
@@ -15,6 +16,7 @@ import java.util.concurrent.ExecutionException;
 import java.util.concurrent.atomic.AtomicLong;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.mock;
@@ -36,6 +38,25 @@ class LiveChannelServiceTest {
     final LiveTabReader reader = mock(LiveTabReader.class);
     final LiveChannelStateRepository states = mock(LiveChannelStateRepository.class);
     final LiveChannelService service = new LiveChannelService(reader, states, clock);
+
+    /** The boot load succeeded (LiveChannelPoller.afterSingletonsInstantiated). */
+    @BeforeEach
+    void bootLoad() {
+        service.loadStates(List.of());
+    }
+
+    /** L1: before the states load, a seed writes nothing and a put refuses, so an empty snapshot never overwrites them. */
+    @Test
+    void nothingIsWrittenBeforeTheStatesLoad() throws Exception {
+        LiveChannelService unloaded = new LiveChannelService(reader, states, clock);
+        when(reader.read(SUNNAH)).thenReturn(sunnahLive());
+
+        unloaded.seed(SUNNAH);                                  // the add is never refused
+
+        assertThat(unloaded.state(SUNNAH)).isNull();
+        assertThatThrownBy(() -> unloaded.put(LiveChannelState.unknown(SUNNAH))).isInstanceOf(IllegalStateException.class);
+        verify(states, never()).save(any());
+    }
 
     static LiveTabResult sunnahLive() {
         return LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("Rs7St51oDDc", "Sunnah")), 1);

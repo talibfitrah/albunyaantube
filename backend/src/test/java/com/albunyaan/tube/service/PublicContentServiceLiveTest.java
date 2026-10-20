@@ -17,7 +17,9 @@ import java.util.List;
 import java.util.stream.IntStream;
 
 import static org.assertj.core.api.Assertions.assertThat;
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
@@ -31,12 +33,13 @@ class PublicContentServiceLiveTest {
     final CategoryRepository categories = mock(CategoryRepository.class);
     final ChannelRepository channels = mock(ChannelRepository.class);
     final LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+    final SearchIndex searchIndex = mock(SearchIndex.class);
     PublicContentService service;
 
     @BeforeEach
     void setUp() throws Exception {
         service = new PublicContentService(channels, mock(PlaylistRepository.class), mock(VideoRepository.class), categories,
-                mock(CategoryContentOrderRepository.class), Runnable::run, mock(SearchIndex.class), liveCategories);
+                mock(CategoryContentOrderRepository.class), Runnable::run, searchIndex, liveCategories);
         when(categories.findByParentId(CAT)).thenReturn(List.of());
         when(liveCategories.isLive(CAT)).thenReturn(true);
         when(liveCategories.items(CAT)).thenReturn(IntStream.range(0, 5)
@@ -53,6 +56,35 @@ class PublicContentServiceLiveTest {
             assertThat(second.getData()).extracting(ContentItemDto::getId).containsExactly("live00000003", "live00000004");
             assertThat(second.getPageInfo().getNextCursor()).isNull();
         }
+    }
+
+    /** L3: q= on a LIVE category searches the expanded list the unfiltered VIDEOS request serves (1.0.3 sends q). */
+    @Test
+    void aSearchInALiveCategorySearchesTheExpandedList() throws Exception {
+        when(liveCategories.items(CAT)).thenReturn(List.of(
+                ContentItemDto.video("makkahlive1", "Makkah Live", null, 0, null, null, null, null, "Quran TV", null),
+                ContentItemDto.video("zadlive0001", "بث مباشر القرآن الكريم", null, 0, null, null, null, null, "Zad TV", null),
+                ContentItemDto.video("kidslive001", "Kids Live", null, 0, null, null, null, null, "One4kids", null)));
+        when(searchIndex.searchPage(anyString(), anyString(), anyInt(), any(), anyLong()))
+                .thenReturn(new SearchIndex.Hits(List.of(), "none", 0));   // the catalog index holds no current live
+
+        PublicContentService.SearchPage makkah = service.searchContent("VIDEOS", null, 20, CAT, null, null, "makkah");
+        PublicContentService.SearchPage quran = service.searchContent("VIDEOS", null, 20, CAT, null, null, "القران");
+        PublicContentService.SearchPage zad = service.searchContent("VIDEOS", null, 20, CAT, null, null, "zad tv");
+        PublicContentService.SearchPage live = service.searchContent("VIDEOS", null, 1, CAT, null, null, "live");
+        PublicContentService.SearchPage none = service.searchContent("VIDEOS", null, 20, CAT, null, null, "nothing");
+
+        assertThat(makkah.page().getData()).extracting(ContentItemDto::getId).containsExactly("makkahlive1");
+        assertThat(makkah.match()).isEqualTo("exact");
+        assertThat(quran.page().getData()).extracting(ContentItemDto::getId).containsExactly("zadlive0001");
+        assertThat(zad.page().getData()).extracting(ContentItemDto::getId).containsExactly("zadlive0001");
+        assertThat(live.page().getData()).extracting(ContentItemDto::getId).containsExactly("makkahlive1");
+        CursorPageDto<ContentItemDto> next = service.searchContent("VIDEOS", live.page().getPageInfo().getNextCursor(), 1,
+                CAT, null, null, "live").page();
+        assertThat(next.getData()).extracting(ContentItemDto::getId).containsExactly("kidslive001");
+        assertThat(next.getPageInfo().getNextCursor()).isNull();
+        assertThat(none.page().getData()).isEmpty();
+        assertThat(none.match()).isEqualTo("none");
     }
 
     @Test

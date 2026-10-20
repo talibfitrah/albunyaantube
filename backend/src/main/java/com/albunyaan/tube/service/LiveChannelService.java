@@ -40,6 +40,8 @@ public class LiveChannelService {
     private volatile Map<String, Channel> entries = Map.of();
     private volatile Map<String, List<LiveTabResult.LiveItem>> served = Map.of();
     private volatile Long suspectSince;
+    /** L1: false until loadStates succeeds. A state computed from the empty snapshot would overwrite the stored one. */
+    private volatile boolean loaded;
 
     public LiveChannelService(LiveTabReader reader, LiveChannelStateRepository states, Clock clock) {
         this.reader = reader;
@@ -78,7 +80,8 @@ public class LiveChannelService {
      * seed (pre-flight M9): a failed state write is logged and the state stays in the snapshot; the next cycle persists it.
      * A breaker refusal or a rate limit says nothing about the channel, so it seeds nothing (R7). An empty read hides
      * only a channel that is not served now: re-adding a served channel during a suspect stretch keeps its lives (R10).
-     * Restore records stay for the next cycle, which restores the docs (R12).
+     * Restore records stay for the next cycle, which restores the docs (R12). Before the states load nothing is seeded
+     * (L1): the first cycle loads them and reads the channel.
      */
     public void seed(String ucId) {
         seedWith(ucId, livesNow(ucId));                         // the YouTube read stays outside the lock
@@ -87,6 +90,10 @@ public class LiveChannelService {
     /** {@link #seed} from a read the caller already made (spec §10: the migration's fresh poll). Sends no request. */
     public void seedWith(String ucId, LiveTabResult r) {
         if (r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
+            return;
+        }
+        if (!loaded) {
+            log.warn("live seed: states not loaded yet; {} is read by the next cycle", ucId);
             return;
         }
         synchronized (stateLock) {
@@ -111,8 +118,9 @@ public class LiveChannelService {
         return stateLock;
     }
 
-    /** Persist, then publish into the snapshot. */
+    /** Persist, then publish into the snapshot. Refused before the states load (L1). */
     public void put(LiveChannelState next) throws ExecutionException, InterruptedException, TimeoutException {
+        if (!loaded) throw new IllegalStateException("live channel states not loaded yet");
         states.save(next);
         publishState(next);
     }
@@ -123,10 +131,15 @@ public class LiveChannelService {
         snapshot = Map.copyOf(copy);
     }
 
-    public synchronized void loadStates(Collection<LiveChannelState> loaded) {
+    public synchronized void loadStates(Collection<LiveChannelState> saved) {
         Map<String, LiveChannelState> copy = new HashMap<>();
-        loaded.forEach(s -> copy.put(s.getChannelId(), s));
+        saved.forEach(s -> copy.put(s.getChannelId(), s));
         snapshot = Map.copyOf(copy);
+        loaded = true;
+    }
+
+    public boolean loaded() {
+        return loaded;
     }
 
     /** The poller's view of the LIVE categories: the channel entries and their R11-filtered lives. */

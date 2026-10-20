@@ -534,6 +534,82 @@ class LiveChannelPollerTest {
         assertThat(live.served()).isEmpty();
     }
 
+    /** A Sunnah-like state: LIVE, plus the R12 restore record of a doc the poller archived. */
+    private LiveChannelState savedWithRestoreRecord() {
+        LiveChannelState saved = LiveChannelState.unknown(A);
+        saved.setStatus(LiveChannelState.LIVE);
+        saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
+        saved.getArchived().put("ownarchive1", "ERROR");
+        return saved;
+    }
+
+    /** L1 (scenario A): a failed boot load is retried by the next cycle; no seed or cycle writes a state before it. */
+    @Test
+    void aFailedBootLoadIsRetriedBeforeAnyStateWrite() throws Exception {
+        entries(A);
+        when(states.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"))
+                .thenReturn(List.of(savedWithRestoreRecord()));
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        poller.afterSingletonsInstantiated();
+
+        live.seed(A);                                                 // an admin add before the reload
+        verify(states, never()).save(any());
+
+        cycleAt(T0);
+
+        verify(states).save(argThat(s -> "ERROR".equals(s.getArchived().get("ownarchive1"))));
+        verify(states, never()).save(argThat(s -> s.getArchived().isEmpty()));
+        assertThat(live.state(A).getArchived()).containsEntry("ownarchive1", "ERROR");
+    }
+
+    /** L1 (scenario B): an open breaker skips the YouTube reads, never the reload and the served view. */
+    @Test
+    void anOpenBreakerStillReloadsAndRefreshesTheServedView() throws Exception {
+        entries(A);
+        when(states.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"))
+                .thenReturn(List.of(savedWithRestoreRecord()));
+        when(breaker.isOpen()).thenReturn(true);
+        poller.afterSingletonsInstantiated();
+
+        cycleAt(T0);
+
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        assertThat(live.entries()).containsKey(A);
+        verify(reader, never()).read(anyString());
+        verify(states, never()).save(any());
+        verify(caches).evictPublicContentCaches();                     // pages cached while nothing was loaded
+    }
+
+    /** L2: 30 targets in backoff never take the 30 slots from a due target behind them. */
+    @Test
+    void backedOffTargetsDoNotTakeTheThirtySlots() {
+        for (int i = 0; i < 30; i++) entries(String.format("UC%022d", i));
+        String healthy = String.format("UC%022d", 30);
+        entries(healthy);
+        when(reader.read(anyString())).thenReturn(LiveTabResult.error(1, "x"));
+        when(reader.read(healthy)).thenReturn(live("aaaaaaaaaaa"));
+
+        cycleAt(T0);                                                  // the first 30 fail: backed off to T0 + 10 min
+        cycleAt(T0 + 5 * MIN);
+
+        verify(reader).read(healthy);
+    }
+
+    /** L2: an ERROR never advances checkedAt, so attempts, not successful checks, order the targets. */
+    @Test
+    void failingTargetsRotateBehindTargetsNotYetTried() {
+        for (int i = 0; i < 30; i++) entries(String.format("UC%022d", i));
+        String healthy = String.format("UC%022d", 30);
+        entries(healthy);
+        when(reader.read(anyString())).thenReturn(LiveTabResult.error(1, "x"));
+        when(reader.read(healthy)).thenReturn(live("aaaaaaaaaaa"));
+
+        cycleAt(T0);                                                  // the first 30 fail
+        cycleAt(T0 + 10 * MIN);                                       // their backoff is over: all 31 are due
+
+        verify(reader).read(healthy);
+    }
+
     /**
      * Fix round 2: the snapshot loads while the singletons are instantiated, before Tomcat opens the port (finishRefresh)
      * and before @Scheduled tasks register (ContextRefreshedEvent); never on ApplicationReadyEvent.

@@ -71,6 +71,12 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     private Long unprovenSince;
     private long requestDay = -1;
     private int requestsToday;
+    /**
+     * L2: when this process last read each channel. An ERROR leaves checkedAt alone, so attempts, not checks, order the
+     * targets. ponytail: in memory, never pruned (one entry per channel ever polled); a restart orders by checkedAt until
+     * each target is read once.
+     */
+    private final Map<String, Long> tried = new HashMap<>();
 
     public LiveChannelPoller(LiveCategoryService liveCategories, VideoRepository videos,
                              LiveChannelStateRepository states, LiveChannelService live, SortOrderService sortOrder,
@@ -114,33 +120,39 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     }
 
     public synchronized void cycle(long now) {
-        if (breaker.isOpen()) {
-            log.info("live poller: circuit breaker open, cycle skipped");
-            return;
-        }
         try {
+            if (!live.loaded()) live.loadStates(states.findAll());     // L1: a failed boot load retries before any write
+            Map<String, List<LiveTabResult.LiveItem>> servedBefore = live.served();
             View view = view();
+            if (breaker.isOpen()) {
+                // L1: no YouTube request, so an open breaker (1-48 h) never freezes the view or the endpoint's 404s
+                refreshView(view);
+                if (!servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+                log.info("live poller: circuit breaker open, cycle skipped");
+                return;
+            }
             if (view.liveCategoryIds().isEmpty()) {
                 live.publish(Map.of(), Map.of());
                 return;
             }
-            Map<String, List<LiveTabResult.LiveItem>> servedBefore = live.served();
-            List<String> targets = new ArrayList<>(view.targets());
-            targets.sort(Comparator.comparingLong(uc -> {
-                LiveChannelState s = live.state(uc);
-                return s == null || s.getCheckedAt() == null ? 0L : s.getCheckedAt();
-            }));
+            List<String> targets = view.targets().stream()
+                    .filter(uc -> {                                   // L2: a backoff skips before the 30 cap
+                        LiveChannelState s = live.state(uc);
+                        return s == null || s.getNextPollAt() == null || s.getNextPollAt() <= now;
+                    })
+                    .sorted(Comparator.comparingLong(this::lastTried))
+                    .limit(MAX_TARGETS)
+                    .toList();
             int budget = CYCLE_BUDGET;
             int spent = 0;
             Map<String, LiveTabResult> fetched = new LinkedHashMap<>();
-            for (String uc : targets.subList(0, Math.min(MAX_TARGETS, targets.size()))) {
-                LiveChannelState s = live.state(uc);
-                if (s != null && s.getNextPollAt() != null && s.getNextPollAt() > now) continue;
+            for (String uc : targets) {
                 if (budget < MAX_PER_CHANNEL) break;                    // D16: the next cycle resumes here
                 LiveTabResult r = live.livesNow(uc);
                 budget -= r.requests();
                 spent += r.requests();
                 if (r.outcome() == LiveTabResult.Outcome.BREAKER) break; // D3: not counted
+                tried.put(uc, now);
                 fetched.put(uc, r);                             // a rate limit too: apply advances its checkedAt
                 if (r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
                     // R7: stop at the first rate limit; oldest-first then reads this channel last next cycle
@@ -177,6 +189,13 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         } catch (Exception e) {
             log.warn("live poller: cycle failed: {}", e.toString());
         }
+    }
+
+    /** D16 oldest first: the later of the last check and this process's last read (L2). */
+    private long lastTried(String uc) {
+        LiveChannelState s = live.state(uc);
+        long checked = s == null || s.getCheckedAt() == null ? 0L : s.getCheckedAt();
+        return Math.max(checked, tried.getOrDefault(uc, 0L));
     }
 
     /** Recompute the published entries and R11-filtered lives from Firestore (no YouTube traffic). */

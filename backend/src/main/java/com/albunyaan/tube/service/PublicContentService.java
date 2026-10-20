@@ -36,6 +36,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -1050,7 +1051,8 @@ public class PublicContentService {
      * In-tab search (spec §4.7): the ladder over catalog documents of one type, relevance-ordered (the
      * tab's `sort` is ignored, owner ruling Q4), paged with a Base64 `offset:snapshot` cursor: every page runs on
      * the index snapshot of the first (SearchIndex.searchPage); a bare offset cursor starts a new snapshot. Returns
-     * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list.
+     * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list. A LIVE category's
+     * VIDEOS search filters its expansion instead (L3).
      */
     public SearchPage searchContent(String type, String cursor, int limit, String category,
                                     String length, String date, String q)
@@ -1060,6 +1062,14 @@ public class PublicContentService {
         long offset = decodeCursorOffset(cursor);
         if (offset > MAX_SEARCH_FETCH) { // no tab pages past its catalog; a crafted offset must cost nothing (F2)
             return new SearchPage(new CursorPageDto<>(List.of(), null), "none");
+        }
+        if ("VIDEO".equals(docType) && category != null && !category.isBlank() && liveCategoryService.isLive(category)) {
+            // L3: the VIDEOS list of a LIVE category is its expansion (getContent), whose lives the index may not hold
+            List<ContentItemDto> hits = liveCategoryService.items(category).stream()
+                    .filter(i -> SearchIndex.matches(q,
+                            Objects.toString(i.getTitle(), "") + " " + Objects.toString(i.getChannelTitle(), "")))
+                    .toList();
+            return new SearchPage(livePage(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
         }
         searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
