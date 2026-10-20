@@ -1,0 +1,36 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelLiveChannelTest.kt
+  s_dbb6b1f3671904::t_01f00ee62587d4 30,65,72,267-296
+  s_dbb6b1f3671904::t_29823d16e13232 297-298
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelTestDoubles.kt
+  s_dbb6b1f3671904::t_01f00ee62587d4 47,55
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_2cd64cfc11693b 838-845,968,1456-1457
+android/app/src/main/java/com/albunyaan/tube/di/DataModule.kt
+  s_dbb6b1f3671904::t_028067755cb2e1 388-389,391
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelDownloadPlaybackTest.kt
+  s_dbb6b1f3671904::t_028067755cb2e1 288-301
+android/app/src/test/java/com/albunyaan/tube/player/StreamPrefetchServiceTtlTest.kt
+  s_dbb6b1f3671904::t_028067755cb2e1 105,116-139
+  s_dbb6b1f3671904::t_8f79287c21b22e 57,140-141
+android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt
+  s_dbb6b1f3671904::t_2cd64cfc11693b 35-43
+android/app/src/main/java/com/albunyaan/tube/player/StreamPrefetchService.kt
+  s_dbb6b1f3671904::t_028067755cb2e1 75
+  s_dbb6b1f3671904::t_2cd64cfc11693b 169-174
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "304ddfdcf0f1c91944c67a21a025fa4f086efc05",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
