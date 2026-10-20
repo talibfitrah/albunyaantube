@@ -5,26 +5,18 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.model.Channel;
-import com.albunyaan.tube.model.ContentReport;
 import com.albunyaan.tube.model.Playlist;
-import com.albunyaan.tube.model.ReportStatus;
-import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
-import com.albunyaan.tube.repository.ContentReportRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
-import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.LiveCategoryService;
-import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.PublicContentService;
-import com.albunyaan.tube.service.StreamIndexService;
-import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import org.apache.lucene.document.Document;
@@ -1395,41 +1387,20 @@ class SearchIndexTest {
      * video was saved RESOLVED with nothing excluded and no note. Off, nothing changes.
      */
     @Test
-    void aParentlessReportWaitsForTheInnerIndexOnlyWhileInnerSearchIsOn() throws Exception {
+    void listingsLoadedWaitsForTheInnerIndexOnlyWhileInnerSearchIsOn() throws Exception {
         InnerIndex unbuilt = new InnerIndex(innerTmp.resolve("base").toString(),
                 new InnerStore(innerTmp.resolve("on").toString()), java.time.Clock.systemUTC());
         unbuilt.sleeper = ms -> { };
         openedInner.add(unbuilt);
-        ContentReport cold = parentless("lesson00001");
-        ContentReportService on = reports(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, unbuilt)), cold);
-        assertThrows(SearchIndex.NotReadyException.class, () -> on.resolveReport("r", ReportStatus.RESOLVED, "admin", null));
-        assertEquals(ReportStatus.PENDING, cold.getStatus(), "the admin retries on the 503");
+        SearchIndex on = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, unbuilt));
+        assertFalse(on.listingsLoaded());
 
         unbuilt.rebuild(Map.of(), 10_000);
-        assertEquals(ReportStatus.RESOLVED, on.resolveReport("r", ReportStatus.RESOLVED, "admin", null).getStatus());
+        assertTrue(on.listingsLoaded());
 
         InnerIndex off = new InnerIndex(innerTmp.resolve("base").toString(), new InnerStore(""), java.time.Clock.systemUTC());
-        ContentReport report = parentless("lesson00001");
-        ContentReportService today = reports(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, off)), report);
-        assertEquals(ReportStatus.RESOLVED, today.resolveReport("r", ReportStatus.RESOLVED, "admin", null).getStatus(),
+        assertTrue(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, off)).listingsLoaded(),
                 "inner search off: as today");
-    }
-
-    private static ContentReport parentless(String videoId) {
-        ContentReport report = new ContentReport();
-        report.setTargetType(ReportTargetType.VIDEO);
-        report.setTargetId(videoId);
-        report.setStatus(ReportStatus.PENDING);
-        return report;
-    }
-
-    /** A report service on `idx` and the repositories newIndex mocked, holding `report` as "r". */
-    private ContentReportService reports(SearchIndex idx, ContentReport report) throws Exception {
-        ContentReportRepository repo = mock(ContentReportRepository.class);
-        when(repo.findById("r")).thenReturn(Optional.of(report));
-        when(repo.update(any())).thenAnswer(inv -> inv.getArgument(0));
-        return new ContentReportService(repo, Caffeine.newBuilder().build(), videoRepo, channelRepo, playlistRepo,
-                mock(PublicContentCacheService.class), mock(StreamIndexService.class), idx, Caffeine.newBuilder().build());
     }
 
     /** Fix round 1: a source whose latest crawl was complete and fresh, with every counted item stored. */

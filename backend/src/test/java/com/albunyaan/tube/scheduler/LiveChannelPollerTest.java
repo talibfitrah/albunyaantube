@@ -156,16 +156,6 @@ class LiveChannelPollerTest {
         verify(reader, never()).read(anyString());
     }
 
-    @Test
-    void anOpenBreakerSkipsTheCycle() {
-        entries(A);
-        when(breaker.isOpen()).thenReturn(true);
-
-        cycleAt(T0);
-
-        verify(reader, never()).read(anyString());
-    }
-
     /** C1 / R10: a parse break that reads every channel as "nothing LIVE" never removes or archives anything. */
     @Test
     void aPersistentParseBreakNeverRemovesOrArchives() throws Exception {

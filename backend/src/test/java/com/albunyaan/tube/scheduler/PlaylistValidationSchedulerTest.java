@@ -6,7 +6,6 @@ import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
-import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
@@ -39,7 +38,6 @@ class PlaylistValidationSchedulerTest {
     @Mock private PublicContentCacheService publicContentCacheService;
     @Mock private YouTubeCircuitBreaker circuitBreaker;
     @Mock private SystemSettingsRepository systemSettingsRepository;
-    @Mock private ThumbnailRepairMigration thumbnailRepair;
 
     private ValidationProperties validationProperties;
     private PlaylistValidationScheduler scheduler;
@@ -49,22 +47,20 @@ class PlaylistValidationSchedulerTest {
         validationProperties = new ValidationProperties();
         validationProperties.getPlaylist().getScheduler().setEnabled(true);
         scheduler = new PlaylistValidationScheduler(contentValidationService, publicContentCacheService,
-                validationProperties, circuitBreaker, systemSettingsRepository, thumbnailRepair);
+                validationProperties, circuitBreaker, systemSettingsRepository);
     }
 
     @Test
-    void breakerOpen_healsUnderShortLock_evicts_noValidation() throws Exception {
+    void breakerOpen_healsUnderShortLock_noValidation() throws Exception {
         when(circuitBreaker.isOpen()).thenReturn(true);
         when(circuitBreaker.getStatus()).thenReturn(mock(YouTubeCircuitBreaker.CircuitBreakerStatus.class));
         when(systemSettingsRepository.tryAcquireLock(eq(LOCK_KEY), anyString(), eq(300))).thenReturn(true);
-        when(thumbnailRepair.repairBrokenPlaylistThumbnails()).thenReturn(2);
 
         scheduler.scheduledValidation();
 
-        InOrder order = inOrder(systemSettingsRepository, thumbnailRepair, publicContentCacheService);
+        InOrder order = inOrder(systemSettingsRepository, contentValidationService);
         order.verify(systemSettingsRepository).tryAcquireLock(eq(LOCK_KEY), endsWith("-heal"), eq(300));
-        order.verify(thumbnailRepair).repairBrokenPlaylistThumbnails();
-        order.verify(publicContentCacheService).evictPublicContentCaches();
+        order.verify(contentValidationService).healBrokenPlaylistThumbnails();
         order.verify(systemSettingsRepository).releaseLock(eq(LOCK_KEY), endsWith("-heal"));
         verify(contentValidationService, never()).validatePlaylists(anyString(), any(), anyString(), anyInt());
     }
@@ -95,7 +91,7 @@ class PlaylistValidationSchedulerTest {
         scheduler.scheduledValidation();
 
         assertNotNull(heldAfterHeal.get(), "the run's lock was released by the heal");
-        verifyNoInteractions(thumbnailRepair); // the lock holder heals; the attempt skipped
+        verify(contentValidationService, never()).healBrokenPlaylistThumbnails(); // the lock holder heals; the attempt skipped
         assertNull(holder.get(), "the run releases its own lock at the end");
     }
 
@@ -107,7 +103,7 @@ class PlaylistValidationSchedulerTest {
 
         scheduler.scheduledValidation();
 
-        verifyNoInteractions(thumbnailRepair, publicContentCacheService);
+        verifyNoInteractions(contentValidationService, publicContentCacheService);
         verify(systemSettingsRepository, never()).releaseLock(anyString(), anyString());
     }
 
@@ -122,46 +118,23 @@ class PlaylistValidationSchedulerTest {
         scheduler.scheduledValidation();
 
         verify(contentValidationService).validatePlaylists(anyString(), any(), anyString(), anyInt());
-        verifyNoInteractions(thumbnailRepair);
+        verify(contentValidationService, never()).healBrokenPlaylistThumbnails();
     }
 
     @Test
-    void bootHeal_takesShortLockUnderItsOwnHolder_heals_evicts_releases() throws Exception {
+    void bootHeal_takesShortLockUnderItsOwnHolder_heals_releases() throws Exception {
         when(systemSettingsRepository.tryAcquireLock(eq(LOCK_KEY), endsWith("-boot"), eq(300))).thenReturn(true);
-        when(thumbnailRepair.repairBrokenPlaylistThumbnails()).thenReturn(1);
 
         scheduler.healThumbnailsOnBoot();
 
-        InOrder order = inOrder(systemSettingsRepository, thumbnailRepair, publicContentCacheService);
+        InOrder order = inOrder(systemSettingsRepository, contentValidationService);
         order.verify(systemSettingsRepository).tryAcquireLock(eq(LOCK_KEY), endsWith("-boot"), eq(300));
-        order.verify(thumbnailRepair).repairBrokenPlaylistThumbnails();
-        order.verify(publicContentCacheService).evictPublicContentCaches();
+        order.verify(contentValidationService).healBrokenPlaylistThumbnails();
         order.verify(systemSettingsRepository).releaseLock(eq(LOCK_KEY), endsWith("-boot"));
-        verifyNoInteractions(contentValidationService);
+        verify(contentValidationService, never()).validatePlaylists(anyString(), any(), anyString(), anyInt());
         Method boot = PlaylistValidationScheduler.class.getMethod("healThumbnailsOnBoot");
         assertArrayEquals(new Class<?>[]{ApplicationReadyEvent.class}, boot.getAnnotation(EventListener.class).value());
         assertEquals("validationExecutor", boot.getAnnotation(Async.class).value());
-    }
-
-    @Test
-    void bootHeal_lockHeld_skips() throws Exception {
-        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt())).thenReturn(false);
-
-        scheduler.healThumbnailsOnBoot();
-
-        verifyNoInteractions(thumbnailRepair, publicContentCacheService);
-        verify(systemSettingsRepository, never()).releaseLock(anyString(), anyString());
-    }
-
-    @Test
-    void bootHeal_healReturnsZero_doesNotEvict_stillReleases() throws Exception {
-        when(systemSettingsRepository.tryAcquireLock(anyString(), anyString(), anyInt())).thenReturn(true);
-        when(thumbnailRepair.repairBrokenPlaylistThumbnails()).thenReturn(0);
-
-        scheduler.healThumbnailsOnBoot();
-
-        verify(publicContentCacheService, never()).evictPublicContentCaches();
-        verify(systemSettingsRepository).releaseLock(eq(LOCK_KEY), anyString());
     }
 
     @Test
@@ -170,6 +143,6 @@ class PlaylistValidationSchedulerTest {
 
         scheduler.healThumbnailsOnBoot();
 
-        verifyNoInteractions(thumbnailRepair, publicContentCacheService, systemSettingsRepository);
+        verifyNoInteractions(contentValidationService, publicContentCacheService, systemSettingsRepository);
     }
 }

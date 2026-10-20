@@ -623,8 +623,8 @@ public class YouTubeCircuitBreaker {
             return;
         }
 
-        // Use compareAndSet for atomic state transition to prevent overwriting a concurrent
-        // CLOSED transition (e.g., if recordSuccess() was called by another path).
+        // Use compareAndSet for atomic state transition so a state that has changed since the
+        // probe started is not overwritten.
         if (!state.compareAndSet(State.HALF_OPEN, State.OPEN)) {
             logger.debug("recordProbeFailure: state changed from HALF_OPEN - skipping probe failure handling");
             return;

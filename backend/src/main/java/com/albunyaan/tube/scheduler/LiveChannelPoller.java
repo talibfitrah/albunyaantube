@@ -128,7 +128,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                 // L1: no YouTube request, so an open breaker (1-48 h) never freezes the view or the endpoint's 404s
                 refreshView(view);
                 if (!servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
-                log.info("live poller: circuit breaker open, cycle skipped");
+                log.info("live poller: circuit breaker open, YouTube reads skipped");
                 return;
             }
             tried.keySet().retainAll(view.targets());                   // F4: a channel left in no LIVE category

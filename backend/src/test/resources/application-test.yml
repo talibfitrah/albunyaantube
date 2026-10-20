@@ -26,7 +26,7 @@ app:
   validation:
     playlist:
       scheduler:
-        # Keeps the boot oEmbed thumbnail heal (live network) off in Spring tests; opt in per test.
+        # Keeps the boot oEmbed thumbnail heal (live network) off in Spring tests.
         enabled: false
   newpipe:
     # NewPipeExtractor configuration for tests

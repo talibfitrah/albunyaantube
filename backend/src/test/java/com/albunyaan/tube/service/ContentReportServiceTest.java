@@ -274,7 +274,7 @@ class ContentReportServiceTest {
 
     // --- Fix round 1: a miss is never a clean "resolved" -----------------------------------------
 
-    /** R34 needs the built index: a cold resolve is refused (503, Retry-After) before the report is marked, so it stays PENDING. */
+    /** R34 needs the listings loaded: a cold resolve is refused (503, Retry-After) before the report is marked, so it stays PENDING. */
     @Test
     void aParentlessReportBeforeTheIndexIsBuiltIsRefusedAndStaysPending() throws Exception {
         ContentReport report = new ContentReport();

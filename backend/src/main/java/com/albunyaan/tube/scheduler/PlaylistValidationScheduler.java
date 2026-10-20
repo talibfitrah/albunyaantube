@@ -6,7 +6,6 @@ import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
-import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.boot.context.event.ApplicationReadyEvent;
@@ -68,7 +67,6 @@ public class PlaylistValidationScheduler {
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
     private final SystemSettingsRepository systemSettingsRepository;
-    private final ThumbnailRepairMigration thumbnailRepair;
 
     private final String instanceId;
     private final ScheduledExecutorService heartbeatExecutor;
@@ -78,14 +76,12 @@ public class PlaylistValidationScheduler {
             PublicContentCacheService publicContentCacheService,
             ValidationProperties validationProperties,
             YouTubeCircuitBreaker circuitBreaker,
-            SystemSettingsRepository systemSettingsRepository,
-            ThumbnailRepairMigration thumbnailRepair) {
+            SystemSettingsRepository systemSettingsRepository) {
         this.contentValidationService = contentValidationService;
         this.publicContentCacheService = publicContentCacheService;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
-        this.thumbnailRepair = thumbnailRepair;
         this.instanceId = generateInstanceId();
         this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "playlist-lock-heartbeat");
@@ -271,24 +267,9 @@ public class PlaylistValidationScheduler {
             return;
         }
         try {
-            healBrokenThumbnails(trigger);
+            contentValidationService.healBrokenPlaylistThumbnails();
         } finally {
             systemSettingsRepository.releaseLock(LOCK_KEY, holder);
-        }
-    }
-
-    /** oEmbed heal of broken playlist thumbnails (no NewPipe); evicts when it repaired any. */
-    private void healBrokenThumbnails(String trigger) {
-        try {
-            int healed = thumbnailRepair.repairBrokenPlaylistThumbnails();
-            if (healed > 0) {
-                evictPublicContentCaches();
-            }
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) {
-                Thread.currentThread().interrupt();
-            }
-            logger.warn("{} playlist thumbnail heal failed: {}", trigger, e.getMessage());
         }
     }
 

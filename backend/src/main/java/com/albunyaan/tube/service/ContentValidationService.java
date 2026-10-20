@@ -888,7 +888,7 @@ public class ContentValidationService {
      * loaded first would write its stale /pl_c/ back over a concurrent heal's /vi/. A failed heal
      * never stops validation.
      */
-    private void healBrokenPlaylistThumbnails() {
+    public void healBrokenPlaylistThumbnails() {
         try {
             if (thumbnailRepair.repairBrokenPlaylistThumbnails() > 0) {
                 publicContentCacheService.evictPublicContentCaches();
@@ -897,7 +897,7 @@ public class ContentValidationService {
             if (e instanceof InterruptedException) {
                 Thread.currentThread().interrupt();
             }
-            logger.warn("Playlist thumbnail heal failed; validation continues: {}", e.getMessage());
+            logger.warn("Playlist thumbnail heal failed: {}", e.getMessage());
         }
     }
 
