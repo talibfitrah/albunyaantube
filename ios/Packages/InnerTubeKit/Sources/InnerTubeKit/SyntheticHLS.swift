@@ -151,6 +151,7 @@ extension SyntheticHLS {
             if let width = v.width, let height = v.height { attributes += ",RESOLUTION=\(width)x\(height)" }
             if let fps = v.fps { attributes += ",FRAME-RATE=\(fps)" }
             if main != nil { attributes += ",AUDIO=\"a\"" }
+            attributes += ",CLOSED-CAPTIONS=NONE"   // else AVFoundation assumes in-band CEA-608 and shows an empty "CC" entry
             lines += ["#EXT-X-STREAM-INF:" + attributes, "v\(i).m3u8"]
         }
         return (lines + [""]).joined(separator: "\n")

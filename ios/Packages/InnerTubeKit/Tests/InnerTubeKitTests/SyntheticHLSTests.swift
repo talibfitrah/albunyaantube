@@ -256,11 +256,14 @@ import Testing
         #EXT-X-INDEPENDENT-SEGMENTS
         #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",LANGUAGE="en-US",NAME="English (United States) original",DEFAULT=YES,AUTOSELECT=YES,URI="a0.m3u8"
         #EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",LANGUAGE="de-DE",NAME="German 'dub'",DEFAULT=NO,AUTOSELECT=YES,URI="a1.m3u8"
-        #EXT-X-STREAM-INF:BANDWIDTH=3789619,AVERAGE-BANDWIDTH=895893,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x1080,FRAME-RATE=25,AUDIO="a"
+        #EXT-X-STREAM-INF:BANDWIDTH=3789619,AVERAGE-BANDWIDTH=895893,CODECS="avc1.640028,mp4a.40.2",RESOLUTION=1920x1080,FRAME-RATE=25,AUDIO="a",CLOSED-CAPTIONS=NONE
         v0.m3u8
 
         """)
         #expect(!text.contains("SUBTITLES"))
+        // Without CLOSED-CAPTIONS, AVFoundation assumes in-band CEA-608 and shows an empty "CC" menu entry.
+        let streamInf = text.split(separator: "\n").filter { $0.hasPrefix("#EXT-X-STREAM-INF:") }
+        #expect(!streamInf.isEmpty && streamInf.allSatisfy { $0.contains(",CLOSED-CAPTIONS=NONE") })
     }
 
     /// RFC 8216 §4.2: a quoted-string has no CR or LF, so a server-sent name or codecs value cannot add a playlist line.
@@ -273,7 +276,7 @@ import Testing
         let lines = SyntheticHLS(video: [v], audio: [a]).masterPlaylist().split(separator: "\n")
         #expect(lines.count == 6)
         #expect(lines[3] == #"#EXT-X-MEDIA:TYPE=AUDIO,GROUP-ID="a",LANGUAGE="en",NAME="x#EXT-X-STREAM-INF:BANDWIDTH=1https://h/v",DEFAULT=YES,AUTOSELECT=YES,URI="a0.m3u8""#)
-        #expect(lines[4] == #"#EXT-X-STREAM-INF:BANDWIDTH=2,CODECS="avc1.640028https://h/v.m3u8,mp4a.40.2#EXT-X-ENDLIST",AUDIO="a""#)
+        #expect(lines[4] == #"#EXT-X-STREAM-INF:BANDWIDTH=2,CODECS="avc1.640028https://h/v.m3u8,mp4a.40.2#EXT-X-ENDLIST",AUDIO="a",CLOSED-CAPTIONS=NONE"#)
     }
 
     /// RFC 8216 §4.3.4.1.1: NAMEs are unique in a group. A nil name falls back to the language, then to the index; a repeat
