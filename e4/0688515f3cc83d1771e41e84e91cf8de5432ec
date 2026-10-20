@@ -1,0 +1,53 @@
+backend/src/test/java/com/albunyaan/tube/service/YouTubeCircuitBreakerTest.java
+  s_dbb6b1f3671904::t_45d42333c2b21e 4,11-12,17-20,341-393
+backend/src/test/java/com/albunyaan/tube/service/BulkSubmissionServiceSubmitTest.java
+  s_dbb6b1f3671904::t_4f7521295d12e5 212-216,218-220,519-537
+  s_dbb6b1f3671904::t_29e704af35d8a4 538-539
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_5b89723ba463b2 348,353-361,713-732,3383-3389,4962-5049
+  s_dbb6b1f3671904::t_766bfe3d25b7c2 5050
+backend/src/main/java/com/albunyaan/tube/controller/LiveChannelController.java
+  s_dbb6b1f3671904::t_a3664a1f218cf9 39-42
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_a3664a1f218cf9 45-46,154-159
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_247b5564be9a87 93-94,189,227,287-291,293,296-297,300-301,304-309,313-316,320,388-389,476,520,523,526,577,619-632,668,710,773,812-820,967-971,973
+  s_dbb6b1f3671904::t_784fd13c5a4675 733
+backend/src/main/java/com/albunyaan/tube/search/InnerState.java
+  s_dbb6b1f3671904::t_247b5564be9a87 58-59
+backend/solver/test/solver.test.mjs
+  s_dbb6b1f3671904::t_22265c021cc7d7 470-549
+backend/src/test/java/com/albunyaan/tube/controller/LiveChannelControllerTest.java
+  s_dbb6b1f3671904::t_a3664a1f218cf9 19,31,39-40
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_0f19eef00b34e9 6-7,575-624
+  s_dbb6b1f3671904::t_d90b702c616e49 625
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_4f7521295d12e5 239-250,415-439,897-927,1484-1505
+  s_dbb6b1f3671904::t_de7ae90f1437e1 233,374,387-388,450,855-859
+  s_dbb6b1f3671904::t_96c8d72ec36b4d 440,1506
+backend/src/main/java/com/albunyaan/tube/service/YouTubeCircuitBreaker.java
+  s_dbb6b1f3671904::t_74a78b0203f89a 190-192,426,474-482
+  s_dbb6b1f3671904::t_e62f488ec368f7 483-484
+backend/src/main/java/com/albunyaan/tube/service/BulkSubmissionService.java
+  s_dbb6b1f3671904::t_efb32c5807b22a 112-121,155-164,166-168,171,230-232
+backend/solver/server.mjs
+  s_dbb6b1f3671904::t_3f1cfc22c25f56 34,117-119,123-136,182,208,223-224
+  s_dbb6b1f3671904::t_ba525977590db4 26-33,35-46,49,53-57,71-72,81,85
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e40688515f3cc83d1771e41e84e91cf8de5432ec",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
