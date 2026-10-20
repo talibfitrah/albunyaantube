@@ -581,7 +581,7 @@ public class InnerCrawler {
         } catch (UncheckedIOException e) { // our own disk write: never a rate signal (§12)
             if (stopped) return; // stop()'s interrupt closed the channel (ClosedByInterruptException): not a failed disk
             log.error("inner-crawl source={}: {}; crawling paused 1 h", key, e.getMessage(), e);
-            long pausedUntil = now + CrawlPacer.PAUSE_MS;
+            long pausedUntil = clock.millis() + CrawlPacer.PAUSE_MS; // from the failure: a long job must not eat the pause
             synchronized (store.state()) {
                 store.state().breaker.pausedUntil = pausedUntil; // a full disk must not burn requests on re-fetches
             }

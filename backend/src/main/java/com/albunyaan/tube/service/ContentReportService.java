@@ -320,7 +320,14 @@ public class ContentReportService {
                     streamIndexService.markStreamArchived(targetId);
                     archived = true;
                     if (opt.isEmpty()) {
-                        miss = excludeEverywhereListed(targetId);
+                        try {
+                            miss = excludeEverywhereListed(targetId);
+                        } catch (Exception e) { // the record is saved and indexed: only the per-source exclusions are missing
+                            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                            log.warn("Video {} taken down, but its source exclusions failed: {}", targetId, e.getMessage());
+                            miss = "Taken down, but not excluded on the sources listing it (" + e.getClass().getSimpleName()
+                                    + "). Exclude it there by hand.";
+                        }
                     }
                 }
                 case CHANNEL -> {

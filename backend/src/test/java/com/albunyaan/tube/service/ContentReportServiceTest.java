@@ -247,6 +247,24 @@ class ContentReportServiceTest {
         return v;
     }
 
+    /** Stage 9 Cubic r3 P3: a failure after the record is saved must not read "Not taken down". */
+    @Test
+    void aFailureAfterTheTakeDownRecordIsSavedSaysItWasTakenDown() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-io")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenThrow(new java.io.IOException("disk"));
+
+        ContentReport out = service.resolveReport("report-io", ReportStatus.RESOLVED, "admin", null);
+
+        verify(videoRepository).save(any());
+        assertThat(out.getResolutionNote()).doesNotContain("Not taken down").contains("Taken down").contains("by hand");
+    }
+
     /** Stage 9 B11 P3: a take-down record is written only for a video id; any other reported string gets a note. */
     @Test
     void aReportOnAStringThatIsNoVideoIdWritesNoTakeDownRecord() throws Exception {

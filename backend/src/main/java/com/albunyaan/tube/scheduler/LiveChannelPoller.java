@@ -295,8 +295,9 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     private boolean end(Video doc, boolean archive, Set<String> liveCategoryIds) {
         boolean changed = false;
         try {
-            for (String cat : doc.getCategoryIds() == null ? List.<String>of() : List.copyOf(doc.getCategoryIds())) {
-                if (!liveCategoryIds.contains(cat)) continue;
+            // every LIVE category, not just the doc's own: an order row can outlive the doc's id, and members() lists it
+            // (the removal is idempotent). ponytail: a few LIVE categories at most, so no per-category membership read.
+            for (String cat : liveCategoryIds) {
                 sortOrder.removeContentFromCategoryAndUpdate(cat, doc.getId(), "video");
                 audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
                 changed = true;

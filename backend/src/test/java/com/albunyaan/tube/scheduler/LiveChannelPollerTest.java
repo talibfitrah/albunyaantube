@@ -380,6 +380,28 @@ class LiveChannelPollerTest {
         verify(audit).logSystem("live_stream_archived_ended", "video", "doc-link", "live-poller");
     }
 
+    /** Stage 9 Cubic r3: an order row can survive the doc dropping the LIVE id; the link still leaves the list. */
+    @Test
+    void anEndedLinkWhoseOrderRowSurvivesStillLeavesTheLiveList() throws Exception {
+        entries(A);
+        endingLink();
+        when(videos.findByYoutubeId("linkid00001")).thenAnswer(inv -> {
+            Video orphan = new Video("linkid00001");
+            orphan.setId("doc-link");
+            orphan.setStatus("APPROVED");
+            orphan.setChannelId(A);
+            orphan.setCategoryIds(new ArrayList<>());               // the doc no longer lists CAT
+            orphan.setValidationStatus(ValidationStatus.VALID);
+            return Optional.of(orphan);
+        });
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0);
+        cycleAt(T0 + 10 * MIN);
+        cycleAt(T0 + 20 * MIN);
+
+        verify(sortOrder).removeContentFromCategoryAndUpdate(CAT, "doc-link", "video");
+    }
+
     /** Concern 2: an archive that fails after its restore record was written is logged with both ids for an admin. */
     @Test
     void aFailedArchiveNamesTheDocForTheAdmin() throws Exception {

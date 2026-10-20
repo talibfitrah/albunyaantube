@@ -762,6 +762,20 @@ class InnerCrawlerTest {
     }
 
     @Test
+    void theDiskPauseRunsFromTheFailureNotTheJobStart() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        Files.createDirectories(store.corpusFile(CH));
+        Files.writeString(store.corpusFile(CH).resolve("blocker"), "x");
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            now.set(now.get().plusSeconds(30 * 60)); // a long job: the write fails at its end
+            return batch(1, items("lesson", 0, 1, "x"), false);
+        });
+        step();
+        assertEquals(now.get().toEpochMilli() + CrawlPacer.PAUSE_MS, store.state().breaker.pausedUntil);
+    }
+
+    @Test
     void aRestartKeepsTheModeTheBackoffAndTheCap() throws Exception {
         store.state().mode = InnerState.Mode.FIRST_PASS;
         store.state().capPerSource = 2_000;
