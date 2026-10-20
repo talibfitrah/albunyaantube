@@ -33,6 +33,17 @@ function flatten(nodes: any[]): FlatCategory[] {
   return out
 }
 
+/** Ids of the LIVE categories (the server refuses them on playlists). */
+export async function liveCategoryIds(): Promise<Set<string>> {
+  if (!cachedPromise) cachedPromise = getAllCategories().then(flatten)
+  try {
+    return new Set((await cachedPromise).filter((c) => c.type === 'LIVE').map((c) => c.id))
+  } catch (e) {
+    cachedPromise = null
+    throw e
+  }
+}
+
 /** `playlist`: the picker is for a playlist row, which the live category refuses. Moderators never see LIVE (R1). */
 export function useCategoryPicker(opts: { playlist?: boolean } = {}) {
   const authStore = useAuthStore()

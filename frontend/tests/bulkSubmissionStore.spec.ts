@@ -3,7 +3,11 @@ import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 import { useBulkSubmissionStore } from '../src/stores/bulkSubmissionStore'
 import { bulkSubmissionService } from '../src/services/bulkSubmissionService'
 import { i18n } from '../src/main'
+import { liveCategoryIds } from '../src/components/contentSearch/bulk/useCategoryPicker'
 
+vi.mock('../src/components/contentSearch/bulk/useCategoryPicker', () => ({
+  liveCategoryIds: vi.fn(),
+}))
 vi.mock('../src/services/bulkSubmissionService', () => ({
   bulkSubmissionService: { previewBulk: vi.fn(), submitBulk: vi.fn() },
 }))
@@ -127,5 +131,21 @@ describe('bulkSubmissionStore: coded errors read in the admin language (F20)', (
     await s.runSubmit()
 
     expect(s.error).toBe('rows must not be empty')
+  })
+
+  it('runSubmit strips LIVE default categories from playlist rows only', async () => {
+    mockedSubmit.mockResolvedValue({ totalSubmitted: 2, added: 2, failed: 0, results: [] } as any)
+    vi.mocked(liveCategoryIds).mockResolvedValue(new Set(['live-1']))
+    const s = useBulkSubmissionStore()
+    s.phase = 'PREVIEW'
+    s.defaultCategoryIds = ['live-1', 'quran']
+    s.previewRows = [
+      { rowIndex: 0, status: 'OK', originalUrl: 'c', detectedType: 'CHANNEL', metadata: {} } as any,
+      { rowIndex: 1, status: 'OK', originalUrl: 'p', detectedType: 'PLAYLIST', metadata: {} } as any,
+    ]
+    await s.runSubmit()
+    const rows = mockedSubmit.mock.calls[0][0].rows
+    expect(rows[0].categoryIds).toEqual(['live-1', 'quran'])
+    expect(rows[1].categoryIds).toEqual(['quran'])
   })
 })

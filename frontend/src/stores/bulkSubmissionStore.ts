@@ -3,6 +3,7 @@ import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
 import type { AxiosError } from 'axios'
+import { liveCategoryIds } from '../components/contentSearch/bulk/useCategoryPicker'
 import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
 
 /**
@@ -123,15 +124,20 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       // doesn't carry forward a misleading message when the next attempt
       // succeeds.
       this.error = null
-      const rows: SubmitRow[] = submittable.map((r) => ({
-        rowIndex: r.rowIndex!,
-        originalUrl: r.originalUrl!,
-        detectedType: r.detectedType!,
-        videoType: r.videoType,
-        metadata: r.metadata!,
-        categoryIds: r.categoryIds ?? this.defaultCategoryIds,
-      }))
       try {
+        // The server refuses LIVE on a playlist and rejects the whole batch: playlist rows never inherit it.
+        const live = submittable.some((r) => r.detectedType === 'PLAYLIST') ? await liveCategoryIds() : new Set<string>()
+        const rows: SubmitRow[] = submittable.map((r) => {
+          const ids = r.categoryIds ?? this.defaultCategoryIds
+          return {
+            rowIndex: r.rowIndex!,
+            originalUrl: r.originalUrl!,
+            detectedType: r.detectedType!,
+            videoType: r.videoType,
+            metadata: r.metadata!,
+            categoryIds: r.detectedType === 'PLAYLIST' ? ids.filter((id) => !live.has(id)) : ids,
+          }
+        })
         const resp = await bulkSubmissionService.submitBulk({ rows })
         this.submitResult = resp
         this.phase = 'RESULT'
