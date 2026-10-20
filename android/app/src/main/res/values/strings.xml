@@ -47,7 +47,7 @@
     <string name="player_action_report">Report</string>
     <!-- Unused on Android since 1.0.4; kept because iOS reads it through ios/scripts/convert-strings.py (PlayerScreen.swift). -->
     <string name="player_status_audio_only">Playing audio-only stream.</string>
-    <string name="player_status_resolving">Resolving stream…</string>
+    <string name="player_status_resolving">Loading stream…</string>
     <string name="player_stream_error">Playback unavailable. Please try again later.</string>
     <string name="player_stream_unavailable">This video is not available for playback.</string>
     <string name="player_geo_restricted">This video is not available in your region.</string>
