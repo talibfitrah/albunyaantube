@@ -128,7 +128,6 @@ class PlaybackSolverServiceTest {
                 Arguments.of("0229CD64", List.of(N), List.of()),                  // upper-case hex
                 Arguments.of("0229cd6", List.of(N), List.of()),                   // 7 chars
                 Arguments.of(null, List.of(N), List.of()),
-                Arguments.of("0229cd64", List.of(), List.of()),                   // n needs 1-4
                 Arguments.of("0229cd64", List.of(N, N, N, N, N), List.of()),
                 Arguments.of("0229cd64", List.of("short"), List.of()),            // n is 8-32 chars
                 Arguments.of("0229cd64", List.of("x".repeat(7)), List.of()),
@@ -164,6 +163,15 @@ class PlaybackSolverServiceTest {
     void theShapeBoundariesAreAccepted(List<String> n, List<String> s) {
         assertThat(service(true).solve("0229cd64", n, s).status()).isEqualTo(200);
         assertThat(solveHits.get()).isEqualTo(1);
+    }
+
+    /** Stage 9 Cubic r2 P3: n holds 0-4. iOS sends n: [] when no selected format carries one; its s challenges still solve. */
+    @Test
+    void anSOnlySolveAnswersItsSChallenges() {
+        PlaybackSolverService.Answer answer = service(true).solve("0229cd64", List.of(), List.of(s(1)));
+        assertThat(answer.status()).isEqualTo(200);
+        assertThat(answer.body()).isEqualTo(Map.of("n", Map.of(), "s", Map.of(s(1), s(1) + "A")));
+        assertThat(lastSolveBody.get()).contains("\"n\":[]");
     }
 
     @Test

@@ -537,6 +537,37 @@ class BulkSubmissionServiceSubmitTest {
         assertEquals(SubmitStatus.ADDED, resp.results().get(1).status());
     }
 
+    /**
+     * Stage 9 Cubic r2 P2: a single add of the same id that lands while this submit fetches its rows is caught by a
+     * registry read right before the write, never by the answer cached before the live guard. Real checker, so the test
+     * holds whichever batches the service keeps.
+     */
+    @Test
+    void aSingleAddThatLandsDuringTheRowFetchIsADuplicateNotASecondDoc() throws Exception {
+        var channels = mock(com.albunyaan.tube.repository.ChannelRepository.class);
+        var concurrent = new com.albunyaan.tube.model.Channel(CHANNEL_ID);
+        concurrent.setId("doc-single-add");
+        concurrent.setStatus("PENDING");
+        java.util.concurrent.atomic.AtomicBoolean landed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(channels.findByYoutubeId(CHANNEL_ID)).thenAnswer(i -> landed.get() ? Optional.of(concurrent) : Optional.empty());
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID), any())).thenAnswer(i -> {
+            landed.set(true);                                                  // the single add commits meanwhile
+            return PreviewFetchResult.ok(new PreviewMetadata(CHANNEL_ID, "Ch", null, "Ch", CHANNEL_ID, 1L, null, null, null), null);
+        });
+        var real = new BulkSubmissionService(new YouTubeUrlParser(), gateway,
+                new RegistryDuplicateChecker(channels, mock(com.albunyaan.tube.repository.PlaylistRepository.class),
+                        mock(com.albunyaan.tube.repository.VideoRepository.class)),
+                writer, Executors.newFixedThreadPool(1), mock(PublicContentCacheService.class), mock(SortOrderService.class),
+                categoryRepository, submissionRateLimiter, liveCategoryGuard);
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var resp = real.submit(new BulkSubmitRequest(List.of(row), "PENDING"), "admin-uid", true);
+
+        assertEquals("DUPLICATE", resp.results().get(0).errorCode());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
     /** Fix round 1: a failed categories read inside the guard is a retryable 503, not a 409, and nothing is written. */
     @Test
     void aFailedLiveCategoryCheckIs503CheckUnavailable() throws Exception {

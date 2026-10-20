@@ -40,9 +40,11 @@ public class LiveChannelController {
         // published. A failed boot load or view refresh waits for the poller's next cycle (~1 min after boot), which
         // publishes only after its Live-tab reads. Same 503 + Retry-After shape as the search index (GlobalExceptionHandler).
         if (!live.published()) {
-            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "60").build();
+            return retryLater();
         }
         if (!live.entries().containsKey(channelId)) {
+            // A channel just added to a LIVE category is seeded at once but listed only by the next cycle (stage 9 Cubic r2).
+            if (live.recentlyAdded(channelId)) return retryLater();
             throw new ResourceNotFoundException("LiveChannel", channelId);
         }
         List<Live> lives = live.served().getOrDefault(channelId, List.of()).stream()
@@ -50,5 +52,9 @@ public class LiveChannelController {
         return ResponseEntity.ok()
                 .cacheControl(CacheControl.maxAge(15, TimeUnit.SECONDS).cachePublic())
                 .body(new LiveChannelLives(channelId, lives.isEmpty() ? "OFFLINE" : "LIVE", lives));
+    }
+
+    private static ResponseEntity<LiveChannelLives> retryLater() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "60").build();
     }
 }

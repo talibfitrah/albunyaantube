@@ -608,6 +608,20 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(firestore.collection("categories").document(PLAIN).get().get().getString("type")).isNull();
     }
 
+    /** Stage 9 Cubic r2 P2: a POST naming an existing category's id makes a new category; PUT stays the only way to LIVE. */
+    @Test
+    void row17_aCreateNamingAnExistingIdNeverTurnsThatCategoryLive() throws Exception {
+        doc("playlists", "pl-r17c", Map.of("youtubeId", "PLit1r17c0000000000000000000000000", "title", "P",
+                "status", "APPROVED", "categoryIds", List.of(PLAIN), "createdAt", Timestamp.now()));
+        as("admin");
+        send(post("/api/admin/categories"), Map.of("id", PLAIN, "name", "Plain", "type", "LIVE"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.id").value(org.hamcrest.Matchers.not(PLAIN)));
+        var plain = firestore.collection("categories").document(PLAIN).get().get();
+        assertThat(plain.getString("type")).as("the playlist-holding category was not turned LIVE").isNull();
+        assertThat(plain.getString("name")).isEqualTo("Plain");
+    }
+
     // ---- Task 10 fix round 1: row 15 (identity, D8, SKIP and MERGE, the verified channel) ----
 
     private ResultActions importJson(Object file, String mergeStrategy) throws Exception {

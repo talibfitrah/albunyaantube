@@ -154,9 +154,10 @@ public class PlaybackSolverService {
         return Answer.ok(Map.of("n", nOut, "s", sOut));
     }
 
+    /** n holds 0-4: an s-only solve sends n: [] when no selected format carries one (iOS StreamResolver.mintHD). */
     static boolean valid(String playerId, List<String> n, List<String> s) {
         return playerId != null && PLAYER_ID.matcher(playerId).matches()
-                && n != null && n.size() >= 1 && n.size() <= 4 && n.stream().allMatch(x -> shaped(x, 8, 32))
+                && n != null && n.size() <= 4 && n.stream().allMatch(x -> shaped(x, 8, 32))
                 && s != null && s.size() <= 64 && s.stream().allMatch(x -> shaped(x, 64, 160));
     }
 

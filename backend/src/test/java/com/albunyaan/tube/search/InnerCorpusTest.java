@@ -55,6 +55,27 @@ class InnerCorpusTest {
         assertNull(InnerCorpus.read(notJson));
     }
 
+    /**
+     * Stage 9 Cubic r2 P3: an empty, truncated or non-gzip file fails inside GZIPInputStream's constructor; the raw stream
+     * opened for it must still close. Counted on this JVM's open descriptors (no GC between: a leak's Cleaner never runs).
+     */
+    @Test
+    void aFileThatIsNotGzipNeverLeaksItsFileHandle() throws IOException {
+        var os = (com.sun.management.UnixOperatingSystemMXBean) java.lang.management.ManagementFactory.getOperatingSystemMXBean();
+        Path empty = Files.write(dir.resolve("channel_UCempty.jsonl.gz"), new byte[0]);
+        var logger = (ch.qos.logback.classic.Logger) org.slf4j.LoggerFactory.getLogger(InnerCorpus.class);
+        var level = logger.getLevel();
+        logger.setLevel(ch.qos.logback.classic.Level.OFF);                     // 50 stack traces otherwise
+        try {
+            long before = os.getOpenFileDescriptorCount();
+            for (int i = 0; i < 50; i++) assertNull(InnerCorpus.read(empty));
+            long leaked = os.getOpenFileDescriptorCount() - before;
+            assertTrue(leaked < 25, leaked + " file handles left open by 50 reads");
+        } finally {
+            logger.setLevel(level);
+        }
+    }
+
     @Test
     void filesListsOnlyCorpusFilesInNameOrder() throws IOException {
         InnerCorpus.write(InnerCorpus.file(dir, "playlist:PLb"), List.of());

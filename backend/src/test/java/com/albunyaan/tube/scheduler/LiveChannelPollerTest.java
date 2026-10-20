@@ -574,11 +574,52 @@ class LiveChannelPollerTest {
 
     /** The public endpoint's status for channel A: its 404 is the apps' definitive "not live" stop. */
     private int endpointStatus() {
+        return endpointStatus(A);
+    }
+
+    private int endpointStatus(String uc) {
         try {
-            return new LiveChannelController(live).channel(A).getStatusCode().value();
+            return new LiveChannelController(live).channel(uc).getStatusCode().value();
         } catch (ResourceNotFoundException e) {
             return 404;
         }
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2: every channel add runs the guard, which seeds the channel before the write. Only a cycle (or
+     * the migration) republishes the endpoint's entries, so until one lists the channel it answers 503, never the 404.
+     */
+    @Test
+    void aChannelAddedSinceTheLastViewAnswers503UntilACycleListsIt() throws Exception {
+        entries(A);
+        when(states.findAll()).thenReturn(List.of());
+        when(reader.read(A)).thenReturn(live());
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        poller.afterSingletonsInstantiated();                          // a published view without B
+
+        live.seed(B);                                                  // the guard, on the add
+        entries(B);                                                    // the add's write lands
+        now.set(T0 + 9 * MIN);
+
+        assertThat(endpointStatus(B)).isEqualTo(503);
+        cycleAt(T0 + 10 * MIN);
+        assertThat(endpointStatus(B)).isEqualTo(200);
+    }
+
+    /** An add that never landed (refused or failed after the guard's seed) is the definitive 404 again after two cycles. */
+    @Test
+    void aSeedWhoseAddNeverLandedIs404AgainAfterTwoCycles() throws Exception {
+        entries(A);
+        when(states.findAll()).thenReturn(List.of());
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        poller.afterSingletonsInstantiated();
+
+        live.seed(B);
+
+        assertThat(endpointStatus(B)).isEqualTo(503);
+        now.set(T0 + 20 * MIN);
+        assertThat(endpointStatus(B)).isEqualTo(404);
+        assertThat(endpointStatus(A)).as("a listed channel is unaffected").isEqualTo(200);
     }
 
     private LiveChannelState savedLive() {

@@ -110,6 +110,9 @@ public class CategoryController {
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, TimeoutException {
+        // A create always makes a new doc: save() would set() over a client-named existing one, skipping PUT's LIVE
+        // checks (stage 9 Cubic r2). No caller sends an id (frontend categoryService.createCategory).
+        category.setId(null);
         category.setCreatedBy(user.getUid());
         category.setUpdatedBy(user.getUid());
 

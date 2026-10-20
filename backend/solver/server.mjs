@@ -19,6 +19,10 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 export function newContext(timeoutMs = 10_000) {
   // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
   const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
+  // V8 runs a FinalizationRegistry cleanup as a host task, outside every vm timeout (Cubic r2 P2); WeakRef goes with it.
+  // Promise-based built-ins (WebAssembly, Atomics.waitAsync) only queue microtasks, which drain inside the next timeout.
+  // base.js already checks `typeof FinalizationRegistry`, and EJS uses neither.
+  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef;', ctx);
   vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs });
   return ctx;
 }
@@ -317,6 +321,9 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const solver = createSolver({ origin: process.env.SOLVER_ORIGIN || undefined,
                                 cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });
+  // A stop is a clean exit, never Node's default kill (Cubic r2 P2). The build and self-test are synchronous, so this
+  // handler runs only after pollOnce's finally removed the crash marker: a restart never drops a healthy player.
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => process.exit(0));
   const pollSafely = () => solver.poll().catch((e) => console.warn(`WARN poll rejected: ${e.message}`));   // never kill the process
   pollSafely();
   setInterval(pollSafely, 30 * 60_000);     // at startup and every 30 min (§4.5)

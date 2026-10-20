@@ -5,6 +5,7 @@ import com.albunyaan.tube.model.ReportReason;
 import com.albunyaan.tube.model.ReportStatus;
 import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.ContentReportRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
@@ -294,7 +295,11 @@ public class ContentReportService {
         return false;
     }
 
-    /** Archives the target; a video with no document is excluded where listed instead (R34). Returns a miss for the note, or null. */
+    /**
+     * Archives the target. A video with no document gets one, its take-down record (stage 9 Cubic r2): any Video document
+     * hides its id from search on every source, including one crawled after this resolve (SearchIndex.videoIds). It is
+     * also excluded on the sources listing it now, for their channel and playlist screens (R34). Returns a miss, or null.
+     */
     private String archiveReportedContent(ReportTargetType targetType, String targetId) {
         boolean archived = false;
         String miss = null;
@@ -302,12 +307,12 @@ public class ContentReportService {
             switch (targetType) {
                 case VIDEO -> {
                     var opt = videoRepository.findByYoutubeId(targetId);
-                    if (opt.isPresent()) {
-                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
-                        videoRepository.save(opt.get());
-                        streamIndexService.markStreamArchived(opt.get().getYoutubeId());
-                        archived = true;
-                    } else {
+                    Video video = opt.orElseGet(() -> takeDownRecord(targetId));
+                    video.setValidationStatus(ValidationStatus.ARCHIVED);
+                    videoRepository.save(video);
+                    streamIndexService.markStreamArchived(targetId);
+                    archived = true;
+                    if (opt.isEmpty()) {
                         miss = excludeEverywhereListed(targetId);
                     }
                 }
@@ -345,6 +350,16 @@ public class ContentReportService {
         return miss;
     }
 
+    /**
+     * A reported video's take-down record: REJECTED (never served, never in the approvals queue; a later add of the id
+     * goes through as usual) and, by the caller, ARCHIVED (listed under Archived content, whose delete lifts it).
+     */
+    private static Video takeDownRecord(String youtubeId) {
+        Video video = new Video(youtubeId);
+        video.setStatus("REJECTED");
+        return video;
+    }
+
     /** After an exclusion write: public listings and the admin Exclusions workspace (a 5-minute cache) show it at once. */
     private void exclusionsChanged() {
         publicContentCacheService.evictPublicContentCaches();
@@ -352,10 +367,10 @@ public class ContentReportService {
     }
 
     /**
-     * Inner-search R34. A report opened from search carries no parent, and an inner or stream video has no Video
-     * document, so archiving finds nothing to archive. Exclude it instead on every admitted source that lists it:
-     * channels -> excludedItems.videos, playlists -> excludedVideoIds. Each repository save fires CatalogChanged, so
-     * search hides it at once. Works for every installed app; a later app may send sourceType/sourceId as the parent.
+     * Inner-search R34. A report opened from search carries no parent, and an inner or stream video had no Video
+     * document to archive (the caller now writes its take-down record). Also exclude it on every admitted source that
+     * lists it now, for their channel and playlist screens: channels -> excludedItems.videos, playlists ->
+     * excludedVideoIds. Works for every installed app; a later app may send sourceType/sourceId as the parent.
      * Returns the miss for the resolution note (sources not excluded), or null.
      */
     private String excludeEverywhereListed(String videoId) throws java.io.IOException {
@@ -369,7 +384,7 @@ public class ContentReportService {
         }
         List<String> keys = searchIndex.sourcesListing(videoId);
         if (keys.isEmpty()) {
-            log.warn("Cannot archive video {}: not in the database and no approved source lists it", videoId);
+            log.info("Report resolved: video {} is listed by no approved source yet; its take-down record hides it", videoId);
             return null;
         }
         List<String> missed = keys.stream().filter(key -> !excludeFromParent(

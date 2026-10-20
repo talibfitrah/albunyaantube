@@ -282,6 +282,25 @@ class CategoryControllerTest {
         assertEquals(Category.TYPE_LIVE, response.getBody().getType());
     }
 
+    /**
+     * Stage 9 Cubic r2 P2: a create never takes the client's id, so it can never overwrite (and flip LIVE on, or clear
+     * LIVE from) an existing category past PUT's checks. No admin caller sends one (frontend categoryService.createCategory).
+     */
+    @Test
+    void aCreateWithAnExistingIdMakesANewCategoryAndNeverOverwritesThatOne() throws Exception {
+        when(categoryRepository.findMaxDisplayOrder()).thenReturn(16);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+        Category body = live("Quran", null);
+        body.setId("quran");                                                    // an existing category's id
+
+        categoryController.createCategory(body, adminUser);
+
+        var saved = org.mockito.ArgumentCaptor.forClass(Category.class);
+        verify(categoryRepository).save(saved.capture());
+        assertNull(saved.getValue().getId(), "the repository assigns a new id; set() would replace the 'quran' doc");
+        verify(liveCategoryGuard, never()).checkMembersForLive(any());
+    }
+
     @Test
     void createLiveWithAParentIsRefusedWithShape() throws Exception {
         when(categoryRepository.existsById("parent-1")).thenReturn(true);

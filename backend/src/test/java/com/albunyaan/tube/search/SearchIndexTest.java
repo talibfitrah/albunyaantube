@@ -1121,6 +1121,27 @@ class SearchIndexTest {
         assertTrue(ids("zubdahnoor").isEmpty());
     }
 
+    /**
+     * Stage 9 Cubic r2 P2 (R34): a resolved report's take-down record, a REJECTED and ARCHIVED Video document, hides the
+     * id on every source, including one admitted after the resolve. A per-source exclusion alone would not.
+     */
+    @Test
+    void aReportTakeDownHidesTheVideoOnASourceAdmittedAfterIt() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("reported001", "Zubdahnoor reported", 600)),
+                "channel:UCrejected", List.of(item("reported001", "Zubdahnoor reported", 600))), Map.of());
+        index = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        Video takeDown = new Video("reported001");
+        takeDown.setId("doc-reported001");
+        takeDown.setStatus("REJECTED");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        saved(takeDown);
+        saved(channel("UCrejected", "Later Source"));                               // admitted after the resolve
+        index.awaitWrites();
+        assertTrue(index.sources().containsKey("channel:UCrejected"), "precondition: the later source is admitted");
+        assertFalse(ids("zubdahnoor").contains("reported001"));
+    }
+
     /** Inner titles built to collide with every golden row (spec §14.1): the rows' own words, Zakir uploads, a stream id. */
     private InnerIndex adversarialInner() throws Exception {
         String dawah = "channel:UCfassTU6mGWIj-yb26_ADjQ", zakir = "channel:UC3YmP7nqf514I1zh1eVbzrA";

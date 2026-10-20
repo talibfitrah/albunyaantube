@@ -230,13 +230,49 @@ class ContentReportServiceTest {
         verify(playlistRepository).save(pl);
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
         assertThat(pl.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
-        verify(publicContentCacheService).evictPublicContentCaches();
-        verify(videoRepository, never()).save(any());
+        verify(publicContentCacheService, org.mockito.Mockito.atLeastOnce()).evictPublicContentCaches();
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
 
+    /** The one Video document a parentless resolve may write: the id's take-down record, never in the catalog. */
+    private Video takenDown(String youtubeId) throws Exception {
+        var saved = org.mockito.ArgumentCaptor.forClass(Video.class);
+        verify(videoRepository).save(saved.capture());
+        Video v = saved.getValue();
+        assertThat(v.getYoutubeId()).isEqualTo(youtubeId);
+        assertThat(v.getStatus()).as("never APPROVED or PENDING: not served, not in the approvals queue").isEqualTo("REJECTED");
+        assertThat(v.getValidationStatus()).as("listed under Archived content, where the admin can delete it")
+                .isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        return v;
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2: the exclusion holds on every source, including one crawled after the resolve. Any Video
+     * document hides its id from search on every source (SearchIndex.videoIds), so a video with none gets one.
+     */
     @Test
-    void aParentlessReportOnAVideoNoSourceListsOnlyLogs() throws Exception {
+    void aParentlessReportRecordsATakeDownThatHoldsOnSourcesCrawledLater() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-later")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of("channel:UCfassTU6mGWIj-yb26_ADjQ"));
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ"))
+                .thenReturn(Optional.of(new Channel("UCfassTU6mGWIj-yb26_ADjQ")));
+
+        ContentReport out = service.resolveReport("report-later", ReportStatus.RESOLVED, "admin", null);
+
+        takenDown("ilgiwqpcOC8");
+        verify(streamIndexService).markStreamArchived("ilgiwqpcOC8");
+        assertThat(out.getResolutionNote()).isNull();
+    }
+
+    /** Stage 9 Cubic r2 P2: no source lists it yet, so there is nothing to exclude on; the take-down is still recorded. */
+    @Test
+    void aParentlessReportOnAVideoNoSourceListsYetStillRecordsTheTakeDown() throws Exception {
         ContentReport report = new ContentReport();
         report.setTargetType(ReportTargetType.VIDEO);
         report.setTargetId("lesson99999");
@@ -248,9 +284,10 @@ class ContentReportServiceTest {
 
         service.resolveReport("report-none", ReportStatus.RESOLVED, "admin", null);
 
+        takenDown("lesson99999");
         verify(channelRepository, never()).save(any());
         verify(playlistRepository, never()).save(any());
-        verify(publicContentCacheService, never()).evictPublicContentCaches();
+        verify(publicContentCacheService).evictPublicContentCaches();
     }
 
     @Test
@@ -338,7 +375,7 @@ class ContentReportServiceTest {
         assertThat(out.getResolutionNote()).startsWith("music video")
                 .contains("playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe").doesNotContain("channel:UCfassTU6mGWIj-yb26_ADjQ");
         verify(reportRepository, times(2)).update(report);
-        verify(publicContentCacheService).evictPublicContentCaches();
+        verify(publicContentCacheService, org.mockito.Mockito.atLeastOnce()).evictPublicContentCaches();
     }
 
     @Test

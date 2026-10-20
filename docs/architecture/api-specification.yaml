@@ -345,15 +345,18 @@ paths:
               schema:
                 $ref: '#/components/schemas/LiveChannelLives'
         '404':
-          description: Not a channel entry of a live category. Definitive; never sent while the live states load
+          description: |
+            Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
+            channel added to a live category in the last 20 minutes that no poll has listed yet
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
         '503':
           description: |
-            The live states are still loading after a server start: no view built from them has been published yet.
-            Empty body; retry after `Retry-After` seconds.
+            The live states are still loading after a server start (no view built from them has been published yet),
+            or the channel was added to a live category in the last 20 minutes and the poller (every 10 minutes) has
+            not listed it yet. Empty body; retry after `Retry-After` seconds.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (60)
@@ -750,6 +753,9 @@ paths:
                   $ref: '#/components/schemas/Category'
     post:
       summary: Create new category
+      description: |
+        Always creates a new category with a server-assigned id; an `id` in the body is ignored, so a create never
+        overwrites an existing category. Only the update (PUT) can turn an existing category LIVE.
       operationId: createCategory
       tags: [Categories]
       requestBody:
@@ -765,6 +771,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '400':
+          description: |
+            An unknown `type` or a missing parent (empty body), or `LIVE_CATEGORY_SHAPE`: a LIVE category with a
+            parent, or any category under a LIVE parent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
 
   /admin/categories/top-level:
     get:
@@ -843,6 +857,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '400':
+          description: |
+            An unknown `type`, a missing, self or descendant parent (empty body), or a live-category refusal:
+            `LIVE_CATEGORY_SHAPE` (a LIVE category with a parent or subcategories, or a category under a LIVE parent),
+            `LIVE_CATEGORY_FULL` (setting LIVE on a category holding more than 30 items) or
+            `LIVE_CATEGORY_MEMBERS_INVALID` (setting LIVE on a category holding items that are not channels or live
+            streams; `details.offenders` lists them)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
+        '404':
+          description: Category not found
+        '503':
+          description: |
+            `LIVE_CHECK_UNAVAILABLE`: setting LIVE needs a YouTube check of the category's live streams, and it could
+            not run. Nothing was saved; retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
     delete:
       summary: Delete category (fails if has subcategories)
       operationId: deleteCategory
@@ -3356,6 +3391,7 @@ components:
       properties:
         id:
           type: string
+          description: Server-assigned; ignored in a create (POST) body
         name:
           type: string
         slug:
@@ -5000,7 +5036,7 @@ components:
           nullable: true
         status:
           type: string
-          description: Channel UNKNOWN, LIVE, OFFLINE or TERMINATED; link LIVE, MISSING, BLOCKED or NO_CHANNEL
+          description: Channel UNKNOWN, LIVE or OFFLINE; link LIVE, MISSING, BLOCKED or NO_CHANNEL
         name:
           type: string
           nullable: true
@@ -5010,6 +5046,7 @@ components:
         reason:
           type: string
           nullable: true
+          description: TERMINATED when the channel's last read found it terminated; null otherwise
         lives:
           type: array
           items:
@@ -5110,6 +5147,29 @@ components:
           type: object
           nullable: true
           description: Additional error context (optional)
+
+    LiveCategoryError:
+      type: object
+      description: A live-category refusal (spec 2026-10-17 §4.2); the admin UI maps `code` to its own message
+      required: [status, code, message]
+      properties:
+        timestamp:
+          type: string
+        status:
+          type: integer
+        error:
+          type: string
+        code:
+          type: string
+          enum: [LIVE_CATEGORY_ADMIN_ONLY, LIVE_CATEGORY_TYPE_NOT_ALLOWED, LIVE_LINK_NOT_LIVE, LIVE_LINK_CHANNEL_UNKNOWN,
+                 LIVE_CHECK_UNAVAILABLE, LIVE_CATEGORY_FULL, LIVE_CATEGORY_SHAPE, LIVE_CATEGORY_MEMBERS_INVALID]
+        message:
+          type: string
+        path:
+          type: string
+        details:
+          type: object
+          description: The refusal's context; a whole-request refusal lists `offenders` (ref, code, message)
 
 
     # ===========================================================================

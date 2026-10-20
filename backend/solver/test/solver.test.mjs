@@ -473,8 +473,8 @@ import { spawn } from 'node:child_process';
 const SERVER = JSON.stringify(new URL('../server.mjs', import.meta.url).href);
 
 /** Runs `script` (an ES module) in a child Node, killed after `ms`: a host stuck in realm code shows as signal SIGKILL. */
-async function child(script, ms = 8_000) {
-  const proc = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+async function child(script, ms = 8_000, flags = []) {
+  const proc = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
   let stdout = '';
   proc.stdout.on('data', (d) => { stdout += d; });
   const timer = setTimeout(() => proc.kill('SIGKILL'), ms);
@@ -547,3 +547,49 @@ test('a build that kills the process (a fatal V8 OOM skips every catch) never lo
   assert.deepEqual([builds.length, restarted.health().status, yt.downloads()], [1, 'ok', 2]);
   yt.close();
 });
+
+// ---- stage 9 Cubic round 2: no host-scheduled realm callback, and a clean stop never marks a healthy player as a crash
+test('a FinalizationRegistry callback the player registers never runs on the host, outside the vm timeout (Cubic r2 P2)', async () => {
+  const r = await child(realmScript(`vm.runInContext(\`globalThis.jsc = () => ({ preprocessed_player:
+      "if (typeof FinalizationRegistry === 'function') { globalThis.keep = new FinalizationRegistry(() => { for (;;) {} });"
+      + " for (let i = 0; i < 100; i++) keep.register({}, i); } _result.n = (x) => x + 'A'; _result.sig = (x) => x.slice(1);" })\`, ctx);
+    const built = outcome(() => !!buildPlayer(ctx, 'x', 300));
+    for (let i = 0; i < 5; i++) { gc(); await new Promise((r) => setTimeout(r, 50)); }   // V8 posts the cleanup as a host task
+    console.log(JSON.stringify([built, vm.runInContext('typeof FinalizationRegistry + typeof WeakRef', ctx)]));`), 8_000, ['--expose-gc']);
+  assert.equal(r.signal, null, 'a cleanup callback looped on the host');
+  assert.deepEqual(JSON.parse(r.stdout), ['true', 'undefinedundefined']);
+});
+
+test('a stop during the startup build clears the crash marker and keeps the healthy player (Cubic r2 P2)',
+  { skip: !haveRecording && 'no recorded base.js', timeout: 30_000 }, async () => {
+    const hash = 'cccccccc';
+    // the recorded player, its sts moved to today: a real build takes ~1.5 s, long enough to stop the server inside it
+    const text = fs.readFileSync(PLAYER, 'utf8').replace(/((?:signatureTimestamp|sts)\s*:\s*)\d{5}/, (m, key) => key + today());
+    const yt = http.createServer((req, res) => {
+      if (req.url === '/iframe_api') return res.end(iframeText(hash));
+      if (req.url === `/s/player/${hash}/player_ias.vflset/en_US/base.js`) return res.end(text);
+      res.writeHead(404); res.end();
+    }).listen(0, '127.0.0.1');
+    await once(yt, 'listening');
+    const origin = `http://127.0.0.1:${yt.address().port}`;
+    const dir = tempDir();
+    const marker = path.join(dir, 'building');
+    const server = spawn(process.execPath, [new URL('../server.mjs', import.meta.url).pathname], {
+      env: { ...process.env, SOLVER_ORIGIN: origin, SOLVER_CACHE_DIR: dir, SOLVER_PORT: '0' }, stdio: ['ignore', 'ignore', 'inherit'] });
+    try {
+      for (let i = 0; i < 1500 && !fs.existsSync(marker); i++) await new Promise((r) => setTimeout(r, 10));
+      assert.ok(fs.existsSync(marker), 'the startup build began');
+      server.kill('SIGTERM');                                        // systemctl stop / restart
+      const [code, signal] = await once(server, 'exit');
+      assert.equal(fs.existsSync(marker), false, 'a clean stop left the crash marker behind');
+      assert.deepEqual([code, signal], [0, null]);
+      assert.equal(fs.existsSync(path.join(dir, `${hash}.js`)), true, 'the healthy player was dropped');
+      const builds = [];
+      const restarted = createSolver({ origin, cacheDir: dir, build: fakeBuild(builds), log: quiet });
+      await restarted.poll();
+      assert.deepEqual([builds.length, restarted.health().status], [1, 'ok'], 'the next start builds it from the cache');
+    } finally {
+      server.kill('SIGKILL');
+      yt.close();
+    }
+  });

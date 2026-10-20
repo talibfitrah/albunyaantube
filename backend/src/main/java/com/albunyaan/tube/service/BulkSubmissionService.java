@@ -152,14 +152,17 @@ public class BulkSubmissionService {
             }
         }
 
-        // Per-submit dedupe batch: it memoizes each (type, youtubeId), and markAsExisting records the rows this submit
-        // writes, so a second row with the same id is a DUPLICATE too. The first lookups run before the live guard.
+        // Two per-submit dedupe batches. `known`: what the registry held when the request came in, read before the live
+        // guard. `lateBatch`: read again right before each write (stage 9 Cubic r2: a single add landing during this
+        // submit's 30-60 s of fetches must not get a second doc), and markAsExisting records each row this submit
+        // writes, so a second row with the same id is a DUPLICATE too.
         //
-        // Cross-admin / cross-pod race remains: two parallel /bulk/submit
-        // calls for the same youtubeId can both pass findExisting and both
-        // write a doc. Documented as deferral in
+        // Cross-admin / cross-pod race remains between that read and the
+        // write: two parallel /bulk/submit calls for the same youtubeId can
+        // both pass findExisting and both write a doc. Documented as deferral in
         // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
         // — closing it requires Firestore native transactions in the writer.
+        RegistryDuplicateChecker.Batch known = dedupe.newBatch();
         RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
 
         // D9: the whole request is refused on any live-category violation, before any slot or write is spent.
@@ -168,7 +171,7 @@ public class BulkSubmissionService {
         // LIVE_LINK_NOT_LIVE (stage 9 Cubic P3). The memoized answer keeps it a DUPLICATE in the row loop below.
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         for (SubmitRow row : req.rows()) {
-            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(lateBatch, row)) {
+            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(known, row)) {
                 continue;
             }
             liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
@@ -227,22 +230,10 @@ public class BulkSubmissionService {
                 continue;
             }
 
-            // Dedupe check before write: answered from the lookup made before the live guard (one Firestore read
-            // per row), or from markAsExisting for a row this submit already wrote. Closes the preview→submit window
-            // where a parallel submit landed the same youtubeId.
-            try {
-                var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
-                if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
-                    results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                            SubmitStatus.FAILED, "DUPLICATE"));
-                    failed++;
-                    continue;
-                }
-            } catch (RuntimeException dedupeErr) {
-                log.warn("bulk-submit late-dedupe failed rowIndex={} url={} reason={}",
-                        row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "INTERNAL_ERROR"));
+            // Registered when the request came in (the memoized lookup made before the live guard): DUPLICATE with no
+            // category read or fetch spent on it.
+            if (registered(known, row)) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null, SubmitStatus.FAILED, "DUPLICATE"));
                 failed++;
                 continue;
             }
@@ -336,6 +327,26 @@ public class BulkSubmissionService {
                     fetched.title(), fetched.thumbnailUrl(), fetched.channelName(), verifiedChannel, fetched.subscribers(),
                     fetched.itemCount(), fetched.durationSeconds(), fetched.viewCount());
             VideoType trustedVideoType = authoritative.videoType();
+
+            // Dedupe right before the write: a fresh registry read (lateBatch is first asked here), or markAsExisting
+            // for a row this submit already wrote. Closes the window where a single add or a parallel submit landed
+            // the same youtubeId during this submit's guard and fetches; what is left is this read to the write.
+            try {
+                var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
+                if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
+                    results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                            SubmitStatus.FAILED, "DUPLICATE"));
+                    failed++;
+                    continue;
+                }
+            } catch (RuntimeException dedupeErr) {
+                log.warn("bulk-submit late-dedupe failed rowIndex={} url={} reason={}",
+                        row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "INTERNAL_ERROR"));
+                failed++;
+                continue;
+            }
 
             try {
                 String registryId = switch (row.detectedType()) {

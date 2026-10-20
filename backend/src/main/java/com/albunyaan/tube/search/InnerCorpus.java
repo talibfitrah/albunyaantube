@@ -8,6 +8,7 @@ import org.slf4j.LoggerFactory;
 
 import java.io.BufferedReader;
 import java.io.IOException;
+import java.io.InputStream;
 import java.io.InputStreamReader;
 import java.io.OutputStreamWriter;
 import java.io.Writer;
@@ -67,8 +68,9 @@ final class InnerCorpus {
     static List<Item> read(Path file) {
         if (!Files.exists(file)) return null;
         List<Item> out = new ArrayList<>();
-        try (BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(Files.newInputStream(file)),
-                StandardCharsets.UTF_8))) {
+        // Two resources: GZIPInputStream's constructor throws on an empty or non-gzip file, and the raw stream still closes.
+        try (InputStream raw = Files.newInputStream(file);
+             BufferedReader r = new BufferedReader(new InputStreamReader(new GZIPInputStream(raw), StandardCharsets.UTF_8))) {
             for (String line = r.readLine(); line != null; line = r.readLine()) {
                 if (!line.isEmpty()) out.add(JSON.readValue(line, Item.class));
             }

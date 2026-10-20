@@ -26,6 +26,8 @@ import java.util.concurrent.TimeoutException;
 public class LiveChannelService {
 
     static final long MEMO_MS = 60_000L;
+    /** Two poller cycles (10 min apart): a channel seeded this recently may be missing from the published entries. */
+    static final long ADDED_MS = 20 * 60_000L;
     private static final org.slf4j.Logger log = org.slf4j.LoggerFactory.getLogger(LiveChannelService.class);
 
     private record Memo(long at, LiveTabResult result) {}
@@ -34,6 +36,8 @@ public class LiveChannelService {
     private final LiveChannelStateRepository states;
     private final Clock clock;
     private final Map<String, Memo> memo = new ConcurrentHashMap<>();
+    /** UC id -> when the guard last seeded it: every channel add, before its write lands. */
+    private final Map<String, Long> added = new ConcurrentHashMap<>();
     private final Object stateLock = new Object();
 
     private volatile Map<String, LiveChannelState> snapshot = Map.of();
@@ -86,6 +90,9 @@ public class LiveChannelService {
      * seeded (L1, F3): the first cycle loads them and reads the channel.
      */
     public void seed(String ucId) {
+        long now = clock.millis();
+        added.values().removeIf(at -> now - at >= ADDED_MS);
+        added.put(ucId, now);
         if (!loaded) {
             log.warn("live seed: states not loaded yet; {} is read by the next cycle", ucId);
             return;
@@ -157,6 +164,16 @@ public class LiveChannelService {
     /** Stage 9 Cubic P2: the endpoint's 404 is definitive only once this is true, not merely once the states loaded. */
     public boolean published() {
         return published;
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2: seeded within {@link #ADDED_MS}. Only the poller's cycle (or the migration) republishes the
+     * entries, so the public endpoint answers 503, not its definitive 404, for such a channel until a view lists it.
+     * ponytail: a time window, not "until the first view built after the write"; two failed cycles in a row end it early.
+     */
+    public boolean recentlyAdded(String ucId) {
+        Long at = added.get(ucId);
+        return at != null && clock.millis() - at < ADDED_MS;
     }
 
     public LiveChannelState state(String ucId) {
