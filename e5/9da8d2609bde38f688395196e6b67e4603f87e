@@ -1,0 +1,24 @@
+frontend/tests/bulkSubmissionStore.spec.ts
+  s_dbb6b1f3671904::t_8160d6cc1120f7 6,8-10,135-138
+  s_dbb6b1f3671904::t_0e8f77cbc02ad9 139-150
+frontend/src/components/contentSearch/bulk/useCategoryPicker.ts
+  s_dbb6b1f3671904::t_c17eb13a8d48db 36-46
+frontend/src/stores/bulkSubmissionStore.ts
+  s_dbb6b1f3671904::t_6899beaa2ddc6a 6,128-140
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e59da8d2609bde38f688395196e6b67e4603f87e",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
