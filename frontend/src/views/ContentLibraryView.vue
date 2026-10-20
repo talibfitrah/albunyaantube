@@ -715,6 +715,8 @@ const categoryModalCurrentIds = computed(() =>
 /** Spec §8: one type for the modal when every selected item shares it. */
 const categoryModalContentType = computed(() => {
   const types = new Set(itemsForCategoryAssignment.value.map(i => String(i.type).toLowerCase()));
+  // The live category refuses a playlist, and the server refuses the whole request: any playlist disables it.
+  if (types.has('playlist')) return 'playlist';
   return types.size === 1 ? ([...types][0] as 'channel' | 'playlist' | 'video') : null;
 });
 
@@ -956,7 +958,15 @@ async function bulkChangeStatus(status: string) {
 
 // A coded refusal reads in the admin's language with each offending row (spec §8, D9); anything else keeps its message.
 function bulkErrorReason(err: any): string {
-  return apiErrorCode(err) ? apiErrorWithOffenders(err, t, 'contentLibrary.errorBulkAction') : (err?.message || String(err));
+  return apiErrorCode(err)
+    ? apiErrorWithOffenders(err, t, 'contentLibrary.errorBulkAction', offenderTitle)
+    : (err?.message || String(err));
+}
+
+// Offender refs are "type:docId": show the item's title when it is loaded.
+function offenderTitle(ref: string): string {
+  const id = ref.slice(ref.indexOf(':') + 1);
+  return content.value.find(c => c.id === id)?.title ?? ref;
 }
 
 function openBulkCategoryAssignment() {

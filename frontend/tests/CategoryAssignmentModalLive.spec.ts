@@ -59,6 +59,20 @@ describe('CategoryAssignmentModal and the live category (spec §8)', () => {
     expect(label.closest('label')!.querySelector('input[type=checkbox]')).not.toBeDisabled();
   });
 
+  it('drops a tick carried over from a channel add when the next item is a video, but keeps it selectable (F-M5)', async () => {
+    auth.isAdmin = true;
+    const { rerender } = renderModal('channel');
+    const checkbox = (await screen.findByText('Channels Live')).closest('label')!
+      .querySelector('input[type=checkbox]') as HTMLInputElement;
+    await fireEvent.click(checkbox);
+    expect(checkbox).toBeChecked();
+
+    await rerender({ contentType: 'video' });
+
+    expect(checkbox).not.toBeChecked();
+    expect(checkbox).not.toBeDisabled();
+  });
+
   it('drops a tick carried over from a channel add when the next item is a playlist', async () => {
     auth.isAdmin = true;
     const { rerender } = renderModal('channel');

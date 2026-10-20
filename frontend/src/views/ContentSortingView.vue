@@ -5,6 +5,8 @@
       <p class="subtitle">{{ t('contentSorting.subtitle') }}</p>
     </div>
 
+    <p v-if="liveStatusFailed" class="live-suspect" role="status">{{ t('contentSorting.live.statusUnavailable') }}</p>
+
     <!-- Loading state -->
     <div v-if="isLoading" class="loading-state">
       <p>{{ t('contentSorting.loading') }}</p>
@@ -249,6 +251,8 @@
               </div>
             </div>
 
+            <div v-if="addModalError" class="add-error" role="alert">{{ addModalError }}</div>
+
             <div class="modal-body">
               <div v-if="addModalTruncated" class="truncation-warning">
                 <p>{{ t('contentSorting.addContentTruncated', { count: addModalAvailable.length }) }}</p>
@@ -334,7 +338,7 @@ import {
   type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
-import { apiErrorToMessage } from '@/services/http';
+import { apiErrorWithOffenders } from '@/services/http';
 import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
@@ -343,6 +347,7 @@ const { t, locale } = useI18n();
 
 // Spec §8: the live state loads once when the view opens (no auto-refresh).
 const liveStatus = ref<LiveStatus | null>(null);
+const liveStatusFailed = ref(false);
 const formatTime = (iso: string) => new Date(iso).toLocaleString(locale.value);
 function liveCategory(categoryId: string) {
   return liveStatus.value?.categories.find(c => c.id === categoryId) ?? null;
@@ -444,6 +449,7 @@ function handleThumbnailError(event: Event, item: any) {
 const addModalOpen = ref(false);
 const addModalLoading = ref(false);
 const addModalSubmitting = ref(false);
+const addModalError = ref('');
 const addModalSearch = ref('');
 const addModalTypeFilter = ref('all');
 const addModalAvailable = ref<ApprovedContentItem[]>([]);
@@ -781,6 +787,7 @@ async function handleRemoveContent(item: ContentSortItem) {
 async function openAddContentModal(categoryId: string) {
   addModalCategoryId = categoryId;
   addModalOpen.value = true;
+  addModalError.value = '';
   addModalSearch.value = '';
   addModalTypeFilter.value = 'all';
   addModalSelected.value = new Set();
@@ -811,6 +818,7 @@ async function openAddContentModal(categoryId: string) {
 function closeAddContentModal() {
   deactivateFocusTrap();
   addModalOpen.value = false;
+  addModalError.value = '';
   addModalAvailable.value = [];
   addModalSelected.value = new Set();
   addModalTruncated.value = false;
@@ -823,6 +831,7 @@ function toggleAddSelection(item: ApprovedContentItem) {
 async function confirmAddContent() {
   if (addModalSelected.value.size === 0) return;
   addModalSubmitting.value = true;
+  addModalError.value = '';
 
   const categoryId = addModalCategoryId;
   const items = Array.from(addModalSelected.value).map(parseContentKey);
@@ -834,7 +843,8 @@ async function confirmAddContent() {
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
     closeAddContentModal();
   } catch (e: any) {
-    toast.error(apiErrorToMessage(e, t, 'contentSorting.addContentError'));
+    // Persistent, with each offending row: a toast would vanish before the admin could find the bad item.
+    addModalError.value = apiErrorWithOffenders(e, t, 'contentSorting.addContentError');
   } finally {
     addModalSubmitting.value = false;
   }
@@ -843,7 +853,11 @@ async function confirmAddContent() {
 onMounted(() => {
   loadCategories();
   // Admin-only endpoint: a moderator's 403 (or any failure) just means no live chips; it never blocks the list.
-  getLiveStatus().then(s => { liveStatus.value = s; }).catch(() => { liveStatus.value = null; });
+  getLiveStatus().then(s => { liveStatus.value = s; }).catch(e => {
+    liveStatus.value = null;
+    // 403 is the moderator case (no live UI by design); anything else is an outage the admin should hear about.
+    liveStatusFailed.value = e?.response?.status !== 403;
+  });
 });
 </script>
 
@@ -1428,6 +1442,7 @@ tr.drag-over {
   padding: 0 2.5rem 0.5rem 0;
 }
 
+.add-error { margin: 0 1.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--color-danger-soft); color: var(--color-danger); text-align: start; white-space: pre-line; }
 .live-note { margin-block: 0 0.5rem; color: var(--color-text-secondary); text-align: start; }
 .live-suspect { margin-block: 0 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--color-warning-soft); color: var(--color-warning); text-align: start; }
 .live-chip { margin-inline-start: 0.5rem; padding-inline: 0.5rem; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }

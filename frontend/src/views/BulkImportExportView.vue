@@ -397,7 +397,7 @@ async function handleExport() {
     importExportService.downloadBlob(blob, filename)
     exportSuccess.value = t('bulkImportExport.export.success')
   } catch (error: any) {
-    console.error('Export failed:', error)
+    console.error('Export failed:', apiErrorCode(error) ?? error?.message)
     exportError.value = error.response?.data?.message || t('bulkImportExport.export.error')
   } finally {
     isExporting.value = false
@@ -432,7 +432,7 @@ async function handleValidate() {
 
     importSuccess.value = t('bulkImportExport.import.validationComplete')
   } catch (error: any) {
-    console.error('Validation failed:', error)
+    console.error('Validation failed:', apiErrorCode(error) ?? error?.message)
     importError.value = error.response?.data?.message || t('bulkImportExport.import.validationError')
   } finally {
     isValidating.value = false
@@ -498,7 +498,7 @@ async function handleImport() {
     }
     importForm.value.file = null
   } catch (error: any) {
-    console.error('Import failed:', error)
+    console.error('Import failed:', apiErrorCode(error) ?? error?.message)
 
     // Handle specific error responses. A live-category refusal first: LIVE_CHECK_UNAVAILABLE is a 503, not "server busy".
     if (apiErrorCode(error)?.startsWith('LIVE_')) {
@@ -551,6 +551,7 @@ async function pollImportProgress() {
       } else {
         // Pre-flight M8: a refused async import is a FAILED run whose details carry the code and offenders (D9).
         const d = response.run.details
+        importSuccess.value = ''
         importError.value = typeof d?.code === 'string' && d.code.startsWith('LIVE_')
           ? apiErrorWithOffenders(new ApiError(d.errorMessage ?? d.code, 0, d.code, { offenders: d.offenders }),
               t, 'bulkImportExport.import.importFailed')
@@ -558,7 +559,7 @@ async function pollImportProgress() {
       }
     }
   } catch (error: any) {
-    console.error('Failed to poll import progress:', error)
+    console.error('Failed to poll import progress:', apiErrorCode(error) ?? error?.message)
     // Don't stop polling on transient errors, just log them
   }
 }
@@ -578,7 +579,7 @@ async function handleDownloadFailedItems() {
     const filename = `albunyaan-import-failed-${new Date().toISOString().split('T')[0]}.json`
     importExportService.downloadBlob(blob, filename)
   } catch (error: any) {
-    console.error('Failed to download failed items:', error)
+    console.error('Failed to download failed items:', apiErrorCode(error) ?? error?.message)
     importError.value = t('bulkImportExport.import.downloadFailedError')
   }
 }

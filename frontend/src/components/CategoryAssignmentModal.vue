@@ -97,6 +97,15 @@ watch(disabledIds, ids => ids.forEach(id => {
   partialIds.value.delete(id);
 }));
 
+// A tick carried over from a channel add must not pre-tick LIVE on a video: the server then needs the video to be live.
+watch(() => props.contentType, type => {
+  if (type !== 'video') return;
+  categories.value.filter(c => c.type === 'LIVE').forEach(c => {
+    selectedIds.value.delete(c.id);
+    partialIds.value.delete(c.id);
+  });
+});
+
 // Methods
 onMounted(async () => {
   // Await the load: expandToCategory walks categories.value, so expanding

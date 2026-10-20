@@ -54,7 +54,9 @@ export function liveChips(entry: LiveEntryStatus | undefined, formatTime: (iso: 
   if (entry.errorSince) return [{ key: 'contentSorting.live.errorSince', params: { time: formatTime(entry.errorSince) }, tone: 'bad' }];
   if (entry.status === 'UNKNOWN') return [{ key: 'contentSorting.live.pending', tone: 'warn' }];
   if (entry.status === 'OFFLINE') {
-    return [{ key: 'contentSorting.live.offlineSince', params: { time: entry.offlineSince ? formatTime(entry.offlineSince) : '' }, tone: 'warn' }];
+    return [entry.offlineSince
+      ? { key: 'contentSorting.live.offlineSince', params: { time: formatTime(entry.offlineSince) }, tone: 'warn' }
+      : { key: 'contentSorting.live.offline', tone: 'warn' }];
   }
   const lives = entry.lives ?? [];
   const chips: LiveChip[] = [{ key: 'contentSorting.live.live', params: { count: lives.filter(l => l.served === 'SERVED').length }, tone: 'ok' }];

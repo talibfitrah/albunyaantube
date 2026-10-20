@@ -26,7 +26,8 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
   getApprovedContent: () => Promise.resolve({ items: [
     { id: 'pl-1', type: 'playlist', youtubeId: null, title: 'A playlist', thumbnailUrl: null }], truncated: false }),
   addContentToCategorySort: () => Promise.reject(Object.assign(new Error('Request failed with status code 400'), {
-    response: { status: 400, data: { code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED', message: 'x' } }
+    response: { status: 400, data: { code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED', message: 'x',
+      details: { offenders: [{ ref: 'playlist:pl-1', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }
   }))
 }));
 vi.mock('@/services/importExportService', () => ({
@@ -40,15 +41,18 @@ const mount = (view: unknown, locale = 'en') =>
   render(view as never, { global: { plugins: [createI18n({ legacy: false, locale, messages })] } });
 
 describe('a live-category refusal is shown in the admin\'s language (spec §8)', () => {
-  it('Content Sorting: adding a playlist to the live category toasts the localized reason', async () => {
+  it('Content Sorting: a refused add stays on screen with the localized reason and each offender (F-C2)', async () => {
     mount(ContentSortingView);
     await fireEvent.click(await screen.findByText('Channels Live'));
     await fireEvent.click(await screen.findByText(/Add Content/));
     await fireEvent.click(await screen.findByText('A playlist'));
     await fireEvent.click(screen.getByRole('button', { name: /^Add/ }));
 
-    await vi.waitFor(() => expect(toastError).toHaveBeenCalledWith(
-      'The live category accepts only channels and streams that are live right now.'));
+    const reason = 'The live category accepts only channels and streams that are live right now.';
+    const box = await screen.findByRole('alert');
+    expect(box).toHaveTextContent(reason);
+    expect(box).toHaveTextContent(`playlist:pl-1: ${reason}`);
+    expect(toastError).not.toHaveBeenCalled();
   });
 });
 
@@ -79,6 +83,14 @@ describe('Import: a refused async import lists each offender (spec §8, D9)', ()
       expect(box).toHaveTextContent('playlist:PLit1r16a000000000000000000000000: The live category accepts only');
     }, { timeout: 3000 });
     expect(container.querySelector('.phase-indicator')).toHaveTextContent('Refused by the live category. Nothing was imported.');
+  });
+
+  it('a failed run clears the "Import started" success box (F-M3)', async () => {
+    importRun.value = refused;
+    const container = await runImport();
+
+    await vi.waitFor(() => expect(container.querySelector('.error-message')).not.toBeNull(), { timeout: 3000 });
+    expect(container.querySelector('.success-message')).toBeNull();
   });
 
   it('renders the refusal in Arabic', async () => {

@@ -43,7 +43,8 @@ interface ErrorResponseBody {
  * If err carries a code (an ApiError, or an axios error whose body has one: F20),
  * the helper looks up i18n key {@code apiErrors.<CODE>} (falling back to the server message).
  * Anything uncoded gets {@code t(fallbackKey)}: its message is English transport text
- * (axios's "Request failed with status code 500", fetch's "Failed to fetch").
+ * (axios's "Request failed with status code 500", fetch's "Failed to fetch"),
+ * except an uncoded ApiError, which keeps the server's own reason.
  */
 export function apiErrorToMessage(
   err: unknown,
@@ -54,6 +55,8 @@ export function apiErrorToMessage(
   if (code) {
     return t('apiErrors.' + code, apiErrorServerMessage(err) ?? (err instanceof Error ? err.message : code));
   }
+  // An uncoded ApiError keeps its server reason (e.g. a 400/409 text), unless it is only the transport default.
+  if (err instanceof ApiError && !/^Request failed with status \d+$/.test(err.message)) return err.message;
   return t(fallbackKey);
 }
 
@@ -86,10 +89,11 @@ export function apiErrorOffenders(err: unknown): { ref: string; code: string }[]
 export function apiErrorWithOffenders(
   err: unknown,
   t: (key: string, fallback?: string) => string,
-  fallbackKey: string
+  fallbackKey: string,
+  refLabel: (ref: string) => string = ref => ref
 ): string {
   const lines = [apiErrorToMessage(err, t, fallbackKey)];
-  for (const o of apiErrorOffenders(err)) lines.push(`${o.ref}: ${t('apiErrors.' + o.code, o.code)}`);
+  for (const o of apiErrorOffenders(err)) lines.push(`${refLabel(o.ref)}: ${t('apiErrors.' + o.code, o.code)}`);
   return lines.join('\n');
 }
 

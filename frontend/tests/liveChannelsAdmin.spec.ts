@@ -78,6 +78,11 @@ describe('live channels: coded errors from both transports (F20)', () => {
     expect(apiErrorToMessage(new TypeError('Failed to fetch'), t, 'contentSearch.addError')).toBe(fallback);
   });
 
+  it('keeps the server reason of an uncoded ApiError, unless it is only the transport default (F-M8)', () => {
+    expect(apiErrorToMessage(new ApiError('Cannot delete the last admin', 409), t, 'users.errors.delete')).toBe('Cannot delete the last admin');
+    expect(apiErrorToMessage(new ApiError('Request failed with status 409', 409), t, 'users.errors.delete')).toBe(lookup('en', 'users.errors.delete'));
+  });
+
   it('translates the submission rate limit (429 RATE_LIMIT on single and bulk adds)', () => {
     const err = Object.assign(new Error('Request failed with status code 429'),
       { response: { status: 429, data: { code: 'RATE_LIMIT', message: 'Daily submission limit reached. Try again later.' } } });
@@ -93,6 +98,11 @@ describe('live channels: row chips (spec §8)', () => {
   const time = (iso: string) => `T(${iso})`;
   const channel = (over: Partial<LiveEntryStatus>): LiveEntryStatus =>
     ({ contentType: 'channel', contentId: 'c', status: 'LIVE', lives: [], ...over } as LiveEntryStatus);
+
+  it('says plain "Offline" when there is no offlineSince (F-M10)', () => {
+    expect(liveChips(channel({ status: 'OFFLINE', offlineSince: null }), time)).toEqual([{ key: 'contentSorting.live.offline', tone: 'warn' }]);
+    expect(liveChips(channel({ status: 'OFFLINE', offlineSince: 'X' }), time)[0]).toMatchObject({ key: 'contentSorting.live.offlineSince', params: { time: 'T(X)' } });
+  });
 
   it('counts served lives and flags excluded and blocked ones', () => {
     const chips = liveChips(channel({ lives: [

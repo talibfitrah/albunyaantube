@@ -78,6 +78,7 @@ const isActionable = computed(
       <BulkRowCategoryEditor
         v-if="editing"
         :model-value="resolvedCategoryIds"
+        :playlist="row.detectedType === 'PLAYLIST'"
         @save="(ids) => { emit('updateCategories', row.rowIndex ?? 0, ids); editing = false }"
         @cancel="editing = false"
       />

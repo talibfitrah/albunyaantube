@@ -3,7 +3,7 @@ export const messages = {
     // Backend typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>.
     apiErrors: {
       MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.',
-      LIVE_CATEGORY_ADMIN_ONLY: 'Only admins can add to or remove from the live category.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'Only admins can add to the live category.',
       LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'The live category accepts only channels and streams that are live right now.',
       LIVE_LINK_NOT_LIVE: "This video isn't live on its channel's Live tab right now (unlisted streams never appear there), so it can't be added to the live category.",
       LIVE_LINK_CHANNEL_UNKNOWN: "This stream's channel couldn't be found. Try again later.",
@@ -373,6 +373,8 @@ export const messages = {
         note: 'Users see each channel\'s current live streams. Offline channels are hidden until they are live again. A link to a specific stream is removed when that stream ends.',
         live: 'Live · {count}',
         offlineSince: 'Offline since {time}',
+        offline: 'Offline',
+        statusUnavailable: 'Live status unavailable right now.',
         terminated: 'Channel unavailable on YouTube',
         errorSince: 'Check failing since {time}',
         suspectSince: 'Live check suspect since {time}: showing the last known streams',
@@ -1649,7 +1651,7 @@ export const messages = {
   ar: {
     apiErrors: {
       MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الإلكتروني — البريد غير مُعدّ على الخادم.',
-      LIVE_CATEGORY_ADMIN_ONLY: 'يمكن للمشرفين فقط الإضافة إلى فئة البث المباشر أو الحذف منها.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'يمكن للمشرفين فقط الإضافة إلى فئة البث المباشر.',
       LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'تقبل فئة البث المباشر القنوات والبث الجاري الآن فقط.',
       LIVE_LINK_NOT_LIVE: 'هذا الفيديو ليس مباشرًا الآن في تبويب البث المباشر لقناته (البث غير المدرج لا يظهر هناك أبدًا)، لذا لا يمكن إضافته إلى فئة البث المباشر.',
       LIVE_LINK_CHANNEL_UNKNOWN: 'تعذّر العثور على قناة هذا البث. حاول مرة أخرى لاحقًا.',
@@ -2011,13 +2013,25 @@ export const messages = {
       }
     },
     categoryModal: {
-      liveOnlyChannelsAndLive: 'فئة البث المباشر: القنوات والبث المباشر فقط'
+      liveOnlyChannelsAndLive: 'فئة البث المباشر: القنوات والبث المباشر فقط',
+      headingSingle: 'تعيين فئة',
+      headingMulti: 'تعيين الفئات',
+      searchPlaceholder: 'ابحث في الفئات...',
+      loading: 'جارٍ تحميل الفئات...',
+      noResults: 'لم يتم العثور على فئات.',
+      selectedCount: 'تم تحديد {count}',
+      clearSelection: 'مسح التحديد',
+      close: 'إغلاق',
+      cancel: 'إلغاء',
+      assign: 'تعيين'
     },
     contentSorting: {
       live: {
         note: 'يرى المستخدمون البث المباشر الحالي لكل قناة. تُخفى القنوات غير المتصلة حتى تعود إلى البث. ويُحذف رابط البث المحدد عند انتهائه.',
         live: 'مباشر · {count}',
         offlineSince: 'غير متصل منذ {time}',
+        offline: 'غير متصل',
+        statusUnavailable: 'حالة البث المباشر غير متاحة حاليًا.',
         terminated: 'القناة غير متاحة على يوتيوب',
         errorSince: 'يتعذّر الفحص منذ {time}',
         suspectSince: 'فحص البث مشكوك فيه منذ {time}: يُعرض آخر بث معروف',
@@ -3076,7 +3090,7 @@ export const messages = {
   nl: {
     apiErrors: {
       MAIL_UNAVAILABLE: 'De e-mail kon niet worden verzonden — e-mail is niet ingesteld op de server.',
-      LIVE_CATEGORY_ADMIN_ONLY: 'Alleen beheerders kunnen items toevoegen aan of verwijderen uit de livecategorie.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'Alleen beheerders kunnen items toevoegen aan de livecategorie.',
       LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'De livecategorie accepteert alleen kanalen en streams die nu live zijn.',
       LIVE_LINK_NOT_LIVE: 'Deze video staat nu niet live op het Live-tabblad van zijn kanaal (niet-vermelde streams staan daar nooit), dus hij kan niet aan de livecategorie worden toegevoegd.',
       LIVE_LINK_CHANNEL_UNKNOWN: 'Het kanaal van deze stream kon niet worden gevonden. Probeer het later opnieuw.',
@@ -3436,13 +3450,25 @@ export const messages = {
       }
     },
     categoryModal: {
-      liveOnlyChannelsAndLive: 'Livecategorie: alleen kanalen en livestreams'
+      liveOnlyChannelsAndLive: 'Livecategorie: alleen kanalen en livestreams',
+      headingSingle: 'Categorie toewijzen',
+      headingMulti: 'Categorieën toewijzen',
+      searchPlaceholder: 'Categorieën zoeken...',
+      loading: 'Categorieën laden...',
+      noResults: 'Geen categorieën gevonden.',
+      selectedCount: '{count} geselecteerd',
+      clearSelection: 'Selectie wissen',
+      close: 'Sluiten',
+      cancel: 'Annuleren',
+      assign: 'Toewijzen'
     },
     contentSorting: {
       live: {
         note: 'Gebruikers zien de huidige livestreams van elk kanaal. Offline kanalen zijn verborgen tot ze weer live zijn. Een link naar een specifieke stream wordt verwijderd zodra die stream eindigt.',
         live: 'Live · {count}',
         offlineSince: 'Offline sinds {time}',
+        offline: 'Offline',
+        statusUnavailable: 'Live-status momenteel niet beschikbaar.',
         terminated: 'Kanaal niet beschikbaar op YouTube',
         errorSince: 'Controle mislukt sinds {time}',
         suspectSince: 'Livecontrole twijfelachtig sinds {time}: de laatst bekende streams worden getoond',

@@ -214,3 +214,44 @@ describe('ContentLibraryView — a live-category refusal lists each offender (sp
       "video:doc-1: This video isn't live on its channel's Live tab right now")));
   });
 });
+
+describe('ContentLibraryView — the live category and mixed selections', () => {
+  const PLAYLIST = { ...base, type: 'playlist', id: 'p1', youtubeId: 'yt-p1', title: 'Series', categoryIds: [] };
+
+  beforeEach(() => {
+    getMock.mockReset();
+    bulkAssignCategoriesMock.mockReset();
+    vi.stubGlobal('alert', vi.fn());
+  });
+
+  function stubWithLive(items: unknown[]) {
+    getMock.mockImplementation((url: string) => url === '/api/admin/categories'
+      ? Promise.resolve({ data: [...CATEGORIES, { id: 'cat-live', name: 'Channels Live', type: 'LIVE', parentCategoryId: null }] })
+      : Promise.resolve({ data: { content: items, totalItems: items.length, currentPage: 0, pageSize: 20, totalPages: 1, truncated: false } }));
+  }
+
+  it('disables LIVE when a playlist is among a mixed selection (F-M4)', async () => {
+    stubWithLive([TECH_CHANNEL, PLAYLIST]);
+    renderView();
+
+    await selectAllRows();
+    await fireEvent.click(screen.getByRole('button', { name: 'Bulk Actions' }));
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign Categories' }));
+    const dialog = await openModal();
+
+    expect(checkboxFor(dialog, 'Channels Live')).toBeDisabled();
+  });
+
+  it('names an offender by its title, not the raw document id (F-M7)', async () => {
+    bulkAssignCategoriesMock.mockRejectedValue(new ApiError('1 item(s) refused', 400, 'LIVE_LINK_NOT_LIVE',
+      { offenders: [{ ref: 'channel:c1', code: 'LIVE_LINK_NOT_LIVE' }] }));
+    stubLibrary([TECH_CHANNEL]);
+    renderView();
+
+    await fireEvent.click((await screen.findAllByTitle('Categories'))[0]);
+    const dialog = await openModal();
+    await fireEvent.click(within(dialog).getByRole('button', { name: 'Assign' }));
+
+    await vi.waitFor(() => expect(alert).toHaveBeenCalledWith(expect.stringContaining('Boma: This video isn')));
+  });
+});

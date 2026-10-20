@@ -3201,7 +3201,7 @@ URL
 https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw
 https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj
 https://www.youtube.com/watch?v=xc7keR2piUM
-https://www.youtube.com/live/jfKfPfyJRdk
+https://www.youtube.com/live/Rs7St51oDDc
 ```
 
 - [ ] **Step 4: Create sample JSON**
@@ -3214,7 +3214,7 @@ Create `frontend/public/samples/sample-bulk-urls.json`:
     "https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw",
     "https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj",
     "https://www.youtube.com/watch?v=xc7keR2piUM",
-    "https://www.youtube.com/live/jfKfPfyJRdk"
+    "https://www.youtube.com/live/Rs7St51oDDc"
   ]
 }
 ```
@@ -3232,7 +3232,7 @@ const rows = [
   ['https://www.youtube.com/channel/UCXuqSBlHAE6Xw-yeJA0Tunw'],
   ['https://www.youtube.com/playlist?list=PLrAXtmRdnEQy6nuLMHjMZOz59Oq8B9nUj'],
   ['https://www.youtube.com/watch?v=xc7keR2piUM'],
-  ['https://www.youtube.com/live/jfKfPfyJRdk'],
+  ['https://www.youtube.com/live/Rs7St51oDDc'],
 ]
 const ws = xlsx.utils.aoa_to_sheet(rows)
 xlsx.utils.book_append_sheet(wb, ws, 'urls')
