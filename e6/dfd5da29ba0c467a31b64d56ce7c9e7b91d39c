@@ -1,0 +1,27 @@
+backend/src/main/java/com/albunyaan/tube/scheduler/PlaylistValidationScheduler.java
+  s_dbb6b1f3671904::t_95540524dda0d5 194,247,261-266
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailRepairMigration.java
+  s_dbb6b1f3671904::t_50198422d2df25 158-162
+backend/src/main/resources/firestore.rules
+  s_dbb6b1f3671904::t_65940e0c632915 78,84,90
+backend/src/test/java/com/albunyaan/tube/scheduler/PlaylistValidationSchedulerTest.java
+  s_dbb6b1f3671904::t_e9de70aa72f64f 21,65,68,72-101
+backend/src/test/java/com/albunyaan/tube/security/FirestoreRulesActiveStatusTest.java
+  s_dbb6b1f3671904::t_71b41f8f417712 8,67-87
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e6dfd5da29ba0c467a31b64d56ce7c9e7b91d39c",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
