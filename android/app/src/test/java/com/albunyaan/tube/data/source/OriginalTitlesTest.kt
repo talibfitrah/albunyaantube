@@ -1,8 +1,12 @@
 package com.albunyaan.tube.data.source
 
 import com.albunyaan.tube.data.source.api.ContentApi
+import kotlinx.coroutines.awaitCancellation
+import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.currentTime
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -119,16 +123,65 @@ class OriginalTitlesTest {
     @Test
     fun `an unknown id is asked again after the answer's max-age`() = runTest {
         whenever(api.fetchTitles(any())).thenReturn(
-            Response.success(emptyMap(), Headers.headersOf("Cache-Control", "public, max-age=60"))
+            Response.success(emptyMap(), Headers.headersOf("Cache-Control", "public, max-age=3600"))
         )
 
         retitle(rows(1))
-        clock += 30_000
+        clock += 61_000 // past the 60 s floor: max-age, not the floor, decides
         retitle(rows(1))
         verify(api, times(1)).fetchTitles(any())
-        clock += 31_000
+        clock += 3_540_000
         retitle(rows(1))
         verify(api, times(2)).fetchTitles(any())
+    }
+
+    // Fix round 1 (B): iOS TitlesClient parity. Each 50-id chunk stands alone; quiet only when no chunk answered.
+    private val twoChunks = rows(*(1..51).toList().toIntArray()) // lesson00051 is alone in the second chunk
+
+    @Test
+    fun `one chunk that throws or hangs costs only its own ids and does not quiet the client`() = runTest {
+        for (lonely in listOf<suspend () -> Response<Map<String, String>>>({ throw IOException("down") }, { awaitCancellation() })) {
+            val api: ContentApi = mock()
+            val titles = OriginalTitles(api) { 1_000L }
+            whenever(api.fetchTitles(any())).doSuspendableAnswer { inv ->
+                if (inv.getArgument<String>(0) == id(51)) lonely() else Response.success(mapOf(id(1) to "الأول"))
+            }
+
+            val out = titles.retitle(twoChunks, { it.id }) { r, t -> r.copy(title = t) }
+
+            assertEquals("الأول", out.first().title)
+            assertEquals("Lesson 51", out.last().title)
+            titles.retitle(rows(51), { it.id }) { r, t -> r.copy(title = t) } // same instant: not quiet, so it asks
+            verify(api, times(3)).fetchTitles(any())
+        }
+    }
+
+    @Test
+    fun `one chunk's 503 does not quiet the client`() = runTest {
+        whenever(api.fetchTitles(any())).doSuspendableAnswer { inv ->
+            if (inv.getArgument<String>(0) == id(51)) Response.error(503, "{}".toResponseBody(null))
+            else Response.success(mapOf(id(1) to "الأول"))
+        }
+
+        assertEquals("الأول", retitle(twoChunks).first().title)
+        retitle(rows(51))
+        verify(api, times(3)).fetchTitles(any())
+    }
+
+    @Test
+    fun `a caller cancelled mid-ask leaves the client willing to ask`() = runTest {
+        var calls = 0
+        whenever(api.fetchTitles(any())).doSuspendableAnswer {
+            if (++calls == 1) awaitCancellation() else Response.success(mapOf(id(1) to "الأول"))
+        }
+        val backedOut = launch { retitle(rows(1)) }
+        runCurrent()
+        assertEquals("positive control: the ask is out and hung", 1, calls)
+
+        backedOut.cancelAndJoin()
+
+        assertEquals("الأول", retitle(rows(1)).single().title)
+        assertEquals(2, calls)
     }
 
     @Test

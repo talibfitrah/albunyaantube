@@ -15,7 +15,8 @@ import javax.inject.Singleton
  * Owner issue 1(b): the original titles our backend holds (`GET /api/v1/titles`) for the video ids an on-device
  * channel or playlist page lists. NewPipe lists those pages at en-US (`NewPipeExtractorClient` localization), so
  * YouTube machine-translates Arabic and Dutch titles. Every failure is silent: rows keep their list titles, and a
- * failed or slow ask quiets this for [QUIET_MS], so a down server costs one slow page a minute, never a retry storm.
+ * page whose every chunk fails or misses the cap quiets this for [QUIET_MS], so a down server costs one slow page a
+ * minute, never a retry storm.
  */
 @Singleton
 class OriginalTitles @VisibleForTesting internal constructor(
@@ -46,27 +47,28 @@ class OriginalTitles @VisibleForTesting internal constructor(
         val t = now()
         val ask = synchronized(memo) { wanted.filter { memo[it]?.let { e -> e.title == null && e.until <= t } ?: true } }
         if (ask.isNotEmpty() && t >= quietUntil) {
-            val answers = try {
-                withTimeoutOrNull(TIMEOUT_MS) {
-                    coroutineScope {
-                        ask.chunked(MAX_IDS).map { chunk -> async { chunk to api.fetchTitles(chunk.joinToString(",")) } }.awaitAll()
-                    }
-                }
-            } catch (e: CancellationException) {
-                throw e
-            } catch (e: Exception) {
-                null // IOException, a Moshi error: silent
-            }
-            if (answers == null || answers.any { (_, r) -> !r.isSuccessful }) quietUntil = t + QUIET_MS // timeout, 400, 503
-            synchronized(memo) {
-                answers?.forEach { (chunk, r) ->
-                    val body = r.body().takeIf { r.isSuccessful } ?: return@forEach
-                    val until = t + r.raw().cacheControl.maxAgeSeconds.coerceAtLeast(60) * 1_000L
-                    chunk.forEach { id -> memo[id] = Entry(body[id], until) }
-                }
-            }
+            // Every chunk is asked at once under its own cap (iOS `TitlesClient` parity): a failed chunk costs only its ids.
+            val answered = coroutineScope {
+                ask.chunked(MAX_IDS).map { chunk -> async { fetch(chunk, t) } }.awaitAll()
+            }.filterNotNull()
+            if (answered.isEmpty()) quietUntil = t + QUIET_MS // no chunk answered: a down or slow server
+            synchronized(memo) { answered.forEach(memo::putAll) }
         }
         return synchronized(memo) { wanted.mapNotNull { id -> memo[id]?.title?.let { id to it } }.toMap() }
+    }
+
+    /** The memo entries for one chunk, or null when it threw, missed the cap or got a non-2xx (400, 503). */
+    private suspend fun fetch(chunk: List<String>, t: Long): Map<String, Entry>? {
+        val r = try {
+            withTimeoutOrNull(TIMEOUT_MS) { api.fetchTitles(chunk.joinToString(",")) } ?: return null
+        } catch (e: CancellationException) {
+            throw e // the caller gave up, not the server: never quiet for it
+        } catch (e: Exception) {
+            return null // IOException, a Moshi error: silent
+        }
+        val body = r.body()?.takeIf { r.isSuccessful } ?: return null
+        val until = t + r.raw().cacheControl.maxAgeSeconds.coerceAtLeast(60) * 1_000L
+        return chunk.associateWith { Entry(body[it], until) }
     }
 
     companion object {
