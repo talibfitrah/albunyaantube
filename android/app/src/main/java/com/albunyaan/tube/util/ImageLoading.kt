@@ -1,6 +1,7 @@
 package com.albunyaan.tube.util
 
 import android.widget.ImageView
+import coil.dispose
 import coil.load
 import coil.request.CachePolicy
 import coil.transform.CircleCropTransformation
@@ -68,6 +69,7 @@ object ImageLoading {
             is ContentItem.Channel -> {
                 // Channels use yt3.googleusercontent.com — no YouTube fallback chain
                 if (!isUrlValid(url)) {
+                    dispose() // as in loadThumbnailUrl
                     setImageResource(placeholder)
                     return
                 }
@@ -96,6 +98,7 @@ object ImageLoading {
         error: Int = placeholder
     ) {
         if (!isUrlValid(url)) {
+            dispose() // else Coil restarts this view's last request on re-attach: a recycled row gets another picture
             setImageResource(error)
             return
         }
@@ -147,6 +150,7 @@ object ImageLoading {
         val fallbackUrls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, videoId, isShort)
 
         if (fallbackUrls.isEmpty()) {
+            dispose() // as in loadThumbnailUrl
             setImageResource(error)
             setTag(FALLBACK_REQUEST_TAG_KEY, null)
             return
