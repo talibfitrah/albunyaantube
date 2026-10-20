@@ -155,9 +155,11 @@ public class ThumbnailRepairMigration {
     /**
      * Playlist half only: oEmbed + targeted thumbnail update, with no NewPipe and no
      * gateway, so the YouTube circuit breaker can never block it. No CAS lock here: the
-     * writes are idempotent, and the scheduler's callers hold its distributed lock.
-     * Called at the start of every playlist validation load, and by
-     * {@code PlaylistValidationScheduler} when the breaker is OPEN and once after boot.
+     * writes are idempotent. Called at the start of every playlist validation load, and
+     * by {@code PlaylistValidationScheduler} when the breaker is OPEN and once after boot.
+     * The scheduler's own calls and its scheduled runs hold its distributed lock; admin
+     * validation runs (validate-all, validate-playlists) do not, and rely on healing
+     * before their own load.
      *
      * @return the number of approved playlists whose broken thumbnail was repaired
      */

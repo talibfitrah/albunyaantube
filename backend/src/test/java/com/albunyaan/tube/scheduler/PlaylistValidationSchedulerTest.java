@@ -18,6 +18,7 @@ import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Async;
 
 import java.lang.reflect.Method;
+import java.util.concurrent.atomic.AtomicReference;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.*;
@@ -61,11 +62,41 @@ class PlaylistValidationSchedulerTest {
         scheduler.scheduledValidation();
 
         InOrder order = inOrder(systemSettingsRepository, thumbnailRepair, publicContentCacheService);
-        order.verify(systemSettingsRepository).tryAcquireLock(eq(LOCK_KEY), anyString(), eq(300));
+        order.verify(systemSettingsRepository).tryAcquireLock(eq(LOCK_KEY), endsWith("-heal"), eq(300));
         order.verify(thumbnailRepair).repairBrokenPlaylistThumbnails();
         order.verify(publicContentCacheService).evictPublicContentCaches();
-        order.verify(systemSettingsRepository).releaseLock(eq(LOCK_KEY), anyString());
+        order.verify(systemSettingsRepository).releaseLock(eq(LOCK_KEY), endsWith("-heal"));
         verify(contentValidationService, never()).validatePlaylists(anyString(), any(), anyString(), anyInt());
+    }
+
+    @Test
+    void breakerOpenHeal_neverReleasesALiveRunsLock() throws Exception {
+        // A lock that is re-entrant per holder, like SystemSettingsRepository's.
+        AtomicReference<String> holder = new AtomicReference<>();
+        when(systemSettingsRepository.tryAcquireLock(eq(LOCK_KEY), anyString(), anyInt())).thenAnswer(i -> {
+            String who = i.getArgument(1);
+            return holder.compareAndSet(null, who) || who.equals(holder.get());
+        });
+        when(systemSettingsRepository.releaseLock(eq(LOCK_KEY), anyString()))
+                .thenAnswer(i -> holder.compareAndSet(i.getArgument(1), null));
+        when(circuitBreaker.isOpen()).thenReturn(false, true);
+        when(circuitBreaker.getStatus()).thenReturn(mock(YouTubeCircuitBreaker.CircuitBreakerStatus.class));
+        AtomicReference<String> heldAfterHeal = new AtomicReference<>();
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
+        run.complete(ValidationRun.STATUS_COMPLETED);
+        when(contentValidationService.validatePlaylists(anyString(), any(), anyString(), anyInt())).thenAnswer(i -> {
+            String runHolder = holder.get();
+            scheduler.scheduledValidation(); // the breaker opened: a heal attempt while this run holds the lock
+            heldAfterHeal.set(holder.get());
+            assertEquals(runHolder, heldAfterHeal.get(), "the heal must leave the live run's lock in place");
+            return run;
+        });
+
+        scheduler.scheduledValidation();
+
+        assertNotNull(heldAfterHeal.get(), "the run's lock was released by the heal");
+        verifyNoInteractions(thumbnailRepair); // the lock holder heals; the attempt skipped
+        assertNull(holder.get(), "the run releases its own lock at the end");
     }
 
     @Test

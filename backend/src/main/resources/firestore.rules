@@ -75,19 +75,19 @@ service cloud.firestore {
     // Content collections
     match /channels/{channelId} {
       allow read: if isModerator();
-      allow create: if isModerator();
+      allow create: if false; // Only the backend creates content (Admin SDK), after approval
       allow update, delete: if isAdmin();
     }
 
     match /playlists/{playlistId} {
       allow read: if isModerator();
-      allow create: if isModerator();
+      allow create: if false; // Only the backend creates content (Admin SDK), after approval
       allow update, delete: if isAdmin();
     }
 
     match /videos/{videoId} {
       allow read: if isModerator();
-      allow create: if isModerator();
+      allow create: if false; // Only the backend creates content (Admin SDK), after approval
       allow update, delete: if isAdmin();
     }
 

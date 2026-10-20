@@ -191,7 +191,7 @@ public class PlaylistValidationScheduler {
                     status.getLastErrorMessage());
             // The heal uses no NewPipe, so it never waits on the breaker. A closed-breaker run
             // heals inside validatePlaylists instead.
-            healUnderLock(trigger, instanceId);
+            healUnderLock(trigger, instanceId + "-heal");
             return;
         }
 
@@ -244,9 +244,7 @@ public class PlaylistValidationScheduler {
     /**
      * Heals once after each boot, so a deploy fixes dead thumbnails the same day
      * instead of at the next 07:00 run. Off the request threads; tests keep it off
-     * through the scheduler's enabled flag (application-test.yml). Its own lock holder
-     * id keeps it exclusive even against a run on this same instance (the lock is
-     * re-entrant per holder).
+     * through the scheduler's enabled flag (application-test.yml).
      */
     @Async("validationExecutor")
     @EventListener(ApplicationReadyEvent.class)
@@ -260,7 +258,12 @@ public class PlaylistValidationScheduler {
 
     /**
      * Lock, heal, evict, release, so two instances never double-heal. When the lock is
-     * held, skip: the holder is a validation run, which heals before it loads any doc.
+     * held, skip: the holder is a validation run, which heals before it loads any doc,
+     * or another heal. Each heal passes its own holder id ({@code -heal}, {@code -boot}):
+     * the lock is re-entrant per holder, so sharing the run's id would let a heal
+     * re-enter a live run's lock and release it. While a heal holds the lock (at most
+     * {@value #HEAL_LOCK_TTL_SECONDS} s), a 07:00 run or a manual trigger at that moment
+     * skips entirely; that is acceptable, because the next run heals and validates.
      */
     private void healUnderLock(String trigger, String holder) {
         if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, holder, HEAL_LOCK_TTL_SECONDS)) {
