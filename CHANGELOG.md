@@ -5,6 +5,8 @@ stable release.
 
 ## [Unreleased]
 
+- iOS: videos that played only in standard quality now switch to HD a few seconds after they start, at the same point, when HD is available; if HD falters, playback carries on in standard quality without stopping.
+- Backend: a small, sandboxed playback helper (at most 384 MB of memory; 20 requests a minute per account) supports HD on iOS; it never handles video.
 - Live channels: the "Channels Live" category shows each channel's current live stream (a channel with several shows all of them), hides a channel while it is off air, and drops a link to a specific stream once that stream ends; ended streams also leave search and the video lists. Only admins can add to it: channels, or streams that are live right now. Installed apps get this with no update.
 - Admin: categories have a type (Standard or Live channels); the live category's sorting view shows each channel's live state and a warning when the live check looks wrong; refusals at every add, approve and import say why, in English, Arabic and Dutch.
 - Search (both apps): forgives typos, shows the closest or related results when nothing matches, and updates smoothly while you type; on iOS, VoiceOver announces the result count.
