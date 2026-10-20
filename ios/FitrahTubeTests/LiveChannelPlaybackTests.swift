@@ -381,6 +381,23 @@ struct LiveChannelPlaybackTests {
         LiveChannelLives(lives: ids.map { .init(id: $0, title: "Sunnah") })
     }
 
+    /// Stage 9 Cubic r3 P2: the open's caller is cancelled (the screen's `.task`, on a tab switch) while the resolve is
+    /// out. The not-live follow-up must still end in the error state, never an endless Loading with no Retry.
+    @Test func aCancelledOpenOfANotLiveChannelStillEndsInTheErrorState() async throws {
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc", now: false))]),
+                               args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { _ in      // slow and deaf to cancellation, so the cancelled timeout wins the race
+                                   await Task.detached { try? await Task.sleep(for: .milliseconds(100)) }.value
+                                   throw LiveChannelNotFound()
+                               })
+        let opening = Task { await vm.open() }
+        opening.cancel()
+        await opening.value
+        try await waitUntil { vm.state != .loading }
+        #expect(vm.state == .error(messageKey: "player_error_message"))
+    }
+
     /// Hand-off 1: a 404 is the backend saying this is not a servable live channel. Stop at once, after an end and after
     /// a failure alike: no same-id try and no ten minutes of waits.
     @Test func aNotFoundChannelStopsInsteadOfWaiting() async throws {

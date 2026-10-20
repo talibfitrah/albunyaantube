@@ -359,7 +359,7 @@ extension StreamState {
     private var upgradeTask: Task<Void, Never>?
     /// Stage 6 I-C2: latched by `stopUpgrade()` until the screen is back (`resumeUpgrades()`). A resolve still out when the
     /// screen went away has no upgrade task to cancel yet; this keeps it from launching or publishing one.
-    private var upgradesStopped = false
+    private(set) var upgradesStopped = false
     /// R41: the last `hd.failed` report. The next ask waits for it, so the resolver has denied the video before it is
     /// asked again (a 360p incident's own re-resolve starts that ask right away).
     private var hdFailedReport: Task<Void, Never>?
@@ -1113,7 +1113,7 @@ extension StreamState {
     /// spent it: the screen reconciles `.appear` the moment the model exists, so this replay is
     /// second and idempotent.
     func didMount() {
-        reconcile(.appear)
+        reconcile(.appear, replay: true)
         reconcile(.videoStarted)
     }
 
@@ -1122,7 +1122,7 @@ extension StreamState {
     /// mount arm and `swapArgs` -- calls this with what happened and nothing else decides anything:
     /// `CastOwnership.decide` is a pure table over the three owners' state, and this executes its
     /// one answer.
-    func reconcile(_ trigger: CastTrigger) {
+    func reconcile(_ trigger: CastTrigger, replay: Bool = false) {
         // Plan review M11 / stage 6 I-M3: every went-away and came-back seam routes here (`.onDisappear`, `.onAppear` and
         // the rail's `tabIsSelected` through `railTrigger`), cast or no cast, so HD stops and resumes with the screen.
         // Stage 7 I-D1 (iPad simulator, 2026-10-20): AVKit's own fullscreen fires `.onDisappear` after its `willBegin…`,
@@ -1132,7 +1132,8 @@ extension StreamState {
             if avKitFullscreen { hdStopDeferred = true } else { stopUpgrade() }
         } else if trigger == .appear {
             hdStopDeferred = false
-            resumeUpgrades()
+            // Stage 7 N1: the mount's replayed `.appear` is not a new appearance; it must not clear a stop latched since.
+            if !replay { resumeUpgrades() }
         }
         guard let cast else { return }
         // Before the decision, not after: whichever trigger discovers a drop reads this, and
@@ -1455,9 +1456,14 @@ extension StreamState {
         // FAILURE, so a listed id gets its same-id re-resolve first; that re-resolve's own miss is an END, so nothing loops.
         if myGeneration == generation, let miss = liveMiss, miss.generation == generation {
             liveMiss = nil
-            if await !liveChannelTrigger(miss.trigger) {
-                await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
-            }
+            // Unstructured on purpose (Cubic r3 P2): this runs in the caller's task, and a cancelled `.task` (a tab switch)
+            // would cancel the lookup's timeout, which `liveChannelTrigger` reads as "a newer wait owns the state" and
+            // returns, leaving `.loading` with no Retry. Nothing else owns the state here.
+            await Task {
+                if await !self.liveChannelTrigger(miss.trigger) {
+                    await self.resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
+                }
+            }.value
         }
         return myGeneration == generation
     }

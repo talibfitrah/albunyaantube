@@ -226,6 +226,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         background.onWillEnterForeground = { [weak model] in
             await model?.reResolveIfExpiring()
         }
+        context.coordinator.adopt(model)
         background.attach(player: player)
     }
 
@@ -373,18 +374,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) var path: NWPath
         /// The sampler's "is there a network" input: the path monitor's answer. Settable so a host
         /// test against a localhost server does not depend on the test machine's own network (N2).
+        /// The path monitor's status; settable so a test can park a failure under each status (stage 7 N2).
+        lazy var pathStatus: () -> NWPath.Status = { [unowned self] in self.path.status }
         lazy var isOnline: () -> Bool = { [unowned self] in
             #if DEBUG
             // `NetworkMonitor`'s acceptance hook, here too: the parked-offline screenshot (stage 6 I-M1).
             if LaunchArguments.debug.contains("-fitrah-offline") { return false }
             #endif
-            return Self.isOnline(self.path.status)
+            // Stage 6 I-M1: the shell's offline banner's own predicate, so a failure parked for the network (`fire`)
+            // always has that banner on screen. `.requiresConnection` used to park with no banner, waiting for a
+            // `.satisfied` that only a new connection -- the parked recovery's own -- could bring.
+            return NetworkMonitor.isOnline(for: self.pathStatus())
         }
 
-        /// Stage 6 I-M1: the shell's offline banner's own predicate (`NetworkMonitor`), so a failure parked for the network
-        /// (`fire`) always has that banner on screen. `.requiresConnection` used to park with no banner, waiting for a
-        /// `.satisfied` that only a new connection -- the parked recovery's own -- could bring.
-        nonisolated static func isOnline(_ status: NWPath.Status) -> Bool { NetworkMonitor.isOnline(for: status) }
         /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
         /// fullscreen flag, written on every update pass.
         var doubleTap: UITapGestureRecognizer?
@@ -578,6 +580,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 controller.player = nil
             }
         }
+
+        /// Hands the coordinator its model before `observe` does: `makeUIViewController` attaches the background
+        /// controller first, and its I-C9b seed (`resumeIntentPending`) reads `model.isAdvancing` at attach.
+        func adopt(_ model: PlayerViewModel) { self.model = model }
 
         func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool,
                      playToEnd: PlayToEndAction) {

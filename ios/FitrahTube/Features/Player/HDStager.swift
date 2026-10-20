@@ -69,7 +69,7 @@ import UIKit
         defer { polledAt = now }
         if now.timeIntervalSince(polledAt) > Self.maxPollGap { return .stale }
         if item.status == .failed { return .failed }
-        let need = Self.need(position: position, duration: Self.duration(item), loops: loops)
+        let need = Self.need(position: position, duration: Self.duration(item))
         if need == nil, !loops { return .stale }
         if Self.mustReseek(position: position, seekedTo: seekedTo, need: need ?? Self.ahead) { seek(to: position) }
         if item.status == .readyToPlay, let need, Self.isBuffered(Self.ranges(item), position: position, need: need) {
@@ -101,7 +101,7 @@ import UIKit
     /// How much must be buffered past `position`: `ahead`, or what is left of a clip shorter than `ahead`. nil (no swap
     /// now) within `ahead` of the end of anything longer: a looping Short waits for the loop instead of swapping onto a
     /// tail the loop throws away, and a VOD does not buy a rebuffer for its last seconds of HD (stage 6 I-M7).
-    nonisolated static func need(position: Double, duration: Double?, loops: Bool) -> Double? {
+    nonisolated static func need(position: Double, duration: Double?) -> Double? {
         guard let duration else { return ahead }
         let left = duration - position - 0.5
         if left >= ahead { return ahead }
@@ -148,7 +148,7 @@ import UIKit
         let position = player.currentTime().seconds
         guard let stager, stager.masterURL == masterURL else {
             guard standardHasHeadroom(ranges(visible), position: position, duration: duration(visible)),
-                  loops || need(position: position, duration: duration(visible), loops: false) != nil else { return nil }
+                  loops || need(position: position, duration: duration(visible)) != nil else { return nil }
             return make(pending, masterURL, position)
         }
         switch stager.poll(position: position, loops: loops) {

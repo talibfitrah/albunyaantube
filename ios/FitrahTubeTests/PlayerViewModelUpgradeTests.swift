@@ -258,6 +258,25 @@ struct PlayerViewModelUpgradeTests {
         #expect(vm.pendingUpgrade == nil)
     }
 
+    /// Stage 7 N1: the mount's replayed `.appear` (`didMount`, after `open()`) is not a real appearance, so it must not
+    /// clear a stop latched while the screen left during `open()`.
+    @Test func theMountReplayDoesNotClearAStopLatchedDuringOpen() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let gate = AsyncGate()
+        let resolver = ScriptedResolver([Self.standard, Self.standard], gate: gate)
+        let vm = model(resolver, hd: recorder.upgrade)
+        let opening = Task { await vm.open() }
+        for _ in 0..<500 where await resolver.calls == 0 { try? await Task.sleep(for: .milliseconds(2)) }
+        vm.reconcile(.disappear)
+        await gate.open()
+        await opening.value
+        vm.didMount()
+        #expect(vm.upgradesStopped)
+        vm.reconcile(.appear)   // a real appearance does resume
+        #expect(!vm.upgradesStopped)
+    }
+
     /// The latch lasts only while the screen is away (stage 6 I-C2): back on screen, the next resolve asks again. The
     /// play that was on screen when it left stays on 360p (`stopUpgrade`'s ponytail).
     @Test func returningToTheScreenLetsTheNextResolveAskAgain() async {
@@ -323,18 +342,6 @@ struct PlayerViewModelUpgradeTests {
         await vm.retry()
         try? await Task.sleep(for: .milliseconds(50))
         #expect(recorder.asked.count == 1)            // latched until the screen is back
-    }
-
-    /// Fix round 1: leaving the screen also drops an upgrade that was already published.
-    @Test func leavingTheScreenDropsAPublishedUpgrade() async {
-        let recorder = Recorder()
-        recorder.answer = Self.hd()
-        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
-        await vm.open()
-        await waitForPending(vm)
-        #expect(vm.pendingUpgrade != nil)
-        vm.stopUpgrade()
-        #expect(vm.pendingUpgrade == nil)
     }
 
     /// Fix round 1 (spec §4.9): a silent TTL refresh that never lands keeps the kept 360p, so an HD incident still

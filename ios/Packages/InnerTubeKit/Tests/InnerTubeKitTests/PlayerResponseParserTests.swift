@@ -416,6 +416,13 @@ import Testing
         #expect(streaming.title == nil)
     }
 
+    /// Stage 9 P3: one malformed TV format entry is dropped, the rest survive (it used to throw for the whole video).
+    @Test func oneMalformedAdaptiveFormatDoesNotDropTheGoodOnes() throws {
+        let body = Data(#"{"streamingData":{"adaptiveFormats":[{"itag":137,"mimeType":"video/mp4","bitrate":1000,"initRange":{"start":"0"}},{"itag":140,"mimeType":"audio/mp4","bitrate":"128"},{"itag":18,"mimeType":"video/mp4","bitrate":500,"url":"https://r1.googlevideo.com/v18"},"junk"]}}"#.utf8)
+        let formats = try PlayerResponseParser().adaptiveFormats(body)
+        #expect(formats.map(\.itag) == [18])
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)

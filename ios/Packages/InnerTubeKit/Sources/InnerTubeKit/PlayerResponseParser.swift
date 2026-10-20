@@ -273,7 +273,7 @@ extension PlayerResponseParser {
     /// purpose: no field this rung needs can ever break the VISIONOS/ANDROID parse above. Entries without an itag,
     /// mimeType or bitrate are dropped.
     func adaptiveFormats(_ body: Data) throws -> [AdaptiveFormat] {
-        try JSONDecoder().decode(AdaptiveWire.self, from: body).streamingData?.adaptiveFormats?.compactMap(\.format) ?? []
+        try JSONDecoder().decode(AdaptiveWire.self, from: body).streamingData?.adaptiveFormats?.compactMap { $0.value?.format } ?? []
     }
 }
 
@@ -316,6 +316,12 @@ private struct AdaptiveWire: Decodable {
             return lower...upper
         }
     }
-    struct StreamingData: Decodable { var adaptiveFormats: [Format]? }
+    /// One entry that does not decode is nil, not a throw: it must not cost the video its HD (stage 9; `TVAdaptive.select`
+    /// drops a bad entry by the same rule).
+    struct Lossy: Decodable {
+        var value: Format?
+        init(from decoder: Decoder) throws { value = try? Format(from: decoder) }
+    }
+    struct StreamingData: Decodable { var adaptiveFormats: [Lossy]? }
     var streamingData: StreamingData?
 }

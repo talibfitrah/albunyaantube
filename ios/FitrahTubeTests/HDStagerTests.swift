@@ -75,13 +75,11 @@ struct HDStagerTests {
 
     // MARK: - the pure staging rules
 
-    @Test func needClampsToWhatIsLeftUnlessTheItemLoops() {   // Review Focus 1
-        #expect(HDStager.need(position: 3, duration: 600, loops: false) == 10)
-        #expect(HDStager.need(position: 592, duration: 600, loops: false) == nil)    // I-M7: too late to be worth a swap
-        #expect(HDStager.need(position: 2, duration: 8, loops: false) == 5.5)         // a clip shorter than 10.5 s
-        #expect(HDStager.need(position: 592, duration: 600, loops: true) == nil)     // a looping Short waits for the loop
-        #expect(HDStager.need(position: 2, duration: 8, loops: true) == 5.5)          // shorter than 10.5 s: what is left
-        #expect(HDStager.need(position: 3, duration: nil, loops: false) == 10)        // unknown length: the full 10 s
+    @Test func needClampsToWhatIsLeft() {   // Review Focus 1
+        #expect(HDStager.need(position: 3, duration: 600) == 10)
+        #expect(HDStager.need(position: 592, duration: 600) == nil)    // I-M7: too late to be worth a swap
+        #expect(HDStager.need(position: 2, duration: 8) == 5.5)         // a clip shorter than 10.5 s
+        #expect(HDStager.need(position: 3, duration: nil) == 10)        // unknown length: the full 10 s
     }
 
     @Test func isBufferedNeedsOneRangeCoveringWhatIsNeeded() {

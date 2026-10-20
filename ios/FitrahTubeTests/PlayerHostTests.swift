@@ -302,6 +302,56 @@ struct PlayerHostTests {
         #expect(resolver.calls.count == 2)
     }
 
+    /// Stage 6 I-M1 (re-review N2): a failure parks only while the shell shows its offline banner, i.e. exactly when
+    /// `NetworkMonitor.isOnline(for:)` says offline. Runs the coordinator's REAL default `isOnline`, so reverting its
+    /// predicate (`== .satisfied`) parks `.requiresConnection` with no banner on screen and this fails.
+    @Test(.timeLimit(.minutes(1)), arguments: [NWPath.Status.satisfied, .requiresConnection, .unsatisfied])
+    func aFailureParksExactlyWhenTheShellShowsTheOfflineBanner(_ status: NWPath.Status) async throws {
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(), args: PlayerArgs(videoId: "fixture-1"))
+        await model.open()
+        try #require(resolver.calls.count == 1)
+        let player = try #require(PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.pathStatus = { status }
+        coordinator.lastVideoId = "fixture-1"
+        let item = try #require(player.currentItem)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while coordinator.failedItem !== item, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.failedItem === item, "the item never failed")
+        if NetworkMonitor.isOnline(for: status) {
+            await resolver.waitUntilCalled(count: 2)    // the banner is down, so recovery runs
+        } else {
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(resolver.calls.count == 1, "recovery ran with the offline banner showing")
+        }
+    }
+
+    /// Stage 9 Cubic r3 P2 (I-C9b): `makeUIViewController` attaches the background controller BEFORE the recovery
+    /// observers hand the coordinator its model, so the seed's "an advance is in flight counts as playing" read nil.
+    @Test(.timeLimit(.minutes(1))) func aFreshCoordinatorSeesAnAdvanceInFlightBeforeItObservesAnything() async throws {
+        let resolver = RecordingResolver(.hls)
+        let settings = Self.settings()
+        settings.safeMode = false                       // Safe Mode disables auto-advance
+        let model = PlayerViewModel(resolver: resolver, settings: settings,
+                                    args: PlayerArgs(videoId: "a", playlistId: "PL"),
+                                    queueSource: FakeQueueSource(pages: [(ids: ["a", "b"], next: nil)]))
+        await model.open()
+        resolver.hold("b")
+        let advancing = Task { await model.playToEnd() }
+        for _ in 0..<500 where !model.isAdvancing { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(model.isAdvancing)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.adopt(model)
+        #expect(coordinator.background.resumeIntentPending?() == true)
+        resolver.release(id: "b")
+        await advancing.value
+    }
+
     /// 1.0.4 round 5 (re-review N1, test c): the auto-advance end had no "still the current item"
     /// guard (its failed-to-end sibling has one). An end AVFoundation delivers for the OLD item after
     /// the swap (queued on main before the observer went) must not advance a second time; the current
