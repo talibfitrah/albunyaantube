@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.approvals.ApprovalApi
 import com.albunyaan.tube.data.importflow.ImportApi
 import com.albunyaan.tube.data.search.YouTubeSearchApi
 import com.albunyaan.tube.data.source.api.CategoryResponse
+import com.albunyaan.tube.data.source.api.ChannelLives
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.data.source.api.DownloadApi
@@ -168,6 +169,12 @@ class FakeContentApi : ContentApi {
 
     override suspend fun checkVideoAvailable(id: String): retrofit2.Response<Unit> =
         retrofit2.Response.success(Unit)
+
+    override suspend fun fetchLiveChannel(id: String): ChannelLives = ChannelLives(id, "LIVE", emptyList())
+
+    /** The server knows no ids: rows keep their list titles. */
+    override suspend fun fetchTitles(ids: String): retrofit2.Response<Map<String, String>> =
+        retrofit2.Response.success(emptyMap())
 }
 
 /**
