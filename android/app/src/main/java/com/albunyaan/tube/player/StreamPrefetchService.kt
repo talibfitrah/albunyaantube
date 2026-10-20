@@ -23,16 +23,6 @@ interface StreamPrefetchService {
     fun consumePrefetch(videoId: String): ResolvedStreams?
     fun isPrefetchInFlight(videoId: String): Boolean
     fun cancelPrefetch(videoId: String)
-    /**
-     * Clear prefetch-specific state only (does NOT cancel global resolver jobs).
-     * Safe to call while playback is active.
-     */
-    fun clearPrefetchState()
-    /**
-     * Clear all state AND cancel global resolver jobs.
-     * Only call when playback is stopped to avoid interrupting active resolutions.
-     */
-    fun clearAll()
 }
 
 /**
@@ -354,36 +344,6 @@ class DefaultStreamPrefetchService @Inject constructor(
         prefetchResults.remove(videoId)
         insertionOrder.remove(videoId) // Clean up order tracking
         // Note: We don't cancel via globalResolver as other callers may be waiting
-    }
-
-    /**
-     * Clear prefetch-specific state only.
-     *
-     * Safe to call at any time, including while playback is active. Does NOT cancel
-     * in-flight global resolutions, so player streams continue uninterrupted.
-     */
-    override fun clearPrefetchState() {
-        prefetchingVideoIds.clear()
-        prefetchResults.clear()
-        insertionOrder.clear()
-        Log.d(TAG, "Cleared prefetch state (global resolver jobs not affected)")
-    }
-
-    /**
-     * Clear all prefetches AND cancel global resolver jobs.
-     *
-     * **Important:** This method calls [GlobalStreamResolver.cancelAll] which cancels ALL
-     * in-flight stream resolutions globally, not just those initiated by prefetch.
-     * If the player is actively resolving streams when this is called, playback may be
-     * interrupted. Only call this when the app is truly backgrounded and playback is stopped.
-     *
-     * To clear only prefetch-specific work without affecting player resolutions,
-     * call [clearPrefetchState] instead.
-     */
-    override fun clearAll() {
-        clearPrefetchState()
-        globalResolver.cancelAll()
-        Log.d(TAG, "Cleared all prefetch state and cancelled global resolver jobs")
     }
 
     /**

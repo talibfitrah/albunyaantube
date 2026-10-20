@@ -398,12 +398,6 @@ class DefaultDownloadRepository(
         }
     }
 
-    private suspend fun fetchVideoTitle(videoId: String): String? {
-        // For now, just use the videoId as title
-        // TODO: Fetch actual title from extractor or backend
-        return videoId
-    }
-
     override fun enqueue(request: DownloadRequest) {
         // Save extended metadata (title, thumbnailUrl) before scheduling
         // This ensures the metadata is available for display after app restart
@@ -665,14 +659,6 @@ class DefaultDownloadRepository(
             }
             entries.value = current
         }
-    }
-
-    private operator fun MutableCollection<String>.plusAssign(value: String) {
-        add(value)
-    }
-
-    private operator fun MutableCollection<String>.minusAssign(value: String) {
-        remove(value)
     }
 }
 

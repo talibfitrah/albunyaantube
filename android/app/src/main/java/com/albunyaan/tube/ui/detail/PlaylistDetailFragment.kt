@@ -479,8 +479,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             is PlaylistDetailViewModel.PlaylistUiEvent.NavigateToPlayer -> {
                 navigateToPlayer(startIndex = event.startIndex, shuffled = event.shuffled)
             }
-            is PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet -> {
-                showDownloadQualitySheet(event)
+            PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet -> {
+                showDownloadQualitySheet()
             }
             is PlaylistDetailViewModel.PlaylistUiEvent.StartPlaylistDownload -> {
                 executePlaylistDownload(event)
@@ -688,9 +688,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         alpha = if (enabled) 1f else 0.4f
     }
 
-    private fun showDownloadQualitySheet(
-        @Suppress("UNUSED_PARAMETER") event: PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet
-    ) {
+    private fun showDownloadQualitySheet() {
         // Simple quality selection dialog
         val qualities = PlaylistQualityOption.entries.toTypedArray()
         val qualityNames = qualities.map { it.label }.toTypedArray()

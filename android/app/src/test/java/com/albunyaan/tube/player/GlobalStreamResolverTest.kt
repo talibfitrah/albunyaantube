@@ -46,7 +46,6 @@ class GlobalStreamResolverTest {
     fun tearDown() {
         // Clear the cleanup listener to prevent cross-test leakage
         resolver.setOnJobCleanupListener(null)
-        resolver.cancelAll()
     }
 
     // --- Single-Flight Tests ---
@@ -279,60 +278,6 @@ class GlobalStreamResolverTest {
     // --- State Management Tests ---
 
     @Test
-    fun `cancelResolve removes and cancels job`() = runTest {
-        val gate = CompletableDeferred<Unit>()
-        fakeProvider.setGate("video1", gate)
-        fakeProvider.setResult("video1", createMockStreams("video1"))
-
-        // Start request
-        val job = launch { resolver.resolveStreams("video1") }
-
-        // Wait for extraction to start
-        fakeProvider.waitForExtractionStart("video1")
-        assertTrue("Job should be in-flight", resolver.isResolveInFlight("video1"))
-
-        // Cancel
-        resolver.cancelResolve("video1")
-
-        assertFalse("Job should not be in-flight after cancel", resolver.isResolveInFlight("video1"))
-
-        // Cleanup
-        gate.complete(Unit)
-        job.join()
-    }
-
-    @Test
-    fun `cancelAll cancels all in-flight jobs`() = runTest {
-        val gate1 = CompletableDeferred<Unit>()
-        val gate2 = CompletableDeferred<Unit>()
-        fakeProvider.setGate("video1", gate1)
-        fakeProvider.setResult("video1", createMockStreams("video1"))
-        fakeProvider.setGate("video2", gate2)
-        fakeProvider.setResult("video2", createMockStreams("video2"))
-
-        // Start two requests
-        val job1 = launch { resolver.resolveStreams("video1") }
-        val job2 = launch { resolver.resolveStreams("video2") }
-
-        // Wait for both to start
-        fakeProvider.waitForExtractionStart("video1")
-        fakeProvider.waitForExtractionStart("video2")
-
-        assertEquals("Should have 2 in-flight jobs", 2, resolver.getInFlightCount())
-
-        // Cancel all
-        resolver.cancelAll()
-
-        assertEquals("Should have 0 in-flight jobs after cancelAll", 0, resolver.getInFlightCount())
-
-        // Cleanup
-        gate1.complete(Unit)
-        gate2.complete(Unit)
-        job1.join()
-        job2.join()
-    }
-
-    @Test
     fun `getInFlightCount returns correct count`() = runTest {
         assertEquals("Initially no in-flight jobs", 0, resolver.getInFlightCount())
 
@@ -390,8 +335,8 @@ class GlobalStreamResolverTest {
     }
 
     /**
-     * Verifies that when a shared job is cancelled (e.g., via cancelResolve),
-     * callers waiting on it receive null instead of propagating CancellationException.
+     * Verifies that when a shared job is cancelled (a forced refresh replaces a resolve only
+     * prefetches await), callers waiting on it receive null instead of propagating CancellationException.
      */
     @Test
     fun `shared job cancellation returns null to waiting callers`() = runTest {
@@ -402,21 +347,21 @@ class GlobalStreamResolverTest {
         var firstCallerResult: ResolvedStreams? = createMockStreams("placeholder") // Non-null placeholder
         var secondCallerResult: ResolvedStreams? = createMockStreams("placeholder")
 
-        // Start two callers sharing the same in-flight job
+        // Start two prefetch callers sharing the same in-flight job (neither counts as an awaiter)
         val job1 = launch {
-            firstCallerResult = resolver.resolveStreams("video1", caller = "first")
+            firstCallerResult = resolver.resolveStreams("video1", caller = "first", priority = Priority.BACKGROUND_REFRESH)
         }
         fakeProvider.waitForExtractionStart("video1")
 
         val job2 = launch {
-            secondCallerResult = resolver.resolveStreams("video1", caller = "second")
+            secondCallerResult = resolver.resolveStreams("video1", caller = "second", priority = Priority.BACKGROUND_REFRESH)
         }
 
         // Yield to let second caller join the in-flight job
         kotlinx.coroutines.yield()
 
-        // Cancel the shared job (not the callers)
-        resolver.cancelResolve("video1")
+        // A forced refresh cancels the shared job (not the callers)
+        val refresh = launch { resolver.resolveStreams("video1", forceRefresh = true, caller = "refresh") }
 
         // Both jobs should complete normally (not cancelled)
         job1.join()
@@ -431,6 +376,7 @@ class GlobalStreamResolverTest {
 
         // Cleanup
         gate.complete(Unit)
+        refresh.join()
     }
 
     // --- Priority Propagation Tests (ANDROID-PERSONAL-02 [Bug 1]) ---

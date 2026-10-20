@@ -99,24 +99,6 @@ class ImageLoadingTest {
         assertFalse(ImageLoading.isUrlValid("https://i.ytimg.com/img/no_thumbnail.jpg"))
     }
 
-    @Test
-    fun `shouldApplyCircleCrop returns true for Channel`() {
-        val channel = createChannel("1", "Test Channel")
-        assertTrue(ImageLoading.shouldApplyCircleCrop(channel))
-    }
-
-    @Test
-    fun `shouldApplyCircleCrop returns false for Video`() {
-        val video = createVideo("1", "Test Video")
-        assertFalse(ImageLoading.shouldApplyCircleCrop(video))
-    }
-
-    @Test
-    fun `shouldApplyCircleCrop returns false for Playlist`() {
-        val playlist = createPlaylist("1", "Test Playlist")
-        assertFalse(ImageLoading.shouldApplyCircleCrop(playlist))
-    }
-
     // Test data helpers
     private fun createVideo(id: String, title: String, thumbnailUrl: String? = null) = ContentItem.Video(
         id = id,

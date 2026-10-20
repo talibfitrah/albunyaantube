@@ -199,8 +199,6 @@ internal class FakePrefetchService(private val prefetched: ResolvedStreams? = nu
     override fun consumePrefetch(videoId: String): ResolvedStreams? = null
     override fun isPrefetchInFlight(videoId: String): Boolean = false
     override fun cancelPrefetch(videoId: String) {}
-    override fun clearPrefetchState() {}
-    override fun clearAll() {}
 }
 
 /** Favourites in memory; [toggled] records what each toggle sent. */

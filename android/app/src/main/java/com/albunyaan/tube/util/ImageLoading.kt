@@ -278,12 +278,4 @@ object ImageLoading {
      * Exposed for testing.
      */
     fun isUrlValid(url: String?): Boolean = !url.isNullOrBlank() && !url.contains("/img/no_thumbnail")
-
-    /**
-     * Determine if circle crop transformation should be applied.
-     * Exposed for testing.
-     */
-    fun shouldApplyCircleCrop(item: ContentItem): Boolean {
-        return item is ContentItem.Channel
-    }
 }

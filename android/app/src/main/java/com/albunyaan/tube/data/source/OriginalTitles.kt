@@ -72,7 +72,7 @@ class OriginalTitles @VisibleForTesting internal constructor(
     }
 
     companion object {
-        const val MAX_IDS = 50 // PublicContentController.MAX_TITLE_IDS
+        private const val MAX_IDS = 50 // PublicContentController.MAX_TITLE_IDS
         private const val TIMEOUT_MS = 1_500L // ponytail: 1.5 s cap; raise it if field RTT to the API is higher
         private const val QUIET_MS = 60_000L
         private const val MEMO_SIZE = 2_000

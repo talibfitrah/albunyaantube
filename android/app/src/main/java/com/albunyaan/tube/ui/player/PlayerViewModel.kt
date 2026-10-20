@@ -295,13 +295,6 @@ class PlayerViewModel @Inject constructor(
     // Quality switching debounce: prevents rapid re-prepares when user quickly changes quality
     private var qualitySwitchJob: Job? = null
 
-    private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
-        replay = 0,
-        extraBufferCapacity = 8,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val analyticsEvents: SharedFlow<PlaybackAnalyticsEvent> = _analyticsEvents
-
     /** Expose playback metrics for fragment-level tracking (first frame, rebuffer, 403 errors) */
     val metrics: PlaybackMetricsCollector get() = playbackMetrics
 
@@ -312,7 +305,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     init {
-        hydrateQueue()
         observeDownloads()
         observeFavoriteStatus()
     }
@@ -384,7 +376,6 @@ class PlayerViewModel @Inject constructor(
         val ready = (_state.value.streamState as? StreamState.Ready)
             ?.let { StreamState.Ready(it.streamId, rebuildSelection(it)) }
         updateState { it.copy(audioOnly = audioOnly, streamState = ready ?: it.streamState) }
-        publishAnalytics(PlaybackAnalyticsEvent.AudioOnlyToggled(audioOnly))
     }
 
     /**
@@ -428,8 +419,7 @@ class PlayerViewModel @Inject constructor(
         currentItem = target
         applyQueueState()
         hydrateCurrentItemMetadataIfNeeded(target)
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(target, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(target, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(target)
     }
 
     fun markCurrentComplete(): Boolean {
@@ -437,10 +427,10 @@ class PlayerViewModel @Inject constructor(
             onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
             return false
         }
-        return advanceToNext(PlaybackStartReason.AUTO, markComplete = true)
+        return advanceToNext()
     }
 
-    fun skipToNext(): Boolean = advanceToNext(PlaybackStartReason.USER_SELECTED, markComplete = false)
+    fun skipToNext(): Boolean = advanceToNext()
 
     fun skipToPrevious(): Boolean {
         val current = currentItem ?: return false
@@ -457,8 +447,7 @@ class PlayerViewModel @Inject constructor(
         queue.add(0, current)
         currentItem = previous
         applyQueueState()
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(previous, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(previous, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(previous)
         return true
     }
 
@@ -594,7 +583,6 @@ class PlayerViewModel @Inject constructor(
                 selectionOrigin = QualitySelectionOrigin.MANUAL
             )
             updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-            publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
             return
         }
 
@@ -613,7 +601,6 @@ class PlayerViewModel @Inject constructor(
         )
 
         updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-        publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
     }
 
     /**
@@ -811,11 +798,6 @@ class PlayerViewModel @Inject constructor(
      */
     fun selectSubtitle(track: SubtitleTrack?) {
         updateState { it.copy(selectedSubtitle = track) }
-        track?.let {
-            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged(it.languageName))
-        } ?: run {
-            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged("Off"))
-        }
     }
 
     /**
@@ -898,8 +880,6 @@ class PlayerViewModel @Inject constructor(
         applyQueueState()
         hydrateCurrentItemMetadataIfNeeded(item)
 
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-
         // A1 fix (Stage-3 review): the duplicate availability gate that used to
         // live here is gone. The chokepoint inside [GlobalStreamResolver] runs
         // the HEAD probe once per extraction; if the video is archived a
@@ -911,7 +891,7 @@ class PlayerViewModel @Inject constructor(
         // synchronously before launching its background job, so the UI
         // transitions away from any previous video's Ready / Error state
         // immediately on the main thread.
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(item)
     }
 
     /**
@@ -969,8 +949,7 @@ class PlayerViewModel @Inject constructor(
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
             return
         }
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(item)
     }
 
     /** A completed download of [videoId] whose file is on disk; a video copy before an audio-only one. */
@@ -1271,46 +1250,9 @@ class PlayerViewModel @Inject constructor(
         applyQueueState()
 
         currentItem?.let { item ->
-            publishAnalytics(
-                PlaybackAnalyticsEvent.PlaybackStarted(
-                    item,
-                    PlaybackStartReason.USER_SELECTED
-                )
-            )
-            resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+            resolveStreamFor(item)
         } ?: run {
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-        }
-    }
-
-    private fun hydrateQueue() {
-        val stubItems = stubUpNextItems()
-        val (playable, excluded) = stubItems.partition { !it.isExcluded }
-        queue.clear()
-        previousItems.clear()
-        queue.addAll(playable)
-        currentItem = if (queue.isNotEmpty()) queue.removeAt(0) else null
-        updateState {
-            it.copy(
-                currentItem = currentItem?.gateChannelName(),
-                upNext = queue.map { item -> item.gateChannelName() },
-                excludedItems = excluded,
-                currentDownload = findDownloadFor(currentItem, latestDownloads),
-                hasNext = queue.isNotEmpty(),
-                hasPrevious = previousItems.isNotEmpty()
-            )
-        }
-        publishAnalytics(
-            PlaybackAnalyticsEvent.QueueHydrated(
-                totalItems = stubItems.size,
-                excludedItems = excluded.size,
-                firstItem = currentItem
-            )
-        )
-        currentItem?.let {
-            hydrateCurrentItemMetadataIfNeeded(it)
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(it, PlaybackStartReason.AUTO))
-            resolveStreamFor(it, PlaybackStartReason.AUTO)
         }
     }
 
@@ -1418,7 +1360,7 @@ class PlayerViewModel @Inject constructor(
      */
     fun retryCurrentStream() {
         val item = currentItem ?: return
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = false)
+        resolveStreamFor(item, forceRefresh = false)
     }
 
     /**
@@ -1521,12 +1463,11 @@ class PlayerViewModel @Inject constructor(
         mpdRegistry.unregister(item.streamId)
         // Invalidate the prefetch cache as well since URLs are likely stale
         synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
+        resolveStreamFor(item, forceRefresh = true)
     }
 
     private fun resolveStreamFor(
         item: UpNextItem,
-        @Suppress("UNUSED_PARAMETER") reason: PlaybackStartReason,
         forceRefresh: Boolean = false
     ) {
         resolveJob?.cancel()
@@ -1559,11 +1500,8 @@ class PlayerViewModel @Inject constructor(
 
         android.util.Log.d("PlayerViewModel", "Auto-skipping unplayable video ${item.streamId} ($consecutiveSkips/$MAX_CONSECUTIVE_SKIPS)")
 
-        // Emit UI event for toast
-        _analyticsEvents.tryEmit(PlaybackAnalyticsEvent.VideoSkipped(item, consecutiveSkips))
-
         // Advance to next item
-        return advanceToNext(PlaybackStartReason.AUTO, markComplete = false)
+        return advanceToNext()
     }
 
     /**
@@ -1627,7 +1565,6 @@ class PlayerViewModel @Inject constructor(
                     "Content unavailable for ${item.streamId} via prefetch await; halting retries",
                 )
                 playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 if (handleStreamResolutionFailure(item)) {
                     return  // Auto-skipped to next item in playlist
                 }
@@ -1638,7 +1575,6 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
                 val selection = tapPrefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     adoptOriginalTitle(tapPrefetched)
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
@@ -1655,7 +1591,6 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
                 val selection = prefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
                     adoptOriginalTitle(prefetched)
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
@@ -1693,7 +1628,6 @@ class PlayerViewModel @Inject constructor(
                     "Content unavailable for ${item.streamId} per backend gate; halting retries",
                 )
                 playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 if (handleStreamResolutionFailure(item)) {
                     return  // Auto-skipped to next item in playlist
                 }
@@ -1720,7 +1654,6 @@ class PlayerViewModel @Inject constructor(
                 } else {
                     // All retries exhausted - try auto-skip in playlist mode
                     playbackMetrics.onPlaybackFailed(item.streamId, "extraction_timeout")
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                     // §9.1: a spent budget is step 4 (ENDED: a same-id retry here has no budget and would loop).
                     if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED); return }
                     if (handleStreamResolutionFailure(item)) {
@@ -1740,7 +1673,6 @@ class PlayerViewModel @Inject constructor(
                 } else {
                     // All retries exhausted - try auto-skip in playlist mode
                     playbackMetrics.onPlaybackFailed(item.streamId, "stream_null")
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                     // §9.1: a spent budget is step 4 (F3: an ended 24/7 id fails to resolve rather than turning into a recording).
                     if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED); return }
                     if (handleStreamResolutionFailure(item)) {
@@ -1763,7 +1695,6 @@ class PlayerViewModel @Inject constructor(
             if (selection == null) {
                 playbackMetrics.onPlaybackFailed(item.streamId, "no_selection")
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 return
             }
 
@@ -1771,7 +1702,6 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "Stream resolved successfully on attempt $attempt")
             // PR5: Signal success to reset backoff state (attempt was already recorded in acquire())
             rateLimiter.onExtractionSuccess(item.streamId)
-            publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
             adoptOriginalTitle(resolved)
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
             maybeEnumerateDubs(selection)
@@ -1964,7 +1894,7 @@ class PlayerViewModel @Inject constructor(
             thumbnailUrl = "https://i.ytimg.com/vi/$newId/hqdefault_live.jpg")
         currentItem = next
         applyQueueState()
-        resolveStreamFor(next, PlaybackStartReason.AUTO)
+        resolveStreamFor(next)
     }
 
     /**
@@ -2189,16 +2119,11 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun publishAnalytics(event: PlaybackAnalyticsEvent) {
-        _analyticsEvents.tryEmit(event)
-        updateState { it.copy(lastAnalyticsEvent = event) }
-    }
-
     private fun updateState(transform: (PlayerState) -> PlayerState) {
         _state.update { transform(it) }   // atomic: the live refresh writes from the IO thread while Main writes too
     }
 
-    private fun advanceToNext(reason: PlaybackStartReason, markComplete: Boolean): Boolean {
+    private fun advanceToNext(): Boolean {
         val finished = currentItem ?: return false
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
@@ -2206,9 +2131,6 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        if (markComplete) {
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
-        }
 
         // PR6.6: If queue is empty but more pages exist, fetch asynchronously (no runBlocking)
         if (queue.isEmpty() && playlistPagingState?.hasMore == true && !playlistPagingState!!.pagingFailed) {
@@ -2225,8 +2147,7 @@ class PlayerViewModel @Inject constructor(
                     currentItem = next
                     consecutiveSkips = 0
                     applyQueueState()
-                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
-                    resolveStreamFor(next, reason)
+                    resolveStreamFor(next)
                 } else {
                     // Failed to load more or still empty - end of playlist
                     android.util.Log.w("PlayerViewModel", "advanceToNext: async fetch failed or empty")
@@ -2249,8 +2170,7 @@ class PlayerViewModel @Inject constructor(
 
         return if (next != null) {
             consecutiveSkips = 0  // Reset on successful advance
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
-            resolveStreamFor(next, reason)
+            resolveStreamFor(next)
             true
         } else {
             updateState { state -> state.copy(streamState = StreamState.Idle) }
@@ -2399,11 +2319,9 @@ data class PlayerState(
     val hasVideoTrack: Boolean = true,
     val currentItem: UpNextItem? = null,
     val upNext: List<UpNextItem> = emptyList(),
-    val excludedItems: List<UpNextItem> = emptyList(),
     val currentDownload: DownloadEntry? = null,
     val streamState: StreamState = StreamState.Idle,
     val selectedSubtitle: SubtitleTrack? = null,
-    val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
     /** Current retry attempt (0 = first attempt, 1 = first retry, etc.) */
@@ -2421,8 +2339,6 @@ data class UpNextItem(
     val title: String,
     val channelName: String,
     val durationSeconds: Int,
-    val isExcluded: Boolean = false,
-    val exclusionReason: String? = null,
     val streamId: String,
     val thumbnailUrl: String? = null,
     val description: String? = null,
@@ -2468,39 +2384,6 @@ data class PlaylistPagingState(
     val pagingFailed: Boolean,
     val lastPageFetchMs: Long
 )
-
-sealed class PlaybackAnalyticsEvent {
-    data class QueueHydrated(
-        val totalItems: Int,
-        val excludedItems: Int,
-        val firstItem: UpNextItem?
-    ) : PlaybackAnalyticsEvent()
-
-    data class PlaybackStarted(
-        val item: UpNextItem,
-        val reason: PlaybackStartReason
-    ) : PlaybackAnalyticsEvent()
-
-    data class PlaybackCompleted(val item: UpNextItem) : PlaybackAnalyticsEvent()
-
-    data class AudioOnlyToggled(val enabled: Boolean) : PlaybackAnalyticsEvent()
-
-    data class StreamResolved(val streamId: String, val qualityLabel: String?) : PlaybackAnalyticsEvent()
-
-    data class StreamFailed(val streamId: String) : PlaybackAnalyticsEvent()
-
-    data class QualityChanged(val qualityLabel: String) : PlaybackAnalyticsEvent()
-
-    data class SubtitleChanged(val languageName: String) : PlaybackAnalyticsEvent()
-
-    /** PR6.6: Emitted when an unplayable video is auto-skipped in playlist mode */
-    data class VideoSkipped(val item: UpNextItem, val consecutiveSkipCount: Int) : PlaybackAnalyticsEvent()
-}
-
-enum class PlaybackStartReason(@StringRes val labelRes: Int) {
-    AUTO(R.string.player_start_reason_auto),
-    USER_SELECTED(R.string.player_start_reason_user_selected)
-}
 
 /**
  * Smart quality selection based on available tracks.
@@ -2558,8 +2441,6 @@ private fun ResolvedStreams.toSelectionWithPreferredAudio(preferredLanguage: Str
         ?: return base
     return base.copy(audio = matchingAudio)
 }
-
-private fun stubUpNextItems(): List<UpNextItem> = emptyList()
 
 /**
  * UI events emitted by PlayerViewModel for user feedback.

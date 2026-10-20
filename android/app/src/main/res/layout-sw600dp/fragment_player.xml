@@ -621,63 +621,9 @@
                     android:nestedScrollingEnabled="false"
                     android:paddingBottom="@dimen/spacing_md" />
 
-                <!-- Hidden Views for Compatibility -->
-                <TextView
-                    android:id="@+id/playerStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/currentlyPlaying"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/audioOnlyLabel"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
+                <!-- Hidden: audioButton relays through this Switch (PlayerFragment) -->
                 <Switch
                     android:id="@+id/audioOnlyToggle"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <Button
-                    android:id="@+id/completeButton"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/downloadStatus"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/excludedMessage"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/upNextEmpty"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/analyticsHeader"
-                    android:layout_width="0dp"
-                    android:layout_height="0dp"
-                    android:visibility="gone" />
-
-                <TextView
-                    android:id="@+id/analyticsStatus"
                     android:layout_width="0dp"
                     android:layout_height="0dp"
                     android:visibility="gone" />

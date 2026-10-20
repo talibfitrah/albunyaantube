@@ -46,8 +46,8 @@ class LivePlaylistRedirector internal constructor(
     private val maps = ConcurrentHashMap<String, Map<Int, String>>()
     /** The itags the player has asked for since the source was built: a fresh master must cover all of them. */
     private val requested = ConcurrentHashMap<String, MutableSet<Int>>()
-    /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it. */
-    private val generations = ConcurrentHashMap<String, Long>()
+    /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it; guarded by `this`. */
+    private val generations = HashMap<String, Long>()
     /** The client whose URLs (and so UA) each stream's current source was built from; guarded by `this`. */
     private val clients = HashMap<String, ExtractionClient>()
 
@@ -61,8 +61,8 @@ class LivePlaylistRedirector internal constructor(
         val itag = itag(url) ?: return null
         requested.getOrPut(streamId) { ConcurrentHashMap.newKeySet() }.add(itag)
         val mapped = maps[streamId]?.get(itag) ?: return null
-        val have = expire(url) ?: return null
-        val fresh = expire(mapped) ?: return null
+        val have = ResolvedStreams.expireSeconds(url) ?: return null
+        val fresh = ResolvedStreams.expireSeconds(mapped) ?: return null
         if (fresh <= have || ip(mapped) != ip(url)) return null
         return mapped
     }
@@ -96,7 +96,7 @@ class LivePlaylistRedirector internal constructor(
             if (map.isEmpty() || !map.keys.containsAll(requested[id].orEmpty())) return false
             maps[id] = map
         }
-        if (BuildConfig.DEBUG) Log.d(TAG, "swap $id: ${map.size} renditions -> expire ${expire(master)}")
+        if (BuildConfig.DEBUG) Log.d(TAG, "swap $id: ${map.size} renditions -> expire ${ResolvedStreams.expireSeconds(master)}")
         return true
     }
 
@@ -104,13 +104,11 @@ class LivePlaylistRedirector internal constructor(
         private const val TAG = "LiveSwap"
         private const val PLAYLIST_PATH = "/api/manifest/hls_playlist/"
         private val ITAG = Regex("/itag/(\\d+)/")
-        private val EXPIRE = Regex("/expire/(\\d+)/")
         private val IP = Regex("/ip/([^/]+)/")
         private val URL = Regex("https://[^\\s\"]+")
 
-        fun itag(url: String): Int? = ITAG.find(url)?.groupValues?.get(1)?.toIntOrNull()
-        fun expire(url: String): Long? = EXPIRE.find(url)?.groupValues?.get(1)?.toLongOrNull()
-        fun ip(url: String): String? = IP.find(url)?.groupValues?.get(1)
+        private fun itag(url: String): Int? = ITAG.find(url)?.groupValues?.get(1)?.toIntOrNull()
+        private fun ip(url: String): String? = IP.find(url)?.groupValues?.get(1)
 
         /**
          * itag → media-playlist URL from a master's variant lines and `EXT-X-MEDIA URI="…"` attributes.

@@ -132,11 +132,14 @@ data class ResolvedStreams(
 
         /** Spec §9.2(a): refresh 10 min before the live URLs expire (~6 h after extraction, F11). */
         const val LIVE_REFRESH_LEAD_MS = 10 * 60 * 1000L
-        const val LIVE_LIFETIME_MIN_MS = 30 * 60 * 1000L
-        const val LIVE_LIFETIME_MAX_MS = 6 * 60 * 60 * 1000L
+        private const val LIVE_LIFETIME_MIN_MS = 30 * 60 * 1000L
+        private const val LIVE_LIFETIME_MAX_MS = 6 * 60 * 60 * 1000L
         /** No `/expire/` in the URL: resolvedAt + 5 h 50 m. */
-        const val LIVE_REFRESH_FALLBACK_MS = (5 * 60 + 50) * 60 * 1000L
+        private const val LIVE_REFRESH_FALLBACK_MS = (5 * 60 + 50) * 60 * 1000L
         private val EXPIRE = Regex("/expire/(\\d+)/")
+
+        /** A googlevideo URL's `/expire/<epoch seconds>/`; null when it has none. */
+        fun expireSeconds(url: String): Long? = EXPIRE.find(url)?.groupValues?.get(1)?.toLongOrNull()
 
         /**
          * DEBUG `fitrah_live_refresh_ms`, floored at 30 s: 0, a negative or a seconds typo (`120`) would
@@ -165,9 +168,9 @@ data class ResolvedStreams(
     /** Spec §9.2(a): when to refresh this live stream, on the monotonic clock; null when it is not live. */
     fun liveRefreshAtElapsedMs(): Long? {
         if (!isLive) return null
-        val expireSeconds = hlsUrl?.let { EXPIRE.find(it)?.groupValues?.get(1)?.toLongOrNull() }
+        val expireAt = hlsUrl?.let { expireSeconds(it) }
             ?: return urlGeneratedAt + LIVE_REFRESH_FALLBACK_MS
-        val lifetime = (expireSeconds * 1000 - urlGeneratedAtWallMs).coerceIn(LIVE_LIFETIME_MIN_MS, LIVE_LIFETIME_MAX_MS)
+        val lifetime = (expireAt * 1000 - urlGeneratedAtWallMs).coerceIn(LIVE_LIFETIME_MIN_MS, LIVE_LIFETIME_MAX_MS)
         return urlGeneratedAt + lifetime - LIVE_REFRESH_LEAD_MS
     }
 

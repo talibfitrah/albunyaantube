@@ -1,7 +1,6 @@
 package com.albunyaan.tube.util
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -34,53 +33,6 @@ class ThumbnailUrlHelperTest {
     fun `extractVideoId extracts ID from maxresdefault URL`() {
         val url = "https://i.ytimg.com/vi/ABC123def45/maxresdefault.jpg"
         assertEquals("ABC123def45", ThumbnailUrlHelper.extractVideoId(url))
-    }
-
-    @Test
-    fun `normalizeVideoId returns valid 11-char ID as-is`() {
-        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.normalizeVideoId("sCQwxFEMlZ4"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from watch URL`() {
-        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/watch?v=sCQwxFEMlZ4"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from short URL`() {
-        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.normalizeVideoId("https://youtu.be/sCQwxFEMlZ4"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from shorts URL`() {
-        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/shorts/sCQwxFEMlZ4"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from embed URL`() {
-        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/embed/sCQwxFEMlZ4"))
-    }
-
-    @Test
-    fun `normalizeVideoId returns null for invalid input`() {
-        assertNull(ThumbnailUrlHelper.normalizeVideoId(null))
-        assertNull(ThumbnailUrlHelper.normalizeVideoId(""))
-        assertNull(ThumbnailUrlHelper.normalizeVideoId("   "))
-    }
-
-    @Test
-    fun `isShortsThumbnail detects shorts patterns`() {
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/oar2.jpg"))
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/frame0.jpg"))
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://youtube.com/shorts/abc123"))
-    }
-
-    @Test
-    fun `isShortsThumbnail returns false for regular thumbnails`() {
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/hqdefault.jpg"))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/maxresdefault.jpg"))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail(null))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail(""))
     }
 
     @Test

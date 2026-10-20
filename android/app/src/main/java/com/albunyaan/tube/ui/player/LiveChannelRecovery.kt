@@ -40,7 +40,7 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
     }
 
     companion object {
-        val BACKOFF_S = listOf(15, 30, 60, 120)
+        private val BACKOFF_S = listOf(15, 30, 60, 120)
         /** D12: a multi-live channel gets up to 2 min for the ended show to restart under its title. */
         const val TITLE_WAIT_MS = 2 * 60_000L
         const val GIVE_UP_MS = 10 * 60_000L

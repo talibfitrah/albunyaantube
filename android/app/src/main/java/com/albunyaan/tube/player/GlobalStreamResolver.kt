@@ -442,8 +442,8 @@ class GlobalStreamResolver private constructor(
             // Distinguish between caller cancellation vs shared job cancellation:
             // - If the caller's coroutine is no longer active, rethrow to propagate cancellation
             //   (e.g., fragment destroyed mid-resolve → structured concurrency demands propagation)
-            // - If the caller is still active but the shared job was cancelled (e.g., cancelResolve
-            //   or forceRefresh), return null so the caller can handle gracefully
+            // - If the caller is still active but the shared job was cancelled (a forceRefresh or
+            //   escalation replaced it), return null so the caller can handle gracefully
             if (!currentCoroutineContext().isActive) {
                 Log.d(TAG, "[$caller] caller cancelled while awaiting new job for $videoId")
                 throw e
@@ -481,34 +481,6 @@ class GlobalStreamResolver private constructor(
     fun isResolveInFlight(videoId: String): Boolean {
         val inFlight = inFlightJobs[videoId]
         return inFlight != null && inFlight.deferred.isActive
-    }
-
-    /**
-     * Cancel an in-flight resolve for a videoId.
-     * Use sparingly - other callers waiting on this job will get null.
-     */
-    fun cancelResolve(videoId: String) {
-        val cancelled = inFlightJobs.remove(videoId)?.also { it.deferred.cancel() }
-        if (cancelled != null) {
-            Log.d(TAG, "Cancelled resolve for $videoId")
-        } else {
-            Log.d(TAG, "No in-flight resolve to cancel for $videoId")
-        }
-    }
-
-    /**
-     * Cancel all in-flight resolves.
-     * Call on app background or memory pressure.
-     *
-     * Note: Uses synchronized to ensure atomic cancel+clear operation.
-     */
-    fun cancelAll() {
-        synchronized(lock) {
-            val count = inFlightJobs.size
-            inFlightJobs.forEach { (_, inFlight) -> inFlight.deferred.cancel() }
-            inFlightJobs.clear()
-            Log.d(TAG, "Cancelled all resolves ($count jobs)")
-        }
     }
 
     /**

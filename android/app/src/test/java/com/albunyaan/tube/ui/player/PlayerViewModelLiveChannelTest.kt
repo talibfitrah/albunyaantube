@@ -100,7 +100,7 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `an end never advances the queue and asks the backend`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
 
@@ -117,7 +117,7 @@ class PlayerViewModelLiveChannelTest {
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
             repository.resolvedStreams = streams("newSunnah01", isLive = true)
 
             vm.markCurrentComplete()
@@ -210,12 +210,12 @@ class PlayerViewModelLiveChannelTest {
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+            content.channelLives[channel] = ChannelLives(emptyList())
 
             assertTrue(vm.forceRefreshForAutoRecovery())
             runCurrent()
             assertEquals(1, repository.resolveCallCount)                          // nothing listed: wait
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
 
             advanceClocks(15_000)
 
@@ -246,14 +246,14 @@ class PlayerViewModelLiveChannelTest {
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
 
             vm.forceRefreshForAutoRecovery()
             runCurrent()
             assertEquals(2, repository.resolveCallCount)
             assertEquals("Rs7St51oDDc", (vm.state.value.streamState as StreamState.Ready).streamId)
 
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
             repository.resolvedStreams = streams("newSunnah01", isLive = true)
             vm.forceRefreshForAutoRecovery()
             runCurrent()
@@ -265,7 +265,7 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `a refused same-id refresh goes to the step 4 retries`() = runTest(dispatcher) {
         val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
 
@@ -289,7 +289,7 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `an exhausted recovery goes to the step 4 retries`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
 
@@ -310,7 +310,7 @@ class PlayerViewModelLiveChannelTest {
         val content = FakeContentService()
         val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
         vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
 
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(4_000); runCurrent()
@@ -326,7 +326,7 @@ class PlayerViewModelLiveChannelTest {
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+            content.channelLives[channel] = ChannelLives(emptyList())
             vm.markCurrentComplete()
             runCurrent()
             assertEquals(StreamState.Loading, vm.state.value.streamState)
@@ -346,7 +346,7 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `the debug force-end follows the item`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
             vm.debugLiveForceEndMs = 60_000
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(30_000); runCurrent()
@@ -369,7 +369,7 @@ class PlayerViewModelLiveChannelTest {
             assertTrue(vm.state.value.streamState is StreamState.Ready)
             assertFalse(vm.liveReconnecting())
 
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", emptyList())
+            content.channelLives[channel] = ChannelLives(emptyList())
             vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
             assertEquals(StreamState.Loading, vm.state.value.streamState)            // the first load: as it was
             assertFalse(vm.liveReconnecting())
@@ -404,7 +404,7 @@ class PlayerViewModelLiveChannelTest {
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
-            content.channelLives[channel] = ChannelLives(channel, "LIVE", listOf(LiveItem("newSunnah01", "Sunnah")))
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
             repository.resolvedStreams = streams("newSunnah01", isLive = true)
             repository.resolveDelayMs = 5_000                                        // hold the switch's resolve
 

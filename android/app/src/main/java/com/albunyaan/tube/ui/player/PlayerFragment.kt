@@ -453,7 +453,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     liveChannelId = liveChannelId,
                 )
             }
-            // If no arguments, ViewModel will use default stub queue (for testing)
         }
 
         // Workaround for Media3 PlayerControlView RecyclerView crash:
@@ -477,9 +476,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         binding.audioOnlyToggle.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setAudioOnly(isChecked)
-        }
-        binding.completeButton.setOnClickListener {
-            viewModel.markCurrentComplete()
         }
 
         // Setup description dropdown
@@ -1543,10 +1539,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     if (state.isFavorite) R.string.player_action_favorited else R.string.player_action_favorite
                 )
 
-            binding.currentlyPlaying.text = currentItem?.let {
-                getString(R.string.player_current_item, it.title)
-            } ?: getString(R.string.player_no_current_item)
-            binding.completeButton.isEnabled = state.streamState is StreamState.Ready
             updateDownloadControls(binding, state)
             // Show audio-language button only when the current video exposes
             // multiple language tracks (NewPipe-surfaced dub locales). For
@@ -1573,20 +1565,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
-            binding.upNextEmpty.isVisible = state.upNext.isEmpty()
-                // Update ExoPlayer prev/next buttons based on playlist position
-                // Always keep buttons visible but visually indicate disabled state
-                updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
-            binding.excludedMessage.isVisible = state.excludedItems.isNotEmpty()
-            if (state.excludedItems.isNotEmpty()) {
-                binding.excludedMessage.text = getString(
-                    R.string.player_excluded_message,
-                    state.excludedItems.size
-                    )
-                }
-                binding.analyticsStatus.text = renderAnalytics(state.lastAnalyticsEvent)
-                maybePrepareStream(state)
-                // Future: apply real track selection when backend streams available.
+            // Update ExoPlayer prev/next buttons based on playlist position
+            // Always keep buttons visible but visually indicate disabled state
+            updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
+            maybePrepareStream(state)
             }
         }
     }
@@ -2055,39 +2037,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private fun renderAnalytics(event: PlaybackAnalyticsEvent?): String {
-        return when (event) {
-            is PlaybackAnalyticsEvent.QueueHydrated -> getString(
-                R.string.player_event_queue_hydrated,
-                event.totalItems,
-                event.excludedItems
-            )
-            is PlaybackAnalyticsEvent.PlaybackStarted -> getString(
-                R.string.player_event_play_started,
-                event.item.title,
-                getString(event.reason.labelRes)
-            )
-            is PlaybackAnalyticsEvent.PlaybackCompleted -> getString(
-                R.string.player_event_play_completed,
-                event.item.title
-            )
-            is PlaybackAnalyticsEvent.AudioOnlyToggled -> if (event.enabled) {
-                getString(R.string.player_event_audio_only_on)
-            } else {
-                getString(R.string.player_event_audio_only_off)
-            }
-            null -> getString(R.string.player_analytics_none)
-            is PlaybackAnalyticsEvent.StreamResolved -> getString(
-                R.string.player_event_stream_resolved,
-                event.qualityLabel ?: getString(R.string.player_event_stream_resolved_unknown)
-            )
-            is PlaybackAnalyticsEvent.StreamFailed -> getString(R.string.player_event_stream_failed)
-            is PlaybackAnalyticsEvent.QualityChanged -> "Quality changed to ${event.qualityLabel}"
-            is PlaybackAnalyticsEvent.SubtitleChanged -> "Subtitles: ${event.languageName}"
-            is PlaybackAnalyticsEvent.VideoSkipped -> "Skipped unavailable video (${event.consecutiveSkipCount}/3)"
-        }
-    }
-
     private fun updatePlayerStatus(binding: FragmentPlayerBinding, state: PlayerState) {
         // §9.1 step 4: a live channel's reconnect (up to ~12 min over an ended or stopped player, where ExoPlayer shows
         // no spinner) shows the recovery overlay as laid out: spinner, "Resolving stream…", no Retry. A first load keeps
@@ -2098,12 +2047,10 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         )
         when (val streamState = state.streamState) {
             StreamState.Idle -> {
-                binding.playerStatus.text = getString(R.string.player_status_initializing)
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             StreamState.Loading -> {
-                binding.playerStatus.text = getString(R.string.player_status_resolving)
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.isVisible = reconnecting
                 if (reconnecting) {
@@ -2113,7 +2060,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 }
             }
             is StreamState.Error -> {
-                binding.playerStatus.text = getString(streamState.messageRes)
                 // Show error overlay with retry options; ensure buttons are visible
                 // (they may have been hidden by a prior ContentUnavailable state)
                 binding.playerErrorOverlay.visibility = View.VISIBLE
@@ -2133,13 +2079,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRetryButton.visibility = View.GONE
                 binding.playerRefreshStreamButton.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.content_unavailable_title)
             }
             is StreamState.Ready -> {
-                binding.playerStatus.text = when {
-                    state.audioOnly -> getString(R.string.player_status_audio_only)
-                    else -> getString(R.string.player_status_video_playing)
-                }
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
@@ -2151,7 +2092,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // A local file has nothing to re-resolve: Retry would only hide this overlay.
                 binding.playerRecoveryRetryButton.isVisible = !state.playingDownload
                 binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.player_recovery_exhausted)
             }
         }
     }

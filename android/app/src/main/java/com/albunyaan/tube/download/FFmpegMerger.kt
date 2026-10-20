@@ -142,19 +142,6 @@ class FFmpegMerger @Inject constructor() {
         }
     }
 
-    /**
-     * Check if FFmpeg-kit is available and functional.
-     */
-    fun isAvailable(): Boolean {
-        return try {
-            val session = FFmpegKit.execute("-version")
-            ReturnCode.isSuccess(session.returnCode)
-        } catch (e: Exception) {
-            Log.e(TAG, "FFmpeg-kit not available", e)
-            false
-        }
-    }
-
     companion object {
         private const val TAG = "FFmpegMerger"
     }

@@ -72,7 +72,7 @@ data class CursorPage(
 )
 
 @JsonClass(generateAdapter = true)
-data class ChannelLives(val channelId: String, val status: String, val lives: List<LiveItem>)
+data class ChannelLives(val lives: List<LiveItem>)
 
 @JsonClass(generateAdapter = true)
 data class LiveItem(val id: String, val title: String)
