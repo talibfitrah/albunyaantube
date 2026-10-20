@@ -3,6 +3,7 @@ package com.albunyaan.tube.util;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.service.ChannelOrchestrator;
@@ -17,8 +18,11 @@ import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 
+import java.time.Clock;
+import java.util.ArrayList;
 import java.util.List;
 import java.util.Optional;
+import java.util.concurrent.atomic.AtomicLong;
 
 import static org.junit.jupiter.api.Assertions.*;
 import static org.mockito.ArgumentMatchers.any;
@@ -45,6 +49,7 @@ class ThumbnailRepairMigrationTest {
     private PlaylistRepository playlistRepository;
     private ChannelOrchestrator orchestrator;
     private YouTubeOEmbedClient oEmbedClient;
+    private final AtomicLong nowMillis = new AtomicLong();
     private ThumbnailRepairMigration migration;
 
     @BeforeEach
@@ -72,8 +77,11 @@ class ThumbnailRepairMigrationTest {
         when(lockRef.update(anyString(), any(), any(), any()))
                 .thenReturn(ApiFutures.immediateFuture(mock(WriteResult.class)));
 
+        Clock clock = mock(Clock.class);
+        when(clock.millis()).thenAnswer(i -> nowMillis.get());
+
         migration = new ThumbnailRepairMigration(
-                firestore, channelRepository, playlistRepository, orchestrator, oEmbedClient, timeouts);
+                firestore, channelRepository, playlistRepository, orchestrator, oEmbedClient, timeouts, clock);
     }
 
     @Test
@@ -130,6 +138,87 @@ class ThumbnailRepairMigrationTest {
         verify(playlistRepository).updateThumbnailUrl("pl-broken", "https://i.ytimg.com/vi/sQMC7fkjmOA/hqdefault.jpg");
         verify(oEmbedClient, never()).playlistThumbnailUrl(GOOD_PL_ID);
         verify(playlistRepository, never()).updateThumbnailUrl(eq("pl-good"), anyString());
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_healsPlcViaOEmbed_noNewPipe() throws Exception {
+        Playlist broken = playlist("pl-broken", BROKEN_PL_ID,
+                "https://i.ytimg.com/pl_c/" + BROKEN_PL_ID + "/studio_square_thumbnail.jpg?sqp=CI7erNYG");
+        Playlist healthy = playlist("pl-good", GOOD_PL_ID, "https://i.ytimg.com/vi/ABCDEFGHIJK/hqdefault.jpg");
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(broken, healthy));
+        when(oEmbedClient.playlistThumbnailUrl(BROKEN_PL_ID))
+                .thenReturn(Optional.of("https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg"));
+
+        assertEquals(1, migration.repairBrokenPlaylistThumbnails());
+
+        verify(playlistRepository).updateThumbnailUrl("pl-broken", "https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg");
+        verify(playlistRepository, never()).updateThumbnailUrl(eq("pl-good"), anyString());
+        verify(oEmbedClient, never()).playlistThumbnailUrl(GOOD_PL_ID);
+        // No NewPipe, no channel pass: the circuit breaker can never block this heal.
+        verifyNoInteractions(orchestrator, channelRepository);
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_oEmbedEmpty_leavesRowAndReturnsZero() throws Exception {
+        Playlist broken = playlist("pl-broken", BROKEN_PL_ID,
+                "https://i.ytimg.com/pl_c/" + BROKEN_PL_ID + "/studio_square_thumbnail.jpg?sqp=CI7erNYG");
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(broken));
+        // setUp stubs oEmbed to Optional.empty() for every id.
+
+        assertEquals(0, migration.repairBrokenPlaylistThumbnails());
+
+        verify(oEmbedClient).playlistThumbnailUrl(BROKEN_PL_ID);
+        verify(playlistRepository, never()).updateThumbnailUrl(anyString(), anyString());
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_capsAt50RowsPerCall() throws Exception {
+        List<Playlist> broken = new ArrayList<>();
+        for (int i = 0; i < 51; i++) {
+            broken.add(playlist("pl-" + i, "PLbudget" + i, "https://i.ytimg.com/pl_c/PLbudget" + i + "/studio_square_thumbnail.jpg"));
+        }
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(broken);
+        when(oEmbedClient.playlistThumbnailUrl(anyString()))
+                .thenReturn(Optional.of("https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg"));
+
+        assertEquals(50, migration.repairBrokenPlaylistThumbnails());
+
+        verify(oEmbedClient, times(50)).playlistThumbnailUrl(anyString());
+        verify(oEmbedClient, never()).playlistThumbnailUrl("PLbudget50");
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_stopsAt90sDeadline_checkedBetweenRows() throws Exception {
+        Playlist first = playlist("pl-1", BROKEN_PL_ID, "https://i.ytimg.com/pl_c/" + BROKEN_PL_ID + "/x.jpg");
+        Playlist second = playlist("pl-2", "PLyztaY9hicvenbGRI0C9nM96ukQj16CoP",
+                "https://i.ytimg.com/pl_c/PLyztaY9hicvenbGRI0C9nM96ukQj16CoP/x.jpg");
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(first, second));
+        // The first oEmbed call is slow enough to spend the whole 90 s budget.
+        when(oEmbedClient.playlistThumbnailUrl(BROKEN_PL_ID)).thenAnswer(i -> {
+            nowMillis.addAndGet(90_000);
+            return Optional.of("https://i.ytimg.com/vi/DW-00ckCAPI/hqdefault.jpg");
+        });
+
+        assertEquals(1, migration.repairBrokenPlaylistThumbnails());
+
+        verify(oEmbedClient, never()).playlistThumbnailUrl("PLyztaY9hicvenbGRI0C9nM96ukQj16CoP");
+        verify(playlistRepository, never()).updateThumbnailUrl(eq("pl-2"), anyString());
+    }
+
+    @Test
+    void repairBrokenPlaylistThumbnails_skipsArchivedUnavailableAndEmptyRows() throws Exception {
+        String plc = "https://i.ytimg.com/pl_c/PLx/studio_square_thumbnail.jpg";
+        Playlist archived = playlist("pl-a", "PLarchived", plc);
+        archived.setValidationStatus(ValidationStatus.ARCHIVED);
+        Playlist unavailable = playlist("pl-u", "PLunavailable", plc);
+        unavailable.setValidationStatus(ValidationStatus.UNAVAILABLE);
+        Playlist empty = playlist("pl-e", "PLempty", plc);
+        empty.setItemCount(0);
+        when(playlistRepository.findAllByOrderByItemCountDesc()).thenReturn(List.of(archived, unavailable, empty));
+
+        assertEquals(0, migration.repairBrokenPlaylistThumbnails());
+
+        verify(oEmbedClient, never()).playlistThumbnailUrl(anyString());
     }
 
     @Test

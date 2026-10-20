@@ -6,8 +6,12 @@ import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
+import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.boot.context.event.ApplicationReadyEvent;
+import org.springframework.context.event.EventListener;
+import org.springframework.scheduling.annotation.Async;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -56,11 +60,15 @@ public class PlaylistValidationScheduler {
     /** Default lock TTL in seconds if config is not available. Matches video. */
     private static final int DEFAULT_LOCK_TTL_SECONDS = 7200; // 2 hours
 
+    /** Lock TTL for a heal-only pass: its 90 s deadline + one 8 s oEmbed call + Firestore, with margin. */
+    private static final int HEAL_LOCK_TTL_SECONDS = 300;
+
     private final ContentValidationService contentValidationService;
     private final PublicContentCacheService publicContentCacheService;
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
     private final SystemSettingsRepository systemSettingsRepository;
+    private final ThumbnailRepairMigration thumbnailRepair;
 
     private final String instanceId;
     private final ScheduledExecutorService heartbeatExecutor;
@@ -70,12 +78,14 @@ public class PlaylistValidationScheduler {
             PublicContentCacheService publicContentCacheService,
             ValidationProperties validationProperties,
             YouTubeCircuitBreaker circuitBreaker,
-            SystemSettingsRepository systemSettingsRepository) {
+            SystemSettingsRepository systemSettingsRepository,
+            ThumbnailRepairMigration thumbnailRepair) {
         this.contentValidationService = contentValidationService;
         this.publicContentCacheService = publicContentCacheService;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
+        this.thumbnailRepair = thumbnailRepair;
         this.instanceId = generateInstanceId();
         this.heartbeatExecutor = Executors.newSingleThreadScheduledExecutor(r -> {
             Thread t = new Thread(r, "playlist-lock-heartbeat");
@@ -179,6 +189,9 @@ public class PlaylistValidationScheduler {
                     status.getRemainingCooldownMs() / 60000,
                     status.getLastErrorType(),
                     status.getLastErrorMessage());
+            // The heal uses no NewPipe, so it never waits on the breaker. A closed-breaker run
+            // heals inside validatePlaylists instead.
+            healUnderLock(trigger, instanceId + "-heal");
             return;
         }
 
@@ -225,6 +238,57 @@ public class PlaylistValidationScheduler {
         } finally {
             stopLockHeartbeat(heartbeat);
             systemSettingsRepository.releaseLock(LOCK_KEY, instanceId);
+        }
+    }
+
+    /**
+     * Heals once after each boot, so a deploy fixes dead thumbnails the same day
+     * instead of at the next 07:00 run. Off the request threads; tests keep it off
+     * through the scheduler's enabled flag (application-test.yml).
+     */
+    @Async("validationExecutor")
+    @EventListener(ApplicationReadyEvent.class)
+    public void healThumbnailsOnBoot() {
+        if (!validationProperties.getPlaylist().getScheduler().isEnabled()) {
+            logger.info("Playlist validation scheduler is DISABLED - skipping boot thumbnail heal");
+            return;
+        }
+        healUnderLock("boot", instanceId + "-boot");
+    }
+
+    /**
+     * Lock, heal, evict, release, so two instances never double-heal. When the lock is
+     * held, skip: the holder is a validation run, which heals before it loads any doc,
+     * or another heal. Each heal passes its own holder id ({@code -heal}, {@code -boot}):
+     * the lock is re-entrant per holder, so sharing the run's id would let a heal
+     * re-enter a live run's lock and release it. While a heal holds the lock (at most
+     * {@value #HEAL_LOCK_TTL_SECONDS} s), a 07:00 run or a manual trigger at that moment
+     * skips entirely; that is acceptable, because the next run heals and validates.
+     */
+    private void healUnderLock(String trigger, String holder) {
+        if (!systemSettingsRepository.tryAcquireLock(LOCK_KEY, holder, HEAL_LOCK_TTL_SECONDS)) {
+            logger.info("{} playlist thumbnail heal skipped - the lock holder heals", trigger);
+            return;
+        }
+        try {
+            healBrokenThumbnails(trigger);
+        } finally {
+            systemSettingsRepository.releaseLock(LOCK_KEY, holder);
+        }
+    }
+
+    /** oEmbed heal of broken playlist thumbnails (no NewPipe); evicts when it repaired any. */
+    private void healBrokenThumbnails(String trigger) {
+        try {
+            int healed = thumbnailRepair.repairBrokenPlaylistThumbnails();
+            if (healed > 0) {
+                evictPublicContentCaches();
+            }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.warn("{} playlist thumbnail heal failed: {}", trigger, e.getMessage());
         }
     }
 

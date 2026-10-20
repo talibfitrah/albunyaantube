@@ -23,6 +23,11 @@ app:
         enabled: true
         host: localhost
         port: 8090
+  validation:
+    playlist:
+      scheduler:
+        # Keeps the boot oEmbed thumbnail heal (live network) off in Spring tests; opt in per test.
+        enabled: false
   newpipe:
     # NewPipeExtractor configuration for tests
     stream-cache-ttl-minutes: 30

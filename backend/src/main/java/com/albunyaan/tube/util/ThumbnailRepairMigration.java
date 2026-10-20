@@ -3,6 +3,7 @@ package com.albunyaan.tube.util;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.service.ChannelOrchestrator;
@@ -18,6 +19,7 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Component;
 
 import java.net.InetAddress;
+import java.time.Clock;
 import java.util.ArrayList;
 import java.util.List;
 import java.util.Map;
@@ -62,6 +64,10 @@ public class ThumbnailRepairMigration {
      */
     private static final long STALE_LOCK_MS = 30 * 60 * 1000L;
 
+    /** Budget of one {@link #repairBrokenPlaylistThumbnails()} call; the rest wait for the next run. */
+    static final int HEAL_MAX_ROWS = 50;
+    static final long HEAL_DEADLINE_MS = 90_000L;
+
     public record RunSummary(int channelsScanned, int channelsRepaired,
                              int playlistsScanned, int playlistsRepaired,
                              int failures, List<String> failedChannelIds,
@@ -74,19 +80,22 @@ public class ThumbnailRepairMigration {
     private final ChannelOrchestrator orchestrator;
     private final YouTubeOEmbedClient oEmbedClient;
     private final FirestoreTimeoutProperties timeoutProperties;
+    private final Clock clock;
 
     public ThumbnailRepairMigration(Firestore firestore,
                                     ChannelRepository channelRepository,
                                     PlaylistRepository playlistRepository,
                                     ChannelOrchestrator orchestrator,
                                     YouTubeOEmbedClient oEmbedClient,
-                                    FirestoreTimeoutProperties timeoutProperties) {
+                                    FirestoreTimeoutProperties timeoutProperties,
+                                    Clock clock) {
         this.firestore = firestore;
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.orchestrator = orchestrator;
         this.oEmbedClient = oEmbedClient;
         this.timeoutProperties = timeoutProperties;
+        this.clock = clock;
     }
 
     public RunSummary run(String actorUid) throws Exception {
@@ -128,20 +137,7 @@ public class ThumbnailRepairMigration {
 
             List<Playlist> playlists = playlistRepository.findAllByOrderByItemCountDesc();
             playlistsScanned = playlists.size();
-            for (Playlist playlist : playlists) {
-                String youtubeId = playlist.getYoutubeId();
-                if (youtubeId == null || youtubeId.isBlank()) {
-                    continue;
-                }
-                if (!ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl())) {
-                    continue;
-                }
-                if (repairPlaylist(playlist, youtubeId)) {
-                    playlistsRepaired++;
-                } else {
-                    failedPlaylistIds.add(youtubeId);
-                }
-            }
+            playlistsRepaired = repairPlaylists(playlists, failedPlaylistIds, Integer.MAX_VALUE, Long.MAX_VALUE);
         } finally {
             releaseLock(lockRef, runToken);
         }
@@ -154,6 +150,60 @@ public class ThumbnailRepairMigration {
         return new RunSummary(channelsScanned, channelsRepaired,
                 playlistsScanned, playlistsRepaired, failures,
                 failedChannelIds, failedPlaylistIds, startedAt, completedAt);
+    }
+
+    /**
+     * Playlist half only: oEmbed + targeted thumbnail update, with no NewPipe and no
+     * gateway, so the YouTube circuit breaker can never block it. No CAS lock here: the
+     * writes are idempotent. Called at the start of every playlist validation load, and
+     * by {@code PlaylistValidationScheduler} when the breaker is OPEN and once after boot.
+     * The scheduler's own calls and its scheduled runs hold its distributed lock; admin
+     * validation runs (validate-all, validate-playlists) do not, and rely on healing
+     * before their own load.
+     *
+     * @return the number of approved playlists whose broken thumbnail was repaired
+     */
+    // ponytail: budget of HEAL_MAX_ROWS oEmbed calls (8 s max each) and HEAL_DEADLINE_MS per call,
+    // checked between rows; the rest wait for the next run. Rows go largest itemCount first, so
+    // more than 50 broken rows oEmbed can never fix would starve the rest: record a last-heal
+    // attempt and sort by it if that ever shows up in the "budget reached" log.
+    public int repairBrokenPlaylistThumbnails() throws Exception {
+        int repaired = repairPlaylists(playlistRepository.findAllByOrderByItemCountDesc(), new ArrayList<>(),
+                HEAL_MAX_ROWS, clock.millis() + HEAL_DEADLINE_MS);
+        logger.info("Playlist thumbnail heal: {} repaired via oEmbed", repaired);
+        return repaired;
+    }
+
+    private int repairPlaylists(List<Playlist> playlists, List<String> failedIds, int maxRows, long deadlineMillis) {
+        int repaired = 0;
+        int attempted = 0;
+        for (Playlist playlist : playlists) {
+            String youtubeId = playlist.getYoutubeId();
+            if (youtubeId == null || youtubeId.isBlank()) {
+                continue;
+            }
+            if (!ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl())) {
+                continue;
+            }
+            // oEmbed can never fix these, so they would cost a wasted call every run.
+            ValidationStatus status = playlist.getValidationStatus();
+            if (status == ValidationStatus.ARCHIVED || status == ValidationStatus.UNAVAILABLE
+                    || Integer.valueOf(0).equals(playlist.getItemCount())) {
+                continue;
+            }
+            if (attempted >= maxRows || clock.millis() >= deadlineMillis) {
+                logger.info("Thumbnail repair: playlist budget reached after {} rows; the rest wait for the next run",
+                        attempted);
+                break;
+            }
+            attempted++;
+            if (repairPlaylist(playlist, youtubeId)) {
+                repaired++;
+            } else {
+                failedIds.add(youtubeId);
+            }
+        }
+        return repaired;
     }
 
     private boolean repairChannel(Channel channel, String youtubeId) {

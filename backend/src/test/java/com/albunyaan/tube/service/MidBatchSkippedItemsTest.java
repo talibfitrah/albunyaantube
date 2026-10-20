@@ -81,7 +81,8 @@ class MidBatchSkippedItemsTest {
                 validationRunRepository,
                 validationProperties,
                 publicContentCacheService,
-                streamIndexService
+                streamIndexService,
+                mock(com.albunyaan.tube.util.ThumbnailRepairMigration.class)
         );
     }
 

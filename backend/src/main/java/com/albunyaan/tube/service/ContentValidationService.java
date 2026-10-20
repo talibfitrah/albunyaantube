@@ -14,6 +14,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.ValidationRunRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.util.ThumbnailRepairMigration;
 import com.albunyaan.tube.util.ThumbnailUrls;
 import com.google.cloud.Timestamp;
 import org.slf4j.Logger;
@@ -49,6 +50,7 @@ public class ContentValidationService {
     private final ValidationProperties validationProperties;
     private final PublicContentCacheService publicContentCacheService;
     private final StreamIndexService streamIndexService;
+    private final ThumbnailRepairMigration thumbnailRepair;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -59,7 +61,8 @@ public class ContentValidationService {
             ValidationRunRepository validationRunRepository,
             ValidationProperties validationProperties,
             PublicContentCacheService publicContentCacheService,
-            StreamIndexService streamIndexService
+            StreamIndexService streamIndexService,
+            ThumbnailRepairMigration thumbnailRepair
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -70,6 +73,7 @@ public class ContentValidationService {
         this.validationProperties = validationProperties;
         this.publicContentCacheService = publicContentCacheService;
         this.streamIndexService = streamIndexService;
+        this.thumbnailRepair = thumbnailRepair;
     }
 
     // ==================== Validation Triggers ====================
@@ -815,6 +819,7 @@ public class ContentValidationService {
     }
 
     private List<Playlist> getPlaylistsForValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+        healBrokenPlaylistThumbnails();
         // Reads every approved playlist so one with a broken stored thumbnail can jump the oldest-first
         // queue: Firestore cannot query "thumbnailUrl contains /pl_c/". The YouTube budget stays `limit`.
         // ponytail: one doc read per approved playlist per run (~450/day); store a broken-thumbnail flag
@@ -875,6 +880,25 @@ public class ContentValidationService {
                 result.size(), neverValidated, errorRetry, validRecheck);
 
         return result;
+    }
+
+    /**
+     * oEmbed heal (no NewPipe) at the one entry every playlist validation path loads through, in the
+     * run's own thread and before any doc is loaded: the run full-saves the docs it loaded, so a doc
+     * loaded first would write its stale /pl_c/ back over a concurrent heal's /vi/. A failed heal
+     * never stops validation.
+     */
+    private void healBrokenPlaylistThumbnails() {
+        try {
+            if (thumbnailRepair.repairBrokenPlaylistThumbnails() > 0) {
+                publicContentCacheService.evictPublicContentCaches();
+            }
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) {
+                Thread.currentThread().interrupt();
+            }
+            logger.warn("Playlist thumbnail heal failed; validation continues: {}", e.getMessage());
+        }
     }
 
     private List<Video> getVideosForValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {

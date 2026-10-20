@@ -101,6 +101,27 @@ class FirestoreRulesActiveStatusTest {
         return out;
     }
 
+    /**
+     * Security review H1: content docs are created only by the backend (Admin SDK, which bypasses
+     * rules) after approval. A moderator token must not create a channel, playlist or video doc
+     * directly, already APPROVED and in any category. Rules OR their allow statements, so no
+     * statement in the block may grant create (or write) on any condition but false.
+     */
+    @Test
+    void firestoreRules_contentCollectionsDenyClientCreates() throws Exception {
+        String rules = loadRules();
+        Pattern grantsCreate = Pattern.compile("allow\\s+(write\\b|[\\w, ]*\\bcreate\\b)[^;]*?if\\s+(?!false\\s*;)");
+        for (String c : new String[] {"channels", "playlists", "videos"}) {
+            Matcher m = Pattern.compile("match\\s+/" + c + "/\\{\\w+\\}\\s*\\{([^}]*)}").matcher(rules);
+            assertTrue(m.find(), "/" + c + "/ match block not found");
+            String block = m.group(1);
+            assertTrue(Pattern.compile("allow\\s+create:\\s*if\\s+false\\s*;").matcher(block).find(),
+                    "/" + c + "/ MUST be 'allow create: if false;'");
+            assertFalse(grantsCreate.matcher(block).find(),
+                    "/" + c + "/ must not grant create to any client: " + block.trim());
+        }
+    }
+
     private String loadRules() throws Exception {
         try (InputStream in = new ClassPathResource("firestore.rules").getInputStream()) {
             return new String(in.readAllBytes(), StandardCharsets.UTF_8);
