@@ -189,7 +189,7 @@ struct PlayerViewModelUpgradeTests {
     @Test func aRefusedSidxIsReportedToTheResolver() async {   // R42 (revision 4)
         let recorder = Recorder()
         let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
-        vm.upgradeRefused()
+        vm.hdRefusalHook?()
         try? await Task.sleep(for: .milliseconds(50))
         #expect(recorder.refused == 1)
     }

@@ -15,13 +15,17 @@ import UIKit
     /// ponytail: 30 s from creation, unmeasured -- a throttled HD (Gate 0's mint 2, 1 of 9) never fills; that video
     /// stays on 360p (R41).
     nonisolated static let deadline: TimeInterval = 30
+    /// The sampler polls once a second; a longer silence is a suspension (no `.background` tick seen), not a slow fill.
+    nonisolated static let maxPollGap: TimeInterval = 3
 
-    enum Poll: Equatable { case waiting, ready, failed }
+    /// `stale`: the polls stopped for a while (a suspension the sampler never saw); dropped with no penalty.
+    enum Poll: Equatable { case waiting, ready, failed, stale }
 
     let masterURL: URL
     let item: AVPlayerItem
     private let hidden = AVPlayer()
     private let startedAt: Date
+    private var polledAt: Date
     private var seekedTo: TimeInterval = 0
     /// The host's item settings (the quality ceiling), applied to the hidden item here and to the visible one at the
     /// hand-over.
@@ -33,6 +37,7 @@ import UIKit
         self.masterURL = masterURL
         self.configure = configure
         startedAt = now
+        polledAt = now
         configure(item)
         item.preferredForwardBufferDuration = Self.window
         hidden.isMuted = true
@@ -46,7 +51,7 @@ import UIKit
     /// The production item: the loader on the master, or the direct m4a when Audio only is on (M14, accepted). A `sidx`
     /// refused after its retry is reported through `onRefused` (R42).
     convenience init(upgrade: Resolved, masterURL: URL, audioOnly: Bool, position: TimeInterval,
-                     onRefused: @escaping @Sendable () -> Void, configure: @escaping (AVPlayerItem) -> Void) {
+                     onRefused: (@Sendable () -> Void)?, configure: @escaping (AVPlayerItem) -> Void) {
         let url = PlayerHostView.streamURL(upgrade.stream, audioOnly: audioOnly)
         self.init(item: AVPlayerItem(asset: PlayerHostView.asset(url: url, userAgent: upgrade.userAgent,
                                                                  synthetic: upgrade.stream.synthetic, onRefused: onRefused)),
@@ -60,6 +65,8 @@ import UIKit
 
     /// One look: re-aimed at the live position when it left the window, ready once enough is buffered past it.
     func poll(position: TimeInterval, loops: Bool, now: Date = Date()) -> Poll {
+        defer { polledAt = now }
+        if now.timeIntervalSince(polledAt) > Self.maxPollGap { return .stale }
         if item.status == .failed { return .failed }
         let need = Self.need(position: position, duration: Self.duration(item), loops: loops)
         if Self.mustReseek(position: position, seekedTo: seekedTo, need: need ?? Self.ahead) { seek(to: position) }
@@ -142,6 +149,8 @@ import UIKit
         switch stager.poll(position: position, loops: loops) {
         case .waiting:
             return stager
+        case .stale:
+            return nil
         case .failed:
             model.upgradeFailed()
             return nil

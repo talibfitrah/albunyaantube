@@ -49,7 +49,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
-                                        interrupted: BackgroundPlaybackController.sessionInterrupted)
+                                        interrupted: BackgroundPlaybackController.sessionInterrupted,
+                                        onRefused: model.hdRefusalHook)
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
@@ -92,7 +93,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
                                         failedItem: context.coordinator.failedItem,
-                                        interrupted: context.coordinator.background.interrupted)
+                                        interrupted: context.coordinator.background.interrupted,
+                                        onRefused: model.hdRefusalHook)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -277,7 +279,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // restore is `.restoreVideo` below, which stays deferred.)
             let audioOnly = action == .swapToAudioOnly
             if let player {
-                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly)
+                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly, onRefused: model?.hdRefusalHook)
                 // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
                 // observer (status KVO, failed-to-play-to-end, the wall-clock stall sampler) is
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
@@ -411,7 +413,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
         private(set) var watchdog = StallWatchdog()
         /// Spec R43: the HD item buffering on its hidden player, if any.
-        private var stager: HDStager?
+        private(set) var stager: HDStager?
         /// The layer's pixel size from the last `applyQuality`, so a staged item gets the same quality ceiling.
         var layerSize: CGSize = .zero
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
@@ -727,6 +729,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             observedItem = nil
             observedPlayer = nil
             parkedFailure = nil
+            stager = nil              // its hidden player goes now, not whenever SwiftUI lets this coordinator go
         }
 
         /// Pure measurement, no decisions: read the player, hand the sample to `StallWatchdog`, act on
@@ -750,7 +753,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
                                      isLive: isLive, isOnline: isOnline(), now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
-            if tick.fire { fire(.stall) }
+            // A stall's recovery replaces the item; a swap in the same tick would be a second rebuffer.
+            if tick.fire { fire(.stall); return }
             stepUpgrade(player: player)
         }
 
@@ -784,7 +788,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             stager = HDStager.step(stager, model: model, player: player, eligible: eligible, loops: playToEnd == .restart) {
                 upgrade, masterURL, position in
                 HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: model.audioOnly, position: position,
-                         onRefused: { Task { @MainActor in model.upgradeRefused() } },
+                         onRefused: model.hdRefusalHook,
                          configure: { [weak self] item in
                              // `applyQuality`'s ceiling, with its last layer size and the live path.
                              guard let self else { return }
@@ -877,10 +881,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// `resumeIntentPending`), as recovery's replacement does (`Coordinator.observe`). The update pass passes its controller's flag; the
     /// make pass passes the session's (round 2): a host rebuilt mid-interruption (an auto-skip past
     /// an error state) has a controller that never saw the begin.
+    /// Phase 2 (R42): `onRefused` goes on a rebuilt `fitrah-hls` asset (`PlayerViewModel.hdRefusalHook`).
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
                        pausedForCast: Bool = false, airPlayFellBack: Bool = false,
-                       failedItem: AVPlayerItem? = nil, interrupted: Bool = false) -> AVPlayer? {
+                       failedItem: AVPlayerItem? = nil, interrupted: Bool = false,
+                       onRefused: (@Sendable () -> Void)? = nil) -> AVPlayer? {
         guard let resolved = state.resolved else {
             existing?.pause()
             return nil
@@ -898,7 +904,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
            existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
-        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic))
+        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
+                                             onRefused: onRefused))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an

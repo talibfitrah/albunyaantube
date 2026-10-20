@@ -884,9 +884,11 @@ extension StreamState {
         if let hd { hdFailedReport = Task { await hd.failed(videoId) } }
     }
 
-    /// R42 (revision 4): the staged item's `sidx` was still refused after its retry.
-    func upgradeRefused() {
-        if let hd { Task { await hd.refused() } }
+    /// R42 (revision 4): what a synthetic asset's loader calls when its `sidx` was still refused after its retry. It holds
+    /// only the Sendable `HDUpgrade`, never the model: the model holds `currentItem`, whose asset holds the loader.
+    var hdRefusalHook: (@Sendable () -> Void)? {
+        guard let hd else { return nil }
+        return { Task { await hd.refused() } }
     }
 
     /// Plan review M11: a screen that went away stops asking for HD.

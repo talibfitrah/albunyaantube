@@ -116,8 +116,40 @@ struct HDStagerTests {
     nonisolated final class Reports: @unchecked Sendable {
         private let lock = NSLock()
         private var ids: [String] = []
+        private var refusals = 0
         func add(_ id: String) { lock.withLock { ids.append(id) } }
+        func refuse() { lock.withLock { refusals += 1 } }
         var failed: [String] { lock.withLock { ids } }
+        var refused: Int { lock.withLock { refusals } }
+    }
+
+    /// Holds every loading request forever, so an item on it stays `.unknown`: neither ready nor failed.
+    nonisolated final class NeverAnswers: NSObject, AVAssetResourceLoaderDelegate, @unchecked Sendable {
+        let queue = DispatchQueue(label: "HDStagerTests.NeverAnswers")
+        func resourceLoader(_ resourceLoader: AVAssetResourceLoader,
+                            shouldWaitForLoadingOfRequestedResource loadingRequest: AVAssetResourceLoadingRequest) -> Bool {
+            true
+        }
+    }
+
+    /// An item that never becomes ready. The caller keeps the returned delegate alive (the loader holds it weakly).
+    private static func hangingItem() -> (AVPlayerItem, NeverAnswers) {
+        let asset = AVURLAsset(url: URL(string: "fitrah-hang://\(UUID().uuidString)/master.m3u8")!)
+        let delegate = NeverAnswers()
+        asset.resourceLoader.setDelegate(delegate, queue: delegate.queue)
+        return (AVPlayerItem(asset: asset), delegate)
+    }
+
+    private static func masterURL(_ resolved: Resolved) -> URL {
+        guard case .hls(let url, _, _, _, _) = resolved.stream else { preconditionFailure("not an .hls stream") }
+        return url
+    }
+
+    /// The loader's private `onRefused`, by reflection: no seam exposes it, and a real `sidx` 403 needs the network.
+    private static func refusalHook(of item: AVPlayerItem?) -> (@Sendable () -> Void)? {
+        guard let loader = (item?.asset as? AVURLAsset)?.resourceLoader.delegate as? SyntheticHLSLoader,
+              let value = Mirror(reflecting: loader).descendant("onRefused") else { return nil }
+        return value as? @Sendable () -> Void
     }
 
     private actor Standard360: StreamResolving {
@@ -149,13 +181,17 @@ struct HDStagerTests {
         let upgrade = Self.hd()
         let vm = PlayerViewModel(
             resolver: Standard360(), settings: Self.settings(), args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"),
-            hd: HDUpgrade(upgrade: { _ in upgrade }, failed: { reports.add($0) }, refused: {}))
+            hd: HDUpgrade(upgrade: { _ in upgrade }, failed: { reports.add($0) }, refused: { reports.refuse() }))
         await vm.open()
         for _ in 0..<500 where vm.pendingUpgrade == nil { try await Task.sleep(for: .milliseconds(2)) }
         let player = try #require(PlayerHostView.player(for: vm.state, replacing: nil))
+        try await pauseHalfASecondIn(player)
+        return (vm, player, upgrade)
+    }
+
+    private func pauseHalfASecondIn(_ player: AVPlayer) async throws {
         for _ in 0..<300 where player.currentTime().seconds < 0.5 { try await Task.sleep(for: .milliseconds(10)) }
         player.pause()
-        return (vm, player, upgrade)
     }
 
     /// Stands in for the host's item settings (the quality ceiling) so a test can see which items got them.
@@ -248,7 +284,9 @@ struct HDStagerTests {
                                  hd: HDUpgrade(upgrade: { _ in upgrade }, failed: { _ in }, refused: {}))
         await vm.open()
         try await Task.sleep(for: .milliseconds(50))
-        let stager = HDStager.step(nil, model: vm, player: AVPlayer(), eligible: true, loops: false) { upgrade, url, position in
+        let player = AVPlayer(url: Self.clip)          // a buffered item: only the missing upgrade can stop `make`
+        try await pauseHalfASecondIn(player)
+        let stager = HDStager.step(nil, model: vm, player: player, eligible: true, loops: false) { upgrade, url, position in
             asked += 1
             return localStager(upgrade, url, position)
         }
@@ -256,5 +294,91 @@ struct HDStagerTests {
         #expect(vm.pendingUpgrade == nil)
         #expect(stager == nil)
         #expect(asked == 0)
+        player.replaceCurrentItem(with: nil)
+    }
+
+    // MARK: - fix round 1
+
+    /// The background audio swap and its undo rebuild the HD item on a NEW asset; its loader still reports a refused
+    /// `sidx` (R42), through the view model's hook, which holds only `HDUpgrade`.
+    @Test func aRebuiltHDAssetStillReportsARefusal() async throws {
+        let reports = Reports()
+        let vm = PlayerViewModel(resolver: Standard360(), settings: Self.settings(),
+                                 args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"),
+                                 hd: HDUpgrade(upgrade: { _ in nil }, failed: { _ in }, refused: { reports.refuse() }))
+        let state = StreamState.ready(Self.hd())
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil, audioOnly: true))
+        PlayerHostView.applyPolicyAction(.restoreVideoNow, state: state, player: player, model: vm)
+        let hook = try #require(Self.refusalHook(of: player.currentItem))
+        hook()
+        for _ in 0..<100 where reports.refused == 0 { try await Task.sleep(for: .milliseconds(5)) }
+        #expect(reports.refused == 1)
+        #expect(PlayerViewModel(resolver: Standard360(), settings: Self.settings(),
+                                args: PlayerArgs(videoId: "abcdefghijk")).hdRefusalHook == nil)
+        player.replaceCurrentItem(with: nil)
+    }
+
+    /// The production stager on the `.invalid` fixture: registered for sign-out, and its hand-over leaves an item the
+    /// commit's update pass keeps (same player, same fresh item), so the swap is not rebuilt a second time.
+    @Test(.timeLimit(.minutes(1))) func theProductionStagerHandsOverAnItemTheUpdatePassKeeps() async throws {
+        let (vm, player, upgrade) = try await playing(Reports())
+        let masterURL = Self.masterURL(upgrade)
+        let stager = HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: vm.audioOnly, position: 0.5,
+                              onRefused: vm.hdRefusalHook, configure: { _ in })
+        #expect(PlayerHostView.builtPlayers.allObjects.contains { $0 !== player && $0.currentItem === stager.item })   // M15
+        #expect(vm.commitUpgrade(masterURL))
+        stager.handOver(to: player)
+        let fresh = try #require(player.currentItem)
+        #expect(fresh !== stager.item)
+        #expect(fresh.asset === stager.item.asset)
+        #expect(Self.refusalHook(of: fresh) != nil)
+        #expect(PlayerHostView.player(for: vm.state, replacing: player, audioOnly: vm.audioOnly) === player)
+        #expect(player.currentItem === fresh)
+        player.replaceCurrentItem(with: nil)
+    }
+
+    @Test func aStagerNotReadyWithinThirtySecondsFails() {   // R41, the 30 s deadline
+        let (item, delegate) = Self.hangingItem()
+        let start = Date()
+        let stager = HDStager(item: item, masterURL: URL(string: "fitrah-hls://x/master.m3u8")!, position: 0, now: start)
+        for second in 1...30 {
+            #expect(stager.poll(position: 0, loops: false, now: start.addingTimeInterval(TimeInterval(second))) == .waiting)
+        }
+        #expect(stager.poll(position: 0, loops: false, now: start.addingTimeInterval(31)) == .failed)
+        withExtendedLifetime(delegate) {}
+    }
+
+    /// A suspension the sampler never saw (no `.background` tick) leaves a gap between polls: the stager is dropped
+    /// with no penalty instead of its stale deadline denying HD.
+    @Test(.timeLimit(.minutes(1))) func aGapBetweenPollsDropsTheStagerWithoutPenalty() async throws {
+        let reports = Reports()
+        let (vm, player, upgrade) = try await playing(reports)
+        let (item, delegate) = Self.hangingItem()
+        let stale = HDStager(item: item, masterURL: Self.masterURL(upgrade), position: 0.5, now: Date().addingTimeInterval(-31))
+        #expect(stale.poll(position: 0.5, loops: false, now: Date().addingTimeInterval(-30)) == .waiting)
+        #expect(stale.poll(position: 0.5, loops: false, now: Date().addingTimeInterval(-26)) == .stale)
+        let (suspendedItem, suspendedDelegate) = Self.hangingItem()
+        let suspended = HDStager(item: suspendedItem, masterURL: Self.masterURL(upgrade), position: 0.5,
+                                 now: Date().addingTimeInterval(-31))
+        #expect(HDStager.step(suspended, model: vm, player: player, eligible: true, loops: false, make: localStager) == nil)
+        #expect(vm.pendingUpgrade != nil)              // restaged on the next tick
+        #expect(reports.failed.isEmpty)
+        withExtendedLifetime((delegate, suspendedDelegate)) {}
+        player.replaceCurrentItem(with: nil)
+    }
+
+    /// The host's sampler runs `step` (with the view model's refusal hook), and `stopObserving` releases the stager.
+    @Test(.timeLimit(.minutes(1))) func theSamplerStagesAndStopObservingReleasesTheStager() async throws {
+        let (vm, player, _) = try await playing(Reports())
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        defer { coordinator.stopMonitoring() }
+        coordinator.observe(item: item, player: player, model: vm, isLive: false, playToEnd: .none)
+        for _ in 0..<300 where coordinator.stager == nil { try await Task.sleep(for: .milliseconds(10)) }
+        let stager = try #require(coordinator.stager)
+        #expect(Self.refusalHook(of: stager.item) != nil)
+        coordinator.stopObserving()
+        #expect(coordinator.stager == nil)
+        player.replaceCurrentItem(with: nil)
     }
 }
