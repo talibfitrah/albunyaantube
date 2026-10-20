@@ -243,7 +243,27 @@ class ContentReportServiceTest {
         assertThat(v.getStatus()).as("never APPROVED or PENDING: not served, not in the approvals queue").isEqualTo("REJECTED");
         assertThat(v.getValidationStatus()).as("listed under Archived content, where the admin can delete it")
                 .isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(v.getSource()).as("marks it a take-down record, which Restore deletes").isEqualTo("REPORT");
         return v;
+    }
+
+    /** Stage 9 B11 P3: a take-down record is written only for a video id; any other reported string gets a note. */
+    @Test
+    void aReportOnAStringThatIsNoVideoIdWritesNoTakeDownRecord() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("../../x");
+        when(reportRepository.findById("report-junk")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("../../x")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+
+        ContentReport out = service.resolveReport("report-junk", ReportStatus.RESOLVED, "admin", null);
+
+        verify(videoRepository, never()).save(any());
+        verify(streamIndexService, never()).markStreamArchived(anyString());
+        assertThat(out.getStatus()).isEqualTo(ReportStatus.RESOLVED);
+        assertThat(out.getResolutionNote()).contains("not a video id");
     }
 
     /**

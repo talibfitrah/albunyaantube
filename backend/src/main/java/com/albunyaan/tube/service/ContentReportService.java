@@ -31,6 +31,9 @@ public class ContentReportService {
     private static final Logger log = LoggerFactory.getLogger(ContentReportService.class);
     private static final int RATE_LIMIT_MAX = 5;
     private static final String ANONYMOUS_DEVICE_KEY = "ANONYMOUS_DEVICE";
+    private static final java.util.regex.Pattern VIDEO_ID = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{11}");
+    /** Video.source of a take-down record (stage 9 B11): Restore deletes such a record, a re-add replaces it. */
+    static final String TAKE_DOWN_SOURCE = "REPORT";
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
@@ -307,6 +310,10 @@ public class ContentReportService {
             switch (targetType) {
                 case VIDEO -> {
                     var opt = videoRepository.findByYoutubeId(targetId);
+                    if (opt.isEmpty() && !VIDEO_ID.matcher(targetId).matches()) { // stage 9 B11 P3: no junk records
+                        log.warn("Cannot take down video {}: not a video id", targetId);
+                        return "Not taken down: the reported id is not a video id.";
+                    }
                     Video video = opt.orElseGet(() -> takeDownRecord(targetId));
                     video.setValidationStatus(ValidationStatus.ARCHIVED);
                     videoRepository.save(video);
@@ -351,13 +358,20 @@ public class ContentReportService {
     }
 
     /**
-     * A reported video's take-down record: REJECTED (never served, never in the approvals queue; a later add of the id
-     * goes through as usual) and, by the caller, ARCHIVED (listed under Archived content, whose delete lifts it).
+     * A reported video's take-down record: REJECTED (never served, never in the approvals queue) and, by the caller,
+     * ARCHIVED (listed under Archived content, where Restore or delete removes it). A later add of the id, single or
+     * bulk, is written into this doc, as for any REJECTED video (stage 9 B11).
      */
     private static Video takeDownRecord(String youtubeId) {
         Video video = new Video(youtubeId);
         video.setStatus("REJECTED");
+        video.setSource(TAKE_DOWN_SOURCE);
         return video;
+    }
+
+    /** A take-down record: the doc exists only to hide the id, so lifting the take-down means deleting it. */
+    static boolean isTakeDownRecord(Video video) {
+        return "REJECTED".equals(video.getStatus()) && TAKE_DOWN_SOURCE.equals(video.getSource());
     }
 
     /** After an exclusion write: public listings and the admin Exclusions workspace (a 5-minute cache) show it at once. */

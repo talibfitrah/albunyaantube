@@ -930,6 +930,7 @@ public class RegistryController {
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if video already exists by youtubeId
+        String rejectedDocId = null;
         if (video.getYoutubeId() != null) {
             var existing = videoRepository.findByYoutubeId(video.getYoutubeId());
             if (existing.isPresent()) {
@@ -965,12 +966,18 @@ public class RegistryController {
                     auditLogService.log("video_resubmitted_after_changes", "video", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }
-                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                // Stage 9 B11: a REJECTED video (a report's take-down record too) is re-added into its doc, as bulk
+                // does: no 409, no second doc. Anything else is a duplicate.
+                if (!"REJECTED".equals(ex.getStatus())) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+                rejectedDocId = ex.getId();
             }
         }
 
         // Clear server-controlled fields to prevent mass assignment
-        video.setId(null);
+        video.setId(rejectedDocId);
+        video.setSource(null); // server-controlled: "REPORT" marks a take-down record, which Restore deletes
         video.setCreatedAt(com.google.cloud.Timestamp.now());
         video.setApprovalMetadata(null);
         video.setValidationStatus(null);
@@ -999,7 +1006,8 @@ public class RegistryController {
         video.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
                 .sanitizeThumbnailUrl(video.getThumbnailUrl()));
 
-        Video saved = videoRepository.save(video);
+        // A re-add replaces the REJECTED doc whole, on a status CAS (as the resubmit path above).
+        Video saved = rejectedDocId == null ? videoRepository.save(video) : videoRepository.saveIfStatus(video, "REJECTED");
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
             for (String categoryId : saved.getCategoryIds()) {
                 sortOrderService.addContentToCategory(categoryId, saved.getId(), "video");

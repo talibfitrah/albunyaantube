@@ -113,7 +113,7 @@ class BulkSubmissionServiceSubmitTest {
                         new PreviewMetadata(VIDEO_ID, "Live Vid", "https://i.ytimg.com/t.jpg",
                                 "Ch", CHANNEL_ID, null, null, null, 50L),
                         VideoType.LIVE));
-        when(writer.writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true))).thenReturn("doc-v-1");
+        when(writer.writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true), any())).thenReturn("doc-v-1");
 
         var row = new SubmitRow(0, VIDEO_URL,
                 YouTubeContentType.VIDEO, VideoType.LIVE,
@@ -124,14 +124,30 @@ class BulkSubmissionServiceSubmitTest {
         var resp = svc.submit(req, "admin-uid", true);
 
         assertEquals(1, resp.added());
-        verify(writer).writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true));
+        verify(writer).writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true), any());
+    }
+
+    /** Stage 9 B11: a REJECTED video (a report's take-down record too) is re-added into its doc, never a second one. */
+    @Test
+    void aRejectedVideoIsReAddedIntoItsDoc() throws Exception {
+        when(lateBatch.findExisting(eq(YouTubeContentType.VIDEO), eq("TakeDown001")))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-takedown", "REJECTED")));
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), eq("doc-takedown"))).thenReturn("doc-takedown");
+        var row = new SubmitRow(0, "https://www.youtube.com/watch?v=TakeDown001", YouTubeContentType.VIDEO,
+                VideoType.STANDARD, new PreviewMetadata("TakeDown001", "v", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+
+        var resp = svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true);
+
+        assertEquals(1, resp.added());
+        assertEquals("doc-takedown", resp.results().get(0).registryId());
     }
 
     @Test
     void perRowFailure_aggregatedNotAborting() throws Exception {
         when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
         when(writer.writePlaylist(any(), any(), any(), any(), anyBoolean())).thenThrow(new RuntimeException("firestore down"));
-        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean())).thenReturn("doc-v-1");
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn("doc-v-1");
 
         var rows = List.of(
                 new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
@@ -505,14 +521,14 @@ class BulkSubmissionServiceSubmitTest {
     @Test
     void aLiveCategoryVideoRowIsWrittenWithTheVerifiedChannel() throws Exception {
         when(liveCategoryGuard.checkAll(eq(true), any())).thenReturn(java.util.Map.of("0", "UCROKYPep-UuODNwyipe6JMw"));
-        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean())).thenReturn("doc-v-live");
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn("doc-v-live");
         var row = new SubmitRow(0, "https://www.youtube.com/watch?v=Rs7St51oDDc", YouTubeContentType.VIDEO, null,
                 new PreviewMetadata("Rs7St51oDDc", "Sunnah", null, null, null, null, null, null, null), List.of("cat-live"));
 
         svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true);
 
         var written = org.mockito.ArgumentCaptor.forClass(PreviewMetadata.class);
-        verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean());
+        verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean(), any());
         assertEquals("UCROKYPep-UuODNwyipe6JMw", written.getValue().channelId());   // the gateway stub says "UCauth"
     }
 

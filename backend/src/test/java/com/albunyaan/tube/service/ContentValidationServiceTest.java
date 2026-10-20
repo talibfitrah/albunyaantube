@@ -976,4 +976,31 @@ class ContentValidationServiceTest {
         }
         return video;
     }
+
+    /**
+     * Stage 9 B11: Restore lifts a report's take-down. Its record (REJECTED, source REPORT) is the take-down, so Restore
+     * deletes it, back to the no-doc state before the report; any other archived video is set VALID as before.
+     */
+    @Test
+    void restoreDeletesATakeDownRecordAndSetsAnyOtherArchivedVideoValid() throws Exception {
+        Video takeDown = new Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setSource("REPORT");
+        takeDown.setValidationStatus(ValidationStatus.ARCHIVED);
+        Video archived = new Video("Archived001");
+        archived.setId("doc-archived");
+        archived.setStatus("APPROVED");
+        archived.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.findById("doc-archived")).thenReturn(Optional.of(archived));
+
+        var result = service.restoreContent("video", List.of("doc-takedown", "doc-archived"), "admin-uid", "Admin");
+
+        assertEquals(2, result.getSuccessCount());
+        verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", Set.of("REJECTED"));
+        verify(videoRepository, never()).save(takeDown);
+        verify(videoRepository).save(archived);
+        assertEquals(ValidationStatus.VALID, archived.getValidationStatus());
+    }
 }

@@ -175,20 +175,24 @@ public class RegistrySubmissionWriter {
     }
 
     /**
-     * Persist a fresh Video doc. Returns the new Firestore document ID.
+     * Persist a fresh Video doc. Returns its Firestore document ID.
      *
      * @param videoType resolved video type; {@code null} is normalised to
      *                  {@link VideoType#STANDARD} so legacy callers needn't
      *                  branch on liveness explicitly.
+     * @param rejectedDocId the id's REJECTED doc (a report's take-down record too) to write into, replacing it whole
+     *                  on a status CAS, so a re-add never makes a second doc (stage 9 B11); null for a new doc
      */
     public String writeVideo(PreviewMetadata meta,
                              VideoType videoType,
                              List<String> categoryIds,
                              String requestedStatus,
                              String submittedByUid,
-                             boolean isAdmin)
+                             boolean isAdmin,
+                             String rejectedDocId)
             throws ExecutionException, InterruptedException, TimeoutException {
         Video v = new Video(meta.youtubeId());
+        v.setId(rejectedDocId);
         v.setTitle(meta.title());
         v.setThumbnailUrl(sanitizeThumbnailUrl(meta.thumbnailUrl()));
         if (meta.durationSeconds() != null) {
@@ -210,7 +214,7 @@ public class RegistrySubmissionWriter {
         Timestamp now = Timestamp.now();
         v.setCreatedAt(now);
         v.setUpdatedAt(now);
-        Video saved = videos.save(v);
+        Video saved = rejectedDocId == null ? videos.save(v) : videos.saveIfStatus(v, "REJECTED");
         return saved.getId();
     }
 

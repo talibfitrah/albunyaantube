@@ -22,6 +22,7 @@ import java.util.Map;
 
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.*;
 
@@ -170,6 +171,52 @@ class BulkSubmissionIT extends BaseIntegrationTest {
                         .content(json.writeValueAsString(submitReq)))
                 .andExpect(status().isOk())
                 .andExpect(jsonPath("$.added").value(1));
+    }
+
+    private void seedVideo(String docId, String youtubeId, String status, String source,
+                           com.albunyaan.tube.model.ValidationStatus validation) throws Exception {
+        var v = new com.albunyaan.tube.model.Video(youtubeId);
+        v.setId(docId);
+        v.setStatus(status);
+        v.setSource(source);
+        v.setValidationStatus(validation);
+        firestore.collection("videos").document(docId).set(v).get(5, java.util.concurrent.TimeUnit.SECONDS);
+    }
+
+    /** Stage 9 B11: a bulk re-add of a taken-down video reuses its take-down record (one doc), and the app serves it. */
+    @Test
+    void bulkReAddOfATakenDownVideoReusesItsRecordAndIsServed() throws Exception {
+        stubAuthAs("admin-uid", "admin");
+        seedVideo("aaaa-takedown", "TakeDown001", "REJECTED", "REPORT", com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        var meta = new PreviewMetadata("TakeDown001", "Lesson", "https://i.ytimg.com/vi/TakeDown001/hq.jpg",
+                "Channel", "UCxxxxxxxxxxxxxxxxxxxxxx", null, null, 213L, 1000L);
+        when(gateway.fetchByDetectedType(any(), any(), any())).thenReturn(PreviewFetchResult.ok(meta, VideoType.STANDARD));
+        var submitReq = new BulkSubmitRequest(List.of(new SubmitRow(0, "https://www.youtube.com/watch?v=TakeDown001",
+                YouTubeContentType.VIDEO, VideoType.STANDARD, meta, List.of("cat-1"))), "APPROVED");
+
+        mvc.perform(post("/api/admin/registry/bulk/submit")
+                        .header("Authorization", "Bearer fake-admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(submitReq)))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.added").value(1))
+                .andExpect(jsonPath("$.results[0].registryId").value("aaaa-takedown"));
+
+        var docs = firestore.collection("videos").whereEqualTo("youtubeId", "TakeDown001").get()
+                .get(5, java.util.concurrent.TimeUnit.SECONDS).getDocuments();
+        org.junit.jupiter.api.Assertions.assertEquals(1, docs.size(), "no second doc");
+        org.junit.jupiter.api.Assertions.assertEquals("APPROVED", docs.get(0).getString("status"));
+        org.junit.jupiter.api.Assertions.assertNull(docs.get(0).get("validationStatus"), "the take-down is lifted");
+        mvc.perform(get("/api/v1/videos/TakeDown001")).andExpect(status().isOk());
+    }
+
+    /** Stage 9 B11: a stale REJECTED second doc (a bulk re-add before B11) never blocks the approved one at the gate. */
+    @Test
+    void aStaleRejectedDuplicateNeverBlocksTheApprovedVideo() throws Exception {
+        seedVideo("aaaa-stale", "TwoDocs0001", "REJECTED", null, null);   // sorts first: limit(1) used to answer it
+        seedVideo("zzzz-approved", "TwoDocs0001", "APPROVED", null, null);
+
+        mvc.perform(get("/api/v1/videos/TwoDocs0001")).andExpect(status().isOk());
     }
 
     /**

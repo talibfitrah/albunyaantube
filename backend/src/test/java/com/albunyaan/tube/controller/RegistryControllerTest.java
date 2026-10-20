@@ -545,6 +545,32 @@ class RegistryControllerTest {
         verify(videoRepository, never()).save(any());
     }
 
+    /** Stage 9 B11: a re-add of a rejected video (a report's take-down record too) reuses its doc: no 409, no second doc. */
+    @Test
+    void addVideo_reAddOfARejectedVideoReusesItsDoc() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.saveIfStatus(any(), eq("REJECTED"))).thenAnswer(inv -> inv.getArgument(0));
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("TakeDown001");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+        body.setSource("REPORT");   // server-controlled: the re-added doc is no take-down record
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        var saved = org.mockito.ArgumentCaptor.forClass(com.albunyaan.tube.model.Video.class);
+        verify(videoRepository).saveIfStatus(saved.capture(), eq("REJECTED"));
+        assertEquals("doc-takedown", saved.getValue().getId());
+        assertEquals("APPROVED", saved.getValue().getStatus());
+        assertNull(saved.getValue().getValidationStatus(), "the take-down's ARCHIVED is lifted");
+        assertNull(saved.getValue().getSource());
+        verify(videoRepository, never()).save(any());
+    }
+
     @Test
     void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
         // Arrange

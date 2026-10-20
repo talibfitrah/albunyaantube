@@ -93,7 +93,7 @@ public class Video {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String submitterNote;
 
-    private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | null
+    private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | "REPORT" (a take-down record) | null
 
     /**
      * Finding 3: PUBLIC (default; null on legacy docs is treated as PUBLIC) or PERSONAL.

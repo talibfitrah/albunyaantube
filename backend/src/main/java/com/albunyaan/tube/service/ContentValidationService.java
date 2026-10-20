@@ -1156,7 +1156,13 @@ public class ContentValidationService {
                         break;
                     case "video":
                         Video video = videoRepository.findById(id).orElse(null);
-                        if (video != null) {
+                        if (video != null && ContentReportService.isTakeDownRecord(video)) {
+                            // Stage 9 B11: the record is the take-down (REJECTED hides it whatever its validationStatus),
+                            // so Restore deletes it: back to no doc, as before the report. CAS: a re-add may have landed.
+                            videoRepository.deleteByIdIfStatusIn(id, java.util.Set.of("REJECTED"));
+                            auditLogService.logSystem("video_restored", "video", id, actorName);
+                            restored = true;
+                        } else if (video != null) {
                             video.setValidationStatus(ValidationStatus.VALID);
                             video.setLastValidatedAt(Timestamp.now());
                             videoRepository.save(video);

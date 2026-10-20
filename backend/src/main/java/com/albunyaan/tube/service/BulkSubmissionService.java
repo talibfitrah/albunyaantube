@@ -331,6 +331,7 @@ public class BulkSubmissionService {
             // Dedupe right before the write: a fresh registry read (lateBatch is first asked here), or markAsExisting
             // for a row this submit already wrote. Closes the window where a single add or a parallel submit landed
             // the same youtubeId during this submit's guard and fetches; what is left is this read to the write.
+            String rejectedDocId;
             try {
                 var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
                 if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
@@ -339,6 +340,8 @@ public class BulkSubmissionService {
                     failed++;
                     continue;
                 }
+                // Stage 9 B11: a REJECTED video (a report's take-down record too) is written into its doc, not a second.
+                rejectedDocId = lateDupe.map(RegistryDuplicateChecker.ExistingMatch::registryId).orElse(null);
             } catch (RuntimeException dedupeErr) {
                 log.warn("bulk-submit late-dedupe failed rowIndex={} url={} reason={}",
                         row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
@@ -354,7 +357,7 @@ public class BulkSubmissionService {
                     case PLAYLIST -> writer.writePlaylist(trustedMetadata, row.categoryIds(), resolvedStatus, actorUid, isAdmin);
                     case VIDEO    -> writer.writeVideo(trustedMetadata,
                             trustedVideoType != null ? trustedVideoType : VideoType.STANDARD,
-                            row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                            row.categoryIds(), resolvedStatus, actorUid, isAdmin, rejectedDocId);
                     default       -> throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST,
                             "Unsupported detectedType in bulk submit: " + row.detectedType());

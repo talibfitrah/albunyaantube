@@ -110,11 +110,19 @@ public class VideoRepository {
     public Optional<Video> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereEqualTo("youtubeId", youtubeId)
-                .limit(1)
                 .get();
 
-        List<Video> videos = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class);
-        return videos.isEmpty() ? Optional.empty() : Optional.of(videos.get(0));
+        return preferred(query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class));
+    }
+
+    /**
+     * Stage 9 B11: the doc that counts when a youtubeId has more than one (a bulk re-add of a REJECTED video before B11
+     * wrote a second doc; re-adds now reuse it): APPROVED, then any not REJECTED, then the first in document-id order
+     * (a query's default order). Without it, limit(1) answered whichever doc id sorted first.
+     */
+    static Optional<Video> preferred(List<Video> docs) {
+        return docs.stream().min(java.util.Comparator.comparingInt(
+                v -> "APPROVED".equals(v.getStatus()) ? 0 : "REJECTED".equals(v.getStatus()) ? 2 : 1));
     }
 
     /**
@@ -155,14 +163,15 @@ public class VideoRepository {
                 ApiFuture<QuerySnapshot> q = getCollection()
                         .whereIn("youtubeId", new java.util.ArrayList<>(chunk))
                         .get();
+                Map<String, List<Video>> byId = new HashMap<>();
                 for (QueryDocumentSnapshot d : q.get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS).getDocuments()) {
                     Video v = d.toObject(Video.class);
-                    var s = v.getValidationStatus();
-                    if (s == com.albunyaan.tube.model.ValidationStatus.ARCHIVED
-                            || s == com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE) {
-                        out.add(v.getYoutubeId());
-                    }
+                    byId.computeIfAbsent(v.getYoutubeId(), k -> new ArrayList<>()).add(v);
                 }
+                // Stage 9 B11: the doc isArchivedById reads (preferred), not any doc of the id.
+                byId.forEach((id, docs) -> preferred(docs).map(Video::getValidationStatus)
+                        .filter(s -> s == ValidationStatus.ARCHIVED || s == ValidationStatus.UNAVAILABLE)
+                        .ifPresent(s -> out.add(id)));
             } catch (Exception e) {
                 // fail open — never break sync reads on archive-lookup error
             }
@@ -837,7 +846,7 @@ public class VideoRepository {
                 Video v = doc.toObject(Video.class);
                 if (v != null) {
                     v.setId(doc.getId());
-                    result.put(v.getYoutubeId(), v);
+                    result.merge(v.getYoutubeId(), v, (a, b) -> preferred(List.of(a, b)).orElseThrow());
                 }
             }
         }
