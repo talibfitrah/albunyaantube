@@ -1,0 +1,31 @@
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_25de8354d9151e 537-612
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_c0939e88d6016b 938-953
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_5043ea7be84d84 74-79,124-125,127-133,138-145,149,155,194-200
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_b3f7b1eece5857 43-44,83-84,95-98,121,123,134,136,138-142
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_dbb6b1f3671904::t_4f8f40ea6a6d4b 39,1054-1055,1066-1073
+backend/src/test/java/com/albunyaan/tube/service/LiveChannelServiceTest.java
+  s_dbb6b1f3671904::t_1e52f258267c9f 6,19,42-60
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceLiveTest.java
+  s_dbb6b1f3671904::t_b2ede872ef99e6 20,22,36,42,61-89
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c59b703425e689db5340c324007eecb7c151140b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
