@@ -3,6 +3,8 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.service.LiveChannelService;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
+import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.GetMapping;
 import org.springframework.web.bind.annotation.PathVariable;
@@ -34,6 +36,11 @@ public class LiveChannelController {
 
     @GetMapping("/channels/{channelId}")
     public ResponseEntity<LiveChannelLives> channel(@PathVariable String channelId) {
+        // 404 is the apps' definitive "not live" stop: never send it while the states are still loading. The poller's
+        // first cycle runs ~1 min after boot. Same 503 + Retry-After shape as the search index (GlobalExceptionHandler).
+        if (!live.loaded()) {
+            return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "60").build();
+        }
         if (!live.entries().containsKey(channelId)) {
             throw new ResourceNotFoundException("LiveChannel", channelId);
         }
