@@ -605,6 +605,26 @@ struct LiveChannelPlaybackTests {
         }
     }
 
+    /// Re-review minor: an offline player built from a live item's args has no lookup, so it is not in live-channel mode
+    /// and keeps the lifetime cap.
+    @Test func anOfflinePlayerWithALiveItemsArgsGetsNoRefund() async throws {
+        let incidents = RecoveryBudget.maxRetries + 1
+        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 1 + incidents))
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
+        let sleeper = Sleeper(immediate: 0)
+        let vm = PlayerViewModel(resolver: resolver, settings: settings, args: Self.channelArgs("Rs7St51oDDc"),
+                                 sleep: { try await sleeper.sleep($0) })
+        await vm.open()
+        var now = Date(timeIntervalSince1970: 0)
+        for _ in 0..<incidents {
+            for _ in 0...300 { vm.recordPlaybackProgress(now: now); now += 1 }
+            await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
+        }
+
+        #expect(!vm.state.isLiveNow)                                          // the Retry card
+        #expect(await resolver.videoIds.count == incidents)                   // the 4th incident spent no resolve
+    }
+
     /// Important 3: in live-channel mode a spent budget goes to step 4's waits, never the Retry card.
     @Test func aSpentBudgetGoesToStepFour() async throws {
         let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 1 + RecoveryBudget.maxRetries))

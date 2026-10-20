@@ -767,7 +767,7 @@ extension StreamState {
     /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`). In live-channel mode,
     /// sustained playback also refunds the lifetime retries (§9.1, Task 32 fix round 1).
     func recordPlaybackProgress(now: Date = Date()) {
-        recoveryBudget.recordPlaybackProgress(now: args.liveChannelId != nil ? now : nil)
+        recoveryBudget.recordPlaybackProgress(now: isLiveChannelMode ? now : nil)
     }
 
     // MARK: - Live-channel mode (spec §9.1)
