@@ -296,6 +296,18 @@ import Testing
         #expect(sanitized.clients["tvSamsung"] == nil)
     }
 
+    /// Stage 6 I-M10: HD needs two edits, the rung in `resolverOrder` AND the `tvSamsung` context (the fetched `clients`
+    /// replace the bundled table wholesale). Publishing the rung alone keeps HD silently off, so `sanitized` logs it once
+    /// (per fetch or launch), off this flag.
+    @Test func aListedTVRungWithoutItsContextIsFlagged() {
+        var config = RemoteConfig.bundledDefault
+        #expect(!config.hdContextMissing)                    // no rung: HD is off on purpose
+        config.resolverOrder.append("tvSamsungAdaptive")
+        #expect(!config.hdContextMissing)                    // both edits
+        config.clients["tvSamsung"] = nil
+        #expect(config.hdContextMissing)                     // the rung alone
+    }
+
     @Test func semVerComparesNumericSegmentsNotLexicographically() {
         #expect(SemVer.compare("1.0.0", "1.0.10") == .orderedAscending)
         #expect(SemVer.compare("1.2.0", "1.10.0") == .orderedAscending)

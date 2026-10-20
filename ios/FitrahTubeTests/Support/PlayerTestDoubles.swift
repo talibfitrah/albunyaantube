@@ -219,8 +219,16 @@ final class FakeQueueSource: PlaylistQueueSource, @unchecked Sendable {
     private var _pageCalls = 0
     private var _permits = 0
     private var _continuations: [String?] = []
+    private var _retitled: [[String]] = []
 
     var pageCalls: Int { lock.withLock { _pageCalls } }
+    /// Stage 6 I-M9: the ids of each `retitle` ask, in call order.
+    var retitled: [[String]] { lock.withLock { _retitled } }
+
+    func retitle(_ items: [ContentItem]) async -> [ContentItem] {
+        lock.withLock { _retitled.append(items.map(\.id)) }
+        return items
+    }
     /// Owner issue 2: the token each page call was asked with, in call order.
     var continuations: [String?] { lock.withLock { _continuations } }
 

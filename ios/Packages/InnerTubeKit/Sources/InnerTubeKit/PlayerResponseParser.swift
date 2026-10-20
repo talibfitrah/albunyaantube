@@ -221,7 +221,18 @@ public struct PlayerResponseParser: Sendable {
         struct VideoDetails: Decodable {
             var isLive: Bool?
             var isLiveContent: Bool?
+            /// Display-only, so read leniently (stage 9 I-C9c, the `messages` rule): a title that is not a string is no
+            /// title, never a failed decode of the response every resolve needs.
             var title: String?
+
+            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                isLive = try container.decodeIfPresent(Bool.self, forKey: .isLive)
+                isLiveContent = try container.decodeIfPresent(Bool.self, forKey: .isLiveContent)
+                title = try? container.decodeIfPresent(String.self, forKey: .title)
+            }
         }
         struct ResponseContext: Decodable {
             var visitorData: String?

@@ -118,6 +118,10 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     var isLive: Bool = false
     /// Spec §9.1: set, the player is in live-channel mode for this channel (from a live-category list item).
     var liveChannelId: String? = nil
+    /// Stage 7 I-P1 (Android e632edbb `UpNextItem.liveTitle`): the backend's own title for a live-channel item, the one
+    /// D12's title match compares with the backend's list. Set where a live item is made (a list item, a switch); never
+    /// the displayed `title`, which takes the stream's original title like every other video.
+    var liveTitle: String? = nil
     /// Phase 3 Task 7: set, the player plays this `OfflineItem`'s saved file through
     /// `OfflineResolver` (no network, reduced chrome — `PlayerViewModel.isOfflinePlayback`).
     /// Additive with a nil default so every existing construction — deep links included
@@ -141,5 +145,6 @@ extension PlayerArgs {
                   thumbnailURL: item.thumbnailURL, description: item.description,
                   durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: item.liveChannelId)
         liveChannelId = item.liveChannelId          // §9.3(b): the availability gate checks the channel (F15)
+        if item.liveChannelId != nil { liveTitle = item.title }   // I-P1: D12's backend title, before any retitle
     }
 }

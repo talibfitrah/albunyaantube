@@ -18,7 +18,8 @@ import UIKit
     /// The sampler polls once a second; a longer silence is a suspension (no `.background` tick seen), not a slow fill.
     nonisolated static let maxPollGap: TimeInterval = 3
 
-    /// `stale`: the polls stopped for a while (a suspension the sampler never saw); dropped with no penalty.
+    /// `stale`: the polls stopped for a while (a suspension the sampler never saw), or a non-looping video is now too close
+    /// to its end for a swap (stage 6 I-M7); dropped with no penalty.
     enum Poll: Equatable { case waiting, ready, failed, stale }
 
     let masterURL: URL
@@ -69,6 +70,7 @@ import UIKit
         if now.timeIntervalSince(polledAt) > Self.maxPollGap { return .stale }
         if item.status == .failed { return .failed }
         let need = Self.need(position: position, duration: Self.duration(item), loops: loops)
+        if need == nil, !loops { return .stale }
         if Self.mustReseek(position: position, seekedTo: seekedTo, need: need ?? Self.ahead) { seek(to: position) }
         if item.status == .readyToPlay, let need, Self.isBuffered(Self.ranges(item), position: position, need: need) {
             return .ready
@@ -96,13 +98,14 @@ import UIKit
 
     // MARK: - the rules (pure)
 
-    /// How much must be buffered past `position`: `ahead`, or what is left. A looping Short near its end waits for the
-    /// loop (nil) instead of swapping onto a tail the loop throws away. A clip shorter than `ahead` takes what is left.
+    /// How much must be buffered past `position`: `ahead`, or what is left of a clip shorter than `ahead`. nil (no swap
+    /// now) within `ahead` of the end of anything longer: a looping Short waits for the loop instead of swapping onto a
+    /// tail the loop throws away, and a VOD does not buy a rebuffer for its last seconds of HD (stage 6 I-M7).
     nonisolated static func need(position: Double, duration: Double?, loops: Bool) -> Double? {
         guard let duration else { return ahead }
         let left = duration - position - 0.5
         if left >= ahead { return ahead }
-        return loops && duration - 0.5 >= ahead ? nil : max(0, left)
+        return duration - 0.5 >= ahead ? nil : max(0, left)
     }
 
     nonisolated static func isBuffered(_ ranges: [(Double, Double)], position: Double, need: Double) -> Bool {
@@ -139,11 +142,13 @@ import UIKit
     /// loader-backed one.
     static func step(_ stager: HDStager?, model: PlayerViewModel, player: AVPlayer, eligible: Bool, loops: Bool,
                      make: (Resolved, URL, TimeInterval) -> HDStager) -> HDStager? {
-        guard eligible, let pending = model.pendingUpgrade, case .hls(let masterURL, _, _, _, _) = pending.stream,
-              let visible = player.currentItem else { return nil }
+        // Stage 6 I-M4: a cast holds playback, so the paused local player is nobody's to upgrade.
+        guard eligible, !model.pausedForCast, let pending = model.stageableUpgrade(),
+              case .hls(let masterURL, _, _, _, _) = pending.stream, let visible = player.currentItem else { return nil }
         let position = player.currentTime().seconds
         guard let stager, stager.masterURL == masterURL else {
-            guard standardHasHeadroom(ranges(visible), position: position, duration: duration(visible)) else { return nil }
+            guard standardHasHeadroom(ranges(visible), position: position, duration: duration(visible)),
+                  loops || need(position: position, duration: duration(visible), loops: false) != nil else { return nil }
             return make(pending, masterURL, position)
         }
         switch stager.poll(position: position, loops: loops) {

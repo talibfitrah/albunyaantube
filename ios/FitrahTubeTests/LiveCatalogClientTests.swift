@@ -239,6 +239,7 @@ struct LiveCatalogClientTests {
         #expect(page.items.first?.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
         #expect(PlayerArgs(item: page.items[0]).liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
         #expect(PlayerArgs(item: page.items[0]).channelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).liveTitle == "Zad")                // I-P1: D12's backend title (open, queue)
     }
 
     /// The backend's 404 (GlobalExceptionHandler's body): not a servable live channel, stop asking.
@@ -275,5 +276,6 @@ struct LiveCatalogClientTests {
 
         #expect(PlayerArgs(item: item).channelId == nil)
         #expect(PlayerArgs(item: item).liveChannelId == nil)
+        #expect(PlayerArgs(item: item).liveTitle == nil)
     }
 }

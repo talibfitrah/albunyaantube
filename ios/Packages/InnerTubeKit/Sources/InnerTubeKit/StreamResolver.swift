@@ -213,6 +213,9 @@ public actor StreamResolver {
     public func upgrade(_ videoId: String) async -> Resolved? {
         guard let solver = challengeSolver, Self.isValidVideoId(videoId), !hdDenied.contains(videoId) else { return nil }
         if let until = hdPausedUntil, monotonicClock.now < until { return nil }
+        // Stage 9 I-C9a: the app-wide bot-check cooldown suppresses all InnerTube traffic from this IP (§6.3). A cached
+        // 360p can still play inside it, since the cache is read before `performResolve`'s own check.
+        if await sessionStore.cooldownRemaining(now: wallClock.wallNow) != nil { return nil }
         let config = await remoteConfigStore.current()
         guard config.resolverOrder.contains(Self.tvStrategy), let context = config.clients["tvSamsung"] else { return nil }
         do {

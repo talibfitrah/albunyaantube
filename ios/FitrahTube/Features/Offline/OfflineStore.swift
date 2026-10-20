@@ -44,6 +44,15 @@ import SwiftData
         try saveOrRollback()
     }
 
+    /// Stage 9 I-C10.1: every row id, read strictly from the ON-DISK store, for the launch's thumbnail sweep. nil on the
+    /// in-memory stand-in (`AppContainer.makeModelContainer`'s full-disk or locked-store fallback, whose rows are not the
+    /// library) and on a failed fetch (`refresh()` reads that as no rows): nothing is swept against a list that is not it.
+    func persistedIds() -> Set<String>? {
+        guard !context.container.configurations.contains(where: \.isStoredInMemoryOnly),
+              let rows = try? context.fetch(FetchDescriptor<OfflineItem>()) else { return nil }
+        return Set(rows.map(\.id))
+    }
+
     private func first(_ predicate: Predicate<OfflineItem>) -> OfflineItem? {
         var descriptor = FetchDescriptor<OfflineItem>(predicate: predicate)
         descriptor.fetchLimit = 1

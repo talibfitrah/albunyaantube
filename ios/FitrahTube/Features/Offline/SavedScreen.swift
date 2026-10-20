@@ -162,9 +162,10 @@ extension PlayerArgs {
     /// ponytail: a playlist open keeps streaming -- the offline path has no queue (`PlayerScreen`
     /// gives it no queue source, `OfflineResolver` answers one row); a queue-aware local resolver
     /// would play saved items inside a playlist too.
-    @MainActor func preferringSavedCopy(store: OfflineStore, base: URL) -> PlayerArgs {
+    @MainActor func preferringSavedCopy(store: OfflineStore, base: URL, isOnline: Bool) -> PlayerArgs {
+        // Stage 9 I-C10.2 (Android A-M6): an audio-only copy has no picture, so it stands in for the stream only offline.
         guard offlineItemId == nil, playlistId == nil, let item = store.item(videoId: videoId),
-              item.status == OfflineStatus.completed.rawValue, let localPath = item.localPath,
+              item.status == OfflineStatus.completed.rawValue, !item.audioOnly || !isOnline, let localPath = item.localPath,
               FileManager.default.fileExists(
                 atPath: OfflineStorage.fileURL(relativePath: localPath, base: base).path(percentEncoded: false))
         else { return self }

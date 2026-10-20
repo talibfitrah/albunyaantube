@@ -51,10 +51,10 @@ struct MainShellRoutingTests {
     @Test func thePlayerRouteOpensAFullySavedVideoLocally() throws {
         let container = AppContainer.fake(offlineAllowedVideoId: "route-test")   // base: the temp directory
         let item = OfflineItem(videoId: "route-\(UUID().uuidString.prefix(8))", title: "T", channelName: "C",
-                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: true,
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: false,   // a video save: I-C10.2
                                status: OfflineStatus.completed.rawValue, completedAt: Date())
-        item.localPath = "\(item.id).m4a"
-        let file = OfflineStorage.fileURL(relativePath: "\(item.id).m4a", base: container.offlineBase)
+        item.localPath = "\(item.id).mp4"
+        let file = OfflineStorage.fileURL(relativePath: "\(item.id).mp4", base: container.offlineBase)
         try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
         try Data("x".utf8).write(to: file)
         try container.offlineStore.insert(item)

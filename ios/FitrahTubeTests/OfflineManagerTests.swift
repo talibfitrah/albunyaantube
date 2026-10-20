@@ -163,17 +163,22 @@ struct OfflineManagerTests {
     /// `relaunching:` reuses a previous rig's STORE, model container and files behind a fresh
     /// manager, engine and resolver — the app dying and coming back up, which is the only way to
     /// observe what a walk left persisted (R5-8).
-    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls, relaunching previous: Rig? = nil,
+    /// `persistent`: an on-disk store under the base, as the live container opens (stage 9 I-C10.1: the in-memory store
+    /// is what `makeModelContainer` falls back to, and the thumbnail sweep must tell the two apart).
+    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls, relaunching previous: Rig? = nil, persistent: Bool = false,
                          thumbnail: @escaping @Sendable (URL) async -> Data? = { _ in nil }) -> Rig {
-        let container = previous?.container ?? AppContainer.makeModelContainer(inMemory: true)
-        let store = previous?.store ?? OfflineStore(modelContainer: container)
-        let engine = FakeOfflineEngine()
-        let resolver = RecordingResolver(outcome)
-        let flags = Flags()
         // Round 1 / M1: a SPACE in the base, as production's `Library/Application Support` has —
         // every path lookup a fix-up missed shows here, not only on a device.
         let base = previous?.base ?? FileManager.default.temporaryDirectory
             .appending(path: "OfflineManagerTests-\(UUID().uuidString) Application Support", directoryHint: .isDirectory)
+        if persistent { try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true) }
+        let container = previous?.container ?? (persistent
+            ? AppContainer.makeModelContainer(inMemory: false, storeURL: base.appending(path: "offline.store"))
+            : AppContainer.makeModelContainer(inMemory: true))
+        let store = previous?.store ?? OfflineStore(modelContainer: container)
+        let engine = FakeOfflineEngine()
+        let resolver = RecordingResolver(outcome)
+        let flags = Flags()
         let manager = OfflineManager(
             store: store, engine: engine, resolver: resolver,
             limiterCheck: { id in
@@ -1387,6 +1392,37 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: orphanNoData)?.status == OfflineStatus.queued.rawValue)
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Stage 6 I-S3: a Saved row's picture that finished loading after its row went (a delete, the account wipe) leaves
+    /// `<id>.jpg` with no row. The launch's `reattach()` sweeps it; a row's own copy stays.
+    @Test func reattachSweepsThumbnailCopiesThatHaveNoRow() async throws {
+        let rig = makeRig(.hls, persistent: true); defer { rig.cleanUp() }
+        let item = makeOfflineItem("vidKept000A", title: "t", status: .completed, completedAt: Date())
+        try rig.store.insert(item)
+        try OfflineManager.prepareDirectory(rig.directory)
+        let kept = OfflineStorage.thumbnailURL(itemId: item.id, base: rig.base)
+        let stray = OfflineStorage.thumbnailURL(itemId: UUID().uuidString, base: rig.base)
+        try Data("jpeg".utf8).write(to: kept)
+        try Data("jpeg".utf8).write(to: stray)
+
+        await rig.manager.reattach()
+
+        #expect(FileManager.default.fileExists(atPath: kept.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: stray.path(percentEncoded: false)))
+    }
+
+    /// Stage 9 I-C10.1 (Cubic r2, URGENT): on a full or locked disk `makeModelContainer` falls back to an empty in-memory
+    /// store, whose (no) rows are not the library. The sweep never runs against it: every saved thumbnail stays.
+    @Test func theThumbnailSweepNeverRunsAgainstTheInMemoryStandIn() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }      // in memory: the fallback's shape, with no rows
+        try OfflineManager.prepareDirectory(rig.directory)
+        let saved = OfflineStorage.thumbnailURL(itemId: UUID().uuidString, base: rig.base)
+        try Data("jpeg".utf8).write(to: saved)
+
+        await rig.manager.reattach()
+
+        #expect(FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)))
     }
 
     /// Cubic R2-2, second leg: a relaunched row carrying stale resume data was parked as

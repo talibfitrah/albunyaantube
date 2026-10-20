@@ -195,8 +195,8 @@ struct RemoteImage: View {
     /// Round 3 (review m4) and round 5 (N3): a save made before 1.0.4 has no copy; it gets one from
     /// the image in hand, a network load or a cache hit (a card on Home usually loaded the same URL
     /// first), as the save writes it: JPEG 0.8, atomic, off the main actor, never over a copy.
-    /// ponytail: only the Saved row passes `savedCopy`; a row deleted while its picture loads can
-    /// leave this one small file, and nothing enumerates the directory to sweep it.
+    /// Only the Saved row passes `savedCopy`; a row deleted while its picture loads can leave this one
+    /// small file, which the next launch's `OfflineManager.reattach()` sweeps (stage 6 I-S3).
     private static func backfill(_ image: UIImage, to copy: URL) {
         Task.detached(priority: .utility) {
             guard !FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)),

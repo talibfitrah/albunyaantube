@@ -499,6 +499,17 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Stage 6 I-M9: the deep scan's 3 s budget is spent on pages only, never on a `/titles` wait per page; the list it
+    /// found is retitled once, in one ask.
+    @Test func theDeepScanRetitlesItsListOnce() async {
+        let source = FakeQueueSource(pages: [(ids: ["a", "b"], next: "P1"), (ids: ["c", "d"], next: nil)])
+        let (vm, _) = makeModel(args: .init(videoId: "d", playlistId: "PL", targetVideoId: "d"), source: source)
+        await vm.open()
+        #expect(source.pageCalls == 2)
+        #expect(source.retitled == [["a", "b", "c", "d"]])
+        #expect(vm.queue.current?.id == "d")
+    }
+
     @Test func theDeepStartScanIsBoundedAndFallsBackToTheIndexHint() async {
         // `PlayerViewModel.kt:904-1031`, bounds `:1782-1785` (250 items / 3 s).
         let source = FakeQueueSource(pages: (0..<40).map { page in

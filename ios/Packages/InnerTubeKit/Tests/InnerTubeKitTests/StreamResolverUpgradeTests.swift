@@ -96,6 +96,20 @@ import Testing
         return Rig(resolver: resolver, session: session, clock: clock)
     }
 
+    /// Stage 9 I-C9a (Cubic P2): a cached 360p can play inside the app-wide bot-check cooldown (the cache is read before
+    /// it), but the cooldown suppresses ALL InnerTube traffic from this IP, so no `tv_samsung` `/player` POST goes out.
+    @Test func noUpgradeIsAskedDuringTheBotCheckCooldown() async throws {
+        let transport = RecordingTransport([try fixture("player-tv-Ix7uzPm3cU8")])
+        let solver = FakeSolver()
+        let rig = await rig(transport, solver: solver)
+        await rig.session.recordBotCheck()
+        await rig.session.recordBotCheck()                                    // the 2nd consecutive trip: 60 s
+        #expect(await rig.session.cooldownRemaining(now: rig.clock.wallNow) != nil)
+        #expect(await rig.resolver.upgrade("Ix7uzPm3cU8") == nil)
+        #expect(transport.callCount == 0)
+        #expect(solver.playerInfoCalls == 0)
+    }
+
     @Test func anUpgradeIsOneTVPostAndOneSolveAndReturnsASyntheticHLS() async throws {
         let transport = RecordingTransport([try fixture("player-tv-Ix7uzPm3cU8")])
         let solver = FakeSolver()

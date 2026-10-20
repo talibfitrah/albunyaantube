@@ -14,6 +14,7 @@ nonisolated struct LiveChannelRecovery: Sendable {
     /// The incident's identity: a wait that wakes into another incident (or none) stops.
     let id = UUID()
     let currentId: String
+    /// D12's match key: the backend's own title (`PlayerArgs.liveTitle`, I-P1), never the displayed one.
     let currentTitle: String?
     let startedAt: Date
     private var waits = 0
@@ -27,11 +28,21 @@ nonisolated struct LiveChannelRecovery: Sendable {
     }
 
     mutating func next(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date) -> Step {
+        let step = decide(trigger, lives: lives, now: now)
+        // Stage 9 I-C10.4 (Android stage 4 S2): the id goes into the thumbnail URL and the resolve; anything but a video id
+        // is no answer.
+        if case .switchTo(let id, _) = step, !TitlesClient.isVideoId(id) { return decide(trigger, lives: nil, now: now) }
+        return step
+    }
+
+    private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date) -> Step {
         let elapsed = now.timeIntervalSince(startedAt)
         var deadline = Self.giveUpAfter
         if let lives, !lives.isEmpty, !lives.contains(where: { $0.id == currentId }) {
             if lives.count == 1 { return .switchTo(id: lives[0].id, title: lives[0].title) }
-            if let same = lives.first(where: { $0.title == currentTitle }) { return .switchTo(id: same.id, title: same.title) }
+            // I-P1: a blank backend title is no title, and matches no other live (not even a blank one).
+            if let title = currentTitle, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
+               let same = lives.first(where: { $0.title == title }) { return .switchTo(id: same.id, title: same.title) }
             if elapsed >= Self.titleWait { return .switchTo(id: lives[0].id, title: lives[0].title) }
             deadline = Self.titleWait
         } else if trigger == .failure, lives?.contains(where: { $0.id == currentId }) == true {

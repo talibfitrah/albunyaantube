@@ -41,6 +41,7 @@ struct PlayerViewModelUpgradeTests {
         private var _failed: [String] = []
         private var _refused = 0
         private var _cancelledAsks = 0
+        private var _network: String?
         var answer: Resolved?
         var gate: AsyncGate?
         var failedGate: AsyncGate?
@@ -49,6 +50,11 @@ struct PlayerViewModelUpgradeTests {
         var failed: [String] { lock.withLock { _failed } }
         var refused: Int { lock.withLock { _refused } }
         var cancelledAsks: Int { lock.withLock { _cancelledAsks } }
+        /// What `HDUpgrade.network` answers: the network the device is on now.
+        var network: String? {
+            get { lock.withLock { _network } }
+            set { lock.withLock { _network = newValue } }
+        }
 
         var upgrade: HDUpgrade {
             HDUpgrade(upgrade: { id in
@@ -59,23 +65,27 @@ struct PlayerViewModelUpgradeTests {
             }, failed: { id in
                 await self.failedGate?.wait()
                 self.lock.withLock { self._failed.append(id) }
-            }, refused: { self.lock.withLock { self._refused += 1 } })
+            }, refused: { self.lock.withLock { self._refused += 1 } }, network: { self.network })
         }
     }
 
-    /// `throwingOnCall` (1-based) makes that one call throw; `demoted` records every step-down.
+    /// `throwingOnCall` (1-based) makes that one call throw; `demoted` records every step-down; `gate` holds every
+    /// answer until opened.
     private actor ScriptedResolver: StreamResolving {
         private var outcomes: [Resolved]
         private let throwingOnCall: Int?
+        private let gate: AsyncGate?
         private(set) var calls = 0
         private(set) var demoted: [ClientFamily] = []
-        init(_ outcomes: [Resolved], throwingOnCall: Int? = nil) {
+        init(_ outcomes: [Resolved], throwingOnCall: Int? = nil, gate: AsyncGate? = nil) {
             self.outcomes = outcomes
             self.throwingOnCall = throwingOnCall
+            self.gate = gate
         }
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
                      requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             calls += 1
+            await gate?.wait()
             if calls == throwingOnCall { throw URLError(.timedOut) }
             return outcomes.count > 1 ? outcomes.removeFirst() : outcomes[0]
         }
@@ -189,7 +199,28 @@ struct PlayerViewModelUpgradeTests {
     @Test func aRefusedSidxIsReportedToTheResolver() async {   // R42 (revision 4)
         let recorder = Recorder()
         let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
-        vm.hdRefusalHook?()
+        vm.hdRefusalHook(for: nil)?()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.refused == 1)
+    }
+
+    /// Stage 6 I-M2: googlevideo URLs are IP-bound, so a `sidx` 403 on another network than the mint's (a rebuild after
+    /// leaving home Wi-Fi) says nothing about the solve: no 30-minute device-wide pause. The item's own failure still
+    /// denies HD for that video (R41). Back on the mint's network, a refusal is a real one and pauses as before.
+    @Test func aRefusalOnAnotherNetworkThanTheMintsDoesNotPauseHD() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        recorder.network = "en0 192.168.1.1"
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        let hook = vm.hdRefusalHook(for: vm.pendingUpgrade)
+        recorder.network = "pdp_ip0"
+        hook?()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.refused == 0)
+        recorder.network = "en0 192.168.1.1"
+        hook?()
         try? await Task.sleep(for: .milliseconds(50))
         #expect(recorder.refused == 1)
     }
@@ -206,6 +237,92 @@ struct PlayerViewModelUpgradeTests {
         await gate.open()
         try? await Task.sleep(for: .milliseconds(50))
         #expect(vm.pendingUpgrade == nil)
+    }
+
+    /// Stage 6 I-C2 (Codex P2): leaving while the 360p resolve is still out finds no upgrade task to cancel. The latched
+    /// stop keeps the resolve that lands afterwards from asking for HD at all.
+    @Test func leavingTheScreenWhileTheResolveIsOutNeverAsksForHD() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let gate = AsyncGate()
+        let resolver = ScriptedResolver([Self.standard], gate: gate)
+        let vm = model(resolver, hd: recorder.upgrade)
+        let opening = Task { await vm.open() }
+        for _ in 0..<500 where await resolver.calls == 0 { try? await Task.sleep(for: .milliseconds(2)) }
+        vm.stopUpgrade()
+        await gate.open()
+        await opening.value
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(recorder.asked.isEmpty)
+        #expect(vm.pendingUpgrade == nil)
+    }
+
+    /// The latch lasts only while the screen is away (stage 6 I-C2): back on screen, the next resolve asks again. The
+    /// play that was on screen when it left stays on 360p (`stopUpgrade`'s ponytail).
+    @Test func returningToTheScreenLetsTheNextResolveAskAgain() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.reconcile(.disappear)
+        vm.reconcile(.appear)
+        await vm.retry()
+        await waitForPending(vm)
+        #expect(recorder.asked.count == 2)
+        #expect(vm.pendingUpgrade != nil)
+    }
+
+    /// Stage 6 I-M3: the iPad rail keeps a non-selected tab mounted at opacity 0, which fires no `.onDisappear`. Its
+    /// deselect goes through the same went-away seam (`railTrigger` -> `reconcile`), so a player left on another tab stops
+    /// staging HD.
+    @Test func aRailDeselectStopsTheUpgrade() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.reconcile(.appear)
+        if let trigger = CastOwnership.railTrigger(tabSelected: false, onScreen: true) { vm.reconcile(trigger) }
+        #expect(vm.pendingUpgrade == nil)
+        await vm.retry()                               // an advance or a refresh on the hidden tab asks nothing either
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.asked.count == 1)
+    }
+
+    /// Stage 7 I-D1 (iPad simulator, 2026-10-20: SwiftUI fires `.onDisappear` when AVKit's own fullscreen opens, after its
+    /// `willBegin…`): that went-away seam must not cost the play its HD. The stop waits for the fullscreen's end, and the
+    /// screen coming back first (its `.onAppear` lands before `willEnd…`) cancels it.
+    @Test func avKitFullscreenKeepsTheUpgrade() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.avKitFullscreen = true
+        vm.reconcile(.disappear)
+        #expect(vm.pendingUpgrade != nil)
+        vm.reconcile(.appear)
+        vm.avKitFullscreen = false
+        #expect(vm.pendingUpgrade != nil)
+    }
+
+    /// Stage 9 I-C10.5 (Cubic r2): a screen really dismissed while AVKit fullscreen was up (a deep link, a forced sign-out)
+    /// still stops HD, once that fullscreen ends without the screen coming back.
+    @Test func aScreenThatLeftDuringAVKitFullscreenStopsHDWhenItEnds() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.avKitFullscreen = true
+        vm.reconcile(.disappear)
+        vm.avKitFullscreen = false
+        #expect(vm.pendingUpgrade == nil)
+        await vm.retry()
+        try? await Task.sleep(for: .milliseconds(50))
+        #expect(recorder.asked.count == 1)            // latched until the screen is back
     }
 
     /// Fix round 1: leaving the screen also drops an upgrade that was already published.
@@ -239,6 +356,41 @@ struct PlayerViewModelUpgradeTests {
         #expect(recorder.failed == ["abcdefghijk"])
         #expect(await resolver.calls == 2)
         #expect(await resolver.demoted.isEmpty)
+    }
+
+    /// Stage 9 I-C9d (Cubic P3): a silent TTL refresh that fails (a blip, a cooldown) leaves the 360p on screen, so it
+    /// leaves that 360p's HD alone too. A published upgrade stays published.
+    @Test func aFailedSilentRefreshKeepsAPublishedUpgrade() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let expiring = Resolved(stream: .progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"),
+                                client: .android, userAgent: "ua", resolvedAt: Date(), expiresAt: Date())
+        let resolver = ScriptedResolver([expiring], throwingOnCall: 2)
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        await vm.reResolveIfExpiring()                // throws; `silent` keeps the 360p on screen
+        #expect(await resolver.calls == 2)
+        #expect(vm.state == .rung2Progressive(expiring))
+        #expect(vm.pendingUpgrade != nil)
+    }
+
+    /// I-C9d: and an ask still in flight when that refresh started still publishes when it answers.
+    @Test func aFailedSilentRefreshLetsTheUpgradeInFlightPublish() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let gate = AsyncGate()
+        recorder.gate = gate
+        let expiring = Resolved(stream: .progressive(url: URL(string: "https://example.com/a.mp4")!, label: "360p"),
+                                client: .android, userAgent: "ua", resolvedAt: Date(), expiresAt: Date())
+        let resolver = ScriptedResolver([expiring], throwingOnCall: 2)
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()                               // 360p; its upgrade waits at the gate
+        await vm.reResolveIfExpiring()                // throws
+        await gate.open()
+        await waitForPending(vm)
+        #expect(vm.pendingUpgrade != nil)
+        #expect(recorder.cancelledAsks == 0)
     }
 
     /// Fix round 1: video A's published HD never lands on video B's 360p. B's 360p passes the commit's own rung-2 and

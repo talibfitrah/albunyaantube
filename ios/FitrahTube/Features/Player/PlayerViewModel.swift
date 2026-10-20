@@ -131,10 +131,12 @@ nonisolated struct HDUpgrade: Sendable {
     var failed: @Sendable (_ videoId: String) async -> Void
     /// R42 (revision 4): a `sidx` 403 after its retry -- the 30-minute `tv_samsung` pause.
     var refused: @Sendable () async -> Void
+    /// Stage 6 I-M2: the network the device is on now (`NetworkMonitor.identity`); nil where nothing tracks it.
+    var network: @Sendable () async -> String? = { nil }
 
-    static func live(_ resolver: StreamResolver) -> HDUpgrade {
+    static func live(_ resolver: StreamResolver, network: NetworkMonitor) -> HDUpgrade {
         HDUpgrade(upgrade: { await resolver.upgrade($0) }, failed: { await resolver.hdFailed($0) },
-                  refused: { await resolver.hdRefused() })
+                  refused: { await resolver.hdRefused() }, network: { await network.identity })
     }
 }
 
@@ -296,7 +298,12 @@ extension StreamState {
     /// True while AVKit owns the screen with its OWN fullscreen presentation (the iPad path,
     /// ruling 42). Our gesture recognizer is disabled while it is true, because AVKit's fullscreen
     /// already has its own double-tap gravity toggle -- two would double-fire.
-    var avKitFullscreen = false
+    var avKitFullscreen = false {
+        // Stage 9 I-C10.5: the HD stop a went-away seam deferred while AVKit fullscreen was up runs when it ends, unless
+        // the screen came back first (`reconcile(.appear)` clears it).
+        didSet { if oldValue, !avKitFullscreen, hdStopDeferred { hdStopDeferred = false; stopUpgrade() } }
+    }
+    private var hdStopDeferred = false
     /// The player's one transient banner slot (`PlayerScreen.transientBanner`): the fit/zoom
     /// toggle's "Fill screen"/"Fit to screen" (written by the host's double-tap handler, which has
     /// no SwiftUI binding) and the one-time fullscreen zoom hint. Same shape as `Router.pendingBanner`.
@@ -350,6 +357,9 @@ extension StreamState {
     private var standardBeforeUpgrade: Resolved?
     private let hd: HDUpgrade?
     private var upgradeTask: Task<Void, Never>?
+    /// Stage 6 I-C2: latched by `stopUpgrade()` until the screen is back (`resumeUpgrades()`). A resolve still out when the
+    /// screen went away has no upgrade task to cancel yet; this keeps it from launching or publishing one.
+    private var upgradesStopped = false
     /// R41: the last `hd.failed` report. The next ask waits for it, so the resolver has denied the video before it is
     /// asked again (a 360p incident's own re-resolve starts that ask right away).
     private var hdFailedReport: Task<Void, Never>?
@@ -472,6 +482,7 @@ extension StreamState {
         } catch {
             return
         }
+        items = await queueSource.retitle(items)     // stage 6 I-M9: once, after the scan
         queue = PlayerQueue.start(items: items, targetVideoId: args.targetVideoId,
                                   startIndex: args.startIndex, shuffled: args.shuffled, cursor: cursor)
     }
@@ -571,6 +582,15 @@ extension StreamState {
     /// The queue context rides along: playlistId/shuffled keep the queue alive across the hop;
     /// targetVideoId/startIndex are consumed and must NOT be re-applied to the next video.
     private func swapArgs(to item: ContentItem) {
+        var next = PlayerArgs(item: item)
+        next.playlistId = args.playlistId
+        next.shuffled = args.shuffled
+        beginStream(next)
+    }
+
+    /// A new video on this screen: a queue advance, an Up Next tap, or a live channel's switch to its new broadcast (stage
+    /// 6 I-M5). Every per-stream fact is reset here, once, for all three.
+    private func beginStream(_ next: PlayerArgs) {
         // The claim and the pause belong to the video they were taken for. Leaving them set meant
         // the phone played B while every cast field still described A: the session's end seeked B
         // to A's receiver position and played it, and nothing ever cast B -- phone and TV on
@@ -579,9 +599,6 @@ extension StreamState {
         if let claimedVideoId { cast?.releaseClaim(claimedVideoId, owner: castOwner) }
         claimedVideoId = nil
         pausedForCast = false
-        var next = PlayerArgs(item: item)
-        next.playlistId = args.playlistId
-        next.shuffled = args.shuffled
         args = next
         currentTime = 0                      // a new video starts at the beginning
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
@@ -638,7 +655,8 @@ extension StreamState {
         let task = Task {
             do {
                 let page = try await queueSource.page(playlistId: playlistId, continuation: queue.cursor)
-                queue.append(page.items, cursor: page.continuation)
+                let items = await queueSource.retitle(page.items)
+                queue.append(items, cursor: page.continuation)
             } catch {
                 queue.markPagingFailed()
             }
@@ -779,7 +797,7 @@ extension StreamState {
     func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger) async -> Bool {
         guard let channel = args.liveChannelId, let liveLookup else { return false }
         if liveIncident?.currentId != args.videoId {     // an incident belongs to one video id
-            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.title, startedAt: Date())
+            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.liveTitle, startedAt: Date())
         }
         let incidentId = liveIncident?.id
         var lives: [LiveChannelLives.Live]?
@@ -835,28 +853,50 @@ extension StreamState {
     /// §9.1 step 2: a new broadcast is a new timeline (a 1-3 s transition in the existing loading state).
     private func switchLive(to id: String, title: String, channel: String) async {
         liveIncident = nil
-        var next = PlayerArgs(videoId: id, title: title, channelName: args.channelName,
+        // Stage 9 I-C10.3 (Android `title.ifBlank { previous }`): the backend sends "" for a live with no title; the screen
+        // keeps the previous one until the stream's own lands (`performResolve`).
+        let shown = title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty ? args.title : title
+        var next = PlayerArgs(videoId: id, title: shown, channelName: args.channelName,
                               thumbnailURL: URL(string: "https://i.ytimg.com/vi/\(id)/hqdefault_live.jpg"), channelId: channel)
         next.liveChannelId = channel
-        args = next
-        currentTime = 0
+        next.liveTitle = title                  // I-P1: the backend list's title, for the next incident's match
+        beginStream(next)
         await resolve(forceRefresh: false, kind: .player)
     }
 
     // MARK: - HD upgrade (spec R43)
 
     /// R8: only the stream on screen, never a saved file. The answer is dropped if anything moved on meanwhile.
-    private func startUpgrade(videoId: String, generation: Int) {
-        guard let hd, !isOfflinePlayback else { return }
+    private func startUpgrade(for standard: Resolved, videoId: String) {
+        guard let hd, !isOfflinePlayback, !upgradesStopped else { return }
         let report = hdFailedReport
         upgradeTask = Task {
             await report?.value
             guard !Task.isCancelled else { return }
-            let upgrade = await hd.upgrade(videoId)
-            guard let upgrade, !Task.isCancelled, generation == self.generation, resolvedVideoId == videoId else { return }
+            // Stage 6 I-M2: read BEFORE the ask, so a network change during it errs towards no pause, never a wrong one.
+            let network = await hd.network()
+            // The 360p it was asked for is still on screen (stage 9 I-C9d: not `generation`, which a silent refresh that
+            // never lands also moves; every resolve that does land cancels this task).
+            guard var upgrade = await hd.upgrade(videoId), !Task.isCancelled, !upgradesStopped,
+                  state == .rung2Progressive(standard), resolvedVideoId == videoId else { return }
+            upgrade.mintNetwork = network
             pendingUpgrade = upgrade
         }
     }
+
+    /// Stage 6 I-M8: the pending upgrade the host may stage. One whose URLs expired, or that waited 30 minutes (the app in
+    /// the background, a long pause, likely another network), is dropped with no penalty instead of staged into two 403s.
+    /// ponytail: 30 min, unmeasured against the URLs' IP binding; the expiry (~6 h) is the hard bound.
+    func stageableUpgrade(now: Date = Date()) -> Resolved? {
+        guard let pending = pendingUpgrade else { return nil }
+        guard !pending.isExpired(now: now), now.timeIntervalSince(pending.resolvedAt) < Self.upgradeMaxAge else {
+            pendingUpgrade = nil
+            return nil
+        }
+        return pending
+    }
+
+    static let upgradeMaxAge: TimeInterval = 30 * 60
 
     /// The host's hand-over, asked synchronously right before it swaps the item: true = the HD stream is still wanted for
     /// the 360p on screen, and `state` is now `.ready` with it (the update pass then reuses the swapped item, whose URL
@@ -886,16 +926,26 @@ extension StreamState {
 
     /// R42 (revision 4): what a synthetic asset's loader calls when its `sidx` was still refused after its retry. It holds
     /// only the Sendable `HDUpgrade`, never the model: the model holds `currentItem`, whose asset holds the loader.
-    var hdRefusalHook: (@Sendable () -> Void)? {
+    /// Stage 6 I-M2: `resolved` is the stream the asset is built for. googlevideo URLs are IP-bound, so a refusal on
+    /// another network than the mint's (a rebuild after leaving home Wi-Fi) says nothing about the solve and opens no
+    /// device-wide pause; the item's own failure still denies HD for that video (R41).
+    func hdRefusalHook(for resolved: Resolved?) -> (@Sendable () -> Void)? {
         guard let hd else { return nil }
-        return { Task { await hd.refused() } }
+        let mintedOn = resolved?.mintNetwork
+        return { Task { if await hd.network() == mintedOn { await hd.refused() } } }
     }
 
-    /// Plan review M11: a screen that went away stops asking for HD.
+    /// Plan review M11: a screen that went away stops asking for HD, until it is back (stage 6 I-C2's latch).
     /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
     func stopUpgrade() {
+        upgradesStopped = true
         upgradeTask?.cancel()
         pendingUpgrade = nil
+    }
+
+    /// The screen is back: the next resolve may ask for HD again.
+    func resumeUpgrades() {
+        upgradesStopped = false
     }
 
     // MARK: - Cast (Task 8, spec §10)
@@ -1073,6 +1123,17 @@ extension StreamState {
     /// `CastOwnership.decide` is a pure table over the three owners' state, and this executes its
     /// one answer.
     func reconcile(_ trigger: CastTrigger) {
+        // Plan review M11 / stage 6 I-M3: every went-away and came-back seam routes here (`.onDisappear`, `.onAppear` and
+        // the rail's `tabIsSelected` through `railTrigger`), cast or no cast, so HD stops and resumes with the screen.
+        // Stage 7 I-D1 (iPad simulator, 2026-10-20): AVKit's own fullscreen fires `.onDisappear` after its `willBegin…`,
+        // with the screen still showing; the stop waits for the fullscreen's end (`avKitFullscreen`), and the exit's
+        // `.onAppear`, which lands before `willEnd…`, cancels it.
+        if trigger == .disappear {
+            if avKitFullscreen { hdStopDeferred = true } else { stopUpgrade() }
+        } else if trigger == .appear {
+            hdStopDeferred = false
+            resumeUpgrades()
+        }
         guard let cast else { return }
         // Before the decision, not after: whichever trigger discovers a drop reads this, and
         // `.appear` is itself one of them.
@@ -1369,8 +1430,13 @@ extension StreamState {
         let myGeneration = generation
         resolveTask?.cancel()
         // Spec R43: an upgrade belongs to the stream that asked for it; whatever this resolve lands, it is not that one.
-        upgradeTask?.cancel()
-        pendingUpgrade = nil
+        // Not for a silent refresh (stage 9 I-C9d): its 360p stays on screen unless it lands, and one that fails or
+        // cools down would otherwise leave that 360p with no HD for the rest of the play. `performResolve` drops it on
+        // landing instead.
+        if !silent {
+            upgradeTask?.cancel()
+            pendingUpgrade = nil
+        }
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
         // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
         // own re-resolves must not refill their own budget.
@@ -1434,13 +1500,15 @@ extension StreamState {
         resolvedVideoId = videoId
         // Owner issue 1: the source's own title (videoDetails.title), never the list row's hl=en translation.
         // Before `state`: the host republishes Now Playing from `args` on the pass the state change triggers.
-        // Replace-only: a titleless resolve (offline, TV) keeps what the row gave. Not in live-channel mode: D12's title
-        // match compares against the backend's list, so the item keeps the backend's title (Android 4d3951bf).
-        if args.liveChannelId == nil, let title = result.resolved?.title, !title.isEmpty { args.title = title }
+        // Replace-only: a titleless resolve (offline, TV) keeps what the row gave. Live items too (I-P1, Android e632edbb):
+        // D12's title match reads `args.liveTitle`, the backend's own title, which this never touches.
+        if let title = result.resolved?.title, !title.isEmpty { args.title = title }
         // Spec §4.9: the kept 360p goes only when a resolve replaces the stream on screen. A silent refresh that never
         // lands (it failed, or is still out) keeps it, so the HD stream still drops back and never reaches `decide`,
         // whose step-down would demote `.tvSamsung`.
         standardBeforeUpgrade = nil
+        upgradeTask?.cancel()                   // a landed stream is not the one any upgrade in hand was for
+        pendingUpgrade = nil
         state = result
         scheduleLiveRefresh()
         if isLiveChannelMode, result.isPlayable {
@@ -1457,7 +1525,7 @@ extension StreamState {
             #endif
         }
         // Spec R43: 360p is on screen; ask for HD in the background.
-        if case .rung2Progressive = result { startUpgrade(videoId: videoId, generation: generation) }
+        if case .rung2Progressive(let standard) = result { startUpgrade(for: standard, videoId: videoId) }
     }
 
     /// No Safe Mode branch: owner directive 2026-08-27 removed the YouTube hand-off outright, so

@@ -5,20 +5,24 @@ import Testing
 
 /// Spec §4.3 loader on macOS AVFoundation with a fake transport over the ffmpeg fixture (§6.1).
 @Suite struct SyntheticHLSLoaderTests {
-    /// Serves the fixture by file name, honouring `Range`; `statuses` scripts the first answers (a 403, say).
-    final class FixtureFiles: HTTPTransport, @unchecked Sendable {
+    /// Serves the fixture by file name, honouring `Range`; `statuses` scripts the first answers (a 403, say). `caps`
+    /// records each GET's body cap (stage 6 I-C1).
+    final class FixtureFiles: BoundedHTTPTransport, @unchecked Sendable {
         private let lock = NSLock()
         private var statuses: [Int]
         private var sent: [HTTPRequest] = []
+        private var sentCaps: [Int] = []
         private let dir = Bundle.module.resourceURL!.appending(path: "Fixtures/synthetic")
 
         init(statuses: [Int] = []) { self.statuses = statuses }
 
         var requests: [HTTPRequest] { lock.withLock { sent } }
+        var caps: [Int] { lock.withLock { sentCaps } }
 
-        func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+        func send(_ request: HTTPRequest, maxBodyBytes: Int) async throws -> HTTPResponse {
             let scripted: Int? = lock.withLock {
                 sent.append(request)
+                sentCaps.append(maxBodyBytes)
                 return statuses.isEmpty ? nil : statuses.removeFirst()
             }
             if let scripted { return HTTPResponse(status: scripted, headers: [:], body: Data()) }
@@ -111,6 +115,33 @@ import Testing
         await #expect(throws: SyntheticHLSLoader.LoaderError.http(status)) { try await loader.answer("v1.m3u8") }
         #expect(files.requests.count == 1)
         #expect(refusals.value == 0)
+    }
+
+    /// Stage 6 I-C1 (Codex P1): a CDN that ignores `Range` answers 200 with the whole video. The `sidx` GET reads at most
+    /// the index's length (+1, to see that it is too long), never the body it was sent.
+    @Test func theSidxGETIsCappedAtTheIndexLength() async throws {
+        let files = FixtureFiles()
+        let loader = try loader(files)
+        _ = try await loader.answer("v0.m3u8")
+        _ = try await loader.answer("a0.m3u8")
+        let model = try model()
+        #expect(files.caps == [model.video[0].indexRange.count, model.audio[0].indexRange.count])
+    }
+
+    /// Stage 6 I-C3 (Codex P2): Apple's data-request contract. The answer starts at `currentOffset` and ends at the
+    /// requested length, or at the end of the playlist when the request asks for everything to its end.
+    @Test func aDataRequestGetsTheBytesItAskedFor() {
+        let text = Data("#EXTM3U\n#EXT-X-VERSION:7\n".utf8)
+        #expect(SyntheticHLSLoader.slice(text, requestedOffset: 0, requestedLength: text.count, currentOffset: 0,
+                                         toEnd: false) == text)                                       // offset 0
+        #expect(SyntheticHLSLoader.slice(text, requestedOffset: 3, requestedLength: 4, currentOffset: 3,
+                                         toEnd: false) == text.subdata(in: 3..<7))                     // a middle range
+        #expect(SyntheticHLSLoader.slice(text, requestedOffset: 8, requestedLength: 2, currentOffset: 8,
+                                         toEnd: true) == text.subdata(in: 8..<text.count))             // to EOF
+        #expect(SyntheticHLSLoader.slice(text, requestedOffset: 2, requestedLength: 6, currentOffset: 5,
+                                         toEnd: false) == text.subdata(in: 5..<8))                     // partly answered
+        #expect(SyntheticHLSLoader.slice(text, requestedOffset: 90, requestedLength: 4, currentOffset: 90,
+                                         toEnd: false).isEmpty)                                        // past the end
     }
 
     @Test func anUnknownPlaylistFails() async throws {

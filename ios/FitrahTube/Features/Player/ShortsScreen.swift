@@ -43,7 +43,7 @@ struct ShortsScreen: View {
         }
         .statusBarHidden(true)                              // ruling 57
         .toolbar(.hidden, for: .navigationBar)              // fork D; Back is `backButton` below
-        .onAppear { OrientationLock.lockPortrait() }
+        .onAppear { OrientationLock.lockPortrait(); model?.resumeUpgrades() }
         .onDisappear { OrientationLock.release(); model?.stopUpgrade() }
         .task {
             guard model == nil else { return }

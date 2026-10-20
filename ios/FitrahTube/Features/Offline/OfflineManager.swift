@@ -229,8 +229,8 @@ actor OfflineManager: OfflineSaving {
         // 1.0.4 I9 (offline F4 / R6): a copy of the thumbnail next to the file, for the Saved row
         // offline (Android shows it from Coil's disk cache). After `schedule()`, so a slow image host
         // never holds the download back; written only while the row still exists.
-        // ponytail: a delete landing between its file sweep and its row delete can still leave this
-        // one small file behind; nothing enumerates the directory to sweep it.
+        // A delete landing between its file sweep and its row delete can still leave this one small file
+        // behind; the next launch's `reattach()` sweeps it (stage 6 I-S3).
         if let url = metadata.thumbnailUrl.flatMap(URL.init), let data = await thumbnail(url) {
             let file = thumbnailCopy(id)
             await MainActor.run { [store, directory] in
@@ -434,6 +434,18 @@ actor OfflineManager: OfflineSaving {
                     item.status = OfflineStatus.queued.rawValue
                     try store.save()
                 }
+            }
+        }
+        // Stage 6 I-S3: a Saved row's picture that finished loading after its row went (a delete, the account wipe;
+        // `RemoteImage.backfill`) left a copy no teardown will ever name. Swept against a fresh read of the rows: this
+        // also runs mid-session (the root `.task` re-runs when iPad AVKit fullscreen ends, stage 7 D1).
+        // Never against the in-memory stand-in or a failed read (I-C10.1, `persistedIds`): that would sweep the library.
+        // ponytail: a save landing between that read and this sweep loses its fresh copy; the Saved row's backfill writes
+        // it again from the network or the image cache.
+        if let rowIds = await MainActor.run(body: { store.persistedIds() }) {
+            let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.pathExtension == "jpg" && !rowIds.contains(file.deletingPathExtension().lastPathComponent) {
+                try? FileManager.default.removeItem(at: file)
             }
         }
         await schedule()

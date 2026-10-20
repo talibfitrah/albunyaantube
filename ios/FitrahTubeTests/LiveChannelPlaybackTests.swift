@@ -304,6 +304,26 @@ struct LiveChannelPlaybackTests {
         #expect(await resolver.sourceChannelIds.allSatisfy { $0 == channel })    // §9.3(b): the gate checks the channel
     }
 
+    /// Stage 6 I-M5: a new broadcast is a new stream, so the switch takes the same per-stream resets as a queue advance:
+    /// the zoom, the orientation guess (and the AirPlay fallback and the cast claim, shared through the one helper).
+    @Test func aSwitchToANewBroadcastResetsThePerStreamState() async throws {
+        let channel = "UCOll3M-P7oKs5cSrQ9ytt6g"
+        let resolver = RecordingResolver([.success(Self.live("pqC-1yfFvu8")), .success(Self.live("eaOtcUNHDB8"))])
+        var args = PlayerArgs(videoId: "pqC-1yfFvu8", title: "ZAD TV Channel Live", channelId: channel)
+        args.liveChannelId = channel
+        let vm = makeViewModel(resolver, args: args, sleeper: Sleeper(immediate: 0),
+                               lives: [channel: .init(lives: [.init(id: "eaOtcUNHDB8", title: "Zad")])])
+
+        await vm.open()
+        vm.videoZoomed = true
+        vm.videoIsPortrait = true
+        await vm.playToEnd()
+
+        #expect(vm.args.videoId == "eaOtcUNHDB8")
+        #expect(!vm.videoZoomed)
+        #expect(!vm.videoIsPortrait)
+    }
+
     /// RV I11: the September recording (sticky isLive, not live now) is never played in live-channel mode.
     @Test func aNotLiveResolveNeverPlaysTheRecording() async throws {
         let channel = "UCOll3M-P7oKs5cSrQ9ytt6g"
@@ -353,6 +373,7 @@ struct LiveChannelPlaybackTests {
     static func channelArgs(_ videoId: String, title: String? = nil) -> PlayerArgs {
         var args = PlayerArgs(videoId: videoId, title: title, channelId: channel)
         args.liveChannelId = channel
+        args.liveTitle = title
         return args
     }
 
@@ -509,9 +530,10 @@ struct LiveChannelPlaybackTests {
         #expect(await resolver.videoIds == ["Rs7St51oDDc", "Rs7St51oDDc"])
     }
 
-    /// Hand-off 7 (Android 4d3951bf): a live-channel item keeps the backend's title, because D12 matches against the
-    /// backend's list. Adopting the stream's own title would miss the restart and wait for a sibling.
-    @Test func aLiveChannelItemKeepsTheBackendTitleForTheTitleMatch() async throws {
+    /// Stage 7 I-P1 (Android e632edbb; replaces hand-off 7's "keep the backend title"): a live item shows the stream's
+    /// original title like every other video (owner issue 1), and D12 matches the backend's own title (`liveTitle`),
+    /// which no retitle touches. A retitle that returns a different title still finds the restart, not the sibling.
+    @Test func aRetitledLiveItemStillMatchesTheBackendTitle() async throws {
         let resolver = RecordingResolver([.success(Self.live("old0000000a", title: "Laith and Layla | One4Kids LIVE 24/7")),
                                           .success(Self.live("new0000000a"))])
         let lives = LiveChannelLives(
@@ -520,10 +542,48 @@ struct LiveChannelPlaybackTests {
                                lives: [Self.channel: lives])
 
         await vm.open()
-        #expect(vm.args.title == "Laith & Layla")
+        #expect(vm.args.title == "Laith and Layla | One4Kids LIVE 24/7")     // displayed: the original title
+        await vm.playToEnd()
+
+        #expect(vm.args.videoId == "new0000000a")                            // matched on the backend title
+        #expect(vm.args.liveTitle == "Laith & Layla")                        // the switch carries the list's title on
+    }
+
+    /// Stage 9 I-C10.3 (Cubic r2, Android `title.ifBlank { previous }`): the backend sends "" when it has no title for a
+    /// live. The switch keeps showing the previous title until the stream's own lands; recovery keeps the backend's.
+    @Test func aSwitchToABlankTitledLiveKeepsThePreviousTitle() async throws {
+        let resolver = RecordingResolver([.success(Self.live("old0000000a")), .success(Self.live("new0000000a"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("old0000000a", title: "Zad TV"), sleeper: Sleeper(immediate: 0),
+                               lives: [Self.channel: LiveChannelLives(lives: [.init(id: "new0000000a", title: "")])])
+
+        await vm.open()
         await vm.playToEnd()
 
         #expect(vm.args.videoId == "new0000000a")
+        #expect(vm.args.title == "Zad TV")
+        #expect(vm.args.liveTitle == "")
+    }
+
+    /// Stage 9 I-C10.4 (Cubic r2, Android stage 4 S2): the live id goes into the thumbnail URL and the resolve, so a
+    /// switch target that is not an 11-character video id is no answer.
+    @Test func aMalformedSwitchTargetIsNoAnswer() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var ended = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Zad", startedAt: t0)
+        #expect(ended.next(.ended, lives: [.init(id: "../watch?v=", title: "Zad")], now: t0) == .wait(seconds: 15))
+        var failed = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Zad", startedAt: t0)
+        #expect(failed.next(.failure, lives: [.init(id: "short", title: "Other")], now: t0) == .sameId)   // the blind try
+        var fine = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Zad", startedAt: t0)
+        #expect(fine.next(.ended, lives: [.init(id: "new_000-00a", title: "Zad")], now: t0) == .switchTo(id: "new_000-00a", title: "Zad"))
+    }
+
+    /// I-P1: a blank backend title is no title. It matches no other live, even one whose title is blank too.
+    @Test func aBlankBackendTitleMatchesNoOtherLive() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        for blank in ["", "  "] {
+            var r = LiveChannelRecovery(currentId: "old0000000a", currentTitle: blank, startedAt: t0)
+            #expect(r.next(.ended, lives: [.init(id: "kazwa000001", title: blank), .init(id: "zaky0000001", title: "Zaky")], now: t0)
+                    == .wait(seconds: 15))
+        }
     }
 
     /// Hand-off 9: live-channel mode never advances a queue, whatever Safe Mode says.

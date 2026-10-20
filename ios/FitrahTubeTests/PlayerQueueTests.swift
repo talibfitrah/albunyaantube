@@ -34,6 +34,15 @@ private func items(_ ids: [String]) -> [ContentItem] {
     #expect(q.upcoming.map(\.id) == ["d"])
 }
 
+@Test func startUsesTheStartIndexWhenItHoldsTheTarget() {
+    // Stage 6 I-M6 (Cubic P2 class): a playlist that lists the same lecture twice, tapped on its later row. The
+    // playlist screen passes that row's exact index into the exact list it seeds, so Up Next is the tail after IT.
+    let q = PlayerQueue.start(items: items(["a", "b", "a", "c"]), targetVideoId: "a",
+                              startIndex: 2, shuffled: false, cursor: nil)
+    #expect(q.index == 2)
+    #expect(q.upcoming.map(\.id) == ["c"])
+}
+
 @Test func startFallsBackToStartIndexWhenTheTargetIsNotPresent() {
     let q = PlayerQueue.start(items: items(["a", "b", "c"]), targetVideoId: "zz",
                               startIndex: 1, shuffled: false, cursor: nil)

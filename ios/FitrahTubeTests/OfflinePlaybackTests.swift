@@ -65,7 +65,7 @@ struct OfflinePlaybackTests {
         let item = try completed(rig, ext: "mp4")
         let args = PlayerArgs(videoId: item.videoId, title: "From Home", durationSeconds: 754)
 
-        let routed = args.preferringSavedCopy(store: rig.store, base: rig.base)
+        let routed = args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true)
 
         #expect(routed.offlineItemId == item.id)
         #expect(routed.title == "From Home")          // the caller's metadata rides along
@@ -85,9 +85,20 @@ struct OfflinePlaybackTests {
 
         for args in [PlayerArgs(videoId: "not-saved"), PlayerArgs(videoId: running.videoId),
                      PlayerArgs(videoId: missing.videoId), PlayerArgs(videoId: saved.videoId, playlistId: "PL")] {
-            #expect(args.preferringSavedCopy(store: rig.store, base: rig.base).offlineItemId == nil,
+            #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true).offlineItemId == nil,
                     "\(args.videoId) left streaming")
         }
+    }
+
+    /// Stage 9 I-C10.2 (Cubic r2, Android A-M6): an audio-only save has no picture, so online it never replaces the video
+    /// stream (and its quality menu and cast). Offline it is what plays.
+    @Test func anAudioOnlySaveIsPlayedOnlyWhileOffline() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: "m4a", audioOnly: true)
+        let args = PlayerArgs(videoId: item.videoId)
+
+        #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true).offlineItemId == nil)
+        #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: false).offlineItemId == item.id)
     }
 
     // MARK: - OfflineResolver mapping (reconciliation note 5)

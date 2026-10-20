@@ -400,6 +400,16 @@ import Testing
         #expect(streaming.title == "جزء عم المعلم مشاري راشد العفاسي")
     }
 
+    /// Stage 9 I-C9c (Cubic P3): the title is display-only, so one that is not a string reads as no title instead of failing
+    /// the decode every 360p resolve depends on (the `messages` rule).
+    @Test(arguments: ["123", #"{"runs":[{"text":"x"}]}"#, "true"])
+    func aTitleThatIsNotAStringReadsAsNoTitle(_ title: String) throws {
+        let body = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{},"videoDetails":{"title":\#(title),"isLive":false}}"#.utf8)
+        guard case .ok(let streaming) = try parser.parse(body).playability else { Issue.record("expected .ok"); return }
+        #expect(streaming.title == nil)
+        #expect(!streaming.isLiveNow)
+    }
+
     @Test func anOKResponseWithoutATitleHasNoTitle() throws {
         let body = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{}}"#.utf8)
         guard case .ok(let streaming) = try parser.parse(body).playability else { Issue.record("expected .ok"); return }

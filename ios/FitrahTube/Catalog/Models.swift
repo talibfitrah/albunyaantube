@@ -10,7 +10,8 @@ nonisolated enum ContentType: String, Sendable {
 nonisolated struct ContentItem: Identifiable, Hashable, Sendable {
     let id: String
     let type: ContentType
-    let title: String
+    /// `var` for the queue's one retitle of a whole list (stage 6 I-M9, `PlaylistQueueSource.retitle`).
+    var title: String
     let category: String?
     let description: String?
     let thumbnailURL: URL?

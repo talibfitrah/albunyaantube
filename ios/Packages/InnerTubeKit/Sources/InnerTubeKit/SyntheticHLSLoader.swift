@@ -11,7 +11,7 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
     // delegate there, and every finish hops back to it); every other stored property is immutable.
     public static let scheme = "fitrah-hls"
     /// One session for every loader's `sidx` GETs (each `URLSessionTransport` is its own `URLSession`).
-    public static let sharedTransport: HTTPTransport = URLSessionTransport()
+    public static let sharedTransport: BoundedHTTPTransport = URLSessionTransport()
     nonisolated(unsafe) private static var retainKey: UInt8 = 0
 
     enum LoaderError: Error, Equatable {
@@ -21,7 +21,7 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
 
     private let model: SyntheticHLS
     private let userAgent: String
-    private let transport: HTTPTransport
+    private let transport: BoundedHTTPTransport
     private let retryDelay: Duration
     private let onRefused: (@Sendable () -> Void)?
     private let queue = DispatchQueue(label: "SyntheticHLSLoader")
@@ -32,7 +32,7 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
     /// In-flight answers by loading request; whoever removes an entry (the finish or `didCancel`) owns that request.
     private var tasks: [ObjectIdentifier: Task<Void, Never>] = [:]
 
-    init(model: SyntheticHLS, userAgent: String, transport: HTTPTransport, retryDelay: Duration,
+    init(model: SyntheticHLS, userAgent: String, transport: BoundedHTTPTransport, retryDelay: Duration,
          onRefused: (@Sendable () -> Void)? = nil) {
         self.model = model
         self.userAgent = userAgent
@@ -44,7 +44,7 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
     /// The asset for one synthetic stream. `url` is the `Resolved` stream's own `fitrah-hls` master URL, so the host's
     /// URL-identity reuse keeps working. `AVAssetResourceLoader` holds its delegate weakly, so the asset retains it.
     public static func asset(url: URL, model: SyntheticHLS, userAgent: String, options: [String: Any] = [:],
-                             transport: HTTPTransport = sharedTransport, retryDelay: Duration = .seconds(1),
+                             transport: BoundedHTTPTransport = sharedTransport, retryDelay: Duration = .seconds(1),
                              onRefused: (@Sendable () -> Void)? = nil) -> AVURLAsset {
         let asset = AVURLAsset(url: url, options: options)
         let loader = SyntheticHLSLoader(model: model, userAgent: userAgent, transport: transport, retryDelay: retryDelay,
@@ -109,10 +109,12 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
             "Range": "bytes=\(rendition.indexRange.lowerBound)-\(rendition.indexRange.upperBound)",
         ], body: nil)
         if lock.withLock({ refused }) { throw LoaderError.http(403) }
-        var response = try await transport.send(request)
+        // Stage 6 I-C1: read at most the index (+1 byte, to see a longer body), never a whole file a CDN sent instead.
+        let cap = rendition.indexRange.count
+        var response = try await transport.send(request, maxBodyBytes: cap)
         if response.status == 403 {
             try await Task.sleep(for: retryDelay)
-            response = try await transport.send(request)
+            response = try await transport.send(request, maxBodyBytes: cap)
             if response.status == 403 {
                 let first = lock.withLock { () -> Bool in
                     defer { refused = true }
@@ -125,6 +127,14 @@ public final class SyntheticHLSLoader: NSObject, AVAssetResourceLoaderDelegate, 
             throw LoaderError.http(response.status)
         }
         return response.body
+    }
+
+    /// Stage 6 I-C3, Apple's data-request contract: from `currentOffset` to the end of the requested range, or to the end
+    /// of the playlist when the request asks for everything to its end.
+    static func slice(_ data: Data, requestedOffset: Int64, requestedLength: Int, currentOffset: Int64, toEnd: Bool) -> Data {
+        let end = toEnd ? data.count : Int(min(Int64(data.count), max(0, requestedOffset) + Int64(requestedLength)))
+        let start = Int(min(max(currentOffset, 0), Int64(end)))
+        return data.subdata(in: start..<end)
     }
 }
 
@@ -143,7 +153,11 @@ private struct PendingRequest: @unchecked Sendable {
                 info.contentLength = Int64(data.count)
                 info.isByteRangeAccessSupported = false
             }
-            request.dataRequest?.respond(with: data)
+            if let dataRequest = request.dataRequest {
+                dataRequest.respond(with: SyntheticHLSLoader.slice(
+                    data, requestedOffset: dataRequest.requestedOffset, requestedLength: dataRequest.requestedLength,
+                    currentOffset: dataRequest.currentOffset, toEnd: dataRequest.requestsAllDataToEndOfResource))
+            }
             request.finishLoading()
         case .failure(let error):
             request.finishLoading(with: error)

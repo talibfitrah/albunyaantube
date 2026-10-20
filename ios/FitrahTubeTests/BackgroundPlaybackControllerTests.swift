@@ -783,6 +783,35 @@ import UIKit
         #expect(after.timeControlStatus != .paused, "a player built after the end did not start")
     }
 
+    /// Stage 9 I-C9b (Cubic P2): a call starts during an auto-advance, and an auto-skip rebuilds the host. Its FRESH
+    /// controller never saw the begin, so it takes the playback intent from `resumeIntentPending` at attach, and the call's
+    /// end with `.shouldResume` resumes the playlist instead of leaving it stopped.
+    @Test(.timeLimit(.minutes(1))) func aControllerAttachedMidInterruptionResumesOnShouldResume() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        coordinator.stopObserving()
+        coordinator.background.detach()                    // the auto-skip dismantles the host
+
+        let next = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let rebuilt = AVPlayer(url: next)                  // paused: the advance's next lecture, not yet played
+        defer { rebuilt.pause() }
+        let fresh = BackgroundPlaybackController(backgroundPlay: false)
+        var actions: [PlaybackPolicyAction] = []
+        fresh.onPolicyAction = { actions.append($0) }
+        fresh.resumeIntentPending = { true }               // the advance in flight counts as playing (round 3, m1)
+        fresh.attach(player: rebuilt)
+        defer { fresh.detach() }
+        #expect(fresh.interrupted)
+
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { !fresh.interrupted }
+
+        #expect(actions.contains(.resume), "the call's end left the rebuilt host's playlist stopped")
+    }
+
     /// 1.0.4 I1 (final-check N5-1): the user's Play after an interruption that never ended can sit
     /// WAITING and fail (a 403, say) before any tick reads `.playing`. Wanting to play is that Play,
     /// so it ends the interruption too, and recovery's replacement resumes instead of waiting for a tap.

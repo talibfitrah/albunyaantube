@@ -55,6 +55,16 @@ import Testing
         #expect(transport.sent.first?.url.absoluteString == "https://app.fitrahtube.com/api/playback/player")
     }
 
+    /// Stage 6 I-S2 (R21: never the device locale). CFNetwork adds the device's languages as `Accept-Language` to a
+    /// request that sets none, so both solver calls set a fixed `en`.
+    @Test func bothCallsSendAFixedAcceptLanguage() async throws {
+        let (solver, transport) = scripted([.json(200, #"{"playerId":"0229cd64","sts":20739}"#),
+                                            .json(200, #"{"n":{},"s":{}}"#)])
+        _ = try await solver.playerInfo()
+        _ = try await solve(solver)
+        #expect(transport.sent.map { $0.headers["Accept-Language"] } == ["en", "en"])
+    }
+
     @Test func retryAfterIsDeltaSecondsOnly() {   // M16
         #expect(BackendChallengeSolver.retryAfter(["Retry-After": "120"]) == 120)
         #expect(BackendChallengeSolver.retryAfter(["retry-after": " 5 "]) == 5)

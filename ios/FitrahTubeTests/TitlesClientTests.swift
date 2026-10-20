@@ -213,6 +213,25 @@ struct TitlesClientTests {
         #expect(page.items.dropFirst().allSatisfy { $0.title != FixtureTransport.original })
     }
 
+    /// Stage 6 I-M9: a queue page carries the list's own titles, so the player's deep scan never waits on `/titles` per
+    /// page; `retitle` swaps the originals in for the list it is given, keeping its order.
+    @Test func aQueuePageIsUntitledUntilRetitled() async throws {
+        let transport = FixtureTransport("browse-playlist.json")
+        let store = InMemoryKeyValueStore()
+        let source = LivePlaylistQueueSource(
+            client: BrowseClient(transport: transport,
+                                 remoteConfigStore: RemoteConfigStore(transport: transport, keyValueStore: store, url: Self.baseURL),
+                                 sessionStore: SessionStore(monotonicClock: SystemClock(), wallClock: SystemClock(), keyValueStore: store),
+                                 locale: InnerTubeLocale(hl: "en", gl: "US")),
+            titles: TitlesClient(transport: transport, baseURL: Self.baseURL, deviceId: DeviceId(value: "t")))
+        let page = try await source.page(playlistId: "PLtest", continuation: nil)
+        #expect(page.items.count > 1)
+        #expect(page.items.allSatisfy { $0.title != FixtureTransport.original })
+        let titled = await source.retitle(page.items)
+        #expect(titled.first?.title == FixtureTransport.original)
+        #expect(titled.map(\.id) == page.items.map(\.id))
+    }
+
     @Test func aChannelTabShowsTheOriginalTitlesTheServerKnows() async throws {
         let page = try await Self.liveSource("browse-channel-shorts.json").channelTab("UCtestchannel0000000000", tab: .shorts, continuation: nil)
         #expect(page.items.first?.title == FixtureTransport.original)

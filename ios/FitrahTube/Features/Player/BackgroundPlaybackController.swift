@@ -100,7 +100,12 @@ import UIKit
         detach()
         self.player = player
         Self.observeSessionInterruptions()
-        if Self.sessionInterrupted { interrupted = true }
+        if Self.sessionInterrupted {
+            interrupted = true
+            // Stage 9 I-C9b: a host rebuilt mid-interruption (an auto-skip during a call) never saw the begin, so the
+            // begin's playing read is seeded here; its player was built paused, so the intent is what says "playing".
+            wasPlayingBeforeInterruption = player.timeControlStatus != .paused || resumeIntentPending?() == true
+        }
         Self.configureAudioSession()
         applyBackgroundPolicy()
         let center = NotificationCenter.default

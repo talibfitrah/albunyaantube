@@ -226,6 +226,18 @@ public actor RemoteConfigStore {
             guard let expected = expectedClientNames[key] else { return true }
             return context.clientName == expected
         }
+        // Stage 6 I-M10: the fetched `clients` replace the bundled table wholesale, so publishing the rung without its
+        // context turns nothing on. Said once per sanitize, like the order above.
+        if config.hdContextMissing {
+            log.error("resolverOrder lists tvSamsungAdaptive but clients has no tvSamsung context; HD stays off")
+        }
         return config
+    }
+}
+
+extension RemoteConfig {
+    /// Stage 6 I-M10: `tvSamsungAdaptive` is listed but there is no `tvSamsung` context to POST with, so HD stays off.
+    var hdContextMissing: Bool {
+        resolverOrder.contains("tvSamsungAdaptive") && clients["tvSamsung"] == nil
     }
 }

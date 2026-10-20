@@ -50,7 +50,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
                                         interrupted: BackgroundPlaybackController.sessionInterrupted,
-                                        onRefused: model.hdRefusalHook)
+                                        onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
@@ -94,7 +94,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         airPlayFellBack: model.airPlayFellBack,
                                         failedItem: context.coordinator.failedItem,
                                         interrupted: context.coordinator.background.interrupted,
-                                        onRefused: model.hdRefusalHook)
+                                        onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -279,7 +279,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // restore is `.restoreVideo` below, which stays deferred.)
             let audioOnly = action == .swapToAudioOnly
             if let player {
-                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly, onRefused: model?.hdRefusalHook)
+                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly, onRefused: model?.hdRefusalHook(for: state.resolved))
                 // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
                 // observer (status KVO, failed-to-play-to-end, the wall-clock stall sampler) is
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
@@ -373,7 +373,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) var path: NWPath
         /// The sampler's "is there a network" input: the path monitor's answer. Settable so a host
         /// test against a localhost server does not depend on the test machine's own network (N2).
-        lazy var isOnline: () -> Bool = { [unowned self] in self.path.status == .satisfied }
+        lazy var isOnline: () -> Bool = { [unowned self] in
+            #if DEBUG
+            // `NetworkMonitor`'s acceptance hook, here too: the parked-offline screenshot (stage 6 I-M1).
+            if LaunchArguments.debug.contains("-fitrah-offline") { return false }
+            #endif
+            return Self.isOnline(self.path.status)
+        }
+
+        /// Stage 6 I-M1: the shell's offline banner's own predicate (`NetworkMonitor`), so a failure parked for the network
+        /// (`fire`) always has that banner on screen. `.requiresConnection` used to park with no banner, waiting for a
+        /// `.satisfied` that only a new connection -- the parked recovery's own -- could bring.
+        nonisolated static func isOnline(_ status: NWPath.Status) -> Bool { NetworkMonitor.isOnline(for: status) }
         /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
         /// fullscreen flag, written on every update pass.
         var doubleTap: UITapGestureRecognizer?
@@ -788,7 +799,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             stager = HDStager.step(stager, model: model, player: player, eligible: eligible, loops: playToEnd == .restart) {
                 upgrade, masterURL, position in
                 HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: model.audioOnly, position: position,
-                         onRefused: model.hdRefusalHook,
+                         onRefused: model.hdRefusalHook(for: upgrade),
                          configure: { [weak self] item in
                              // `applyQuality`'s ceiling, with its last layer size and the live path.
                              guard let self else { return }

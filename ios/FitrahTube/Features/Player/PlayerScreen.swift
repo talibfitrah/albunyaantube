@@ -83,8 +83,7 @@ struct PlayerScreen: View {
             // publishes `\.tabIsSelected` instead and the `.onChange` below is that layout's half
             // of the same pair. Compact width never sets the key, so both arms stay as they were.
             isOnScreen = false
-            model?.reconcile(.disappear)
-            model?.stopUpgrade()     // plan review M11
+            model?.reconcile(.disappear)     // also stops HD (plan review M11), after AVKit fullscreen (I-D1, `reconcile`)
         }
         // The return leg of the release above: take the claim back if the receiver is still playing
         // our video, re-cast if the session is live but it is not, or pay the hand-back the
@@ -618,7 +617,7 @@ struct PlayerScreen: View {
         #if DEBUG
         if let base = syntheticFixtureBase { return fixtureHD(base: base) }
         #endif
-        return .live(container.resolver)
+        return .live(container.resolver, network: container.network)
     }
 
     /// `-fitrah-fake-player`: the UI-test/screenshot hook -- swaps the real InnerTubeKit-backed
@@ -841,6 +840,8 @@ private func fixtureHD(base: URL) -> HDUpgrade {
 /// `dead-` prefix that `FixturePlayerResolver` refuses, so the walk skips them.
 private struct FixtureQueueSource: PlaylistQueueSource {
     let deadItems: Bool
+
+    func retitle(_ items: [ContentItem]) async -> [ContentItem] { items }
 
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {

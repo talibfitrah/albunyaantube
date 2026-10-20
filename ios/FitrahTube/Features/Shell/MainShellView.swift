@@ -183,7 +183,8 @@ struct MainShellView: View {
         case .player(let args):
             // 1.0.4 I10: local-first -- every entry point reaches the player through here.
             let source = injected ?? container
-            PlayerScreen(args: args.preferringSavedCopy(store: source.offlineStore, base: source.offlineBase))
+            PlayerScreen(args: args.preferringSavedCopy(store: source.offlineStore, base: source.offlineBase,
+                                                        isOnline: source.network.isOnline))
         case .shorts(let args):
             ShortsScreen(args: args)
         case .featured(let categoryId, let categoryName):

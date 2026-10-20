@@ -656,7 +656,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// Playback Phase 2 (spec R20): the backend's sts lookup and sig/n solve for the HD upgrade, over the signed
     /// transport. A fixture container gets none, so its resolver never asks for HD (`AppContainerTests` pins both).
     private var challengeSolver: (any ChallengeSolving)? {
-        isFixture ? nil : BackendChallengeSolver(transport: authorizedTransport, baseURL: apiBaseURL)
+        #if DEBUG
+        if isFixture { return nil }   // `isFixture` is DEBUG-only: Release has no fixture container (stage 7 I-X1)
+        #endif
+        return BackendChallengeSolver(transport: authorizedTransport, baseURL: apiBaseURL)
     }
 
     /// InnerTubeKit composition root (CF-B3/CF-B4, `ios-app-plan.md` §6.1) -- resolves a videoId to

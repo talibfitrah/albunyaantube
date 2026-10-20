@@ -16,10 +16,10 @@ struct HDStagerTests {
                       indexRange: 2...3, contentLength: 9, isDefault: true)])
 
     /// `.invalid` never resolves, so the players these tests build make no network traffic.
-    private static func hd() -> Resolved {
+    private static func hd(resolvedAt: Date = Date(), expiresAt: Date? = nil) -> Resolved {
         Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
                               audioOnlyURL: URL(string: "https://fixture.invalid/a0.m4a")!, captionTracks: [], synthetic: model),
-                 client: .tvSamsung, userAgent: "TV-UA", resolvedAt: Date(), expiresAt: nil)
+                 client: .tvSamsung, userAgent: "TV-UA", resolvedAt: resolvedAt, expiresAt: expiresAt)
     }
 
     /// The bundled 2 s clip (Debug only), and the same file under another URL string -- a different stream to AVPlayer.
@@ -77,7 +77,8 @@ struct HDStagerTests {
 
     @Test func needClampsToWhatIsLeftUnlessTheItemLoops() {   // Review Focus 1
         #expect(HDStager.need(position: 3, duration: 600, loops: false) == 10)
-        #expect(HDStager.need(position: 592, duration: 600, loops: false) == 7.5)
+        #expect(HDStager.need(position: 592, duration: 600, loops: false) == nil)    // I-M7: too late to be worth a swap
+        #expect(HDStager.need(position: 2, duration: 8, loops: false) == 5.5)         // a clip shorter than 10.5 s
         #expect(HDStager.need(position: 592, duration: 600, loops: true) == nil)     // a looping Short waits for the loop
         #expect(HDStager.need(position: 2, duration: 8, loops: true) == 5.5)          // shorter than 10.5 s: what is left
         #expect(HDStager.need(position: 3, duration: nil, loops: false) == 10)        // unknown length: the full 10 s
@@ -177,8 +178,7 @@ struct HDStagerTests {
     }
 
     /// A view model on the bundled clip with an upgrade pending, and its player paused half a second in.
-    private func playing(_ reports: Reports) async throws -> (PlayerViewModel, AVPlayer, Resolved) {
-        let upgrade = Self.hd()
+    private func playing(_ reports: Reports, upgrade: Resolved = HDStagerTests.hd()) async throws -> (PlayerViewModel, AVPlayer, Resolved) {
         let vm = PlayerViewModel(
             resolver: Standard360(), settings: Self.settings(), args: PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"),
             hd: HDUpgrade(upgrade: { _ in upgrade }, failed: { reports.add($0) }, refused: { reports.refuse() }))
@@ -275,6 +275,42 @@ struct HDStagerTests {
         player.replaceCurrentItem(with: nil)
     }
 
+    /// Stage 6 I-M4: while a cast holds playback the local player is paused for the receiver, and its buffered 360p still
+    /// passes the headroom gate. Nothing is staged or swapped for a player nobody watches.
+    @Test(.timeLimit(.minutes(1))) func nothingIsStagedWhileACastHoldsPlayback() async throws {
+        let (vm, player, _) = try await playing(Reports())
+        vm.pauseForCast()
+        var made = 0
+        let stager = HDStager.step(nil, model: vm, player: player, eligible: true, loops: false) { upgrade, url, position in
+            made += 1
+            return localStager(upgrade, url, position)
+        }
+        #expect(stager == nil)
+        #expect(made == 0)
+        player.replaceCurrentItem(with: nil)
+    }
+
+    /// Stage 6 I-M8: an upgrade that waited past its URLs' expiry, or 30 minutes (the app in the background, a long pause,
+    /// another network), is dropped with no penalty instead of staged into two 403s.
+    @Test(.timeLimit(.minutes(1)), arguments: [(TimeInterval(0), TimeInterval(-1)), (TimeInterval(-31 * 60), TimeInterval(3600))])
+    func aStalePendingUpgradeIsDroppedWithoutPenalty(_ age: TimeInterval, _ expiresIn: TimeInterval) async throws {
+        let reports = Reports()
+        let (vm, player, _) = try await playing(reports, upgrade: Self.hd(resolvedAt: Date().addingTimeInterval(age),
+                                                                         expiresAt: Date().addingTimeInterval(expiresIn)))
+        var made = 0
+        let stager = HDStager.step(nil, model: vm, player: player, eligible: true, loops: false) { upgrade, url, position in
+            made += 1
+            return localStager(upgrade, url, position)
+        }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(stager == nil)
+        #expect(made == 0)
+        #expect(vm.pendingUpgrade == nil)
+        #expect(reports.failed.isEmpty)
+        #expect(reports.refused == 0)
+        player.replaceCurrentItem(with: nil)
+    }
+
     /// Live streams are native `.hls`, never `.rung2Progressive`, so nothing is pending and no stager is ever built.
     @Test func aLiveStreamNeverCreatesAStager() async throws {
         var asked = 0
@@ -314,7 +350,7 @@ struct HDStagerTests {
         for _ in 0..<100 where reports.refused == 0 { try await Task.sleep(for: .milliseconds(5)) }
         #expect(reports.refused == 1)
         #expect(PlayerViewModel(resolver: Standard360(), settings: Self.settings(),
-                                args: PlayerArgs(videoId: "abcdefghijk")).hdRefusalHook == nil)
+                                args: PlayerArgs(videoId: "abcdefghijk")).hdRefusalHook(for: nil) == nil)
         player.replaceCurrentItem(with: nil)
     }
 
@@ -324,7 +360,7 @@ struct HDStagerTests {
         let (vm, player, upgrade) = try await playing(Reports())
         let masterURL = Self.masterURL(upgrade)
         let stager = HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: vm.audioOnly, position: 0.5,
-                              onRefused: vm.hdRefusalHook, configure: { _ in })
+                              onRefused: vm.hdRefusalHook(for: upgrade), configure: { _ in })
         #expect(PlayerHostView.builtPlayers.allObjects.contains { $0 !== player && $0.currentItem === stager.item })   // M15
         #expect(vm.commitUpgrade(masterURL))
         stager.handOver(to: player)

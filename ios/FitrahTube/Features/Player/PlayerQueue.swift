@@ -23,7 +23,8 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
     var needsPage: Bool { upcoming.count <= Self.pageThreshold && hasMorePages }
     var streamPrefetchTargets: [ContentItem] { Array(upcoming.prefix(Self.streamPrefetchCount)) }
 
-    /// `targetVideoId` is authoritative, `startIndex` the fallback hint (`PlaylistDetailFragment.kt:747`).
+    /// `targetVideoId` is authoritative, `startIndex` the fallback hint (`PlaylistDetailFragment.kt:747`) -- and the pick
+    /// when it holds the target, so a later copy of a repeated video starts there (stage 6 I-M6, the Cubic P2 class).
     /// Shuffle pins the resolved start item first, randomizes the rest and disables paging
     /// (`PlaylistDetailFragment.kt:300-303`).
     static func start(
@@ -31,7 +32,9 @@ nonisolated struct PlayerQueue: Equatable, Sendable {
         cursor: String?, using generator: inout some RandomNumberGenerator
     ) -> PlayerQueue {
         let clampedIndex = items.isEmpty ? 0 : min(max(startIndex, 0), items.count - 1)
-        let start = targetVideoId.flatMap { id in items.firstIndex { $0.id == id } } ?? clampedIndex
+        let start = targetVideoId.flatMap { id in
+            items.indices.contains(startIndex) && items[startIndex].id == id ? startIndex : items.firstIndex { $0.id == id }
+        } ?? clampedIndex
         let cursor = shuffled ? nil : cursor   // shuffle always disables paging, even on an empty page
         guard shuffled, !items.isEmpty else {
             return PlayerQueue(items: items, index: start, cursor: cursor)
@@ -88,9 +91,12 @@ nonisolated enum AutoSkipPolicy {
 /// provide a different implementation.
 protocol PlaylistQueueSource: Sendable {
     /// One page of a playlist, oldest cursor first. `continuation == nil` means "first page".
-    /// Returns the page's items and the cursor for the next page, or nil when exhausted.
+    /// Returns the page's items and the cursor for the next page, or nil when exhausted. The list's own titles: the deep
+    /// scan's 3 s budget must not wait on `/titles` per page (stage 6 I-M9), so the caller asks `retitle` itself.
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?)
+    /// Owner issue 1(b): the original titles for `items`, each unknown one unchanged.
+    func retitle(_ items: [ContentItem]) async -> [ContentItem]
 }
 
 extension ContentItem {
@@ -128,7 +134,16 @@ struct LivePlaylistQueueSource: PlaylistQueueSource {
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {
         let page = try await client.playlistItems(playlistId, continuation: continuation)
-        let items = await titles.retitle(page.items) // owner issue 1(b): original titles
-        return (items.map { ContentItem(video: $0) }, page.nextContinuation)
+        return (page.items.map { ContentItem(video: $0) }, page.nextContinuation)
+    }
+
+    /// Owner issue 1(b), once per list: the view model asks for a page's (or the deep scan's whole list's) originals.
+    func retitle(_ items: [ContentItem]) async -> [ContentItem] {
+        let originals = await titles.retitle(items.map { VideoItem(id: $0.id, title: $0.title) })
+        return zip(items, originals).map { item, original in
+            var item = item
+            item.title = original.title
+            return item
+        }
     }
 }
