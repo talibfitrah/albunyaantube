@@ -4,4 +4,4 @@ $FF -v error -y -f lavfi -i testsrc2=size=256x144:rate=25 -t 16 -c:v libx264 -pr
 $FF -v error -y -f lavfi -i testsrc2=size=128x72:rate=25 -t 16 -c:v libx264 -profile:v main -b:v 15k -maxrate 15k -bufsize 30k -g 50 -keyint_min 50 -sc_threshold 0 -an "${DASH[@]}" v1.mp4
 $FF -v error -y -f lavfi -i sine=frequency=440:sample_rate=44100 -t 16 -c:a aac -b:a 24k -ac 1 -vn "${DASH[@]}" a0.mp4
 $FF -v error -y -f lavfi -i testsrc2=size=128x72:rate=25 -f lavfi -i sine=frequency=440:sample_rate=44100 -t 16 -c:v libx264 -b:v 15k -g 50 -c:a aac -b:a 24k -ac 1 -shortest -movflags +faststart muxed.mp4
-Model: python3 -I synthetic-model.py <this dir>  (writes synthetic.json)
+Model: synthetic.json is the SyntheticHLS model of these four mp4s, committed in 45889d21 (no generator script exists in the repo).

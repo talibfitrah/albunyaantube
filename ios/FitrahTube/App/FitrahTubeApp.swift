@@ -467,9 +467,8 @@ struct FitrahTubeApp: App {
             context.fill(CGRect(origin: .zero, size: size))
             UIImage(named: "logo")?.draw(in: CGRect(x: 120, y: 50, width: 80, height: 80))
         }
-        let directory = OfflineStorage.directoryURL(base: container.offlineBase)
-        try? OfflineManager.prepareDirectory(directory)
-        try? card.write(to: directory.appending(path: OfflineStorage.thumbnailName(itemId: item.id)))
+        try? OfflineManager.prepareDirectory(OfflineStorage.directoryURL(base: container.offlineBase))
+        try? card.write(to: OfflineStorage.thumbnailURL(itemId: item.id, base: container.offlineBase))
     }
     #endif
 

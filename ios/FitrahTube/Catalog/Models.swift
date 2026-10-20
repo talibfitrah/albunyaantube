@@ -39,8 +39,6 @@ nonisolated struct LiveChannelLives: Hashable, Sendable {
         let id: String
         let title: String
     }
-    let channelId: String
-    let status: String
     let lives: [Live]
 }
 

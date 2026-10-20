@@ -584,7 +584,7 @@ class Rig(http.server.BaseHTTPRequestHandler):
 http.server.ThreadingHTTPServer(("127.0.0.1", port), Rig).serve_forever()
 ' "$PHASE2_PORT" "$ROOT/ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/synthetic" &
 PHASE2_SERVER=$!
-trap 'kill "$HARDENING_SERVER" "$PHASE2_SERVER" 2>/dev/null' EXIT
+trap 'kill "$PHASE2_SERVER" 2>/dev/null' EXIT
 for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
     slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
     echo "== playback phase 2: $device -> $PHASE2_OUT/$slug =="

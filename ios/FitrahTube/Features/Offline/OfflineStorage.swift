@@ -26,6 +26,10 @@ enum OfflineStorage {
         "\(itemId).jpg"
     }
 
+    nonisolated static func thumbnailURL(itemId: String, base: URL) -> URL {
+        fileURL(relativePath: thumbnailName(itemId: itemId), base: base)
+    }
+
     nonisolated static func fileURL(relativePath: String, base: URL) -> URL {
         directoryURL(base: base).appending(path: relativePath)
     }
@@ -35,7 +39,7 @@ enum OfflineStorage {
     /// copies are ~150 KB each, on disk next to the files).
     static func usedBytes(items: [OfflineItem], base: URL) -> Int64 {
         items.reduce(0) { total, item in
-            let copy = fileURL(relativePath: thumbnailName(itemId: item.id), base: base)
+            let copy = thumbnailURL(itemId: item.id, base: base)
             return total + item.bytesWritten + Int64((try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
     }

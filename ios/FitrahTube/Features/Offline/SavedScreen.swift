@@ -76,8 +76,7 @@ private struct SavedRow: View {
     var body: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
             RemoteImage(url: item.thumbnailUrl.flatMap(URL.init),
-                         savedCopy: OfflineStorage.fileURL(relativePath: OfflineStorage.thumbnailName(itemId: item.id),
-                                                           base: container.offlineBase))
+                         savedCopy: OfflineStorage.thumbnailURL(itemId: item.id, base: container.offlineBase))
                 .frame(width: 104, height: 104 * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
             VStack(alignment: .leading, spacing: Spacing.xs) {

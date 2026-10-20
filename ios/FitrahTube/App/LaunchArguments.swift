@@ -10,4 +10,11 @@ enum LaunchArguments {
         []
         #endif
     }
+
+    /// The value following `flag` in `debug`, or nil when the flag is absent or last.
+    static func value(after flag: String) -> String? {
+        let args = debug
+        guard let i = args.firstIndex(of: flag), args.indices.contains(i + 1) else { return nil }
+        return args[i + 1]
+    }
 }

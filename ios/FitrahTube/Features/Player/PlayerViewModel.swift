@@ -1302,16 +1302,12 @@ extension StreamState {
 
     /// DEBUG only (L3, L5): `-fitrah-live-refresh-seconds N`. `LaunchArguments.debug` is empty in Release.
     static var debugLiveRefreshSeconds: TimeInterval? {
-        let arguments = LaunchArguments.debug
-        guard let i = arguments.firstIndex(of: "-fitrah-live-refresh-seconds"), arguments.indices.contains(i + 1) else { return nil }
-        return TimeInterval(arguments[i + 1])
+        LaunchArguments.value(after: "-fitrah-live-refresh-seconds").flatMap { TimeInterval($0) }
     }
 
     /// DEBUG only (L5): `-fitrah-live-force-end-seconds N` forces an end N s after a live-channel item plays.
     static var debugLiveForceEndSeconds: TimeInterval? {
-        let arguments = LaunchArguments.debug
-        guard let i = arguments.firstIndex(of: "-fitrah-live-force-end-seconds"), arguments.indices.contains(i + 1) else { return nil }
-        return TimeInterval(arguments[i + 1])
+        LaunchArguments.value(after: "-fitrah-live-force-end-seconds").flatMap { TimeInterval($0) }
     }
 
     /// Fix round 1: a refresh that does not land (a blip, a cooldown, not live now) is retried this often inside the

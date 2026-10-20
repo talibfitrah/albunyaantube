@@ -110,6 +110,7 @@ actor OfflineManager: OfflineSaving {
     /// it was, exactly like the kill-switch's hidden-affordance rule.
     private let downloadsEnabled: @Sendable () async -> Bool
     private let directory: URL
+    private let baseDirectory: URL
 
     /// Ids with an engine task in flight (or a resolve on the way to one).
     private var active: Set<String> = []
@@ -191,6 +192,7 @@ actor OfflineManager: OfflineSaving {
         self.downloadsEnabled = downloadsEnabled
         self.refusesOwner = refusesOwner
         self.thumbnail = thumbnail
+        self.baseDirectory = baseDirectory
         directory = OfflineStorage.directoryURL(base: baseDirectory)
         Task { [engine] in
             for await event in engine.events { await self.handle(event) }
@@ -1171,7 +1173,7 @@ actor OfflineManager: OfflineSaving {
 
     /// The row's thumbnail copy (1.0.4 I9).
     private func thumbnailCopy(_ id: String) -> URL {
-        directory.appending(path: OfflineStorage.thumbnailName(itemId: id))
+        OfflineStorage.thumbnailURL(itemId: id, base: baseDirectory)
     }
 
     private func forget(_ id: String) {

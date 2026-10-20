@@ -222,8 +222,8 @@ struct LiveCatalogClientTests {
 
         let lives = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g")
 
-        #expect(lives == LiveChannelLives(channelId: "UCOll3M-P7oKs5cSrQ9ytt6g", status: "LIVE",
-                                          lives: [.init(id: "eaOtcUNHDB8", title: "Zad")]))
+        #expect(lives == LiveChannelLives(
+            lives: [.init(id: "eaOtcUNHDB8", title: "Zad")]))
         #expect(transport.lastRequest?.path == "/v1/live/channels/UCOll3M-P7oKs5cSrQ9ytt6g")
     }
 
@@ -261,7 +261,7 @@ struct LiveCatalogClientTests {
     }
 
     @Test func theFakeAnswersAnUnknownChannelLikeThe404() async throws {
-        let lives = LiveChannelLives(channelId: "UCa", status: "OFFLINE", lives: [])
+        let lives = LiveChannelLives(lives: [])
         let fake = FakeCatalogClient(liveChannels: ["UCa": lives])
 
         #expect(try await fake.liveChannel(id: "UCa") == lives)

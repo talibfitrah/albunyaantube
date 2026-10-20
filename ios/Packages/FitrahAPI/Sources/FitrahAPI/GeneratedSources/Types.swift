@@ -45,11 +45,6 @@ public protocol APIProtocol: Sendable {
     /// - Remark: HTTP `GET /v1/playlists/{playlistId}`.
     /// - Remark: Generated from `#/paths//v1/playlists/{playlistId}/get(getPublicPlaylist)`.
     func getPublicPlaylist(_ input: Operations.GetPublicPlaylist.Input) async throws -> Operations.GetPublicPlaylist.Output
-    /// Get video details by YouTube ID
-    ///
-    /// - Remark: HTTP `GET /v1/videos/{videoId}`.
-    /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)`.
-    func getPublicVideo(_ input: Operations.GetPublicVideo.Input) async throws -> Operations.GetPublicVideo.Output
     /// Current live streams of a live-category channel
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
@@ -60,11 +55,6 @@ public protocol APIProtocol: Sendable {
     /// - Remark: HTTP `GET /v1/search`.
     /// - Remark: Generated from `#/paths//v1/search/get(searchPublicContent)`.
     func searchPublicContent(_ input: Operations.SearchPublicContent.Input) async throws -> Operations.SearchPublicContent.Output
-    /// Submit a content report
-    ///
-    /// - Remark: HTTP `POST /v1/reports`.
-    /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)`.
-    func submitContentReport(_ input: Operations.SubmitContentReport.Input) async throws -> Operations.SubmitContentReport.Output
 }
 
 /// Convenience overloads for operation inputs.
@@ -137,19 +127,6 @@ extension APIProtocol {
             headers: headers
         ))
     }
-    /// Get video details by YouTube ID
-    ///
-    /// - Remark: HTTP `GET /v1/videos/{videoId}`.
-    /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)`.
-    public func getPublicVideo(
-        path: Operations.GetPublicVideo.Input.Path,
-        headers: Operations.GetPublicVideo.Input.Headers = .init()
-    ) async throws -> Operations.GetPublicVideo.Output {
-        try await getPublicVideo(Operations.GetPublicVideo.Input(
-            path: path,
-            headers: headers
-        ))
-    }
     /// Current live streams of a live-category channel
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
@@ -174,19 +151,6 @@ extension APIProtocol {
         try await searchPublicContent(Operations.SearchPublicContent.Input(
             query: query,
             headers: headers
-        ))
-    }
-    /// Submit a content report
-    ///
-    /// - Remark: HTTP `POST /v1/reports`.
-    /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)`.
-    public func submitContentReport(
-        headers: Operations.SubmitContentReport.Input.Headers = .init(),
-        body: Operations.SubmitContentReport.Input.Body
-    ) async throws -> Operations.SubmitContentReport.Output {
-        try await submitContentReport(Operations.SubmitContentReport.Input(
-            headers: headers,
-            body: body
         ))
     }
 }
@@ -253,111 +217,6 @@ public enum Servers {
 public enum Components {
     /// Types generated from the `#/components/schemas` section of the OpenAPI document.
     public enum Schemas {
-        /// - Remark: Generated from `#/components/schemas/ContentReport`.
-        public struct ContentReport: Codable, Hashable, Sendable {
-            /// - Remark: Generated from `#/components/schemas/ContentReport/id`.
-            public var id: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/targetType`.
-            @frozen public enum TargetTypePayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case video = "VIDEO"
-                case playlist = "PLAYLIST"
-                case channel = "CHANNEL"
-            }
-            /// - Remark: Generated from `#/components/schemas/ContentReport/targetType`.
-            public var targetType: Components.Schemas.ContentReport.TargetTypePayload?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/targetId`.
-            public var targetId: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/ReasonsPayload`.
-            @frozen public enum ReasonsPayloadPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case music = "MUSIC"
-                case nudity = "NUDITY"
-                case badLanguage = "BAD_LANGUAGE"
-                case flirting = "FLIRTING"
-                case romance = "ROMANCE"
-                case awrah = "AWRAH"
-                case shirk = "SHIRK"
-                case bidah = "BIDAH"
-                case violence = "VIOLENCE"
-                case misinformation = "MISINFORMATION"
-                case other = "OTHER"
-            }
-            /// - Remark: Generated from `#/components/schemas/ContentReport/reasons`.
-            public typealias ReasonsPayload = [Components.Schemas.ContentReport.ReasonsPayloadPayload]
-            /// - Remark: Generated from `#/components/schemas/ContentReport/reasons`.
-            public var reasons: Components.Schemas.ContentReport.ReasonsPayload?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/otherDescription`.
-            public var otherDescription: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/deviceId`.
-            public var deviceId: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/status`.
-            @frozen public enum StatusPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                case pending = "PENDING"
-                case resolved = "RESOLVED"
-                case rejected = "REJECTED"
-            }
-            /// - Remark: Generated from `#/components/schemas/ContentReport/status`.
-            public var status: Components.Schemas.ContentReport.StatusPayload?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/createdAt`.
-            public var createdAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/resolvedAt`.
-            public var resolvedAt: Foundation.Date?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/resolvedBy`.
-            public var resolvedBy: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/ContentReport/resolutionNote`.
-            public var resolutionNote: Swift.String?
-            /// Creates a new `ContentReport`.
-            ///
-            /// - Parameters:
-            ///   - id:
-            ///   - targetType:
-            ///   - targetId:
-            ///   - reasons:
-            ///   - otherDescription:
-            ///   - deviceId:
-            ///   - status:
-            ///   - createdAt:
-            ///   - resolvedAt:
-            ///   - resolvedBy:
-            ///   - resolutionNote:
-            public init(
-                id: Swift.String? = nil,
-                targetType: Components.Schemas.ContentReport.TargetTypePayload? = nil,
-                targetId: Swift.String? = nil,
-                reasons: Components.Schemas.ContentReport.ReasonsPayload? = nil,
-                otherDescription: Swift.String? = nil,
-                deviceId: Swift.String? = nil,
-                status: Components.Schemas.ContentReport.StatusPayload? = nil,
-                createdAt: Foundation.Date? = nil,
-                resolvedAt: Foundation.Date? = nil,
-                resolvedBy: Swift.String? = nil,
-                resolutionNote: Swift.String? = nil
-            ) {
-                self.id = id
-                self.targetType = targetType
-                self.targetId = targetId
-                self.reasons = reasons
-                self.otherDescription = otherDescription
-                self.deviceId = deviceId
-                self.status = status
-                self.createdAt = createdAt
-                self.resolvedAt = resolvedAt
-                self.resolvedBy = resolvedBy
-                self.resolutionNote = resolutionNote
-            }
-            public enum CodingKeys: String, CodingKey {
-                case id
-                case targetType
-                case targetId
-                case reasons
-                case otherDescription
-                case deviceId
-                case status
-                case createdAt
-                case resolvedAt
-                case resolvedBy
-                case resolutionNote
-            }
-        }
         /// - Remark: Generated from `#/components/schemas/HomeCategoryDto`.
         public struct HomeCategoryDto: Codable, Hashable, Sendable {
             /// - Remark: Generated from `#/components/schemas/HomeCategoryDto/id`.
@@ -600,69 +459,6 @@ public enum Components {
                 case truncated
             }
         }
-        /// - Remark: Generated from `#/components/schemas/PublicVideoDetail`.
-        public struct PublicVideoDetail: Codable, Hashable, Sendable {
-            /// YouTube video ID (the id the route was asked for)
-            ///
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/youtubeId`.
-            public var youtubeId: Swift.String
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/title`.
-            public var title: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/description`.
-            public var description: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/thumbnailUrl`.
-            public var thumbnailUrl: Swift.String?
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/durationSeconds`.
-            public var durationSeconds: Swift.Int?
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/viewCount`.
-            public var viewCount: Swift.Int64?
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/channelTitle`.
-            public var channelTitle: Swift.String?
-            /// The EFFECTIVE offline permission (never null): every approved video is saveable unless an admin explicitly set it to false (owner ruling 2026-09-27).
-            ///
-            /// - Remark: Generated from `#/components/schemas/PublicVideoDetail/offlineAllowed`.
-            public var offlineAllowed: Swift.Bool
-            /// Creates a new `PublicVideoDetail`.
-            ///
-            /// - Parameters:
-            ///   - youtubeId: YouTube video ID (the id the route was asked for)
-            ///   - title:
-            ///   - description:
-            ///   - thumbnailUrl:
-            ///   - durationSeconds:
-            ///   - viewCount:
-            ///   - channelTitle:
-            ///   - offlineAllowed: The EFFECTIVE offline permission (never null): every approved video is saveable unless an admin explicitly set it to false (owner ruling 2026-09-27).
-            public init(
-                youtubeId: Swift.String,
-                title: Swift.String? = nil,
-                description: Swift.String? = nil,
-                thumbnailUrl: Swift.String? = nil,
-                durationSeconds: Swift.Int? = nil,
-                viewCount: Swift.Int64? = nil,
-                channelTitle: Swift.String? = nil,
-                offlineAllowed: Swift.Bool
-            ) {
-                self.youtubeId = youtubeId
-                self.title = title
-                self.description = description
-                self.thumbnailUrl = thumbnailUrl
-                self.durationSeconds = durationSeconds
-                self.viewCount = viewCount
-                self.channelTitle = channelTitle
-                self.offlineAllowed = offlineAllowed
-            }
-            public enum CodingKeys: String, CodingKey {
-                case youtubeId
-                case title
-                case description
-                case thumbnailUrl
-                case durationSeconds
-                case viewCount
-                case channelTitle
-                case offlineAllowed
-            }
-        }
         /// - Remark: Generated from `#/components/schemas/PublicChannelDetail`.
         public struct PublicChannelDetail: Codable, Hashable, Sendable {
             /// YouTube channel ID
@@ -821,6 +617,14 @@ public enum Components {
             ///
             /// - Remark: Generated from `#/components/schemas/ContentItemDto/liveChannelId`.
             public var liveChannelId: Swift.String?
+            /// CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
+            ///
+            /// - Remark: Generated from `#/components/schemas/ContentItemDto/sourceType`.
+            public var sourceType: Swift.String?
+            /// The YouTube id of that source (UC... or PL...); search results only
+            ///
+            /// - Remark: Generated from `#/components/schemas/ContentItemDto/sourceId`.
+            public var sourceId: Swift.String?
             /// Creates a new `ContentItemDto`.
             ///
             /// - Parameters:
@@ -839,6 +643,8 @@ public enum Components {
             ///   - videoCount: Number of videos (channels only)
             ///   - itemCount: Number of items (playlists only)
             ///   - liveChannelId: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+            ///   - sourceType: CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
+            ///   - sourceId: The YouTube id of that source (UC... or PL...); search results only
             public init(
                 id: Swift.String,
                 _type: Components.Schemas.ContentItemDto._TypePayload,
@@ -854,7 +660,9 @@ public enum Components {
                 subscribers: Swift.Int64? = nil,
                 videoCount: Swift.Int? = nil,
                 itemCount: Swift.Int? = nil,
-                liveChannelId: Swift.String? = nil
+                liveChannelId: Swift.String? = nil,
+                sourceType: Swift.String? = nil,
+                sourceId: Swift.String? = nil
             ) {
                 self.id = id
                 self._type = _type
@@ -871,6 +679,8 @@ public enum Components {
                 self.videoCount = videoCount
                 self.itemCount = itemCount
                 self.liveChannelId = liveChannelId
+                self.sourceType = sourceType
+                self.sourceId = sourceId
             }
             public enum CodingKeys: String, CodingKey {
                 case id
@@ -888,6 +698,8 @@ public enum Components {
                 case videoCount
                 case itemCount
                 case liveChannelId
+                case sourceType
+                case sourceId
             }
         }
         /// A live-category channel's current lives (spec 2026-10-17 §4.1)
@@ -1994,187 +1806,6 @@ public enum Operations {
             }
         }
     }
-    /// Get video details by YouTube ID
-    ///
-    /// - Remark: HTTP `GET /v1/videos/{videoId}`.
-    /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)`.
-    public enum GetPublicVideo {
-        public static let id: Swift.String = "getPublicVideo"
-        public struct Input: Sendable, Hashable {
-            /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/path`.
-            public struct Path: Sendable, Hashable {
-                /// YouTube video ID
-                ///
-                /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/path/videoId`.
-                public var videoId: Swift.String
-                /// Creates a new `Path`.
-                ///
-                /// - Parameters:
-                ///   - videoId: YouTube video ID
-                public init(videoId: Swift.String) {
-                    self.videoId = videoId
-                }
-            }
-            public var path: Operations.GetPublicVideo.Input.Path
-            /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/header`.
-            public struct Headers: Sendable, Hashable {
-                public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetPublicVideo.AcceptableContentType>]
-                /// Creates a new `Headers`.
-                ///
-                /// - Parameters:
-                ///   - accept:
-                public init(accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetPublicVideo.AcceptableContentType>] = .defaultValues()) {
-                    self.accept = accept
-                }
-            }
-            public var headers: Operations.GetPublicVideo.Input.Headers
-            /// Creates a new `Input`.
-            ///
-            /// - Parameters:
-            ///   - path:
-            ///   - headers:
-            public init(
-                path: Operations.GetPublicVideo.Input.Path,
-                headers: Operations.GetPublicVideo.Input.Headers = .init()
-            ) {
-                self.path = path
-                self.headers = headers
-            }
-        }
-        @frozen public enum Output: Sendable, Hashable {
-            public struct Ok: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/200/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/200/content/application\/json`.
-                    case json(Components.Schemas.PublicVideoDetail)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.PublicVideoDetail {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.GetPublicVideo.Output.Ok.Body
-                /// Creates a new `Ok`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.GetPublicVideo.Output.Ok.Body) {
-                    self.body = body
-                }
-            }
-            /// Public video fields (never the registry entity), including the effective offlineAllowed
-            ///
-            /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)/responses/200`.
-            ///
-            /// HTTP response code: `200 ok`.
-            case ok(Operations.GetPublicVideo.Output.Ok)
-            /// The associated value of the enum case if `self` is `.ok`.
-            ///
-            /// - Throws: An error if `self` is not `.ok`.
-            /// - SeeAlso: `.ok`.
-            public var ok: Operations.GetPublicVideo.Output.Ok {
-                get throws {
-                    switch self {
-                    case let .ok(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "ok",
-                            response: self
-                        )
-                    }
-                }
-            }
-            public struct NotFound: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/404/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/videos/{videoId}/GET/responses/404/content/application\/json`.
-                    case json(Components.Schemas.ErrorResponse)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.ErrorResponse {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.GetPublicVideo.Output.NotFound.Body
-                /// Creates a new `NotFound`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.GetPublicVideo.Output.NotFound.Body) {
-                    self.body = body
-                }
-            }
-            /// Video not found or not approved/available
-            ///
-            /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)/responses/404`.
-            ///
-            /// HTTP response code: `404 notFound`.
-            case notFound(Operations.GetPublicVideo.Output.NotFound)
-            /// The associated value of the enum case if `self` is `.notFound`.
-            ///
-            /// - Throws: An error if `self` is not `.notFound`.
-            /// - SeeAlso: `.notFound`.
-            public var notFound: Operations.GetPublicVideo.Output.NotFound {
-                get throws {
-                    switch self {
-                    case let .notFound(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "notFound",
-                            response: self
-                        )
-                    }
-                }
-            }
-            /// Undocumented response.
-            ///
-            /// A response with a code that is not documented in the OpenAPI document.
-            case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
-        }
-        @frozen public enum AcceptableContentType: AcceptableProtocol {
-            case json
-            case other(Swift.String)
-            public init?(rawValue: Swift.String) {
-                switch rawValue.lowercased() {
-                case "application/json":
-                    self = .json
-                default:
-                    self = .other(rawValue)
-                }
-            }
-            public var rawValue: Swift.String {
-                switch self {
-                case let .other(string):
-                    return string
-                case .json:
-                    return "application/json"
-                }
-            }
-            public static var allCases: [Self] {
-                [
-                    .json
-                ]
-            }
-        }
-    }
     /// Current live streams of a live-category channel
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
@@ -2560,337 +2191,6 @@ public enum Operations {
                     default:
                         try throwUnexpectedResponseStatus(
                             expectedStatus: "serviceUnavailable",
-                            response: self
-                        )
-                    }
-                }
-            }
-            /// Undocumented response.
-            ///
-            /// A response with a code that is not documented in the OpenAPI document.
-            case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
-        }
-        @frozen public enum AcceptableContentType: AcceptableProtocol {
-            case json
-            case other(Swift.String)
-            public init?(rawValue: Swift.String) {
-                switch rawValue.lowercased() {
-                case "application/json":
-                    self = .json
-                default:
-                    self = .other(rawValue)
-                }
-            }
-            public var rawValue: Swift.String {
-                switch self {
-                case let .other(string):
-                    return string
-                case .json:
-                    return "application/json"
-                }
-            }
-            public static var allCases: [Self] {
-                [
-                    .json
-                ]
-            }
-        }
-    }
-    /// Submit a content report
-    ///
-    /// - Remark: HTTP `POST /v1/reports`.
-    /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)`.
-    public enum SubmitContentReport {
-        public static let id: Swift.String = "submitContentReport"
-        public struct Input: Sendable, Hashable {
-            /// - Remark: Generated from `#/paths/v1/reports/POST/header`.
-            public struct Headers: Sendable, Hashable {
-                public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.SubmitContentReport.AcceptableContentType>]
-                /// Creates a new `Headers`.
-                ///
-                /// - Parameters:
-                ///   - accept:
-                public init(accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.SubmitContentReport.AcceptableContentType>] = .defaultValues()) {
-                    self.accept = accept
-                }
-            }
-            public var headers: Operations.SubmitContentReport.Input.Headers
-            /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody`.
-            @frozen public enum Body: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json`.
-                public struct JsonPayload: Codable, Hashable, Sendable {
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/targetType`.
-                    @frozen public enum TargetTypePayload: String, Codable, Hashable, Sendable, CaseIterable {
-                        case video = "VIDEO"
-                        case playlist = "PLAYLIST"
-                        case channel = "CHANNEL"
-                    }
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/targetType`.
-                    public var targetType: Operations.SubmitContentReport.Input.Body.JsonPayload.TargetTypePayload
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/targetId`.
-                    public var targetId: Swift.String
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/ReasonsPayload`.
-                    @frozen public enum ReasonsPayloadPayload: String, Codable, Hashable, Sendable, CaseIterable {
-                        case music = "MUSIC"
-                        case nudity = "NUDITY"
-                        case badLanguage = "BAD_LANGUAGE"
-                        case flirting = "FLIRTING"
-                        case romance = "ROMANCE"
-                        case awrah = "AWRAH"
-                        case shirk = "SHIRK"
-                        case bidah = "BIDAH"
-                        case violence = "VIOLENCE"
-                        case misinformation = "MISINFORMATION"
-                        case other = "OTHER"
-                    }
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/reasons`.
-                    public typealias ReasonsPayload = [Operations.SubmitContentReport.Input.Body.JsonPayload.ReasonsPayloadPayload]
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/reasons`.
-                    public var reasons: Operations.SubmitContentReport.Input.Body.JsonPayload.ReasonsPayload
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/json/otherDescription`.
-                    public var otherDescription: Swift.String?
-                    /// Creates a new `JsonPayload`.
-                    ///
-                    /// - Parameters:
-                    ///   - targetType:
-                    ///   - targetId:
-                    ///   - reasons:
-                    ///   - otherDescription:
-                    public init(
-                        targetType: Operations.SubmitContentReport.Input.Body.JsonPayload.TargetTypePayload,
-                        targetId: Swift.String,
-                        reasons: Operations.SubmitContentReport.Input.Body.JsonPayload.ReasonsPayload,
-                        otherDescription: Swift.String? = nil
-                    ) {
-                        self.targetType = targetType
-                        self.targetId = targetId
-                        self.reasons = reasons
-                        self.otherDescription = otherDescription
-                    }
-                    public enum CodingKeys: String, CodingKey {
-                        case targetType
-                        case targetId
-                        case reasons
-                        case otherDescription
-                    }
-                }
-                /// - Remark: Generated from `#/paths/v1/reports/POST/requestBody/content/application\/json`.
-                case json(Operations.SubmitContentReport.Input.Body.JsonPayload)
-            }
-            public var body: Operations.SubmitContentReport.Input.Body
-            /// Creates a new `Input`.
-            ///
-            /// - Parameters:
-            ///   - headers:
-            ///   - body:
-            public init(
-                headers: Operations.SubmitContentReport.Input.Headers = .init(),
-                body: Operations.SubmitContentReport.Input.Body
-            ) {
-                self.headers = headers
-                self.body = body
-            }
-        }
-        @frozen public enum Output: Sendable, Hashable {
-            public struct Created: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/reports/POST/responses/201/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/responses/201/content/application\/json`.
-                    case json(Components.Schemas.ContentReport)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.ContentReport {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.SubmitContentReport.Output.Created.Body
-                /// Creates a new `Created`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.SubmitContentReport.Output.Created.Body) {
-                    self.body = body
-                }
-            }
-            /// Report submitted successfully
-            ///
-            /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)/responses/201`.
-            ///
-            /// HTTP response code: `201 created`.
-            case created(Operations.SubmitContentReport.Output.Created)
-            /// The associated value of the enum case if `self` is `.created`.
-            ///
-            /// - Throws: An error if `self` is not `.created`.
-            /// - SeeAlso: `.created`.
-            public var created: Operations.SubmitContentReport.Output.Created {
-                get throws {
-                    switch self {
-                    case let .created(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "created",
-                            response: self
-                        )
-                    }
-                }
-            }
-            public struct BadRequest: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/reports/POST/responses/400/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/responses/400/content/application\/json`.
-                    case json(Components.Schemas.ErrorResponse)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.ErrorResponse {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.SubmitContentReport.Output.BadRequest.Body
-                /// Creates a new `BadRequest`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.SubmitContentReport.Output.BadRequest.Body) {
-                    self.body = body
-                }
-            }
-            /// Validation error
-            ///
-            /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)/responses/400`.
-            ///
-            /// HTTP response code: `400 badRequest`.
-            case badRequest(Operations.SubmitContentReport.Output.BadRequest)
-            /// The associated value of the enum case if `self` is `.badRequest`.
-            ///
-            /// - Throws: An error if `self` is not `.badRequest`.
-            /// - SeeAlso: `.badRequest`.
-            public var badRequest: Operations.SubmitContentReport.Output.BadRequest {
-                get throws {
-                    switch self {
-                    case let .badRequest(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "badRequest",
-                            response: self
-                        )
-                    }
-                }
-            }
-            public struct TooManyRequests: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/reports/POST/responses/429/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/responses/429/content/application\/json`.
-                    case json(Components.Schemas.ErrorResponse)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.ErrorResponse {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.SubmitContentReport.Output.TooManyRequests.Body
-                /// Creates a new `TooManyRequests`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.SubmitContentReport.Output.TooManyRequests.Body) {
-                    self.body = body
-                }
-            }
-            /// Rate limit exceeded (max 5 reports per device per hour)
-            ///
-            /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)/responses/429`.
-            ///
-            /// HTTP response code: `429 tooManyRequests`.
-            case tooManyRequests(Operations.SubmitContentReport.Output.TooManyRequests)
-            /// The associated value of the enum case if `self` is `.tooManyRequests`.
-            ///
-            /// - Throws: An error if `self` is not `.tooManyRequests`.
-            /// - SeeAlso: `.tooManyRequests`.
-            public var tooManyRequests: Operations.SubmitContentReport.Output.TooManyRequests {
-                get throws {
-                    switch self {
-                    case let .tooManyRequests(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "tooManyRequests",
-                            response: self
-                        )
-                    }
-                }
-            }
-            public struct InternalServerError: Sendable, Hashable {
-                /// - Remark: Generated from `#/paths/v1/reports/POST/responses/500/content`.
-                @frozen public enum Body: Sendable, Hashable {
-                    /// - Remark: Generated from `#/paths/v1/reports/POST/responses/500/content/application\/json`.
-                    case json(Components.Schemas.ErrorResponse)
-                    /// The associated value of the enum case if `self` is `.json`.
-                    ///
-                    /// - Throws: An error if `self` is not `.json`.
-                    /// - SeeAlso: `.json`.
-                    public var json: Components.Schemas.ErrorResponse {
-                        get throws {
-                            switch self {
-                            case let .json(body):
-                                return body
-                            }
-                        }
-                    }
-                }
-                /// Received HTTP response body
-                public var body: Operations.SubmitContentReport.Output.InternalServerError.Body
-                /// Creates a new `InternalServerError`.
-                ///
-                /// - Parameters:
-                ///   - body: Received HTTP response body
-                public init(body: Operations.SubmitContentReport.Output.InternalServerError.Body) {
-                    self.body = body
-                }
-            }
-            /// Internal server error
-            ///
-            /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)/responses/500`.
-            ///
-            /// HTTP response code: `500 internalServerError`.
-            case internalServerError(Operations.SubmitContentReport.Output.InternalServerError)
-            /// The associated value of the enum case if `self` is `.internalServerError`.
-            ///
-            /// - Throws: An error if `self` is not `.internalServerError`.
-            /// - SeeAlso: `.internalServerError`.
-            public var internalServerError: Operations.SubmitContentReport.Output.InternalServerError {
-                get throws {
-                    switch self {
-                    case let .internalServerError(response):
-                        return response
-                    default:
-                        try throwUnexpectedResponseStatus(
-                            expectedStatus: "internalServerError",
                             response: self
                         )
                     }

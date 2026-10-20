@@ -607,9 +607,7 @@ struct PlayerScreen: View {
     /// `-fitrah-fake-player-synthetic <baseURL>` (spec R34): the Range server `screenshots.sh` runs over InnerTubeKit's
     /// synthetic test fixture.
     static var syntheticFixtureBase: URL? {
-        let args = LaunchArguments.debug
-        guard let i = args.firstIndex(of: "-fitrah-fake-player-synthetic"), args.indices.contains(i + 1) else { return nil }
-        return URL(string: args[i + 1])
+        LaunchArguments.value(after: "-fitrah-fake-player-synthetic").flatMap { URL(string: $0) }
     }
     #endif
 

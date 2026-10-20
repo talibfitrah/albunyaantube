@@ -294,7 +294,7 @@ struct LiveChannelPlaybackTests {
         var args = PlayerArgs(videoId: "pqC-1yfFvu8", title: "ZAD TV Channel Live", channelId: channel)
         args.liveChannelId = channel
         let vm = makeViewModel(resolver, args: args, sleeper: Sleeper(immediate: 0),
-                               lives: [channel: .init(channelId: channel, status: "LIVE", lives: [.init(id: "eaOtcUNHDB8", title: "Zad")])])
+                               lives: [channel: .init(lives: [.init(id: "eaOtcUNHDB8", title: "Zad")])])
 
         await vm.open()
         await vm.playToEnd()
@@ -311,7 +311,7 @@ struct LiveChannelPlaybackTests {
         args.liveChannelId = channel
         let vm = makeViewModel(RecordingResolver([.success(Self.live("pqC-1yfFvu8", now: false))]), args: args,
                                sleeper: Sleeper(immediate: 0),
-                               lives: [channel: .init(channelId: channel, status: "OFFLINE", lives: [])])
+                               lives: [channel: .init(lives: [])])
 
         await vm.open()
 
@@ -325,7 +325,7 @@ struct LiveChannelPlaybackTests {
         var args = PlayerArgs(videoId: "Rs7St51oDDc", channelId: channel)
         args.liveChannelId = channel
         let vm = makeViewModel(resolver, args: args, sleeper: Sleeper(immediate: 0),
-                               lives: [channel: .init(channelId: channel, status: "LIVE", lives: [.init(id: "Rs7St51oDDc", title: "Sunnah")])])
+                               lives: [channel: .init(lives: [.init(id: "Rs7St51oDDc", title: "Sunnah")])])
 
         await vm.open()
         await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
@@ -357,7 +357,7 @@ struct LiveChannelPlaybackTests {
     }
 
     static func onAir(_ ids: String...) -> LiveChannelLives {
-        LiveChannelLives(channelId: channel, status: ids.isEmpty ? "OFFLINE" : "LIVE", lives: ids.map { .init(id: $0, title: "Sunnah") })
+        LiveChannelLives(lives: ids.map { .init(id: $0, title: "Sunnah") })
     }
 
     /// Hand-off 1: a 404 is the backend saying this is not a servable live channel. Stop at once, after an end and after
@@ -514,8 +514,8 @@ struct LiveChannelPlaybackTests {
     @Test func aLiveChannelItemKeepsTheBackendTitleForTheTitleMatch() async throws {
         let resolver = RecordingResolver([.success(Self.live("old0000000a", title: "Laith and Layla | One4Kids LIVE 24/7")),
                                           .success(Self.live("new0000000a"))])
-        let lives = LiveChannelLives(channelId: Self.channel, status: "LIVE",
-                                     lives: [.init(id: "kazwa000001", title: "Kazwa & Bilal"), .init(id: "new0000000a", title: "Laith & Layla")])
+        let lives = LiveChannelLives(
+            lives: [.init(id: "kazwa000001", title: "Kazwa & Bilal"), .init(id: "new0000000a", title: "Laith & Layla")])
         let vm = makeViewModel(resolver, args: Self.channelArgs("old0000000a", title: "Laith & Layla"), sleeper: Sleeper(immediate: 0),
                                lives: [Self.channel: lives])
 

@@ -69,8 +69,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         switch try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id))) {
         case .ok(let ok):
             let dto = try ok.body.json
-            return LiveChannelLives(channelId: dto.channelId, status: dto.status.rawValue,
-                                    lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
+            return LiveChannelLives(lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
         case .notFound:
             throw LiveChannelNotFound()
         case .undocumented(let statusCode, _):
