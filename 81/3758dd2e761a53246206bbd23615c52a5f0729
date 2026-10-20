@@ -1,0 +1,28 @@
+backend/src/test/java/com/albunyaan/tube/util/ThumbnailRepairMigrationTest.java
+  s_dbb6b1f3671904::t_a25812fc13b409 135-165
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailRepairMigration.java
+  s_dbb6b1f3671904::t_41e12833f94e82 146-178
+  s_dbb6b1f3671904::t_4deeec28d24ae5 131
+backend/src/test/java/com/albunyaan/tube/scheduler/PlaylistValidationSchedulerTest.java
+  s_dbb6b1f3671904::t_4bd17a1e059ffc 1-120
+backend/src/main/java/com/albunyaan/tube/scheduler/PlaylistValidationScheduler.java
+  s_dbb6b1f3671904::t_2b9d2718f193a8 9,12-14,68,78-79,85,182-183,240-276
+backend/src/test/resources/application-test.yml
+  s_dbb6b1f3671904::t_ebdbb75e2e64d7 26-30
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "813758dd2e761a53246206bbd23615c52a5f0729",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
