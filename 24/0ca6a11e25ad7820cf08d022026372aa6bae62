@@ -1,0 +1,36 @@
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_dbb6b1f3671904::t_c19cc7086b94b5 891,900
+backend/src/test/resources/application-test.yml
+  s_dbb6b1f3671904::t_1e8fded096274b 29
+backend/src/main/java/com/albunyaan/tube/util/ThumbnailRepairMigration.java
+  s_dbb6b1f3671904::t_f8c428fd7a7605 29-32
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_1e8fded096274b 131
+backend/src/main/java/com/albunyaan/tube/service/YouTubeCircuitBreaker.java
+  s_dbb6b1f3671904::t_1e8fded096274b 626-627
+backend/src/main/java/com/albunyaan/tube/scheduler/PlaylistValidationScheduler.java
+  s_dbb6b1f3671904::t_c19cc7086b94b5 79,270
+backend/src/test/java/com/albunyaan/tube/scheduler/PlaylistValidationSchedulerTest.java
+  s_dbb6b1f3671904::t_6d0a78622e1d89 50,61,63,94,106,121,130,132,134,146
+  s_dbb6b1f3671904::t_740c73da6f9a3c 54,125
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_f8c428fd7a7605 1390,1395-1396,1399,1402
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_1e8fded096274b 277
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "240ca6a11e25ad7820cf08d022026372aa6bae62",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
