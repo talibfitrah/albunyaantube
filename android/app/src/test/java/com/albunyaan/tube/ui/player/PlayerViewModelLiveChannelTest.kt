@@ -27,6 +27,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.doAnswer
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import org.robolectric.shadows.ShadowSystemClock
@@ -61,12 +62,14 @@ class PlayerViewModelLiveChannelTest {
         resolved: ResolvedStreams,
         content: C,
         prefetched: ResolvedStreams? = null,
+        rateLimiter: com.albunyaan.tube.player.ExtractionRateLimiter = com.albunyaan.tube.player.ExtractionRateLimiter(),
     ): Triple<PlayerViewModel, FakePlayerRepository, C> {
         val repository = FakePlayerRepository().apply { resolvedStreams = resolved }
         val vm = playerViewModel(
             repository = repository,
             contentService = content,
             prefetchService = FakePrefetchService(prefetched),
+            rateLimiter = rateLimiter,
             ioDispatcher = dispatcher,
         )
         return Triple(vm, repository, content)
@@ -258,6 +261,38 @@ class PlayerViewModelLiveChannelTest {
             vm.forceRefreshForAutoRecovery()
             runCurrent()
             assertEquals("newSunnah01", (vm.state.value.streamState as StreamState.Ready).streamId)
+        }
+    }
+
+    /** Stage 9 r2: a delayed refresh whose second acquire is still refused is a spent budget (step 4), never a Loading with no way out. */
+    @Test fun `a delayed refresh still refused after the wait goes to step 4 and ends in the error state`() = runTest(dispatcher) {
+        var autoRecoveryCalls = 0
+        val limiter = org.mockito.kotlin.mock<com.albunyaan.tube.player.ExtractionRateLimiter> {
+            on { acquire(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer { inv ->
+                val kind = inv.arguments[1] as com.albunyaan.tube.player.ExtractionRateLimiter.RequestKind
+                when {
+                    kind != com.albunyaan.tube.player.ExtractionRateLimiter.RequestKind.AUTO_RECOVERY ->
+                        com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Allowed
+                    autoRecoveryCalls++ == 0 -> com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Delayed(1_000, "minimum interval")
+                    else -> com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Blocked("limit", 60_000)
+                }
+            }
+        }
+        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true), FakeContentService(), rateLimiter = limiter)
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+
+            assertTrue(vm.forceRefreshForAutoRecovery())
+            advanceClocks(2_000)                                                  // the delay lapses, the second acquire is refused
+            assertEquals(StreamState.Loading, vm.state.value.streamState)         // step 4's reconnecting state, with retries running
+            val asked = content.channelLivesCalls.size
+
+            advanceClocks(11 * 60_000L)
+
+            assertTrue("step 4 must keep asking the backend", content.channelLivesCalls.size > asked)
+            assertTrue(vm.state.value.streamState is StreamState.Error)
         }
     }
 

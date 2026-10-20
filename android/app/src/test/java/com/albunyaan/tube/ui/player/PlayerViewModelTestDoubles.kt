@@ -44,6 +44,7 @@ internal fun playerViewModel(
     contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
     prefetchService: StreamPrefetchService = FakePrefetchService(),
     livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector = com.albunyaan.tube.player.LivePlaylistRedirector { _, _ -> null },
+    rateLimiter: ExtractionRateLimiter = ExtractionRateLimiter(),
     ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
     networkMonitor: com.albunyaan.tube.util.NetworkMonitor =
         com.albunyaan.tube.util.NetworkMonitor(androidx.test.core.app.ApplicationProvider.getApplicationContext()),
@@ -51,7 +52,7 @@ internal fun playerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
     playlistDetailRepository = playlistDetailRepository,
-    rateLimiter = ExtractionRateLimiter(),
+    rateLimiter = rateLimiter,
     prefetchService = prefetchService,
     favoritesRepository = favoritesRepository,
     metricsReporter = FakeExtractorMetricsReporter(),

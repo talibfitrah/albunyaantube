@@ -385,9 +385,10 @@ object DataModule {
         mpdGenerator: MultiRepresentationMpdGenerator,
         mpdRegistry: SyntheticDashMpdRegistry,
         featureFlags: PlaybackFeatureFlags,
-        segmentPreBuffer: SegmentPreBuffer
+        segmentPreBuffer: SegmentPreBuffer,
+        downloadRepository: com.albunyaan.tube.download.DownloadRepository,
     ): StreamPrefetchService {
-        return DefaultStreamPrefetchService(globalResolver, rateLimiter, mpdGenerator, mpdRegistry, featureFlags, segmentPreBuffer)
+        return DefaultStreamPrefetchService(globalResolver, rateLimiter, mpdGenerator, mpdRegistry, featureFlags, segmentPreBuffer, downloadRepository)
     }
 
     @Provides

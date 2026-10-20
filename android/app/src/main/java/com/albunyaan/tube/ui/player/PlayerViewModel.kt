@@ -835,7 +835,14 @@ class PlayerViewModel @Inject constructor(
         val startupLoad = downloadRepository.startupLoad
         if (startupLoad != null && !startupLoad.isCompleted && !waitedForStartupLoad) {
             waitedForStartupLoad = true
-            updateState { it.copy(streamState = StreamState.Loading) }
+            // The player shows "No video is currently playing." for a null item: give it the one being opened.
+            val opening = UpNextItem(
+                id = videoId, title = title, channelName = channelName, thumbnailUrl = thumbnailUrl,
+                durationSeconds = durationSeconds, viewCount = viewCount, streamId = videoId,
+                sourceChannelId = sourceChannelId, liveChannelId = liveChannelId,
+            )
+            currentItem = opening
+            updateState { it.copy(streamState = StreamState.Loading, currentItem = opening) }
             viewModelScope.launch(dispatcher) {
                 // ponytail: a load slower than this streams; raise it if real devices list files slower.
                 withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
@@ -958,14 +965,7 @@ class PlayerViewModel @Inject constructor(
         resolveStreamFor(item)
     }
 
-    /** A completed download of [videoId] whose file is on disk; a video copy before an audio-only one. */
-    private fun savedCopyOf(videoId: String): DownloadEntry? =
-        downloadRepository.downloads.value
-            .filter {
-                it.request.videoId == videoId && it.status == DownloadStatus.COMPLETED &&
-                    it.filePath?.let(::File)?.isFile == true
-            }
-            .minByOrNull { it.request.audioOnly }
+    private fun savedCopyOf(videoId: String): DownloadEntry? = downloadRepository.savedCopyOf(videoId)
 
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
@@ -1453,6 +1453,8 @@ class PlayerViewModel @Inject constructor(
                         currentItem?.let { forceRefreshCurrentStreamInternal(it) }
                     } else {
                         android.util.Log.w("PlayerViewModel", "Delayed refresh still blocked after delay: $newResult")
+                        // A refused refresh is a spent budget (§9.1 step 4), never a Loading with Retry hidden.
+                        if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
                     }
                 }
                 return true // Refresh scheduled

@@ -54,6 +54,7 @@ class StreamPrefetchServiceTtlTest {
     private lateinit var featureFlags: PlaybackFeatureFlags
     private lateinit var segmentPreBuffer: SegmentPreBuffer
     private lateinit var service: DefaultStreamPrefetchService
+    private val downloads = com.albunyaan.tube.ui.player.FakeDownloadRepository()
 
     /**
      * Mutable wall-clock pointer driven by the tests. Bumping it past the
@@ -101,6 +102,7 @@ class StreamPrefetchServiceTtlTest {
             mpdRegistry = mpdRegistry,
             featureFlags = featureFlags,
             segmentPreBuffer = segmentPreBuffer,
+            downloadRepository = downloads,
         ).apply {
             setClockForTesting { now }
         }
@@ -109,6 +111,32 @@ class StreamPrefetchServiceTtlTest {
     @After
     fun tearDown() {
         globalResolver.setOnJobCleanupListener(null)
+    }
+
+    private fun tapped(id: String) = com.albunyaan.tube.data.model.ContentItem.Video(
+        id = id, title = "t", category = "c", durationSeconds = 0, uploadedDaysAgo = null, description = "",
+    )
+
+    private fun saved(videoId: String, file: java.io.File, audioOnly: Boolean = false) =
+        com.albunyaan.tube.download.DownloadEntry(
+            request = com.albunyaan.tube.download.DownloadRequest(id = "d-$videoId", title = "t", videoId = videoId, audioOnly = audioOnly),
+            status = com.albunyaan.tube.download.DownloadStatus.COMPLETED,
+            filePath = file.absolutePath,
+        )
+
+    // Stage 9 r2: local-first plays a saved copy from its file, so its tap would extract streams nobody reads.
+    @Test
+    fun `a tap on a video with a saved copy does not prefetch`() {
+        val file = java.io.File.createTempFile("saved", ".mp4").apply { deleteOnExit() }
+        downloads.entries.value = listOf(saved("video_1", file))
+        val scope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Job())
+
+        service.triggerTapPrefetch(tapped("video_1"), scope)
+        service.triggerTapPrefetch(tapped("video_2"), scope)
+
+        assertEquals("saved copy: no prefetch", false, service.isPrefetchInFlight("video_1"))
+        assertEquals("no copy: prefetches", true, service.isPrefetchInFlight("video_2"))
+        scope.coroutineContext[kotlinx.coroutines.Job]?.cancel()
     }
 
     // ── TTL Tests ─────────────────────────────────────────────────────────────

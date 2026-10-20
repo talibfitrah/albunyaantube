@@ -72,6 +72,7 @@ class DefaultStreamPrefetchService @Inject constructor(
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val featureFlags: PlaybackFeatureFlags,
     private val segmentPreBuffer: SegmentPreBuffer,
+    private val downloadRepository: com.albunyaan.tube.download.DownloadRepository,
 ) : StreamPrefetchService {
 
     /**
@@ -165,6 +166,12 @@ class DefaultStreamPrefetchService @Inject constructor(
      * to ensure prefetch completes even if the calling fragment is destroyed during navigation.
      */
     @Suppress("UNUSED_PARAMETER")
+    // A saved video copy plays from its file (local-first), so extracting its streams would be wasted.
+    override fun triggerTapPrefetch(video: ContentItem.Video, scope: CoroutineScope) {
+        if (downloadRepository.savedCopyOf(video.id)?.request?.audioOnly == false) return
+        super.triggerTapPrefetch(video, scope)
+    }
+
     override fun triggerPrefetch(videoId: String, scope: CoroutineScope) {
         // Don't start duplicate prefetches - check both tracking set and completed results
         if (prefetchingVideoIds.contains(videoId) || prefetchResults.containsKey(videoId)) {

@@ -32,6 +32,15 @@ interface DownloadRepository {
     /** The startup load that first lists the saved files; null when there is none to wait for. */
     val startupLoad: kotlinx.coroutines.Job? get() = null
 
+    /** A completed download of [videoId] whose file is on disk; a video copy before an audio-only one. */
+    fun savedCopyOf(videoId: String): DownloadEntry? =
+        downloads.value
+            .filter {
+                it.request.videoId == videoId && it.status == DownloadStatus.COMPLETED &&
+                    it.filePath?.let(::File)?.isFile == true
+            }
+            .minByOrNull { it.request.audioOnly }
+
     /**
      * Reconcile the in-memory download list with files already committed to storage.
      *

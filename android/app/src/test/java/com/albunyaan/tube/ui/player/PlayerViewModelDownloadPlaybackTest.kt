@@ -285,6 +285,20 @@ class PlayerViewModelDownloadPlaybackTest {
         noNetwork()
     }
 
+    // Stage 9 r2: while the first open waits, the player shows its Loading surface for this video, never
+    // "No video is currently playing." (which is what an unset currentItem renders).
+    @Test fun `the first open shows a loading state for the video while it waits`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v23", title = "Lecture 23", channelName = "Lecturer")
+        testScheduler.runCurrent()
+
+        assertEquals(StreamState.Loading, vm.state.value.streamState)
+        assertEquals("v23", vm.state.value.currentItem?.streamId)
+        assertEquals("Lecture 23", vm.state.value.currentItem?.title)
+    }
+
     // 1.0.4 round 2: a copy saved before the channel name was kept (or saved blank from a
     // standalone playlist) lost the heart once Home opened it locally. The entry point knows the name.
     @Test fun `a local-first open keeps the entry point's channel and duration for the favourite`() = runTest {
