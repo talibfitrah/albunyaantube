@@ -15,7 +15,9 @@ import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
  * preserves backend-formatted messaging (cubic R2 finding #4).
  */
 function extractErrorMessage(e: unknown): string {
-  if (apiErrorCode(e)) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError')
+  if (apiErrorCode(e)) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError',
+    // The backend's offender ref is the 0-based rowIndex; the tables show it as #rowIndex+1.
+    ref => (/^\d+$/.test(ref) ? `#${Number(ref) + 1}` : ref))
   if (e && typeof e === 'object') {
     const ax = e as AxiosError<{ message?: string }>
     const fromBody = ax.response?.data?.message

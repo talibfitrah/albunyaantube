@@ -109,14 +109,14 @@ describe('bulkSubmissionStore: coded errors read in the admin language (F20)', (
 
   it('lists each offender of a live-category refusal (D9)', async () => {
     mockedSubmit.mockRejectedValue(coded(403, { code: 'LIVE_CATEGORY_ADMIN_ONLY', message: 'x',
-      details: { offenders: [{ ref: 'video:vid00000001', code: 'LIVE_CATEGORY_ADMIN_ONLY' }] } }))
+      details: { offenders: [{ ref: '0', code: 'LIVE_CATEGORY_ADMIN_ONLY' }] } }))
     const s = useBulkSubmissionStore()
     s.previewRows = [okRow]
 
     await s.runSubmit()
 
     const t = i18n.global.t
-    expect(s.error).toBe(`${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}\nvideo:vid00000001: ${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}`)
+    expect(s.error).toBe(`${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}\n#1: ${t('apiErrors.LIVE_CATEGORY_ADMIN_ONLY')}`)
   })
 
   it('keeps the server message for an uncoded error', async () => {

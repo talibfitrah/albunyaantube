@@ -92,10 +92,8 @@ const disabledIds = computed(() => new Set(
 ));
 
 // Content Search keeps the last add's ticks; a disabled category must not stay ticked, unclickable, and be sent.
-watch(disabledIds, ids => ids.forEach(id => {
-  selectedIds.value.delete(id);
-  partialIds.value.delete(id);
-}));
+// partialIds stays: an indeterminate category is untouched, so a LIVE channel in a mixed selection keeps it.
+watch(disabledIds, ids => ids.forEach(id => selectedIds.value.delete(id)));
 
 // A tick carried over from a channel add must not pre-tick LIVE on a video: the server then needs the video to be live.
 watch(() => props.contentType, type => {

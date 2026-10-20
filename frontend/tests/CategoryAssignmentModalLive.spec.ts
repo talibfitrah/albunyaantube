@@ -43,6 +43,18 @@ describe('CategoryAssignmentModal and the live category (spec §8)', () => {
     expect(screen.getByText('Live category: channels and live streams only')).toBeInTheDocument();
   });
 
+  it('keeps LIVE on the channel that already has it when a mixed channel + playlist selection assigns another category', async () => {
+    auth.isAdmin = true;
+    const { emitted } = render(CategoryAssignmentModal, {
+      props: { isOpen: true, multiSelect: true, contentType: 'playlist', currentCategoryIds: [['live'], []] },
+      global: { plugins: [createI18n({ legacy: false, locale: 'en', messages })] }
+    });
+    const quran = (await screen.findByText('Quran')).closest('label')!.querySelector('input[type=checkbox]') as HTMLInputElement;
+    await fireEvent.click(quran);
+    await fireEvent.click(screen.getByRole('button', { name: 'Assign' }));
+    expect(emitted().assign[0]).toEqual([['quran'], ['live']]);
+  });
+
   it('ignores a click on a disabled row', async () => {
     auth.isAdmin = true;
     renderModal('playlist');
