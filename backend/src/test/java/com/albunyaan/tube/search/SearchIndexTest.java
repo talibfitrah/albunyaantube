@@ -5,18 +5,26 @@ import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.ContentReport;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ReportStatus;
+import com.albunyaan.tube.model.ReportTargetType;
 import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
+import com.albunyaan.tube.repository.ContentReportRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.LiveCategoryService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.PublicContentService;
+import com.albunyaan.tube.service.StreamIndexService;
+import com.github.benmanes.caffeine.cache.Caffeine;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
 import org.apache.lucene.document.Document;
@@ -1381,6 +1389,49 @@ class SearchIndexTest {
         assertEquals(List.of(), idx.sourcesListing("lesson99999"));
     }
 
+    /**
+     * Codex P2-4, slice B I1: R34's cold check waited for the main index only. With inner search on and its index not
+     * built (2-7 min after every restart, and for good after a failed boot rebuild), a parentless report on an inner-only
+     * video was saved RESOLVED with nothing excluded and no note. Off, nothing changes.
+     */
+    @Test
+    void aParentlessReportWaitsForTheInnerIndexOnlyWhileInnerSearchIsOn() throws Exception {
+        InnerIndex unbuilt = new InnerIndex(innerTmp.resolve("base").toString(),
+                new InnerStore(innerTmp.resolve("on").toString()), java.time.Clock.systemUTC());
+        unbuilt.sleeper = ms -> { };
+        openedInner.add(unbuilt);
+        ContentReport cold = parentless("lesson00001");
+        ContentReportService on = reports(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, unbuilt)), cold);
+        assertThrows(SearchIndex.NotReadyException.class, () -> on.resolveReport("r", ReportStatus.RESOLVED, "admin", null));
+        assertEquals(ReportStatus.PENDING, cold.getStatus(), "the admin retries on the 503");
+
+        unbuilt.rebuild(Map.of(), 10_000);
+        assertEquals(ReportStatus.RESOLVED, on.resolveReport("r", ReportStatus.RESOLVED, "admin", null).getStatus());
+
+        InnerIndex off = new InnerIndex(innerTmp.resolve("base").toString(), new InnerStore(""), java.time.Clock.systemUTC());
+        ContentReport report = parentless("lesson00001");
+        ContentReportService today = reports(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, off)), report);
+        assertEquals(ReportStatus.RESOLVED, today.resolveReport("r", ReportStatus.RESOLVED, "admin", null).getStatus(),
+                "inner search off: as today");
+    }
+
+    private static ContentReport parentless(String videoId) {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId(videoId);
+        report.setStatus(ReportStatus.PENDING);
+        return report;
+    }
+
+    /** A report service on `idx` and the repositories newIndex mocked, holding `report` as "r". */
+    private ContentReportService reports(SearchIndex idx, ContentReport report) throws Exception {
+        ContentReportRepository repo = mock(ContentReportRepository.class);
+        when(repo.findById("r")).thenReturn(Optional.of(report));
+        when(repo.update(any())).thenAnswer(inv -> inv.getArgument(0));
+        return new ContentReportService(repo, Caffeine.newBuilder().build(), videoRepo, channelRepo, playlistRepo,
+                mock(PublicContentCacheService.class), mock(StreamIndexService.class), idx, Caffeine.newBuilder().build());
+    }
+
     /** Fix round 1: a source whose latest crawl was complete and fresh, with every counted item stored. */
     private static InnerState.Source trusted(int items) {
         InnerState.Source src = new InnerState.Source();
@@ -1704,6 +1755,47 @@ class SearchIndexTest {
         for (long gone : recorded.subList(0, 6)) {
             assertNotEquals(gone, index.searchPage("tafsir", "PLAYLIST", 20, null, gone).snapshot());
         }
+    }
+
+    /**
+     * Codex P1-1 (pipeline stage 5): later pages ran on the first page's snapshot, and its catalog hits skipped today's
+     * admission, so a video made PERSONAL or ARCHIVED after page 1 stayed retrievable while the snapshot lived.
+     */
+    @Test
+    void aPinnedInTabPageNeverServesAVideoWithdrawnSinceItsFirstPage() throws Exception {
+        long pinned = index.searchPage("surah", "VIDEO", 1, null, -1).snapshot();
+        assertTrue(ids(index.searchPage("surah", "VIDEO", 20, null, pinned)).containsAll(List.of("vKahf", "vYasin")));
+
+        saved(with(video("vYasin", "Surah Yasin", "Alafasy"), v -> v.setVisibility("PERSONAL")));
+        index.awaitWrites();
+        SearchIndex.Hits page = index.searchPage("surah", "VIDEO", 20, null, pinned);
+        assertEquals(pinned, page.snapshot(), "still the first page's ranking");
+        assertFalse(ids(page).contains("vYasin"), "made PERSONAL after the first page");
+        assertTrue(ids(page).contains("vKahf"));
+
+        saved(with(video("vKahf", "Surah Al-Kahf", "Alafasy"), v -> v.setValidationStatus(ValidationStatus.ARCHIVED)));
+        index.awaitWrites();
+        page = index.searchPage("surah", "VIDEO", 20, null, pinned);
+        assertEquals(pinned, page.snapshot());
+        assertFalse(ids(page).contains("vKahf"), "archived after the first page");
+        assertFalse(ids(page).contains("vYasin"));
+    }
+
+    /** Codex P1-1: snapshots aged out only when a first page recorded one, so a quiet server read a superseded one past its TTL. */
+    @Test
+    void aSupersededSnapshotPastItsTtlIsRefusedOnReadWithNoNewFirstPage() throws Exception {
+        index.snapshotTtlSec = 1;
+        long old = index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot();
+        saved(channels().get(7)); // "Halal Kitchen" re-saved: a new index version
+        index.awaitWrites();
+        long newer = index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot();
+        assertNotEquals(old, newer, "the second first page supersedes the first");
+        assertEquals(old, index.searchPage("tafsir", "PLAYLIST", 20, null, old).snapshot(), "inside its TTL: still read");
+
+        Thread.sleep(1_500); // no first page meanwhile: nothing records, so before the fix nothing pruned
+        SearchIndex.Hits page = index.searchPage("tafsir", "PLAYLIST", 20, null, old);
+        assertNotEquals(old, page.snapshot(), "past its TTL: refused on read, the page runs on the current index");
+        assertEquals(List.of("PLtafsir"), ids(page));
     }
 
     @Test

@@ -96,9 +96,9 @@ public class SearchIndex {
     private static final String[] TIER_NAMES = {"", "exact", "approximate", "related"};
     /** Relevance, then `key`: tied hits keep one order across page fetches even when a save re-appends one (F9). */
     private static final Sort RELEVANCE = new Sort(SortField.FIELD_SCORE, new SortField("key", SortField.Type.STRING));
-    /** How long a superseded in-tab search snapshot stays usable for later pages; then they run on the current index. */
-    private static final double SNAPSHOT_TTL_SEC = 600;
-    /** At most this many snapshots are kept, newest first (review I1). */
+    /** How long a superseded in-tab search snapshot stays usable for later pages; then they run on the current index. Tests lower it. */
+    double snapshotTtlSec = 600;
+    /** At most this many snapshots are kept by each prune, newest first (review I1). */
     private static final int MAX_SNAPSHOTS = 64;
     private static final long FIRST_RETRY_MS = 30_000;
     private static final long MAX_RETRY_MS = 300_000;
@@ -564,7 +564,7 @@ public class SearchIndex {
             Ladder today;
             IndexSearcher searcher = searchers.acquire();
             try {
-                today = ladder(searcher, query, type, false, want, null, trace);
+                today = ladder(searcher, query, type, false, want, null, null, trace);
             } finally {
                 searchers.release(searcher);
             }
@@ -776,23 +776,27 @@ public class SearchIndex {
      * search cuts the same ranking. BM25 statistics move whenever any document changes (a catalog save or a stream
      * removal; all documents share `title` and `channel`), and re-ranking between page fetches repeated or skipped items (Cubic P3, 1.0.4). An unknown or
      * pruned snapshot (-1 for a first page) runs on the current searcher and pins it; the result names the one used.
+     * A pinned page keeps its ranking, never its catalog: each hit must still have its catalog document now (Codex P1-1).
      */
     public Hits searchPage(String query, String type, int want, Set<String> allowedIds, long snapshot)
             throws IOException {
         awaitReady();
+        // On every page, not only a first page's record: a superseded snapshot past its TTL is never read (Codex P1-1).
+        // ponytail: the TTL counts from when a newer first page supersedes a snapshot, so the newest never expires on an
+        // idle server; with admission checked per hit that is only an older ranking and older titles. Carry the first
+        // page's time in the cursor if that ever matters.
+        int[] kept = {0}; // the pruner sees the snapshots newest first
+        snapshots.prune((ageSec, s) -> ageSec > snapshotTtlSec || ++kept[0] > MAX_SNAPSHOTS);
         IndexSearcher pinned = snapshots.acquire(snapshot);
         IndexSearcher searcher = pinned != null ? pinned : searchers.acquire();
+        IndexSearcher now = null;
         try {
-            if (pinned == null) {
-                snapshot = snapshots.record(searcher);
-                // ponytail: a snapshot starts ageing only when a newer first page records a newer one, so on an idle
-                // server one paging session can see an old snapshot; carry the first page's time in the cursor if that matters.
-                int[] kept = {0}; // the pruner sees the snapshots newest first
-                snapshots.prune((ageSec, s) -> ageSec > SNAPSHOT_TTL_SEC || ++kept[0] > MAX_SNAPSHOTS);
-            }
-            Ladder hits = ladder(searcher, query, type, true, want, allowedIds, new Trace());
+            if (pinned == null) snapshot = snapshots.record(searcher);
+            else now = searchers.acquire();
+            Ladder hits = ladder(searcher, query, type, true, want, allowedIds, now, new Trace());
             return new Hits(hits.items(), hits.match(), snapshot);
         } finally {
+            if (now != null) searchers.release(now);
             if (pinned != null) snapshots.release(pinned); else searchers.release(searcher);
         }
     }
@@ -801,10 +805,11 @@ public class SearchIndex {
      * The ladder (spec §4.4): exact, then approximate, then related, each appended (deduplicated by id) behind the hits
      * before it. Approximate fills a page the exact tier left short (a spelling variant such as "ikhlas" for "ikhlaas");
      * related, the noisiest, runs only while fewer than {@link #MIN_CONFIDENT_HITS} items are found. `catalogOnly`
-     * drops streams (in-tab lists); `allowedIds` (null = all) restricts membership for filtered in-tab search (§4.7).
+     * drops streams (in-tab lists); `allowedIds` (null = all) restricts membership for filtered in-tab search (§4.7);
+     * `now` (null = `searcher` is current) is the current searcher a pinned page's hits must still be catalog items on.
      */
     private Ladder ladder(IndexSearcher searcher, String query, String type, boolean catalogOnly, int want,
-                          Set<String> allowedIds, Trace trace) throws IOException {
+                          Set<String> allowedIds, IndexSearcher now, Trace trace) throws IOException {
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
         if (tokens.size() > SearchText.MAX_TOKENS) tokens = tokens.subList(0, SearchText.MAX_TOKENS);
         trace.tokens = tokens.size();
@@ -826,7 +831,7 @@ public class SearchIndex {
             boolean wasEmpty = out.isEmpty();
             int before = out.size();
             long t0 = System.nanoTime();
-            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, out, seen, trace);
+            collect(searcher, filtered(SearchText.tier(tier, tokens, once), type, catalogOnly), want, allowedIds, now, out, seen, trace);
             trace.tierRan[tier] = true;
             trace.tierMs[tier] = (System.nanoTime() - t0) / 1_000_000;
             trace.tierHits[tier] = out.size() - before;
@@ -847,7 +852,7 @@ public class SearchIndex {
         List<ContentItemDto> out = new ArrayList<>();
         IndexSearcher searcher = searchers.acquire();
         try {
-            collect(searcher, filtered(new TermQuery(new Term("id", youtubeId)), type, false), 1, null, out, new HashSet<>(), new Trace());
+            collect(searcher, filtered(new TermQuery(new Term("id", youtubeId)), type, false), 1, null, null, out, new HashSet<>(), new Trace());
         } finally {
             searchers.release(searcher);
         }
@@ -972,6 +977,14 @@ public class SearchIndex {
         return built.await(ms, TimeUnit.MILLISECONDS);
     }
 
+    /**
+     * R34: every source listing is loaded: the first build and, while inner search is on, the inner index. Before that an
+     * empty sourcesListing means "not loaded", never "none" (slice B I1, Codex P2-4).
+     */
+    public boolean listingsLoaded() {
+        return built.getCount() == 0 && (inner == null || !inner.enabled() || inner.ready());
+    }
+
     /** Blocks up to the ready wait for the first catalog build; NotReadyException after it (spec §7). */
     public void awaitReady() {
         try {
@@ -993,7 +1006,7 @@ public class SearchIndex {
      * Over-fetches 2x and pages with searchAfter until `want` visible, unseen, allowed items are found. The page
      * doubles each round, so many hidden hits cost a few query runs, not one per page (M7).
      */
-    private void collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds,
+    private void collect(IndexSearcher searcher, Query query, int want, Set<String> allowedIds, IndexSearcher now,
                          List<ContentItemDto> out, Set<String> seen, Trace trace) throws IOException {
         ScoreDoc after = null;
         long n = Math.max(10, 2L * (want - out.size()));
@@ -1007,6 +1020,11 @@ public class SearchIndex {
                 trace.loaded++;
                 String id = doc.get("id");
                 if (allowedIds != null && !allowedIds.contains(id)) continue;
+                if (now != null && now.count(new BooleanQuery.Builder() // withdrawn since the pinned first page
+                        .add(new TermQuery(new Term("id", id)), Occur.FILTER)
+                        .add(new TermQuery(new Term("source", "CATALOG")), Occur.FILTER).build()) == 0) {
+                    continue;
+                }
                 String keeper = keeper(doc, trace);
                 if (!"CATALOG".equals(doc.get("source")) && keeper == null) {
                     trace.hidden++;

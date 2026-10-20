@@ -41,7 +41,13 @@ public class UploadsFetcher {
     public Batch first(String sourceKey, String hl) throws IOException, ExtractionException {
         PlaylistExtractor x = extractor(sourceKey, hl);
         x.fetchPage();
-        return batch(sourceKey, x.getInitialPage(), x.getStreamCount());
+        long count;
+        try {
+            count = x.getStreamCount();
+        } catch (NumberFormatException e) { // 0.26.5 parses briefStats/stats unguarded: an empty list's "No videos" (slice B I2)
+            count = -1; // unknown, as NewPipe's own fallback: never a parse failure, so never a rate signal
+        }
+        return batch(sourceKey, x.getInitialPage(), count);
     }
 
     public Batch next(String sourceKey, String hl, Page page) throws IOException, ExtractionException {

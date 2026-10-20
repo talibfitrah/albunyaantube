@@ -262,6 +262,22 @@ class InnerIndexTest {
         assertEquals(Set.of(CH), index.sourceKeys("ilgiwqpcOC8"), "a removal drops only that source's copy");
     }
 
+    /**
+     * Codex P2-7: sourceKeys read only the top 100 copies, before R34's admission filter, so a 101st source (or an admitted
+     * one behind 100 copies kept from rejected sources) went unexcluded and kept the reported video searchable.
+     */
+    @Test
+    void sourceKeysListsEverySourceNotJustTheFirstHundred() throws Exception {
+        Set<String> all = new java.util.TreeSet<>();
+        for (int i = 0; i < 150; i++) {
+            String key = String.format("playlist:PLcopy%03d", i);
+            corpus(key, List.of(new InnerCorpus.Item("ilgiwqpcOC8", "x", 1, null, null, null)));
+            all.add(key);
+        }
+        index.rebuild(Map.of(), 10_000);
+        assertEquals(all, index.sourceKeys("ilgiwqpcOC8"));
+    }
+
     @Test
     void aSecondRebuildSwapsAndTheOldDirectoryGoesAMinuteLater() throws Exception {
         corpus(CH, InnerCrawlerTest.items("lesson", 0, 3, "x"));

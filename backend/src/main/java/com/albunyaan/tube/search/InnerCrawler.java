@@ -828,9 +828,13 @@ public class InnerCrawler {
         } catch (IOException e) {
             throw new UncheckedIOException("corpus write failed; the old corpus is kept", e);
         }
+        // The index holds each source's newest capPerSource (R31): diff that window, never the whole corpus, or a merge
+        // after a cap drop adds new items and keeps the ones they push out of it (Codex P2-3).
+        int cap = InnerIndex.clamp(store.state().capPerSource);
+        List<InnerCorpus.Item> was = before.subList(0, Math.min(cap, before.size())), is = kept.subList(0, Math.min(cap, kept.size()));
         try {
             if (sweep) index.replaceSource(key, name, kept);
-            else index.merge(key, name, changed(before, kept), removed(before, kept));
+            else index.merge(key, name, changed(was, is), removed(was, is));
         } catch (IOException | AlreadyClosedException e) { // §12 tragic IndexWriter: the job fails as on a full disk, never a parse signal
             rebuildRequested = true; // the next step rebuilds from the corpus: one attempt per failed job, so per pause
             throw new UncheckedIOException("inner-index write failed; the corpus is written; rebuilding the index from it",

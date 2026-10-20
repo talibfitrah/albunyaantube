@@ -30,7 +30,6 @@ import java.util.concurrent.atomic.AtomicInteger;
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
-import static org.mockito.ArgumentMatchers.anyLong;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.never;
@@ -217,7 +216,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-inner")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
-        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.listingsLoaded()).thenReturn(true);
         when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of(
                 "channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
         Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
@@ -244,7 +243,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-none")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(videoRepository.findByYoutubeId("lesson99999")).thenReturn(Optional.empty());
-        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.listingsLoaded()).thenReturn(true);
         when(searchIndex.sourcesListing("lesson99999")).thenReturn(List.of());
 
         service.resolveReport("report-none", ReportStatus.RESOLVED, "admin", null);
@@ -283,7 +282,7 @@ class ContentReportServiceTest {
         report.setTargetId("ilgiwqpcOC8");
         report.setStatus(ReportStatus.PENDING);
         when(reportRepository.findById("report-cold")).thenReturn(Optional.of(report));
-        when(searchIndex.awaitBuilt(0L)).thenReturn(false);
+        when(searchIndex.listingsLoaded()).thenReturn(false);
         when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
 
         assertThatThrownBy(() -> service.resolveReport("report-cold", ReportStatus.RESOLVED, "admin", null))
@@ -306,7 +305,7 @@ class ContentReportServiceTest {
         when(reportRepository.update(any())).thenReturn(report);
         when(channelRepository.findByYoutubeId("UCgone")).thenReturn(Optional.empty());
         when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
-        when(searchIndex.awaitBuilt(0L)).thenReturn(false);
+        when(searchIndex.listingsLoaded()).thenReturn(false);
 
         ContentReport out = service.resolveReport("report-gone", ReportStatus.RESOLVED, "admin", null);
 
@@ -323,7 +322,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-partial")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
-        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.listingsLoaded()).thenReturn(true);
         when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of(
                 "channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
         Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
@@ -350,7 +349,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-again")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
-        when(searchIndex.awaitBuilt(anyLong())).thenReturn(true);
+        when(searchIndex.listingsLoaded()).thenReturn(true);
         when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of(
                 "channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
         Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");

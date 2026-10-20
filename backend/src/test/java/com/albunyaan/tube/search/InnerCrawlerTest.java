@@ -593,6 +593,41 @@ class InnerCrawlerTest {
         assertEquals(0, pacer.today(CrawlPacer.CRAWLER_THREAD), "no request was sent");
     }
 
+    /**
+     * Slice B I2: YouTube's header for an empty list reads "No videos". NewPipe 0.26.5 parses the briefStats count text
+     * unguarded, so Long.parseLong("") threw NumberFormatException after both requests: a PARSE signal per empty source.
+     */
+    @Test
+    void anEmptyApprovedPlaylistIsAnEmptyCompleteListingNeverASignal() throws Exception {
+        String header = "{\"header\":{\"playlistHeaderRenderer\":{"
+                + "\"byline\":[{\"playlistBylineRenderer\":{\"text\":{\"runs\":[{\"text\":\"No videos\"}]}}}],"
+                + "\"briefStats\":[{\"runs\":[{\"text\":\"No videos\"}]}]}}}";
+        String none = "{\"responseContext\":{\"visitorData\":\"CgtkZW1vVmlzaXRvcg%3D%3D\"}}"; // no items, no continuation
+        org.schabi.newpipe.extractor.NewPipe.init(new org.schabi.newpipe.extractor.downloader.Downloader() {
+            @Override
+            public org.schabi.newpipe.extractor.downloader.Response execute(org.schabi.newpipe.extractor.downloader.Request r)
+                    throws IOException {
+                if (r.url().equals("https://www.youtube.com/sw.js")) { // getClientVersion's first source; cached per JVM after
+                    return new org.schabi.newpipe.extractor.downloader.Response(200, "OK", Map.of(),
+                            "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\"", r.url());
+                }
+                pacer.before(r.url()); // as the prod downloader's hook: every browse is a counted crawler request
+                boolean items = new String(r.dataToSend(), java.nio.charset.StandardCharsets.UTF_8).contains("\"continuation\"");
+                return new org.schabi.newpipe.extractor.downloader.Response(200, "OK", Map.of(), items ? none : header, r.url());
+            }
+        });
+        crawler = newCrawler(new UploadsFetcher(), index);
+        admitted.put(PL, "Lege lijst");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        step();
+        assertEquals(2, pacer.today(CrawlPacer.CRAWLER_THREAD), "a first page: the header and the items");
+        assertTrue(store.state().signals.isEmpty(), "an empty list is benign content, never a rate signal");
+        assertEquals(List.of(), corpus(PL), "an empty corpus is written");
+        assertEquals(-1, source(PL).count, "the count is unknown");
+        assertTrue(source(PL).completeAt > 0, "the listing ended: complete");
+        assertEquals(0, source(PL).failures);
+    }
+
     @Test
     void threeTransportFailuresPauseWithoutDoubling() throws Exception {
         ABC.forEach(k -> admitted.put(k, "x"));
@@ -1223,6 +1258,29 @@ class InnerCrawlerTest {
         assertEquals(List.of(), InnerCrawler.changed(items("lesson", 0, 2, "x"), items("lesson", 0, 2, "x")));
         assertEquals(2, InnerCrawler.changed(items("lesson", 0, 2, "x"), items("lesson", 0, 2, "y")).size(), "a retitle is a change");
         assertEquals(Set.of(id("lesson", 1)), InnerCrawler.removed(items("lesson", 0, 2, "x"), items("lesson", 0, 1, "x")));
+    }
+
+    /**
+     * Codex P2-3: after R31 lowered the cap, the rebuild cut the index to it, but each later merge was computed on the whole
+     * corpus: new items went in and the ones they pushed out of the capped window stayed, so the index grew past the cap.
+     */
+    @Test
+    void aPollAfterACapDropKeepsTheIndexInsideTheCap() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        crawled(CH, items("lesson", 0, 150, "x"), 150, 2);
+        store.state().capPerSource = 100;
+        crawler.boot(); // the rebuild cuts the source to its newest 100
+        assertEquals(100, index.docs());
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 5, "x"));
+        page.addAll(items("lesson", 0, 95, "x"));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(155, page, true));
+        store.state().mode = InnerState.Mode.FULL;
+        step();
+        assertEquals(155, corpus(CH).size(), "the corpus keeps everything (R31)");
+        assertEquals(100, index.docs(), "the newest 100: 5 new in, the 5 they pushed out of the window out");
+        assertTrue(index.sourceKeys(id("new", 4)).contains(CH));
+        assertTrue(index.sourceKeys(id("lesson", 94)).contains(CH));
+        assertFalse(index.sourceKeys(id("lesson", 95)).contains(CH));
     }
 
     @Test

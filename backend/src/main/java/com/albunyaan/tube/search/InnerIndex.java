@@ -173,6 +173,11 @@ public class InnerIndex {
         return live != null;
     }
 
+    /** `search.inner.dir` is set: inner search is on, so until ready() the inner listings are unknown (R34). */
+    boolean enabled() {
+        return store.enabled();
+    }
+
     /** R26 / R14: inner hits are served only when an admin turned them on and the index is built. */
     boolean serving() {
         return store.state().serveInner && live != null;
@@ -219,13 +224,17 @@ public class InnerIndex {
         }
     }
 
-    /** Every source key whose listing holds this video (R34). Empty before the first build. */
+    /**
+     * Every source key whose listing holds this video (R34). Empty before the first build. All its copies, never a top-N:
+     * a cut ahead of the admission filter left sources unexcluded (Codex P2-7). The copies are bounded by the crawled sources.
+     */
     Set<String> sourceKeys(String id) throws IOException {
         IndexSearcher s = acquire();
         if (s == null) return Set.of();
         try {
             Set<String> out = new LinkedHashSet<>();
-            for (ScoreDoc hit : s.search(new TermQuery(new Term("id", id)), 100).scoreDocs) {
+            Query copies = new TermQuery(new Term("id", id));
+            for (ScoreDoc hit : s.search(copies, Math.max(1, s.count(copies))).scoreDocs) {
                 out.add(s.storedFields().document(hit.doc).get("sourceKey"));
             }
             return out;
@@ -328,7 +337,7 @@ public class InnerIndex {
     }
 
     /** A hand-edited state.json can hold any cap; a bad one must not throw after replaceSource buffered its delete. */
-    private static int clamp(int cap) {
+    static int clamp(int cap) {
         return Math.min(Math.max(cap, 1), InnerState.MAX_PER_SOURCE);
     }
 

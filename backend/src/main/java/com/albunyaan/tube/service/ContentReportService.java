@@ -134,10 +134,11 @@ public class ContentReportService {
         ContentReport report = reportRepository.findById(reportId)
                 .orElseThrow(() -> new IllegalArgumentException("Report not found: " + reportId));
         boolean parented = report.getParentType() != null && report.getParentId() != null;
-        // R34 reads the sources listing the video from the built search index. Refuse a cold resolve before the report is
-        // marked, so it stays PENDING and the admin retries on the 503. No wait; the Video read happens only while cold.
+        // R34 reads the sources listing the video from the built search index, and the inner index while inner search is
+        // on. Refuse a cold resolve before the report is marked, so it stays PENDING and the admin retries on the 503.
+        // No wait; the Video read happens only while cold.
         if (newStatus == ReportStatus.RESOLVED && !parented && report.getTargetType() == ReportTargetType.VIDEO
-                && !searchIndex.awaitBuilt(0) && videoRepository.findByYoutubeId(report.getTargetId()).isEmpty()) {
+                && !searchIndex.listingsLoaded() && videoRepository.findByYoutubeId(report.getTargetId()).isEmpty()) {
             throw new SearchIndex.NotReadyException();
         }
         report.setStatus(newStatus);
@@ -357,10 +358,11 @@ public class ContentReportService {
      * search hides it at once. Works for every installed app; a later app may send sourceType/sourceId as the parent.
      * Returns the miss for the resolution note (sources not excluded), or null.
      */
-    private String excludeEverywhereListed(String videoId) throws java.io.IOException, InterruptedException {
-        // Before the first build (catalog and stored streams) an empty listing means "not loaded", not "none".
-        // resolveReport refuses a cold parentless resolve; only a parented report whose parent is gone gets here cold.
-        if (!searchIndex.awaitBuilt(0)) {
+    private String excludeEverywhereListed(String videoId) throws java.io.IOException {
+        // Before the listings load (the first build; the inner index while inner search is on) an empty listing means
+        // "not loaded", not "none". resolveReport refuses a cold parentless resolve; only a parented report whose parent
+        // is gone gets here cold.
+        if (!searchIndex.listingsLoaded()) {
             log.warn("Cannot exclude video {}: the search index is still building", videoId);
             return "Not excluded: the search index was still building, so the sources listing this video are unknown. "
                     + "Exclude it by hand.";
