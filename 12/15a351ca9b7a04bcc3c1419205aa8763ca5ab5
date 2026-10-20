@@ -1,0 +1,36 @@
+backend/solver/test/solver.test.mjs
+  s_dbb6b1f3671904::t_673a30e7bc144f 18-24
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayTest.java
+  s_dbb6b1f3671904::t_8f5529c1cc0cd3 403-418
+backend/src/main/java/com/albunyaan/tube/controller/PlaybackBodyLimit.java
+  s_dbb6b1f3671904::t_1dac1dde7664f8 1-44
+backend/src/test/java/com/albunyaan/tube/controller/PlaybackBodyLimitTest.java
+  s_dbb6b1f3671904::t_5a7fa7916875db 1-54
+backend/src/main/java/com/albunyaan/tube/service/YouTubeCircuitBreaker.java
+  s_dbb6b1f3671904::t_ae6b30c30a7593 587-589
+  s_dbb6b1f3671904::t_244a77106b2213 807-810
+  s_dbb6b1f3671904::t_cde1963ddb1931 806
+backend/src/test/java/com/albunyaan/tube/service/YouTubeCircuitBreakerTest.java
+  s_dbb6b1f3671904::t_7257a5399228c8 307-333
+  s_dbb6b1f3671904::t_c63a1c5419aa4b 306
+backend/solver/server.mjs
+  s_dbb6b1f3671904::t_e5477e6edc2d12 20-21
+backend/src/test/java/com/albunyaan/tube/integration/PlaybackSolveIT.java
+  s_dbb6b1f3671904::t_973430c0340041 34,237-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1215a351ca9b7a04bcc3c1419205aa8763ca5ab5",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
