@@ -1784,7 +1784,6 @@ class SearchIndexTest {
     /** Codex P1-1: snapshots aged out only when a first page recorded one, so a quiet server read a superseded one past its TTL. */
     @Test
     void aSupersededSnapshotPastItsTtlIsRefusedOnReadWithNoNewFirstPage() throws Exception {
-        index.snapshotTtlSec = 1;
         long old = index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot();
         saved(channels().get(7)); // "Halal Kitchen" re-saved: a new index version
         index.awaitWrites();
@@ -1792,7 +1791,8 @@ class SearchIndexTest {
         assertNotEquals(old, newer, "the second first page supersedes the first");
         assertEquals(old, index.searchPage("tafsir", "PLAYLIST", 20, null, old).snapshot(), "inside its TTL: still read");
 
-        Thread.sleep(1_500); // no first page meanwhile: nothing records, so before the fix nothing pruned
+        index.snapshotTtlSec = 0.5; // shortened only now, so a stall before this line can't age the inside-TTL read out
+        Thread.sleep(1_000); // no first page meanwhile: nothing records, so before the fix nothing pruned
         SearchIndex.Hits page = index.searchPage("tafsir", "PLAYLIST", 20, null, old);
         assertNotEquals(old, page.snapshot(), "past its TTL: refused on read, the page runs on the current index");
         assertEquals(List.of("PLtafsir"), ids(page));
