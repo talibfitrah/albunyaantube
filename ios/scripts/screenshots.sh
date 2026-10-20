@@ -551,4 +551,56 @@ for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
 done
 kill "$HARDENING_SERVER" 2>/dev/null
 
+# Playback Phase 2 (local-docs/plans/2026-10-17-ios-playback-phase2.md, Task 19; spec R34): 360p starts, the synthetic HD
+# (fitrah-hls loader, byte ranges from this Range server; python3 -m http.server ignores Range) is swapped in at the same
+# position -- en + ar, iPhone and iPad. Synthetic ffmpeg test-pattern media from InnerTubeKit's test fixtures (no YouTube
+# content; nothing ships).
+PHASE2_OUT="$ROOT/local-docs/screens/playback-phase2"
+PHASE2_PORT="${PHASE2_PORT:-8767}"
+python3 -I -c '
+import http.server, os, re, sys
+port, root = int(sys.argv[1]), sys.argv[2]
+class Rig(http.server.BaseHTTPRequestHandler):
+    def answer(self, send_body):
+        name = self.path.lstrip("/").split("?")[0]
+        path = os.path.join(root, name)
+        if os.path.basename(name) != name or not os.path.isfile(path):
+            self.send_response(404); self.send_header("Content-Length", "0"); self.end_headers(); return
+        data = open(path, "rb").read()
+        match = re.fullmatch(r"bytes=(\d+)-(\d*)", self.headers.get("Range", ""))
+        start = int(match.group(1)) if match else 0
+        end = min(int(match.group(2)), len(data) - 1) if match and match.group(2) else len(data) - 1
+        body = data[start:end + 1]
+        self.send_response(206 if match else 200)
+        if match: self.send_header("Content-Range", "bytes %d-%d/%d" % (start, end, len(data)))
+        self.send_header("Content-Type", "application/json" if name.endswith(".json") else "video/mp4")
+        self.send_header("Accept-Ranges", "bytes")
+        self.send_header("Content-Length", str(len(body)))
+        self.end_headers()
+        if send_body: self.wfile.write(body)
+    def do_GET(self): self.answer(True)
+    def do_HEAD(self): self.answer(False)
+    def log_message(self, *args): pass
+http.server.ThreadingHTTPServer(("127.0.0.1", port), Rig).serve_forever()
+' "$PHASE2_PORT" "$ROOT/ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/synthetic" &
+PHASE2_SERVER=$!
+trap 'kill "$HARDENING_SERVER" "$PHASE2_SERVER" 2>/dev/null' EXIT
+for device in "iPhone 17" "iPad Pro 13-inch (M5)"; do
+    slug=$(echo "$device" | tr '[:upper:]' '[:lower:]' | sed -e 's/[^a-z0-9]\{1,\}/-/g' -e 's/^-//' -e 's/-$//')
+    echo "== playback phase 2: $device -> $PHASE2_OUT/$slug =="
+    rm -rf "${PHASE2_OUT:?}/$slug"
+    TEST_RUNNER_FITRAH_SHOTS_DIR="$PHASE2_OUT/$slug" \
+        TEST_RUNNER_FITRAH_SYNTHETIC_BASE_URL="http://localhost:$PHASE2_PORT/" xcodebuild test \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -testPlan FitrahTubeUITests \
+        -only-testing:FitrahTubeUITests/ScreenshotTests/testPlaybackPhase2States \
+        -destination "platform=iOS Simulator,name=$device" \
+        -derivedDataPath DerivedData \
+        2>&1 | grep -E "Test case .* (passed|failed)|XCTAssert|TEST (SUCCEEDED|FAILED)|error:"
+    [ "${PIPESTATUS[0]}" -ne 0 ] && status=1
+    xcrun simctl shutdown "$device" >/dev/null 2>&1
+done
+kill "$PHASE2_SERVER" 2>/dev/null
+
 exit "$status"

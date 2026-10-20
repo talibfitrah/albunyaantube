@@ -603,11 +603,24 @@ struct PlayerScreen: View {
             .accessibilityIdentifier(identifier)
     }
 
-    /// Spec R43: the HD upgrade every live player gets. No exception for the `-fitrah-fake-player*` hooks (plan review,
-    /// deletable scope 3): they run on fixture containers, whose resolver has no solver (R20), and fixture ids fail
-    /// `isValidVideoId`, so `upgrade` returns nil before any request.
+    #if DEBUG
+    /// `-fitrah-fake-player-synthetic <baseURL>` (spec R34): the Range server `screenshots.sh` runs over InnerTubeKit's
+    /// synthetic test fixture.
+    static var syntheticFixtureBase: URL? {
+        let args = LaunchArguments.debug
+        guard let i = args.firstIndex(of: "-fitrah-fake-player-synthetic"), args.indices.contains(i + 1) else { return nil }
+        return URL(string: args[i + 1])
+    }
+    #endif
+
+    /// Spec R43: the HD upgrade every live player gets. No exception for the other `-fitrah-fake-player*` hooks (plan
+    /// review, deletable scope 3): they run on fixture containers, whose resolver has no solver (R20), and fixture ids
+    /// fail `isValidVideoId`, so `upgrade` returns nil before any request. The synthetic hook (R34) is the one exception.
     static func hdUpgrade(container: AppContainer) -> HDUpgrade {
-        .live(container.resolver)
+        #if DEBUG
+        if let base = syntheticFixtureBase { return fixtureHD(base: base) }
+        #endif
+        return .live(container.resolver)
     }
 
     /// `-fitrah-fake-player`: the UI-test/screenshot hook -- swaps the real InnerTubeKit-backed
@@ -618,6 +631,7 @@ struct PlayerScreen: View {
     /// lands on both screens.
     static func resolver(container: AppContainer) -> any StreamResolving {
         #if DEBUG
+        if let base = syntheticFixtureBase { return FixtureSyntheticResolver(base: base) }
         // Playback hardening (plan Task 7): both rungs on `screenshots.sh`'s local server -- rung 1
         // serves its playlist and two segments, then answers HTTP 401; rung 2 is `rung2/master.m3u8`
         // (`FixtureLadderResolver`) -- the step-down proof, with no network beyond localhost.
@@ -794,6 +808,35 @@ private actor FixtureLadderResolver: StreamResolving {
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async { demoted = true }
+}
+
+/// Playback Phase 2 (spec R34): the 360p half of the swap proof -- the fixture's muxed clip from the local Range server,
+/// tagged `.progressive` so the rung-2 pill shows.
+private struct FixtureSyntheticResolver: StreamResolving {
+    let base: URL
+
+    func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
+                 requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
+        Resolved(stream: .progressive(url: base.appending(path: "muxed.mp4"), label: "360p"), client: .android,
+                 userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }
+
+    func demote(_ videoId: String, failed: ClientFamily) async {}
+}
+
+/// The HD half: three seconds in, the synthetic fixture (two avc1 renditions + AAC, the shipping loader, byte ranges
+/// from the Range server). Synthetic test-pattern media; no YouTube content.
+private func fixtureHD(base: URL) -> HDUpgrade {
+    HDUpgrade(upgrade: { _ in
+        try? await Task.sleep(for: .seconds(3))     // the swap lands after >= 3 s of 360p: the UI test's restart check
+        guard let response = try? await URLSession.shared.data(from: base.appending(path: "synthetic.json")),
+              var model = try? JSONDecoder().decode(SyntheticHLS.self, from: response.0) else { return nil }
+        for i in model.video.indices { model.video[i].url = base.appending(path: model.video[i].url.relativeString) }
+        for i in model.audio.indices { model.audio[i].url = base.appending(path: model.audio[i].url.relativeString) }
+        return Resolved(stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!,
+                                     isLive: false, audioOnlyURL: model.audio.first?.url, captionTracks: [], synthetic: model),
+                        client: .tvSamsung, userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+    }, failed: { _ in }, refused: {})
 }
 
 /// B5 screenshot rig: one page of eight fixture items. With `deadItems`, three ids carry the

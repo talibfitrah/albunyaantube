@@ -2852,6 +2852,48 @@ final class ScreenshotTests: XCTestCase {
         }
     }
 
+    /// Playback Phase 2 (plan Task 19, spec R34): 360p starts with its pill, the synthetic HD is swapped in, and the time
+    /// carries on from where it was -- never restarting at 0. en + ar; iPhone 17 and iPad Pro 13-inch (M5) via
+    /// screenshots.sh.
+    func testPlaybackPhase2States() throws {
+        let directory = try shotsDirectory()
+        let base = try XCTUnwrap(ProcessInfo.processInfo.environment["FITRAH_SYNTHETIC_BASE_URL"],
+                                 "FITRAH_SYNTHETIC_BASE_URL unset — run via ios/scripts/screenshots.sh")
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let swap = Screen(key: "playback-hd-swap",
+                              arguments: ["-fitrah-fake-player-synthetic", base, "-fitrah-route-probe", "YES",
+                                          "-fitrah-route", "player", "fixture-video"],
+                              anchor: .button("unused"))
+            let app = launch(swap, locale: locale, extraArguments: [])
+            let probe = app.descendants(matching: .any)["player.debugRoute"]
+            XCTAssertTrue(probe.waitForExistence(timeout: 20), "hd-swap/\(locale.key): route probe never mounted")
+            let pill = app.staticTexts["player.rung2Pill"]
+            XCTAssertTrue(pill.waitForExistence(timeout: 20), "hd-swap/\(locale.key): the 360p never started")
+            try write(named: "standard-before-swap-\(locale.key)", into: directory)
+            wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: pill)], timeout: 30)
+            // The hook answers 3 s after the resolve, so the swap lands past 2 s of 360p; a restart at 0 reads 0-1 here.
+            for _ in 0..<12 {
+                XCTAssertGreaterThanOrEqual(Self.probeTime(probe), 2, "hd-swap/\(locale.key): the HD restarted instead of carrying the position")
+                usleep(250_000)
+            }
+            let swappedAt = Self.probeTime(probe)
+            let deadline = Date().addingTimeInterval(15)
+            while Self.probeTime(probe) < swappedAt + 2, Date() < deadline { usleep(250_000) }
+            XCTAssertGreaterThanOrEqual(Self.probeTime(probe), swappedAt + 2, "hd-swap/\(locale.key): HD never advanced")
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "hd-swap/\(locale.key): Retry shown")
+            XCTAssertFalse(app.staticTexts["player.state.message"].exists, "hd-swap/\(locale.key): error copy shown")
+            try write(named: "hd-after-swap-\(locale.key)", into: directory)
+            app.terminate()
+        }
+    }
+
+    /// The route probe's `time=<Int>` (`AirPlayRouteProbe`), or -1 when absent.
+    private static func probeTime(_ probe: XCUIElement) -> Int {
+        guard let value = probe.value as? String, let range = value.range(of: #"time=\d+"#, options: .regularExpression) else { return -1 }
+        return Int(value[range].dropFirst(5)) ?? -1
+    }
+
     // MARK: - Helpers
 
     /// `fakeContainer: false` (Plan C Task 6's live leg) launches the LIVE container: real
