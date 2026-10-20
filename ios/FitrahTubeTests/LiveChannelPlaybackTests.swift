@@ -381,16 +381,19 @@ struct LiveChannelPlaybackTests {
 
     /// Hand-off 1: every other lookup error (a 5xx, transport, decode) is no answer, so step 4 waits and asks again.
     @Test func anyOtherLookupErrorWaitsAndAsksAgain() async throws {
-        let sleeper = Sleeper(immediate: 0)
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let lookup = Lookup([.failure(LiveChannelUnexpectedStatus(statusCode: 503))])
         let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), args: Self.channelArgs("Rs7St51oDDc"),
-                               sleep: { try await sleeper.sleep($0) },
-                               lookup: { _ in throw LiveChannelUnexpectedStatus(statusCode: 503) })
+                               sleep: { try await sleeper.sleep($0) }, lookup: { try await lookup.lives($0) })
 
         await vm.open()
         await vm.playToEnd()
-
         #expect(vm.state == .loading)
-        try await waitUntil { sleeper.recorded.contains(.seconds(15)) }
+        try await waitUntil { sleeper.parked == 1 }
+        sleeper.wake()
+
+        try await waitUntil { await lookup.calls == 2 }                       // the wait asked again
+        #expect(vm.state == .loading)
     }
 
     /// Hand-off 2 (spec Revision 5): a failure whose lookup gets no answer runs ONE same-id recovery before the waits.
@@ -540,5 +543,136 @@ struct LiveChannelPlaybackTests {
 
         #expect(vm.advanceCalls == 0)
         #expect(vm.args.videoId == "Rs7St51oDDc")
+    }
+
+    // MARK: - §9.1 fix round 1
+
+    /// Important 1: a failed open, Retry or switched-to id is a FAILURE, so a listed id gets its same-id re-resolve
+    /// before step 4 (a blip is not ten minutes of loading). That re-resolve's own miss is an END, so nothing loops, and a
+    /// recording is an END from the start.
+    @Test func aFailedOpenRetryOrSwitchGetsTheSameIdTryFirst() async throws {
+        let blip = URLError(.timedOut)
+        let listed = [Self.channel: Self.onAir("Rs7St51oDDc")]
+
+        let cold = RecordingResolver([.failure(blip), .success(Self.live("Rs7St51oDDc"))])
+        let opened = makeViewModel(cold, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0), lives: listed)
+        await opened.open()
+        #expect(opened.state.isLiveNow)
+        #expect(await cold.videoIds == ["Rs7St51oDDc", "Rs7St51oDDc"])
+
+        let flaky = RecordingResolver([.failure(blip), .failure(blip), .failure(blip), .success(Self.live("Rs7St51oDDc"))])
+        let retried = makeViewModel(flaky, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0), lives: listed)
+        await retried.open()
+        #expect(retried.state == .loading)
+        #expect(await flaky.videoIds.count == 2)                              // the same-id try's miss waits: no loop
+        await retried.retry()
+        #expect(retried.state.isLiveNow)
+        #expect(await flaky.videoIds.count == 4)
+
+        let switching = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .failure(blip), .success(Self.live("eaOtcUNHDB8"))])
+        let switched = makeViewModel(switching, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0),
+                                     lives: [Self.channel: Self.onAir("eaOtcUNHDB8")])
+        await switched.open()
+        await switched.playToEnd()
+        #expect(switched.state.isLiveNow)
+        #expect(await switching.videoIds == ["Rs7St51oDDc", "eaOtcUNHDB8", "eaOtcUNHDB8"])
+
+        let recorded = RecordingResolver([.success(Self.live("Rs7St51oDDc", now: false)), .success(Self.live("Rs7St51oDDc"))])
+        let recording = makeViewModel(recorded, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0), lives: listed)
+        await recording.open()
+        #expect(recording.state == .loading)
+        #expect(await recorded.videoIds == ["Rs7St51oDDc"])
+    }
+
+    /// Important 2: a 24/7 id plays for days and every network change is an incident. In live-channel mode the lifetime
+    /// retries refund after five minutes of sustained playback (Android counts per episode); an ordinary video keeps its
+    /// lifetime cap.
+    @Test func aLongLivedLiveRecoversEveryIncidentSpacedByFiveMinutesOfPlay() async throws {
+        let incidents = RecoveryBudget.maxRetries + 1
+        for liveChannel in [true, false] {
+            let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 1 + incidents))
+            let args = liveChannel ? Self.channelArgs("Rs7St51oDDc") : PlayerArgs(videoId: "Rs7St51oDDc")
+            let vm = makeViewModel(resolver, args: args, sleeper: Sleeper(immediate: 0), lives: [Self.channel: Self.onAir("Rs7St51oDDc")])
+            await vm.open()
+            var now = Date(timeIntervalSince1970: 0)
+            for _ in 0..<incidents {
+                for _ in 0...300 { vm.recordPlaybackProgress(now: now); now += 1 }        // five minutes of play
+                await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
+            }
+
+            #expect(vm.state.isLiveNow == liveChannel)
+            #expect(await resolver.videoIds.count == (liveChannel ? 1 + incidents : incidents))
+        }
+    }
+
+    /// Important 3: in live-channel mode a spent budget goes to step 4's waits, never the Retry card.
+    @Test func aSpentBudgetGoesToStepFour() async throws {
+        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 1 + RecoveryBudget.maxRetries))
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0),
+                               lives: [Self.channel: Self.onAir("Rs7St51oDDc")])
+
+        await vm.open()
+        for _ in 0..<RecoveryBudget.maxRetries { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        #expect(vm.state.isLiveNow)
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
+
+        #expect(vm.state == .loading)
+        #expect(await resolver.videoIds.count == 1 + RecoveryBudget.maxRetries)
+    }
+
+    /// Important 3: a proactive refresh that lands a recording goes to step 4, but a refresh that fails keeps the playing
+    /// stream: a refresh blip is not an incident.
+    @Test func aRefreshThatLandsARecordingEndsButAFailedRefreshKeepsTheStream() async throws {
+        let sleeper = Sleeper(immediate: 0)
+        let recorded = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("Rs7St51oDDc", now: false))])
+        let endedLookup = Lookup([.success(Self.onAir("Rs7St51oDDc"))])
+        let ended = makeViewModel(recorded, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                                  lookup: { try await endedLookup.lives($0) })
+        await ended.open()
+        await ended.refreshLiveStream()
+        #expect(ended.state == .loading)
+        #expect(await endedLookup.calls == 1)
+
+        let failing = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .failure(URLError(.timedOut))])
+        let blipLookup = Lookup([.success(Self.onAir("Rs7St51oDDc"))])
+        let blip = makeViewModel(failing, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                                 lookup: { try await blipLookup.lives($0) })
+        await blip.open()
+        await blip.refreshLiveStream()
+        #expect(await failing.videoIds.count == 2)
+        #expect(Self.file(blip) == "Rs7St51oDDc.m3u8")
+        #expect(await blipLookup.calls == 0)
+    }
+
+    /// Minor: a cancelled lookup is not an answer. It spends neither the blind same-id try nor a backoff step.
+    @Test func aCancelledLookupSpendsNothing() async throws {
+        let lookup = Lookup([.failure(URLError(.notConnectedToInternet))])
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), args: Self.channelArgs("Rs7St51oDDc"),
+                               sleep: { try await sleeper.sleep($0) }, lookup: { id in
+            if await lookup.calls == 0 { _ = try? await lookup.lives(id); try await Task.sleep(for: .seconds(3600)) }  // parks
+            return try await lookup.lives(id)
+        })
+
+        await vm.open()
+        let cancelled = Task { await vm.liveChannelTrigger(.failure) }
+        try await waitUntil { await lookup.calls == 1 }
+        cancelled.cancel()
+
+        #expect(await cancelled.value)                                        // handled, nothing done
+        #expect(vm.state.isLiveNow)
+        #expect(await vm.liveChannelTrigger(.failure) == false)               // the blind try is still there
+    }
+
+    /// Minor: a lookup that never answers times out after 10 s as no answer, so step 4 waits.
+    @Test func aLookupThatNeverAnswersTimesOut() async throws {
+        let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), args: Self.channelArgs("Rs7St51oDDc"),
+                               sleep: { if $0 != .seconds(10) { try await Task.sleep(for: .seconds(3600)) } },
+                               lookup: { _ in try await Task.sleep(for: .seconds(3600)); throw URLError(.timedOut) })
+
+        await vm.open()
+        let ending = Task { await vm.playToEnd() }
+        try await waitUntil { vm.state == .loading }
+        ending.cancel()
     }
 }

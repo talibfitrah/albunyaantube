@@ -362,14 +362,17 @@ extension StreamState {
 
     /// Spec §9.1 (Task 32): the backend's current lives for a live-category channel; nil = no live-channel mode.
     private let liveLookup: (@Sendable (String) async throws -> LiveChannelLives)?
-    /// Injected so the live refresh timer is testable without waiting hours.
+    /// Injected so the live refresh timer, step 4's waits and the lookup's cap are testable without waiting.
     private let sleep: @Sendable (Duration) async throws -> Void
     private var liveRefreshTask: Task<Void, Never>?
     /// Spec §9.1: the live-channel incident in progress (one per video id) and its step 4 wait.
     private var liveIncident: LiveChannelRecovery?
     private var liveRetryTask: Task<Void, Never>?
-    /// Set by `performResolve` to its generation when a live-channel resolve did not land live now; `resolve` acts on it.
-    private var liveMissGeneration: Int?
+    /// Set by `performResolve` when a live-channel resolve did not land live now, with the trigger it is; `resolve` acts on it.
+    private var liveMiss: (generation: Int, trigger: LiveChannelRecovery.Trigger)?
+    #if DEBUG
+    private var debugForceEndTask: Task<Void, Never>?
+    #endif
     /// Live-channel mode needs the lookup too: an offline player built from a live item's args has none.
     private var isLiveChannelMode: Bool { args.liveChannelId != nil && liveLookup != nil }
     /// The proactive refresh in flight (the live timer's or the foreground check's). The other one joins it: two forced
@@ -761,9 +764,10 @@ extension StreamState {
         }
     }
 
-    /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`).
-    func recordPlaybackProgress() {
-        recoveryBudget.recordPlaybackProgress()
+    /// The stream is genuinely playing again: refund what Android refunds (`RecoveryBudget`). In live-channel mode,
+    /// sustained playback also refunds the lifetime retries (§9.1, Task 32 fix round 1).
+    func recordPlaybackProgress(now: Date = Date()) {
+        recoveryBudget.recordPlaybackProgress(now: args.liveChannelId != nil ? now : nil)
     }
 
     // MARK: - Live-channel mode (spec §9.1)
@@ -772,18 +776,28 @@ extension StreamState {
     /// the caller runs the same-id recovery), wait in the existing loading state, or give up into the error state.
     /// Returns false outside live-channel mode too.
     @discardableResult
-    func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger, now: Date = Date()) async -> Bool {
+    func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger) async -> Bool {
         guard let channel = args.liveChannelId, let liveLookup else { return false }
         if liveIncident?.currentId != args.videoId {     // an incident belongs to one video id
-            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.title, startedAt: now)
+            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.title, startedAt: Date())
         }
         let incidentId = liveIncident?.id
         var lives: [LiveChannelLives.Live]?
         var notFound = false
         do {
-            lives = try await liveLookup(channel).lives
+            lives = try await withThrowingTaskGroup(of: LiveChannelLives.self) { [sleep] group in
+                group.addTask { try await liveLookup(channel) }
+                group.addTask {                 // a backend that never answers is no answer, not a frozen screen
+                    try await sleep(.seconds(10))
+                    throw URLError(.timedOut)
+                }
+                defer { group.cancelAll() }
+                return try await group.next()!
+            }.lives
         } catch is LiveChannelNotFound {
             notFound = true                     // not a servable live channel: stop, never ten minutes of waits
+        } catch let error where error is CancellationError || Task.isCancelled {
+            return true                         // cancelled (a newer wait, a closed screen): not an answer, spend nothing
         } catch {}                              // anything else is no answer: retry
         // The incident ended while the lookup was out (a resolve landed live, a switch, a give-up).
         guard var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId else { return true }
@@ -1373,9 +1387,13 @@ extension StreamState {
         }
         resolveTask = task
         await task.value
-        if myGeneration == generation, liveMissGeneration == generation {
-            liveMissGeneration = nil
-            await liveChannelTrigger(.ended)    // §9.1: not live now, or failed (F3): step 4, never a recording or an error
+        // §9.1: not live now, or failed (F3): step 4, never a recording or an error. A failed open, Retry or switch is a
+        // FAILURE, so a listed id gets its same-id re-resolve first; that re-resolve's own miss is an END, so nothing loops.
+        if myGeneration == generation, let miss = liveMiss, miss.generation == generation {
+            liveMiss = nil
+            if await !liveChannelTrigger(miss.trigger) {
+                await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
+            }
         }
         return myGeneration == generation
     }
@@ -1399,7 +1417,7 @@ extension StreamState {
         // proactive refresh included) and a failed resolve (F3: an ended 24/7 id fails to resolve) are step 4's, never
         // played or shown as an error; `resolve` runs the trigger. A failed silent refresh keeps the stream (below).
         if isLiveChannelMode, !result.isLiveNow, result.isPlayable || !silent {
-            liveMissGeneration = generation
+            liveMiss = (generation, result.isPlayable || kind == .autoRecovery ? .ended : .failure)
             return
         }
         // A silent (proactive TTL) refresh runs WHILE a healthy stream is playing -- that is why it
@@ -1431,9 +1449,10 @@ extension StreamState {
             liveIncident = nil                  // live again: the incident is over, and its wait stops
             #if DEBUG
             if let seconds = Self.debugLiveForceEndSeconds {
-                Task { [weak self] in
+                debugForceEndTask?.cancel()     // one armed force-end: a re-arm replaces it
+                debugForceEndTask = Task { [weak self] in
                     try? await Task.sleep(for: .seconds(seconds))
-                    guard self?.args.videoId == videoId else { return }
+                    guard !Task.isCancelled, self?.args.videoId == videoId else { return }
                     await self?.liveChannelTrigger(.ended)
                 }
             }
