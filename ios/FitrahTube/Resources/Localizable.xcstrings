@@ -12075,7 +12075,7 @@
         "ar": {
           "stringUnit": {
             "state": "translated",
-            "value": "حل البث…"
+            "value": "جارٍ تحميل البث…"
           }
         },
         "en": {
@@ -12087,7 +12087,7 @@
         "nl": {
           "stringUnit": {
             "state": "translated",
-            "value": "Stream oplossen…"
+            "value": "Stream laden…"
           }
         }
       }
