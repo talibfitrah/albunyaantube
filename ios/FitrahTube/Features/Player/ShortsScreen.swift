@@ -44,11 +44,12 @@ struct ShortsScreen: View {
         .statusBarHidden(true)                              // ruling 57
         .toolbar(.hidden, for: .navigationBar)              // fork D; Back is `backButton` below
         .onAppear { OrientationLock.lockPortrait() }
-        .onDisappear { OrientationLock.release() }
+        .onDisappear { OrientationLock.release(); model?.stopUpgrade() }
         .task {
             guard model == nil else { return }
             let vm = PlayerViewModel(resolver: PlayerScreen.resolver(container: container),
-                                     settings: container.settings, args: args)
+                                     settings: container.settings, args: args,
+                                     hd: PlayerScreen.hdUpgrade(container: container))
             model = vm
             await vm.open()
         }

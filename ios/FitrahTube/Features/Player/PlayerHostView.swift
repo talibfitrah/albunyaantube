@@ -337,6 +337,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         guard let item = controller.player?.currentItem else { return }
         let scale = controller.view.window?.screen.scale ?? controller.traitCollection.displayScale
         let layerSize = QualityOption.pixelSize(points: controller.view.bounds.size, scale: scale > 0 ? scale : 2)
+        context.coordinator.layerSize = layerSize
         quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path)
     }
 
@@ -408,7 +409,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var timeObserverToken: Any?
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
-        private var watchdog = StallWatchdog()
+        private(set) var watchdog = StallWatchdog()
+        /// Spec R43: the HD item buffering on its hidden player, if any.
+        private var stager: HDStager?
+        /// The layer's pixel size from the last `applyQuality`, so a staged item gets the same quality ceiling.
+        var layerSize: CGSize = .zero
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
         /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
         /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
@@ -579,6 +584,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // I4: seeded from the live position, not 0 -- a replacement item is seeked back to the
             // outgoing item's time, which a 0 seed would misread as a full item's worth of progress.
             watchdog = StallWatchdog(playbackTime: player.currentTime().seconds)
+            // Plan review C1 (spec R43): an item that is already ready never publishes `.readyToPlay` to the `[.new]`
+            // status sink below, so it is armed here, or its stalls would never fire and the drop-back could not happen.
+            // (`.initial` on the sink would also re-run the DEBUG seek-near-end branch.) Since the Gate 1 ruling the HD
+            // hand-over builds a fresh item, which publishes `.readyToPlay` normally; this stays as the backstop.
+            if item.status == .readyToPlay { watchdog.armed = true }
 
             // I2: `AVPlayerItem.status` KVO carries NO queue guarantee, so the old
             // `observe { MainActor.assumeIsolated { … } }` was a hard trap waiting for an off-main
@@ -741,6 +751,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                      isLive: isLive, isOnline: isOnline(), now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
             if tick.fire { fire(.stall) }
+            stepUpgrade(player: player)
         }
 
         private func fire(_ event: RecoveryEvent) {
@@ -761,6 +772,25 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 return
             }
             Task { await model.handleRecoveryEvent(event, httpStatus: status) }
+        }
+
+        /// Spec R43, once a second: the whole decision is `HDStager.step`; this supplies the live inputs and the
+        /// loader-backed stager. R18: an external route is not eligible, so nothing is staged or swapped on AirPlay.
+        private func stepUpgrade(player: AVPlayer) {
+            guard let model else { return }
+            let eligible = HDStager.mayStage(appState: UIApplication.shared.applicationState,
+                                             pictureInPicture: background.pictureInPictureActive,
+                                             external: player.isExternalPlaybackActive)
+            stager = HDStager.step(stager, model: model, player: player, eligible: eligible, loops: playToEnd == .restart) {
+                upgrade, masterURL, position in
+                HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: model.audioOnly, position: position,
+                         onRefused: { Task { @MainActor in model.upgradeRefused() } },
+                         configure: { [weak self] item in
+                             // `applyQuality`'s ceiling, with its last layer size and the live path.
+                             guard let self else { return }
+                             model.selectedQuality.apply(to: item, layerSize: self.layerSize, network: self.path)
+                         })
+            }
         }
 
         /// The path monitor's hook: the network is back, so a failure parked while it was down runs
@@ -868,7 +898,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
            existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
-        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent))
+        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
@@ -937,8 +967,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// nested in a header dictionary. `AVURLAsset` doesn't expose its `options` dictionary back out
     /// once built, so `assetOptions(userAgent:)` below -- not this asset -- is what `PlayerHostTests`
     /// actually asserts the value against.
-    static func asset(url: URL, userAgent: String) -> AVURLAsset {
-        AVURLAsset(url: url, options: assetOptions(userAgent: userAgent, url: url))
+    /// Playback Phase 2 (spec R12, R17): a `fitrah-hls` master gets its `SyntheticHLSLoader`; the user agent still rides
+    /// `AVURLAssetHTTPUserAgentKey`, so the segment fetches carry the TV UA. `onRefused` is the stager's (R42).
+    static func asset(url: URL, userAgent: String, synthetic: SyntheticHLS? = nil,
+                      onRefused: (@Sendable () -> Void)? = nil) -> AVURLAsset {
+        let options = assetOptions(userAgent: userAgent, url: url)
+        if let synthetic, url.scheme == SyntheticHLSLoader.scheme {
+            return SyntheticHLSLoader.asset(url: url, model: synthetic, userAgent: userAgent, options: options, onRefused: onRefused)
+        }
+        return AVURLAsset(url: url, options: options)
     }
 
     /// Task 7 (the Task 4 trap): a LOCAL file gets `AVURLAssetPreferPreciseDurationAndTimingKey` —

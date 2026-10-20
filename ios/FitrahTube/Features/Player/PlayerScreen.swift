@@ -84,6 +84,7 @@ struct PlayerScreen: View {
             // of the same pair. Compact width never sets the key, so both arms stay as they were.
             isOnScreen = false
             model?.reconcile(.disappear)
+            model?.stopUpgrade()     // plan review M11
         }
         // The return leg of the release above: take the claim back if the receiver is still playing
         // our video, re-cast if the session is live but it is not, or pay the hand-back the
@@ -155,6 +156,7 @@ struct PlayerScreen: View {
                                      settings: container.settings, args: args,
                                      queueSource: Self.queueSource(container: container),
                                      cast: container.castController,
+                                     hd: Self.hdUpgrade(container: container),
                                      liveLookup: { [catalog = container.catalog] id in try await catalog.liveChannel(id: id) })
             }
             model = vm
@@ -599,6 +601,13 @@ struct PlayerScreen: View {
             .padding(.vertical, 6)
             .background(.black.opacity(0.55), in: Capsule())
             .accessibilityIdentifier(identifier)
+    }
+
+    /// Spec R43: the HD upgrade every live player gets. No exception for the `-fitrah-fake-player*` hooks (plan review,
+    /// deletable scope 3): they run on fixture containers, whose resolver has no solver (R20), and fixture ids fail
+    /// `isValidVideoId`, so `upgrade` returns nil before any request.
+    static func hdUpgrade(container: AppContainer) -> HDUpgrade {
+        .live(container.resolver)
     }
 
     /// `-fitrah-fake-player`: the UI-test/screenshot hook -- swaps the real InnerTubeKit-backed
