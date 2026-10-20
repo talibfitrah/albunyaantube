@@ -1,0 +1,19 @@
+android/app/src/main/java/com/albunyaan/tube/player/StreamPrefetchService.kt
+  s_dbb6b1f3671904::t_57745376ee3273 155-160
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9ed595ae6b4c9b6ff930cfbf42c463ff20061cdf",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
