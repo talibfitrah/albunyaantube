@@ -11674,28 +11674,6 @@
         }
       }
     },
-    "player_status_resolving": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جارٍ تحميل البث…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resolving stream…"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream laden…"
-          }
-        }
-      }
-    },
     "player_stream_error": {
       "localizations": {
         "ar": {

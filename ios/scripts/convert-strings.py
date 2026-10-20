@@ -44,6 +44,8 @@ REFUSE = {"views_count_billions", "views_count_millions", "views_count_thousands
           # re-auth legs render their own keys, never `messageKey`. The code now points at
           # `auth_error_wrong_password` and this key has no reader at all.
           "auth_error_user_not_found",
+          # 1.0.4 pipeline stage 1 (iOS S1): Android's resolving-stream overlay text; no Swift reader.
+          "player_status_resolving",
           # Task 3, spec §3 Out / ruling C1: ported but permanently unreachable on iOS, so dead
           # copy. Microsoft auth was never wired up (spec §3 Out); the phone-country keys assumed a
           # picker Android never had here either -- bootstrap's and the profile edit sheet's phone
