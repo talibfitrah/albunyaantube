@@ -87,6 +87,24 @@ class PublicContentServiceLiveTest {
         assertThat(none.match()).isEqualTo("none");
     }
 
+    /** L3 / F1, F6: as the index's exact tier, a stem matches (ال stripped) and a stopword is optional. */
+    @Test
+    void aLiveSearchMatchesStemsAndSkipsStopwords() throws Exception {
+        when(liveCategories.items(CAT)).thenReturn(List.of(
+                ContentItemDto.video("makkahlive1", "Makkah Live", null, 0, null, null, null, null, "Quran TV", null),
+                ContentItemDto.video("zadlive0001", "بث مباشر القرآن الكريم", null, 0, null, null, null, null, "Zad TV", null)));
+
+        assertThat(liveSearch("قرآن")).containsExactly("zadlive0001");
+        assertThat(liveSearch("كريم")).containsExactly("zadlive0001");
+        assertThat(liveSearch("the makkah")).containsExactly("makkahlive1");
+        assertThat(liveSearch("the")).isEmpty();                     // all stopwords: each one is needed
+    }
+
+    private List<String> liveSearch(String q) throws Exception {
+        return service.searchContent("VIDEOS", null, 20, CAT, null, null, q).page().getData().stream()
+                .map(ContentItemDto::getId).toList();
+    }
+
     @Test
     void channelsStillListTheChannelCards() throws Exception {
         when(channels.findApprovedByCategoryAndSubscribersDescWithCursor(anyString(), anyInt(), org.mockito.ArgumentMatchers.any()))

@@ -942,16 +942,21 @@ public class SearchIndex {
 
     /**
      * Tier-1 words over a text outside the index (a LIVE category's current lives, L3): every query token is a word of
-     * `text`, the last one also as a prefix, through the index's analyzer (case, Arabic and digit folding).
-     * ponytail: no stems, fuzzy, concepts or stopword slack; run the ladder on a temporary index if those lists grow.
+     * `text` or shares its stem, the last one also as a prefix, through the index's analyzers (case, Arabic and digit
+     * folding, ال stripped). A stopword is optional unless the query is all stopwords, as in tier 1.
+     * ponytail: no fuzzy or concept tiers; run the ladder on a temporary index if those lists grow.
      */
     public static boolean matches(String query, String text) {
         List<String> words = SearchText.tokens(SearchText.BASE, text);
         List<String> tokens = SearchText.tokens(SearchText.BASE, query);
+        boolean onlyStopwords = tokens.stream().allMatch(SearchText::isStopword);
         for (int i = 0; i < tokens.size(); i++) {
             String token = tokens.get(i);
+            if (!onlyStopwords && SearchText.isStopword(token)) continue;
             boolean last = i == tokens.size() - 1;
-            if (words.stream().noneMatch(w -> w.equals(token) || last && w.startsWith(token))) return false;
+            String stem = SearchText.stem(token);
+            if (words.stream().noneMatch(w -> w.equals(token) || SearchText.stem(w).equals(stem)
+                    || last && w.startsWith(token))) return false;
         }
         return !tokens.isEmpty();
     }

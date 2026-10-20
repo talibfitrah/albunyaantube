@@ -53,6 +53,7 @@ class LiveChannelServiceTest {
 
         unloaded.seed(SUNNAH);                                  // the add is never refused
 
+        verify(reader, never()).read(any());                    // F3: no shared-IP read for a seed that cannot land
         assertThat(unloaded.state(SUNNAH)).isNull();
         assertThatThrownBy(() -> unloaded.put(LiveChannelState.unknown(SUNNAH))).isInstanceOf(IllegalStateException.class);
         verify(states, never()).save(any());

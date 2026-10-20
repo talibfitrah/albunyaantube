@@ -73,8 +73,8 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     private int requestsToday;
     /**
      * L2: when this process last read each channel. An ERROR leaves checkedAt alone, so attempts, not checks, order the
-     * targets. ponytail: in memory, never pruned (one entry per channel ever polled); a restart orders by checkedAt until
-     * each target is read once.
+     * targets. Pruned to the current targets each cycle. ponytail: in memory; a restart orders by checkedAt until each
+     * target is read once.
      */
     private final Map<String, Long> tried = new HashMap<>();
 
@@ -131,6 +131,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                 log.info("live poller: circuit breaker open, cycle skipped");
                 return;
             }
+            tried.keySet().retainAll(view.targets());                   // F4: a channel left in no LIVE category
             if (view.liveCategoryIds().isEmpty()) {
                 live.publish(Map.of(), Map.of());
                 return;

@@ -80,20 +80,23 @@ public class LiveChannelService {
      * seed (pre-flight M9): a failed state write is logged and the state stays in the snapshot; the next cycle persists it.
      * A breaker refusal or a rate limit says nothing about the channel, so it seeds nothing (R7). An empty read hides
      * only a channel that is not served now: re-adding a served channel during a suspect stretch keeps its lives (R10).
-     * Restore records stay for the next cycle, which restores the docs (R12). Before the states load nothing is seeded
-     * (L1): the first cycle loads them and reads the channel.
+     * Restore records stay for the next cycle, which restores the docs (R12). Before the states load nothing is read or
+     * seeded (L1, F3): the first cycle loads them and reads the channel.
      */
     public void seed(String ucId) {
+        if (!loaded) {
+            log.warn("live seed: states not loaded yet; {} is read by the next cycle", ucId);
+            return;
+        }
         seedWith(ucId, livesNow(ucId));                         // the YouTube read stays outside the lock
     }
 
-    /** {@link #seed} from a read the caller already made (spec §10: the migration's fresh poll). Sends no request. */
+    /**
+     * {@link #seed} from a read the caller already made (spec §10: the migration's fresh poll). Sends no request. Before
+     * the states load, put() refuses; the migration is blocked then (F2).
+     */
     public void seedWith(String ucId, LiveTabResult r) {
         if (r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
-            return;
-        }
-        if (!loaded) {
-            log.warn("live seed: states not loaded yet; {} is read by the next cycle", ucId);
             return;
         }
         synchronized (stateLock) {

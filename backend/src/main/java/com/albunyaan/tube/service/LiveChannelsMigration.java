@@ -136,6 +136,8 @@ public class LiveChannelsMigration {
             channelRows.add(row);
         }
         if (!proven) blockers.add("unproven poll: no plan channel reads LIVE (R10)");
+        // F2: steps 3 and 7 compute from the snapshot; loaded never goes back to false, so this holds for the whole run
+        if (!live.loaded()) blockers.add("live channel states not loaded yet; retry after the next poller cycle");
         if (planChannels.size() > LiveCategoryGuard.MAX_ENTRIES) blockers.add("more than " + LiveCategoryGuard.MAX_ENTRIES + " entries");
 
         // The removed videos: their fate is decided by the poll (R12b).

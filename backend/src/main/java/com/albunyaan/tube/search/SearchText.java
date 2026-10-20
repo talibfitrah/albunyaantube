@@ -151,6 +151,11 @@ final class SearchText {
         return stemmed.isEmpty() ? token : stemmed.get(0);
     }
 
+    /** A BASE token in the stop sets: tier 1 makes it optional unless the query is all stopwords (B5). */
+    static boolean isStopword(String token) {
+        return STOPWORDS.contains(token);
+    }
+
     /** English + Dutch + Arabic stop sets, each run once through BASE (spec §4.4). */
     private static Set<String> stopwords() {
         Set<String> out = new HashSet<>();
