@@ -1,0 +1,37 @@
+ios/FitrahTubeTests/HDStagerTests.swift
+  s_dbb6b1f3671904::t_fa9279681ba1a0 360-361,366
+  s_dbb6b1f3671904::t_8d915b5dfa3f23 119,121,123-152,184,188-192,287-289,297-359,362-365,367-382
+ios/FitrahTubeTests/PlayerViewModelUpgradeTests.swift
+  s_dbb6b1f3671904::t_8d915b5dfa3f23 192
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_23b400ec990192::t_871eda81c0c9a8 889-891
+  s_dbb6b1f3671904::t_8f547d3d91482b 887-888
+ios/FitrahTube/Features/Player/HDStager.swift
+  s_dbb6b1f3671904::t_c0e319c74db15b 18-19,21-22,28,40,54,68-69,152-153
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_dbb6b1f3671904::t_16809181846f68 52-53,96-97,282,416,732,756-757,791,884,888-889,907-908
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e827370446fd6d3014100cb103bfaec547af65ff",
+  "prompts": {},
+  "sessions": {
+    "s_23b400ec990192": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a159c7-baa2-76b1-a309-7cac1d8881e9",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    },
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
