@@ -584,9 +584,10 @@ public class YouTubeCircuitBreaker {
         State currentState = state.get();
 
         if (currentState == State.HALF_OPEN) {
-            // Probe succeeded - close the circuit and reset probe flag
+            // Only the probe's own success closes (slice C M1): a search skips the breaker, so its success says
+            // nothing about the endpoints the probe is testing.
+            if (!probeOwner.compareAndSet(Thread.currentThread(), null)) return;
             logger.info("Circuit breaker probe succeeded - transitioning to CLOSED");
-            probeOwner.set(null);
             closeCircuit();
             return;
         }
@@ -801,6 +802,11 @@ public class YouTubeCircuitBreaker {
      */
     public boolean isRateLimitError(Exception exception) {
         if (exception == null) {
+            return false;
+        }
+        // The breaker's own refusal, not YouTube's answer (slice C M2): its text says "rate limiting" and its cooldown
+        // seconds can read "429", and recording it would restart the cooldown on every refused call.
+        if (exception instanceof YouTubeGateway.CircuitOpenException) {
             return false;
         }
 

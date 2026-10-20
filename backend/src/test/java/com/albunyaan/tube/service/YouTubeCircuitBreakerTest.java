@@ -304,6 +304,34 @@ class YouTubeCircuitBreakerTest {
         }
     }
 
+    /**
+     * Slice C M1: an admin search skips the breaker but records its success. Closing HALF_OPEN on it would clear the
+     * backoff while browse is still blocked, so only the probe's own success may close.
+     */
+    @Test
+    @DisplayName("HALF_OPEN: another caller's success does not close the breaker; the probe's own success does")
+    void halfOpen_onlyTheProbesOwnSuccessCloses() throws Exception {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // CLOSED → OPEN
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        circuitBreaker.recordSuccess();   // a search success before any probe is taken
+        assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState(), "no probe, no close");
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.recordSuccess();   // an admin search's success, on another thread
+
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState(), "a non-probe success must not close");
+            assertTrue(circuitBreaker.isOpen(), "the probe still holds the permit");
+
+            probeThread.submit(circuitBreaker::recordSuccess).get();   // the probe itself succeeds
+
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState(), "the probe's success closes");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
     @Test
     @DisplayName("Reset should clear backoff level")
     void resetShouldClearBackoffLevel() {

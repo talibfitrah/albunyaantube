@@ -15,6 +15,13 @@ test('the solver realm has no process, fetch or require (R40)', () => {
   assert.equal(vm.runInContext('typeof process + typeof fetch + typeof require', newContext()), 'undefinedundefinedundefined');
 });
 
+test('the realm\'s global inherits nothing from the host, so constructor.constructor cannot reach process (security M1)', () => {
+  const ctx = newContext();
+  const escape = "(() => { try { return typeof constructor.constructor('return process')(); } catch { return 'blocked'; } })()";
+  assert.notEqual(vm.runInContext(escape, ctx), 'object', 'top level');
+  assert.notEqual(vm.runInContext(`Function(${JSON.stringify(`return ${escape}`)})()`, ctx), 'object', 'in a Function() body, as buildPlayer runs base.js');
+});
+
 test('a hanging build stops at the vm timeout (R27, R40)', () => {
   const ctx = newContext();
   vm.runInContext('globalThis.jsc = () => { const e = Date.now() + 2000; while (Date.now() < e) {} }', ctx);

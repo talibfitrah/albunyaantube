@@ -17,7 +17,8 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 
 /** A fresh realm holding EJS and nothing of Node's (R40). One per player, so eviction drops it whole. */
 export function newContext(timeoutMs = 10_000) {
-  const ctx = vm.createContext({}, { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
+  // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
+  const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
   vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs });
   return ctx;
 }

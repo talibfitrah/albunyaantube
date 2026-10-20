@@ -31,6 +31,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.ZoneOffset;
 import java.util.ArrayList;
+import java.util.Collections;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
@@ -231,6 +232,33 @@ class PlaybackSolveIT extends BaseIntegrationTest {
         } finally {
             ReflectionTestUtils.setField(service, "clock", Clock.systemUTC());
         }
+    }
+
+    /** Codex P1-2: an oversize body is refused before Jackson binds it, so neither the limiter nor the sidecar sees it. */
+    @Test
+    void anOversizeBodyIs413BeforeBindingAndTheLargestValidOneIs200() throws Exception {
+        int before = solveHits.get();
+        String oversize = JSON.writeValueAsString(Map.of("playerId", "0229cd64", "n", List.of(n("O")),
+                "s", Collections.nCopies(200, s("O"))));
+        mvc.perform(post("/api/playback/solve").header("Authorization", "Bearer uid-it-oversize")
+                        .contentType(MediaType.APPLICATION_JSON).content(oversize))
+                .andExpect(status().isPayloadTooLarge())
+                .andExpect(jsonPath("$.status").value(413));
+        // a declared length under the cap (or none, as a chunked body has) does not lift the cap on what is read
+        mvc.perform(post("/api/playback/solve").header("Authorization", "Bearer uid-it-oversize")
+                        .contentType(MediaType.APPLICATION_JSON).header("Content-Length", "100").content(oversize))
+                .andExpect(status().isPayloadTooLarge());
+        assertThat(solveHits.get()).isEqualTo(before);
+
+        List<String> fourN = new ArrayList<>();
+        List<String> sixtyFourS = new ArrayList<>();
+        for (int i = 0; i < 4; i++) fourN.add((n("M" + i) + "y".repeat(12)).substring(0, 32));
+        for (int i = 0; i < 64; i++) sixtyFourS.add((s("M" + i) + "z".repeat(52)).substring(0, 160));
+        mvc.perform(post("/api/playback/solve").header("Authorization", "Bearer uid-it-largest")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(JSON.writeValueAsString(Map.of("playerId", "0229cd64", "n", fourN, "s", sixtyFourS))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.s." + sixtyFourS.get(63)).value(sixtyFourS.get(63) + "A"));
     }
 
     @Test

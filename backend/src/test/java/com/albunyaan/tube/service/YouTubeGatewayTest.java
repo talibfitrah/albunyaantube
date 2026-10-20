@@ -400,6 +400,22 @@ class YouTubeGatewayTest {
             testGateway.shutdown();
         }
 
+        /** Slice C M2: a caller that records "if (isRateLimitError(e))" on a refusal would restart the cooldown forever. */
+        @Test
+        @DisplayName("The OPEN refusal is not a rate-limit signal")
+        void openRefusal_isNotARateLimitError() {
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway testGateway = new YouTubeGateway(ServiceList.YouTube, 3, null, circuitBreaker);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            try {
+                IOException refusal = assertThrows(IOException.class, () -> testGateway.fetchChannelInfo("UCTest"));
+                assertInstanceOf(YouTubeGateway.CircuitOpenException.class, refusal);
+                assertFalse(circuitBreaker.isRateLimitError(refusal), "refusal read as a rate limit: " + refusal.getMessage());
+            } finally {
+                testGateway.shutdown();
+            }
+        }
+
         @Test
         @DisplayName("A RuntimeException from a tab call during the HALF_OPEN probe releases the probe")
         void tabCallRuntimeException_releasesHalfOpenProbe() throws Exception {
