@@ -16,7 +16,7 @@ import static org.springframework.test.web.servlet.request.MockMvcRequestBuilder
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** A-M5: 404 is the apps' definitive "not live" stop, so it must never be sent while the states are still loading. */
+/** A-M5: 404 is the apps' definitive "not live" stop, so it is never sent before a view of the loaded states is published. */
 @WebMvcTest(LiveChannelController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class LiveChannelControllerTest {
@@ -28,7 +28,7 @@ class LiveChannelControllerTest {
 
     @Test
     void whileStatesAreLoadingTheAnswerIs503WithRetryAfterNever404() throws Exception {
-        when(live.loaded()).thenReturn(false);
+        when(live.published()).thenReturn(false);
         when(live.entries()).thenReturn(Map.of());
         mockMvc.perform(get("/api/v1/live/channels/UCaaaaaaaaaaaaaaaaaaaaaa"))
                 .andExpect(status().isServiceUnavailable())
@@ -36,8 +36,8 @@ class LiveChannelControllerTest {
     }
 
     @Test
-    void onceLoadedAnUnknownChannelIsStill404() throws Exception {
-        when(live.loaded()).thenReturn(true);
+    void onceAViewIsPublishedAnUnknownChannelIsStill404() throws Exception {
+        when(live.published()).thenReturn(true);
         when(live.entries()).thenReturn(Map.of());
         mockMvc.perform(get("/api/v1/live/channels/UCaaaaaaaaaaaaaaaaaaaaaa")).andExpect(status().isNotFound());
     }

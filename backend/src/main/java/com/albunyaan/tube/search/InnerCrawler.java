@@ -90,6 +90,8 @@ public class InnerCrawler {
     private boolean woken; // guarded by wake
     private volatile boolean stopped;
     private volatile boolean rebuildRequested;
+    private long rebuildRetryAt; // crawler thread only: a failed rebuild waits 1 min, doubling to 1 h
+    private int rebuildFailures;
     private boolean refreshFailing; // crawler thread only: a dead writer's stack trace is logged once
     private Thread thread;
     private long lastSaveAt;
@@ -184,7 +186,7 @@ public class InnerCrawler {
         if (!stopped) rebuildIndex();
     }
 
-    /** R31 / §9: a cap change (admin or the memory trigger) is a rebuild from the corpus, never a re-crawl. */
+    /** R31 / §9: a cap change (admin or the memory trigger) is a rebuild from the corpus; see dirty() for a raise. */
     void requestRebuild() {
         rebuildRequested = true;
         wakeUp();
@@ -222,7 +224,7 @@ public class InnerCrawler {
             }
             if (u.capPerSource() != null && u.capPerSource() != s.capPerSource) {
                 s.capPerSource = u.capPerSource();
-                rebuild = true; // R31: a rebuild from the corpus, never a re-crawl
+                rebuild = true; // R31: a rebuild from the corpus; a raise also lists sources a lower cap stopped (dirty())
             }
         }
         if (Boolean.TRUE.equals(u.resetPace())) pacer.resetPace();
@@ -282,21 +284,40 @@ public class InnerCrawler {
         return out;
     }
 
+    /**
+     * A failed rebuild is requested again after a wait, 1 min doubling up to 1 h (stage 9 Cubic P2): without it a failed
+     * boot rebuild leaves no inner index until a restart, since replaceSource and merge skip an unbuilt index. An Error
+     * is retried too, after the run loop logs it.
+     */
     private void rebuildIndex() {
+        boolean built = false;
         try {
             index.rebuild(search.sources(), store.state().capPerSource);
+            built = true;
+            rebuildFailures = 0;
         } catch (IOException | RuntimeException e) {
             if (stopped) return; // stop()'s interrupt (ClosedByInterruptException) ended it: not a failed rebuild
-            log.error("inner-index rebuild failed; the previous inner index (if any) keeps serving", e);
+            log.error("inner-index rebuild failed; the previous inner index (if any) keeps serving; retried in {} s",
+                    rebuildWait() / 1000, e);
         } catch (InterruptedException e) {
             Thread.currentThread().interrupt();
+        } finally {
+            if (!built && !stopped) {
+                rebuildRetryAt = clock.millis() + rebuildWait();
+                rebuildFailures++;
+                rebuildRequested = true;
+            }
         }
+    }
+
+    private long rebuildWait() {
+        return Math.min(HOUR_MS, IDLE_MS << Math.min(rebuildFailures, 6));
     }
 
     /** One iteration of the loop (§6.2): the ms to wait before the next. Crawler thread only. */
     long step() {
         long now = clock.millis();
-        if (rebuildRequested) {
+        if (rebuildRequested && now >= rebuildRetryAt) {
             rebuildRequested = false;
             rebuildIndex();
         }
@@ -364,7 +385,8 @@ public class InnerCrawler {
     /**
      * R31, hourly: MemAvailable minus the inner index's bytes is the memory left if every index page stays resident.
      * Three samples in a row under 512 MiB → capPerSource 2,000 (the newest 2,000 per source) and a rebuild. The corpus
-     * keeps everything, so lifting the cap later is a rebuild, never a re-crawl. The check and the set share one monitor
+     * keeps everything, so lifting the cap later is a rebuild, plus a full listing of each source a crawl stopped at the
+     * lower cap meanwhile (see dirty()). The check and the set share one monitor
      * hold, so an admin cap set meanwhile is never raised back to 2,000; then, as update(): save, then the rebuild.
      * Old low samples stay in state.memory, so an admin who lifts the cap while memory is still low sees the next hourly
      * sample trip it again. Intended: the cap holds until memory recovers.
@@ -451,7 +473,7 @@ public class InnerCrawler {
             if (src.firstPageAt > 0) c.merge("firstPaged", 1, Integer::sum);
             if (src.completeAt > 0 && !src.shortCrawl) c.merge("complete", 1, Integer::sum);
             if (src.shortCrawl) c.merge("short", 1, Integer::sum);
-            if (src.dirty) c.merge("dirty", 1, Integer::sum);
+            if (dirty(src, store.state().capPerSource)) c.merge("dirty", 1, Integer::sum);
             if (src.capped) c.merge("capped", 1, Integer::sum);
             if (src.unavailable) c.merge("unavailable", 1, Integer::sum);
             if (src.firstPageAt > 0 && src.completeAt == 0 && !src.shortCrawl) c.merge("pendingBackfill", 1, Integer::sum);
@@ -495,12 +517,13 @@ public class InnerCrawler {
                 continue;
             }
             long due = src.lastPollAt + pollInterval(src, now);
+            boolean listAgain = dirty(src, s.capPerSource);
             if (due <= now) {
                 if (due < pollDue) { // a dirty source competes here too, so a binding cap never starves it
-                    poll = new Job(src.shortCrawl || src.dirty ? Kind.FULL : Kind.POLL, key);
+                    poll = new Job(src.shortCrawl || listAgain ? Kind.FULL : Kind.POLL, key);
                     pollDue = due;
                 }
-            } else if (src.dirty && dirty == null) {
+            } else if (listAgain && dirty == null) {
                 dirty = new Job(Kind.FULL, key);
             }
         }
@@ -551,7 +574,7 @@ public class InnerCrawler {
             // only the definitive gone answer joins the R33.7 run; any other CNA is transient, so it counts as transport (§6.6).
             // A channel source is read as its UU… playlist, so its deleted-channel answer is channelGone's (I-2).
             if (ChannelOrchestrator.playlistGone(e) || (key.startsWith("channel:") && ChannelOrchestrator.channelGone(e))) {
-                pacer.unavailable(key);
+                unavailable(key, src, now);
             } else {
                 transport(key, src, now, e);
             }
@@ -593,6 +616,20 @@ public class InnerCrawler {
         store.save(); // I-4: the wait survives a restart
     }
 
+    /**
+     * R33.7 "unavailable" (gone, or an empty page where items were stored). The source waits like any failure, so after
+     * the run's 1 h pause the pass moves on to other sources first. Only a first unavailable answer joins the run: a
+     * source that was already failing is most likely gone, and if its repeats counted, the same gone sources would
+     * re-form the run after every pause and double the interval to OFF (stage 9 Cubic P2). A soft block still forms
+     * the run from sources that were not failing.
+     */
+    private void unavailable(String key, InnerState.Source src, long now) {
+        boolean repeat = src.failures > 0;
+        backoff(src, now);
+        if (repeat) store.save(); // the wait survives a restart
+        else pacer.unavailable(key); // saves too
+    }
+
     /** The source waits from `from`: 1 h, doubling per failure in a row, up to 7 d. */
     private static void backoff(InnerState.Source src, long from) {
         src.failures++;
@@ -628,7 +665,7 @@ public class InnerCrawler {
         if (corpus == null) return false;
         UploadsFetcher.Batch page = fetcher.first(key, src.hl != null ? src.hl : hl(name));
         if (page.listed() == 0 && !corpus.isEmpty()) {
-            pacer.unavailable(key);
+            unavailable(key, src, now);
             return false;
         }
         boolean complete = complete(page.listed(), page.count(), page.next() == null);
@@ -670,7 +707,7 @@ public class InnerCrawler {
         int cap = Math.min(s.capPerSource, InnerState.MAX_PER_SOURCE);
         UploadsFetcher.Batch page = firstPage != null ? firstPage : fetcher.first(key, src.hl != null ? src.hl : hl(name));
         if (page.listed() == 0 && !corpus.isEmpty()) {
-            pacer.unavailable(key);
+            unavailable(key, src, now);
             return false;
         }
         if (src.hl == null && !page.items().isEmpty()) src.hl = hl(titles(page.items()));
@@ -693,6 +730,7 @@ public class InnerCrawler {
         writeCorpus(key, name, stored, corpus, complete); // first: a failed write changes no state
         src.count = page.count();
         src.capped = capped;
+        src.cappedAt = capped ? cap : 0;
         src.lastPollAt = now;
         src.dirty = false;
         if (src.firstPageAt == 0) src.firstPageAt = now;
@@ -732,7 +770,7 @@ public class InnerCrawler {
         if (corpus == null) return false;
         UploadsFetcher.Batch page = fetcher.first(key, src.hl != null ? src.hl : hl(name));
         if (page.listed() == 0 && !corpus.isEmpty()) {
-            pacer.unavailable(key);
+            unavailable(key, src, now);
             return false;
         }
         if (key.startsWith("playlist:")) {
@@ -769,6 +807,15 @@ public class InnerCrawler {
         }
         logJob("POLL", key, src, added, removed);
         return true;
+    }
+
+    /**
+     * To be listed again in full: removed outside the poll window (R22), or stopped by a crawl at a lower cap than
+     * today's. The corpus then holds only that cap's newest items, so raising the cap (the memory trip's 2,000 lifted)
+     * needs this listing; a rebuild alone reads the same short corpus (stage 9 Cubic P2).
+     */
+    static boolean dirty(InnerState.Source src, int capPerSource) {
+        return src.dirty || src.capped && src.cappedAt < Math.min(capPerSource, InnerState.MAX_PER_SOURCE);
     }
 
     /** R22: half the time since the source last changed, between 1 and 7 days. */
@@ -917,9 +964,13 @@ public class InnerCrawler {
         return Math.max(2, (count + 99) / 100);
     }
 
-    /** R32 "complete": listed ≥ count − tolerance; when the count is unknown (< 0, never 0), only a listing that reached its end. */
+    /**
+     * R32 "complete": the listing reached its end and, when the count is known (< 0 is unknown, never 0), listed ≥
+     * count − tolerance. A first page with a next page is never complete, however close its count: 101-102 uploads list
+     * 100 on it, and the oldest would never be backfilled (stage 9 Cubic P2).
+     */
     static boolean complete(int listed, long count, boolean ended) {
-        return count < 0 ? ended : listed >= count - tolerance(count);
+        return ended && (count < 0 || listed >= count - tolerance(count));
     }
 
     /** The page's items first, then every stored item it does not list: adds and updates, never drops (R32 short, first pages). */

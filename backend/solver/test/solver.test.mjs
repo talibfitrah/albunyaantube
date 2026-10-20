@@ -467,3 +467,83 @@ test('a failed cache delete in a read-only directory leaves poll resolving and /
     yt.close();
   }
 });
+
+// ---- stage 9 Cubic round 1: nothing the realm controls runs on the host, and a crashing player cannot loop restarts
+import { spawn } from 'node:child_process';
+const SERVER = JSON.stringify(new URL('../server.mjs', import.meta.url).href);
+
+/** Runs `script` (an ES module) in a child Node, killed after `ms`: a host stuck in realm code shows as signal SIGKILL. */
+async function child(script, ms = 8_000) {
+  const proc = spawn(process.execPath, ['--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+  let stdout = '';
+  proc.stdout.on('data', (d) => { stdout += d; });
+  const timer = setTimeout(() => proc.kill('SIGKILL'), ms);
+  const [code, signal] = await once(proc, 'exit');
+  clearTimeout(timer);
+  return { code, signal, stdout: stdout.trim() };
+}
+
+/** A child that runs `body` against one realm (`ctx`, `player`) and prints what each call did. */
+const realmScript = (body) => `import vm from 'node:vm'; import { buildPlayer, newContext, selfTest, solveAll } from ${SERVER};
+  const ctx = newContext();
+  const player = { ctx, ...vm.runInContext("({ n: (x) => x + 'A', sig: (x) => x.slice(1) })", ctx) };
+  const outcome = (f) => { try { return JSON.stringify(f()); } catch (e) { return 'threw: ' + e.message; } };
+  ${body}`;
+
+test('a realm JSON.stringify that answers an object with a looping toString never hangs the host (Cubic P2)', async () => {
+  const r = await child(realmScript(`vm.runInContext("JSON.stringify = () => ({ toString() { for (;;) {} } })", ctx);
+    console.log(JSON.stringify([outcome(() => selfTest(player, 300)), outcome(() => solveAll(player, ['abc'], [], 300))]));`));
+  assert.equal(r.signal, null, 'the host hung parsing a realm value');
+  const [self, solve] = JSON.parse(r.stdout);
+  assert.match(self, /^threw: /);
+  assert.match(solve, /^threw: /);
+});
+
+test('a looping getter on the player\'s n is read inside the realm, under the timeout (Cubic P2)', async () => {
+  const r = await child(realmScript(`vm.runInContext(\`globalThis.jsc = () => ({ preprocessed_player:
+      "Object.defineProperty(_result, 'n', { get() { for (;;) {} } }); _result.sig = (x) => x;" })\`, ctx);
+    console.log(outcome(() => buildPlayer(ctx, 'x', 300)));`));
+  assert.equal(r.signal, null, 'the host ran the getter');
+  assert.match(r.stdout, /^threw: .*timed out/);
+});
+
+test('a looping setter the player left on a solve global never runs on the host (Cubic P2)', async () => {
+  const r = await child(realmScript(`for (const name of ['__solveN', '__solveS', '__solveIn', '__probeN', '__probeS', '__probeIn']) {
+      vm.runInContext(\`Object.defineProperty(globalThis, '\${name}', { set() { for (;;) {} }, get() { return undefined; }, configurable: true })\`, ctx);
+    }
+    console.log(JSON.stringify([outcome(() => solveAll(player, ['abc'], [], 300)), outcome(() => selfTest(player, 300))]));`));
+  assert.equal(r.signal, null, 'the host ran the setter');
+  assert.deepEqual(JSON.parse(r.stdout), [JSON.stringify({ n: { abc: 'abcA' }, s: {} }), 'true']);
+});
+
+test('a player that throws an object with a looping message getter never hangs the poll\'s WARN (Cubic P2)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
+    const warnings = [];
+    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, selfTestTimeoutMs: 300,
+      log: { log() {}, warn: (m) => warnings.push(m) },
+      build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: () => { throw { get message() { for (;;) {} } }; }, sig: (x) => x })", ctx) }; } });
+    await solver.poll();
+    console.log(JSON.stringify(warnings));`);
+  yt.close();
+  assert.equal(r.signal, null, 'the host read the thrown object\'s message');
+  assert.match(JSON.parse(r.stdout)[0], /^WARN poll failed at self-test: .*timed out/);
+});
+
+test('a build that kills the process (a fatal V8 OOM skips every catch) never loops: the next start drops that player (Cubic P3)', async () => {
+  const yt = await origin(['aaaaaaaa', 'aaaaaaaa', 'bbbbbbbb']);
+  const dir = tempDir();
+  const r = await child(`import { createSolver } from ${SERVER};
+    createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(dir)}, log: { log() {}, warn() {} }, build: () => process.exit(9) }).poll();`);
+  assert.equal(r.code, 9);
+  assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), true, 'the crash skipped the catch that deletes a bad player');
+  const builds = [];
+  const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), log: quiet });
+  await restarted.poll();
+  assert.equal(builds.length, 0, 'the player that crashed the last build is not built again');
+  assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), false);
+  assert.equal(restarted.health().status, 'warming', 'up and answering, not crashing');
+  await restarted.poll();                                        // the next player builds as usual
+  assert.deepEqual([builds.length, restarted.health().status, yt.downloads()], [1, 'ok', 2]);
+  yt.close();
+});

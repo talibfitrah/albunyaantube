@@ -345,11 +345,20 @@ paths:
               schema:
                 $ref: '#/components/schemas/LiveChannelLives'
         '404':
-          description: Not a channel entry of a live category
+          description: Not a channel entry of a live category. Definitive; never sent while the live states load
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            The live states are still loading after a server start: no view built from them has been published yet.
+            Empty body; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (60)
+              schema:
+                type: integer
 
   /v1/search:
     get:
@@ -700,6 +709,26 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ContentSortDto'
+
+  /admin/live-channels/status:
+    get:
+      summary: Live state of every live category's entries (Content Sorting chips, suspect banner)
+      description: |
+        Read-only, from the live poller's in-memory snapshot plus the categories' members (spec 2026-10-17 §4.2).
+        No YouTube request is made. ADMIN only.
+      operationId: getLiveChannelsStatus
+      tags: [Sort Order]
+      responses:
+        '200':
+          description: Each live category's entries in display order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveChannelsStatus'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
 
   # ============================================================================
   # CATEGORIES (Admin/Moderator)
@@ -3351,6 +3380,13 @@ components:
           type: integer
           nullable: true
           description: Sort order within parent category. Null until explicitly set.
+        type:
+          type: string
+          nullable: true
+          enum: [LIVE]
+          description: |
+            Null for an ordinary category; LIVE for a live-channels category (spec 2026-10-17 §3). An update that
+            omits the field keeps the stored type; an explicit null clears it.
         localizedNames:
           type: object
           nullable: true
@@ -4922,6 +4958,95 @@ components:
                 type: string
               title:
                 type: string
+
+    LiveChannelsStatus:
+      type: object
+      description: GET /admin/live-channels/status (spec 2026-10-17 §4.2)
+      required: [suspectSince, categories]
+      properties:
+        suspectSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: Set while no channel has read LIVE in a cycle that held lives; the last lives are kept meanwhile
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, entries]
+            properties:
+              id:
+                type: string
+              entries:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiveChannelsStatusEntry'
+
+    LiveChannelsStatusEntry:
+      type: object
+      description: |
+        One member of a live category, in display order. A channel entry (contentType channel) carries name,
+        servable, reason, lives, checkedAt, offlineSince, errorSince and lastError; a link entry (contentType video)
+        carries youtubeId, misses and missingSince.
+      required: [contentType, contentId, channelId, status]
+      properties:
+        contentType:
+          type: string
+          enum: [channel, video]
+        contentId:
+          type: string
+        channelId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          description: Channel UNKNOWN, LIVE, OFFLINE or TERMINATED; link LIVE, MISSING, BLOCKED or NO_CHANNEL
+        name:
+          type: string
+          nullable: true
+        servable:
+          type: boolean
+          description: False when the channel is not served at all; its lives then show BLOCKED
+        reason:
+          type: string
+          nullable: true
+        lives:
+          type: array
+          items:
+            type: object
+            required: [id, served]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+                nullable: true
+              served:
+                type: string
+                enum: [SERVED, EXCLUDED, BLOCKED]
+        checkedAt:
+          type: string
+          format: date-time
+          nullable: true
+        offlineSince:
+          type: string
+          format: date-time
+          nullable: true
+        errorSince:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        youtubeId:
+          type: string
+        misses:
+          type: integer
+        missingSince:
+          type: string
+          format: date-time
+          nullable: true
 
     ContentDto:
       type: object

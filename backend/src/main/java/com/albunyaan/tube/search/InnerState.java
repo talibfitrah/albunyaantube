@@ -55,6 +55,8 @@ public class InnerState {
         public volatile long count = -1; // count, items, capped, shortCrawl, completeAt: the stream gate reads them lock-free
         public volatile int items;
         public volatile boolean capped;
+        /** The cap the last full crawl stopped at (0 = it was not stopped): a higher cap lists the source again. */
+        public int cappedAt;
         public volatile boolean dirty;
         @JsonProperty("short")
         public volatile boolean shortCrawl;

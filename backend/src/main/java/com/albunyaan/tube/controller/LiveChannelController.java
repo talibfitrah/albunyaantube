@@ -36,9 +36,10 @@ public class LiveChannelController {
 
     @GetMapping("/channels/{channelId}")
     public ResponseEntity<LiveChannelLives> channel(@PathVariable String channelId) {
-        // 404 is the apps' definitive "not live" stop: never send it while the states are still loading. The poller's
-        // first cycle runs ~1 min after boot. Same 503 + Retry-After shape as the search index (GlobalExceptionHandler).
-        if (!live.loaded()) {
+        // 404 is the apps' definitive "not live" stop: never send it before a view built from the loaded states is
+        // published. A failed boot load or view refresh waits for the poller's next cycle (~1 min after boot), which
+        // publishes only after its Live-tab reads. Same 503 + Retry-After shape as the search index (GlobalExceptionHandler).
+        if (!live.published()) {
             return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "60").build();
         }
         if (!live.entries().containsKey(channelId)) {

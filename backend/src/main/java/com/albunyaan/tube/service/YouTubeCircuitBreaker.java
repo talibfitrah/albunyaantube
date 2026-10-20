@@ -187,7 +187,9 @@ public class YouTubeCircuitBreaker {
         String stateStr = (String) stateData.get("state");
         if (stateStr != null) {
             try {
-                state.set(State.valueOf(stateStr));
+                State loaded = State.valueOf(stateStr);
+                if (loaded == State.HALF_OPEN) enterHalfOpen();
+                else state.set(loaded);
             } catch (IllegalArgumentException e) {
                 logger.warn("Invalid state value '{}' - defaulting to CLOSED", stateStr);
                 state.set(State.CLOSED);
@@ -421,7 +423,7 @@ public class YouTubeCircuitBreaker {
                 if (until == null || Instant.now().isAfter(until)) {
                     // Transition to HALF_OPEN
                     logger.info("Circuit breaker cooldown expired - transitioning to HALF_OPEN");
-                    state.set(State.HALF_OPEN);
+                    enterHalfOpen();
                     persistState();
                     return false; // Allow the probe request
                 }
@@ -467,6 +469,17 @@ public class YouTubeCircuitBreaker {
             return true; // CLOSED state - allow
         }
         return probeOwner.compareAndSet(null, Thread.currentThread());
+    }
+
+    /**
+     * Moves to HALF_OPEN. Entering it from another state starts a new probe round: a permit still held then was taken in
+     * an earlier HALF_OPEN that a Firestore refresh ended while its probe was in flight, and that probe resolved outside
+     * HALF_OPEN, so nothing would ever release it and every caller would stay blocked (stage 9 Cubic P2). Only that
+     * holder is cleared: a probe taken after the move is never touched.
+     */
+    private void enterHalfOpen() {
+        Thread held = probeOwner.get();
+        if (state.getAndSet(State.HALF_OPEN) != State.HALF_OPEN) probeOwner.compareAndSet(held, null);
     }
 
     /**

@@ -1,16 +1,23 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.ValidationProperties;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.Optional;
 import java.util.concurrent.ExecutorService;
 import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for YouTubeCircuitBreaker
@@ -327,6 +334,59 @@ class YouTubeCircuitBreakerTest {
             probeThread.submit(circuitBreaker::recordSuccess).get();   // the probe itself succeeds
 
             assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState(), "the probe's success closes");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    /** A breaker whose Firestore state is {@code stored}: every save succeeds, and the first isOpen() loads it. */
+    private YouTubeCircuitBreaker persistedAs(String stored) throws Exception {
+        SystemSettingsRepository repo = mock(SystemSettingsRepository.class);
+        when(repo.saveWithVersionCheck(any(), any(), anyLong())).thenReturn(true);
+        when(repo.loadOrThrow(any())).thenReturn(Optional.of(Map.of("state", stored)));
+        return new YouTubeCircuitBreaker(validationProperties, repo);
+    }
+
+    /**
+     * Stage 9 Cubic P2: a refresh that moves the state while the probe is in flight leaves its permit behind (the probe
+     * then resolves outside HALF_OPEN). The next HALF_OPEN must start with no probe held, or every caller stays blocked.
+     */
+    @Test
+    @DisplayName("A probe a refresh stranded does not block the next OPEN -> HALF_OPEN")
+    void aProbeStrandedByARefreshDoesNotBlockTheNextHalfOpen() throws Exception {
+        YouTubeCircuitBreaker breaker = persistedAs("CLOSED");   // another instance closed it
+        breaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(breaker::allowProbe).get(), "the probe takes the permit");
+            assertFalse(breaker.isOpen(), "the first check refreshes from Firestore: CLOSED");
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, breaker.getCurrentState());
+            probeThread.submit(breaker::recordSuccess).get();   // the probe resolves in CLOSED
+
+            breaker.setStateForTesting(YouTubeCircuitBreaker.State.OPEN);   // opens again; no cooldown set, so it is over
+            assertFalse(breaker.isOpen(), "OPEN -> HALF_OPEN lets the probe through");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, breaker.getCurrentState());
+            assertFalse(breaker.isOpen(), "no probe is in flight in the new HALF_OPEN");
+            assertTrue(breaker.allowProbe(), "the next probe takes the permit");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("A refresh that loads HALF_OPEN starts it with no probe held")
+    void aRefreshIntoHalfOpenStartsWithNoProbeHeld() throws Exception {
+        YouTubeCircuitBreaker breaker = persistedAs("HALF_OPEN");   // another instance's cooldown ended
+        breaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(breaker::allowProbe).get(), "the probe takes the permit");
+            breaker.setStateForTesting(YouTubeCircuitBreaker.State.CLOSED);   // a move the probe did not make, as a refresh does
+            probeThread.submit(breaker::recordSuccess).get();   // resolves in CLOSED: its permit stays behind
+
+            assertFalse(breaker.isOpen(), "the refresh loads HALF_OPEN with no probe in flight");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, breaker.getCurrentState());
+            assertTrue(breaker.allowProbe(), "the next probe takes the permit");
         } finally {
             probeThread.shutdownNow();
         }

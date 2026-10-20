@@ -209,12 +209,15 @@ class BulkSubmissionServiceSubmitTest {
     void intraBatchDuplicate_secondRowFailsAsDuplicate_afterWriterPopulatesCache() throws Exception {
         // Row 1: writer succeeds, production code calls lateBatch.markAsExisting.
         when(writer.writeChannel(any(), any(), eq("PENDING"), eq("admin-uid"), eq(true))).thenReturn("doc-c-1");
-        // First findExisting → empty; second findExisting (after markAsExisting) → present.
-        // Mockito returns the configured values in order; the second call to the same mock
-        // method gets the second thenReturn value, simulating the cache shadow effect.
+        // As the real Batch: findExisting answers empty until markAsExisting records the written doc, however
+        // often it is asked (the duplicate check before the live guard asks too).
+        java.util.concurrent.atomic.AtomicBoolean marked = new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(inv -> { marked.set(true); return null; })
+                .when(lateBatch).markAsExisting(any(), any(), any(), any());
         when(lateBatch.findExisting(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID)))
-                .thenReturn(Optional.empty(),
-                            Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-c-1", "PENDING")));
+                .thenAnswer(inv -> marked.get()
+                        ? Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-c-1", "PENDING"))
+                        : Optional.empty());
 
         var rows = List.of(
                 new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
@@ -511,6 +514,27 @@ class BulkSubmissionServiceSubmitTest {
         var written = org.mockito.ArgumentCaptor.forClass(PreviewMetadata.class);
         verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean());
         assertEquals("UCROKYPep-UuODNwyipe6JMw", written.getValue().channelId());   // the gateway stub says "UCauth"
+    }
+
+    /** Stage 9 Cubic P3: an already-registered row is DUPLICATE before the live guard runs, never a refusal of the whole request. */
+    @Test
+    void aDuplicateRowIsReportedDuplicateAndNeverReachesTheLiveGuard() throws Exception {
+        when(lateBatch.findExisting(eq(YouTubeContentType.VIDEO), eq(VIDEO_ID)))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-ended-live", "APPROVED")));
+        when(liveCategoryGuard.checkAll(eq(true), argThat(changes -> changes.stream().anyMatch(c -> VIDEO_ID.equals(c.youtubeId())))))
+                .thenThrow(new com.albunyaan.tube.exception.LiveCategoryException(org.springframework.http.HttpStatus.CONFLICT,
+                        com.albunyaan.tube.exception.LiveCategoryException.NOT_LIVE, "the stream has ended", java.util.Map.of()));
+        when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
+        var rows = List.of(
+                new SubmitRow(0, VIDEO_URL, YouTubeContentType.VIDEO, null,
+                        new PreviewMetadata(VIDEO_ID, "Ended live", null, null, null, null, null, null, null), List.of("cat-live")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = svc.submit(new BulkSubmitRequest(rows, "APPROVED"), "admin-uid", true);
+
+        assertEquals("DUPLICATE", resp.results().get(0).errorCode());
+        assertEquals(SubmitStatus.ADDED, resp.results().get(1).status());
     }
 
     /** Fix round 1: a failed categories read inside the guard is a retryable 503, not a 409, and nothing is written. */

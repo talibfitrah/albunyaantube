@@ -42,6 +42,8 @@ public class LiveChannelService {
     private volatile Long suspectSince;
     /** L1: false until loadStates succeeds. A state computed from the empty snapshot would overwrite the stored one. */
     private volatile boolean loaded;
+    /** False until a view built from the loaded states is published: before that entries() is empty, not the truth. */
+    private volatile boolean published;
 
     public LiveChannelService(LiveTabReader reader, LiveChannelStateRepository states, Clock clock) {
         this.reader = reader;
@@ -149,6 +151,12 @@ public class LiveChannelService {
     public void publish(Map<String, Channel> entries, Map<String, List<LiveTabResult.LiveItem>> served) {
         this.entries = Map.copyOf(entries);
         this.served = Map.copyOf(served);
+        if (loaded) published = true;   // after the maps: a reader that sees true sees them
+    }
+
+    /** Stage 9 Cubic P2: the endpoint's 404 is definitive only once this is true, not merely once the states loaded. */
+    public boolean published() {
+        return published;
     }
 
     public LiveChannelState state(String ucId) {

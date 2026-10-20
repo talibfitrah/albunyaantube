@@ -3,6 +3,8 @@ package com.albunyaan.tube.scheduler;
 import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
+import com.albunyaan.tube.controller.LiveChannelController;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.LiveChannelState;
 import com.albunyaan.tube.model.ValidationStatus;
@@ -568,6 +570,57 @@ class LiveChannelPollerTest {
         verify(reader, never()).read(anyString());
         verify(states, never()).save(any());
         verify(caches).evictPublicContentCaches();                     // pages cached while nothing was loaded
+    }
+
+    /** The public endpoint's status for channel A: its 404 is the apps' definitive "not live" stop. */
+    private int endpointStatus() {
+        try {
+            return new LiveChannelController(live).channel(A).getStatusCode().value();
+        } catch (ResourceNotFoundException e) {
+            return 404;
+        }
+    }
+
+    private LiveChannelState savedLive() {
+        LiveChannelState saved = LiveChannelState.unknown(A);
+        saved.setStatus(LiveChannelState.LIVE);
+        saved.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
+        return saved;
+    }
+
+    /** Stage 9 Cubic P2, window 1: the boot load succeeds, then its view refresh fails (logged, swallowed). */
+    @Test
+    void aBootLoadWhoseViewRefreshFailsAnswers503UntilACyclePublishes() throws Exception {
+        entries(A);
+        when(states.findAll()).thenReturn(List.of(savedLive()));
+        when(liveCategories.liveCategoryIds()).thenThrow(new java.util.concurrent.TimeoutException("firestore"))
+                .thenReturn(new LinkedHashSet<>(List.of(CAT)));
+        when(breaker.isOpen()).thenReturn(true);                       // the cycle below needs no YouTube read
+
+        poller.afterSingletonsInstantiated();
+
+        assertThat(endpointStatus()).isEqualTo(503);                   // loaded, but no view published: never 404
+        cycleAt(T0);
+        assertThat(endpointStatus()).isEqualTo(200);
+    }
+
+    /** Stage 9 Cubic P2, window 2: after a failed boot load, the first cycle loads, then reads every Live tab, then publishes. */
+    @Test
+    void theFirstCycleAfterAFailedBootLoadAnswers503UntilItPublishes() throws Exception {
+        entries(A);
+        when(states.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"))
+                .thenReturn(List.of(savedLive()));
+        List<Integer> duringTheRead = new ArrayList<>();
+        when(reader.read(A)).thenAnswer(i -> {
+            duringTheRead.add(endpointStatus());                       // the states are loaded; the view is not published
+            return live("aaaaaaaaaaa");
+        });
+        poller.afterSingletonsInstantiated();
+
+        cycleAt(T0);
+
+        assertThat(duringTheRead).containsExactly(503);
+        assertThat(endpointStatus()).isEqualTo(200);
     }
 
     /** L2: 30 targets in backoff never take the 30 slots from a due target behind them. */

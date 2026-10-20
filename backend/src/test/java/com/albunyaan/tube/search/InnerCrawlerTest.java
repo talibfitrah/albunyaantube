@@ -230,10 +230,22 @@ class InnerCrawlerTest {
         assertFalse(InnerCrawler.complete(100, -1, false));
         assertFalse(InnerCrawler.complete(0, -1, false));
         assertTrue(InnerCrawler.complete(3, -1, true), "unknown count: complete only when the listing ended");
-        assertTrue(InnerCrawler.complete(98, 100, false));
+        assertTrue(InnerCrawler.complete(98, 100, true));
         assertFalse(InnerCrawler.complete(97, 100, true));
         assertEquals(2, InnerCrawler.tolerance(100));
         assertEquals(11, InnerCrawler.tolerance(1_001));
+    }
+
+    /** Stage 9 Cubic P2: 101-102 uploads list 100 on the first page, with a next page: never complete from that page. */
+    @Test
+    void aFirstPageWithANextPageIsNeverComplete() throws Exception {
+        admitted.put(CH, "Dawah Nederland");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(102, items("lesson", 0, 100, "x"), true));
+        step();
+        assertEquals(0, source(CH).completeAt, "the oldest two uploads are still to be listed");
+        assertEquals(1, crawler.counts().get("pendingBackfill"));
+        assertFalse(InnerCrawler.complete(100, 102, false));
     }
 
     @Test
@@ -359,6 +371,7 @@ class InnerCrawlerTest {
 
     // ---- §6.6 outcomes --------------------------------------------------------------------------
 
+    /** The run's sources keep their state (never UNAVAILABLE on a signal); each waits like any failure (stage 9 Cubic P2). */
     @Test
     void threeUnavailableSourcesInARowAreOneSignalAndKeepTheirState() throws Exception {
         ABC.forEach(k -> admitted.put(k, "x"));
@@ -371,7 +384,8 @@ class InnerCrawlerTest {
         assertEquals("UNAVAILABLE_RUN", store.state().signals.get(0).type());
         for (String k : ABC) {
             assertFalse(source(k).unavailable, k);
-            assertEquals(0, source(k).retryAt, k);
+            assertEquals(0, source(k).firstPageAt, k);
+            assertEquals(now.get().toEpochMilli() + CrawlPacer.PAUSE_MS, source(k).retryAt, k);
         }
     }
 
@@ -398,6 +412,32 @@ class InnerCrawlerTest {
         verify(fetcher, times(2)).first(eq(a), anyString());
     }
 
+    /**
+     * Stage 9 Cubic P2: three gone sources form the run once. Without a wait of their own they would be picked first again
+     * after each 1 h pause, re-form the run each time, and double the interval to OFF within hours.
+     */
+    @Test
+    void goneSourcesSignalOnceThenWaitAndNeverDriveTheModeOff() throws Exception {
+        ABC.forEach(k -> admitted.put(k, "x"));
+        String healthy = "channel:UCdddddddddddddddddddddd";
+        admitted.put(healthy, "x");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        for (String k : ABC) when(fetcher.first(eq(k), anyString())).thenAnswer(requestThen(new ContentNotAvailableException(GONE)));
+        when(fetcher.first(eq(healthy), anyString())).thenAnswer(inv -> {
+            pacer.before(BROWSE);
+            return batch(1, items("lesson", 0, 1, "x"), false);
+        });
+        Instant end = now.get().plusMillis(InnerCrawler.DAY_MS);
+        for (int i = 0; i < 5_000 && now.get().isBefore(end) && store.state().mode != InnerState.Mode.OFF; i++) {
+            long ms = step();
+            if (ms > 0) now.set(now.get().plusMillis(ms));
+        }
+        assertEquals(InnerState.Mode.FIRST_PASS, store.state().mode, "the same gone sources drove the crawl OFF");
+        assertEquals(1, store.state().signals.size(), "one UNAVAILABLE_RUN; the same sources never re-form it");
+        assertTrue(source(healthy).firstPageAt > 0, "the pass moved on");
+        for (String k : ABC) assertTrue(source(k).retryAt > now.get().toEpochMilli(), k + " waits");
+    }
+
     @Test
     void aDeletedChannelIsGoneButTheSameAlertOnAPlaylistIsNot() throws Exception {
         String channelGone = "Got error: \"This channel does not exist.\""; // ChannelOrchestrator.channelGone's exact alert
@@ -407,7 +447,7 @@ class InnerCrawlerTest {
         when(fetcher.first(anyString(), anyString())).thenThrow(new ContentNotAvailableException(channelGone));
         step();
         assertEquals(List.of(CH), store.state().breaker.unavailableRun, "I-2: a channel's uploads are gone with it");
-        assertEquals(0, source(CH).retryAt, "in the run, not in transport backoff");
+        assertEquals(now.get().toEpochMilli() + CrawlPacer.PAUSE_MS, source(CH).retryAt, "in the run, and waiting 1 h");
         step();
         assertEquals(List.of(CH), store.state().breaker.unavailableRun, "playlistGone alone rules a playlist");
         assertTrue(source(PL).retryAt > now.get().toEpochMilli(), "transport backoff");
@@ -812,10 +852,11 @@ class InnerCrawlerTest {
         assertEquals(2, InnerCrawler.tolerance(100));
         assertEquals(3, InnerCrawler.tolerance(300));
         assertEquals(17, InnerCrawler.tolerance(1634));
-        assertTrue(InnerCrawler.complete(98, 100, false));
-        assertFalse(InnerCrawler.complete(97, 100, false));
-        assertTrue(InnerCrawler.complete(297, 300, false));
-        assertFalse(InnerCrawler.complete(296, 300, false));
+        assertTrue(InnerCrawler.complete(98, 100, true));
+        assertFalse(InnerCrawler.complete(97, 100, true));
+        assertTrue(InnerCrawler.complete(297, 300, true));
+        assertFalse(InnerCrawler.complete(296, 300, true));
+        assertFalse(InnerCrawler.complete(100, 100, false), "a listing with a next page is never complete");
         assertTrue(InnerCrawler.complete(5, -1, true));
         assertFalse(InnerCrawler.complete(5, -1, false));
     }
@@ -851,6 +892,37 @@ class InnerCrawlerTest {
         assertTrue(source(CH).capped);
         assertFalse(source(CH).dirty);
         verify(fetcher, never()).next(anyString(), anyString(), any());
+    }
+
+    /**
+     * Stage 9 Cubic P2: a crawl the memory trip's lower cap stopped keeps only the newest items. Raising the cap must list
+     * the source again in full (sampleMemory's promise); a rebuild alone reads the same short corpus forever.
+     */
+    @Test
+    void aSourceCrawledUnderALoweredCapIsListedAgainWhenTheCapIsRaised() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 200;                     // the memory trip's cut, scaled down: 500 uploads, 100 a page
+        AtomicInteger page = new AtomicInteger();
+        when(fetcher.first(eq(CH), anyString())).thenAnswer(inv -> {
+            page.set(1);
+            return batch(500, items("lesson", 0, 100, "x"), true);
+        });
+        when(fetcher.next(eq(CH), anyString(), any())).thenAnswer(inv -> {
+            int p = page.getAndIncrement();
+            return batch(500, items("lesson", 100 * p, 100, "x"), p < 4);
+        });
+        step();
+        assertEquals(200, corpus(CH).size());
+        assertTrue(source(CH).capped);
+
+        crawler.update(new InnerCrawler.Update(null, null, null, null, 10_000, null));
+        step();
+
+        assertEquals(500, corpus(CH).size(), "the uploads the lower cap left out are listed");
+        assertFalse(source(CH).capped);
+        step();
+        verify(fetcher, times(2)).first(eq(CH), anyString()); // once: the next step finds nothing more to do
     }
 
     @Test
@@ -1407,6 +1479,29 @@ class InnerCrawlerTest {
         verify(fetcher, timeout(10_000)).first(eq(CH), anyString());
         crawler.stop();
         assertTrue(logs.list.stream().anyMatch(e -> e.getLevel() == Level.ERROR && e.getFormattedMessage().contains("boot")));
+    }
+
+    /** Stage 9 Cubic P2: a failed boot rebuild is retried, 1 min doubling up to 1 h, so inner search is not dead until a restart. */
+    @Test
+    void aFailedBootRebuildIsRetriedWithABoundedBackoff() throws Exception {
+        InnerIndex idx = mock(InnerIndex.class);
+        doThrow(new IOException("disk full")).doThrow(new IOException("disk full")).doNothing().when(idx).rebuild(any(), anyInt());
+        crawler = newCrawler(fetcher, idx);
+        crawler.boot();                                       // attempt 1 fails
+        step();
+        verify(idx, times(1)).rebuild(any(), anyInt());       // not before its minute
+        now.set(now.get().plusMillis(InnerCrawler.IDLE_MS));
+        step();
+        verify(idx, times(2)).rebuild(any(), anyInt());       // attempt 2 fails: the wait doubles
+        now.set(now.get().plusMillis(InnerCrawler.IDLE_MS));
+        step();
+        verify(idx, times(2)).rebuild(any(), anyInt());
+        now.set(now.get().plusMillis(InnerCrawler.IDLE_MS));
+        step();
+        verify(idx, times(3)).rebuild(any(), anyInt());       // attempt 3 succeeds
+        now.set(now.get().plusMillis(InnerCrawler.HOUR_MS));
+        step();
+        verify(idx, times(3)).rebuild(any(), anyInt());       // and nothing more is retried
     }
 
     @Test

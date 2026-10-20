@@ -23,20 +23,38 @@ export function newContext(timeoutMs = 10_000) {
   return ctx;
 }
 
+/** Runs `source` in `ctx` under the vm timeout with `inputs` as globals, and returns what it evaluated to. Nothing the realm
+ *  controls runs on the host (Cubic P2): inputs are defined, never assigned, so no realm setter fires; a throw comes back
+ *  as a host Error whose message the realm built under the same timeout. Callers check the answer's type before using it. */
+function inRealm(ctx, source, inputs, timeoutMs) {
+  const names = Object.keys(inputs);
+  for (const name of names) Object.defineProperty(ctx, name, { value: inputs[name], writable: true, configurable: true });
+  let out;
+  try {
+    out = vm.runInContext(`(() => { try { return [${source}]; } catch (e) { try { return '' + (e?.message ?? e); } catch { return ''; } } })()`,
+      ctx, { timeout: timeoutMs });
+  } finally { for (const name of names) Reflect.deleteProperty(ctx, name); }        // never throws on a locked property
+  if (typeof out === 'string') throw new Error(out || 'the player threw');
+  return out[0];                                                                     // our own array literal: no getter
+}
+
+/** A realm answer that must be a JSON string; anything else is refused unread. */
+function parsed(answer) {
+  if (typeof answer !== 'string') throw new Error('the player answered a non-string');
+  return JSON.parse(answer);
+}
+
 /** Preprocesses one base.js and pulls out its n/sig functions, entirely inside `ctx` under the vm timeout (R27). */
 export function buildPlayer(ctx, playerText, timeoutMs = 10_000) {
-  ctx.__player = playerText;
-  let fns;
-  try {
-    fns = vm.runInContext(`(() => {
+  const fns = inRealm(ctx, `(() => {
       const pre = jsc({ type: 'player', player: __player, requests: [], output_preprocessed: true }).preprocessed_player;
       const r = { n: null, sig: null };
       Function('_result', pre)(r);
-      return r;
-    })()`, ctx, { timeout: timeoutMs });
-  } finally { delete ctx.__player; }
-  if (typeof fns?.n !== 'function' || typeof fns?.sig !== 'function') throw new Error('no n/sig functions in this player');
-  return { ctx, n: fns.n, sig: fns.sig };
+      const n = r.n, sig = r.sig;                     // read here, under the timeout: a getter never runs on the host
+      return typeof n === 'function' && typeof sig === 'function' ? [n, sig] : null;
+    })()`, { __player: playerText }, timeoutMs);
+  if (fns === null) throw new Error('no n/sig functions in this player');
+  return { ctx, n: fns[0], sig: fns[1] };
 }
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
@@ -50,13 +68,8 @@ const changed = (output, input) => usable(output) && output !== input;
 export function selfTest(player, timeoutMs = 10_000) {
   const inputs = Array.from({ length: 10 }, () => [random(16), random(108)]);
   // Only the player's own (in-realm) functions and one JSON string cross in: no main-realm object is reachable (R40).
-  player.ctx.__probeN = player.n;
-  player.ctx.__probeS = player.sig;
-  player.ctx.__probeIn = JSON.stringify(inputs);
-  let outputs;
-  try {
-    outputs = JSON.parse(vm.runInContext('JSON.stringify(JSON.parse(__probeIn).map(([n, s]) => [__probeN(n), __probeS(s)]))', player.ctx, { timeout: timeoutMs }));
-  } finally { delete player.ctx.__probeN; delete player.ctx.__probeS; delete player.ctx.__probeIn; }
+  const outputs = parsed(inRealm(player.ctx, 'JSON.stringify(JSON.parse(__probeIn).map(([n, s]) => [__probeN(n), __probeS(s)]))',
+    { __probeN: player.n, __probeS: player.sig, __probeIn: JSON.stringify(inputs) }, timeoutMs));
   // distinct inputs must give distinct outputs, which rejects constant functions
   const distinct = (k) => new Set(outputs.map((o) => o[k])).size === outputs.length;
   return distinct(0) && distinct(1) && inputs.every(([n, s], i) => changed(outputs[i][0], n) && changed(outputs[i][1], s));
@@ -65,17 +78,11 @@ export function selfTest(player, timeoutMs = 10_000) {
 /** The held functions, run inside the realm under the same vm timeout as a build (R40), only strings crossing in and out.
  *  A challenge whose function throws or answers outside the alphabet is omitted. Throws on timeout. */
 export function solveAll(player, n, s, timeoutMs = 10_000) {
-  player.ctx.__solveN = player.n;
-  player.ctx.__solveS = player.sig;
-  player.ctx.__solveIn = JSON.stringify([n, s]);
-  let raw;
-  try {
-    raw = JSON.parse(vm.runInContext(`(() => {
+  const raw = parsed(inRealm(player.ctx, `(() => {
       const run = (fn, list) => list.map((c) => { try { const v = fn(c); return typeof v === 'string' ? v : null; } catch { return null; } });
       const [n, s] = JSON.parse(__solveIn);
       return JSON.stringify([run(__solveN, n), run(__solveS, s)]);
-    })()`, player.ctx, { timeout: timeoutMs }));
-  } finally { delete player.ctx.__solveN; delete player.ctx.__solveS; delete player.ctx.__solveIn; }
+    })()`, { __solveN: player.n, __solveS: player.sig, __solveIn: JSON.stringify([n, s]) }, timeoutMs));
   const out = { n: {}, s: {} };
   [[n, raw[0], out.n], [s, raw[1], out.s]].forEach(([list, answers, into]) => {
     list.forEach((challenge, i) => { if (usable(answers[i])) into[challenge] = answers[i]; });
@@ -107,9 +114,26 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
                                now = Date.now, log = console, solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 } = {}) {
   const held = new Map();                       // hash -> { sts, player }; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
+  // Names the player being built. A fatal V8 OOM skips every catch, so a marker left at start means that player killed the
+  // last process: it is deleted and not built again by this process, or each restart would rebuild it and crash (Cubic P3).
+  const marker = path.join(cacheDir, 'building');
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
   let cacheWritable = probeCache();
+  const crashed = dropCrashedPlayer();
+
+  function dropCrashedPlayer() {
+    try {
+      const hash = fs.readFileSync(marker, 'utf8');
+      fs.rmSync(marker, { force: true });
+      if (!/^[0-9a-f]{8}$/.test(hash)) return null;
+      fs.rmSync(path.join(cacheDir, `${hash}.js`), { force: true });
+      log.warn(`WARN player ${hash} crashed the solver while building; deleted and skipped until a restart`);
+      return hash;
+    } catch {
+      return null;                                // no marker: the last process did not die building
+    }
+  }
 
   function probeCache() {
     try {
@@ -155,6 +179,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
+      if (hash === crashed) throw new Error('this player crashed the solver on its last build');
       step = 'cache';
       file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
@@ -180,6 +205,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       step = 'evict';
       if (held.size >= 2) held.delete(held.keys().next().value);          // BEFORE the build (R27)
       step = 'build';
+      try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ }
       const cpu0 = process.cpuUsage();
       const player = build(playerText);
       step = 'self-test';
@@ -194,6 +220,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       lastPoll = { at: now(), ok: false, step };
       // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again
       if (file && ['sts', 'build', 'self-test'].includes(step)) try { fs.rmSync(file, { force: true }); } catch { /* the WARN above names the step */ }
+    } finally {
+      try { fs.rmSync(marker, { force: true }); } catch { /* as above */ }
     }
   }
 

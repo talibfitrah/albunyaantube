@@ -109,6 +109,16 @@ public class BulkSubmissionService {
         return new BulkPreviewResponse(rows);
     }
 
+    /** Already in the registry (not REJECTED): the row loop reports it DUPLICATE. A failed lookup is not: the loop retries it. */
+    private static boolean registered(RegistryDuplicateChecker.Batch batch, SubmitRow row) {
+        try {
+            return batch.findExisting(row.detectedType(), row.metadata().youtubeId())
+                    .filter(existing -> !"REJECTED".equals(existing.status())).isPresent();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
     public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
         long start = System.currentTimeMillis();
         // Role-based status normalization: moderators always PENDING; admin defaults PENDING but can pass APPROVED.
@@ -142,11 +152,23 @@ public class BulkSubmissionService {
             }
         }
 
+        // Per-submit dedupe batch: it memoizes each (type, youtubeId), and markAsExisting records the rows this submit
+        // writes, so a second row with the same id is a DUPLICATE too. The first lookups run before the live guard.
+        //
+        // Cross-admin / cross-pod race remains: two parallel /bulk/submit
+        // calls for the same youtubeId can both pass findExisting and both
+        // write a doc. Documented as deferral in
+        // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
+        // — closing it requires Firestore native transactions in the writer.
+        RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
+
         // D9: the whole request is refused on any live-category violation, before any slot or write is spent.
-        // A row that fails the URL round-trip is never written, so the guard neither seeds nor counts it.
+        // A row that fails the URL round-trip, or is already registered, is never written, so the guard neither seeds
+        // nor counts it: an ended live already in the registry is that row's DUPLICATE, never the whole request's
+        // LIVE_LINK_NOT_LIVE (stage 9 Cubic P3). The memoized answer keeps it a DUPLICATE in the row loop below.
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         for (SubmitRow row : req.rows()) {
-            if (roundTripError(row, parser.parse(row.originalUrl())) != null) {
+            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(lateBatch, row)) {
                 continue;
             }
             liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
@@ -188,18 +210,6 @@ public class BulkSubmissionService {
 
         List<SubmitResult> results = new ArrayList<>(req.rows().size());
         int added = 0, failed = 0;
-        // Per-submit dedupe batch closes the
-        // preview→submit window where a second moderator could land the same
-        // youtubeId after the first moderator previewed but before they
-        // submitted. Not a full Firestore transaction, but closes the
-        // sequential-submit race.
-        //
-        // Cross-admin / cross-pod race remains: two parallel /bulk/submit
-        // calls for the same youtubeId can both pass findExisting and both
-        // write a doc. Documented as deferral in
-        // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
-        // — closing it requires Firestore native transactions in the writer.
-        RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
         // Per-submit cache of category-id existence so a 25-row batch
         // sharing the same categoryIds doesn't re-query the same IDs
         // 25 times. Bounded by the SubmitRow max=10 cap × 25 rows = 250
@@ -217,10 +227,9 @@ public class BulkSubmissionService {
                 continue;
             }
 
-            // Late dedupe check immediately before write.
-            // Closes the preview→submit window where a parallel submit landed the
-            // same youtubeId. Costs one Firestore read per row but is small relative
-            // to the write that follows.
+            // Dedupe check before write: answered from the lookup made before the live guard (one Firestore read
+            // per row), or from markAsExisting for a row this submit already wrote. Closes the preview→submit window
+            // where a parallel submit landed the same youtubeId.
             try {
                 var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
                 if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
