@@ -1,0 +1,48 @@
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelLiveChannelTest.kt
+  s_dbb6b1f3671904::t_164927d9402406 103,120,213,218,249,256,268,292,313,329,349,372,407
+android/app/src/main/java/com/albunyaan/tube/ui/detail/PlaylistDetailViewModel.kt
+  s_dbb6b1f3671904::t_b2d204dec0d5e4 423,425,623
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_dbb6b1f3671904::t_840c174811f142 338-339,350,352,357,363-364,379
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_dbb6b1f3671904::t_efb0943f858f92 135-136,138,141-143,171
+  s_dbb6b1f3671904::t_742cae411e5cca 173
+android/app/src/main/java/com/albunyaan/tube/data/source/api/ContentApi.kt
+  s_dbb6b1f3671904::t_164927d9402406 75
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_dbb6b1f3671904::t_f03efdc187b5f8 445-446
+android/app/src/main/java/com/albunyaan/tube/data/source/OriginalTitles.kt
+  s_dbb6b1f3671904::t_efb0943f858f92 75
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerFragment.kt
+  s_dbb6b1f3671904::t_d7132802f7aab8 1568-1571
+android/app/src/androidTest/java/com/albunyaan/tube/di/TestNetworkModule.kt
+  s_dbb6b1f3671904::t_164927d9402406 173
+android/app/src/main/java/com/albunyaan/tube/player/LivePlaylistRedirector.kt
+  s_dbb6b1f3671904::t_efb0943f858f92 49-50,64-65,99,110-111
+android/app/src/main/res/layout-sw600dp/fragment_player.xml
+  s_dbb6b1f3671904::t_dd2bf52d5dacb8 624
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_a64db09b361388 422,430,433,450,894,952,1253,1363,1466,1504,1897,2126,2150,2173
+android/app/src/main/java/com/albunyaan/tube/ui/player/LiveChannelRecovery.kt
+  s_dbb6b1f3671904::t_efb0943f858f92 43
+android/app/src/main/res/layout/fragment_player.xml
+  s_dbb6b1f3671904::t_dd2bf52d5dacb8 627
+android/app/src/main/java/com/albunyaan/tube/ui/detail/PlaylistDetailFragment.kt
+  s_dbb6b1f3671904::t_b2d204dec0d5e4 482-483,691
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d83104e977efe83cf731e2cebf3356ec0d968611",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
