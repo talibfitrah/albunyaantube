@@ -12,13 +12,19 @@ struct LiveChannelPlaybackTests {
         private var outcomes: [Result<Resolved, Error>]
         private(set) var videoIds: [String] = []
         private(set) var sourceChannelIds: [String?] = []
+        /// Stage 9 I16: the stream on the watched screen as each resolve went out (nil: nothing playable).
+        private(set) var onScreenAtCall: [String?] = []
+        private var screen: PlayerViewModel?
 
         init(_ outcomes: [Result<Resolved, Error>]) { self.outcomes = outcomes }
+
+        func watch(_ vm: PlayerViewModel) { screen = vm }
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
                      requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             videoIds.append(videoId)
             sourceChannelIds.append(sourceChannelId)
+            if let screen { onScreenAtCall.append(await MainActor.run { LiveChannelPlaybackTests.file(screen) }) }
             guard !outcomes.isEmpty else { throw ExtractionError.unavailable(videoId: videoId) }
             return try outcomes.removeFirst().get()
         }
@@ -322,6 +328,24 @@ struct LiveChannelPlaybackTests {
         #expect(vm.args.videoId == "eaOtcUNHDB8")
         #expect(!vm.videoZoomed)
         #expect(!vm.videoIsPortrait)
+    }
+
+    /// Stage 9 I16 (Cubic r6): a switch keeps the ended broadcast on screen until the new one lands, as a queue advance
+    /// does. A `.loading` hop dismantles the host, which detaches the audio session and the lock screen, so a switch
+    /// with the screen locked never started the next broadcast.
+    @Test func aSwitchKeepsThePlayerUntilTheNewBroadcastLands() async throws {
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0),
+                               lives: [Self.channel: Self.onAir("eaOtcUNHDB8")])
+
+        await vm.open()
+        await resolver.watch(vm)
+        await vm.playToEnd()
+
+        let onScreen = await resolver.onScreenAtCall
+        #expect(onScreen == ["Rs7St51oDDc.m3u8"])                             // the switch's resolve: no loading hop
+        #expect(Self.file(vm) == "eaOtcUNHDB8.m3u8")
+        #expect(vm.state.isLiveNow)
     }
 
     /// RV I11: the September recording (sticky isLive, not live now) is never played in live-channel mode.

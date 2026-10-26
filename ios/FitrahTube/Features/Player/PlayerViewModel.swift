@@ -699,7 +699,10 @@ extension StreamState {
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
     ///
     /// `afterOutage` (stage 9 I15): the incident was parked while offline (1.0.4 I7) and is replayed now the network is
-    /// back. It says nothing about the link, so it costs no HD: not the 360p's I4 denial, not the HD drop-back's R41.
+    /// back. It says nothing about the link, so HD is never denied for it: no I4 denial on the 360p, no R41 report on the
+    /// HD drop-back. A 360p replay drops the pending upgrade, and its recovery's resolve asks again. The drop-back itself
+    /// stays and asks nothing, so that play goes on at 360p; the video's next resolve (a later play, a re-resolve of
+    /// this 360p) asks for HD again (stage 9 I16 ruling).
     func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil, afterOutage: Bool = false) async {
         #if DEBUG
         if let httpStatus { debugLastRecoveryStatus = httpStatus }
@@ -863,7 +866,10 @@ extension StreamState {
         return true
     }
 
-    /// §9.1 step 2: a new broadcast is a new timeline (a 1-3 s transition in the existing loading state).
+    /// §9.1 step 2: a new broadcast is a new timeline (a 1-3 s transition). Stage 9 I16: the ended broadcast stays on
+    /// screen until the new one lands, as in a queue advance (`advance()`'s `showLoading: false`). A `.loading` hop
+    /// dismantles the host, which detaches the audio session and the lock screen, so a switch with the screen locked
+    /// never started the next broadcast.
     private func switchLive(to id: String, title: String, channel: String) async {
         liveIncident = nil
         // Stage 9 I-C10.3 (Android `title.ifBlank { previous }`): the backend sends "" for a live with no title; the screen
@@ -874,7 +880,7 @@ extension StreamState {
         next.liveChannelId = channel
         next.liveTitle = title                  // I-P1: the backend list's title, for the next incident's match
         beginStream(next)
-        await resolve(forceRefresh: false, kind: .player)
+        await resolve(forceRefresh: false, kind: .player, showLoading: false)
     }
 
     /// §9.1: a trigger, then the same-id re-resolve it may answer with. The one copy of this step (stage 9 I13), for the
@@ -1041,7 +1047,8 @@ extension StreamState {
     /// that as the same "Couldn't play on {device}" a receiver's own refusal produces.
     ///
     /// Only the muxed itag-18 MP4 is castable (`CastMedia.make`: a receiver cannot play the rung-1
-    /// manifest). So a manifest on screen is never reused: the cast walks the muxed rung itself.
+    /// manifest). So a manifest on screen is never reused: the cast walks the muxed rung itself (a committed HD stream
+    /// casts the 360p it replaced instead, `currentCastStream`).
     /// NOT forced -- a muxed walk bypasses the manifest cache anyway, and `RateLimitedResolver`
     /// gates forced walks, so a forced one would hit the `.player` lane's 30 s interval right after
     /// the phone's own resolve and refuse the very first cast.
@@ -1098,10 +1105,13 @@ extension StreamState {
     /// stream until an advance's own resolve lands (the advance deliberately never hops through
     /// `.loading`), so `resolvedVideoId` is what stops a cast handing the receiver the outgoing
     /// video's URL under the incoming video's title.
+    /// Stage 9 I16: with HD committed, the 360p it replaced (`standardBeforeUpgrade`, held only while that HD stream is
+    /// on screen), with its own expiry. The HD stream is a manifest, which `CastMedia.make` refuses.
     private func currentCastStream(now: Date, allowNearExpiry: Bool = false) -> Resolved? {
-        guard resolvedVideoId == args.videoId, let resolved = state.resolved else { return nil }
-        guard allowNearExpiry
-                || !Self.shouldPreemptivelyReResolve(state, now: now, margin: Self.castExpiryMargin)
+        guard resolvedVideoId == args.videoId, state.isPlayable else { return nil }
+        let castable = standardBeforeUpgrade.map(StreamState.rung2Progressive) ?? state
+        guard let resolved = castable.resolved, allowNearExpiry
+                || !Self.shouldPreemptivelyReResolve(castable, now: now, margin: Self.castExpiryMargin)
         else { return nil }
         return resolved
     }

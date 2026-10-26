@@ -167,6 +167,25 @@ struct PlayerViewModelUpgradeTests {
         #expect(!vm.commitUpgrade(Self.masterURL(upgrade)))
     }
 
+    /// Stage 9 I16 (Cubic r6): the committed HD stream is a manifest, which no receiver plays (`CastMedia.make`). A cast
+    /// sends the 360p it replaced, with no walk, as before the upgrade. A refused walk left only the HD stream to fall
+    /// back on, so the user got "Couldn't play on {TV}".
+    @Test func aCastWithHDOnScreenSendsThe360pItReplacedWithNoWalk() async {
+        let recorder = Recorder()
+        let upgrade = Self.hd()
+        recorder.answer = upgrade
+        let resolver = ScriptedResolver([Self.standard], throwingOnCall: 2)   // a cast walk is refused (cooldown, bot check)
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        #expect(vm.commitUpgrade(Self.masterURL(upgrade)))
+
+        let media = await vm.castMedia()
+
+        #expect(media?.contentURL == URL(string: "https://example.com/a.mp4"))
+        #expect(await resolver.calls == 1)                                     // the open's own; no cast walk
+    }
+
     @Test func aRecoveryEventOnTheHDStreamDropsBackTo360pWithoutAResolveOrBudget() async {
         let recorder = Recorder()
         let upgrade = Self.hd()
