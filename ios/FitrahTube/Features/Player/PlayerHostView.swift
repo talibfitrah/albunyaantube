@@ -816,12 +816,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
         /// The path monitor's hook: the network is back, so a failure parked while it was down runs
         /// its recovery now. As a playback failure: the outage proved nothing about the rung, so the
-        /// class's one fresh same-rung URL comes first, never the first-frame shortcut to the step-down.
+        /// class's one fresh same-rung URL comes first, never the first-frame shortcut to the step-down. Nor does it
+        /// cost the video its HD (stage 9 I15, `afterOutage`).
         func networkChanged() {
             guard let parked = parkedFailure, isOnline(), let model else { return }
             parkedFailure = nil
             let event: RecoveryEvent = parked.event == .failedBeforeFirstFrame ? .playbackError : parked.event
-            Task { await model.handleRecoveryEvent(event, httpStatus: parked.status) }
+            Task { await model.handleRecoveryEvent(event, httpStatus: parked.status, afterOutage: true) }
         }
 
         /// The path monitor, plus the backstop for the one teardown path that has no other exit

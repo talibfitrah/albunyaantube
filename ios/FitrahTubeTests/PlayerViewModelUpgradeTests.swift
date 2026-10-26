@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import InnerTubeKit
 import Testing
@@ -104,6 +105,24 @@ struct PlayerViewModelUpgradeTests {
         for _ in 0..<500 where vm.pendingUpgrade == nil { try? await Task.sleep(for: .milliseconds(2)) }
     }
 
+    /// 1.0.4 I7's path end to end: an item that fails while the host is offline is parked (`fire`), and the path
+    /// monitor's real handler replays it into `vm` once the network is back (`networkChanged`).
+    private func failOfflineThenReconnect(_ vm: PlayerViewModel) async throws {
+        let dead = Resolved(stream: .progressive(url: URL(string: "https://127.0.0.1:9/dead.mp4")!, label: "360p"),
+                            client: .android, userAgent: "ua", resolvedAt: Date(), expiresAt: nil)   // the discard port
+        let player = try #require(PlayerHostView.player(for: .rung2Progressive(dead), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        defer { coordinator.stopObserving(); coordinator.stopMonitoring(); player.pause() }
+        coordinator.isOnline = { false }
+        let item = try #require(player.currentItem)
+        coordinator.observe(item: item, player: player, model: vm, isLive: false, playToEnd: .none)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while coordinator.failedItem !== item, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(coordinator.failedItem === item, "the item never failed")
+        coordinator.isOnline = { true }
+        coordinator.monitor.pathUpdateHandler?(coordinator.monitor.currentPath)
+    }
+
     @Test func a360pStartAsksForHDAndPublishesItWithoutLeavingThe360p() async {
         let recorder = Recorder()
         let upgrade = Self.hd()
@@ -180,6 +199,42 @@ struct PlayerViewModelUpgradeTests {
         #expect(recorder.failed == ["abcdefghijk"])
         #expect(await resolver.calls == 2)            // Phase 1's same-rung re-resolve, as in 1.0.3
         #expect(vm.state == .rung2Progressive(Self.standard))
+    }
+
+    /// Stage 9 I15: a 360p failure parked while offline and replayed on reconnect says nothing about the link (I4). The
+    /// upgrade is dropped with no penalty, and the recovery's resolve asks for HD again.
+    @Test(.timeLimit(.minutes(1))) func a360pFailureReplayedAfterAnOutageDoesNotDenyHD() async throws {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        let resolver = ScriptedResolver([Self.standard])
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        try await failOfflineThenReconnect(vm)
+        for _ in 0..<1000 where recorder.asked.count < 2 { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(await resolver.calls == 2)            // the replay's same-rung re-resolve
+        #expect(recorder.asked == ["abcdefghijk", "abcdefghijk"])
+        #expect(recorder.failed.isEmpty)
+    }
+
+    /// Stage 9 I15: a committed HD stream's failure parked while offline still drops back to the 360p it replaced (no
+    /// resolve, no budget), but does not deny HD for the video.
+    @Test(.timeLimit(.minutes(1))) func anHDFailureReplayedAfterAnOutageDropsBackWithoutDenyingHD() async throws {
+        let recorder = Recorder()
+        let upgrade = Self.hd()
+        recorder.answer = upgrade
+        let resolver = ScriptedResolver([Self.standard])
+        let vm = model(resolver, hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        #expect(vm.commitUpgrade(Self.masterURL(upgrade)))
+        try await failOfflineThenReconnect(vm)
+        for _ in 0..<1000 where vm.state != .rung2Progressive(Self.standard) { try await Task.sleep(for: .milliseconds(5)) }
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(await resolver.calls == 1)
+        #expect(recorder.failed.isEmpty)
     }
 
     @Test func aStagedFailureReportsHDFailedOnceAndStaysOn360p() async {

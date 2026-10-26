@@ -697,7 +697,10 @@ extension StreamState {
     /// Position is preserved by NOT passing through `.loading`: `PlayerHostView.player(for:replacing:)`
     /// keeps the live `AVPlayer` and seeks the replacement item back to its `currentTime()`, but only
     /// while the state stays playable -- a `.loading` hop would drop the player and restart at 0.
-    func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil) async {
+    ///
+    /// `afterOutage` (stage 9 I15): the incident was parked while offline (1.0.4 I7) and is replayed now the network is
+    /// back. It says nothing about the link, so it costs no HD: not the 360p's I4 denial, not the HD drop-back's R41.
+    func handleRecoveryEvent(_ event: RecoveryEvent, httpStatus: Int? = nil, afterOutage: Bool = false) async {
         #if DEBUG
         if let httpStatus { debugLastRecoveryStatus = httpStatus }
         #endif
@@ -721,12 +724,15 @@ extension StreamState {
         if let standard = standardBeforeUpgrade {    // set only while the committed HD (`.tvSamsung`) stream is on screen
             standardBeforeUpgrade = nil
             state = .rung2Progressive(standard)
-            if let hd { await hd.failed(hostVideoId) }
+            if let hd, !afterOutage { await hd.failed(hostVideoId) }
             return
         }
         // Plan review I4 (spec R43 revision 4): an incident on the 360p while HD stages means the link cannot carry
-        // both. No HD for this video; the 360p then gets Phase 1's recovery exactly as in 1.0.3.
-        if pendingUpgrade != nil { upgradeFailed() }
+        // both. No HD for this video; the 360p then gets Phase 1's recovery exactly as in 1.0.3. After an outage the
+        // upgrade is only dropped, and the recovery's resolve asks again.
+        if pendingUpgrade != nil {
+            if afterOutage { dropUpgrade() } else { upgradeFailed() }
+        }
         // Task 8 (spec §10 AirPlay), BEFORE the budget machine and never as a `RecoveryAction`:
         // an item that failed while an external route was playing it is the plan's IP-binding
         // risk, not a broken stream. Drop external playback so the same re-resolve mirrors from
