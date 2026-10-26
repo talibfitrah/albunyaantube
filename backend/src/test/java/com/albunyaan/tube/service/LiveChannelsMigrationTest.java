@@ -67,4 +67,38 @@ class LiveChannelsMigrationTest {
         verify(categories, never()).save(any());
         verifyNoInteractions(auditLogs, orders, sortOrder, audit, caches);
     }
+
+    /**
+     * Stage 9 B16 (Cubic r6 P3): D8, as the category update checks it: the migration never makes a nested category, or
+     * one with subcategories, LIVE. Every later edit of such a category would fail LIVE_CATEGORY_SHAPE.
+     */
+    @Test
+    void aNestedCategoryOrOneWithSubcategoriesIsNeverMadeLive() throws Exception {
+        Category nested = new Category("Channels Live", "parent-1");
+        nested.setId(CAT);
+        Category parent = new Category("Lessons", null);
+        parent.setId("lessons");
+        when(categories.findById(CAT)).thenReturn(Optional.of(nested));
+        when(categories.findById("lessons")).thenReturn(Optional.of(parent));
+        when(categories.findByParentId("lessons")).thenReturn(List.of(new Category("Fiqh", "lessons")));
+        Channel sunnah = new Channel(SUNNAH);
+        sunnah.setId("channel_" + SUNNAH);
+        sunnah.setStatus("APPROVED");
+        when(channels.findByYoutubeId(SUNNAH)).thenReturn(Optional.of(sunnah));
+        when(live.readFresh(SUNNAH)).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("Rs7St51oDDc", "Sunnah")), 1));
+        when(live.loaded()).thenReturn(true);
+        when(liveCategories.members(any())).thenReturn(new LiveCategoryService.Members(List.of()));
+
+        for (String categoryId : List.of(CAT, "lessons")) {
+            for (String mode : List.of("DRY_RUN", "APPLY")) {
+                Map<String, Object> out = migration.run(new LiveChannelsMigration.Plan(mode, categoryId,
+                        List.of(new LiveChannelsMigration.PlanChannel(SUNNAH, 0)), List.of()), "admin-uid", "admin@test.com");
+
+                assertThat(out.get("blockers")).as(categoryId + " " + mode).asList()
+                        .containsExactly("D8: a live category can't have a parent category or subcategories");
+            }
+        }
+        verify(categories, never()).save(any());
+        verifyNoInteractions(auditLogs, orders, sortOrder, audit, caches);
+    }
 }

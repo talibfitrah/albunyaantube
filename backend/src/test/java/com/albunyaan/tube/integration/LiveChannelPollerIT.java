@@ -43,6 +43,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
     @Autowired AuditLogService audit;
     @Autowired PublicContentCacheService caches;
     @Autowired CategoryContentOrderRepository orders;
+    @Autowired com.albunyaan.tube.service.ContentReportService reports;
     final YouTubeCircuitBreaker closedBreaker = mock(YouTubeCircuitBreaker.class); // isOpen() is false
 
     static final String LIVE_CAT = "it3-live";
@@ -51,7 +52,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
     @Override
     protected String[] getCollectionsToClean() {
         return new String[]{"categories", "channels", "playlists", "videos", "users", "audit_logs",
-                "category_content_order", "live_channel_state"};
+                "category_content_order", "live_channel_state", "contentReports", "adminNotifications"};
     }
 
     private LiveChannelPoller freshPoller() {
@@ -180,6 +181,37 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         assertThat(doc.getCategoryIds()).containsExactly(LIVE_CAT);
         assertThat(orders.findByCategoryIdOrderByPosition(LIVE_CAT)).extracting(o -> o.getContentId())
                 .contains("doc-it3link001e");
+    }
+
+    /**
+     * Stage 9 B16 (Cubic r6 P2, R12): a report's take-down of a link the poller had ended writes the same ARCHIVED. That
+     * archive is the admin's: the link live again is not restored, and does not rejoin its LIVE category.
+     */
+    @Test
+    void anEndedLinkAReportTookDownStaysDownWhenLiveAgain() throws Exception {
+        String uc = "UCit3g00000000000000000g";
+        seed(uc, "it3link001g", List.of(LIVE_CAT));
+        firestore.collection("channels").document("channel_" + uc).update("createdAt", com.google.cloud.Timestamp.now())
+                .get(5, TimeUnit.SECONDS);   // still an entry after the link ends (see the test above)
+        when(reader.read(anyString())).thenReturn(liveRead("it3otherliv"));
+        LiveChannelPoller poller = freshPoller();
+        for (int i = 0; i <= 2; i++) poller.cycle(T0 + i * 10 * MIN);
+        assertThat(videos.findById("doc-it3link001g").orElseThrow().getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
+        var report = reports.submitReport(com.albunyaan.tube.model.ReportTargetType.VIDEO, "it3link001g",
+                List.of(com.albunyaan.tube.model.ReportReason.OTHER), "it3", "it3-device");
+        reports.resolveReport(report.getId(), com.albunyaan.tube.model.ReportStatus.RESOLVED, "admin", null);
+
+        when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3otherliv", "t"),
+                new LiveTabResult.LiveItem("it3link001g", "t")), 1));
+        live.readFresh(uc);
+        poller.cycle(T0 + 30 * MIN);
+
+        Video doc = videos.findById("doc-it3link001g").orElseThrow();
+        assertThat(doc.getValidationStatus()).as("the take-down stands").isEqualTo(ValidationStatus.ARCHIVED);
+        assertThat(doc.getCategoryIds()).doesNotContain(LIVE_CAT);
+        assertThat(orders.findByCategoryIdOrderByPosition(LIVE_CAT)).extracting(o -> o.getContentId())
+                .doesNotContain("doc-it3link001g");
+        assertThat(states.findAll()).allSatisfy(s -> assertThat(s.getArchived()).doesNotContainKey("it3link001g"));
     }
 
     @Test

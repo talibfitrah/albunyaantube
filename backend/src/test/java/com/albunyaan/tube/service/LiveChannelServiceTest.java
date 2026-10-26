@@ -130,6 +130,29 @@ class LiveChannelServiceTest {
         assertThat(service.state(SUNNAH).getArchived()).containsEntry("Rs7St51oDDc", "VALID");
     }
 
+    /**
+     * Stage 9 B16 (Cubic r6 P2, R12): a report took a link the poller archived down. Its restore record goes, saved, so
+     * the poller never restores it; before the states load that cannot be done, and the caller is told.
+     */
+    @Test
+    void aTakeDownDropsThePollersRestoreRecordOfTheLink() throws Exception {
+        LiveChannelState known = LiveChannelState.unknown(SUNNAH);
+        known.getArchived().put("TakeDown007", "VALID");
+        known.getArchivedFrom().put("TakeDown007", List.of("cat-live"));
+        known.getArchived().put("Rs7St51oDDc", "");
+        service.loadStates(List.of(known));
+
+        service.dropRestore("TakeDown007");
+
+        var saved = org.mockito.ArgumentCaptor.forClass(LiveChannelState.class);
+        verify(states).save(saved.capture());
+        assertThat(saved.getValue().getArchived()).containsOnlyKeys("Rs7St51oDDc");
+        assertThat(saved.getValue().getArchivedFrom()).isEmpty();
+        assertThat(service.state(SUNNAH).getArchived()).containsOnlyKeys("Rs7St51oDDc");
+        assertThatThrownBy(() -> new LiveChannelService(reader, states, clock).dropRestore("TakeDown007"))
+                .isInstanceOf(IllegalStateException.class);
+    }
+
     @Test
     void aFailedSeedRecordsAnError() throws Exception {
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.error(1, "boom"));

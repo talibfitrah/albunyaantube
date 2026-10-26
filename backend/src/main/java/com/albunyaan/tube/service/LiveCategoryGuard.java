@@ -147,6 +147,15 @@ public class LiveCategoryGuard {
         return changes;
     }
 
+    /**
+     * Spec D8: a LIVE category is top-level and nothing nests under it. True when a category with this parent may be
+     * LIVE: no parent and no subcategories. The category update and the live-channels migration (stage 9 B16) both ask.
+     */
+    public static boolean liveShape(com.albunyaan.tube.repository.CategoryRepository categories, String categoryId,
+                                    String parentId) throws ExecutionException, InterruptedException, TimeoutException {
+        return parentId == null && categories.findByParentId(categoryId).isEmpty();
+    }
+
     /** Row 17 (§4.2): setting LIVE on a non-empty category requires every member to conform. */
     public void checkMembersForLive(String categoryId) throws ExecutionException, InterruptedException, TimeoutException {
         LiveCategoryService.Members m = liveCategories.members(categoryId);

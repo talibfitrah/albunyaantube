@@ -44,6 +44,7 @@ public class ContentReportService {
     private final StreamIndexService streamIndexService;
     private final SearchIndex searchIndex;
     private final Cache<String, Object> workspaceExclusionsCache;
+    private final LiveChannelService liveChannelService;
 
     public ContentReportService(
             ContentReportRepository reportRepository,
@@ -54,7 +55,8 @@ public class ContentReportService {
             PublicContentCacheService publicContentCacheService,
             StreamIndexService streamIndexService,
             SearchIndex searchIndex,
-            @Qualifier("workspaceExclusionsCache") Cache<String, Object> workspaceExclusionsCache) {
+            @Qualifier("workspaceExclusionsCache") Cache<String, Object> workspaceExclusionsCache,
+            LiveChannelService liveChannelService) {
         this.reportRepository = reportRepository;
         this.rateLimitCache = rateLimitCache;
         this.videoRepository = videoRepository;
@@ -64,6 +66,7 @@ public class ContentReportService {
         this.streamIndexService = streamIndexService;
         this.searchIndex = searchIndex;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
+        this.liveChannelService = liveChannelService;
     }
 
     public ContentReport submitReport(
@@ -311,16 +314,32 @@ public class ContentReportService {
         try {
             switch (targetType) {
                 case VIDEO -> {
-                    var opt = videoRepository.findByYoutubeId(targetId);
-                    if (opt.isEmpty() && !VIDEO_ID.matcher(targetId).matches()) { // stage 9 B11 P3: no junk records
-                        log.warn("Cannot take down video {}: not a video id", targetId);
-                        return "Not taken down: the reported id is not a video id.";
+                    java.util.Optional<Video> opt;
+                    Video video;
+                    // Stage 9 B16 (Cubic r6 P2, R12): the D7 monitor, so no live-poller restore lands between this read,
+                    // the archive and the drop of the poller's restore record: a link it ended, taken down, stays down.
+                    synchronized (liveChannelService.stateLock()) {
+                        opt = videoRepository.findByYoutubeId(targetId);
+                        if (opt.isEmpty() && !VIDEO_ID.matcher(targetId).matches()) { // stage 9 B11 P3: no junk records
+                            log.warn("Cannot take down video {}: not a video id", targetId);
+                            return "Not taken down: the reported id is not a video id.";
+                        }
+                        video = opt.orElseGet(() -> takeDownRecord(targetId));
+                        video.setValidationStatus(ValidationStatus.ARCHIVED);
+                        videoRepository.save(video);
+                        archived = true;
+                        if (opt.isPresent()) {
+                            try {
+                                liveChannelService.dropRestore(targetId);
+                            } catch (Exception e) {
+                                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                                log.warn("Video {} taken down, but the live poller's restore record of it was not dropped: {}",
+                                        targetId, e.getMessage());
+                                miss = "Taken down, but the live poller may put it back if it goes live again ("
+                                        + e.getClass().getSimpleName() + "). Resolve the report again later.";
+                            }
+                        }
                     }
-                    Video video = opt.orElseGet(() -> takeDownRecord(targetId));
-                    video.setValidationStatus(ValidationStatus.ARCHIVED);
-                    videoRepository.save(video);
-                    streamIndexService.markStreamArchived(targetId);
-                    archived = true;
                     if (opt.isEmpty()) {
                         try {
                             miss = excludeEverywhereListed(video);
@@ -331,6 +350,9 @@ public class ContentReportService {
                                     + e.getClass().getSimpleName() + "). Check them by hand.";
                         }
                     }
+                    // Stage 9 B16 (Cubic r6 P2): after the sources are read, as they are read off the stream's index doc,
+                    // which this deletes. The saved record already hides the stream from search meanwhile.
+                    streamIndexService.markStreamArchived(targetId);
                 }
                 case CHANNEL -> {
                     var opt = channelRepository.findByYoutubeId(targetId);
@@ -368,8 +390,8 @@ public class ContentReportService {
 
     /**
      * A reported video's take-down record: REJECTED (never served, never in the approvals queue) and, by the caller,
-     * ARCHIVED (listed under Archived content, where Restore or delete removes it). A later add of the id, single or
-     * bulk, is written into this doc, as for any REJECTED video (stage 9 B11).
+     * ARCHIVED (listed under Archived content, where Restore or delete removes it). An admin's later add of the id, single
+     * or bulk, is written into this doc, as for any REJECTED video (stage 9 B11); a moderator's is refused (B16).
      */
     private static Video takeDownRecord(String youtubeId) {
         Video video = new Video(youtubeId);

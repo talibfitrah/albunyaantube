@@ -75,6 +75,8 @@ tags:
     description: Unified content library management
   - name: Exclusions
     description: Workspace-level exclusion management
+  - name: Playback
+    description: Signed-in stream playback helpers (the iOS HD upgrade's challenge solver)
 
 paths:
   # ============================================================================
@@ -589,6 +591,16 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContentReport'
+        '503':
+          description: |
+            RESOLVED on a video report with no parent, for a video with no registry doc, while the search index is
+            still building after a server start: the sources listing the video are not known yet. The report stays
+            PENDING. Empty body; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (5)
+              schema:
+                type: integer
 
   /admin/reports/stats:
     get:
@@ -2130,6 +2142,172 @@ paths:
                     enum: [MAIL_UNAVAILABLE]
                   message:
                     type: string
+
+  # ============================================================================
+  # PLAYBACK (signed-in apps; iOS HD playback)
+  # ============================================================================
+
+  /playback/player:
+    get:
+      summary: The player the challenge solver holds now
+      description: |
+        The player id and signature timestamp (`sts`) the server's challenge solver holds, kept for 60 s. The app
+        signs its stream request with `sts`, then sends that player's challenges to `POST /playback/solve`.
+      operationId: getPlaybackPlayer
+      tags: [Playback]
+      responses:
+        '200':
+          description: The solver's current player
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [playerId, sts]
+                properties:
+                  playerId:
+                    type: string
+                    pattern: '^[0-9a-f]{8}$'
+                  sts:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The account is deleted or blocked (`code` ACCOUNT_DELETED or ACCOUNT_BLOCKED)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [ACCOUNT_DELETED, ACCOUNT_BLOCKED]
+                  message:
+                    type: string
+        '503':
+          description: |
+            No player now: the solver is switched off or cannot be reached (`Retry-After: 120`), or the first player
+            is still being fetched (`Retry-After: 10`). Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (10 or 120)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /playback/solve:
+    post:
+      summary: Solve a player's stream challenges
+      description: |
+        Answers the `n` and `s` challenges of one player. Each answer is cached for 6 hours. Limits: 20 calls a
+        minute and 300 an hour per user (429); at most 8 solves in flight and 20 a second across all users (503).
+        Bodies over 16 KB are refused unread (413). Nothing about a request is logged.
+      operationId: solvePlaybackChallenges
+      tags: [Playback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, n, s]
+              properties:
+                playerId:
+                  type: string
+                  pattern: '^[0-9a-f]{8}$'
+                n:
+                  type: array
+                  maxItems: 4
+                  description: An s-only solve sends `[]`
+                  items:
+                    type: string
+                    minLength: 8
+                    maxLength: 32
+                    pattern: '^[A-Za-z0-9_=-]+$'
+                s:
+                  type: array
+                  maxItems: 64
+                  items:
+                    type: string
+                    minLength: 64
+                    maxLength: 160
+                    pattern: '^[A-Za-z0-9_=-]+$'
+      responses:
+        '200':
+          description: Challenge -> answer, for each challenge the solver answered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [n, s]
+                properties:
+                  n:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  s:
+                    type: object
+                    additionalProperties:
+                      type: string
+        '400':
+          description: |
+            A body outside the shapes above (`{}`), or a body that is not JSON (the generic error body).
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The account is deleted or blocked (`code` ACCOUNT_DELETED or ACCOUNT_BLOCKED)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [ACCOUNT_DELETED, ACCOUNT_BLOCKED]
+                  message:
+                    type: string
+        '409':
+          description: The solver no longer holds this player. Body `{}`; fetch `GET /playback/player` again.
+          content:
+            application/json:
+              schema:
+                type: object
+        '413':
+          description: The body is over 16 KB (the generic error body).
+          content:
+            application/json:
+              schema:
+                type: object
+        '429':
+          description: This user's limit (20 a minute, 300 an hour) is used up. Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds until a call is allowed again (at least 1)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+        '503':
+          description: |
+            The solver is busy (`Retry-After: 10`: 8 solves in flight or 20 this second), or switched off, unreachable
+            or failed (`Retry-After: 120`). Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (10 or 120)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
 
   # ============================================================================
   # AUDIT LOGS (Admin Only)

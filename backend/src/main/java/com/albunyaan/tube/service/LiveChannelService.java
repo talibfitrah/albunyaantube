@@ -136,6 +136,24 @@ public class LiveChannelService {
         }
     }
 
+    /**
+     * Stage 9 B16 (Cubic r6 P2, R12): a report took this link down, so its ARCHIVED is the admin's now, never the poller's
+     * to restore (an admin's later change wins). Drops the poller's restore record of it, under the D7 monitor. Before
+     * the states load the records are unknown: IllegalStateException, as put().
+     */
+    public void dropRestore(String videoId) throws ExecutionException, InterruptedException, TimeoutException {
+        synchronized (stateLock) {
+            if (!loaded) throw new IllegalStateException("live channel states not loaded yet");
+            for (LiveChannelState s : snapshot.values()) {
+                if (!s.getArchived().containsKey(videoId)) continue;
+                LiveChannelState next = s.copy();
+                next.getArchived().remove(videoId);
+                next.getArchivedFrom().remove(videoId);
+                put(next);
+            }
+        }
+    }
+
     /** D7: the seed and the poller's per-channel apply compute-and-put one at a time under this monitor. */
     public Object stateLock() {
         return stateLock;

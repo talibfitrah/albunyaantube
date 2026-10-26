@@ -189,11 +189,11 @@ public class CategoryController {
             }
             boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
                     .map(Category::isLive).orElse(false);
-            if (live || parentLive) {
+            if (parentLive) {
                 throw LiveCategoryException.shape(existing.getName());
             }
         }
-        if (live && !categoryRepository.findByParentId(id).isEmpty()) {
+        if (live && !LiveCategoryGuard.liveShape(categoryRepository, id, category.getParentCategoryId())) {
             throw LiveCategoryException.shape(existing.getName());
         }
         if (live && !existing.isLive()) {

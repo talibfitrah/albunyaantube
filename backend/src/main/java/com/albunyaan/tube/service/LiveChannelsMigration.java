@@ -139,6 +139,10 @@ public class LiveChannelsMigration {
         // F2: steps 3 and 7 compute from the snapshot; loaded never goes back to false, so this holds for the whole run
         if (!live.loaded()) blockers.add("live channel states not loaded yet; retry after the next poller cycle");
         if (planChannels.size() > LiveCategoryGuard.MAX_ENTRIES) blockers.add("more than " + LiveCategoryGuard.MAX_ENTRIES + " entries");
+        // Stage 9 B16 (Cubic r6 P3): step 6 sets LIVE directly, so D8 is checked here as the category update checks it.
+        if (!LiveCategoryGuard.liveShape(categories, categoryId, category.getParentCategoryId())) {
+            blockers.add("D8: a live category can't have a parent category or subcategories");
+        }
 
         // The removed videos: their fate is decided by the poll (R12b).
         Map<String, Video> videoDocs = new LinkedHashMap<>();

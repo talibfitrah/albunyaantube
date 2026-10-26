@@ -58,6 +58,10 @@ class ContentReportServiceTest {
 
     Cache<String, AtomicInteger> rateLimitCache;
     Cache<String, Object> workspaceCache;
+    final com.albunyaan.tube.repository.LiveChannelStateRepository liveStates =
+            org.mockito.Mockito.mock(com.albunyaan.tube.repository.LiveChannelStateRepository.class);
+    final LiveChannelService live = new LiveChannelService(org.mockito.Mockito.mock(LiveTabReader.class), liveStates,
+            java.time.Clock.systemUTC());
     ContentReportService service;
 
     private static final List<ReportReason> REASONS = List.of(ReportReason.MUSIC);
@@ -68,7 +72,8 @@ class ContentReportServiceTest {
         rateLimitCache = Caffeine.newBuilder().build();
         workspaceCache = Caffeine.newBuilder().build();
         workspaceCache.put("exclusions", "stale");
-        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService, streamIndexService, searchIndex, workspaceCache);
+        live.loadStates(List.of());
+        service = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository, playlistRepository, publicContentCacheService, streamIndexService, searchIndex, workspaceCache, live);
     }
 
     @Test
@@ -308,6 +313,65 @@ class ContentReportServiceTest {
         assertThat(out.getResolutionNote()).isNull();
     }
 
+    /**
+     * Stage 9 B16 (Cubic r6 P2): the sources listing the video are read off its stream's index doc, which the take-down's
+     * markStreamArchived deletes. Read after it, they come back empty: no exclusion and nothing recorded for Restore.
+     */
+    @Test
+    void aTakeDownReadsTheSourcesListingTheVideoBeforeItRemovesItsStream() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-order")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        java.util.concurrent.atomic.AtomicBoolean streamRemoved = new java.util.concurrent.atomic.AtomicBoolean();
+        org.mockito.Mockito.doAnswer(inv -> { streamRemoved.set(true); return null; })
+                .when(streamIndexService).markStreamArchived("ilgiwqpcOC8");
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenAnswer(inv ->
+                streamRemoved.get() ? List.of() : List.of("channel:UCfassTU6mGWIj-yb26_ADjQ"));
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        org.mockito.Mockito.lenient().when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+
+        service.resolveReport("report-order", ReportStatus.RESOLVED, "admin", null);
+
+        verify(videoRepository).updateIfStatusAndSource(any(), org.mockito.ArgumentMatchers.eq("REJECTED"),
+                org.mockito.ArgumentMatchers.eq("REPORT"), org.mockito.ArgumentMatchers.eq("takeDownExclusions"),
+                org.mockito.ArgumentMatchers.eq(List.of("channel:UCfassTU6mGWIj-yb26_ADjQ")));   // recorded for Restore
+        assertThat(ch.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
+        verify(streamIndexService).markStreamArchived("ilgiwqpcOC8");
+    }
+
+    /**
+     * Stage 9 B16 (Cubic r6 P2, R12): a take-down of a link the live poller ended writes the same ARCHIVED the poller
+     * wrote. It is the admin's now: the poller's restore record of it goes, so the link live again is not restored.
+     */
+    @Test
+    void aTakeDownOfALinkThePollerEndedDropsItsRestoreRecord() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("LiveLink001");
+        when(reportRepository.findById("report-live")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        Video ended = new Video("LiveLink001");
+        ended.setId("doc-live");
+        ended.setStatus("APPROVED");
+        ended.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);   // the poller's archive
+        when(videoRepository.findByYoutubeId("LiveLink001")).thenReturn(Optional.of(ended));
+        com.albunyaan.tube.model.LiveChannelState state = com.albunyaan.tube.model.LiveChannelState.unknown("UCliveLink0000000000000a");
+        state.getArchived().put("LiveLink001", "VALID");
+        state.getArchivedFrom().put("LiveLink001", List.of("cat-live"));
+        live.loadStates(List.of(state));
+
+        ContentReport out = service.resolveReport("report-live", ReportStatus.RESOLVED, "admin", null);
+
+        assertThat(live.state("UCliveLink0000000000000a").getArchived()).doesNotContainKey("LiveLink001");
+        assertThat(live.state("UCliveLink0000000000000a").getArchivedFrom()).doesNotContainKey("LiveLink001");
+        verify(liveStates).save(any());
+        assertThat(out.getResolutionNote()).isNull();
+    }
+
     /** Stage 9 Cubic r2 P2: no source lists it yet, so there is nothing to exclude on; the take-down is still recorded. */
     @Test
     void aParentlessReportOnAVideoNoSourceListsYetStillRecordsTheTakeDown() throws Exception {
@@ -527,7 +591,7 @@ class ContentReportServiceTest {
         when(streams.markVisible("ilgiwqpcOC8")).thenThrow(new TimeoutException("write timed out"));
         var restoring = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository,
                 playlistRepository, publicContentCacheService, new StreamIndexService(streams, searchIndex), searchIndex,
-                workspaceCache);
+                workspaceCache, live);
 
         assertThatThrownBy(() -> restoring.liftTakeDown(recordExcludedOn())).isInstanceOf(TimeoutException.class);
 
