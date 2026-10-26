@@ -162,4 +162,62 @@ class UploadsFetcherTest {
         assertEquals(1, browse.size());
         assertEquals("ar", browse.get(0).localization().getLanguageCode());
     }
+
+    /** YouTube's ERROR alert for a deleted list (a nonexistent PL… and UU… id alike), per hl: live probe 2026-10-26 (N17). */
+    static final Map<String, String> PLAYLIST_GONE = Map.of("en", "The playlist does not exist.",
+            "ar", "قائمة التشغيل غير موجودة.", "nl", "De playlist bestaat niet.");
+
+    /** A browse answer that is one ERROR alert, as YouTube sends it and NewPipe's defaultAlertsCheck reads it. */
+    static String alert(String text) {
+        return "{\"alerts\":[{\"alertRenderer\":{\"type\":\"ERROR\",\"text\":{\"simpleText\":\"" + text + "\"}}}]}";
+    }
+
+    /** The request's InnerTube `hl`. */
+    static String hl(Request r) {
+        return new String(r.dataToSend(), StandardCharsets.UTF_8).replaceAll("(?s).*\"hl\":\"([^\"]*)\".*", "$1");
+    }
+
+    /**
+     * Stage 9 Cubic r7 #4 (N17): YouTube words its ERROR alert in the request's hl, and NewPipe 0.26.5 types even
+     * AccountTerminatedException from English words only ("This account has been terminated", "This channel was
+     * removed"). A localized alert is asked once more in English, whose answer is the one thrown; if English lists the
+     * source, the localized alert is thrown (transient), never the English page (R21). An English alert is the answer.
+     */
+    @Test
+    void aLocalizedAlertIsAskedOnceMoreInEnglishAndThatAnswerIsTheOneThrown() throws Exception {
+        String none = "{\"responseContext\":{\"visitorData\":\"CgtkZW1vVmlzaXRvcg%3D%3D\"}}"; // no alert, no items
+        Map<String, String> answer = new java.util.HashMap<>(); // hl -> the metadata answer; the items are always `none`
+        List<String> asked = new ArrayList<>();
+        NewPipe.init(new Downloader() {
+            @Override
+            public Response execute(Request r) {
+                if (r.url().equals("https://www.youtube.com/sw.js")) { // getClientVersion's first source; cached per JVM after
+                    return new Response(200, "OK", Map.of(), "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\"", r.url());
+                }
+                asked.add(hl(r));
+                boolean items = new String(r.dataToSend(), StandardCharsets.UTF_8).contains("\"continuation\"");
+                return new Response(200, "OK", Map.of(), items ? none : answer.get(hl(r)), r.url());
+            }
+        });
+        UploadsFetcher fetcher = new UploadsFetcher();
+        String key = "channel:UCfassTU6mGWIj-yb26_ADjQ";
+
+        answer.put("ar", alert("تم إنهاء هذا الحساب.")); // illustrative wording: no terminated id was probed
+        answer.put("en", alert("This account has been terminated for a violation of YouTube's Terms of Service."));
+        assertThrows(org.schabi.newpipe.extractor.exceptions.AccountTerminatedException.class, () -> fetcher.first(key, "ar"));
+        assertEquals(List.of("ar", "en"), asked, "one English request, stopped by its alert");
+
+        asked.clear();
+        answer.put("nl", alert("Er is iets misgegaan."));
+        answer.put("en", none); // English lists it
+        ContentNotAvailableException e = assertThrows(ContentNotAvailableException.class, () -> fetcher.first(key, "nl"));
+        assertEquals("Got error: \"Er is iets misgegaan.\"", e.getMessage());
+        assertEquals(List.of("nl", "en", "en"), asked);
+
+        asked.clear();
+        answer.put("en", alert(PLAYLIST_GONE.get("en")));
+        e = assertThrows(ContentNotAvailableException.class, () -> fetcher.first(key, "en"));
+        assertTrue(com.albunyaan.tube.service.ChannelOrchestrator.playlistGone(e));
+        assertEquals(List.of("en"), asked, "never asked twice");
+    }
 }

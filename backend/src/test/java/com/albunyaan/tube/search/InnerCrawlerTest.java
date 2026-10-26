@@ -453,6 +453,42 @@ class InnerCrawlerTest {
         assertTrue(source(PL).retryAt > now.get().toEpochMilli(), "transport backoff");
     }
 
+    /**
+     * Stage 9 Cubic r7 #4 (N17): the crawler asks in the source's own hl (R21), and YouTube words a deleted list's alert
+     * in it (live 2026-10-26). A deleted Arabic or Dutch source joins the R33.7 run as an English one does, never retried
+     * as transport for ever; its English re-ask is one request, inside the same job.
+     */
+    @Test
+    void aDeletedArabicOrDutchSourceIsGoneThoughYouTubeWordsItsAlertInThatLanguage() throws Exception {
+        List<String> asked = new ArrayList<>();
+        org.schabi.newpipe.extractor.NewPipe.init(new org.schabi.newpipe.extractor.downloader.Downloader() {
+            @Override
+            public org.schabi.newpipe.extractor.downloader.Response execute(org.schabi.newpipe.extractor.downloader.Request r)
+                    throws IOException {
+                if (r.url().equals("https://www.youtube.com/sw.js")) { // getClientVersion's first source; cached per JVM after
+                    return new org.schabi.newpipe.extractor.downloader.Response(200, "OK", Map.of(),
+                            "\"INNERTUBE_CONTEXT_CLIENT_VERSION\":\"2.20260120.01.00\"", r.url());
+                }
+                pacer.before(r.url()); // as the prod downloader's hook: every browse is a counted crawler request
+                String hl = UploadsFetcherTest.hl(r);
+                asked.add(hl);
+                return new org.schabi.newpipe.extractor.downloader.Response(200, "OK", Map.of(),
+                        UploadsFetcherTest.alert(UploadsFetcherTest.PLAYLIST_GONE.get(hl)), r.url());
+            }
+        });
+        crawler = newCrawler(new UploadsFetcher(), index);
+        admitted.put(AR, "قناة الدعوة");
+        admitted.put(PL, "Verhalen van de Profeten");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        step();
+        step();
+        assertEquals(List.of(AR, PL), store.state().breaker.unavailableRun, "both gone, as an English source is");
+        assertEquals(List.of("ar", "en", "nl", "en"), asked);
+        assertEquals(4, pacer.today(CrawlPacer.CRAWLER_THREAD));
+        for (String k : List.of(AR, PL)) assertEquals(1, source(k).failures, k + ": one backoff per job");
+        assertTrue(store.state().signals.isEmpty());
+    }
+
     @Test
     void anErrorInsideAJobBacksOffThatSourceAndStillPropagates() throws Exception {
         admitted.put(CH, "Dawah Nederland");

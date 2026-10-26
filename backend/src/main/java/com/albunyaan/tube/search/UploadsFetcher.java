@@ -3,6 +3,7 @@ package com.albunyaan.tube.search;
 import org.schabi.newpipe.extractor.ListExtractor.InfoItemsPage;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.ServiceList;
+import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.localization.DateWrapper;
 import org.schabi.newpipe.extractor.localization.Localization;
@@ -21,7 +22,8 @@ import java.util.regex.Pattern;
 
 /**
  * Reads one admitted source's listing through NewPipe (inner-search spec §4): a channel's uploads playlist UU…, or a
- * playlist PL…, 100 items per request, with `hl` forced (R21). A first page is 2 requests (F4, F25), each next page 1.
+ * playlist PL…, 100 items per request, with `hl` forced (R21). A first page is 2 requests (F4, F25), each next page 1;
+ * a first page that ends in a localized ERROR alert is asked once more in English (1 request, 2 if English lists it).
  * Never goes through YouTubeGateway: the crawler has its own breaker and the shared one must not see its traffic
  * (R12). Every HTTP request still passes CrawlPacer inside NewPipe's global downloader.
  * NewPipe's exceptions pass through as NewPipe types them: the crawler alone decides what "gone" is (R3-18).
@@ -40,7 +42,16 @@ public class UploadsFetcher {
 
     public Batch first(String sourceKey, String hl) throws IOException, ExtractionException {
         PlaylistExtractor x = extractor(sourceKey, hl);
-        x.fetchPage();
+        try {
+            x.fetchPage();
+        } catch (ContentNotAvailableException e) {
+            // YouTube words an ERROR alert in `hl` (live 2026-10-26: ar "قائمة التشغيل غير موجودة.", nl "De playlist
+            // bestaat niet."), but the gone rules, and NewPipe's own AccountTerminatedException, read English words only.
+            // So a localized alert is asked once more in English, and English's answer is the one the crawler classifies.
+            if ("en".equals(hl) || !String.valueOf(e.getMessage()).startsWith("Got error: \"")) throw e;
+            extractor(sourceKey, "en").fetchPage();
+            throw e; // English lists it: the alert was transient, and an English page is never stored (R21)
+        }
         long count;
         try {
             count = x.getStreamCount();
