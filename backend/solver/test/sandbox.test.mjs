@@ -62,7 +62,7 @@ test('the unit carries the spec\'s flags and hardening lines (R31)', () => {
   assert.equal(tokens[0], '/opt/fitrah-solver/node/bin/node');
   assert.equal(tokens.at(-1), '/opt/fitrah-solver/app/server.mjs');
   assert.deepEqual(unitFlags('/R', '/C'),
-    ['--permission', '--allow-fs-read=/R/', '--allow-fs-read=/C/', '--allow-fs-write=/C/', '--max-old-space-size=256']);
+    ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/', '--allow-fs-read=/C/', '--allow-fs-write=/C/', '--max-old-space-size=256']);
   for (const line of ['MemoryMax=384M', 'StartLimitIntervalSec=3600', 'StartLimitBurst=4', 'RestartSec=60', 'CPUWeight=20',
     'DynamicUser=yes', 'CacheDirectory=fitrah-solver', 'ProtectHome=yes', 'InaccessiblePaths=-/opt/albunyaan',
     'PrivateDevices=yes', 'CapabilityBoundingSet=', 'RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX',
@@ -189,3 +189,14 @@ test('a player that leaves an unhandled rejection is dropped and the real server
     assert.deepEqual([h.status, h.held, h.lastPoll.step], ['warming', [], 'adopted']);
     assert.match(stderr, /WARN player dddddddd left an unhandled promise rejection/);
   });
+
+/** Cubic r7 #1: without --experimental-vm-modules the deny callback cannot run and import() leaks the host process, so the
+ *  server must refuse to start rather than run a leaky realm. Spawned WITHOUT the unit flags (no --experimental-vm-modules). */
+test('the server refuses to start without --experimental-vm-modules (Cubic r7 #1)', (t) => {
+  const { root, cache } = install(t);
+  const run = spawnSync(process.execPath, [path.join(root, 'app', 'server.mjs')], {
+    encoding: 'utf8', timeout: 8_000,
+    env: { ...process.env, SOLVER_CACHE_DIR: cache, SOLVER_PORT: '0', SOLVER_ORIGIN: 'http://127.0.0.1:1' } });
+  assert.notEqual(run.status, 0, `the server started without the flag (status ${run.status}):\n${run.stderr}`);
+  assert.match(run.stderr, /experimental-vm-modules/);
+});

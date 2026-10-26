@@ -11,7 +11,7 @@ DynamicUser=yes
 CacheDirectory=fitrah-solver
 WorkingDirectory=/opt/fitrah-solver
 Environment=SOLVER_BIND=127.0.0.1 SOLVER_PORT=4417
-ExecStart=/opt/fitrah-solver/node/bin/node --permission \
+ExecStart=/opt/fitrah-solver/node/bin/node --experimental-vm-modules --permission \
   --allow-fs-read=/opt/fitrah-solver/ --allow-fs-read=/var/cache/fitrah-solver/ \
   --allow-fs-write=/var/cache/fitrah-solver/ \
   --max-old-space-size=256 /opt/fitrah-solver/app/server.mjs

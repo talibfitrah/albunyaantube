@@ -9,6 +9,14 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 
 export const CHALLENGE = /^[A-Za-z0-9_=-]+$/;
 
+// Dynamic import() inside the realm is the one surface vm cannot strip: it is syntax, not a deletable global. Left alone,
+// `import('x')` rejects with a HOST object (a host Error, or with --experimental-vm-modules but no callback the host
+// ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG), and `e.constructor.constructor('return process')()` then hands the player the
+// host process (Cubic r7 #1, P1). Passing this on EACH runInContext that compiles realm code makes every import() form
+// (direct, eval, indirect eval, Function, await) reject with a realm primitive string instead. It needs --experimental-vm-modules
+// (newContext asserts it); a throw here, not a rejected/pending promise, so no realm reaction object survives on the host.
+const denyImport = () => { throw 'import() is disabled inside the solver realm'; };
+
 const EJS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor', 'ejs-0.8.0');
 const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
   + '\nObject.assign(globalThis, lib);\n'
@@ -17,6 +25,9 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 
 /** A fresh realm holding EJS and nothing of Node's (R40). One per player, so eviction drops it whole. */
 export function newContext(timeoutMs = 10_000) {
+  // Fail closed: without --experimental-vm-modules the importModuleDynamically callbacks below are ignored and import() leaks
+  // the host process (Cubic r7 #1). SourceTextModule is the flag's own marker. No realm is ever built unprotected.
+  if (typeof vm.SourceTextModule !== 'function') throw new Error('the solver realm needs --experimental-vm-modules to deny dynamic import (Cubic r7 #1)');
   // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
   const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
   // V8 runs these as host tasks, outside every vm timeout: a FinalizationRegistry cleanup (Cubic r2 P2; WeakRef goes with it)
@@ -24,8 +35,8 @@ export function newContext(timeoutMs = 10_000) {
   // promise[async_id_symbol] off each unhandled rejected promise after the run, which only a realm Proxy could answer with code
   // (Cubic r6 P2). Atomics.waitAsync settles with a string, so it only queues microtasks, which drain inside the next timeout.
   // base.js checks `typeof FinalizationRegistry` and `window.WebAssembly`; neither it nor EJS uses Proxy.
-  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx);
-  vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs });
+  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx, { importModuleDynamically: denyImport });
+  vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs, importModuleDynamically: denyImport });
   return ctx;
 }
 
@@ -38,7 +49,7 @@ function inRealm(ctx, source, inputs, timeoutMs) {
   let out;
   try {
     out = vm.runInContext(`(() => { try { return [${source}]; } catch (e) { try { return '' + (e?.message ?? e); } catch { return ''; } } })()`,
-      ctx, { timeout: timeoutMs });
+      ctx, { timeout: timeoutMs, importModuleDynamically: denyImport });   // deny import() in all player code (Cubic r7 #1)
   } finally { for (const name of names) Reflect.deleteProperty(ctx, name); }        // never throws on a locked property
   if (typeof out === 'string') throw new Error(out || 'the player threw');
   return out[0];                                                                     // our own array literal: no getter
@@ -127,7 +138,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
   let ran = null;                               // the player whose realm ran last
   let cacheWritable = probeCache();
-  let crashed = dropCrashedPlayer();
+  const crashed = new Set();                    // every player that broke this process (build OOM or an unhandled rejection); skipped until a restart
+  const bootCrash = dropCrashedPlayer();
+  if (bootCrash) crashed.add(bootCrash);
 
   function dropCrashedPlayer() {
     try {
@@ -186,7 +199,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
-      if (hash === crashed) throw new Error('this player broke the solver; skipped until a restart');
+      if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');
       step = 'cache';
       file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
@@ -283,7 +296,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     if (Object.getPrototypeOf(promise) === Promise.prototype) throw reason;
     held.delete(ran);
     if (current === ran) current = held.keys().next().value ?? null;
-    crashed = ran;
+    crashed.add(ran);                           // a Set: a later rejection must not forget an earlier crasher (two players in A/B rotation)
     log.warn(`WARN player ${ran} left an unhandled promise rejection; evicted and skipped until a restart`);
   }
 
@@ -334,6 +347,11 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
+  // Fail closed before binding (Cubic r7 #1): without the flag the import() deny callback is ignored and the realm leaks process.
+  if (typeof vm.SourceTextModule !== 'function') {
+    console.error('FATAL: the solver needs --experimental-vm-modules; without it dynamic import() inside the realm leaks the host process (Cubic r7 #1). Refusing to start.');
+    process.exit(1);
+  }
   const solver = createSolver({ origin: process.env.SOLVER_ORIGIN || undefined,
                                 cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });

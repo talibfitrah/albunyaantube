@@ -58,7 +58,7 @@ test('a microtask loop scheduled by the player hits the timeout (fix 2)', { time
     const ctx = newContext();
     const player = { ctx, ...vm.runInContext("({ n: (x) => { Promise.resolve().then(() => { for (;;) {} }); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
     try { selfTest(player, 300); console.log('no timeout'); } catch (e) { console.log(e.code); }`;
-  const r = spawnSync(process.execPath, ['--input-type=module', '-e', script], { encoding: 'utf8', timeout: 20_000 });
+  const r = spawnSync(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', script], { encoding: 'utf8', timeout: 20_000 });
   assert.equal(r.stdout.trim(), 'ERR_SCRIPT_EXECUTION_TIMEOUT');
 });
 
@@ -474,7 +474,8 @@ const SERVER = JSON.stringify(new URL('../server.mjs', import.meta.url).href);
 
 /** Runs `script` (an ES module) in a child Node, killed after `ms`: a host stuck in realm code shows as signal SIGKILL. */
 async function child(script, ms = 8_000, flags = []) {
-  const proc = spawn(process.execPath, [...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
+  // newContext needs --experimental-vm-modules (Cubic r7 #1); every realm child runs under the flag the prod unit now carries.
+  const proc = spawn(process.execPath, ['--experimental-vm-modules', ...flags, '--input-type=module', '-e', script], { stdio: ['ignore', 'pipe', 'inherit'] });
   let stdout = '';
   proc.stdout.on('data', (d) => { stdout += d; });
   const timer = setTimeout(() => proc.kill('SIGKILL'), ms);
@@ -615,7 +616,7 @@ test('a stop during the startup build clears the crash marker and keeps the heal
     const origin = `http://127.0.0.1:${yt.address().port}`;
     const dir = tempDir();
     const marker = path.join(dir, 'building');
-    const server = spawn(process.execPath, [new URL('../server.mjs', import.meta.url).pathname], {
+    const server = spawn(process.execPath, ['--experimental-vm-modules', new URL('../server.mjs', import.meta.url).pathname], {
       env: { ...process.env, SOLVER_ORIGIN: origin, SOLVER_CACHE_DIR: dir, SOLVER_PORT: '0' }, stdio: ['ignore', 'ignore', 'inherit'] });
     try {
       for (let i = 0; i < 1500 && !fs.existsSync(marker); i++) await new Promise((r) => setTimeout(r, 10));
@@ -634,3 +635,72 @@ test('a stop during the startup build clears the crash marker and keeps the heal
       yt.close();
     }
   });
+
+// ---- stage 9 Cubic r7 #1 (P1): dynamic import() inside the realm must not reach the host process
+test('player code calling import() in any of the five forms cannot reach the host process (Cubic r7 #1, P1)', async () => {
+  const forms = {
+    direct: "import('a')",
+    directEval: "eval(\"import('b')\")",
+    indirectEval: "(0,eval)(\"import('c')\")",
+    fn: "Function('return import(' + String.fromCharCode(39) + 'd' + String.fromCharCode(39) + ')')()",
+    asyncAwait: "(async () => { await import('e'); })()",
+  };
+  // Each form runs through the real buildPlayer -> inRealm path (the one every n/sig and base.js already uses). A realm
+  // reason that is a primitive string cannot answer constructor.constructor with the host process; a host Error reason can.
+  const script = `import vm from 'node:vm'; import { buildPlayer, newContext } from ${SERVER};
+    const forms = ${JSON.stringify(forms)};
+    const cap = (f) => "globalThis.leak='pending';"
+      + "var grab=function(e){try{"
+      + "var p=(e!==null&&(typeof e==='object'||typeof e==='function'))?e.constructor.constructor('return process')():'prim';"
+      + "globalThis.leak=(p&&typeof p==='object')?('LEAK pid='+p.pid):('safe realmString='+(e!=null&&e.constructor===String));"
+      + "}catch(x){globalThis.leak='blocked:'+(x&&x.message);}};"
+      + "(" + f + ").then(grab, grab);"
+      + "_result.n=function(x){return x+'A';};_result.sig=function(x){return x.slice(1);};";
+    const out = {};
+    for (const [name, f] of Object.entries(forms)) {
+      const ctx = newContext();
+      vm.runInContext('globalThis.jsc = () => ({ preprocessed_player: ' + JSON.stringify(cap(f)) + ' })', ctx);
+      buildPlayer(ctx, 'x', 1000);
+      await new Promise((r) => setTimeout(r, 30));
+      vm.runInContext('0', ctx);                           // flush the import() rejection microtask (probe5)
+      out[name] = vm.runInContext('globalThis.leak', ctx);
+    }
+    console.log(JSON.stringify(out));`;
+  const r = await child(script);
+  assert.equal(r.signal, null, 'the realm hung the host');
+  const out = JSON.parse(r.stdout);
+  for (const [name, leak] of Object.entries(out)) assert.ok(!leak.includes('LEAK'), `${name}: ${leak}`);
+  assert.equal(out.fn, out.direct, 'the Function() form closes exactly like a direct import() (controller)');
+});
+
+test('a player that leaves an uncaught import() rejection is evicted, never a process exit (Cubic r7 #2)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
+  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
+    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
+      build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'imp') import('nope'); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
+    process.on('unhandledRejection', solver.rejected);               // as the main block wires it
+    await solver.poll(); await solver.poll();
+    const [status] = solver.solve({ playerId: 'aaaaaaaa', n: ['imp'], s: [] });
+    await new Promise((r) => setTimeout(r, 80));
+    console.log(JSON.stringify([status, solver.health().held]));`);
+  yt.close();
+  assert.equal(r.signal, null, 'the import() rejection hung or killed the host');
+  assert.equal(r.code, 0, 'the import() rejection exited the process');
+  assert.deepEqual(JSON.parse(r.stdout), [200, ['bbbbbbbb']], 'the player whose import() rejected is evicted; the other stays');
+});
+
+test('two players that each leave a realm rejection are both skipped until a restart (controller P3-2)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa']);
+  const warnings = [];
+  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: { log() {}, warn: (m) => warnings.push(m) } });
+  await solver.poll(); await solver.poll();                        // adopt aaaaaaaa, bbbbbbbb
+  const realmRejection = Object.create(null);                      // a non-host promise: rejected() treats it as a realm one
+  solver.solve({ playerId: 'aaaaaaaa', n: ['x'], s: [] }); solver.rejected(1, realmRejection);   // crash attributed to aaaaaaaa
+  solver.solve({ playerId: 'bbbbbbbb', n: ['x'], s: [] }); solver.rejected(1, realmRejection);   // crash attributed to bbbbbbbb
+  warnings.length = 0;
+  await solver.poll();                                             // iframe_api -> aaaaaaaa again
+  assert.equal(solver.health().lastPoll.step, 'hash', 'the earlier-crashed player was rebuilt, not skipped');
+  assert.ok(!solver.health().held.includes('aaaaaaaa'), 'the earlier-crashed player was re-adopted');
+  assert.match(warnings.at(-1), /skipped until a restart/);
+  yt.close();
+});
