@@ -194,8 +194,10 @@ class PlayerViewModel @Inject constructor(
     /** Set by [loadDownload]: this player plays that download's local file and never resolves online, until a stream plays. */
     private var playingDownloadId: String? = null
 
-    /** [loadVideo] waits for the download list's startup load once per player. */
+    /** [loadVideo] waits for the download list's startup load once per player; a cancelled wait does not count. */
     private var waitedForStartupLoad = false
+    /** That wait. Cubic r5 #9: a newer load or a gone view cancels it, so its late call never replaces either. */
+    private var startupWait: Job? = null
 
     /**
      * Cached prefetch result paired with the wall-clock timestamp at which it
@@ -832,9 +834,9 @@ class PlayerViewModel @Inject constructor(
         // open one video here, so a saved copy plays from its file as it does from Downloads. The
         // first open of a process can come before the repository's startup load has listed the
         // files; it waits for that once. A playlist keeps its streaming queue.
+        startupWait?.cancel()
         val startupLoad = downloadRepository.startupLoad
         if (startupLoad != null && !startupLoad.isCompleted && !waitedForStartupLoad) {
-            waitedForStartupLoad = true
             // The player shows "No video is currently playing." for a null item: give it the one being opened.
             val opening = UpNextItem(
                 id = videoId, title = title, channelName = channelName, thumbnailUrl = thumbnailUrl,
@@ -843,9 +845,11 @@ class PlayerViewModel @Inject constructor(
             )
             currentItem = opening
             updateState { it.copy(streamState = StreamState.Loading, currentItem = opening) }
-            viewModelScope.launch(dispatcher) {
+            startupWait = viewModelScope.launch(dispatcher) {
                 // ponytail: a load slower than this streams; raise it if real devices list files slower.
                 withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
+                waitedForStartupLoad = true
+                startupWait = null
                 loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId)
             }
             return
@@ -1875,6 +1879,7 @@ class PlayerViewModel @Inject constructor(
     fun onPlayerViewDestroyed() {
         liveScreenOpen = false
         liveRetryJob?.cancel()
+        startupWait?.cancel()   // Cubic r5 #9: its late loadVideo would reopen the latch with no view
     }
 
     /**

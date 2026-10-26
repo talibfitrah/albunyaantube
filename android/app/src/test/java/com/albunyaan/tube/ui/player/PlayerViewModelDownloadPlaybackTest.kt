@@ -349,6 +349,40 @@ class PlayerViewModelDownloadPlaybackTest {
         assertFalse(vm.state.value.playingDownload)
     }
 
+    // Cubic r5 #9: the first open's wait was never cancelled, so its late call replaced a newer open.
+    @Test fun `a newer open during the first open's wait is never replaced by it`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() // never completes: the 2 s cap
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v24")
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+
+        vm.loadVideo(videoId = "v25")                                    // a second into v24's wait
+        advanceUntilIdle()
+
+        assertEquals("the newer open stays", "v25", vm.state.value.currentItem?.streamId)
+        assertFalse("the replaced open never resolves", "v24" in streams.resolvedVideoIds)
+    }
+
+    // ...and the view recreated in that wait (onViewCreated loads again) waits for the files itself: its open is local-first
+    // too, and the first open's late call never re-loads on top of it.
+    @Test fun `a view recreated during the first open's wait still plays the saved copy`() = runTest {
+        val load = kotlinx.coroutines.CompletableDeferred<Unit>()
+        downloads.startupLoad = load
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v26")
+        testScheduler.runCurrent()
+
+        vm.onPlayerViewDestroyed()
+        vm.loadVideo(videoId = "v26")                                    // onViewCreated again, the files still being listed
+        downloads.entries.value = listOf(completed("d26", "v26", tmp.newFile("v26.mp4")))
+        load.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.playingDownload)
+        noNetwork()
+    }
+
     @Test fun `a saved video copy wins over an audio-only one, and a missing file streams`() = runTest {
         val video = tmp.newFile("v12.mp4")
         downloads.entries.value = listOf(

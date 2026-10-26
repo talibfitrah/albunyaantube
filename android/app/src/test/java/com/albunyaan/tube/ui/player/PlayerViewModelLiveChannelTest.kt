@@ -211,6 +211,23 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
+    /** Cubic r5 #9: a cold process's first open waits up to 2 s for the saved files; a view gone in that wait loads nothing late. */
+    @Test fun `a first open whose view is gone during the startup wait never polls`() = runTest(dispatcher) {
+        val downloads = FakeDownloadRepository().apply { startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() }
+        val repository = FakePlayerRepository().apply { resolvedStreams = streams("pqC-1yfFvu8", isLive = false) }
+        val content = FakeContentService()
+        val vm = playerViewModel(repository = repository, downloadRepository = downloads, contentService = content, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
+            runCurrent()
+            vm.onPlayerViewDestroyed()                                               // the user moved on within the 2 s
+
+            advanceClocks(11 * 60_000L)
+
+            assertTrue("no backend ask with the screen gone", content.channelLivesCalls.isEmpty())
+        }
+    }
+
     @Test fun `an end never advances the queue and asks the backend`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
         vm.cancelAfter {
