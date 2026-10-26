@@ -580,19 +580,6 @@ public class ChannelOrchestrator {
         }
     }
 
-    /**
-     * Validate and fetch video by YouTube ID
-     */
-    @Cacheable(value = "newpipeVideoValidation", key = "#youtubeId", unless = "#result == null")
-    public StreamInfo validateAndFetchVideo(String youtubeId) {
-        try {
-            return getVideoDetails(youtubeId);
-        } catch (IOException e) {
-            logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
-            return null;
-        }
-    }
-
     // ==================== Batch Validation ====================
 
     /**
@@ -863,41 +850,6 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Batch validate and fetch videos
-     * @deprecated Use {@link #batchValidateVideosWithDetails(List)} for proper error handling
-     */
-    @Deprecated
-    public Map<String, StreamInfo> batchValidateVideos(List<String> youtubeIds) {
-        if (youtubeIds == null || youtubeIds.isEmpty()) {
-            return Collections.emptyMap();
-        }
-
-        logger.debug("Batch validating {} videos", youtubeIds.size());
-
-        Map<String, StreamInfo> videoMap = Collections.synchronizedMap(new HashMap<>());
-        List<CompletableFuture<Void>> futures = new ArrayList<>();
-
-        for (String videoId : youtubeIds) {
-            CompletableFuture<Void> future = gateway.runAsync(() -> {
-                try {
-                    StreamInfo info = getVideoDetails(videoId);
-                    if (info != null) {
-                        videoMap.put(videoId, info);
-                    }
-                } catch (IOException e) {
-                    logger.warn("Failed to validate video {}: {}", videoId, e.getMessage());
-                }
-            });
-            futures.add(future);
-        }
-
-        CompletableFuture.allOf(futures.toArray(new CompletableFuture[0])).join();
-
-        logger.debug("Batch validation completed: {}/{} videos found", videoMap.size(), youtubeIds.size());
-        return videoMap;
-    }
-
-    /**
      * Batch validate videos with detailed error categorization.
      * notFound (the caller archives) ONLY when {@link #videoGoneOrGated}; everything else is ERROR (retry later).
      *
@@ -961,10 +913,15 @@ public class ChannelOrchestrator {
                             videoId, e.getMessage(), e.getClass().getSimpleName());
                     result.addNotFound(videoId);
                 } else if (circuitBreaker != null && circuitBreaker.isRateLimitError(e)) {
-                    // Detection only - recording is in gateway
-                    logger.error("Video {} RATE LIMITED: {} ({})",
-                            videoId, e.getMessage(), e.getClass().getSimpleName());
+                    // Detection only - recording is in gateway. R7, as the live poller: stop at the first rate limit.
+                    // The breaker no longer stops a /player bot check batch (B17), so this keeps it to one request.
+                    logger.error("Video {} RATE LIMITED: {} ({}). Skipping remaining {} items (will retry on next run).",
+                            videoId, e.getMessage(), e.getClass().getSimpleName(), youtubeIds.size() - i - 1);
                     result.addError(videoId, "Rate limit: " + e.getMessage());
+                    for (int j = i + 1; j < youtubeIds.size(); j++) {
+                        result.addSkipped(youtubeIds.get(j));
+                    }
+                    break;
                 } else {
                     logger.warn("Video {} extraction error (will retry): {} ({})",
                             videoId, e.getMessage(), e.getClass().getSimpleName());
@@ -1183,14 +1140,6 @@ public class ChannelOrchestrator {
     }
 
     /**
-     * Validate and fetch video as DTO
-     */
-    public StreamDetailsDto validateAndFetchVideoDto(String youtubeId) {
-        StreamInfo info = validateAndFetchVideo(youtubeId);
-        return info != null ? mapToStreamDetailsDto(info) : null;
-    }
-
-    /**
      * Batch validate channels and return as DTOs
      * @deprecated Use {@link #batchValidateChannelsDtoWithDetails(List)} for proper error handling
      */
@@ -1213,19 +1162,6 @@ public class ChannelOrchestrator {
                 .collect(Collectors.toMap(
                         Map.Entry::getKey,
                         e -> mapToPlaylistDetailsDto(e.getValue())
-                ));
-    }
-
-    /**
-     * Batch validate videos and return as DTOs
-     * @deprecated Use {@link #batchValidateVideosDtoWithDetails(List)} for proper error handling
-     */
-    @Deprecated
-    public Map<String, StreamDetailsDto> batchValidateVideosDto(List<String> youtubeIds) {
-        return batchValidateVideos(youtubeIds).entrySet().stream()
-                .collect(Collectors.toMap(
-                        Map.Entry::getKey,
-                        e -> mapToStreamDetailsDto(e.getValue())
                 ));
     }
 

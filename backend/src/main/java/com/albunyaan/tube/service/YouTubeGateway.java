@@ -20,6 +20,7 @@ import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
@@ -211,12 +212,20 @@ public class YouTubeGateway {
             return;
         }
 
-        if (circuitBreaker.isRateLimitError(e)) {
+        // ponytail (B17): /player's bot check is this IP's player-only refusal; browse keeps answering (prod
+        // 2026-08-19 07:10, breaker-investigation §2), so it never reaches the shared breaker that gates browse.
+        // Each video batch stops at its first one instead. Upgrade path: a /player-only breaker (option a2).
+        boolean playerBotCheck = e instanceof SignInConfirmNotBotException;
+        if (playerBotCheck) {
+            logger.error("YouTube rate limit error detected: {} - {} (/player bot check, not recorded by the breaker)",
+                    e.getClass().getSimpleName(), e.getMessage());
+        }
+        if (!playerBotCheck && circuitBreaker.isRateLimitError(e)) {
             // Rate limit error - record it (will increase backoff if in HALF_OPEN)
             circuitBreaker.recordRateLimitError(e);
             logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
         } else if (circuitBreaker.isProbeRequest()) {
-            // Non-rate-limit error during probe - must clear probe permit to avoid stuck state
+            // Non-rate-limit error (or a /player bot check) during probe - must clear probe permit to avoid stuck state
             circuitBreaker.recordProbeFailure(e);
             logger.warn("Probe failed with non-rate-limit error: {}", e.getMessage());
         }

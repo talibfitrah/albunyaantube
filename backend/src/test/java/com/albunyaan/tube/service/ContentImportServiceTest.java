@@ -558,6 +558,32 @@ class ContentImportServiceTest {
         verify(channelRepository, times(2)).save(any(Channel.class));
     }
 
+    /**
+     * B17: a video batch that stopped at a /player bot check (the rest SKIPPED; the shared breaker no longer records
+     * it) is not retried: the retry would only send the same refused request again.
+     */
+    @Test
+    void importSimpleFormatAsync_aBatchStoppedByABotCheckIsNotRetried() throws Exception {
+        Map<String, String> videosMap = new LinkedHashMap<>();
+        videosMap.put("validatorT1", "Lesson 1|Global");
+        videosMap.put("validatorT2", "Lesson 2|Global");
+        videosMap.put("validatorT3", "Lesson 3|Global");
+        List<Map<String, String>> simpleData = List.of(Collections.emptyMap(), Collections.emptyMap(), videosMap);
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<StreamDetailsDto> stopped = new BatchValidationResult<>();
+        stopped.addError("validatorT1", "Rate limit: Sign in to confirm you're not a bot");
+        stopped.addSkipped("validatorT2");
+        stopped.addSkipped("validatorT3");
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(stopped);
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        verify(channelOrchestrator, times(1)).batchValidateVideosDtoWithDetails(anyList());
+        assertEquals(1, run.getVideosFailed());
+        verify(videoRepository, never()).save(any(Video.class));
+    }
+
     // Helper methods to create DTOs
 
     private ChannelDetailsDto createChannelDto(String id, String name) {

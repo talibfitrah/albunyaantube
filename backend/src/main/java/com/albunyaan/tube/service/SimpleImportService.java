@@ -13,10 +13,12 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.util.YouTubeUrlUtils;
 import com.google.cloud.Timestamp;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -436,6 +438,7 @@ public class SimpleImportService {
             SimpleImportResponse response,
             Set<String> storedLiveRows
     ) {
+        String playerRefusal = null;   // B17: set at the first /player bot check; the rest are not asked
         for (Map.Entry<String, String> entry : videosMap.entrySet()) {
             String youtubeId = entry.getKey();
             Row row = Row.parse(entry.getValue());
@@ -456,15 +459,26 @@ public class SimpleImportService {
                     continue;
                 }
 
-                // 2. Validate YouTube ID and fetch metadata
-                StreamDetailsDto ytVideo = channelOrchestrator.validateAndFetchVideoDto(youtubeId);
+                // 2. Validate YouTube ID and fetch metadata. The shared breaker no longer stops /player bot checks
+                // (B17), so an import stops asking at the first one: one refused request per import.
+                StreamDetailsDto ytVideo = null;
+                if (playerRefusal == null) {
+                    try {
+                        ytVideo = channelOrchestrator.getVideoDetailsDto(youtubeId);
+                    } catch (IOException e) {
+                        logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
+                        if (e.getCause() instanceof SignInConfirmNotBotException) {
+                            playerRefusal = "YouTube refused the lookup (bot check), try again later";
+                        }
+                    }
+                }
 
                 if (ytVideo == null) {
                     response.addResult(SimpleImportItemResult.failed(
                             youtubeId,
                             titleFromFile,
                             "VIDEO",
-                            "YouTube video not found or deleted (404)"
+                            playerRefusal != null ? playerRefusal : "YouTube video not found or deleted (404)"
                     ));
                     continue;
                 }

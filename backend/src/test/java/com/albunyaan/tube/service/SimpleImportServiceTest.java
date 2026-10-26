@@ -16,9 +16,12 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 
+import java.io.IOException;
 import java.util.Arrays;
 import java.util.Collections;
+import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
 import java.util.Objects;
@@ -29,6 +32,8 @@ import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -140,7 +145,7 @@ class SimpleImportServiceTest {
         dto.setViewCount(1_000L);
 
         when(videoRepository.findByYoutubeId("VID123")).thenReturn(Optional.empty());
-        when(channelOrchestrator.validateAndFetchVideoDto("VID123")).thenReturn(dto);
+        when(channelOrchestrator.getVideoDetailsDto("VID123")).thenReturn(dto);
         when(categoryMappingService.mapCategoryNamesToIds("CatC")).thenReturn(List.of("cat-3"));
         when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
 
@@ -158,6 +163,30 @@ class SimpleImportServiceTest {
         assertEquals(180, saved.getDurationSeconds());
         assertEquals(1_000L, saved.getViewCount());
         assertEquals(List.of("cat-3"), saved.getCategoryIds());
+    }
+
+    /** B17: the shared breaker no longer records a /player bot check, so an import stops asking after the first. */
+    @Test
+    void importSimpleFormat_videoLookupsStopAtTheFirstBotCheck() throws Exception {
+        Map<String, String> videos = new LinkedHashMap<>();
+        videos.put("validatorT1", "Lesson 1|CatC");
+        videos.put("validatorT2", "Lesson 2|CatC");
+        videos.put("validatorT3", "Lesson 3|CatC");
+        List<Map<String, String>> payload = List.of(Collections.emptyMap(), Collections.emptyMap(), videos);
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(channelOrchestrator.getVideoDetailsDto(anyString())).thenThrow(new IOException("Video fetch failed",
+                new SignInConfirmNotBotException("YouTube probably temporarily blocked anonymous watch access with "
+                        + "this IP , got error LOGIN_REQUIRED: \"Sign in to confirm you're not a bot\"")));
+
+        SimpleImportResponse response = service.importSimpleFormat(payload, "APPROVED", "user-1", true, Set.of());
+
+        verify(channelOrchestrator, times(1)).getVideoDetailsDto(anyString());
+        assertEquals(3, response.getResults().size());
+        response.getResults().forEach(r -> {
+            assertEquals("FAILED", r.getStatus(), r.getYoutubeId());
+            assertTrue(r.getErrorReason().contains("bot check"), r.getErrorReason());
+        });
+        verify(videoRepository, never()).save(any(Video.class));
     }
 
     /** §7 row 16: the keywords part is never read as categories (the same parse as the async import and the live guard). */

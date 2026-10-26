@@ -22,6 +22,8 @@ import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
@@ -549,6 +551,34 @@ class YouTubeGatewayTest {
                 assertThrows(expected, call);
                 assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
                 assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(), method);
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /**
+         * B17 (breaker-investigation option a1): YouTube refuses this IP's /player requests while its browse reads
+         * keep working, so the bot check must not pause browse. Every other rate limit still counts.
+         */
+        @Test
+        @DisplayName("B17: a /player bot check never reaches the shared breaker; a ReCaptcha (HTTP 429) still opens it")
+        void playerBotCheck_isNotRecorded_reCaptchaStillIs() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString()))
+                    .thenThrow(new SignInConfirmNotBotException("YouTube probably temporarily blocked anonymous watch "
+                            + "access with this IP , got error LOGIN_REQUIRED: \"Sign in to confirm you're not a bot\""))
+                    .thenThrow(new ReCaptchaException("reCaptcha Challenge requested",
+                            "https://youtubei.googleapis.com/youtubei/v1/reel/reel_item_watch"));
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null); // threshold 1
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                assertEquals(0, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState());
+
+                assertThrows(ReCaptchaException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                assertEquals(1, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
             } finally {
                 g.shutdown();
             }
