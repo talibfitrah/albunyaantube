@@ -68,6 +68,7 @@ public class RegistryController {
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
     private final BulkSubmissionService bulkSubmissionService;
     private final LiveCategoryGuard liveCategoryGuard;
+    private final com.albunyaan.tube.service.ContentReportService contentReportService;
 
     public RegistryController(
             ChannelRepository channelRepository,
@@ -78,7 +79,8 @@ public class RegistryController {
             SortOrderService sortOrderService,
             com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache,
             BulkSubmissionService bulkSubmissionService,
-            LiveCategoryGuard liveCategoryGuard
+            LiveCategoryGuard liveCategoryGuard,
+            com.albunyaan.tube.service.ContentReportService contentReportService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -89,6 +91,7 @@ public class RegistryController {
         this.workspaceExclusionsCache = workspaceExclusionsCache;
         this.bulkSubmissionService = bulkSubmissionService;
         this.liveCategoryGuard = liveCategoryGuard;
+        this.contentReportService = contentReportService;
     }
 
     /**
@@ -1012,7 +1015,7 @@ public class RegistryController {
             saved = videoRepository.save(video);
         } else {
             try {
-                saved = videoRepository.saveIfStatus(video, "REJECTED");
+                saved = contentReportService.reAdd(video);   // a take-down record's exclusions go too (B14)
             } catch (IllegalStateException | IllegalArgumentException raced) { // another re-add landed, or Restore deleted it
                 return ResponseEntity.status(HttpStatus.CONFLICT).build();
             }

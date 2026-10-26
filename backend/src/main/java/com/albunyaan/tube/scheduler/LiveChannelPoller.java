@@ -212,11 +212,13 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     /**
      * Stage 9 B13: the poller's view was the only thing a moderation write left stale for 10-20 minutes. Every moderation
      * path but the exclusions evicts the public caches (a take-down, an un-approve, a channel leaving a LIVE category,
-     * a category losing LIVE or deleted): that marks the view stale.
+     * a category losing LIVE or deleted): that marks the view stale. Stage 9 B14: only while something is served (prod
+     * has no LIVE category, and no write then changes what the endpoint serves), or while a cycle runs: its view, read
+     * before this write, may publish the first entries.
      */
     @EventListener
     public void onPublicContentEvicted(PublicContentCacheService.Evicted event) {
-        viewStale.set(true);
+        if (cycleLock.isLocked() || !live.entries().isEmpty()) viewStale.set(true);
     }
 
     /** Stage 9 B13: an exclusion writes only its channel doc, with no eviction: a write to a served channel's doc counts. */
@@ -319,37 +321,43 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
      * served changed. Compute-and-put runs under the seed's monitor (D7); the YouTube read is already done. R12 order:
      * a restore saves its doc before the state drops the record, and nothing else changes for an ended id until the
      * state holding its restore record is written. A failed state write therefore changes no membership or doc; the id
-     * stays tracked and the next cycle ends it again. A failure after the write is logged with the ids (see end()).
+     * stays tracked and the next cycle ends it again. A failure after the write is logged with the ids (see end()), and
+     * so is a restored link's rejoin that a later failure loses (stage 9 B14: the next cycle finds it no longer ARCHIVED).
      */
     private boolean apply(String uc, LiveTabResult read, boolean proven, boolean hideAllowed, Set<String> links,
                           Set<String> liveCategoryIds, long now) throws Exception {
         boolean changed;
         List<Ending> endings = new ArrayList<>();
         List<String[]> rejoins = new ArrayList<>();                         // {LIVE category, doc id} (stage 9 B13)
-        synchronized (live.stateLock()) {
-            LiveChannelState prev = live.state(uc);
-            LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
-            LiveChannelState next = o.next();
-            changed = !Objects.equals(servedIds(prev), servedIds(next));
-            for (Map.Entry<String, String> r : o.restored().entrySet()) {
-                List<String> from = next.getArchivedFrom().remove(r.getKey());
-                String docId = restore(r.getKey(), r.getValue());
-                if (docId == null) continue;
-                changed = true;
-                if (from != null) from.stream().filter(liveCategoryIds::contains).forEach(cat -> rejoins.add(new String[]{cat, docId}));
-            }
-            for (String id : o.ended()) {
-                Video doc = videos.findByYoutubeId(id).orElse(null);
-                if (doc == null) continue;
-                boolean archive = archivable(doc, liveCategoryIds);
-                if (archive) {
-                    ValidationStatus vs = doc.getValidationStatus();
-                    next.getArchived().put(id, vs == null ? "" : vs.name());
-                    next.getArchivedFrom().put(id, List.copyOf(doc.getCategoryIds()));   // archivable: all LIVE ones
+        try {
+            synchronized (live.stateLock()) {
+                LiveChannelState prev = live.state(uc);
+                LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
+                LiveChannelState next = o.next();
+                changed = !Objects.equals(servedIds(prev), servedIds(next));
+                for (Map.Entry<String, String> r : o.restored().entrySet()) {
+                    List<String> from = next.getArchivedFrom().remove(r.getKey());
+                    String docId = restore(r.getKey(), r.getValue());
+                    if (docId == null) continue;
+                    changed = true;
+                    if (from != null) from.stream().filter(liveCategoryIds::contains).forEach(cat -> rejoins.add(new String[]{cat, docId}));
                 }
-                endings.add(new Ending(doc, archive));
+                for (String id : o.ended()) {
+                    Video doc = videos.findByYoutubeId(id).orElse(null);
+                    if (doc == null) continue;
+                    boolean archive = archivable(doc, liveCategoryIds);
+                    if (archive) {
+                        ValidationStatus vs = doc.getValidationStatus();
+                        next.getArchived().put(id, vs == null ? "" : vs.name());
+                        next.getArchivedFrom().put(id, List.copyOf(doc.getCategoryIds()));   // archivable: all LIVE ones
+                    }
+                    endings.add(new Ending(doc, archive));
+                }
+                live.put(next);
             }
-            live.put(next);
+        } catch (Exception e) {
+            for (String[] r : rejoins) addByHand(r[1], r[0], e);
+            throw e;
         }
         for (Ending e : endings) {
             changed |= end(e.doc(), e.archive(), liveCategoryIds);
@@ -431,10 +439,14 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             return true;
         } catch (Exception e) {
             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("live poller: restored video doc {} not put back in live category {}; add it by hand: {}",
-                    docId, categoryId, e.toString());
+            addByHand(docId, categoryId, e);
             return false;
         }
+    }
+
+    private static void addByHand(String docId, String categoryId, Exception e) {
+        log.warn("live poller: restored video doc {} not put back in live category {}; add it by hand: {}",
+                docId, categoryId, e.toString());
     }
 
     private void count(int requests, long now) {

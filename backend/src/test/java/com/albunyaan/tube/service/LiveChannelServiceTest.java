@@ -204,6 +204,31 @@ class LiveChannelServiceTest {
         assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
     }
 
+    /**
+     * Stage 9 B14 (Cubic r5 #6): a channel out of every LIVE category is not polled, so its stored lives may have ended
+     * days ago. Re-added, only a read shows lives again: a seed YouTube does not answer (breaker, rate limit, error)
+     * leaves it serving none. Its restore records stay for the poller (R12).
+     */
+    @Test
+    void aReAddedChannelYouTubeDoesNotAnswerServesNoneOfItsOldLives() {
+        for (LiveTabResult noAnswer : List.of(LiveTabResult.breaker(0, "open"),
+                LiveTabResult.rateLimited(1, "ReCaptchaException: 429"), LiveTabResult.error(1, "boom"))) {
+            LiveChannelState frozen = LiveChannelState.unknown(SUNNAH);   // as the poller left it, days ago
+            frozen.setStatus(LiveChannelState.LIVE);
+            frozen.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
+            frozen.getArchived().put("oldarchive1", "VALID");
+            service.loadStates(List.of(frozen));
+            when(reader.read(SUNNAH)).thenReturn(noAnswer);
+
+            service.seed(SUNNAH);                                    // not an entry now: it is (re)entering
+
+            LiveChannelState s = service.state(SUNNAH);
+            assertThat(LiveCategoryService.servedLives(new Channel(SUNNAH), s, Map.of()))
+                    .as(noAnswer.outcome().name()).isEmpty();
+            assertThat(s.getArchived()).as(noAnswer.outcome().name()).containsEntry("oldarchive1", "VALID");
+        }
+    }
+
     @Test
     void aFirstSeedOfAnOfflineChannelHidesIt() {
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.ok(List.of(), 1));

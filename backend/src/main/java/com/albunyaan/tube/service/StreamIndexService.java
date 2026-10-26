@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class StreamIndexService {
@@ -60,15 +62,13 @@ public class StreamIndexService {
         }
     }
 
-    /** Stage 9 B13: undoes markStreamArchived when Restore lifts a report's take-down: visible and searchable again. */
-    public void markStreamRestored(String streamId) {
-        try {
-            SearchableStream stream = streamRepository.markVisible(streamId);
-            if (stream != null) searchIndex.restoreStream(stream);
-            log.info("Stream {} restored (visible: {})", streamId, stream != null);
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("markStreamRestored failed for {}: {}", streamId, e.getMessage());
-        }
+    /**
+     * Stage 9 B13: undoes markStreamArchived when Restore lifts a report's take-down: visible and searchable again.
+     * Stage 9 B14: a failure is thrown, so Restore keeps its record and can run again (nothing else re-shows the stream).
+     */
+    public void markStreamRestored(String streamId) throws ExecutionException, InterruptedException, TimeoutException {
+        SearchableStream stream = streamRepository.markVisible(streamId);
+        if (stream != null) searchIndex.restoreStream(stream);
+        log.info("Stream {} restored (visible: {})", streamId, stream != null);
     }
 }

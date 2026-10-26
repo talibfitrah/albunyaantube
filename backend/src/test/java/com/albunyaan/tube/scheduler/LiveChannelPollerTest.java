@@ -798,6 +798,28 @@ class LiveChannelPollerTest {
                 argThat(items -> items.size() == 1 && "doc-link".equals(items.get(0)[0]) && "video".equals(items.get(0)[1])));
     }
 
+    /**
+     * Stage 9 B14 (re-review P3-3, Cubic r5 #7): a failure after a restore saved its doc loses that link's rejoin for good
+     * (the next cycle finds the doc no longer ARCHIVED). Both ids are logged, so an admin puts it back by hand.
+     */
+    @Test
+    void aRestoredLinkWhoseRejoinIsLostIsNamedForTheAdmin() throws Exception {
+        entries(A);
+        Video left = endingLink();
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        for (int i = 0; i <= 2; i++) cycleAt(T0 + i * 10 * MIN);     // ended: out of CAT, archived
+        when(videos.findByYoutubeId("linkid00001")).thenReturn(Optional.of(left));
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa", "linkid00001"));
+        doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(states).save(any());
+
+        cycleAt(T0 + 30 * MIN);                                       // restored, then the state write fails
+
+        assertThat(left.getValidationStatus()).isEqualTo(ValidationStatus.VALID);
+        verify(sortOrder, never()).addMultipleContentToCategory(anyString(), any());
+        assertThat(logged(Level.WARN)).anySatisfy(e -> assertThat(e.getFormattedMessage())
+                .contains("doc-link", CAT, "add it by hand"));
+    }
+
     // ---- Stage 9 B13 (P2): moderation reaches the live endpoint at the next tick, not the next cycle ----
 
     /** Every moderation path but the exclusions evicts the public caches (a channel removed, LIVE cleared, a take-down...). */
@@ -841,6 +863,24 @@ class LiveChannelPollerTest {
         poller.refreshIfStale();
         poller.onCatalogChanged(new CatalogChanged("CHANNEL", "channel_" + B, false));
         poller.onCatalogChanged(new CatalogChanged("PLAYLIST", "channel_" + A, false));
+        poller.refreshIfStale();
+
+        verify(liveCategories, never()).liveCategoryIds();
+    }
+
+    /**
+     * Stage 9 B14 (re-review P3-4): every public-cache eviction marked the view stale, so admin activity re-read the
+     * categories every 15 s even with nothing served (prod has no LIVE category). With no entry, no write can change
+     * what the endpoint serves: nothing is read. The other half, a served channel's moderation reaching the endpoint at
+     * the next tick, is aModerationEvictionReachesTheLiveEndpointAtTheNextTick and aTickNeverWaitsOnARunningCycle...
+     */
+    @Test
+    void withNothingServedAnEvictionReadsNothing() throws Exception {
+        when(liveCategories.liveCategoryIds()).thenReturn(new LinkedHashSet<>());
+        cycleAt(T0);
+        org.mockito.Mockito.clearInvocations(liveCategories);
+
+        poller.onPublicContentEvicted(new PublicContentCacheService.Evicted());
         poller.refreshIfStale();
 
         verify(liveCategories, never()).liveCategoryIds();

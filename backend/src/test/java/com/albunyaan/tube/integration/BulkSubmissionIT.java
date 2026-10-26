@@ -274,6 +274,72 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     }
 
     /**
+     * Stage 9 B14 (re-review P3-1, Cubic r5 #2): a take-down's sources are written as that one field, and only while the
+     * doc is still the take-down record. A re-add that landed meanwhile wins: the write is refused, the doc untouched.
+     */
+    @Test
+    void aTakeDownsSourcesAreWrittenOnlyWhileTheDocIsStillTheRecord() throws Exception {
+        seedVideo("aaaa-record", "TakeDown005", "REJECTED", "REPORT", com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        seedVideo("aaaa-readded", "ReAdded0002", "APPROVED", null, null);
+        List<String> sources = List.of("channel:UCtakedown0000000000000a");
+
+        videoRepository.updateIfStatusAndSource("aaaa-record", "REJECTED", "REPORT", "takeDownExclusions", sources);
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class, () -> videoRepository
+                .updateIfStatusAndSource("aaaa-readded", "REJECTED", "REPORT", "takeDownExclusions", sources), "re-added: refused");
+
+        var record = videoRepository.findById("aaaa-record").orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals(sources, record.getTakeDownExclusions());
+        org.junit.jupiter.api.Assertions.assertEquals(com.albunyaan.tube.model.ValidationStatus.ARCHIVED, record.getValidationStatus());
+        var reAdded = videoRepository.findById("aaaa-readded").orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("APPROVED", reAdded.getStatus(), "the re-add stands");
+        org.junit.jupiter.api.Assertions.assertNull(reAdded.getTakeDownExclusions());
+    }
+
+    /**
+     * Stage 9 B14 (Cubic r5 #3): a re-add, single or bulk, that writes into a take-down record also lifts the exclusions
+     * its report added, as Restore does, so the re-added video is not left hidden on those sources.
+     */
+    @Test
+    void aReAddOverATakeDownLiftsTheExclusionsItsReportAdded() throws Exception {
+        stubAuthAs("admin-uid", "admin");
+        for (String id : List.of("TakeDown003", "TakeDown004")) {
+            var record = new com.albunyaan.tube.model.Video(id);
+            record.setId("aaaa-" + id);
+            record.setStatus("REJECTED");
+            record.setSource("REPORT");
+            record.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            record.setTakeDownExclusions(List.of("channel:UCtakedown0000000000000a"));
+            firestore.collection("videos").document(record.getId()).set(record).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        }
+        firestore.collection("channels").document("ch-takedown").set(Map.of("youtubeId", "UCtakedown0000000000000a",
+                "name", "C", "status", "APPROVED",
+                "excludedItems", Map.of("videos", List.of("TakeDown003", "TakeDown004", "KeptExcl001"))))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        mvc.perform(post("/api/admin/registry/videos")
+                        .header("Authorization", "Bearer fake-admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("youtubeId", "TakeDown003", "title", "Lesson",
+                                "categoryIds", List.of("cat-1"), "status", "APPROVED"))))
+                .andExpect(status().isCreated());
+        var meta = new PreviewMetadata("TakeDown004", "Lesson", "https://i.ytimg.com/vi/TakeDown004/hq.jpg",
+                "Channel", "UCxxxxxxxxxxxxxxxxxxxxxx", null, null, 213L, 1000L);
+        when(gateway.fetchByDetectedType(any(), any(), any())).thenReturn(PreviewFetchResult.ok(meta, VideoType.STANDARD));
+        mvc.perform(post("/api/admin/registry/bulk/submit")
+                        .header("Authorization", "Bearer fake-admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new BulkSubmitRequest(List.of(new SubmitRow(0,
+                                "https://www.youtube.com/watch?v=TakeDown004", YouTubeContentType.VIDEO, VideoType.STANDARD,
+                                meta, List.of("cat-1"))), "PENDING"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.added").value(1));
+
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("KeptExcl001"), firestore.collection("channels")
+                .document("ch-takedown").get().get(5, java.util.concurrent.TimeUnit.SECONDS).get("excludedItems.videos"),
+                "only the reports' exclusions are lifted");
+    }
+
+    /**
      * §7.1 — Non-admin, non-moderator (plain USER role) must receive 403 Forbidden.
      */
     @Test

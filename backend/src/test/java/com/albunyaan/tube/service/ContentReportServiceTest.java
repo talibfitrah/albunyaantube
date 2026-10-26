@@ -237,7 +237,7 @@ class ContentReportServiceTest {
     /** The one Video document a parentless resolve may write: the id's take-down record, never in the catalog. */
     private Video takenDown(String youtubeId) throws Exception {
         var saved = org.mockito.ArgumentCaptor.forClass(Video.class);
-        verify(videoRepository, org.mockito.Mockito.atLeastOnce()).save(saved.capture()); // again with its sources (B13)
+        verify(videoRepository).save(saved.capture()); // once: its sources are a field update (B14), never a second save
         Video v = saved.getValue();
         assertThat(v.getYoutubeId()).isEqualTo(youtubeId);
         assertThat(v.getStatus()).as("never APPROVED or PENDING: not served, not in the approvals queue").isEqualTo("REJECTED");
@@ -446,9 +446,13 @@ class ContentReportServiceTest {
 
     // --- Stage 9 B13: Restore undoes a take-down whole --------------------------------------------
 
-    /** The record names the sources the take-down excluded the id on, and only those: an admin's earlier exclusion stays. */
+    /**
+     * The record names the sources the take-down excluded the id on, and only those: an admin's earlier exclusion stays.
+     * Stage 9 B14 (re-review P3-1, Cubic r5 #2): written as that one field, only while the doc is still the take-down
+     * record. A second full save turned a re-add that landed meanwhile back into a take-down.
+     */
     @Test
-    void aTakeDownRecordNamesOnlyTheSourcesItExcludedTheVideoOn() throws Exception {
+    void aTakeDownRecordNamesOnlyTheSourcesItExcludedTheVideoOnAndNeverRewritesTheDoc() throws Exception {
         ContentReport report = new ContentReport();
         report.setTargetType(ReportTargetType.VIDEO);
         report.setTargetId("ilgiwqpcOC8");
@@ -465,11 +469,17 @@ class ContentReportServiceTest {
         when(channelRepository.findByYoutubeId("UCalready0000000000000aa")).thenReturn(Optional.of(already));
         when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"))
                 .thenReturn(Optional.of(new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")));
+        when(videoRepository.save(any())).thenAnswer(inv -> {             // the real save assigns the new doc's id
+            Video v = inv.getArgument(0);
+            v.setId("doc-record");
+            return v;
+        });
 
         service.resolveReport("report-names", ReportStatus.RESOLVED, "admin", null);
 
-        assertThat(takenDown("ilgiwqpcOC8").getTakeDownExclusions())
-                .containsExactly("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        takenDown("ilgiwqpcOC8");
+        verify(videoRepository).updateIfStatusAndSource("doc-record", "REJECTED", "REPORT", "takeDownExclusions",
+                List.of("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
     }
 
     /** Restore lifts what the take-down did: the exclusions it added and the stream it hid, then deletes its record. */
@@ -497,5 +507,90 @@ class ContentReportServiceTest {
         verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
         verify(publicContentCacheService).evictPublicContentCaches();
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
+    }
+
+    // --- Stage 9 B14 ------------------------------------------------------------------------------
+
+    private static Video recordExcludedOn(String... sourceKeys) {
+        Video record = new Video("ilgiwqpcOC8");
+        record.setId("doc-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setTakeDownExclusions(List.of(sourceKeys));
+        return record;
+    }
+
+    /** Re-review P3-2: a stream restore that fails stops Restore before the delete, so the record stays for a retry. */
+    @Test
+    void aFailedStreamRestoreKeepsTheRecordSoRestoreCanRunAgain() throws Exception {
+        var streams = org.mockito.Mockito.mock(com.albunyaan.tube.repository.SearchableStreamRepository.class);
+        when(streams.markVisible("ilgiwqpcOC8")).thenThrow(new TimeoutException("write timed out"));
+        var restoring = new ContentReportService(reportRepository, rateLimitCache, videoRepository, channelRepository,
+                playlistRepository, publicContentCacheService, new StreamIndexService(streams, searchIndex), searchIndex,
+                workspaceCache);
+
+        assertThatThrownBy(() -> restoring.liftTakeDown(recordExcludedOn())).isInstanceOf(TimeoutException.class);
+
+        verify(videoRepository, never()).deleteByIdIfStatusIn(anyString(), any());
+    }
+
+    /** Re-review P3-5: a Restore whose delete loses its race still shows the exclusions it already lifted, at once. */
+    @Test
+    void aRestoreThatLosesItsDeleteStillShowsTheExclusionsItLifted() throws Exception {
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        ch.getExcludedItems().getVideos().add("ilgiwqpcOC8");
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+        doThrow(new IllegalStateException("Cannot delete video doc-takedown: status APPROVED not in [REJECTED]"))
+                .when(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
+
+        assertThatThrownBy(() -> service.liftTakeDown(recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ")))
+                .isInstanceOf(IllegalStateException.class);
+
+        verify(channelRepository).save(ch);
+        verify(publicContentCacheService).evictPublicContentCaches();
+        assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
+    }
+
+    /**
+     * Cubic r5 #3: a re-add writes into the take-down record (B11) and lifts the exclusions its report added, as Restore
+     * does; else the re-added video stays excluded on those sources with no record why. A PENDING re-add too: the doc
+     * itself gates it until approval (410 at the public gate, its stream blocked in search).
+     */
+    @Test
+    void aReAddOverATakeDownRecordLiftsTheExclusionsItsReportAdded() throws Exception {
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        ch.getExcludedItems().getVideos().addAll(List.of("ilgiwqpcOC8", "keptExcl001"));
+        Playlist pl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        pl.getExcludedVideoIds().add("ilgiwqpcOC8");
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pl));
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(
+                recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")));
+        Video reAdded = new Video("ilgiwqpcOC8");
+        reAdded.setId("doc-takedown");
+        reAdded.setStatus("PENDING");
+        when(videoRepository.saveIfStatus(reAdded, "REJECTED")).thenReturn(reAdded);
+
+        assertThat(service.reAdd(reAdded)).isSameAs(reAdded);
+
+        assertThat(ch.getExcludedItems().getVideos()).containsExactly("keptExcl001");
+        assertThat(pl.getExcludedVideoIds()).isEmpty();
+        verify(channelRepository).save(ch);
+        verify(playlistRepository).save(pl);
+        assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
+    }
+
+    /** Cubic r5 #3: the lift follows the write: a re-add that loses its race (409) lifts nothing. */
+    @Test
+    void aReAddThatLosesItsRaceLiftsNothing() throws Exception {
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ")));
+        Video reAdded = new Video("ilgiwqpcOC8");
+        reAdded.setId("doc-takedown");
+        when(videoRepository.saveIfStatus(reAdded, "REJECTED")).thenThrow(new IllegalStateException("found APPROVED"));
+
+        assertThatThrownBy(() -> service.reAdd(reAdded)).isInstanceOf(IllegalStateException.class);
+
+        verify(channelRepository, never()).findByYoutubeId(anyString());
+        verify(channelRepository, never()).save(any());
     }
 }

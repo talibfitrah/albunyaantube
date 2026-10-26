@@ -33,6 +33,7 @@ class RegistrySubmissionWriterTest {
     private ChannelRepository channels;
     private PlaylistRepository playlists;
     private VideoRepository videos;
+    private ContentReportService reports;
     private RegistrySubmissionWriter writer;
 
     @BeforeEach
@@ -40,7 +41,8 @@ class RegistrySubmissionWriterTest {
         channels = mock(ChannelRepository.class);
         playlists = mock(PlaylistRepository.class);
         videos = mock(VideoRepository.class);
-        writer = new RegistrySubmissionWriter(channels, playlists, videos);
+        reports = mock(ContentReportService.class);
+        writer = new RegistrySubmissionWriter(channels, playlists, videos, reports);
     }
 
     @Test
@@ -122,7 +124,7 @@ class RegistrySubmissionWriterTest {
     /** Stage 9 B11: a re-add of a REJECTED video writes into that doc (a CAS on REJECTED), never a second one. */
     @Test
     void writeVideo_intoARejectedDoc_reusesItsId() throws Exception {
-        when(videos.saveIfStatus(any(Video.class), eq("REJECTED"))).thenAnswer(inv -> inv.getArgument(0));
+        when(reports.reAdd(any(Video.class))).thenAnswer(inv -> inv.getArgument(0));   // the CAS on REJECTED (B14)
         var meta = new PreviewMetadata("TakeDown001", "Lesson", null, null, null, null, null, null, null);
 
         String id = writer.writeVideo(meta, null, List.of("cat1"), "APPROVED", "admin-uid", true, "doc-takedown");

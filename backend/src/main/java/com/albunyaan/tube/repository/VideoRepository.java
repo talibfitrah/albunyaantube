@@ -101,6 +101,28 @@ public class VideoRepository {
         return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
     }
 
+    /**
+     * Stage 9 B14: sets one field, only while the doc still has this status and source (a take-down record's
+     * takeDownExclusions), so a re-add that rewrote the doc meanwhile wins. IllegalStateException when it no longer
+     * matches, IllegalArgumentException when it is gone (as saveIfStatus).
+     */
+    public void updateIfStatusAndSource(String id, String expectedStatus, String expectedSource, String field, Object value)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(id);
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Video not found: " + id);
+            }
+            if (!expectedStatus.equals(snapshot.getString("status")) || !expectedSource.equals(snapshot.getString("source"))) {
+                throw new IllegalStateException("Cannot update video " + id + ": no longer " + expectedStatus + " from " + expectedSource);
+            }
+            transaction.update(docRef, field, value);
+            return null;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", id);
+    }
+
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
         DocumentReference docRef = getCollection().document(id);
         Video video = docRef.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Video.class);

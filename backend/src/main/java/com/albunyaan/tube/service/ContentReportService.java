@@ -381,8 +381,43 @@ public class ContentReportService {
     /**
      * Stage 9 B13: Restore lifts a take-down whole: the exclusions its report added and its stream's archive, then the
      * record (CAS: a re-add may have landed). A failure leaves the record, so Restore can run again; each lift repeats safely.
+     * Stage 9 B14: what was lifted shows at once, also when a later step fails.
      */
     public void liftTakeDown(Video record) throws ExecutionException, InterruptedException, TimeoutException {
+        try {
+            liftExclusions(record);
+            streamIndexService.markStreamRestored(record.getYoutubeId());
+            videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
+        } finally {
+            exclusionsChanged();
+        }
+    }
+
+    /**
+     * Stage 9 B14 (Cubic r5 #3): a re-add writes into the id's REJECTED doc (B11, a status CAS). When that doc was a
+     * take-down record, the exclusions its report added go too, as on Restore. At add time, PENDING too: the doc itself
+     * gates the video until approval (410 at the public gate, its stream blocked in search). After the write, so a lost
+     * race lifts nothing; a lift failure then is logged for an admin, and the re-add stands.
+     */
+    public Video reAdd(Video video) throws ExecutionException, InterruptedException, TimeoutException {
+        Video replaced = videoRepository.findById(video.getId()).orElse(null);
+        Video saved = videoRepository.saveIfStatus(video, "REJECTED");
+        if (replaced != null && isTakeDownRecord(replaced)) {
+            try {
+                liftExclusions(replaced);
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.warn("Video {} re-added over its take-down record, but not every exclusion its report added ({}) was "
+                        + "lifted; lift them by hand: {}", video.getYoutubeId(), replaced.getTakeDownExclusions(), e.toString());
+            } finally {
+                exclusionsChanged();
+            }
+        }
+        return saved;
+    }
+
+    /** The exclusions a take-down's report added, as its record names them (B13): the id leaves each source's list. */
+    private void liftExclusions(Video record) throws ExecutionException, InterruptedException, TimeoutException {
         String videoId = record.getYoutubeId();
         for (String key : record.getTakeDownExclusions() == null ? List.<String>of() : record.getTakeDownExclusions()) {
             String sourceId = key.substring(key.indexOf(':') + 1);
@@ -400,9 +435,6 @@ public class ContentReportService {
                 }
             }
         }
-        streamIndexService.markStreamRestored(videoId);
-        videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
-        exclusionsChanged();
     }
 
     /** A take-down record: the doc exists only to hide the id, so lifting the take-down means deleting it. */
@@ -444,9 +476,8 @@ public class ContentReportService {
                 key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
                 key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null, added)).toList();
         if (missed.size() < keys.size()) exclusionsChanged();
-        if (!added.isEmpty()) {
-            record.setTakeDownExclusions(added);
-            videoRepository.save(record);
+        if (!added.isEmpty()) {   // stage 9 B14: that one field, only while the doc is still the record (a re-add wins)
+            videoRepository.updateIfStatusAndSource(record.getId(), "REJECTED", TAKE_DOWN_SOURCE, "takeDownExclusions", added);
         }
         log.info("Report resolved: video {} listed by {}; not excluded on {}", videoId, keys, missed);
         return missed.isEmpty() ? null : "Not excluded on " + String.join(", ", missed) + ". Exclude it there by hand.";

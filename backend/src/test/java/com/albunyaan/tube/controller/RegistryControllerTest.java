@@ -57,6 +57,9 @@ class RegistryControllerTest {
     @Mock
     private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
+    @Mock
+    private com.albunyaan.tube.service.ContentReportService contentReportService;
+
     @InjectMocks
     private RegistryController registryController;
 
@@ -553,7 +556,7 @@ class RegistryControllerTest {
         takeDown.setStatus("REJECTED");
         takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
         when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
-        when(videoRepository.saveIfStatus(any(), eq("REJECTED"))).thenAnswer(inv -> inv.getArgument(0));
+        when(contentReportService.reAdd(any())).thenAnswer(inv -> inv.getArgument(0));   // the CAS on REJECTED (B14)
         com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("TakeDown001");
         body.setTitle("Lesson");
         body.setStatus("APPROVED");
@@ -563,7 +566,7 @@ class RegistryControllerTest {
 
         assertEquals(HttpStatus.CREATED, response.getStatusCode());
         var saved = org.mockito.ArgumentCaptor.forClass(com.albunyaan.tube.model.Video.class);
-        verify(videoRepository).saveIfStatus(saved.capture(), eq("REJECTED"));
+        verify(contentReportService).reAdd(saved.capture());
         assertEquals("doc-takedown", saved.getValue().getId());
         assertEquals("APPROVED", saved.getValue().getStatus());
         assertNull(saved.getValue().getValidationStatus(), "the take-down's ARCHIVED is lifted");
@@ -578,7 +581,7 @@ class RegistryControllerTest {
         takeDown.setId("doc-takedown");
         takeDown.setStatus("REJECTED");
         when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
-        when(videoRepository.saveIfStatus(any(), eq("REJECTED")))
+        when(contentReportService.reAdd(any()))                       // the CAS on REJECTED (B14)
                 .thenThrow(new IllegalStateException("expected status REJECTED but found PENDING"))
                 .thenThrow(new IllegalArgumentException("Video not found: doc-takedown"));
 

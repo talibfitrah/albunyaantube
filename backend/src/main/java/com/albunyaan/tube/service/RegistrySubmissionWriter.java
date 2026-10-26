@@ -104,13 +104,16 @@ public class RegistrySubmissionWriter {
     private final ChannelRepository channels;
     private final PlaylistRepository playlists;
     private final VideoRepository videos;
+    private final ContentReportService reports;
 
     public RegistrySubmissionWriter(ChannelRepository channels,
                                     PlaylistRepository playlists,
-                                    VideoRepository videos) {
+                                    VideoRepository videos,
+                                    ContentReportService reports) {
         this.channels = channels;
         this.playlists = playlists;
         this.videos = videos;
+        this.reports = reports;
     }
 
     /**
@@ -214,7 +217,7 @@ public class RegistrySubmissionWriter {
         Timestamp now = Timestamp.now();
         v.setCreatedAt(now);
         v.setUpdatedAt(now);
-        Video saved = rejectedDocId == null ? videos.save(v) : videos.saveIfStatus(v, "REJECTED");
+        Video saved = rejectedDocId == null ? videos.save(v) : reports.reAdd(v);   // a take-down's exclusions go too (B14)
         return saved.getId();
     }
 

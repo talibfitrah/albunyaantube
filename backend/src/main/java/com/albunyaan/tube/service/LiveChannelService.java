@@ -7,6 +7,7 @@ import org.springframework.stereotype.Service;
 
 import java.io.IOException;
 import java.time.Clock;
+import java.util.ArrayList;
 import java.util.Collection;
 import java.util.HashMap;
 import java.util.List;
@@ -87,7 +88,9 @@ public class LiveChannelService {
      * A breaker refusal or a rate limit says nothing about the channel, so it seeds nothing (R7). An empty read hides
      * only a channel that is not served now: re-adding a served channel during a suspect stretch keeps its lives (R10).
      * Restore records stay for the next cycle, which restores the docs (R12). Before the states load nothing is read or
-     * seeded (L1, F3): the first cycle loads them and reads the channel.
+     * seeded (L1, F3): the first cycle loads them and reads the channel. Stage 9 B14: a channel (re)entering a LIVE
+     * category was not polled while out, so its stored lives may have ended days ago; a seed that says nothing or fails
+     * drops them (UNKNOWN, hidden) and keeps its restore records.
      */
     public void seed(String ucId) {
         long now = clock.millis();
@@ -105,14 +108,22 @@ public class LiveChannelService {
      * the states load, put() refuses; the migration is blocked then (F2).
      */
     public void seedWith(String ucId, LiveTabResult r) {
-        if (r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
-            return;
-        }
+        boolean noSignal = r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED;
         synchronized (stateLock) {
-            LivePollRules.Outcome o = LivePollRules.apply(state(ucId), ucId, r, false, !entries.containsKey(ucId),
-                    Set.of(), clock.millis());
-            LiveChannelState next = o.next();
-            next.getArchived().putAll(o.restored());
+            LiveChannelState next = state(ucId);
+            boolean entering = !entries.containsKey(ucId);
+            if (entering && next != null && !next.getLives().isEmpty() && (noSignal || r.outcome() == LiveTabResult.Outcome.ERROR)) {
+                next = next.copy();                                     // stage 9 B14: unread since it re-entered
+                next.setLives(new ArrayList<>());
+                next.setStatus(LiveChannelState.UNKNOWN);
+            } else if (noSignal) {
+                return;
+            }
+            if (!noSignal) {
+                LivePollRules.Outcome o = LivePollRules.apply(next, ucId, r, false, entering, Set.of(), clock.millis());
+                next = o.next();
+                next.getArchived().putAll(o.restored());
+            }
             try {
                 put(next);
             } catch (ExecutionException | TimeoutException e) {

@@ -723,12 +723,14 @@ paths:
                   $ref: '#/components/schemas/ContentSortDto'
         '400':
           description: |
-            An unknown category or item, or a malformed item (empty body), or a live-category refusal (see
-            LiveCategoryRefused)
+            An unknown category or item (an empty body); a request that fails validation or is malformed JSON
+            (ErrorResponse); or a live-category refusal (LiveCategoryError, see LiveCategoryRefused)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LiveCategoryError'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
         '503':
           $ref: '#/components/responses/LiveCheckUnavailable'
 
@@ -2365,12 +2367,14 @@ paths:
           description: Item approved
         '400':
           description: |
-            categoryOverride does not name an existing category (a plain error body), or a live-category refusal
-            (see LiveCategoryRefused)
+            categoryOverride does not name an existing category, or the body is malformed (ErrorResponse); or a
+            live-category refusal (LiveCategoryError, see LiveCategoryRefused)
           content:
             application/json:
               schema:
-                $ref: '#/components/schemas/LiveCategoryError'
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
         '503':
           $ref: '#/components/responses/LiveCheckUnavailable'
 

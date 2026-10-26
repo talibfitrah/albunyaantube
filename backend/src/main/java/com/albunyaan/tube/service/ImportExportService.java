@@ -308,6 +308,10 @@ public class ImportExportService {
                         continue;
                     }
 
+                    if (existingOpt.isPresent()) {
+                        // Stage 9 B14: server-only (an export leaves it out), so a later Restore of a take-down lifts it
+                        video.setTakeDownExclusions(existingOpt.get().getTakeDownExclusions());
+                    }
                     if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
                         // MERGE: Preserve timestamps, audit fields, validation status, update content
                         Video existing = existingOpt.get();
