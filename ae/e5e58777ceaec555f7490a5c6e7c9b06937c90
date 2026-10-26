@@ -1,0 +1,27 @@
+frontend/tests/liveErrorsInViews.spec.ts
+  s_dbb6b1f3671904::t_eea2d8f003582c 16-18
+frontend/src/components/contentSearch/bulk/BulkPreviewRow.vue
+  s_dbb6b1f3671904::t_6cf504138ba9db 2,5,29-38
+frontend/src/views/ContentSortingView.vue
+  s_dbb6b1f3671904::t_a50f21578e8165 342,803-804,809,841-844,852,854,856-858
+frontend/tests/BulkPreviewTable.spec.ts
+  s_dbb6b1f3671904::t_9e70bc93cbc8f1 11-14,128-135
+frontend/tests/ContentSortingLive.spec.ts
+  s_dbb6b1f3671904::t_f5f7237d704ea8 9-19,24-25,27,103-154
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "aee5e58777ceaec555f7490a5c6e7c9b06937c90",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
