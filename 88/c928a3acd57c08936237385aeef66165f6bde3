@@ -1,0 +1,46 @@
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelPollerIT.java
+  s_dbb6b1f3671904::t_53e371bc504a6e 46,55,186-214
+  s_dbb6b1f3671904::t_4d31fe8e84a6d2 215-216
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_72f5009278bd71 316-345
+  s_dbb6b1f3671904::t_929d4352d6e138 61-64,75-76,346-374,594
+backend/src/test/java/com/albunyaan/tube/service/LiveChannelServiceTest.java
+  s_dbb6b1f3671904::t_8c225fd4de8eae 133-155
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_10deceee411a5a 393-394
+  s_dbb6b1f3671904::t_bcd3df2c50f461 333
+  s_dbb6b1f3671904::t_408812a21fffab 353-355
+  s_dbb6b1f3671904::t_46e641bf61ca68 47,58-59,69,317-332,334-341
+backend/src/test/java/com/albunyaan/tube/service/LiveChannelsMigrationTest.java
+  s_dbb6b1f3671904::t_431188485dc464 70
+  s_dbb6b1f3671904::t_da362da9df5333 71-103
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryGuard.java
+  s_dbb6b1f3671904::t_4e7521c1e8ebb8 150-158
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_a1950c64ca9d22 139-143,145-154
+  s_dbb6b1f3671904::t_af8f5558aaca2b 144,155-156
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_cda28ce914f85b 2175-2185,2264-2274
+  s_dbb6b1f3671904::t_bd19b0c7e260bf 78-79,594-603,2147-2174,2186-2263,2275-2310,2312
+  s_dbb6b1f3671904::t_8a9aeb67af4a7c 2311
+backend/src/main/java/com/albunyaan/tube/controller/CategoryController.java
+  s_dbb6b1f3671904::t_4e7521c1e8ebb8 192,196
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelsMigration.java
+  s_dbb6b1f3671904::t_e3899675ddc320 142-145
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "88c928a3acd57c08936237385aeef66165f6bde3",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
