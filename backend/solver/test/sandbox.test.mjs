@@ -157,3 +157,35 @@ test('the real server under the unit flags adopts a player, then 1,000 solves le
       assert.ok(after.p95CpuMs <= 2, `p95 ${after.p95CpuMs} ms`);       // R30
     } finally { /* cleanup is in t.after */ }
   });
+
+/** Cubic r6 P2: Node's default exits on an unhandled rejection, after pollOnce's finally removed the crash marker, so each
+ *  systemd restart rebuilt the player from the cache and died again until StartLimitBurst left HD off for everyone. */
+test('a player that leaves an unhandled rejection is dropped and the real server under the unit flags stays up (Cubic r6 P2)',
+  { skip: !playerText && 'SOLVER_TEST_PLAYER missing', timeout: 30_000 }, async (t) => {
+    const { root, cache } = install(t);
+    const hash = 'dddddddd';
+    const end = playerText.lastIndexOf('})(_yt_player);');                 // a statement EJS keeps, run at every build
+    const text = (playerText.slice(0, end) + ';g.r6=Promise.reject(new Error("r6"));' + playerText.slice(end))
+      .replace(/((?:signatureTimestamp|sts)\s*:\s*)\d{5}/, (m, key) => key + Math.floor(Date.now() / 86_400_000));
+    const yt = http.createServer((req, res) => {
+      if (req.url === '/iframe_api') return res.end(`'https:\\/\\/www.youtube.com\\/s\\/player\\/${hash}\\/www-widgetapi.vflset\\/x.js'`);
+      if (req.url === `/s/player/${hash}/player_ias.vflset/en_US/base.js`) return res.end(text);
+      res.writeHead(404); res.end();
+    }).listen(0, '127.0.0.1');
+    await once(yt, 'listening');
+    const port = await freePort();
+    const child = spawn(process.execPath, [...unitFlags(root, cache), path.join(root, 'app', 'server.mjs')], {
+      env: { ...process.env, SOLVER_ORIGIN: `http://127.0.0.1:${yt.address().port}`, SOLVER_CACHE_DIR: cache, SOLVER_PORT: String(port) },
+      stdio: ['ignore', 'ignore', 'pipe'] });
+    let stderr = '';
+    child.stderr.on('data', (d) => { stderr += d; });
+    t.after(() => { child.kill(); yt.close(); });
+    let h = null;
+    for (let i = 0; i < 100 && child.exitCode === null && !h?.lastPoll; i++) {
+      await new Promise((r) => setTimeout(r, 200));
+      h = await fetch(`http://127.0.0.1:${port}/health`).then((r) => r.json()).catch(() => null);
+    }
+    assert.equal(child.exitCode, null, `the rejection killed the server: ${stderr}`);
+    assert.deepEqual([h.status, h.held, h.lastPoll.step], ['warming', [], 'adopted']);
+    assert.match(stderr, /WARN player dddddddd left an unhandled promise rejection/);
+  });

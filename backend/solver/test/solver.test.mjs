@@ -560,6 +560,47 @@ test('a FinalizationRegistry callback the player registers never runs on the hos
   assert.deepEqual(JSON.parse(r.stdout), ['true', 'undefinedundefined']);
 });
 
+// ---- stage 9 Cubic round 6: nothing the realm built runs on the host after the run returns; its rejection drops the player
+test('a WebAssembly compile the player starts never settles on the host, outside the vm timeout (Cubic r6 P2)', async () => {
+  const r = await child(realmScript(`vm.runInContext(\`globalThis.jsc = () => ({ preprocessed_player:
+      "Object.defineProperty(Object.prototype, 'then', { get() { for (;;) {} } });"
+      + " try { WebAssembly.compile(new Uint8Array([0, 97, 115, 109, 1, 0, 0, 0])).catch(() => {}); } catch {}"
+      + " _result.n = (x) => x + 'A'; _result.sig = (x) => x.slice(1);" })\`, ctx);
+    const built = outcome(() => !!buildPlayer(ctx, 'x', 300));
+    await new Promise((r) => setTimeout(r, 200));                    // V8 resolves an async compile from a host task
+    console.log(JSON.stringify([built, vm.runInContext('typeof WebAssembly', ctx)]));`));
+  assert.equal(r.signal, null, 'the compiled module\'s then getter looped on the host');
+  assert.deepEqual(JSON.parse(r.stdout), ['true', 'undefined']);
+});
+
+test('Node\'s bookkeeping of an unhandled realm rejection never runs a realm Proxy on the host (Cubic r6 P2)', async () => {
+  const r = await child(realmScript(`process.on('unhandledRejection', () => {});
+    vm.runInContext(\`globalThis.jsc = () => ({ preprocessed_player:
+      "try { Object.setPrototypeOf(Promise.reject(1), new Proxy({}, { get() { for (;;) {} } })); } catch {}"
+      + " _result.n = (x) => x + 'A'; _result.sig = (x) => x.slice(1);" })\`, ctx);
+    const built = outcome(() => !!buildPlayer(ctx, 'x', 300));
+    await new Promise((r) => setTimeout(r, 200));                    // Node reads promise[async_id_symbol] after the run
+    console.log(JSON.stringify([built, vm.runInContext('typeof Proxy', ctx)]));`));
+  assert.equal(r.signal, null, 'a Proxy trap looped on the host');
+  assert.deepEqual(JSON.parse(r.stdout), ['true', 'undefined']);
+});
+
+test('an unhandled rejection from a solve drops only that player; the host\'s own still exits as before (Cubic r6 P2)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
+  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
+    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
+      build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'reject') Promise.reject(1); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
+    process.on('unhandledRejection', solver.rejected);               // as the main block wires it
+    await solver.poll(); await solver.poll();
+    const [status] = solver.solve({ playerId: 'aaaaaaaa', n: ['reject'], s: [] });
+    await new Promise((r) => setTimeout(r, 50));
+    console.log(JSON.stringify([status, solver.health().held]));
+    Promise.reject(new Error('expected in this test: the host\\'s own unhandled rejection still exits the process'));`);
+  yt.close();
+  assert.deepEqual(JSON.parse(r.stdout), [200, ['bbbbbbbb']], 'the player whose solve rejected is evicted, not the current one');
+  assert.equal(r.code, 1, 'a host rejection was blamed on a player');
+});
+
 test('a stop during the startup build clears the crash marker and keeps the healthy player (Cubic r2 P2)',
   { skip: !haveRecording && 'no recorded base.js', timeout: 30_000 }, async () => {
     const hash = 'cccccccc';

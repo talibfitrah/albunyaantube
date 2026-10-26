@@ -19,10 +19,12 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 export function newContext(timeoutMs = 10_000) {
   // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
   const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
-  // V8 runs a FinalizationRegistry cleanup as a host task, outside every vm timeout (Cubic r2 P2); WeakRef goes with it.
-  // Promise-based built-ins (WebAssembly, Atomics.waitAsync) only queue microtasks, which drain inside the next timeout.
-  // base.js already checks `typeof FinalizationRegistry`, and EJS uses neither.
-  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef;', ctx);
+  // V8 runs these as host tasks, outside every vm timeout: a FinalizationRegistry cleanup (Cubic r2 P2; WeakRef goes with it)
+  // and a WebAssembly async compile's resolve, which reads a realm `then` getter off the module (Cubic r6 P2). Node reads
+  // promise[async_id_symbol] off each unhandled rejected promise after the run, which only a realm Proxy could answer with code
+  // (Cubic r6 P2). Atomics.waitAsync settles with a string, so it only queues microtasks, which drain inside the next timeout.
+  // base.js checks `typeof FinalizationRegistry` and `window.WebAssembly`; neither it nor EJS uses Proxy.
+  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx);
   vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs });
   return ctx;
 }
@@ -123,8 +125,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   const marker = path.join(cacheDir, 'building');
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
+  let ran = null;                               // the player whose realm ran last
   let cacheWritable = probeCache();
-  const crashed = dropCrashedPlayer();
+  let crashed = dropCrashedPlayer();
 
   function dropCrashedPlayer() {
     try {
@@ -183,7 +186,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
-      if (hash === crashed) throw new Error('this player crashed the solver on its last build');
+      if (hash === crashed) throw new Error('this player broke the solver; skipped until a restart');
       step = 'cache';
       file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
@@ -210,6 +213,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       if (held.size >= 2) held.delete(held.keys().next().value);          // BEFORE the build (R27)
       step = 'build';
       try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ }
+      ran = hash;
       const cpu0 = process.cpuUsage();
       const player = build(playerText);
       step = 'self-test';
@@ -240,6 +244,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     if (!entry) return [409, { error: 'unknown player' }];
     const cpu0 = process.cpuUsage();
     let answers;
+    ran = playerId;
     try {
       answers = solveAll(entry.player, n, s, solveTimeoutMs);
     } catch {                                   // a hung or broken player: evict it, others stay served (ruling 1)
@@ -271,8 +276,19 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     };
   }
 
+  /** The process's 'unhandledRejection' listener (Cubic r6 P2). Node reports a realm's rejection once the run that made it has
+   *  returned, before any other task, so it is the last-run player's: evicted and skipped until a restart, never a crash that
+   *  each restart repeats. The realm's reason is never read; a host promise's rejection still exits as Node's default does. */
+  function rejected(reason, promise) {
+    if (Object.getPrototypeOf(promise) === Promise.prototype) throw reason;
+    held.delete(ran);
+    if (current === ran) current = held.keys().next().value ?? null;
+    crashed = ran;
+    log.warn(`WARN player ${ran} left an unhandled promise rejection; evicted and skipped until a restart`);
+  }
+
   const poll = () => (polling ??= pollOnce().finally(() => { polling = null; }));
-  return { poll, solve, health };
+  return { poll, solve, health, rejected };
 }
 
 const strings = (value) => Array.isArray(value) && value.every((x) => typeof x === 'string');
@@ -324,6 +340,7 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   // A stop is a clean exit, never Node's default kill (Cubic r2 P2). The build and self-test are synchronous, so this
   // handler runs only after pollOnce's finally removed the crash marker: a restart never drops a healthy player.
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => process.exit(0));
+  process.on('unhandledRejection', solver.rejected);   // Node's default exit came after pollOnce's finally cleared the marker
   const pollSafely = () => solver.poll().catch((e) => console.warn(`WARN poll rejected: ${e.message}`));   // never kill the process
   pollSafely();
   setInterval(pollSafely, 30 * 60_000);     // at startup and every 30 min (§4.5)
