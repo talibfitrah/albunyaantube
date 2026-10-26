@@ -68,6 +68,9 @@ class ContentValidationServiceTest {
     @Mock
     private ThumbnailRepairMigration thumbnailRepair;
 
+    @Mock
+    private ContentReportService contentReportService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -87,7 +90,8 @@ class ContentValidationServiceTest {
                 validationProperties,
                 publicContentCacheService,
                 streamIndexService,
-                thumbnailRepair
+                thumbnailRepair,
+                contentReportService
         );
     }
 
@@ -980,9 +984,10 @@ class ContentValidationServiceTest {
     /**
      * Stage 9 B11: Restore lifts a report's take-down. Its record (REJECTED, source REPORT) is the take-down, so Restore
      * deletes it, back to the no-doc state before the report; any other archived video is set VALID as before.
+     * Stage 9 B13: the lift also undoes the take-down's exclusions and stream archive (ContentReportService.liftTakeDown).
      */
     @Test
-    void restoreDeletesATakeDownRecordAndSetsAnyOtherArchivedVideoValid() throws Exception {
+    void restoreLiftsATakeDownRecordAndSetsAnyOtherArchivedVideoValid() throws Exception {
         Video takeDown = new Video("TakeDown001");
         takeDown.setId("doc-takedown");
         takeDown.setStatus("REJECTED");
@@ -998,7 +1003,7 @@ class ContentValidationServiceTest {
         var result = service.restoreContent("video", List.of("doc-takedown", "doc-archived"), "admin-uid", "Admin");
 
         assertEquals(2, result.getSuccessCount());
-        verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", Set.of("REJECTED"));
+        verify(contentReportService).liftTakeDown(takeDown);
         verify(videoRepository, never()).save(takeDown);
         verify(videoRepository).save(archived);
         assertEquals(ValidationStatus.VALID, archived.getValidationStatus());

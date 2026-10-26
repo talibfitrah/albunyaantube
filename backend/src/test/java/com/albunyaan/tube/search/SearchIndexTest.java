@@ -2243,6 +2243,20 @@ class SearchIndexTest {
         assertTrue(ids(hooks.search("quxtar", "VIDEO", 10)).isEmpty());
     }
 
+    /** Stage 9 B13: Restore of a report's take-down undoes markStreamArchived; the stored stream is found again. */
+    @Test
+    void aRestoredStreamIsFoundAgain() throws Exception {
+        SearchableStream fresh = stream("fresh-2", "Fresh Quxtar Lesson", "channel:UCquranTv");
+        SearchIndex hooks = started(newIndex(channels(), playlists(), videos(), List.of(fresh), 5_000));
+        hooks.removeStream("fresh-2");
+        hooks.awaitWrites();
+
+        hooks.restoreStream(fresh);
+        hooks.awaitWrites();
+
+        assertEquals(List.of("fresh-2"), ids(hooks.search("quxtar", "VIDEO", 10)));
+    }
+
     // ---- build and swap hardening (B3 review) --------------------------------------------------
 
     @Test

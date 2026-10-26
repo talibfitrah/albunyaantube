@@ -14,7 +14,9 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 import static org.hamcrest.Matchers.contains;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.delete;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -23,6 +25,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 class LiveCategoryServingIT extends BaseIntegrationTest {
 
     @MockBean LiveTabReader reader;          // no YouTube; the snapshot is set directly
+    @MockBean com.google.firebase.auth.FirebaseAuth firebaseAuth;   // the moderation routes (stage 9 B13)
     @Autowired LiveChannelService live;
     @Autowired LiveChannelPoller poller;
 
@@ -118,5 +121,42 @@ class LiveCategoryServingIT extends BaseIntegrationTest {
     @Test
     void aChannelThatIsNoLiveEntryIs404() throws Exception {
         mvc.perform(get("/api/v1/live/channels/UCnotAnEntry000000000000")).andExpect(status().isNotFound());
+    }
+
+    // ---- Stage 9 B13 (P2): moderation reaches the live endpoint at the poller's next tick, not its next cycle ----
+
+    private void asAdmin() throws Exception {
+        com.google.firebase.auth.FirebaseToken token = org.mockito.Mockito.mock(com.google.firebase.auth.FirebaseToken.class);
+        org.mockito.Mockito.when(token.getUid()).thenReturn("admin-uid");
+        org.mockito.Mockito.when(token.getEmail()).thenReturn("admin-uid@test.com");
+        org.mockito.Mockito.when(token.getClaims()).thenReturn(Map.of("role", "admin"));
+        org.mockito.Mockito.when(firebaseAuth.verifyIdToken(org.mockito.ArgumentMatchers.anyString())).thenReturn(token);
+        org.mockito.Mockito.when(firebaseAuth.verifyIdToken(org.mockito.ArgumentMatchers.anyString(),
+                org.mockito.ArgumentMatchers.anyBoolean())).thenReturn(token);
+    }
+
+    @Test
+    void anExclusionARemovalAndACategoryDeleteReachTheLiveEndpointAtTheNextTick() throws Exception {
+        asAdmin();
+        // An exclusion (the workspace writes the channel doc and evicts nothing)
+        mvc.perform(post("/api/admin/exclusions").header("Authorization", "Bearer fake-admin-token")
+                        .contentType(org.springframework.http.MediaType.APPLICATION_JSON)
+                        .content("{\"parentType\":\"CHANNEL\",\"parentId\":\"channel_" + KIDS
+                                + "\",\"excludeType\":\"VIDEO\",\"excludeId\":\"it2kids0001\",\"reason\":\"LIVESTREAM\"}"))
+                .andExpect(status().isCreated());
+        poller.refreshIfStale();
+        mvc.perform(get("/api/v1/live/channels/" + KIDS)).andExpect(status().isOk()).andExpect(jsonPath("$.lives").isEmpty());
+
+        // The channel removed from the LIVE category
+        mvc.perform(delete("/api/admin/sort/categories/" + CAT + "/content/channel/channel_" + SUNNAH)
+                .header("Authorization", "Bearer fake-admin-token")).andExpect(status().isOk());
+        poller.refreshIfStale();
+        mvc.perform(get("/api/v1/live/channels/" + SUNNAH)).andExpect(status().isNotFound());
+
+        // The LIVE category deleted
+        mvc.perform(delete("/api/admin/categories/" + CAT).header("Authorization", "Bearer fake-admin-token"))
+                .andExpect(status().isNoContent());
+        poller.refreshIfStale();
+        mvc.perform(get("/api/v1/live/channels/" + KIDS)).andExpect(status().isNotFound());
     }
 }

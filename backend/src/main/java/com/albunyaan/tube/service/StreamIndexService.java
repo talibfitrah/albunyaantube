@@ -59,4 +59,16 @@ public class StreamIndexService {
             log.warn("markStreamArchived failed for {}: {}", streamId, e.getMessage());
         }
     }
+
+    /** Stage 9 B13: undoes markStreamArchived when Restore lifts a report's take-down: visible and searchable again. */
+    public void markStreamRestored(String streamId) {
+        try {
+            SearchableStream stream = streamRepository.markVisible(streamId);
+            if (stream != null) searchIndex.restoreStream(stream);
+            log.info("Stream {} restored (visible: {})", streamId, stream != null);
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("markStreamRestored failed for {}: {}", streamId, e.getMessage());
+        }
+    }
 }

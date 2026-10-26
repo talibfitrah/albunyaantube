@@ -50,6 +50,7 @@ public class ContentValidationService {
     private final ValidationProperties validationProperties;
     private final PublicContentCacheService publicContentCacheService;
     private final StreamIndexService streamIndexService;
+    private final ContentReportService contentReportService;
     private final ThumbnailRepairMigration thumbnailRepair;
 
     public ContentValidationService(
@@ -62,7 +63,8 @@ public class ContentValidationService {
             ValidationProperties validationProperties,
             PublicContentCacheService publicContentCacheService,
             StreamIndexService streamIndexService,
-            ThumbnailRepairMigration thumbnailRepair
+            ThumbnailRepairMigration thumbnailRepair,
+            ContentReportService contentReportService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -74,6 +76,7 @@ public class ContentValidationService {
         this.publicContentCacheService = publicContentCacheService;
         this.streamIndexService = streamIndexService;
         this.thumbnailRepair = thumbnailRepair;
+        this.contentReportService = contentReportService;
     }
 
     // ==================== Validation Triggers ====================
@@ -1158,8 +1161,9 @@ public class ContentValidationService {
                         Video video = videoRepository.findById(id).orElse(null);
                         if (video != null && ContentReportService.isTakeDownRecord(video)) {
                             // Stage 9 B11: the record is the take-down (REJECTED hides it whatever its validationStatus),
-                            // so Restore deletes it: back to no doc, as before the report. CAS: a re-add may have landed.
-                            videoRepository.deleteByIdIfStatusIn(id, java.util.Set.of("REJECTED"));
+                            // so Restore deletes it: back to no doc, as before the report. Stage 9 B13: with the source
+                            // exclusions and the stream archive its report added.
+                            contentReportService.liftTakeDown(video);
                             auditLogService.logSystem("video_restored", "video", id, actorName);
                             restored = true;
                         } else if (video != null) {

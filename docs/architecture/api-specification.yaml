@@ -322,6 +322,10 @@ paths:
   /v1/live/channels/{channelId}:
     get:
       summary: Current live streams of a live-category channel
+      description: |
+        Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+        change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+        deleted)
       operationId: getLiveChannel
       tags: [Public Content]
       security: []
@@ -675,6 +679,58 @@ paths:
                 type: array
                 items:
                   $ref: '#/components/schemas/ContentSortDto'
+
+  /admin/sort/categories/{categoryId}/content/add:
+    post:
+      summary: Add content items to a category, at the end of its sort order
+      description: Also adds the category to each item's categoryIds. Admin only.
+      operationId: addContentToCategory
+      tags: [Sort Order]
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [contentId, contentType]
+                    properties:
+                      contentId:
+                        type: string
+                      contentType:
+                        type: string
+                        enum: [channel, playlist, video]
+      responses:
+        '200':
+          description: The category's content in sort order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentSortDto'
+        '400':
+          description: |
+            An unknown category or item, or a malformed item (empty body), or a live-category refusal (see
+            LiveCategoryRefused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/sort/categories/{categoryId}/content/reorder:
     put:
@@ -1151,6 +1207,10 @@ paths:
           description: Channel added
         '409':
           description: Channel already exists
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
 
   /admin/registry/channels/status/{status}:
     get:
@@ -1211,6 +1271,8 @@ paths:
       responses:
         '200':
           description: Channel updated
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
     delete:
       summary: Delete channel from registry
       operationId: registryDeleteChannel
@@ -1239,6 +1301,8 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists:
     get:
@@ -1269,6 +1333,10 @@ paths:
           description: Playlist added
         '409':
           description: Playlist already exists
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
 
   /admin/registry/playlists/status/{status}:
     get:
@@ -1329,6 +1397,8 @@ paths:
       responses:
         '200':
           description: Playlist updated
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
     delete:
       summary: Delete playlist from registry
       operationId: registryDeletePlaylist
@@ -1357,6 +1427,8 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists/{id}/exclusions:
     get:
@@ -1445,7 +1517,15 @@ paths:
         '201':
           description: Video added
         '409':
-          description: Video already exists
+          description: |
+            Video already exists, or its re-add lost a race (another re-add landed, or Restore deleted the
+            record). A REJECTED video, a report's take-down record too, is re-added into its own doc instead.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/registry/videos/status/{status}:
     get:
@@ -1506,6 +1586,10 @@ paths:
       responses:
         '200':
           description: Video updated
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
     delete:
       summary: Delete video from registry
       operationId: registryDeleteVideo
@@ -1534,6 +1618,10 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   # ============================================================================
   # BULK SUBMISSION (Admin/Moderator)
@@ -1594,11 +1682,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkSubmitResponse'
         '400':
-          description: Validation error (e.g. empty row list, too many rows)
+          description: |
+            A validation error (e.g. empty row list, too many rows), or a live-category refusal of the whole request
+            (see LiveCategoryRefused; `details.offenders` lists the rows)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: |
+            Insufficient permissions, or `LIVE_CATEGORY_ADMIN_ONLY` (LiveCategoryError): a moderator's row names a
+            LIVE category
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   # ============================================================================
   # YOUTUBE INTEGRATION (Admin/Moderator)
@@ -2258,7 +2364,15 @@ paths:
         '200':
           description: Item approved
         '400':
-          description: categoryOverride does not name an existing category
+          description: |
+            categoryOverride does not name an existing category (a plain error body), or a live-category refusal
+            (see LiveCategoryRefused)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/approvals/{id}/reject:
     post:
@@ -2593,6 +2707,10 @@ paths:
       responses:
         '200':
           description: Import results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/import-export/import/validate:
     post:
@@ -2662,6 +2780,10 @@ paths:
       responses:
         '200':
           description: Import results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/import-export/import/simple/validate:
     post:
@@ -2925,6 +3047,10 @@ paths:
       responses:
         '200':
           description: Bulk action results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/content/bulk/reject:
     post:
@@ -3013,6 +3139,10 @@ paths:
       responses:
         '200':
           description: Bulk action results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/content/bulk/reorder:
     post:
@@ -5448,3 +5578,31 @@ components:
                 type: string
               message:
                 type: string
+
+    LiveCategoryRefused:
+      description: |
+        A live-category refusal (spec 2026-10-17 §4.2): the write would put content into a LIVE category against its
+        rules. `LIVE_CATEGORY_TYPE_NOT_ALLOWED` (only channels and live streams), `LIVE_CATEGORY_FULL` (30 entries),
+        `LIVE_LINK_NOT_LIVE` or `LIVE_LINK_CHANNEL_UNKNOWN` (a video must be live on its channel now). Nothing was
+        saved; a request of several items is refused whole and `details.offenders` lists each
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'
+
+    LiveCategoryAdminOnly:
+      description: |
+        `LIVE_CATEGORY_ADMIN_ONLY`: only an admin adds to, or publishes into, a LIVE category. Nothing was saved
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'
+
+    LiveCheckUnavailable:
+      description: |
+        `LIVE_CHECK_UNAVAILABLE`: a video going into a LIVE category needs a YouTube check that it is live now, and
+        the check could not run. Nothing was saved; retry
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'

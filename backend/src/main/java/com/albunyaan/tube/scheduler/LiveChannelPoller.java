@@ -6,6 +6,7 @@ import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.service.AuditLogService;
 import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.LiveChannelService;
@@ -18,6 +19,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.beans.factory.SmartInitializingSingleton;
 import org.springframework.beans.factory.annotation.Value;
+import org.springframework.context.event.EventListener;
 import org.springframework.scheduling.annotation.Scheduled;
 import org.springframework.stereotype.Component;
 
@@ -35,6 +37,8 @@ import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
 import java.util.concurrent.TimeUnit;
+import java.util.concurrent.atomic.AtomicBoolean;
+import java.util.concurrent.locks.ReentrantLock;
 
 /**
  * Spec §5: every 10 minutes, read the Live tab of each distinct channel behind a LIVE category, apply
@@ -77,6 +81,10 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
      * target is read once.
      */
     private final Map<String, Long> tried = new HashMap<>();
+    /** The cycle's lock; the moderation refresh only tries it (stage 9 B13): a cycle's YouTube reads take minutes. */
+    private final ReentrantLock cycleLock = new ReentrantLock();
+    /** Stage 9 B13: a moderation write since the last view; the next tick republishes the view (Firestore only). */
+    private final AtomicBoolean viewStale = new AtomicBoolean();
 
     public LiveChannelPoller(LiveCategoryService liveCategories, VideoRepository videos,
                              LiveChannelStateRepository states, LiveChannelService live, SortOrderService sortOrder,
@@ -119,7 +127,16 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         }
     }
 
-    public synchronized void cycle(long now) {
+    public void cycle(long now) {
+        cycleLock.lock();
+        try {
+            cycleLocked(now);
+        } finally {
+            cycleLock.unlock();
+        }
+    }
+
+    private void cycleLocked(long now) {
         try {
             if (!live.loaded()) live.loadStates(states.findAll());     // L1: a failed boot load retries before any write
             Map<String, List<LiveTabResult.LiveItem>> servedBefore = live.served();
@@ -192,6 +209,53 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         }
     }
 
+    /**
+     * Stage 9 B13: the poller's view was the only thing a moderation write left stale for 10-20 minutes. Every moderation
+     * path but the exclusions evicts the public caches (a take-down, an un-approve, a channel leaving a LIVE category,
+     * a category losing LIVE or deleted): that marks the view stale.
+     */
+    @EventListener
+    public void onPublicContentEvicted(PublicContentCacheService.Evicted event) {
+        viewStale.set(true);
+    }
+
+    /** Stage 9 B13: an exclusion writes only its channel doc, with no eviction: a write to a served channel's doc counts. */
+    @EventListener
+    public void onCatalogChanged(CatalogChanged event) {
+        if ("CHANNEL".equals(event.type()) && live.entries().values().stream().anyMatch(c -> Objects.equals(event.docId(), c.getId()))) {
+            viewStale.set(true);
+        }
+    }
+
+    @Scheduled(fixedDelay = 15, initialDelay = 15, timeUnit = TimeUnit.SECONDS)
+    public void scheduledRefresh() {
+        if (enabled) {
+            refreshIfStale();
+        }
+    }
+
+    /**
+     * Stage 9 B13: republishes the view after a moderation write, as the cycle's own refresh does (Firestore only), and
+     * evicts when what is served changed (D14). Never while a cycle runs: the tick skips and keeps the flag, so a cycle
+     * that built its view before the write is followed by one more refresh.
+     */
+    public void refreshIfStale() {
+        if (!viewStale.get() || !cycleLock.tryLock()) {
+            return;
+        }
+        try {
+            if (!viewStale.getAndSet(false)) return;
+            Map<String, List<LiveTabResult.LiveItem>> before = live.served();
+            refreshView(view());
+            if (!servedIds(before).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+        } catch (Exception e) {
+            viewStale.set(true);                                           // the next tick tries again
+            log.warn("live poller: moderation refresh failed: {}", e.toString());
+        } finally {
+            cycleLock.unlock();
+        }
+    }
+
     /** D16 oldest first: the later of the last check and this process's last read (L2). */
     private long lastTried(String uc) {
         LiveChannelState s = live.state(uc);
@@ -261,13 +325,18 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                           Set<String> liveCategoryIds, long now) throws Exception {
         boolean changed;
         List<Ending> endings = new ArrayList<>();
+        List<String[]> rejoins = new ArrayList<>();                         // {LIVE category, doc id} (stage 9 B13)
         synchronized (live.stateLock()) {
             LiveChannelState prev = live.state(uc);
             LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
             LiveChannelState next = o.next();
             changed = !Objects.equals(servedIds(prev), servedIds(next));
             for (Map.Entry<String, String> r : o.restored().entrySet()) {
-                changed |= restore(r.getKey(), r.getValue());
+                List<String> from = next.getArchivedFrom().remove(r.getKey());
+                String docId = restore(r.getKey(), r.getValue());
+                if (docId == null) continue;
+                changed = true;
+                if (from != null) from.stream().filter(liveCategoryIds::contains).forEach(cat -> rejoins.add(new String[]{cat, docId}));
             }
             for (String id : o.ended()) {
                 Video doc = videos.findByYoutubeId(id).orElse(null);
@@ -276,6 +345,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                 if (archive) {
                     ValidationStatus vs = doc.getValidationStatus();
                     next.getArchived().put(id, vs == null ? "" : vs.name());
+                    next.getArchivedFrom().put(id, List.copyOf(doc.getCategoryIds()));   // archivable: all LIVE ones
                 }
                 endings.add(new Ending(doc, archive));
             }
@@ -283,6 +353,9 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         }
         for (Ending e : endings) {
             changed |= end(e.doc(), e.archive(), liveCategoryIds);
+        }
+        for (String[] r : rejoins) {
+            changed |= rejoin(r[0], r[1]);
         }
         return changed;
     }
@@ -299,11 +372,13 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             // (the removal is idempotent). ponytail: a few LIVE categories at most, so no per-category membership read.
             for (String cat : liveCategoryIds) {
                 sortOrder.removeContentFromCategoryAndUpdate(cat, doc.getId(), "video");
-                audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
+                if (doc.getCategoryIds() != null && doc.getCategoryIds().contains(cat)) {   // stage 9 B13: only where it was
+                    audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
+                }
                 changed = true;
             }
             Video fresh = archive ? videos.findById(doc.getId()).orElse(null) : null;   // removal saved categoryIds
-            if (fresh != null && archivable(fresh, liveCategoryIds)) {
+            if (fresh != null && archivableOnceRemoved(fresh, liveCategoryIds)) {
                 fresh.setValidationStatus(ValidationStatus.ARCHIVED);
                 videos.save(fresh);
                 audit.logSystem("live_stream_archived_ended", "video", fresh.getId(), "live-poller");
@@ -317,24 +392,49 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         return changed;
     }
 
-    /** R12: APPROVED, no category outside the LIVE ones, and not already UNAVAILABLE or ARCHIVED. */
+    /**
+     * R12: APPROVED, in a LIVE category and in no other, and not already UNAVAILABLE or ARCHIVED. Stage 9 B13: a doc in
+     * no LIVE category is never the poller's to archive (a departed live's own VOD: it never returns to be restored).
+     */
     public static boolean archivable(Video doc, Set<String> liveCategoryIds) {
+        return doc.getCategoryIds() != null && doc.getCategoryIds().stream().anyMatch(liveCategoryIds::contains)
+                && archivableOnceRemoved(doc, liveCategoryIds);
+    }
+
+    /** R12 once the link has left its LIVE categories (end(), the migration's step 7): no other category came since. */
+    public static boolean archivableOnceRemoved(Video doc, Set<String> liveCategoryIds) {
         ValidationStatus vs = doc.getValidationStatus();
         return "APPROVED".equals(doc.getStatus())
                 && (doc.getCategoryIds() == null || liveCategoryIds.containsAll(doc.getCategoryIds()))
                 && vs != ValidationStatus.UNAVAILABLE && vs != ValidationStatus.ARCHIVED;
     }
 
-    /** R12: only a doc this poller archived, and only while it is still ARCHIVED (an admin's later change wins). */
-    private boolean restore(String youtubeId, String previous) throws Exception {
+    /** R12: only a doc this poller archived, and only while it is still ARCHIVED (an admin's later change wins). Its id. */
+    private String restore(String youtubeId, String previous) throws Exception {
         Video doc = videos.findByYoutubeId(youtubeId).orElse(null);
         if (doc == null || doc.getValidationStatus() != ValidationStatus.ARCHIVED) {
-            return false;
+            return null;
         }
         doc.setValidationStatus(previous.isEmpty() ? null : ValidationStatus.valueOf(previous));
         videos.save(doc);
         audit.logSystem("live_stream_restored", "video", doc.getId(), "live-poller");
-        return true;
+        return doc.getId();
+    }
+
+    /**
+     * Stage 9 B13 (R12): a restored link goes back into the LIVE category it left, through the guarded add (the 30-entry
+     * cap; live on its channel now, which this cycle's read just showed). A refusal or a failure leaves it out, logged.
+     */
+    private boolean rejoin(String categoryId, String docId) {
+        try {
+            sortOrder.addMultipleContentToCategory(categoryId, List.<String[]>of(new String[]{docId, "video"}));
+            return true;
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("live poller: restored video doc {} not put back in live category {}; add it by hand: {}",
+                    docId, categoryId, e.toString());
+            return false;
+        }
     }
 
     private void count(int requests, long now) {

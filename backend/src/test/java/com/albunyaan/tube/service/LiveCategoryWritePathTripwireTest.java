@@ -35,6 +35,7 @@ class LiveCategoryWritePathTripwireTest {
             Map.entry("controller/SortOrderController.java", 2),          // row 14
             Map.entry("exception/GlobalExceptionHandler.java", 18),       // response bodies
             Map.entry("repository/ChannelRepository.java", 2),            // re-asserts the doc's own status
+            Map.entry("scheduler/LiveChannelPoller.java", 1),             // R12 rejoin: SortOrderService's guarded add (B13)
             Map.entry("security/FirebaseAuthFilter.java", 2),             // HTTP status
             Map.entry("security/ProfileUpdateRateLimitInterceptor.java", 1),
             Map.entry("security/SecurityConfig.java", 1),

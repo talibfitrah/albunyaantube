@@ -137,6 +137,51 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         verify(spyCaches, times(2)).evictPublicContentCaches();
     }
 
+    /** Stage 9 B13 (P2): a departed live whose APPROVED doc is in no LIVE category is not the poller's to archive. */
+    @Test
+    void aDepartedLiveWhoseDocIsInNoLiveCategoryIsNotArchived() throws Exception {
+        String uc = "UCit3f00000000000000000f";
+        seed(uc, "it3link001f", List.of(LIVE_CAT));                  // the LIVE category, its channel entry and a link
+        firestore.collection("videos").document("doc-it3vod0001f")
+                .set(Map.of("youtubeId", "it3vod0001f", "title", "the VOD", "status", "APPROVED")).get(5, TimeUnit.SECONDS);
+        when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3vod0001f", "t"),
+                new LiveTabResult.LiveItem("it3link001f", "t")), 1));
+        LiveChannelPoller poller = freshPoller();
+        poller.cycle(T0);                                            // the VOD's stream is live on the channel
+
+        when(reader.read(anyString())).thenReturn(liveRead("it3link001f"));
+        live.readFresh(uc);                                          // the service's 60 s memo runs on the wall clock here
+        for (int i = 1; i <= 3; i++) poller.cycle(T0 + i * 10 * MIN); // it departs and ends
+
+        assertThat(videos.findById("doc-it3vod0001f").orElseThrow().getValidationStatus()).isNull();
+    }
+
+    /** Stage 9 B13 (P3, R12): an ended link that is live again goes back into the LIVE category it left, order row too. */
+    @Test
+    void anEndedLinkThatIsLiveAgainReturnsToItsCategory() throws Exception {
+        String uc = "UCit3e00000000000000000e";
+        seed(uc, "it3link001e", List.of(LIVE_CAT));
+        // Its channel is an entry too (the member query orders by createdAt), so it is still read after the link ends:
+        // R12 restores only what a read sees.
+        firestore.collection("channels").document("channel_" + uc).update("createdAt", com.google.cloud.Timestamp.now())
+                .get(5, TimeUnit.SECONDS);
+        when(reader.read(anyString())).thenReturn(liveRead("it3otherliv"));
+        LiveChannelPoller poller = freshPoller();
+        for (int i = 0; i <= 2; i++) poller.cycle(T0 + i * 10 * MIN);
+        assertThat(videos.findById("doc-it3link001e").orElseThrow().getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
+
+        when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3otherliv", "t"),
+                new LiveTabResult.LiveItem("it3link001e", "t")), 1));
+        live.readFresh(uc);
+        poller.cycle(T0 + 30 * MIN);
+
+        Video doc = videos.findById("doc-it3link001e").orElseThrow();
+        assertThat(doc.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);   // restored
+        assertThat(doc.getCategoryIds()).containsExactly(LIVE_CAT);
+        assertThat(orders.findByCategoryIdOrderByPosition(LIVE_CAT)).extracting(o -> o.getContentId())
+                .contains("doc-it3link001e");
+    }
+
     @Test
     void unprovenCyclesChangeNothing() throws Exception {
         String uc = "UCit3c00000000000000000c";

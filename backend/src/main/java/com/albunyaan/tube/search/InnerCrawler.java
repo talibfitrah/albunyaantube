@@ -774,9 +774,10 @@ public class InnerCrawler {
             return false;
         }
         if (key.startsWith("playlist:")) {
-            List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), page.items().size())));
-            if (page.count() == src.count && ids(page.items()).equals(top)) {
-                writeCorpus(key, name, mergeWindow(page.items(), corpus), corpus, false); // titles refreshed
+            List<InnerCorpus.Item> items = mergeKeep(page.items(), List.of()); // stage 9 B13: the corpus is de-duplicated
+            List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), items.size())));
+            if (page.count() == src.count && ids(items).equals(top)) {
+                writeCorpus(key, name, mergeWindow(items, corpus), corpus, false); // titles refreshed
                 src.lastPollAt = now;
                 logJob("POLL", key, src, 0, 0);
                 return true;

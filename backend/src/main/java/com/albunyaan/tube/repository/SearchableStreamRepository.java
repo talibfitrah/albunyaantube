@@ -90,4 +90,21 @@ public class SearchableStreamRepository {
                 .update(updates)
                 .get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
     }
+
+    /**
+     * Undoes markInvisible (stage 9 B13: Restore lifts a report's take-down): visible again while a source key remains.
+     * Returns the stream, or null when none is stored or it has no source left.
+     */
+    public SearchableStream markVisible(String streamId)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(streamId);
+        return firestore.runTransaction(transaction -> {
+            DocumentSnapshot snap = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            SearchableStream stream = snap.exists() ? snap.toObject(SearchableStream.class) : null;
+            if (stream == null || stream.getSourceKeys() == null || stream.getSourceKeys().isEmpty()) return null;
+            transaction.update(docRef, "visible", true);
+            stream.setVisible(true);
+            return stream;
+        }).get(timeoutProperties.getWrite(), TimeUnit.SECONDS);
+    }
 }

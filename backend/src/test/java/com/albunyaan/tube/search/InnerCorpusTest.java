@@ -76,6 +76,16 @@ class InnerCorpusTest {
         }
     }
 
+    /** Stage 9 B13: a write closes its GZIPOutputStream, so its native zlib buffer goes at once, not when the GC gets to it. */
+    @Test
+    void aWriteClosesItsGzipStream() throws IOException {
+        try (var gzips = org.mockito.Mockito.mockConstruction(java.util.zip.GZIPOutputStream.class)) {
+            InnerCorpus.write(InnerCorpus.file(dir, "channel:UCa"), List.of(new InnerCorpus.Item("lesson00001", "a", 1, null, null, null)));
+
+            org.mockito.Mockito.verify(gzips.constructed().get(0)).close();
+        }
+    }
+
     @Test
     void filesListsOnlyCorpusFilesInNameOrder() throws IOException {
         InnerCorpus.write(InnerCorpus.file(dir, "playlist:PLb"), List.of());

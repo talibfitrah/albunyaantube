@@ -162,7 +162,7 @@ public class ContentReportService {
             boolean excluded = false;
             if (parented) {
                 excluded = excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
-                        report.getTargetId(), report.getContentSubType());
+                        report.getTargetId(), report.getContentSubType(), null);
             }
             String miss = null;
             if (!excluded) {
@@ -186,7 +186,7 @@ public class ContentReportService {
      * succeeded), false otherwise (caller should fall back to archive).
      */
     private boolean excludeFromParent(ReportTargetType parentType, String parentId, ReportTargetType targetType,
-                                      String targetId, String contentSubType) {
+                                      String targetId, String contentSubType, List<String> addedTo) {
         if (parentType == null || parentId == null || targetId == null || targetType == null) return false;
 
         try {
@@ -209,6 +209,7 @@ public class ContentReportService {
                     if (added) {
                         channel.setExcludedItems(excluded);
                         channelRepository.save(channel);
+                        if (addedTo != null) addedTo.add("channel:" + parentId);
                     }
                     return true; // even no-op (already excluded) counts — don't fall back to archive
                 }
@@ -229,6 +230,7 @@ public class ContentReportService {
                         ids.add(targetId);
                         playlist.setExcludedVideoIds(ids);
                         playlistRepository.save(playlist);
+                        if (addedTo != null) addedTo.add("playlist:" + parentId);
                     }
                     return true;
                 }
@@ -321,12 +323,12 @@ public class ContentReportService {
                     archived = true;
                     if (opt.isEmpty()) {
                         try {
-                            miss = excludeEverywhereListed(targetId);
+                            miss = excludeEverywhereListed(video);
                         } catch (Exception e) { // the record is saved and indexed: only the per-source exclusions are missing
                             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                             log.warn("Video {} taken down, but its source exclusions failed: {}", targetId, e.getMessage());
-                            miss = "Taken down, but not excluded on the sources listing it (" + e.getClass().getSimpleName()
-                                    + "). Exclude it there by hand.";
+                            miss = "Taken down, but not excluded (or not recorded for Restore) on the sources listing it ("
+                                    + e.getClass().getSimpleName() + "). Check them by hand.";
                         }
                     }
                 }
@@ -376,6 +378,33 @@ public class ContentReportService {
         return video;
     }
 
+    /**
+     * Stage 9 B13: Restore lifts a take-down whole: the exclusions its report added and its stream's archive, then the
+     * record (CAS: a re-add may have landed). A failure leaves the record, so Restore can run again; each lift repeats safely.
+     */
+    public void liftTakeDown(Video record) throws ExecutionException, InterruptedException, TimeoutException {
+        String videoId = record.getYoutubeId();
+        for (String key : record.getTakeDownExclusions() == null ? List.<String>of() : record.getTakeDownExclusions()) {
+            String sourceId = key.substring(key.indexOf(':') + 1);
+            if (key.startsWith("channel:")) {
+                var channel = channelRepository.findByYoutubeId(sourceId).orElse(null);
+                if (channel != null && channel.getExcludedItems() != null && channel.getExcludedItems().getVideos().remove(videoId)) {
+                    channel.setExcludedItems(channel.getExcludedItems());      // recounts
+                    channelRepository.save(channel);
+                }
+            } else {
+                var playlist = playlistRepository.findByYoutubeId(sourceId).orElse(null);
+                if (playlist != null && playlist.getExcludedVideoIds() != null && playlist.getExcludedVideoIds().remove(videoId)) {
+                    playlist.setExcludedVideoIds(playlist.getExcludedVideoIds()); // recounts
+                    playlistRepository.save(playlist);
+                }
+            }
+        }
+        streamIndexService.markStreamRestored(videoId);
+        videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
+        exclusionsChanged();
+    }
+
     /** A take-down record: the doc exists only to hide the id, so lifting the take-down means deleting it. */
     static boolean isTakeDownRecord(Video video) {
         return "REJECTED".equals(video.getStatus()) && TAKE_DOWN_SOURCE.equals(video.getSource());
@@ -392,9 +421,11 @@ public class ContentReportService {
      * document to archive (the caller now writes its take-down record). Also exclude it on every admitted source that
      * lists it now, for their channel and playlist screens: channels -> excludedItems.videos, playlists ->
      * excludedVideoIds. Works for every installed app; a later app may send sourceType/sourceId as the parent.
-     * Returns the miss for the resolution note (sources not excluded), or null.
+     * Returns the miss for the resolution note (sources not excluded), or null. The record keeps the sources it excluded
+     * the video on (stage 9 B13), and only those: one an admin had excluded it on before stays excluded after Restore.
      */
-    private String excludeEverywhereListed(String videoId) throws java.io.IOException {
+    private String excludeEverywhereListed(Video record) throws Exception {
+        String videoId = record.getYoutubeId();
         // Before the listings load (the first build; the inner index while inner search is on) an empty listing means
         // "not loaded", not "none". resolveReport refuses a cold parentless resolve; only a parented report whose parent
         // is gone gets here cold.
@@ -408,10 +439,15 @@ public class ContentReportService {
             log.info("Report resolved: video {} is listed by no approved source yet; its take-down record hides it", videoId);
             return null;
         }
+        List<String> added = new java.util.ArrayList<>();
         List<String> missed = keys.stream().filter(key -> !excludeFromParent(
                 key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
-                key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null)).toList();
+                key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null, added)).toList();
         if (missed.size() < keys.size()) exclusionsChanged();
+        if (!added.isEmpty()) {
+            record.setTakeDownExclusions(added);
+            videoRepository.save(record);
+        }
         log.info("Report resolved: video {} listed by {}; not excluded on {}", videoId, keys, missed);
         return missed.isEmpty() ? null : "Not excluded on " + String.join(", ", missed) + ". Exclude it there by hand.";
     }

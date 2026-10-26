@@ -1012,6 +1012,27 @@ class InnerCrawlerTest {
         verify(fetcher, never()).next(anyString(), anyString(), any());
     }
 
+    /**
+     * Stage 9 B13: a playlist that lists a video twice in its first page polls as unchanged. The stored corpus is
+     * de-duplicated, so the raw page never matched it, and every poll listed a 251-item playlist again in full.
+     */
+    @Test
+    void aPlaylistThatRepeatsAVideoInItsFirstPagePollsAsUnchanged() throws Exception {
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        List<InnerCorpus.Item> listing = new ArrayList<>(items("story", 0, 250, "x"));
+        listing.add(5, listing.get(2));                                    // the owner added story…2 twice
+        crawled(PL, InnerCrawler.mergeKeep(listing, List.of()), listing.size(), 2);
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(listing.size(), listing.subList(0, 100), true));
+        when(fetcher.next(eq(PL), anyString(), any())).thenReturn(batch(-1, listing.subList(100, listing.size()), false));
+
+        step();
+
+        verify(fetcher).first(eq(PL), anyString());
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+        assertEquals(250, corpus(PL).size());
+    }
+
     @Test
     void thePollIntervalIsHalfTheTimeSinceTheLastChangeBetweenOneAndSevenDays() {
         long t = 100 * InnerCrawler.DAY_MS;

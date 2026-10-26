@@ -11,6 +11,7 @@ import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.service.AuditLogService;
 import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.LiveChannelService;
@@ -47,6 +48,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.argThat;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.doNothing;
 import static org.mockito.Mockito.doThrow;
@@ -723,8 +725,152 @@ class LiveChannelPollerTest {
     @Test
     void theBootLoadRunsBeforeThePortOpens() {
         assertThat(SmartInitializingSingleton.class).isAssignableFrom(LiveChannelPoller.class);
+        // Stage 9 B13: the poller listens to moderation (plain records); never to an application lifecycle event.
         assertThat(Arrays.stream(LiveChannelPoller.class.getDeclaredMethods())
-                .filter(m -> m.isAnnotationPresent(EventListener.class)).map(java.lang.reflect.Method::getName).toList())
+                .filter(m -> m.isAnnotationPresent(EventListener.class))
+                .filter(m -> java.util.stream.Stream.of(m.getParameterTypes(), m.getAnnotation(EventListener.class).classes())
+                        .flatMap(Arrays::stream).anyMatch(org.springframework.context.ApplicationEvent.class::isAssignableFrom))
+                .map(java.lang.reflect.Method::getName).toList())
                 .isEmpty();
+    }
+
+    // ---- Stage 9 B13: R12 archives only what was in a LIVE category, and restores it there ----
+
+    /** P2: a departed live's doc in no LIVE category is not the poller's to archive; its VOD never returns to restore it. */
+    @Test
+    void anEndedLiveWhoseDocIsInNoLiveCategoryIsNeverArchived() throws Exception {
+        entries(A);
+        Video uncategorised = new Video("vodnull0001");
+        uncategorised.setId("doc-null");
+        uncategorised.setStatus("APPROVED");
+        uncategorised.setCategoryIds(null);
+        Video empty = new Video("vodempty001");
+        empty.setId("doc-empty");
+        empty.setStatus("APPROVED");
+        empty.setCategoryIds(new ArrayList<>());
+        for (Video v : List.of(uncategorised, empty)) {
+            when(videos.findByYoutubeId(v.getYoutubeId())).thenReturn(Optional.of(v));
+            when(videos.findById(v.getId())).thenReturn(Optional.of(v));
+        }
+        when(reader.read(anyString())).thenReturn(live("vodnull0001", "vodempty001"));
+        cycleAt(T0);                                                  // both live on A
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        for (int i = 1; i <= 3; i++) cycleAt(T0 + i * 10 * MIN);      // both depart, then end (2 proven misses, >= 15 min)
+
+        assertThat(uncategorised.getValidationStatus()).isNull();
+        assertThat(empty.getValidationStatus()).isNull();
+        verify(videos, never()).save(any());
+        assertThat(live.state(A).getArchived()).isEmpty();
+        verify(audit, never()).logSystem(eq("live_link_removed_ended"), anyString(), anyString(), anyString());
+    }
+
+    /** The removal runs in every LIVE category (an order row can outlive the doc's id); the audit names only the doc's. */
+    @Test
+    void anEndedLinkIsAuditedOnlyForTheLiveCategoryItWasIn() throws Exception {
+        String other = "otherLiveCategory0000";
+        when(liveCategories.liveCategoryIds()).thenReturn(new LinkedHashSet<>(List.of(CAT, other)));
+        when(liveCategories.members(other)).thenReturn(new LiveCategoryService.Members(List.of()));
+        entries(A);
+        endingLink();
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+
+        for (int i = 0; i <= 2; i++) cycleAt(T0 + i * 10 * MIN);
+
+        verify(sortOrder).removeContentFromCategoryAndUpdate(other, "doc-link", "video");
+        verify(audit, times(1)).logSystem("live_link_removed_ended", "video", "doc-link", "live-poller");
+    }
+
+    /** P3: a link the poller archived goes back into the LIVE category it left once it is live again (through the guard). */
+    @Test
+    void aRestoredLinkGoesBackIntoTheLiveCategoryItLeft() throws Exception {
+        entries(A);
+        Video left = endingLink();
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        for (int i = 0; i <= 2; i++) cycleAt(T0 + i * 10 * MIN);     // ended: out of CAT, archived
+        assertThat(left.getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
+
+        when(videos.findByYoutubeId("linkid00001")).thenReturn(Optional.of(left));
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa", "linkid00001"));
+        cycleAt(T0 + 30 * MIN);                                       // live again: restored
+
+        assertThat(left.getValidationStatus()).isEqualTo(ValidationStatus.VALID);
+        verify(sortOrder).addMultipleContentToCategory(eq(CAT),
+                argThat(items -> items.size() == 1 && "doc-link".equals(items.get(0)[0]) && "video".equals(items.get(0)[1])));
+    }
+
+    // ---- Stage 9 B13 (P2): moderation reaches the live endpoint at the next tick, not the next cycle ----
+
+    /** Every moderation path but the exclusions evicts the public caches (a channel removed, LIVE cleared, a take-down...). */
+    @Test
+    void aModerationEvictionReachesTheLiveEndpointAtTheNextTick() throws Exception {
+        entries(A);
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0);
+        assertThat(endpointStatus()).isEqualTo(200);
+
+        members.clear();                                              // e.g. the channel left the LIVE category
+        poller.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+        poller.refreshIfStale();
+
+        assertThat(endpointStatus()).isEqualTo(404);
+        verify(reader, times(1)).read(anyString());                   // Firestore only: no YouTube read
+    }
+
+    /** An exclusion writes the channel doc and evicts nothing: a write to a served channel's doc triggers the refresh. */
+    @Test
+    void anExclusionOnAServedChannelReachesTheLiveEndpointAtTheNextTick() throws Exception {
+        entries(A);
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa", "bbbbbbbbbbb"));
+        cycleAt(T0);
+
+        ((Channel) members.get(0)).getExcludedItems().getLiveStreams().add("aaaaaaaaaaa");
+        poller.onCatalogChanged(new CatalogChanged("CHANNEL", "channel_" + A, false));
+        poller.refreshIfStale();
+
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
+    }
+
+    /** Support: a write the endpoint never serves (another channel, a playlist), and a tick with nothing stale, read nothing. */
+    @Test
+    void aWriteTheEndpointDoesNotServeReadsNothing() throws Exception {
+        entries(A);
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0);
+        org.mockito.Mockito.clearInvocations(liveCategories);
+
+        poller.refreshIfStale();
+        poller.onCatalogChanged(new CatalogChanged("CHANNEL", "channel_" + B, false));
+        poller.onCatalogChanged(new CatalogChanged("PLAYLIST", "channel_" + A, false));
+        poller.refreshIfStale();
+
+        verify(liveCategories, never()).liveCategoryIds();
+    }
+
+    /** The tick never waits on a running cycle (its YouTube reads take minutes): it skips, keeps the flag, refreshes after. */
+    @Test
+    void aTickNeverWaitsOnARunningCycleAndRefreshesAfterIt() throws Exception {
+        entries(A);
+        CountDownLatch reading = new CountDownLatch(1);
+        CountDownLatch release = new CountDownLatch(1);
+        when(reader.read(anyString())).thenAnswer(i -> {
+            reading.countDown();
+            release.await(10, TimeUnit.SECONDS);
+            return live("aaaaaaaaaaa");
+        });
+        Thread cycle = new Thread(() -> poller.cycle(T0));
+        try {
+            cycle.start();
+            assertThat(reading.await(10, TimeUnit.SECONDS)).isTrue(); // the cycle is inside its YouTube read
+            poller.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+            long started = System.nanoTime();
+            poller.refreshIfStale();
+            assertThat(System.nanoTime() - started).as("the tick waited on the cycle").isLessThan(TimeUnit.SECONDS.toNanos(5));
+        } finally {
+            release.countDown();
+            cycle.join(10_000);
+        }
+        org.mockito.Mockito.clearInvocations(liveCategories);
+        poller.refreshIfStale();
+        verify(liveCategories).liveCategoryIds();                     // the skipped tick kept the flag
     }
 }

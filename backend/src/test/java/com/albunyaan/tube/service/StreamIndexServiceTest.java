@@ -10,6 +10,7 @@ import org.mockito.junit.jupiter.MockitoExtension;
 
 import java.util.List;
 
+import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.Mockito.*;
 
 @ExtendWith(MockitoExtension.class)
@@ -51,5 +52,19 @@ class StreamIndexServiceTest {
 
         verify(searchIndex).removeSource("channel:UC123");
         verify(searchIndex).removeStream("abc12345678");
+    }
+
+    /** Stage 9 B13: Restore of a take-down undoes markStreamArchived: the stored stream is visible and indexed again. */
+    @Test
+    void markStreamRestored_makesTheStoredStreamVisibleAndIndexesItAgain() throws Exception {
+        SearchableStream s = new SearchableStream(); s.setStreamId("ilgiwqpcOC8");
+        when(streamRepository.markVisible("ilgiwqpcOC8")).thenReturn(s);
+        when(streamRepository.markVisible("innerOnly01")).thenReturn(null); // no stored stream (an inner copy): nothing to index
+
+        service.markStreamRestored("ilgiwqpcOC8");
+        service.markStreamRestored("innerOnly01");
+
+        verify(searchIndex).restoreStream(s);
+        verify(searchIndex, times(1)).restoreStream(any());
     }
 }

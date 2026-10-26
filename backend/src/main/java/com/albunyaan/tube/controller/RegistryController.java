@@ -1007,7 +1007,16 @@ public class RegistryController {
                 .sanitizeThumbnailUrl(video.getThumbnailUrl()));
 
         // A re-add replaces the REJECTED doc whole, on a status CAS (as the resubmit path above).
-        Video saved = rejectedDocId == null ? videoRepository.save(video) : videoRepository.saveIfStatus(video, "REJECTED");
+        Video saved;
+        if (rejectedDocId == null) {
+            saved = videoRepository.save(video);
+        } else {
+            try {
+                saved = videoRepository.saveIfStatus(video, "REJECTED");
+            } catch (IllegalStateException | IllegalArgumentException raced) { // another re-add landed, or Restore deleted it
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+        }
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
             for (String categoryId : saved.getCategoryIds()) {
                 sortOrderService.addContentToCategory(categoryId, saved.getId(), "video");

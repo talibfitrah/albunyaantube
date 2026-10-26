@@ -85,8 +85,9 @@ final class InnerCorpus {
     static void write(Path file, List<Item> items) throws IOException {
         Path tmp = file.resolveSibling(file.getFileName() + ".tmp");
         try {
-            try (FileChannel ch = FileChannel.open(tmp, CREATE, TRUNCATE_EXISTING, WRITE)) {
-                GZIPOutputStream gz = new GZIPOutputStream(Channels.newOutputStream(ch), 65_536);
+            // Stage 9 B13: gz is closed too, which frees its native zlib buffer now, not when the GC's Cleaner gets to it.
+            try (FileChannel ch = FileChannel.open(tmp, CREATE, TRUNCATE_EXISTING, WRITE);
+                 GZIPOutputStream gz = new GZIPOutputStream(Channels.newOutputStream(ch), 65_536)) {
                 Writer w = new OutputStreamWriter(gz, StandardCharsets.UTF_8);
                 for (Item it : items) {
                     w.write(JSON.writeValueAsString(it));

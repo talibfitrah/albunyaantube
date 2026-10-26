@@ -237,7 +237,7 @@ class ContentReportServiceTest {
     /** The one Video document a parentless resolve may write: the id's take-down record, never in the catalog. */
     private Video takenDown(String youtubeId) throws Exception {
         var saved = org.mockito.ArgumentCaptor.forClass(Video.class);
-        verify(videoRepository).save(saved.capture());
+        verify(videoRepository, org.mockito.Mockito.atLeastOnce()).save(saved.capture()); // again with its sources (B13)
         Video v = saved.getValue();
         assertThat(v.getYoutubeId()).isEqualTo(youtubeId);
         assertThat(v.getStatus()).as("never APPROVED or PENDING: not served, not in the approvals queue").isEqualTo("REJECTED");
@@ -442,5 +442,60 @@ class ContentReportServiceTest {
         assertThat(pl.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
         verify(reportRepository, times(1)).update(any());
         assertThat(out.getResolutionNote()).isNull();
+    }
+
+    // --- Stage 9 B13: Restore undoes a take-down whole --------------------------------------------
+
+    /** The record names the sources the take-down excluded the id on, and only those: an admin's earlier exclusion stays. */
+    @Test
+    void aTakeDownRecordNamesOnlyTheSourcesItExcludedTheVideoOn() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-names")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of("channel:UCfassTU6mGWIj-yb26_ADjQ",
+                "channel:UCalready0000000000000aa", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
+        Channel already = new Channel("UCalready0000000000000aa");
+        already.getExcludedItems().getVideos().add("ilgiwqpcOC8");   // an admin excluded it there before the report
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ"))
+                .thenReturn(Optional.of(new Channel("UCfassTU6mGWIj-yb26_ADjQ")));
+        when(channelRepository.findByYoutubeId("UCalready0000000000000aa")).thenReturn(Optional.of(already));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"))
+                .thenReturn(Optional.of(new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")));
+
+        service.resolveReport("report-names", ReportStatus.RESOLVED, "admin", null);
+
+        assertThat(takenDown("ilgiwqpcOC8").getTakeDownExclusions())
+                .containsExactly("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+    }
+
+    /** Restore lifts what the take-down did: the exclusions it added and the stream it hid, then deletes its record. */
+    @Test
+    void liftingATakeDownUndoesItsExclusionsAndItsStreamThenDeletesTheRecord() throws Exception {
+        Video record = new Video("ilgiwqpcOC8");
+        record.setId("doc-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setTakeDownExclusions(List.of("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        ch.getExcludedItems().getVideos().addAll(List.of("ilgiwqpcOC8", "keptExcl001"));
+        Playlist pl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        pl.getExcludedVideoIds().add("ilgiwqpcOC8");
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pl));
+
+        service.liftTakeDown(record);
+
+        assertThat(ch.getExcludedItems().getVideos()).containsExactly("keptExcl001");
+        assertThat(pl.getExcludedVideoIds()).isEmpty();
+        verify(channelRepository).save(ch);
+        verify(playlistRepository).save(pl);
+        verify(streamIndexService).markStreamRestored("ilgiwqpcOC8");
+        verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
+        verify(publicContentCacheService).evictPublicContentCaches();
+        assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
 }

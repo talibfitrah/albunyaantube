@@ -571,6 +571,26 @@ class RegistryControllerTest {
         verify(videoRepository, never()).save(any());
     }
 
+    /** Stage 9 B13: a re-add that loses its race (another re-add, or a Restore deleted the record) is 409, not 500. */
+    @Test
+    void addVideo_aReAddThatLosesItsRaceIs409() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.saveIfStatus(any(), eq("REJECTED")))
+                .thenThrow(new IllegalStateException("expected status REJECTED but found PENDING"))
+                .thenThrow(new IllegalArgumentException("Video not found: doc-takedown"));
+
+        for (String race : List.of("re-added", "restored")) {
+            com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("TakeDown001");
+            body.setStatus("APPROVED");
+            ResponseEntity<com.albunyaan.tube.model.Video> response =
+                    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> registryController.addVideo(body, adminUser), race);
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode(), race);
+        }
+    }
+
     @Test
     void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
         // Arrange

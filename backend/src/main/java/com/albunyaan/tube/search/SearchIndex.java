@@ -468,6 +468,13 @@ public class SearchIndex {
         submit("removeStream " + streamId, () -> writer.deleteDocuments(streamKey(streamId)));
     }
 
+    /** After StreamIndexService.markStreamRestored (stage 9 B13): the stored stream is indexed again, as the boot load does. */
+    public void restoreStream(SearchableStream stream) {
+        if (stream.getStreamId() == null || stream.getTitle() == null) return;
+        submit("restoreStream " + stream.getStreamId(),
+                () -> writer.updateDocument(streamKey(stream.getStreamId()), streamDoc(streamDto(stream), stream.getSourceKeys())));
+    }
+
     /** Stored values of `field` on the document with `key` (as of the last refresh), or none. */
     private List<String> storedValues(String key, String field) throws IOException {
         IndexSearcher searcher = searchers.acquire();

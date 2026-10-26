@@ -277,7 +277,7 @@ public class LiveChannelsMigration {
                 if (!"ARCHIVE".equals(actions.get(pv.youtubeId()))) continue;
                 Video doc = videos.findById(videoDocs.get(pv.youtubeId()).getId()).orElseThrow();
                 if (doc.getValidationStatus() == ValidationStatus.ARCHIVED) continue;          // done on an earlier run
-                if (!LiveChannelPoller.archivable(doc, Set.of(categoryId))) {                // R12, the poller's rule
+                if (!LiveChannelPoller.archivableOnceRemoved(doc, Set.of(categoryId))) {    // R12, the poller's rule
                     warnings.add("kept: " + pv.youtubeId() + " " + (doc.getCategoryIds() != null && !doc.getCategoryIds().isEmpty()
                             ? "holds categories " + doc.getCategoryIds()
                             : "is " + (doc.getValidationStatus() == ValidationStatus.UNAVAILABLE ? "UNAVAILABLE" : doc.getStatus())));
@@ -289,6 +289,7 @@ public class LiveChannelsMigration {
                     LiveChannelState next = s == null ? LiveChannelState.unknown(pv.channelId()) : s.copy();
                     ValidationStatus vs = doc.getValidationStatus();
                     next.getArchived().put(pv.youtubeId(), vs == null ? "" : vs.name());
+                    next.getArchivedFrom().put(pv.youtubeId(), List.of(categoryId));
                     live.put(next);
                 }
                 doc.setValidationStatus(ValidationStatus.ARCHIVED);

@@ -96,6 +96,13 @@ public class Video {
     private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | "REPORT" (a take-down record) | null
 
     /**
+     * Stage 9 B13: on a take-down record only, the source keys ("channel:UC…", "playlist:PL…") its report excluded the id
+     * on, so Restore lifts exactly those. Server-only: never read from or written to a request body.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private List<String> takeDownExclusions;
+
+    /**
      * Finding 3: PUBLIC (default; null on legacy docs is treated as PUBLIC) or PERSONAL.
      * PERSONAL items are approved only for specific users and never appear in public
      * browse/search. Set at approval time, not at submission.
@@ -240,6 +247,14 @@ public class Video {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public List<String> getTakeDownExclusions() {
+        return takeDownExclusions;
+    }
+
+    public void setTakeDownExclusions(List<String> takeDownExclusions) {
+        this.takeDownExclusions = takeDownExclusions;
     }
 
     public String getVisibility() {

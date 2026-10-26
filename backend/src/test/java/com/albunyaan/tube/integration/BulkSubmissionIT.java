@@ -51,6 +51,14 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     @MockBean
     private YouTubeGateway gateway;
 
+    @Autowired
+    private com.albunyaan.tube.repository.VideoRepository videoRepository;
+
+    @Override
+    protected String[] getCollectionsToClean() {
+        return new String[]{"categories", "channels", "playlists", "videos", "users", "audit_logs", "searchable_streams"};
+    }
+
     /**
      * Seed the "cat-1" category so the per-row categoryIds existence
      * check in {@code BulkSubmissionService.submit} (added 2026-05-23 to
@@ -217,6 +225,52 @@ class BulkSubmissionIT extends BaseIntegrationTest {
         seedVideo("zzzz-approved", "TwoDocs0001", "APPROVED", null, null);
 
         mvc.perform(get("/api/v1/videos/TwoDocs0001")).andExpect(status().isOk());
+    }
+
+    /** Stage 9 B13: Restore lifts a take-down whole: the exclusion it added, its stream's archive, then its record. */
+    @Test
+    void restoreOfATakeDownLiftsItsExclusionAndItsStreamThenDeletesTheRecord() throws Exception {
+        stubAuthAs("admin-uid", "admin");
+        var record = new com.albunyaan.tube.model.Video("TakeDown002");
+        record.setId("aaaa-restore");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        record.setTakeDownExclusions(List.of("channel:UCtakedown0000000000000a"));
+        firestore.collection("videos").document("aaaa-restore").set(record).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        firestore.collection("channels").document("ch-takedown").set(Map.of("youtubeId", "UCtakedown0000000000000a",
+                "name", "C", "status", "APPROVED", "excludedItems", Map.of("videos", List.of("TakeDown002", "KeptExcl001"))))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        firestore.collection("searchable_streams").document("TakeDown002").set(Map.of(   // streamId is the doc id
+                "title", "Lesson", "sourceKeys", List.of("channel:UCtakedown0000000000000a"), "visible", false))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        mvc.perform(post("/api/admin/content-validation/action")
+                        .header("Authorization", "Bearer fake-admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"action\":\"RESTORE\",\"type\":\"VIDEO\",\"ids\":[\"aaaa-restore\"]}"))
+                .andExpect(status().isOk());
+
+        org.junit.jupiter.api.Assertions.assertFalse(firestore.collection("videos").document("aaaa-restore").get()
+                .get(5, java.util.concurrent.TimeUnit.SECONDS).exists(), "the record is gone");
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("KeptExcl001"), firestore.collection("channels").document("ch-takedown")
+                .get().get(5, java.util.concurrent.TimeUnit.SECONDS).get("excludedItems.videos"), "only the take-down's exclusion is lifted");
+        org.junit.jupiter.api.Assertions.assertEquals(Boolean.TRUE, firestore.collection("searchable_streams").document("TakeDown002")
+                .get().get(5, java.util.concurrent.TimeUnit.SECONDS).getBoolean("visible"), "the stream's archive is undone");
+    }
+
+    /** Stage 9 B13: through the real Firestore client, a conditional write's own refusal reaches its caller as itself. */
+    @Test
+    void aConditionalWritesOwnRefusalIsThrownAsItself() throws Exception {
+        seedVideo("aaaa-approved", "ReAdded0001", "APPROVED", null, null);
+        var doc = videoRepository.findById("aaaa-approved").orElseThrow();
+        var gone = new com.albunyaan.tube.model.Video("Restored001");
+        gone.setId("aaaa-gone");
+
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalStateException.class,
+                () -> videoRepository.saveIfStatus(doc, "REJECTED"), "another re-add landed: 409");
+        org.junit.jupiter.api.Assertions.assertThrows(IllegalArgumentException.class,
+                () -> videoRepository.saveIfStatus(gone, "REJECTED"), "a Restore deleted the record");
     }
 
     /**

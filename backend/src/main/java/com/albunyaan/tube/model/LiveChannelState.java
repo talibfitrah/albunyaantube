@@ -33,6 +33,8 @@ public class LiveChannelState {
     /** R12: ids this poller archived, with the validationStatus to restore ("" = none). */
     // ponytail: never pruned by design (R12 restore-on-reappearance); move to a subcollection if a doc nears 1 MiB.
     private Map<String, String> archived = new HashMap<>();
+    /** Stage 9 B13 (R12): the LIVE categories each archived link left, so its restore puts it back there. */
+    private Map<String, List<String>> archivedFrom = new HashMap<>();
     private Long updatedAt;
 
     public LiveChannelState() {
@@ -60,6 +62,7 @@ public class LiveChannelState {
         c.misses = new HashMap<>();
         misses.forEach((k, v) -> c.misses.put(k, new Miss(v.count, v.since)));
         c.archived = new HashMap<>(archived);
+        c.archivedFrom = new HashMap<>(archivedFrom);
         c.updatedAt = updatedAt;
         return c;
     }
@@ -88,6 +91,8 @@ public class LiveChannelState {
     public void setMisses(Map<String, Miss> misses) { this.misses = misses == null ? new HashMap<>() : misses; }
     public Map<String, String> getArchived() { return archived; }
     public void setArchived(Map<String, String> archived) { this.archived = archived == null ? new HashMap<>() : archived; }
+    public Map<String, List<String>> getArchivedFrom() { return archivedFrom; }
+    public void setArchivedFrom(Map<String, List<String>> archivedFrom) { this.archivedFrom = archivedFrom == null ? new HashMap<>() : archivedFrom; }
     public Long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Long updatedAt) { this.updatedAt = updatedAt; }
 
