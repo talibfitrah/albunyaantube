@@ -7,10 +7,11 @@ import CategoriesView from '@/views/CategoriesView.vue';
 import { messages } from '@/locales/messages';
 
 const auth = vi.hoisted(() => ({ isAdmin: true }));
-const service = vi.hoisted(() => ({ updateCategory: vi.fn(() => Promise.resolve({})) }));
-vi.mock('@/services/sortOrder', () => ({
-  getCategoryContentOrder: () => Promise.resolve([{ contentId: 'abc', contentType: 'playlist', title: 'My playlist', thumbnailUrl: null, position: 0, youtubeId: 'PLabc' }])
+const service = vi.hoisted(() => ({
+  updateCategory: vi.fn(() => Promise.resolve({})),
+  getCategoryContentOrder: vi.fn(() => Promise.resolve([{ contentId: 'abc', contentType: 'playlist', title: 'My playlist', thumbnailUrl: null, position: 0, youtubeId: 'PLabc' }]))
 }));
+vi.mock('@/services/sortOrder', () => ({ getCategoryContentOrder: service.getCategoryContentOrder }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
 vi.mock('@/services/categoryService', () => ({
   getAllCategories: () => Promise.resolve([
@@ -151,5 +152,15 @@ describe('CategoriesView and the category type (spec §8, R18)', () => {
     await saveAsLive('Quran');
 
     await waitFor(() => expect(formError()).toBe(messages.en.categories.dialog.error));
+  });
+
+  it('fetches member titles only for a refusal that lists offenders (Cubic r5 #11)', async () => {
+    service.getCategoryContentOrder.mockClear();
+    service.updateCategory.mockRejectedValueOnce(
+      Object.assign(new Error('Request failed with status code 500'), { response: { status: 500, data: {} } }));
+    await saveAsLive('Quran');
+
+    await waitFor(() => expect(formError()).toBe(messages.en.categories.dialog.error));
+    expect(service.getCategoryContentOrder).not.toHaveBeenCalled();
   });
 });

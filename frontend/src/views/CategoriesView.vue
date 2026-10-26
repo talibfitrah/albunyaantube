@@ -172,7 +172,7 @@
 import { ref, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
-import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
+import { apiErrorOffenders, apiErrorWithOffenders, offenderTitles } from '@/services/http';
 import { getCategoryContentOrder } from '@/services/sortOrder';
 import CategoryTreeItem from '@/components/categories/CategoryTreeItem.vue';
 import ErrorRetry from '@/components/common/ErrorRetry.vue';
@@ -305,8 +305,11 @@ async function handleSubmit() {
     await loadCategories();
   } catch (err) {
     // A flip to LIVE can be refused with each offending member listed (MEMBERS_INVALID).
-    // Offenders are members of this category: name them by title, falling back to the raw ref.
-    const members = await getCategoryContentOrder(dialogData.value.id).catch(() => []);
+    // Offenders are members of this category: name them by title, falling back to the raw ref. Only then is the
+    // list read (Cubic r5): a new category has none, and any other failure needs no titles.
+    const members = apiErrorOffenders(err).length && dialogMode.value !== 'add'
+      ? await getCategoryContentOrder(dialogData.value.id).catch(() => [])
+      : [];
     dialogError.value = apiErrorWithOffenders(err, t, 'categories.dialog.error',
       offenderTitles(members.map(m => ({ id: m.contentId, title: m.title }))));
   } finally {
