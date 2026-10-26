@@ -847,6 +847,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Cancel the buffering-stall watchdog to prevent stale refresh triggers
         cancelStallWatchdog()
+        viewModel.onPlayerViewDestroyed()   // §9.1 step 4: no live reconnect polling once the screen is gone (Cubic r4)
 
         // Release MediaSession BEFORE releasing player (service doesn't own player lifecycle)
         playbackService?.releaseSession()

@@ -162,6 +162,38 @@ class PushDirtyTest {
         assertEquals("A's rows must not go out once A has signed out", 0, pushes.get())
     }
 
+    // Cubic r4 (SyncManager.kt:93): guarded() read the session when a call started, so a pushDirty(A) that started after
+    // A signed out (AlBunyaanApplication.onResume: the aborted pullAll(A), then pushDirty(A)) passed every check, and
+    // FirebaseAuthInterceptor signed A's rows with B's token, before B's bind wiped them.
+    @Test fun aPushForASignedOutAccountThatStartsLaterPushesNothing() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("A", 0L, true))
+        sm.bind("A")
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "A", dirty = true))
+        val pushes = java.util.concurrent.atomic.AtomicInteger()
+        api.putFavoriteResponse = { id, req ->
+            pushes.incrementAndGet()
+            Response.success(FavoriteSyncDto(id, false, 1L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+
+        sm.unbind()                 // A signs out; B signs in, its bind still to come
+        sm.pushDirty("A")           // the push queued for A starts now
+
+        assertEquals("nothing goes out for A once A has signed out", 0, pushes.get())
+    }
+
+    /** ...and work for an account other than the bound one never runs (a worker holding A's uid after B bound). */
+    @Test fun workForAnAccountThatIsNotBoundNeverRuns() = runTest {
+        sm.bind("B")
+        val pulls = java.util.concurrent.atomic.AtomicInteger()
+        val empty = api.pullResponse
+        api.pullResponse = { pulls.incrementAndGet(); empty() }
+
+        sm.pullAll("A")
+
+        assertEquals("B is bound: nothing is asked for A under B's token", 0, pulls.get())
+    }
+
     /** Row one fails with [failure]; the drain must go on and push row two (review m4, m6). */
     private suspend fun assertDrainGoesOnAfter(failure: () -> Response<SubscriptionSyncDto>) {
         db.subscribedChannelDao().upsert(SubscribedChannel("UC6", "u", "n", null, user_id = "uid", dirty = true))

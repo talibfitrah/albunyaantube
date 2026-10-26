@@ -69,6 +69,16 @@ class LiveChannelRecoveryTest {
         assertEquals(Step.Wait(15), recovery().next(Trigger.FAILURE, emptyList(), at(0)))   // an answer of none is no blind try
     }
 
+    /** Spec Rev 5 / iOS (Cubic r4): ONE same-id recovery per incident; the failure of that re-resolve is step 4's. */
+    @Test fun `a listed id gets one same-id recovery per incident`() {
+        val listed = listOf(LiveItem("old0000000a", "x"))
+        val r = recovery()
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, listed, at(0)))
+        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, listed, at(10)))
+        val blind = recovery().apply { next(Trigger.FAILURE, null, at(0)) }
+        assertEquals("the blind try was the one", Step.Wait(15), blind.next(Trigger.FAILURE, listed, at(1)))
+    }
+
     /** Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer. */
     @Test fun `a malformed backend id is no answer`() {
         val bad = listOf(LiveItem("../x?y=1", "Laith & Layla"))

@@ -388,6 +388,24 @@ class PlayerViewModelDownloadPlaybackTest {
         assertTrue(offline.state.value.audioOnly)
     }
 
+    // Cubic r4: startDownload set audio-only from the saved copy and leaveDownload kept it, so after an audio-only copy
+    // played offline the next online stream opened audio-only too (stage 3 M6: online, the video streams).
+    @Test fun `an audio-only copy played offline leaves the next online stream as video`() = runTest {
+        downloads.entries.value = listOf(completed("d18", "v18", tmp.newFile("v18.m4a"), audioOnly = true))
+        online = false
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v18")
+        advanceUntilIdle()
+        assertTrue("offline, the saved audio plays", vm.state.value.audioOnly)
+
+        online = true
+        vm.loadVideo(videoId = "v19")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertFalse("online, the next video streams with its picture", vm.state.value.audioOnly)
+    }
+
     // Stage 9 r3 (Cubic): loadDownload's local-file flag outlived it, so a later stream (the view recreated after the
     // saved copy was deleted) re-read the gone file: "not available", with Retry, Cast, Quality and Up Next hidden.
     @Test fun `a stream after a local file plays the stream`() = runTest {

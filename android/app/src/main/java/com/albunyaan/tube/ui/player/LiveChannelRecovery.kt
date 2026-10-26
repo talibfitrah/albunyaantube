@@ -18,7 +18,8 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
     }
 
     private var waits = 0
-    private var blindSameIdTried = false
+    /** Spec Rev 5 / iOS: ONE same-id recovery per incident. A failure after it is that re-resolve failing: step 4. */
+    private var sameIdTried = false
 
     fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
         val step = decide(trigger, lives, nowMs)
@@ -35,10 +36,10 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
             lives.firstOrNull { it.title == currentTitle?.ifBlank { null } }?.let { return Step.SwitchTo(it.id, it.title) }
             if (elapsed >= TITLE_WAIT_MS) return Step.SwitchTo(lives[0].id, lives[0].title)
             deadline = TITLE_WAIT_MS
-        } else if (trigger == Trigger.FAILURE) {
-            if (lives?.any { it.id == currentId } == true) return Step.SameId
-            // No answer: one same-id try per incident (the gate fails open; the live check keeps recordings out).
-            if (lives == null && !blindSameIdTried) { blindSameIdTried = true; return Step.SameId }
+        } else if (trigger == Trigger.FAILURE && !sameIdTried && (lives == null || lives.any { it.id == currentId })) {
+            // Listed, or no answer (the gate fails open; the live check keeps recordings out).
+            sameIdTried = true
+            return Step.SameId
         }
         if (elapsed >= GIVE_UP_MS) return Step.GiveUp
         // A wait ends by the next deadline: the D12 title wait at 2 min, the give-up at 10 min.

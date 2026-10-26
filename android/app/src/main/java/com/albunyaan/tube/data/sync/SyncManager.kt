@@ -77,10 +77,16 @@ class SyncManager @Inject constructor(
     // and B signed in pushed A's rows under B's Bearer, into B's account.
     private val session = java.util.concurrent.atomic.AtomicInteger()
 
-    /** The [session] the block holding [syncMutex] was asked in. */
+    /** The [session] the block holding [syncMutex] belongs to: a bind's when it was asked, other work's binding's. */
     private var running = 0
 
-    suspend fun bind(uid: String) = guarded { bindLocked(uid) }
+    // Cubic r4: the account sync works for, set by a bind (under syncMutex, like [running]). unbind() moves [session] past
+    // [boundIn] at once, so no work runs, however late it starts, until the next bind. A process with no bind yet runs on
+    // the stored binding: any uid, as before.
+    private var boundIn = 0
+    private var boundUid: String? = null
+
+    suspend fun bind(uid: String) = guarded(uid, bindAsked = session.get()) { bindLocked(uid) }
 
     /**
      * S7-N4: bind, pullAll and pushDirty, and so this class's own launches (`pushDirtyAsync`, the
@@ -89,12 +95,13 @@ class SyncManager @Inject constructor(
      * with no handler and kill the process. Now it is logged; the rows stay dirty for the next
      * trigger. Cancellation still propagates.
      */
-    private suspend fun guarded(block: suspend () -> Unit) {
-        val asked = session.get()
+    private suspend fun guarded(uid: String, bindAsked: Int? = null, block: suspend () -> Unit) {
         syncMutex.withLock {
-            running = asked
+            running = bindAsked ?: boundIn
             try {
                 ensureSameSession()
+                if (bindAsked != null) { boundIn = bindAsked; boundUid = uid }
+                else if (boundUid != null && boundUid != uid) throw SignedOutSinceAsked()   // not the bound account
                 block()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
@@ -184,7 +191,7 @@ class SyncManager @Inject constructor(
         binding.markMergeDone(uid)
     }
 
-    suspend fun pullAll(uid: String) = guarded { pullAllLocked(uid) }
+    suspend fun pullAll(uid: String) = guarded(uid) { pullAllLocked(uid) }
 
     private suspend fun pullAllLocked(uid: String) {
         val cursors = mutableMapOf(
@@ -456,7 +463,7 @@ class SyncManager @Inject constructor(
             importedAt      = r.importedAt,
         )
 
-    suspend fun pushDirty(uid: String) = guarded { pushDirtyLocked(uid) }
+    suspend fun pushDirty(uid: String) = guarded(uid) { pushDirtyLocked(uid) }
 
     private suspend fun pushDirtyLocked(uid: String) {
         // Cubic R5 P1 #19 — drain across types is *resilient*, not all-or-nothing.

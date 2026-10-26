@@ -260,9 +260,9 @@ class PlayerViewModel @Inject constructor(
 
     // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
     private var liveIncident: LiveChannelRecovery? = null
-    /** This live-channel item reached live or had an incident: a later load (a Retry, a switch) is a reconnect. */
-    private var liveStarted = false
     private var liveRetryJob: Job? = null
+    /** §9.1 step 4 retries only while the screen is open (Cubic r4): false from [onPlayerViewDestroyed] to the next load. */
+    private var liveScreenOpen = true
     private var liveForceEndJob: Job? = null
     /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
     var debugLiveForceEndMs: Long? = null
@@ -862,7 +862,8 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel(); liveStarted = false
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel(); liveScreenOpen = true
+        updateState { it.copy(liveStarted = false) }
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -968,8 +969,10 @@ class PlayerViewModel @Inject constructor(
 
     /** A stream after a local file (stage 9 r3): [resolveWithRetry] reads [playingDownloadId] first, so it must go. */
     private fun leaveDownload() {
+        if (playingDownloadId == null) return
         playingDownloadId = null
-        updateState { it.copy(playingDownload = false) }
+        // Cubic r4: so must the audio-only startDownload took from the copy; online the video streams (stage 3 M6).
+        updateState { it.copy(playingDownload = false, audioOnly = false) }
     }
 
     private fun savedCopyOf(videoId: String): DownloadEntry? = downloadRepository.savedCopyOf(videoId)
@@ -1405,7 +1408,7 @@ class PlayerViewModel @Inject constructor(
             // Stage 3 I1: Loading at once, as resolveStreamFor sets it. The caller stops the player next, and a Ready(old)
             // left up while the backend answers would make the fragment re-prepare the failed source (a second permit).
             updateState { it.copy(streamState = StreamState.Loading) }
-            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE, ::recoverLiveSameId)
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
             return true
         }
         return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
@@ -1523,6 +1526,19 @@ class PlayerViewModel @Inject constructor(
 
         // Advance to next item
         return advanceToNext()
+    }
+
+    /**
+     * Every attempt failed. §9.1 / stage 9 r3: in live-channel mode no answer (a timeout, the network, F3's ended 24/7 id)
+     * is a failure, not an end: the backend's list switches, waits, or retries the same id once per incident (Rev 5).
+     */
+    private fun resolveExhausted(item: UpNextItem, reason: String, @StringRes messageRes: Int) {
+        playbackMetrics.onPlaybackFailed(item.streamId, reason)
+        when {
+            item.liveChannelId != null -> onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
+            handleStreamResolutionFailure(item) -> Unit                // auto-skipped to the next playlist item
+            else -> updateState { it.copy(streamState = StreamState.Error(messageRes)) }
+        }
     }
 
     /**
@@ -1673,15 +1689,7 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    // All retries exhausted - try auto-skip in playlist mode
-                    playbackMetrics.onPlaybackFailed(item.streamId, "extraction_timeout")
-                    // §9.1 / stage 9 r3: no answer (a timeout, the network) is a failure, not an end. The same id is retried on
-                    // the AUTO_RECOVERY budget, which bounds it; only an end or a not-live resolve goes straight to step 4.
-                    if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE, ::recoverLiveSameId); return }
-                    if (handleStreamResolutionFailure(item)) {
-                        return  // Auto-skipped to next item
-                    }
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
+                    resolveExhausted(item, "extraction_timeout", R.string.player_stream_error)
                     return
                 }
             }
@@ -1693,14 +1701,7 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    // All retries exhausted - try auto-skip in playlist mode
-                    playbackMetrics.onPlaybackFailed(item.streamId, "stream_null")
-                    // §9.1: a failure too (F3: an ended 24/7 id fails to resolve; the backend's list then switches or waits).
-                    if (item.liveChannelId != null) { onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE, ::recoverLiveSameId); return }
-                    if (handleStreamResolutionFailure(item)) {
-                        return  // Auto-skipped to next item
-                    }
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    resolveExhausted(item, "stream_null", R.string.player_stream_unavailable)
                     return
                 }
             }
@@ -1711,7 +1712,7 @@ class PlayerViewModel @Inject constructor(
                     return
                 }
                 liveIncident = null                                   // live again: the incident is over
-                liveStarted = true
+                updateState { it.copy(liveStarted = true) }
             }
             val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
@@ -1870,15 +1871,21 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /** PlayerFragment.onDestroyView: the player is released, so the §9.1 step 4 retries stop until the next load. */
+    fun onPlayerViewDestroyed() {
+        liveScreenOpen = false
+        liveRetryJob?.cancel()
+    }
+
     /**
      * §9.1: ask the backend for the channel's current lives, then switch, wait, recover the same id, or give up.
      * Main thread only (it and [switchLive] touch [currentItem], the queue state and the resolve job).
      */
-    private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger, onSameId: () -> Unit = {}) {
+    private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger) {
+        if (!liveScreenOpen) return                                    // every trigger comes here, a late one included
         val item = currentItem ?: return
         val channelId = item.liveChannelId ?: return
-        liveStarted = true
-        updateState { it }   // a Loading already up (an ended id opened cold) turns into the reconnect now
+        updateState { it.copy(liveStarted = true) }   // a Loading already up (an ended id opened cold) is a reconnect now
         // An incident belongs to one stream id: a stale one (the user picked another item) never blocks this one.
         val incident = liveIncident?.takeIf { it.currentId == item.streamId }
             ?: LiveChannelRecovery(item.streamId, item.liveTitle, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
@@ -1900,13 +1907,13 @@ class PlayerViewModel @Inject constructor(
             else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime())
             when (step) {
                 is LiveChannelRecovery.Step.SwitchTo -> switchLive(step.id, step.title)
-                LiveChannelRecovery.Step.SameId -> onSameId()
+                LiveChannelRecovery.Step.SameId -> recoverLiveSameId()
                 is LiveChannelRecovery.Step.Wait -> {
                     updateState { it.copy(streamState = StreamState.Loading) }   // the existing reconnecting state
                     kotlinx.coroutines.delay(step.seconds * 1_000L)
                     if (liveIncident !== incident) return@launch
                     // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
-                    onLiveChannelTrigger(trigger, onSameId)
+                    onLiveChannelTrigger(trigger)
                 }
                 LiveChannelRecovery.Step.GiveUp -> {
                     liveIncident = null
@@ -2151,11 +2158,8 @@ class PlayerViewModel @Inject constructor(
     }
 
     private fun updateState(transform: (PlayerState) -> PlayerState) {
-        // Every writer runs on Main (stage 3 M1: the live refresh too), so this never retries. Stage 9 r3: liveReconnecting
-        // is derived here, so it reaches the fragment in the same emission as the streamState it belongs to.
-        _state.update { old ->
-            transform(old).let { it.copy(liveReconnecting = it.streamState is StreamState.Loading && currentItem?.liveChannelId != null && liveStarted) }
-        }
+        // Every writer runs on Main (stage 3 M1: the live refresh too), so this never retries.
+        _state.update(transform)
     }
 
     private fun advanceToNext(): Boolean {
@@ -2367,13 +2371,17 @@ data class PlayerState(
     val playingDownload: Boolean = false,
     /** Whether the heart is offered: the server rejects a favourite with no channel name (400). */
     val canFavorite: Boolean = false,
+    /** This live-channel item reached live or had an incident: a later load (a Retry, a switch) is a reconnect. */
+    val liveStarted: Boolean = false,
+) {
     /**
      * §9.1 step 4 on screen: this Loading is a live channel's reconnect (step 4's waits, a switch, a Retry), so the
      * fragment shows the recovery overlay. True for every load of a live-channel item after it reached live or had an
-     * incident (an ended id opened cold included); its first load is not, whatever played before it.
+     * incident (an ended id opened cold included); its first load is not, whatever played before it. Cubic r4: derived
+     * from this state alone, so it is current in every emission with no extra write.
      */
-    val liveReconnecting: Boolean = false,
-)
+    val liveReconnecting: Boolean get() = liveStarted && streamState is StreamState.Loading && currentItem?.liveChannelId != null
+}
 
 data class UpNextItem(
     val id: String,

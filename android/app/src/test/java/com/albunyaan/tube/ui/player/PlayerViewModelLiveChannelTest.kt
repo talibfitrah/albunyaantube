@@ -136,19 +136,15 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
-    /** ...within the same-id budget (AUTO_RECOVERY permits): once it is spent, step 4 waits and never loops on the id. */
-    @Test fun `network failures retry within the same-id budget, then step 4`() = runTest(dispatcher) {
+    /** Spec Rev 5 / iOS (Cubic r4): ONE same-id retry; its failure is the spent budget, so step 4 never loops on the id. */
+    @Test fun `a failed same-id re-resolve is retried once, then step 4`() = runTest(dispatcher) {
         val repository = Offline(streams("Rs7St51oDDc", isLive = true), failures = Int.MAX_VALUE)
         val content = FakeContentService().apply { channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah"))) }
         val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
-            advanceClocks(3 * 60_000L)
-            val spent = repository.calls
-            assertTrue("same-id re-resolves ran ($spent)", spent > 3)
-
-            advanceClocks(5 * 60_000L)
-            assertEquals("a spent budget never re-resolves", spent, repository.calls)
+            advanceClocks(8 * 60_000L)
+            assertEquals("3 attempts, then ONE same-id re-resolve of 3", 6, repository.calls)
             assertEquals(StreamState.Loading, vm.state.value.streamState)
 
             advanceClocks(3 * 60_000L)
@@ -171,6 +167,47 @@ class PlayerViewModelLiveChannelTest {
             runCurrent()
             assertEquals(StreamState.Loading, vm.state.value.streamState)
             assertTrue(vm.state.value.liveReconnecting)
+        }
+    }
+
+    /** Spec §9.1 step 4 (Cubic r4): the retries run only while the screen is open; the polling stops with the view. */
+    @Test fun `a destroyed player view stops the reconnect polling`() = runTest(dispatcher) {
+        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+            content.channelLives[channel] = ChannelLives(emptyList())
+            vm.markCurrentComplete()
+            runCurrent()
+            assertEquals(1, content.channelLivesCalls.size)                       // step 4: the 15 s wait
+
+            vm.onPlayerViewDestroyed()
+            advanceClocks(11 * 60_000L)
+
+            assertEquals("no poll once the screen is gone", 1, content.channelLivesCalls.size)
+        }
+    }
+
+    /** ...and a trigger that lands after the view went (a resolve still out, here a recording) starts none. */
+    @Test fun `a trigger after the player view is gone asks nothing`() = runTest(dispatcher) {
+        val answer = kotlinx.coroutines.CompletableDeferred<ResolvedStreams?>()
+        val held = object : com.albunyaan.tube.player.PlayerRepository by FakePlayerRepository() {
+            override suspend fun resolveStreams(
+                videoId: String, forceRefresh: Boolean, priority: com.albunyaan.tube.data.extractor.Priority, sourceChannelId: String?,
+            ): ResolvedStreams? = answer.await()
+        }
+        val content = FakeContentService()
+        val vm = playerViewModel(repository = held, contentService = content, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "pqC-1yfFvu8", sourceChannelId = channel, liveChannelId = channel)
+            runCurrent()
+            vm.onPlayerViewDestroyed()
+
+            answer.complete(streams("pqC-1yfFvu8", isLive = false))                 // the not-live trigger, screen gone
+            runCurrent()
+            advanceClocks(60_000)
+
+            assertTrue("no backend ask with the screen gone", content.channelLivesCalls.isEmpty())
         }
     }
 
