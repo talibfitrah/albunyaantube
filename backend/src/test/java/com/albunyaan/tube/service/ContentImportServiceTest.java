@@ -560,7 +560,8 @@ class ContentImportServiceTest {
 
     /**
      * B17: a video batch that stopped at a /player bot check (the rest SKIPPED; the shared breaker no longer records
-     * it) is not retried: the retry would only send the same refused request again.
+     * it) is not retried: the retry would only send the same refused request again. B18 (Cubic r7 #3): the skipped
+     * rows were never checked, so they fail like the refused one (counted, listed for /failed-items), never vanish.
      */
     @Test
     void importSimpleFormatAsync_aBatchStoppedByABotCheckIsNotRetried() throws Exception {
@@ -580,8 +581,42 @@ class ContentImportServiceTest {
         service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
 
         verify(channelOrchestrator, times(1)).batchValidateVideosDtoWithDetails(anyList());
-        assertEquals(1, run.getVideosFailed());
+        assertEquals(3, run.getVideosChecked());
+        assertEquals(3, run.getVideosFailed());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(Set.of("video:validatorT1", "video:validatorT2", "video:validatorT3"), Set.copyOf(failedItemIds));
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> reasonCounts = (Map<String, Integer>) run.getDetails().get("reasonCounts");
+        assertEquals(2, reasonCounts.entrySet().stream()
+                .filter(e -> e.getKey().startsWith("VIDEO_YOUTUBE_ERROR: Not checked")).mapToInt(Map.Entry::getValue).sum());
         verify(videoRepository, never()).save(any(Video.class));
+    }
+
+    /** B18: an open breaker skips a whole channel or playlist batch; each row fails and is listed, none is dropped. */
+    @Test
+    void importSimpleFormatAsync_rowsSkippedByAnOpenBreakerAreFailedAndListed() throws Exception {
+        List<Map<String, String>> simpleData = List.of(Map.of("UCskipped", "C|Global"), Map.of("PLskipped", "P|Global"),
+                Collections.emptyMap());
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(playlistRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<ChannelDetailsDto> channels = new BatchValidationResult<>();
+        channels.addSkipped("UCskipped");
+        BatchValidationResult<PlaylistDetailsDto> playlists = new BatchValidationResult<>();
+        playlists.addSkipped("PLskipped");
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channels);
+        when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlists);
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(1, run.getChannelsFailed());
+        assertEquals(1, run.getPlaylistsFailed());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(List.of("channel:UCskipped", "playlist:PLskipped"), failedItemIds);
+        verify(channelOrchestrator, times(1)).batchValidateChannelsDtoWithDetails(anyList());
+        verify(channelOrchestrator, times(1)).batchValidatePlaylistsDtoWithDetails(anyList());
     }
 
     // Helper methods to create DTOs

@@ -633,8 +633,14 @@ public class ContentImportService {
             Function<List<String>, BatchValidationResult<T>> retryFunction,
             String contentType
     ) {
-        // A batch that stopped early (breaker open, or a rate limit: B17) is not retried; it would meet the same refusal
-        if (initialResult == null || initialResult.getErrors().isEmpty() || !initialResult.getSkipped().isEmpty()) {
+        // A batch that stopped early (breaker open, or a rate limit: B17) is not retried; it would meet the same refusal.
+        // B18: its skipped ids were never checked; they fail as errors (counted, in failedItemIds), never vanish.
+        if (initialResult != null && !initialResult.getSkipped().isEmpty()) {
+            initialResult.getSkipped().forEach(id -> initialResult.addError(id,
+                    "Not checked: YouTube refused this batch (rate limit or circuit breaker open); retry later"));
+            return initialResult;
+        }
+        if (initialResult == null || initialResult.getErrors().isEmpty()) {
             return initialResult;
         }
 

@@ -143,10 +143,11 @@ public class PlaybackSolverService {
             } finally {
                 inFlight.release();
             }
-            if (reply.status() == 409 || reply.status() == 500) {   // the sidecar no longer holds that player
+            // The sidecar no longer holds that player: unknown (409), or its solve threw and it was evicted (500, B18)
+            if (reply.status() == 409 || reply.status() == 500) {
                 playerCopy.updateAndGet(copy -> copy != null && copy.playerId().equals(playerId) ? null : copy);
+                return Answer.of(409, null);
             }
-            if (reply.status() == 409) return Answer.of(409, null);
             if (reply.status() != 200) return Answer.of(503, 120);
             remember(playerId, "n", nMissing, reply.json().get("n"), nOut);
             remember(playerId, "s", sMissing, reply.json().get("s"), sOut);

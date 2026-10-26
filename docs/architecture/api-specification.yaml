@@ -2185,8 +2185,10 @@ paths:
                     type: string
         '503':
           description: |
-            No player now: the solver is switched off or cannot be reached (`Retry-After: 120`), or the first player
-            is still being fetched (`Retry-After: 10`). Body `{}`.
+            No player now. `Retry-After: 120`: the solver is switched off, cannot be reached, answers late (1 s) or
+            unreadably, or holds no player (none fetched yet, or its last one was dropped); a failed lookup is
+            remembered for 10 s and answered the same way. `Retry-After: 10`: another call is fetching the player
+            right now and no earlier copy is held. Body `{}`.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (10 or 120)
@@ -2203,7 +2205,8 @@ paths:
       description: |
         Answers the `n` and `s` challenges of one player. Each answer is cached for 6 hours. Limits: 20 calls a
         minute and 300 an hour per user (429); at most 8 solves in flight and 20 a second across all users (503).
-        Bodies over 16 KB are refused unread (413). Nothing about a request is logged.
+        A body over 16 KB gets 413 before any JSON is bound: unread when its `Content-Length` declares it, else (a
+        chunked body declares none) after reading at most 16 KB and one byte. Nothing about a request is logged.
       operationId: solvePlaybackChallenges
       tags: [Playback]
       requestBody:
@@ -2273,7 +2276,9 @@ paths:
                   message:
                     type: string
         '409':
-          description: The solver no longer holds this player. Body `{}`; fetch `GET /playback/player` again.
+          description: |
+            The solver no longer holds this player: it was replaced, or a solve with it failed and the solver
+            dropped it. Body `{}`; fetch `GET /playback/player` again.
           content:
             application/json:
               schema:
@@ -2297,8 +2302,8 @@ paths:
                 type: object
         '503':
           description: |
-            The solver is busy (`Retry-After: 10`: 8 solves in flight or 20 this second), or switched off, unreachable
-            or failed (`Retry-After: 120`). Body `{}`.
+            The solver is busy (`Retry-After: 10`: 8 solves in flight or 20 this second), or switched off, unreachable,
+            slower than 1 s, or failed in any other way (`Retry-After: 120`). Body `{}`.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (10 or 120)
@@ -5316,7 +5321,11 @@ components:
           type: string
           format: date-time
           nullable: true
-          description: Set while no channel has read LIVE in a cycle that held lives; the last lives are kept meanwhile
+          description: |
+            When the current run of unproven cycles began: the first cycle in which no polled channel read LIVE
+            (live spec R10); null after any cycle with a LIVE read. Meanwhile a channel that reads empty keeps its
+            last lives for up to 1 h and is then hidden, and nothing is removed. Also set while every channel is
+            really offline.
         categories:
           type: array
           items:

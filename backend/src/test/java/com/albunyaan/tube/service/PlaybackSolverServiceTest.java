@@ -320,12 +320,21 @@ class PlaybackSolverServiceTest {
         assertThat(service(true).solve("0229cd64", List.of(N), List.of()).status()).isEqualTo(409);
     }
 
-    /** 503 = warming; 500 = a solve that timed out or threw in the sidecar, which evicted that player (Task 3 as built). */
-    @ParameterizedTest
-    @ValueSource(ints = {500, 503})
-    void aFailedOrWarmingSidecarAnswers503With120(int status) {
-        solveStatus = status;
+    /** Any other sidecar status (a 503 here) is a failure: 503 + 120. */
+    @Test
+    void aFailedSidecarAnswers503With120() {
+        solveStatus = 503;
         assertThat(service(true).solve("0229cd64", List.of(N), List.of())).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+    }
+
+    /**
+     * B18 (Cubic r7 #8): a sidecar 500 is a solve that threw, and the sidecar evicted that player (server.mjs solve()), so
+     * the app gets the unknown-player 409: iOS drops its player id with no window, instead of a 120 s window spent on it.
+     */
+    @Test
+    void aSolveThatEvictedThePlayerAnswersTheUnknownPlayer409() {
+        solveStatus = 500;
+        assertThat(service(true).solve("0229cd64", List.of(N), List.of())).isEqualTo(new PlaybackSolverService.Answer(409, Map.of(), null));
     }
 
     @Test
