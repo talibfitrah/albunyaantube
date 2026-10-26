@@ -261,6 +261,17 @@ class CrawlPacerTest {
 
     // ---- R11 pacing and refusals ----------------------------------------------------------------
 
+    /** Cubic r8 #15: a backward clock step of 1 h must not make the crawler sleep the interval plus the step. */
+    @Test
+    void aBackwardClockStepCannotLengthenTheWaitPastTheMaximumIntervalTimesJitter() throws Exception {
+        onCrawler(() -> {
+            pacer.before(BROWSE);
+            now.set(now.get().minusSeconds(3600));
+            pacer.before(BROWSE);
+        });
+        assertEquals(List.of(144_000L), slept);
+    }
+
     @Test
     void theCrawlerWaitsIntervalTimesJitterThenTheSharedThrottle() throws Exception {
         pacer.jitter = () -> 0.8;

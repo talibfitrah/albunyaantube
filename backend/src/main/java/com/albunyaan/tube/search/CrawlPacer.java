@@ -92,7 +92,9 @@ public class CrawlPacer {
         InnerState s = store.state();
         refuseWhileHeld(s);
         if (today(CRAWLER_THREAD) >= dailyCap) throw new CrawlPausedException("daily cap");
-        long wait = lastRequestAt + Math.round(s.breaker.intervalMs * jitter.getAsDouble()) - clock.millis();
+        // capped: a backward clock step must not lengthen the sleep, which wakeUp() cannot end (Cubic r8 #15)
+        long wait = Math.min(lastRequestAt + Math.round(s.breaker.intervalMs * jitter.getAsDouble()) - clock.millis(),
+                Math.round(MAX_INTERVAL_MS * 1.2));
         if (wait > 0) {
             try {
                 sleeper.sleep(wait);

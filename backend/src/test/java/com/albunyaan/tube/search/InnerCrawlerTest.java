@@ -1069,6 +1069,20 @@ class InnerCrawlerTest {
         assertEquals(250, corpus(PL).size());
     }
 
+    /** Cubic r8 #16: a complete first page that lists a video twice must not write it twice to the corpus. */
+    @Test
+    void aCompleteFirstPageThatRepeatsAVideoWritesItOnce() throws Exception {
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FIRST_PASS;
+        List<InnerCorpus.Item> listing = new ArrayList<>(items("story", 0, 50, "x"));
+        listing.add(5, listing.get(2));
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(listing.size(), listing, false));
+
+        step();
+
+        assertEquals(50, corpus(PL).size());
+    }
+
     @Test
     void thePollIntervalIsHalfTheTimeSinceTheLastChangeBetweenOneAndSevenDays() {
         long t = 100 * InnerCrawler.DAY_MS;

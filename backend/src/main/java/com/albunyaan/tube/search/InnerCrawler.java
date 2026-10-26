@@ -675,7 +675,7 @@ public class InnerCrawler {
         }
         boolean complete = complete(page.listed(), page.count(), page.next() == null);
         // first: a failed write changes no state
-        writeCorpus(key, name, complete ? page.items() : mergeKeep(page.items(), corpus), corpus, complete);
+        writeCorpus(key, name, mergeKeep(page.items(), complete ? List.of() : corpus), corpus, complete);
         if (!page.items().isEmpty()) src.hl = hl(titles(page.items())); // R21: the source's own language, kept from now on
         src.count = page.count();
         src.firstPageAt = now;
