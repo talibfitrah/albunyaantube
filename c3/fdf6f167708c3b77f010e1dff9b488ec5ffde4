@@ -1,0 +1,48 @@
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Types.swift
+  s_dbb6b1f3671904::t_f5e0702d3e0a7a 1957-1959,1982-2027,2030-2032
+  s_dbb6b1f3671904::t_1caaa12c132457 2028-2029
+ios/FitrahTube/Features/Offline/OfflineStorage.swift
+  s_dbb6b1f3671904::t_0121f31af626d4 44,46-47,49
+  s_dbb6b1f3671904::t_154af81676fe36 40-43,45,48,52
+ios/FitrahTubeTests/LiveCatalogClientTests.swift
+  s_dbb6b1f3671904::t_7304b090bf7c21 254-255,259,264
+ios/FitrahTube/Catalog/CatalogClient.swift
+  s_dbb6b1f3671904::t_5718237b8cb3dd 21-25
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_dbb6b1f3671904::t_2f9eaa21973313 875,877
+  s_dbb6b1f3671904::t_a9b7a900fe500d 828
+  s_dbb6b1f3671904::t_43c94dbc4a7ebb 382,384-385,501,717,721,808,823-827,829-831,849,874,876,878-902,974-975,979-980,983,986-992,1409-1410,1419,1431-1434,1486,1505,1555
+ios/FitrahTube/Catalog/LiveCatalogClient.swift
+  s_dbb6b1f3671904::t_154af81676fe36 67-68,76-77
+ios/FitrahTube/Features/Offline/SavedScreen.swift
+  s_dbb6b1f3671904::t_154af81676fe36 18-19,45-48,50,59-60
+ios/FitrahTubeTests/OfflineEngineTests.swift
+  s_dbb6b1f3671904::t_81b67a47fdab30 145-146,151-155
+ios/FitrahTube/Features/Settings/SettingsView.swift
+  s_dbb6b1f3671904::t_17f53e72f3147e 195-196,290-291,293,328-329
+ios/Packages/FitrahAPI/Sources/FitrahAPI/GeneratedSources/Client.swift
+  s_dbb6b1f3671904::t_f5e0702d3e0a7a 600-606
+ios/FitrahTubeTests/LiveChannelPlaybackTests.swift
+  s_dbb6b1f3671904::t_473137d3fad7aa 401-405,407-414,416-467,708
+  s_dbb6b1f3671904::t_5f6e754fdc52ba 406,415
+  s_dbb6b1f3671904::t_fc2c1be9c7f48e 692-707
+  s_dbb6b1f3671904::t_ca7cec06fd58d0 709
+ios/FitrahTube/Features/Player/LiveChannelRecovery.swift
+  s_dbb6b1f3671904::t_154af81676fe36 30-32,35,39,58-59
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3fdf6f167708c3b77f010e1dff9b488ec5ffde4",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
