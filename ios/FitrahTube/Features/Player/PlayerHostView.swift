@@ -801,7 +801,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             guard let model else { return }
             let eligible = HDStager.mayStage(appState: UIApplication.shared.applicationState,
                                              pictureInPicture: background.pictureInPictureActive,
-                                             external: player.isExternalPlaybackActive)
+                                             external: player.isExternalPlaybackActive, online: isOnline())
             stager = HDStager.step(stager, model: model, player: player, eligible: eligible, loops: playToEnd == .restart) {
                 upgrade, masterURL, position in
                 HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: model.audioOnly, position: position,

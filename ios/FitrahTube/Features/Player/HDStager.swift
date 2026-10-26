@@ -13,7 +13,7 @@ import UIKit
     /// How far past its seek point the hidden item buffers (`preferredForwardBufferDuration`).
     nonisolated static let window: TimeInterval = 20
     /// ponytail: 30 s from creation, unmeasured -- a throttled HD (Gate 0's mint 2, 1 of 9) never fills; that video
-    /// stays on 360p (R41).
+    /// stays on 360p (R41). A stager lives only while online (`mayStage`), so offline seconds never count.
     nonisolated static let deadline: TimeInterval = 30
     /// The sampler polls once a second; a longer silence is a suspension (no `.background` tick seen), not a slow fill.
     nonisolated static let maxPollGap: TimeInterval = 3
@@ -123,8 +123,10 @@ import UIKit
     }
 
     /// M13: `.inactive` (Control Center, a notification) keeps the stager; the background, PiP and an external route drop it.
-    nonisolated static func mayStage(appState: UIApplication.State, pictureInPicture: Bool, external: Bool) -> Bool {
-        appState != .background && !pictureInPicture && !external
+    /// Cubic r5 #10: so does no network, like the stall watchdog's offline seconds: a drop says nothing about that video on
+    /// that link (R41), so neither its seconds nor its failed requests may run into a denial. Back online, it restages.
+    nonisolated static func mayStage(appState: UIApplication.State, pictureInPicture: Bool, external: Bool, online: Bool) -> Bool {
+        appState != .background && !pictureInPicture && !external && online
     }
 
     private static func ranges(_ item: AVPlayerItem) -> [(Double, Double)] {

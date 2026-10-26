@@ -102,12 +102,13 @@ struct HDStagerTests {
         #expect(HDStager.standardHasHeadroom([(0, 600)], position: 590, duration: 600))
     }
 
-    @Test func stagingStopsOnlyInTheBackgroundInPiPOrOnAnExternalRoute() {   // M13, R18
-        #expect(HDStager.mayStage(appState: .active, pictureInPicture: false, external: false))
-        #expect(HDStager.mayStage(appState: .inactive, pictureInPicture: false, external: false))   // Control Center
-        #expect(!HDStager.mayStage(appState: .background, pictureInPicture: false, external: false))
-        #expect(!HDStager.mayStage(appState: .active, pictureInPicture: true, external: false))
-        #expect(!HDStager.mayStage(appState: .active, pictureInPicture: false, external: true))
+    @Test func stagingStopsOnlyInTheBackgroundInPiPOnAnExternalRouteOrOffline() {   // M13, R18, Cubic r5 #10
+        #expect(HDStager.mayStage(appState: .active, pictureInPicture: false, external: false, online: true))
+        #expect(HDStager.mayStage(appState: .inactive, pictureInPicture: false, external: false, online: true))   // Control Center
+        #expect(!HDStager.mayStage(appState: .background, pictureInPicture: false, external: false, online: true))
+        #expect(!HDStager.mayStage(appState: .active, pictureInPicture: true, external: false, online: true))
+        #expect(!HDStager.mayStage(appState: .active, pictureInPicture: false, external: true, online: true))
+        #expect(!HDStager.mayStage(appState: .active, pictureInPicture: false, external: false, online: false))
     }
 
     // MARK: - the production decision with fakes (plan review I5)
@@ -413,6 +414,30 @@ struct HDStagerTests {
         #expect(Self.refusalHook(of: stager.item) != nil)
         coordinator.stopObserving()
         #expect(coordinator.stager == nil)
+        player.replaceCurrentItem(with: nil)
+    }
+
+    /// Cubic r5 #10: with no network the sampler drops the stager with no penalty, as in the background, so a drop never
+    /// runs out the 30 s deadline or fails the hidden item into a denial (R41); back online it is restaged.
+    @Test(.timeLimit(.minutes(1))) func noNetworkDropsTheStagerWithoutPenalty() async throws {
+        let reports = Reports()
+        let (vm, player, _) = try await playing(reports)
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        defer { coordinator.stopMonitoring() }
+        coordinator.isOnline = { true }
+        coordinator.observe(item: item, player: player, model: vm, isLive: false, playToEnd: .none)
+        for _ in 0..<300 where coordinator.stager == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(coordinator.stager != nil)
+        coordinator.isOnline = { false }
+        for _ in 0..<300 where coordinator.stager != nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(coordinator.stager == nil)
+        #expect(vm.pendingUpgrade != nil)
+        #expect(reports.failed.isEmpty)
+        coordinator.isOnline = { true }
+        for _ in 0..<300 where coordinator.stager == nil { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(coordinator.stager != nil)
+        coordinator.stopObserving()
         player.replaceCurrentItem(with: nil)
     }
 }
