@@ -486,7 +486,8 @@ public class InnerCrawler {
      * R23: FIRST_PASS = first pages only. FULL = (1) newly admitted sources' full crawls, (2) due polls, oldest due
      * first (a short or dirty source is listed in full at its poll slot), (3) backfill full crawls, smallest first,
      * unknown counts last, unless held (R32), (4) `dirty` full crawls not yet due. Sets `steady` (no backfill left, or
-     * it is held): from then on every job, a new source's too (owner ruling), runs inside the daily cap. Sources in the
+     * it is held): from then on every job, a new source's too (owner ruling), runs inside the daily cap. A backfill
+     * source waiting out a backoff or the unavailable run is still backfill left (stage 9 Cubic r5 P3). Sources in the
      * current unavailable run wait for it to resolve (R33.7); non-admitted sources are simply never picked (R24), and
      * nothing is dropped for a missing read (SearchIndex's catalog change removes, then re-adds).
      */
@@ -499,8 +500,11 @@ public class InnerCrawler {
         boolean full = s.mode == InnerState.Mode.FULL;
         Job fresh = null, backfill = null, dirty = null, poll = null;
         long pollDue = Long.MAX_VALUE, backfillCount = Long.MAX_VALUE;
+        boolean backfillLeft = false;
         for (String key : new TreeSet<>(admitted.keySet())) {
             InnerState.Source src = source(key);
+            boolean unfilled = src.firstPageAt > 0 && src.completeAt == 0 && !src.shortCrawl; // first-paged only: backfill
+            backfillLeft |= unfilled;
             if (src.retryAt > now || inRun.contains(key)) continue;
             src.unavailable = false; // its 7 days are over: back to its previous state
             if (src.firstPageAt == 0) {
@@ -508,7 +512,7 @@ public class InnerCrawler {
                 continue;
             }
             if (!full) continue;
-            if (src.completeAt == 0 && !src.shortCrawl) { // first-paged only: backfill
+            if (unfilled) {
                 long count = src.count < 0 ? Long.MAX_VALUE : src.count;
                 if (!s.backfillHeld && (backfill == null || count < backfillCount)) {
                     backfill = new Job(Kind.FULL, key);
@@ -527,7 +531,7 @@ public class InnerCrawler {
                 dirty = new Job(Kind.FULL, key);
             }
         }
-        steady = full && backfill == null; // a held backfill is steady; a new admission does not lift the cap
+        steady = full && (!backfillLeft || s.backfillHeld); // a held backfill is steady; a new admission does not lift the cap
         if (fresh != null) return fresh;
         if (poll != null) return poll;
         if (backfill != null) return backfill;
@@ -777,8 +781,10 @@ public class InnerCrawler {
             List<InnerCorpus.Item> items = mergeKeep(page.items(), List.of()); // stage 9 B13: the corpus is de-duplicated
             List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), items.size())));
             if (page.count() == src.count && ids(items).equals(top)) {
-                writeCorpus(key, name, mergeWindow(items, corpus), corpus, false); // titles refreshed
+                List<InnerCorpus.Item> refreshed = mergeWindow(items, corpus);
+                writeCorpus(key, name, refreshed, corpus, false); // titles refreshed
                 src.lastPollAt = now;
+                renewTrust(src, refreshed.size(), page.count(), now);
                 logJob("POLL", key, src, 0, 0);
                 return true;
             }
@@ -806,8 +812,23 @@ public class InnerCrawler {
         if (!keepsMoreThanACrawlSweeps && page.count() >= 0 && page.count() < merged.size() - tolerance(page.count())) {
             src.dirty = true; // removed outside the window: listed again in full (R22)
         }
+        renewTrust(src, merged.size(), page.count(), now);
         logJob("POLL", key, src, added, removed);
         return true;
+    }
+
+    /**
+     * R18 (stage 9 Cubic r5 P2): a poll that finds a fully crawled source still complete (its stored items cover the
+     * count, R32) and inside the cap renews the gate's trust in it, as the full crawl gave it. Never for a source no full
+     * crawl proved (completeAt 0, short, capped), nor after a poll that left it short of its count or over the cap: it
+     * keeps its date, and the gate stops trusting it 30 days on. `stored` is the size before the R2 cut, which hides an
+     * overflow. A gone source or a failed write never gets here.
+     */
+    private void renewTrust(InnerState.Source src, int stored, long count, long now) {
+        if (src.completeAt > 0 && !src.shortCrawl && !src.capped && count >= 0 && stored >= count - tolerance(count)
+                && stored <= InnerIndex.clamp(store.state().capPerSource)) {
+            src.completeAt = now;
+        }
     }
 
     /**

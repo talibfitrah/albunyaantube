@@ -187,9 +187,10 @@ public class InnerIndex {
 
     /**
      * R18 stream gate: a stored stream is hidden for `sourceKey` only when that source's latest crawl was complete (not
-     * short, and not stopped at a cap, which never lists the older items), at most 30 days old, and does not list the id
-     * in this index. The index must hold all the crawl listed: every counted item stored (NewPipe drops items it cannot
-     * parse), and no more than the cap this index and the current one cut a source to (R31 lowers it unattended).
+     * short, and not stopped at a cap, which never lists the older items), confirmed at most 30 days ago (by that crawl,
+     * or by a poll that found it still complete: InnerCrawler.renewTrust), and does not list the id in this index. The
+     * index must hold all the crawl listed: every counted item stored (NewPipe drops items it cannot parse), and no more
+     * than the cap this index and the current one cut a source to (R31 lowers it unattended).
      * Fails open: an unknown, untrusted or unreadable case, or no searcher (not built, closing), keeps today's behaviour.
      * `trace` (nullable) counts the lookups and their time for the slow-search line.
      */

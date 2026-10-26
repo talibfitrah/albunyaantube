@@ -1311,6 +1311,93 @@ class InnerCrawlerTest {
         assertFalse(source(CH).dirty, "it keeps more than a capped crawl lists, and a capped crawl never sweeps");
     }
 
+    /**
+     * Stage 9 Cubic r5 P3: R23's backfill phase is pace-only while a first-paged source still lacks a full crawl, even
+     * when every such source is waiting out a backoff. Judged from the runnable jobs alone, the steady cap applied
+     * mid-backfill and held due polls and fresh admissions until a backoff ended or 00:00 UTC.
+     */
+    @Test
+    void aBackfillSourceWaitingOutABackoffKeepsTheCapOff() throws Exception {
+        String waiting = "channel:UCaaaaaaaaaaaaaaaaaaaaaa";
+        admitted.put(CH, "x");
+        admitted.put(waiting, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        crawled(CH, items("lesson", 0, 3, "x"), 3, 2);                                   // a poll due 1 d ago
+        crawled(waiting, items("story", 0, 100, "x"), 900, 0);
+        crawler.source(waiting).completeAt = 0;                                            // first-paged only
+        crawler.source(waiting).retryAt = now.get().toEpochMilli() + CrawlPacer.PAUSE_MS; // a transport failure's 1 h
+        today(999);
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(3, items("lesson", 0, 3, "x"), false));
+        assertEquals(0, step(), "the backfill is not done: pace only, so the due poll runs");
+        verify(fetcher).first(eq(CH), anyString());
+        verify(fetcher, never()).first(eq(waiting), anyString());
+
+        store.state().backfillHeld = true;                                                 // a held backfill is steady
+        crawler.source(CH).lastPollAt = 0;
+        assertEquals(Instant.parse("2026-10-21T00:00:00Z").toEpochMilli() - now.get().toEpochMilli(), step());
+        verify(fetcher).first(eq(CH), anyString());
+    }
+
+    /**
+     * Stage 9 Cubic r5 P2: a poll that finds a fully crawled source still complete renews the stream gate's trust. Only
+     * full crawls set completeAt, so a channel that only gains uploads, or an unchanged playlist, stopped being gated 30
+     * days after its last full crawl, and the stored streams it hid came back to search.
+     */
+    @Test
+    void aPollThatFindsACompleteSourceStillCompleteKeepsTheGateTrustingIt() throws Exception {
+        admitted.put(CH, "x");
+        admitted.put(PL, "x");
+        crawled(CH, items("lesson", 0, 150, "x"), 150, 29);
+        crawled(PL, items("story", 0, 40, "x"), 40, 29);
+        crawler.boot();
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().streamGate = true;
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 2, "x"));
+        page.addAll(items("lesson", 0, 98, "x"));
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(152, page, true));                      // two new uploads
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(40, items("story", 0, 40, "x"), false)); // unchanged
+        step();
+        step();
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+        now.set(now.get().plusMillis(2 * InnerCrawler.DAY_MS));                                          // 31 d after the crawls
+        assertTrue(index.gateDrops(CH, id("gone", 0), null), "the poll found the channel's listing still complete");
+        assertTrue(index.gateDrops(PL, id("gone", 0), null), "and the unchanged playlist's");
+        assertFalse(index.gateDrops(CH, id("new", 0), null), "a listed upload is kept");
+    }
+
+    /**
+     * The limit of that renewal: only a poll that proves the listing complete and inside the cap renews it. Each case here
+     * keeps the full crawl's date, so the gate stops trusting the source 30 days after it.
+     */
+    @Test
+    void aPollThatLeavesTheListingUnprovenNeverRenewsTheGateTrust() throws Exception {
+        String grew = "channel:UCaaaaaaaaaaaaaaaaaaaaaa", overCap = "channel:UCbbbbbbbbbbbbbbbbbbbbbb",
+                gone = "channel:UCcccccccccccccccccccccc", failed = "channel:UCdddddddddddddddddddddd";
+        InnerIndex idx = mock(InnerIndex.class);
+        doThrow(new AlreadyClosedException("this IndexWriter is closed")).when(idx).merge(eq(failed), any(), anyList(), any());
+        crawler = newCrawler(fetcher, idx);
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().capPerSource = 200;
+        for (String k : List.of(grew, gone, failed)) {
+            admitted.put(k, "x");
+            crawled(k, items("lesson", 0, 150, "x"), 150, 29);
+        }
+        admitted.put(overCap, "x");
+        crawled(overCap, items("lesson", 0, 199, "x"), 199, 29);
+        long fullCrawlAt = source(grew).completeAt;
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 2, "x"));
+        page.addAll(items("lesson", 0, 98, "x"));
+        when(fetcher.first(eq(grew), anyString())).thenReturn(batch(300, page, true));  // 152 stored, YouTube counts 300
+        when(fetcher.first(eq(overCap), anyString())).thenReturn(batch(201, page, true)); // 201 stored: over the cap of 200
+        when(fetcher.first(eq(gone), anyString())).thenReturn(batch(0, List.of(), false));
+        when(fetcher.first(eq(failed), anyString())).thenReturn(batch(152, page, true)); // complete, but the merge fails
+        for (int i = 0; i < 4; i++) step();
+        for (String k : List.of(grew, overCap, gone, failed)) verify(fetcher).first(eq(k), anyString());
+        assertEquals(201, corpus(overCap).size());
+        assertTrue(store.state().breaker.pausedUntil > now.get().toEpochMilli(), "the failed merge paused the crawl");
+        for (String k : List.of(grew, overCap, gone, failed)) assertEquals(fullCrawlAt, source(k).completeAt, k);
+    }
+
     // ---- Task 21: the index -----------------------------------------------------------------------
 
     @Test
