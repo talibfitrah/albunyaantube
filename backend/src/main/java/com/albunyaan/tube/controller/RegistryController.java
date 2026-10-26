@@ -969,9 +969,10 @@ public class RegistryController {
                     auditLogService.log("video_resubmitted_after_changes", "video", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }
-                // Stage 9 B11: a REJECTED video (a report's take-down record too) is re-added into its doc, as bulk
-                // does: no 409, no second doc. Anything else is a duplicate.
-                if (!"REJECTED".equals(ex.getStatus())) {
+                // Stage 9 B11: an admin's add of a REJECTED video (a report's take-down record too) is re-added into its
+                // doc, as bulk does: no 409, no second doc. Anything else is a duplicate. B16 (Cubic r6 P1): a moderator's
+                // add would make that doc their own PENDING one, which they could delete: the take-down undone.
+                if (!"REJECTED".equals(ex.getStatus()) || !user.isAdmin()) {
                     return ResponseEntity.status(HttpStatus.CONFLICT).build();
                 }
                 rejectedDocId = ex.getId();

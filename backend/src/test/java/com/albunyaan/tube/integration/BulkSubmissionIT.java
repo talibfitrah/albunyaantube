@@ -340,6 +340,62 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     }
 
     /**
+     * Stage 9 B16 (Cubic r6 P1): a moderator cannot undo a take-down. The add, single (409) or bulk (DUPLICATE), leaves
+     * the record and its report's exclusions as they were, the gate stays 410, and the record is not theirs to delete.
+     */
+    @Test
+    void aModeratorCannotUndoATakeDown() throws Exception {
+        stubAuthAs("mod-uid", "moderator");
+        var record = new com.albunyaan.tube.model.Video("TakeDown006");
+        record.setId("aaaa-TakeDown006");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        record.setTakeDownExclusions(List.of("channel:UCtakedown0000000000000a"));
+        firestore.collection("videos").document(record.getId()).set(record).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        firestore.collection("channels").document("ch-takedown").set(Map.of("youtubeId", "UCtakedown0000000000000a",
+                "name", "C", "status", "APPROVED", "excludedItems", Map.of("videos", List.of("TakeDown006"))))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        var meta = new PreviewMetadata("TakeDown006", "Lesson", "https://i.ytimg.com/vi/TakeDown006/hq.jpg",
+                "Channel", "UCxxxxxxxxxxxxxxxxxxxxxx", null, null, 213L, 1000L);
+        when(gateway.fetchByDetectedType(any(), any(), any())).thenReturn(PreviewFetchResult.ok(meta, VideoType.STANDARD));
+
+        mvc.perform(post("/api/admin/registry/videos")
+                        .header("Authorization", "Bearer fake-mod-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(Map.of("youtubeId", "TakeDown006", "title", "Lesson",
+                                "categoryIds", List.of("cat-1")))))
+                .andExpect(status().isConflict());
+        mvc.perform(post("/api/admin/registry/bulk/submit")
+                        .header("Authorization", "Bearer fake-mod-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(new BulkSubmitRequest(List.of(new SubmitRow(0,
+                                "https://www.youtube.com/watch?v=TakeDown006", YouTubeContentType.VIDEO, VideoType.STANDARD,
+                                meta, List.of("cat-1"))), "PENDING"))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.added").value(0))
+                .andExpect(jsonPath("$.results[0].errorCode").value("DUPLICATE"));
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/admin/registry/videos/aaaa-TakeDown006/submission")
+                        .header("Authorization", "Bearer fake-mod-token"))
+                .andExpect(status().is4xxClientError());
+
+        var docs = firestore.collection("videos").whereEqualTo("youtubeId", "TakeDown006").get()
+                .get(5, java.util.concurrent.TimeUnit.SECONDS).getDocuments();
+        org.junit.jupiter.api.Assertions.assertEquals(1, docs.size(), "no second doc");
+        var kept = docs.get(0).toObject(com.albunyaan.tube.model.Video.class);
+        org.junit.jupiter.api.Assertions.assertEquals("REJECTED", kept.getStatus());
+        org.junit.jupiter.api.Assertions.assertEquals("REPORT", kept.getSource());
+        org.junit.jupiter.api.Assertions.assertNull(kept.getSubmittedBy());
+        org.junit.jupiter.api.Assertions.assertEquals(com.albunyaan.tube.model.ValidationStatus.ARCHIVED, kept.getValidationStatus());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("channel:UCtakedown0000000000000a"), kept.getTakeDownExclusions());
+        org.junit.jupiter.api.Assertions.assertEquals(List.of("TakeDown006"), firestore.collection("channels")
+                .document("ch-takedown").get().get(5, java.util.concurrent.TimeUnit.SECONDS).get("excludedItems.videos"),
+                "the report's exclusion stays");
+        mvc.perform(get("/api/v1/videos/TakeDown006")).andExpect(status().isGone());
+    }
+
+    /**
      * §7.1 — Non-admin, non-moderator (plain USER role) must receive 403 Forbidden.
      */
     @Test

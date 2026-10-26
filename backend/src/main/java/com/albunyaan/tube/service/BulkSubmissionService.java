@@ -109,14 +109,23 @@ public class BulkSubmissionService {
         return new BulkPreviewResponse(rows);
     }
 
-    /** Already in the registry (not REJECTED): the row loop reports it DUPLICATE. A failed lookup is not: the loop retries it. */
-    private static boolean registered(RegistryDuplicateChecker.Batch batch, SubmitRow row) {
+    /** Already in the registry (see duplicate): the row loop reports it DUPLICATE. A failed lookup is not: the loop retries it. */
+    private static boolean registered(RegistryDuplicateChecker.Batch batch, SubmitRow row, boolean isAdmin) {
         try {
             return batch.findExisting(row.detectedType(), row.metadata().youtubeId())
-                    .filter(existing -> !"REJECTED".equals(existing.status())).isPresent();
+                    .filter(existing -> duplicate(existing, isAdmin)).isPresent();
         } catch (RuntimeException e) {
             return false;
         }
+    }
+
+    /**
+     * Any registered doc but a REJECTED one, which an admin may re-add (B11). Stage 9 B16 (Cubic r6 P1): only an admin.
+     * A moderator's row would become their own PENDING doc (a video's take-down record or rejection, written into) or a
+     * PENDING second doc that can shadow a rejected channel's or playlist's 410; either undoes the rejection.
+     */
+    private static boolean duplicate(RegistryDuplicateChecker.ExistingMatch existing, boolean isAdmin) {
+        return !isAdmin || !"REJECTED".equals(existing.status());
     }
 
     public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
@@ -171,7 +180,7 @@ public class BulkSubmissionService {
         // LIVE_LINK_NOT_LIVE (stage 9 Cubic P3). The memoized answer keeps it a DUPLICATE in the row loop below.
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         for (SubmitRow row : req.rows()) {
-            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(known, row)) {
+            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(known, row, isAdmin)) {
                 continue;
             }
             liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
@@ -232,7 +241,7 @@ public class BulkSubmissionService {
 
             // Registered when the request came in (the memoized lookup made before the live guard): DUPLICATE with no
             // category read or fetch spent on it.
-            if (registered(known, row)) {
+            if (registered(known, row, isAdmin)) {
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null, SubmitStatus.FAILED, "DUPLICATE"));
                 failed++;
                 continue;
@@ -334,7 +343,7 @@ public class BulkSubmissionService {
             String rejectedDocId;
             try {
                 var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
-                if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
+                if (lateDupe.isPresent() && duplicate(lateDupe.get(), isAdmin)) {
                     results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
                             SubmitStatus.FAILED, "DUPLICATE"));
                     failed++;

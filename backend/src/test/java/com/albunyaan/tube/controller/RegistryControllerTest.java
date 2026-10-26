@@ -594,6 +594,52 @@ class RegistryControllerTest {
         }
     }
 
+    /**
+     * Stage 9 B16 (Cubic r6 P1): only an admin re-adds over a REJECTED doc. A moderator's add would turn a report's
+     * take-down record, or an admin's rejection, into the moderator's own PENDING doc, which they could then delete.
+     */
+    @Test
+    void addVideo_aModeratorsAddOverARejectedDocIs409AndLeavesItUntouched() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setSource("REPORT");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        com.albunyaan.tube.model.Video rejected = new com.albunyaan.tube.model.Video("Rejected001");
+        rejected.setId("doc-rejected");
+        rejected.setStatus("REJECTED");
+        rejected.setSubmittedBy(moderatorUser.getUid());
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.findByYoutubeId("Rejected001")).thenReturn(Optional.of(rejected));
+        lenient().when(contentReportService.reAdd(any())).thenAnswer(inv -> inv.getArgument(0));   // were it reached
+
+        for (String id : List.of("TakeDown001", "Rejected001")) {
+            com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video(id);
+            body.setTitle("Lesson");
+            ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, moderatorUser);
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode(), id);
+        }
+        verify(contentReportService, never()).reAdd(any());
+        verify(videoRepository, never()).save(any());
+        verify(videoRepository, never()).saveIfStatus(any(), any());
+    }
+
+    /** Stage 9 B16: a REJECTED doc is never the submitter's to delete, whoever submitted it. */
+    @Test
+    void deleteOwnVideoSubmission_aModeratorCannotDeleteARejectedDoc() throws Exception {
+        com.albunyaan.tube.model.Video rejected = new com.albunyaan.tube.model.Video("Rejected001");
+        rejected.setId("doc-rejected");
+        rejected.setStatus("REJECTED");
+        rejected.setSubmittedBy(moderatorUser.getUid());
+        when(videoRepository.findById("doc-rejected")).thenReturn(Optional.of(rejected));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnVideoSubmission("doc-rejected", moderatorUser);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+        verify(videoRepository, never()).deleteByIdIfStatusIn(any(), any());
+        verify(videoRepository, never()).deleteById(any());
+    }
+
     @Test
     void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
         // Arrange

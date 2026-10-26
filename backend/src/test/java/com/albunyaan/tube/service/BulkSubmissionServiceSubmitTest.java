@@ -143,6 +143,28 @@ class BulkSubmissionServiceSubmitTest {
         assertEquals("doc-takedown", resp.results().get(0).registryId());
     }
 
+    /**
+     * Stage 9 B16 (Cubic r6 P1): only an admin re-adds over a REJECTED doc. A moderator's row is the DUPLICATE any other
+     * registered row is: never written into a take-down record or an admin's rejection, nor beside one as a second doc.
+     */
+    @Test
+    void aModeratorsRowOverARejectedDocIsADuplicate() throws Exception {
+        when(lateBatch.findExisting(any(), any()))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-rejected", "REJECTED")));
+        var rows = List.of(
+                new SubmitRow(0, "https://www.youtube.com/watch?v=TakeDown001", YouTubeContentType.VIDEO, VideoType.STANDARD,
+                        new PreviewMetadata("TakeDown001", "v", null, null, null, null, null, null, null), List.of("cat-1")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = svc.submit(new BulkSubmitRequest(rows, "PENDING"), "mod-uid", false);
+
+        assertEquals(0, resp.added());
+        assertEquals(List.of("DUPLICATE", "DUPLICATE"), resp.results().stream().map(SubmitResult::errorCode).toList());
+        verify(writer, never()).writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
     @Test
     void perRowFailure_aggregatedNotAborting() throws Exception {
         when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
