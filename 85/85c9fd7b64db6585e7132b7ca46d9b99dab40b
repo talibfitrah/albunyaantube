@@ -1,0 +1,41 @@
+backend/src/test/java/com/albunyaan/tube/service/YouTubeCircuitBreakerTest.java
+  s_dbb6b1f3671904::t_5cf67ab3ac7031 342-368
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_b9e83a3e2ec945 375-420
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_7349b514dd6ad9 331-340,344,346,350,353
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_dbb6b1f3671904::t_0b3b36be616f35 93-94
+  s_dbb6b1f3671904::t_ac9b2361ca7e22 574,576-578,581-585,596-603
+  s_dbb6b1f3671904::t_26c65098b3f2a2 43
+  s_dbb6b1f3671904::t_9323ebcfcc8dbd 54
+  s_dbb6b1f3671904::t_6df867d95affb6 95-98
+  s_dbb6b1f3671904::t_486aaec7d469d7 225-231,233,238
+  s_dbb6b1f3671904::t_b454e176e8cdff 44
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayTest.java
+  s_dbb6b1f3671904::t_3eb80758ff8350 579-580,586
+  s_dbb6b1f3671904::t_74ee713782f1c2 33-36
+  s_dbb6b1f3671904::t_d9ed01ed440494 595-695
+  s_dbb6b1f3671904::t_a39602d940f935 25
+  s_dbb6b1f3671904::t_bc7beaf03ec980 696
+backend/src/main/java/com/albunyaan/tube/service/YouTubeCircuitBreaker.java
+  s_dbb6b1f3671904::t_0227dafd34a080 670-673,675
+  s_dbb6b1f3671904::t_4796465520de2b 674,676-677
+  s_dbb6b1f3671904::t_002417a05c4b72 669
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8585c9fd7b64db6585e7132b7ca46d9b99dab40b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
