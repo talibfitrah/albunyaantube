@@ -372,6 +372,52 @@ class ContentReportServiceTest {
         assertThat(out.getResolutionNote()).isNull();
     }
 
+    /** A parentless VIDEO report on {@code id}, whose doc is gone, and a live channel state still holding its restore record. */
+    private String staleRestoreRecord(String id, String channel) throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId(id);
+        when(reportRepository.findById("report-" + id)).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId(id)).thenReturn(Optional.empty());   // an admin deleted the poller's doc
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        when(searchIndex.sourcesListing(id)).thenReturn(List.of());
+        com.albunyaan.tube.model.LiveChannelState state = com.albunyaan.tube.model.LiveChannelState.unknown(channel);
+        state.getArchived().put(id, "VALID");
+        state.getArchivedFrom().put(id, List.of("cat-live"));
+        live.loadStates(List.of(state));
+        return "report-" + id;
+    }
+
+    /**
+     * Stage 9 B19 (r6 P3-3): the poller's restore record outlives a doc an admin deleted. A take-down then writes a new
+     * record (REJECTED, ARCHIVED) for the id; a record left in place "restores" it out of Archived content, and back
+     * into its old LIVE category, when the id goes live again.
+     */
+    @Test
+    void aTakeDownOfAnIdWithNoDocDropsAStaleRestoreRecord() throws Exception {
+        String reportId = staleRestoreRecord("LiveLink002", "UCliveLink0000000000000b");
+
+        ContentReport out = service.resolveReport(reportId, ReportStatus.RESOLVED, "admin", null);
+
+        takenDown("LiveLink002");
+        assertThat(live.state("UCliveLink0000000000000b").getArchived()).doesNotContainKey("LiveLink002");
+        assertThat(live.state("UCliveLink0000000000000b").getArchivedFrom()).doesNotContainKey("LiveLink002");
+        assertThat(out.getResolutionNote()).isNull();
+    }
+
+    /** B19: with no doc too, a failed drop is named in the note, also when the exclusions after it succeed. */
+    @Test
+    void aTakeDownOfAnIdWithNoDocWhoseRestoreDropFailsSaysSo() throws Exception {
+        String reportId = staleRestoreRecord("LiveLink003", "UCliveLink0000000000000c");
+        doThrow(new ExecutionException(new RuntimeException("firestore down"))).when(liveStates).save(any());
+
+        ContentReport out = service.resolveReport(reportId, ReportStatus.RESOLVED, "admin", null);
+
+        takenDown("LiveLink003");
+        assertThat(out.getResolutionNote()).contains("the live poller may put it back");
+    }
+
     /** Stage 9 Cubic r2 P2: no source lists it yet, so there is nothing to exclude on; the take-down is still recorded. */
     @Test
     void aParentlessReportOnAVideoNoSourceListsYetStillRecordsTheTakeDown() throws Exception {

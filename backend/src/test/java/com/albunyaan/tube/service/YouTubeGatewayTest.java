@@ -22,6 +22,7 @@ import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
@@ -29,6 +30,10 @@ import org.schabi.newpipe.extractor.search.SearchExtractor;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -571,14 +576,119 @@ class YouTubeGatewayTest {
                             "https://youtubei.googleapis.com/youtubei/v1/reel/reel_item_watch"));
             YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null); // threshold 1
             YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            Instant t0 = Instant.parse("2026-10-27T06:00:00Z");
+            g.clock = Clock.fixed(t0, ZoneOffset.UTC);
             try {
                 assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
                 assertEquals(0, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
                 assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState());
 
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)), ZoneOffset.UTC);   // B19: past the /player window
                 assertThrows(ReCaptchaException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
                 assertEquals(1, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
                 assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        private static SignInConfirmNotBotException botCheck() {
+            return new SignInConfirmNotBotException("YouTube probably temporarily blocked anonymous watch access with "
+                    + "this IP , got error LOGIN_REQUIRED: \"Sign in to confirm you're not a bot\"");
+        }
+
+        /**
+         * Stage 9 B19 (r6 P2-1): callers without a stop of their own (bulk preview/submit, the Reports page's lookups)
+         * sent one refused /player request per row. After a bot check every /player call for 60 min fails at once,
+         * as the same exception, so each caller's bot-check stop still fires, and sends nothing. Browse still goes out.
+         */
+        @Test
+        @DisplayName("B19: a /player bot check refuses /player locally for 60 min without a request; browse still goes out")
+        void playerBotCheck_refusesPlayerLocallyFor60Minutes() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            when(youtube.getChannelExtractor(anyString())).thenThrow(new ParsingException("browse sent"));
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            Instant t0 = Instant.parse("2026-10-27T06:00:00Z");
+            g.clock = Clock.fixed(t0, ZoneOffset.UTC);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                for (int i = 0; i < 20; i++) {   // a Reports page's 20 lookups
+                    SignInConfirmNotBotException local =
+                            assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                    assertEquals(SignInConfirmNotBotException.class, local.getClass(), "the breaker's class-name check");
+                    assertTrue(circuitBreaker.isRateLimitError(local), "the callers' bot-check stops read it as one");
+                }
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)).minusMillis(1), ZoneOffset.UTC);
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+
+                ParsingException browse =
+                        assertThrows(ParsingException.class, () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g"));
+                assertEquals("browse sent", browse.getMessage(), "browse is never refused by the /player window");
+
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)), ZoneOffset.UTC);
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                verify(youtube, times(2)).getStreamExtractor(anyString());
+                assertEquals(0, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /** B19: the local refusal comes before the shared breaker's permit, so it never takes a HALF_OPEN probe. */
+        @Test
+        @DisplayName("B19: a /player call refused by the window leaves the HALF_OPEN probe permit free")
+        void playerRefusalWindow_neverTakesTheHalfOpenProbe() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            g.clock = Clock.fixed(Instant.parse("2026-10-27T06:00:00Z"), ZoneOffset.UTC);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));   // CLOSED
+                circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // a browse 429 opens it
+                circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);   // its cooldown ended
+                int level = circuitBreaker.getStatusSnapshot().getBackoffLevel();
+
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+                assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+                assertFalse(circuitBreaker.isOpen(), "the probe permit is still free for a browse read");
+                assertEquals(level, circuitBreaker.getStatusSnapshot().getBackoffLevel());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /**
+         * Stage 9 B19 (r6 P3-1): a bot check on the HALF_OPEN probe says nothing about browse. It gives the permit back
+         * and leaves the breaker HALF_OPEN at its level, so the next request (a browse read, as /player is refused
+         * locally now) probes again, instead of browse being paused for another cooldown.
+         */
+        @Test
+        @DisplayName("B19: a bot check on the HALF_OPEN probe releases it; the breaker stays HALF_OPEN at its level")
+        void playerBotCheckOnTheHalfOpenProbe_releasesItAndKeepsHalfOpen() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeCircuitBreaker.CircuitBreakerStatus before = circuitBreaker.getStatusSnapshot();
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));   // the probe
+
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+                assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+                assertFalse(circuitBreaker.isOpen(), "the permit is released: the next request probes");
+                YouTubeCircuitBreaker.CircuitBreakerStatus after = circuitBreaker.getStatusSnapshot();
+                assertEquals(before.getBackoffLevel(), after.getBackoffLevel());
+                assertEquals(before.getCooldownUntil(), after.getCooldownUntil());
+                assertEquals(before.getTotalRateLimitErrors(), after.getTotalRateLimitErrors());
             } finally {
                 g.shutdown();
             }

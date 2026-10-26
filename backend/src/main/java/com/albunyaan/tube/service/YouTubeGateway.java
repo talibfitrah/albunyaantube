@@ -40,6 +40,8 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -49,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 /**
@@ -86,6 +89,12 @@ public class YouTubeGateway {
 
     @Nullable
     private final YouTubeCircuitBreaker circuitBreaker;
+
+    Clock clock = Clock.systemUTC();   // tests swap it
+
+    // ponytail: fixed 60 min window, in memory; a persisted /player breaker (option a2) if it ever matters
+    private static final long PLAYER_REFUSAL_MS = 60 * 60_000L;
+    private final AtomicLong playerRefusedUntil = new AtomicLong();   // epoch ms; /player is asked again from then
 
     @Autowired
     public YouTubeGateway(
@@ -213,19 +222,20 @@ public class YouTubeGateway {
         }
 
         // ponytail (B17): /player's bot check is this IP's player-only refusal; browse keeps answering (prod
-        // 2026-08-19 07:10, breaker-investigation §2), so it never reaches the shared breaker that gates browse.
-        // Each video batch stops at its first one instead. Upgrade path: a /player-only breaker (option a2).
-        boolean playerBotCheck = e instanceof SignInConfirmNotBotException;
-        if (playerBotCheck) {
-            logger.error("YouTube rate limit error detected: {} - {} (/player bot check, not recorded by the breaker)",
-                    e.getClass().getSimpleName(), e.getMessage());
+        // 2026-08-19 07:10, breaker-investigation §2), so it never reaches the shared breaker that gates browse;
+        // fetchStreamInfo's own window refuses /player instead. Upgrade path: a /player-only breaker (option a2).
+        // B19 (r6 P3-1): on the HALF_OPEN probe it proves nothing about browse either: the permit goes back, the
+        // breaker stays HALF_OPEN at its level, and the next request (a browse read: /player is refused) probes.
+        if (e instanceof SignInConfirmNotBotException) {
+            circuitBreaker.releaseProbe();
+            return;
         }
-        if (!playerBotCheck && circuitBreaker.isRateLimitError(e)) {
+        if (circuitBreaker.isRateLimitError(e)) {
             // Rate limit error - record it (will increase backoff if in HALF_OPEN)
             circuitBreaker.recordRateLimitError(e);
             logger.warn("Rate limit error detected, circuit breaker recording: {}", e.getMessage());
         } else if (circuitBreaker.isProbeRequest()) {
-            // Non-rate-limit error (or a /player bot check) during probe - must clear probe permit to avoid stuck state
+            // Non-rate-limit error during probe - must clear probe permit to avoid stuck state
             circuitBreaker.recordProbeFailure(e);
             logger.warn("Probe failed with non-rate-limit error: {}", e.getMessage());
         }
@@ -561,10 +571,18 @@ public class YouTubeGateway {
     // ==================== Video Operations ====================
 
     /**
-     * Fetch stream info by video ID.
+     * Fetch stream info by video ID: the one /player path (the inner crawler refuses /player outright).
      * Applies throttling, circuit breaker protection, and probe timeout (for HALF_OPEN probes).
+     * Stage 9 B19 (r6 P2-1): for 60 min after a bot check, every call throws a SignInConfirmNotBotException at once,
+     * without a request, so each caller's bot-check stop still fires. It runs before the breaker, so it never takes a
+     * HALF_OPEN probe. Callers with no stop of their own (bulk rows, report lookups) no longer send one per row.
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
+        long refusedUntil = playerRefusedUntil.get();
+        if (clock.millis() < refusedUntil) {
+            throw new SignInConfirmNotBotException("YouTube bot-checked /player in the last 60 min; not sent (refused "
+                    + "here until " + Instant.ofEpochMilli(refusedUntil) + ")");
+        }
         checkCircuitBreaker();
         applyThrottling();
 
@@ -575,6 +593,14 @@ public class YouTubeGateway {
             recordSuccess();
             return result;
         } catch (IOException | ExtractionException e) {
+            if (e instanceof SignInConfirmNotBotException) {
+                long now = clock.millis();
+                if (playerRefusedUntil.getAndSet(now + PLAYER_REFUSAL_MS) <= now) {   // once per window
+                    logger.warn("YouTube bot-checked /player: {}. Every /player request is refused here, without a "
+                            + "request, until {}; browse is not affected", e.getMessage(),
+                            Instant.ofEpochMilli(now + PLAYER_REFUSAL_MS));
+                }
+            }
             recordError(e);
             throw e;
         } finally {

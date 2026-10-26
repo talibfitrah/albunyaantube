@@ -328,27 +328,29 @@ public class ContentReportService {
                         video.setValidationStatus(ValidationStatus.ARCHIVED);
                         videoRepository.save(video);
                         archived = true;
-                        if (opt.isPresent()) {
-                            try {
-                                liveChannelService.dropRestore(targetId);
-                            } catch (Exception e) {
-                                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-                                log.warn("Video {} taken down, but the live poller's restore record of it was not dropped: {}",
-                                        targetId, e.getMessage());
-                                miss = "Taken down, but the live poller may put it back if it goes live again ("
-                                        + e.getClass().getSimpleName() + "). Resolve the report again later.";
-                            }
+                        // Stage 9 B19 (r6 P3-3): with no doc too. A record can outlive the doc the poller archived (an
+                        // admin deleted it); kept, it would "restore" this take-down record when the id goes live again.
+                        try {
+                            liveChannelService.dropRestore(targetId);
+                        } catch (Exception e) {
+                            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                            log.warn("Video {} taken down, but the live poller's restore record of it was not dropped: {}",
+                                    targetId, e.getMessage());
+                            miss = "Taken down, but the live poller may put it back if it goes live again ("
+                                    + e.getClass().getSimpleName() + "). Resolve the report again later.";
                         }
                     }
                     if (opt.isEmpty()) {
+                        String excludeMiss;
                         try {
-                            miss = excludeEverywhereListed(video);
+                            excludeMiss = excludeEverywhereListed(video);
                         } catch (Exception e) { // the record is saved and indexed: only the per-source exclusions are missing
                             if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                             log.warn("Video {} taken down, but its source exclusions failed: {}", targetId, e.getMessage());
-                            miss = "Taken down, but not excluded (or not recorded for Restore) on the sources listing it ("
+                            excludeMiss = "Taken down, but not excluded (or not recorded for Restore) on the sources listing it ("
                                     + e.getClass().getSimpleName() + "). Check them by hand.";
                         }
+                        if (excludeMiss != null) miss = miss == null ? excludeMiss : miss + "\n" + excludeMiss;   // B19: both
                     }
                     // Stage 9 B16 (Cubic r6 P2): after the sources are read, as they are read off the stream's index doc,
                     // which this deletes. The saved record already hides the stream from search meanwhile.

@@ -667,6 +667,15 @@ public class YouTubeCircuitBreaker {
     }
 
     /**
+     * Stage 9 B19 (r6 P3-1): give the probe permit back with no outcome, for a probe whose answer says nothing about
+     * what the breaker gates (a /player bot check: browse keeps answering). State, backoff level and cooldown stay, so
+     * the next request probes. Only the probe's own thread releases it, as {@link #recordProbeFailure}.
+     */
+    public void releaseProbe() {
+        probeOwner.compareAndSet(Thread.currentThread(), null);
+    }
+
+    /**
      * Check if backoff level should decay (decrement after 48h of success).
      */
     private void checkBackoffDecay() {

@@ -339,6 +339,33 @@ class YouTubeCircuitBreakerTest {
         }
     }
 
+    /** Stage 9 B19 (r6 P3-1): a probe with no outcome for browse (a /player bot check) gives its permit back, nothing else. */
+    @Test
+    @DisplayName("releaseProbe: only the probe's own release frees the permit; state, level and cooldown stay")
+    void releaseProbe_freesOnlyTheOwnersPermit() throws Exception {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // CLOSED → OPEN at level 0
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        YouTubeCircuitBreaker.CircuitBreakerStatus before = circuitBreaker.getStatusSnapshot();
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.releaseProbe();   // another thread: not its permit
+            assertTrue(circuitBreaker.isOpen(), "the probe still holds the permit");
+
+            probeThread.submit(circuitBreaker::releaseProbe).get();
+
+            assertFalse(circuitBreaker.isOpen(), "the permit is free");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+            YouTubeCircuitBreaker.CircuitBreakerStatus after = circuitBreaker.getStatusSnapshot();
+            assertEquals(before.getBackoffLevel(), after.getBackoffLevel());
+            assertEquals(before.getCooldownUntil(), after.getCooldownUntil());
+            assertTrue(circuitBreaker.allowProbe(), "the next request takes the probe");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
     /** A breaker whose Firestore state is {@code stored}: every save succeeds, and the first isOpen() loads it. */
     private YouTubeCircuitBreaker persistedAs(String stored) throws Exception {
         SystemSettingsRepository repo = mock(SystemSettingsRepository.class);
