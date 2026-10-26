@@ -8,7 +8,10 @@ import { messages } from '../src/locales/messages'
 
 vi.mock('../src/services/categoryService', () => ({
   getAllCategories: () =>
-    Promise.resolve([{ id: 'cat-1', name: 'Cat 1', subcategories: [] }]),
+    Promise.resolve([
+      { id: 'cat-1', name: 'Cat 1', subcategories: [] },
+      { id: 'cat-live', name: 'Live', type: 'LIVE', subcategories: [] },
+    ]),
 }))
 
 vi.mock('../src/services/bulkSubmissionService', () => ({
@@ -121,5 +124,13 @@ describe('BulkPreviewTable', () => {
     const backBtn = wrapper.findAll('button').find((b) => b.text().includes('Back'))
     await backBtn!.trigger('click')
     expect(store.phase).toBe('INPUT')
+  })
+  it('a playlist row does not count the LIVE default category', async () => {
+    const store = useBulkSubmissionStore()
+    store.defaultCategoryIds = ['cat-1', 'cat-live']
+    store.previewRows = [{ ...okRow(0), detectedType: 'PLAYLIST' }, okRow(1)]
+    const wrapper = mountTable()
+    await vi.waitFor(() => expect(wrapper.findAll('.bulk-categories-toggle')[0].text()).toMatch(/^1\s/))
+    expect(wrapper.findAll('.bulk-categories-toggle')[1].text()).toMatch(/^2\s/)
   })
 })

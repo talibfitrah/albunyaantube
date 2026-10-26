@@ -339,6 +339,7 @@ import {
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
 import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
+import { liveCategoryIds } from '@/components/contentSearch/bulk/useCategoryPicker';
 import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
@@ -799,12 +800,13 @@ async function openAddContentModal(categoryId: string) {
 
   const token = ++addModalLoadToken;
   try {
-    const result = await getApprovedContent();
+    // The category's own type decides, not the live-status call (still loading, or failed, or a moderator's 403).
+    const [result, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds()]);
     if (token !== addModalLoadToken) return;
     addModalTruncated.value = result.truncated;
     const existingKeys = new Set(contentItems.value.map(contentKey));
     // The server refuses a playlist in the live category: do not offer one.
-    const live = !!liveCategory(categoryId);
+    const live = liveIds.has(categoryId);
     addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)) && !(live && i.type === 'playlist'));
   } catch (e: any) {
     if (token !== addModalLoadToken) return;
@@ -836,6 +838,10 @@ async function confirmAddContent() {
   addModalError.value = '';
 
   const categoryId = addModalCategoryId;
+  const session = addModalLoadToken;
+  const titles = offenderTitles(addModalAvailable.value);
+  // The reply may land after Cancel or after another category's modal opened.
+  const sameModal = () => addModalOpen.value && session === addModalLoadToken;
   const items = Array.from(addModalSelected.value).map(parseContentKey);
 
   try {
@@ -843,10 +849,13 @@ async function confirmAddContent() {
     const cat = categories.value.find(c => c.id === categoryId);
     if (cat) cat.contentCount = contentItems.value.length;
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
-    closeAddContentModal();
+    if (sameModal()) closeAddContentModal();
   } catch (e: any) {
+    const message = apiErrorWithOffenders(e, t, 'contentSorting.addContentError', titles);
     // Persistent, with each offending row: a toast would vanish before the admin could find the bad item.
-    addModalError.value = apiErrorWithOffenders(e, t, 'contentSorting.addContentError', offenderTitles(addModalAvailable.value));
+    // Only in the modal the add started from; otherwise nobody would see it there.
+    if (sameModal()) addModalError.value = message;
+    else toast.error(message);
   } finally {
     addModalSubmitting.value = false;
   }

@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '@/generated/api/schema'
+import { liveCategoryIds } from './useCategoryPicker'
 import BulkRowCategoryEditor from './BulkRowCategoryEditor.vue'
 
 type PreviewRow = components['schemas']['PreviewRow']
@@ -25,7 +26,16 @@ const { t } = useI18n()
 
 const editing = ref(false)
 
-const resolvedCategoryIds = computed(() => props.row.categoryIds ?? props.defaultCategoryIds)
+// The server refuses LIVE on a playlist and submit strips it: the count and the editor must match.
+const live = ref(new Set<string>())
+onMounted(async () => {
+  if (props.row.detectedType === 'PLAYLIST') live.value = await liveCategoryIds().catch(() => live.value)
+})
+
+const resolvedCategoryIds = computed(() => {
+  const ids = props.row.categoryIds ?? props.defaultCategoryIds
+  return props.row.detectedType === 'PLAYLIST' ? ids.filter((id) => !live.value.has(id)) : ids
+})
 
 const typeChipLabel = computed(() => {
   if (props.row.detectedType === 'VIDEO' && props.row.videoType === 'LIVE') return 'LIVE'

@@ -13,6 +13,9 @@ const importRun = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 
 vi.mock('@/services/api/client');
 vi.mock('@/utils/toast', () => ({ toast: { error: toastError, success: vi.fn(), warning: vi.fn() } }));
+vi.mock('@/services/categoryService', () => ({
+  getAllCategories: () => Promise.resolve([{ id: 'live', name: 'Channels Live', type: 'REGULAR', subcategories: [] }])
+}));
 vi.mock('@/services/liveChannels', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/liveChannels')>()),
   getLiveStatus: () => Promise.resolve({ suspectSince: null, categories: [] })
