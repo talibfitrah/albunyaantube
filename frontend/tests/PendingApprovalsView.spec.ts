@@ -234,3 +234,29 @@ describe('PendingApprovalsView — a live-category refusal (spec §8)', () => {
     expect(screen.getByText('My Channel')).toBeTruthy();
   });
 });
+
+describe('PendingApprovalsView — a LIVE bulk pick the picker no longer offers', () => {
+  beforeEach(() => {
+    vi.clearAllMocks();
+    getPendingCountMock.mockResolvedValue(2);
+    getAllCategoriesMock.mockResolvedValue([
+      { id: 'live-1', label: 'Live', type: 'LIVE', subcategories: [] },
+      { id: 'cat-1', label: 'Education', subcategories: [] }
+    ]);
+  });
+
+  it('clears the pick when an uncategorised playlist joins the selection', async () => {
+    await renderView([
+      makeItem({ id: 'ch-1' }),
+      { ...makeItem({ id: 'pl-1' }), type: 'playlist' as const, title: 'My Playlist' }
+    ]);
+    await fireEvent.click(await screen.findByLabelText(/My Channel/));
+    const select = (await screen.findByLabelText(/^category/i, { selector: '#bulk-category-select' })) as HTMLSelectElement;
+    await fireEvent.update(select, 'live-1');
+    await fireEvent.click(screen.getByLabelText(/My Playlist/));
+
+    expect(select.value).toBe('');
+    await fireEvent.click(screen.getByRole('button', { name: /^approve 2/i }));
+    await waitFor(() => expect(approveItemMock).toHaveBeenCalledWith('ch-1', 'channel', undefined));
+  });
+});

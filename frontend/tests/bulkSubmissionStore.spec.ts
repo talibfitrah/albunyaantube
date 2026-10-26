@@ -170,4 +170,14 @@ describe('bulkSubmissionStore: coded errors read in the admin language (F20)', (
     await s.runSubmit()
     expect(mockedSubmit.mock.calls[0][0].rows[1].categoryIds).toEqual(['quran'])
   })
+
+  it('a new preview clears the rows flagged by an earlier submit', async () => {
+    mockedPreview.mockResolvedValue({ rows: [] } as any)
+    const s = useBulkSubmissionStore()
+    s.parsedUrls = ['u']
+    s.defaultCategoryIds = ['quran']
+    s.rowsNeedingCategory = [1]
+    await s.runPreview()
+    expect(s.rowsNeedingCategory).toEqual([])
+  })
 })

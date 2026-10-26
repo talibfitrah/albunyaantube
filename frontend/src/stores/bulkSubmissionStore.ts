@@ -80,6 +80,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       }
       this.phase = 'LOADING'
       this.error = null
+      this.rowsNeedingCategory = []
       try {
         const resp = await bulkSubmissionService.previewBulk({
           urls: this.parsedUrls,

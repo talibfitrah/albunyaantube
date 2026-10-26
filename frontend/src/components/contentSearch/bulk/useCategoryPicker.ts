@@ -4,9 +4,10 @@ import { useAuthStore } from '@/stores/auth'
 
 interface FlatCategory { id: string; name: string; type?: string | null }
 
-// Module-level cache so the API call doesn't happen twice when default picker + row editor are both mounted.
-// NOTE: invalidate if the admin edits the category tree elsewhere in the session (separate ticket).
-let cachedPromise: Promise<FlatCategory[]> | null = null
+// Shares one in-flight request between the default picker and row editor mounting together. Dropped as soon as it
+// settles, so a category type changed elsewhere in the session is never read stale.
+let inflight: Promise<FlatCategory[]> | null = null
+const fetchFlat = () => (inflight ??= getAllCategories().then(flatten).finally(() => { inflight = null }))
 
 /** Return the next selection after toggling `id`'s membership in `current`. */
 export function toggleCategoryId(current: readonly string[], id: string): string[] {
@@ -35,13 +36,7 @@ function flatten(nodes: any[]): FlatCategory[] {
 
 /** Ids of the LIVE categories (the server refuses them on playlists). */
 export async function liveCategoryIds(): Promise<Set<string>> {
-  if (!cachedPromise) cachedPromise = getAllCategories().then(flatten)
-  try {
-    return new Set((await cachedPromise).filter((c) => c.type === 'LIVE').map((c) => c.id))
-  } catch (e) {
-    cachedPromise = null
-    throw e
-  }
+  return new Set((await fetchFlat()).filter((c) => c.type === 'LIVE').map((c) => c.id))
 }
 
 /** `playlist`: the picker is for a playlist row, which the live category refuses. Moderators never see LIVE (R1). */
@@ -55,13 +50,9 @@ export function useCategoryPicker(opts: { playlist?: boolean } = {}) {
 
   async function load() {
     try {
-      if (!cachedPromise) {
-        cachedPromise = getAllCategories().then(flatten)
-      }
-      all.value = await cachedPromise
+      all.value = await fetchFlat()
     } catch (e) {
       loadError.value = (e as Error).message
-      cachedPromise = null
     } finally {
       isLoading.value = false
     }

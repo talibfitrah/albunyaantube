@@ -423,7 +423,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, onMounted } from 'vue';
+import { ref, computed, onMounted, watch } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { useAuthStore } from '@/stores/auth';
 import { getThumbnailUrl, getThumbnailFallbacks } from '@/utils/formatters';
@@ -630,6 +630,10 @@ const someLoadedSelected = computed(() => selectedIds.value.size > 0 && !allLoad
 const selectionHasUncategorised = computed(() => selectedItems.value.some(i => !itemHasCategories(i)));
 /** One bulk category goes to every uncategorised item, so a playlist among them rules LIVE out. */
 const selectionHasUncategorisedPlaylist = computed(() => selectedItems.value.some(i => i.type === 'playlist' && !itemHasCategories(i)));
+// The picker stops offering LIVE once a playlist joins; a pick it no longer offers must not linger as hidden state.
+watch(selectionHasUncategorisedPlaylist, p => {
+  if (!categoriesFor(p).some(c => c.id === bulkCategory.value)) bulkCategory.value = '';
+});
 
 function isSelected(id: string): boolean {
   return selectedIds.value.has(id);
