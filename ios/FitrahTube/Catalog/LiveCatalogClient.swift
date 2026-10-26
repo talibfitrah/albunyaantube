@@ -64,7 +64,8 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     }
 
     /// 404 is the backend's "not a servable live channel" (stop); any other status, and a transport or decode
-    /// failure (`ClientError`), is retryable.
+    /// failure (`ClientError`), is retryable. Stage 9 I13: the documented 503 (the live states still load, or no poll has
+    /// listed the channel yet) carries its Retry-After, live-channel mode's next wait.
     func liveChannel(id: String) async throws -> LiveChannelLives {
         switch try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id))) {
         case .ok(let ok):
@@ -72,6 +73,8 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             return LiveChannelLives(lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
         case .notFound:
             throw LiveChannelNotFound()
+        case .serviceUnavailable(let busy):
+            throw LiveChannelUnexpectedStatus(statusCode: 503, retryAfter: busy.headers.retryAfter)
         case .undocumented(let statusCode, _):
             throw LiveChannelUnexpectedStatus(statusCode: statusCode)
         }

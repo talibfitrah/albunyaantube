@@ -18,7 +18,11 @@ nonisolated struct LiveChannelUnsupported: Error {}
 nonisolated struct LiveChannelNotFound: Error {}
 
 /// Any other answer (a 5xx, an undocumented status): retryable, never a `LiveChannelNotFound`.
-nonisolated struct LiveChannelUnexpectedStatus: Error { let statusCode: Int }
+nonisolated struct LiveChannelUnexpectedStatus: Error {
+    let statusCode: Int
+    /// The 503's Retry-After (stage 9 I13): live-channel mode's next wait.
+    var retryAfter: Int? = nil
+}
 
 extension CatalogClient {
     func liveChannel(id: String) async throws -> LiveChannelLives { throw LiveChannelUnsupported() }

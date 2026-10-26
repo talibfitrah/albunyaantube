@@ -251,14 +251,17 @@ struct LiveCatalogClientTests {
         await #expect(throws: LiveChannelNotFound.self) { try await sut.liveChannel(id: "UCx") }
     }
 
-    /// Anything else is "no answer": retryable, never mistaken for a 404.
+    /// Anything else is "no answer": retryable, never mistaken for a 404. Stage 9 I13: the documented 503 (the live
+    /// states still load) carries its Retry-After, which live-channel mode waits.
     @Test func aLiveChannel503IsNotNotFound() async {
         let (sut, transport) = makeClient(responseBody: Data())
         transport.status = .serviceUnavailable
+        transport.extraHeaders = [.retryAfter: "60"]
 
         let error = await #expect(throws: (any Error).self) { try await sut.liveChannel(id: "UCx") }
         #expect(error != nil && !(error is LiveChannelNotFound))
         #expect((error as? LiveChannelUnexpectedStatus)?.statusCode == 503)
+        #expect((error as? LiveChannelUnexpectedStatus)?.retryAfter == 60)
     }
 
     @Test func theFakeAnswersAnUnknownChannelLikeThe404() async throws {

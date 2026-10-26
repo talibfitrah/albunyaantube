@@ -27,15 +27,16 @@ nonisolated struct LiveChannelRecovery: Sendable {
         self.startedAt = startedAt
     }
 
-    mutating func next(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date) -> Step {
-        let step = decide(trigger, lives: lives, now: now)
+    /// `retryAfter` (stage 9 I13): the backend's 503 Retry-After, the shortest next wait.
+    mutating func next(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int? = nil) -> Step {
+        let step = decide(trigger, lives: lives, now: now, retryAfter: retryAfter)
         // Stage 9 I-C10.4 (Android stage 4 S2): the id goes into the thumbnail URL and the resolve; anything but a video id
         // is no answer.
-        if case .switchTo(let id, _) = step, !TitlesClient.isVideoId(id) { return decide(trigger, lives: nil, now: now) }
+        if case .switchTo(let id, _) = step, !TitlesClient.isVideoId(id) { return decide(trigger, lives: nil, now: now, retryAfter: nil) }
         return step
     }
 
-    private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date) -> Step {
+    private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int?) -> Step {
         let elapsed = now.timeIntervalSince(startedAt)
         var deadline = Self.giveUpAfter
         if let lives, !lives.isEmpty, !lives.contains(where: { $0.id == currentId }) {
@@ -54,6 +55,7 @@ nonisolated struct LiveChannelRecovery: Sendable {
         if elapsed >= Self.giveUpAfter { return .giveUp }
         defer { waits += 1 }
         // Clamped, so the title wait ends at 2 min and the give-up lands at 10 min, not up to a backoff step later.
-        return .wait(seconds: min(Self.backoff[min(waits, Self.backoff.count - 1)], Int((deadline - elapsed).rounded(.up))))
+        let backoff = max(Self.backoff[min(waits, Self.backoff.count - 1)], retryAfter ?? 0)
+        return .wait(seconds: min(backoff, Int((deadline - elapsed).rounded(.up))))
     }
 }

@@ -37,10 +37,19 @@ enum OfflineStorage {
     /// Per-item accounting for the footer. No quota — device storage is the natural limit
     /// (`DownloadStorage.kt:61-67`). Each row's thumbnail copy counts too (1.0.4 round 2: I9's
     /// copies are ~150 KB each, on disk next to the files).
-    static func usedBytes(items: [OfflineItem], base: URL) -> Int64 {
+    /// Stage 9 I13 (Cubic r4 P3): the copies' total is one stat per row, and the Saved footer and Settings' Storage
+    /// row re-render on every progress tick, so both cache it off a `.task` (`thumbnailBytes`); a render sums the rows'
+    /// in-memory bytes and takes that cache. Nil is the first frame, before the task lands: one read then, the
+    /// `availableBytes(cached:base:)` shape.
+    static func usedBytes(items: [OfflineItem], thumbnailBytes cached: Int64?, base: URL) -> Int64 {
+        items.reduce(0) { $0 + $1.bytesWritten } + (cached ?? thumbnailBytes(items: items, base: base))
+    }
+
+    /// The thumbnail copies' share of `usedBytes`: one file stat per row, so never per render.
+    static func thumbnailBytes(items: [OfflineItem], base: URL) -> Int64 {
         items.reduce(0) { total, item in
             let copy = thumbnailURL(itemId: item.id, base: base)
-            return total + item.bytesWritten + Int64((try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+            return total + Int64((try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
         }
     }
 

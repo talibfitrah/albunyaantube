@@ -398,6 +398,73 @@ struct LiveChannelPlaybackTests {
         #expect(vm.state == .error(messageKey: "player_error_message"))
     }
 
+    /// Stage 9 I13 (re-review of the r3 fix): that follow-up outlives the screen's `.task`. A screen that went away (a pop,
+    /// or a tab switch) while its lookup was out never acts on the answer: no switch, no resolve, no cast reconcile for a
+    /// screen nobody is on. The screen's return runs it, so a tab switch still never ends in an endless Loading.
+    @Test func aFollowUpWhoseScreenLeftDuringItsLookupWaitsForTheReturn() async throws {
+        let gate = GatedSleeper(gated: .seconds(1))
+        let onAir = Self.onAir("kazwa000001")
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc", now: false)), .success(Self.live("kazwa000001"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { duration in
+            // The lookup's 10 s cap is deaf to cancellation for 200 ms, so the answer always lands first.
+            guard duration == .seconds(10) else { return try await Task.sleep(for: .seconds(3600)) }
+            await Task.detached { try? await Task.sleep(for: .milliseconds(200)) }.value
+            throw URLError(.timedOut)
+        }, lookup: { _ in
+            try await gate.sleep(.seconds(1))
+            return onAir
+        })
+        vm.reconcile(.appear)                                                 // the mount
+        let opening = Task { await vm.open() }
+        try await waitUntil { gate.parked == 1 }
+        vm.reconcile(.disappear)                                              // gone as the answer lands
+        gate.wake()
+        await opening.value
+
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(vm.state == .loading)
+
+        vm.reconcile(.appear)                                                 // back on screen
+        try await waitUntil { gate.parked == 1 }
+        gate.wake()
+        try await waitUntil { vm.state.isLiveNow }
+        #expect(vm.args.videoId == "kazwa000001")
+    }
+
+    /// Stage 9 I13: a screen that went away before the resolve landed asks the backend nothing until it is back.
+    @Test func aFollowUpWhoseScreenLeftDuringTheResolveAsksNothingUntilTheReturn() async throws {
+        let lookup = Lookup([.success(Self.onAir("kazwa000001"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc", now: false)), .success(Self.live("kazwa000001"))])
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { try await lookup.lives($0) })
+        vm.reconcile(.appear)
+        vm.reconcile(.disappear)
+        await vm.open()
+
+        #expect(await lookup.calls == 0)
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+
+        vm.reconcile(.appear)
+        try await waitUntil { vm.state.isLiveNow }
+        #expect(vm.args.videoId == "kazwa000001")
+    }
+
+    /// Stage 9 I13: the backend's 503 (its live states still load after a start) is no answer, and its Retry-After is
+    /// the next wait, not the 15 s backoff.
+    @Test func aBusyBackendsRetryAfterIsTheNextWait() async throws {
+        let sleeper = GatedSleeper(gated: .seconds(60))
+        let lookup = Lookup([.failure(LiveChannelUnexpectedStatus(statusCode: 503, retryAfter: 60))])
+        let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), args: Self.channelArgs("Rs7St51oDDc"),
+                               sleep: { try await sleeper.sleep($0) }, lookup: { try await lookup.lives($0) })
+
+        await vm.open()
+        await vm.playToEnd()                                                  // an end: straight to the wait
+        #expect(vm.state == .loading)
+        try await waitUntil { sleeper.parked == 1 }
+    }
+
     /// Hand-off 1: a 404 is the backend saying this is not a servable live channel. Stop at once, after an end and after
     /// a failure alike: no same-id try and no ten minutes of waits.
     @Test func aNotFoundChannelStopsInsteadOfWaiting() async throws {
@@ -620,6 +687,24 @@ struct LiveChannelPlaybackTests {
 
         #expect(vm.advanceCalls == 0)
         #expect(vm.args.videoId == "Rs7St51oDDc")
+    }
+
+    /// Stage 9 I13 (Cubic r4 P3): live-channel mode is one predicate, `isLiveChannelMode`, and it needs the lookup too.
+    /// A live item's args with no lookup (an offline player's shape) play as an ordinary video, so the queue advances.
+    @Test func anItemWithNoLiveLookupAdvancesItsQueueLikeAnyVideo() async throws {
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
+        settings.safeMode = false
+        var args = Self.channelArgs("Rs7St51oDDc")
+        args.playlistId = "PL"
+        let vm = PlayerViewModel(resolver: RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("b"))]),
+                                 settings: settings, args: args,
+                                 queueSource: FakeQueueSource(pages: [(ids: ["Rs7St51oDDc", "b"], next: nil)]))
+
+        await vm.open()
+        await vm.playToEnd()
+
+        #expect(vm.advanceCalls == 1)
+        #expect(vm.args.videoId == "b")
     }
 
     // MARK: - §9.1 fix round 1

@@ -379,7 +379,10 @@ extension StreamState {
     private var liveIncident: LiveChannelRecovery?
     private var liveRetryTask: Task<Void, Never>?
     /// Set by `performResolve` when a live-channel resolve did not land live now, with the trigger it is; `resolve` acts on it.
+    /// Stage 9 I13: also where a follow-up whose screen went away waits for the screen's return (`resumeLiveMiss`).
     private var liveMiss: (generation: Int, trigger: LiveChannelRecovery.Trigger)?
+    /// Stage 9 I13: the follow-up in flight (`followLiveMiss`), which the screen going away cancels (`stopUpgrade`).
+    private var liveFollowUp: Task<Void, Never>?
     #if DEBUG
     private var debugForceEndTask: Task<Void, Never>?
     #endif
@@ -495,7 +498,7 @@ extension StreamState {
         #if DEBUG
         playToEndCalls += 1
         #endif
-        if args.liveChannelId != nil {          // §9.1: never advance the queue in live-channel mode
+        if isLiveChannelMode {                  // §9.1: never advance the queue in live-channel mode
             await liveChannelTrigger(.ended)
             return
         }
@@ -711,11 +714,11 @@ extension StreamState {
         defer { if recoveryToken == token { recoveryToken = nil } }
         // §9.1 step 1: in live-channel mode an incident first asks the backend; the same id falls through to the
         // existing recovery below (step 3).
-        if args.liveChannelId != nil, liveIncident?.currentId != args.videoId, await liveChannelTrigger(.failure) { return }
+        if isLiveChannelMode, liveIncident?.currentId != args.videoId, await liveChannelTrigger(.failure) { return }
         // Spec R43: any failure or stall of the HD stream drops back to the 360p it replaced, at the live position (the
         // host's replace-and-seek; `fire` already recorded the resume intent), before the budget machine runs and spending
         // nothing. HD is off for this video (R41). The 360p's own later incidents get Phase 1's full ladder.
-        if resolved.client == .tvSamsung, let standard = standardBeforeUpgrade {
+        if let standard = standardBeforeUpgrade {    // set only while the committed HD (`.tvSamsung`) stream is on screen
             standardBeforeUpgrade = nil
             state = .rung2Progressive(standard)
             if let hd { await hd.failed(hostVideoId) }
@@ -802,6 +805,7 @@ extension StreamState {
         let incidentId = liveIncident?.id
         var lives: [LiveChannelLives.Live]?
         var notFound = false
+        var retryAfter: Int?
         do {
             lives = try await withThrowingTaskGroup(of: LiveChannelLives.self) { [sleep] group in
                 group.addTask { try await liveLookup(channel) }
@@ -816,10 +820,15 @@ extension StreamState {
             notFound = true                     // not a servable live channel: stop, never ten minutes of waits
         } catch let error where error is CancellationError || Task.isCancelled {
             return true                         // cancelled (a newer wait, a closed screen): not an answer, spend nothing
-        } catch {}                              // anything else is no answer: retry
-        // The incident ended while the lookup was out (a resolve landed live, a switch, a give-up).
-        guard var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId else { return true }
-        let step: LiveChannelRecovery.Step = notFound ? .giveUp : incident.next(trigger, lives: lives, now: Date())
+        } catch {                               // anything else is no answer: retry (stage 9 I13: a 503 says when)
+            retryAfter = (error as? LiveChannelUnexpectedStatus)?.retryAfter
+        }
+        // The incident ended while the lookup was out (a resolve landed live, a switch, a give-up). Stage 9 I13: an answer
+        // that landed as the caller was cancelled is no answer either.
+        guard !Task.isCancelled, var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId
+        else { return true }
+        let step: LiveChannelRecovery.Step = notFound ? .giveUp
+            : incident.next(trigger, lives: lives, now: Date(), retryAfter: retryAfter)
         liveIncident = incident
         switch step {
         case .sameId:
@@ -837,9 +846,7 @@ extension StreamState {
                 // A wait stops with its incident and its stream, or it would wake over a healthy one.
                 guard !Task.isCancelled, let self, self.liveIncident?.id == incidentId, self.args.videoId == videoId else { return }
                 // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
-                if await !self.liveChannelTrigger(trigger) {
-                    await self.resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
-                }
+                await self.liveStep(trigger)
             }
         case .giveUp:
             liveIncident = nil
@@ -862,6 +869,35 @@ extension StreamState {
         next.liveTitle = title                  // I-P1: the backend list's title, for the next incident's match
         beginStream(next)
         await resolve(forceRefresh: false, kind: .player)
+    }
+
+    /// §9.1: a trigger, then the same-id re-resolve it may answer with. The one copy of this step (stage 9 I13), for the
+    /// wait and the not-live follow-up.
+    private func liveStep(_ trigger: LiveChannelRecovery.Trigger) async {
+        if await !liveChannelTrigger(trigger) { await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false) }
+    }
+
+    /// The not-live follow-up `resolve` owes `miss` (stage 9 I13). Unstructured, so a cancelled `.task` (a tab switch)
+    /// cannot end it and leave `.loading` with no Retry (Cubic r3). And never for a screen that went away (the I-C2 latch,
+    /// `upgradesStopped`): `stopUpgrade()` cancels it, and it waits in `liveMiss` for the screen's return. A popped
+    /// screen never returns, so a stale follow-up never switches, resolves or reconciles a cast.
+    private func followLiveMiss(_ miss: (generation: Int, trigger: LiveChannelRecovery.Trigger)) async {
+        let task = Task {
+            if !upgradesStopped { await liveStep(miss.trigger) }
+            // Every step moves `generation`; one that did not means the screen went away first.
+            guard generation == miss.generation, upgradesStopped || Task.isCancelled else { return }
+            liveMiss = miss
+            if !upgradesStopped { resumeLiveMiss() }        // the screen came back before this unwound
+        }
+        liveFollowUp = task
+        await task.value
+    }
+
+    /// The screen is back (`resumeUpgrades`): the follow-up it left waiting runs now, unless a newer resolve owns the stream.
+    private func resumeLiveMiss() {
+        guard let miss = liveMiss, miss.generation == generation else { return }
+        liveMiss = nil
+        Task { await followLiveMiss(miss) }
     }
 
     // MARK: - HD upgrade (spec R43)
@@ -935,17 +971,25 @@ extension StreamState {
         return { Task { if await hd.network() == mintedOn { await hd.refused() } } }
     }
 
-    /// Plan review M11: a screen that went away stops asking for HD, until it is back (stage 6 I-C2's latch).
+    /// Plan review M11: a screen that went away stops asking for HD, until it is back (stage 6 I-C2's latch). Stage 9
+    /// I13: and stops its live follow-up (`followLiveMiss`), which waits for the return.
     /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
     func stopUpgrade() {
         upgradesStopped = true
-        upgradeTask?.cancel()
-        pendingUpgrade = nil
+        dropUpgrade()
+        liveFollowUp?.cancel()
     }
 
-    /// The screen is back: the next resolve may ask for HD again.
+    /// The screen is back: the next resolve may ask for HD again, and a live follow-up left waiting runs.
     func resumeUpgrades() {
         upgradesStopped = false
+        resumeLiveMiss()
+    }
+
+    /// An upgrade belongs to the stream that asked for it: nothing can take its answer now.
+    private func dropUpgrade() {
+        upgradeTask?.cancel()
+        pendingUpgrade = nil
     }
 
     // MARK: - Cast (Task 8, spec §10)
@@ -1362,7 +1406,8 @@ extension StreamState {
         max(0, expiresAt.timeIntervalSince(now) - liveRefreshLead)
     }
 
-    /// DEBUG only (L3, L5): `-fitrah-live-refresh-seconds N`. `LaunchArguments.debug` is empty in Release.
+    #if DEBUG
+    /// DEBUG only (L3, L5): `-fitrah-live-refresh-seconds N`.
     static var debugLiveRefreshSeconds: TimeInterval? {
         LaunchArguments.value(after: "-fitrah-live-refresh-seconds").flatMap { TimeInterval($0) }
     }
@@ -1371,6 +1416,7 @@ extension StreamState {
     static var debugLiveForceEndSeconds: TimeInterval? {
         LaunchArguments.value(after: "-fitrah-live-force-end-seconds").flatMap { TimeInterval($0) }
     }
+    #endif
 
     /// Fix round 1: a refresh that does not land (a blip, a cooldown, not live now) is retried this often inside the
     /// lead (Android parity), so one blip at T − 10 min does not bring back the 6 h cut.
@@ -1382,7 +1428,10 @@ extension StreamState {
         liveRefreshTask?.cancel()
         liveRefreshTask = nil
         guard state.isLiveNow, let expiresAt = state.resolved?.expiresAt else { return }
-        let delay = Self.debugLiveRefreshSeconds ?? Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
+        var delay = Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
+        #if DEBUG
+        delay = Self.debugLiveRefreshSeconds ?? delay
+        #endif
         liveRefreshTask = Task { [weak self, sleep = self.sleep] in
             try? await sleep(.seconds(delay))
             let stop = min(expiresAt, Date().addingTimeInterval(Self.liveRefreshLead)).addingTimeInterval(-Self.liveRefreshRetry)
@@ -1434,10 +1483,7 @@ extension StreamState {
         // Not for a silent refresh (stage 9 I-C9d): its 360p stays on screen unless it lands, and one that fails or
         // cools down would otherwise leave that 360p with no HD for the rest of the play. `performResolve` drops it on
         // landing instead.
-        if !silent {
-            upgradeTask?.cancel()
-            pendingUpgrade = nil
-        }
+        if !silent { dropUpgrade() }
         // A user-initiated open/retry is a fresh stream (or a deliberate fresh start on the same
         // one): hand it a full budget, and end any recovery's claim on it (stage 5 F4). Recovery's
         // own re-resolves must not refill their own budget.
@@ -1456,14 +1502,7 @@ extension StreamState {
         // FAILURE, so a listed id gets its same-id re-resolve first; that re-resolve's own miss is an END, so nothing loops.
         if myGeneration == generation, let miss = liveMiss, miss.generation == generation {
             liveMiss = nil
-            // Unstructured on purpose (Cubic r3 P2): this runs in the caller's task, and a cancelled `.task` (a tab switch)
-            // would cancel the lookup's timeout, which `liveChannelTrigger` reads as "a newer wait owns the state" and
-            // returns, leaving `.loading` with no Retry. Nothing else owns the state here.
-            await Task {
-                if await !self.liveChannelTrigger(miss.trigger) {
-                    await self.resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false)
-                }
-            }.value
+            await followLiveMiss(miss)
         }
         return myGeneration == generation
     }
@@ -1513,8 +1552,7 @@ extension StreamState {
         // lands (it failed, or is still out) keeps it, so the HD stream still drops back and never reaches `decide`,
         // whose step-down would demote `.tvSamsung`.
         standardBeforeUpgrade = nil
-        upgradeTask?.cancel()                   // a landed stream is not the one any upgrade in hand was for
-        pendingUpgrade = nil
+        dropUpgrade()                           // a landed stream is not the one any upgrade in hand was for
         state = result
         scheduleLiveRefresh()
         if isLiveChannelMode, result.isPlayable {

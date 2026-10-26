@@ -597,6 +597,13 @@ public struct Client: APIProtocol {
                         preconditionFailure("bestContentType chose an invalid content type.")
                     }
                     return .notFound(.init(body: body))
+                case 503:
+                    let headers: Operations.GetLiveChannel.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Retry-After",
+                        as: Swift.Int.self
+                    ))
+                    return .serviceUnavailable(.init(headers: headers))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,

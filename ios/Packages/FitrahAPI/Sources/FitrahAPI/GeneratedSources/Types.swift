@@ -1954,7 +1954,9 @@ public enum Operations {
                     self.body = body
                 }
             }
-            /// Not a channel entry of a live category
+            /// Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
+            /// channel added to a live category in the last 20 minutes that no poll has listed yet
+            ///
             ///
             /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/404`.
             ///
@@ -1972,6 +1974,57 @@ public enum Operations {
                     default:
                         try throwUnexpectedResponseStatus(
                             expectedStatus: "notFound",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct ServiceUnavailable: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/503/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// Seconds to wait before retrying (60)
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/503/headers/Retry-After`.
+                    public var retryAfter: Swift.Int?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - retryAfter: Seconds to wait before retrying (60)
+                    public init(retryAfter: Swift.Int? = nil) {
+                        self.retryAfter = retryAfter
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetLiveChannel.Output.ServiceUnavailable.Headers
+                /// Creates a new `ServiceUnavailable`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                public init(headers: Operations.GetLiveChannel.Output.ServiceUnavailable.Headers = .init()) {
+                    self.headers = headers
+                }
+            }
+            /// The live states are still loading after a server start (no view built from them has been published yet),
+            /// or the channel was added to a live category in the last 20 minutes and the poller (every 10 minutes) has
+            /// not listed it yet. Empty body; retry after `Retry-After` seconds.
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/503`.
+            ///
+            /// HTTP response code: `503 serviceUnavailable`.
+            case serviceUnavailable(Operations.GetLiveChannel.Output.ServiceUnavailable)
+            /// The associated value of the enum case if `self` is `.serviceUnavailable`.
+            ///
+            /// - Throws: An error if `self` is not `.serviceUnavailable`.
+            /// - SeeAlso: `.serviceUnavailable`.
+            public var serviceUnavailable: Operations.GetLiveChannel.Output.ServiceUnavailable {
+                get throws {
+                    switch self {
+                    case let .serviceUnavailable(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "serviceUnavailable",
                             response: self
                         )
                     }

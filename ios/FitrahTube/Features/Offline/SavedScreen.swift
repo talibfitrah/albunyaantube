@@ -15,6 +15,8 @@ struct SavedScreen: View {
     /// Free-space capacity, read once per appearance instead of once per `body` — see
     /// `OfflineStorage.availableBytes(cached:base:)`, which the footer reads it through.
     @State private var availableBytes: Int64?
+    /// The thumbnail copies' total, read with it (stage 9 I13) — see `OfflineStorage.usedBytes`.
+    @State private var thumbnailBytes: Int64?
 
     var body: some View {
         Group {
@@ -40,8 +42,12 @@ struct SavedScreen: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "offline_saved_title"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: container.offlineStore.items.count) {
+        // Keyed on the statuses, not the count (stage 9 I13): a save's thumbnail copy lands after its row (I9), and its
+        // next status change re-reads it; a progress tick changes none.
+        // ponytail: a save that completes before its copy lands counts it from the next visit.
+        .task(id: container.offlineStore.items.map(\.status)) {
             availableBytes = OfflineStorage.availableBytes(base: container.offlineBase)
+            thumbnailBytes = OfflineStorage.thumbnailBytes(items: container.offlineStore.items, base: container.offlineBase)
         }
     }
 
@@ -50,7 +56,8 @@ struct SavedScreen: View {
     private var footer: some View {
         let items = container.offlineStore.items
         return Text(OfflineStorage.footer(count: items.count,
-                                          used: OfflineStorage.usedBytes(items: items, base: container.offlineBase),
+                                          used: OfflineStorage.usedBytes(items: items, thumbnailBytes: thumbnailBytes,
+                                                                         base: container.offlineBase),
                                           available: OfflineStorage.availableBytes(
                                               cached: availableBytes, base: container.offlineBase),
                                           locale: locale))
