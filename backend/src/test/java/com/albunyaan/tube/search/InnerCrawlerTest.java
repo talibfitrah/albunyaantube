@@ -1398,6 +1398,69 @@ class InnerCrawlerTest {
         for (String k : List.of(grew, overCap, gone, failed)) assertEquals(fullCrawlAt, source(k).completeAt, k);
     }
 
+    /**
+     * Stage 9 Cubic r6 #6 (ruling): while the backfill is held (R32), a first-paged source still polls its first page
+     * at its poll slot, so new uploads arrive, a removal inside that page is dropped and the guessed titles are
+     * refreshed. The page proves nothing past itself: no full crawl, no gate trust, and the source stays backfill left.
+     */
+    @Test
+    void aHeldBackfillStillPollsTheFirstPageOfAFirstPagedSource() throws Exception {
+        admitted.put(CH, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().backfillHeld = true;
+        crawled(CH, items("lesson", 0, 100, "Guessed"), 101, 2);   // 101 uploads, first page 2 days ago: a poll is due
+        crawler.source(CH).completeAt = 0;                          // first-paged only
+        List<InnerCorpus.Item> page = new ArrayList<>(items("new", 0, 2, "Own"));
+        page.addAll(items("lesson", 0, 1, "Own"));
+        page.addAll(items("lesson", 2, 97, "Own"));                 // lesson…01 is gone; the window ends at lesson…98
+        when(fetcher.first(eq(CH), anyString())).thenReturn(batch(102, page, true));
+        long t = now.get().toEpochMilli();
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.POLL, CH), crawler.nextJob(admitted, t));
+        step();
+        List<String> ids = corpus(CH).stream().map(InnerCorpus.Item::id).toList();
+        assertEquals(101, ids.size());
+        assertEquals(id("new", 0), ids.get(0));
+        assertFalse(ids.contains(id("lesson", 1)), "a removal inside the first page is dropped");
+        assertTrue(ids.contains(id("lesson", 99)), "older than the window: kept");
+        assertEquals("Own 0", corpus(CH).get(2).t(), "titles refreshed in the source's own hl");
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+        assertEquals(0, source(CH).completeAt, "101 of 102 is within tolerance, but no full crawl proved it: no trust");
+        assertFalse(source(CH).shortCrawl);
+        assertEquals(102, source(CH).count);
+        assertEquals(t, source(CH).lastPollAt);
+        assertNull(crawler.nextJob(admitted, t), "polled: nothing more until its next slot");
+        store.state().backfillHeld = false;                          // released: the backfill lists it in full
+        assertEquals(new InnerCrawler.Job(InnerCrawler.Kind.FULL, CH), crawler.nextJob(admitted, t));
+    }
+
+    /**
+     * The same poll for a first-paged playlist: a changed first page only merges. A complete playlist's poll would list
+     * it again in full, which the hold stops, and in the owner's order an id that left the first page may only have
+     * moved down.
+     */
+    @Test
+    void aHeldBackfillMergesAFirstPagedPlaylistsChangedPageWithoutAFullCrawl() throws Exception {
+        admitted.put(PL, "x");
+        store.state().mode = InnerState.Mode.FULL;
+        store.state().backfillHeld = true;
+        crawled(PL, items("story", 0, 100, "x"), 300, 2);
+        crawler.source(PL).completeAt = 0;                          // first-paged only
+        List<InnerCorpus.Item> page = new ArrayList<>(items("story", 1, 99, "x"));
+        page.addAll(items("added", 0, 1, "x"));                     // story…00 left the first page; one id is new
+        when(fetcher.first(eq(PL), anyString())).thenReturn(batch(301, page, true));
+        when(fetcher.next(eq(PL), anyString(), any())).thenReturn(batch(-1, items("story", 100, 200, "x"), false));
+        step();
+        verify(fetcher).first(eq(PL), anyString());
+        verify(fetcher, never()).next(anyString(), anyString(), any());
+        List<String> ids = corpus(PL).stream().map(InnerCorpus.Item::id).toList();
+        assertEquals(101, ids.size(), "merged: the new id added, nothing dropped");
+        assertTrue(ids.containsAll(List.of(id("added", 0), id("story", 0))));
+        assertEquals(0, source(PL).completeAt);
+        assertFalse(source(PL).shortCrawl);
+        assertEquals(301, source(PL).count);
+        assertEquals(now.get().toEpochMilli(), source(PL).lastChangeAt, "§6.4: a poll that found a new id");
+    }
+
     // ---- Task 21: the index -----------------------------------------------------------------------
 
     @Test

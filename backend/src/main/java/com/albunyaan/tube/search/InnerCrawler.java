@@ -485,11 +485,12 @@ public class InnerCrawler {
     /**
      * R23: FIRST_PASS = first pages only. FULL = (1) newly admitted sources' full crawls, (2) due polls, oldest due
      * first (a short or dirty source is listed in full at its poll slot), (3) backfill full crawls, smallest first,
-     * unknown counts last, unless held (R32), (4) `dirty` full crawls not yet due. Sets `steady` (no backfill left, or
-     * it is held): from then on every job, a new source's too (owner ruling), runs inside the daily cap. A backfill
-     * source waiting out a backoff or the unavailable run is still backfill left (stage 9 Cubic r5 P3). Sources in the
-     * current unavailable run wait for it to resolve (R33.7); non-admitted sources are simply never picked (R24), and
-     * nothing is dropped for a missing read (SearchIndex's catalog change removes, then re-adds).
+     * unknown counts last, unless held (R32); a held one is polled at its slot, first page only (stage 9 Cubic r6
+     * ruling), (4) `dirty` full crawls not yet due. Sets `steady` (no backfill left, or it is held): from then on every
+     * job, a new source's too (owner ruling), runs inside the daily cap. A backfill source waiting out a backoff or the
+     * unavailable run is still backfill left (stage 9 Cubic r5 P3). Sources in the current unavailable run wait for it
+     * to resolve (R33.7); non-admitted sources are simply never picked (R24), and nothing is dropped for a missing read
+     * (SearchIndex's catalog change removes, then re-adds).
      */
     Job nextJob(Map<String, String> admitted, long now) {
         InnerState s = store.state();
@@ -512,9 +513,9 @@ public class InnerCrawler {
                 continue;
             }
             if (!full) continue;
-            if (unfilled) {
+            if (unfilled && !s.backfillHeld) {
                 long count = src.count < 0 ? Long.MAX_VALUE : src.count;
-                if (!s.backfillHeld && (backfill == null || count < backfillCount)) {
+                if (backfill == null || count < backfillCount) {
                     backfill = new Job(Kind.FULL, key);
                     backfillCount = count;
                 }
@@ -767,7 +768,8 @@ public class InnerCrawler {
     /**
      * §6.4 poll: the first page (count + newest 100). Channels: gap fill while a page holds no known id, in-window
      * removals, then the count check (R22). Playlists: unchanged = titles refreshed; changed = listed again at once
-     * (≤ 100 items: the poll page itself is the complete listing).
+     * (≤ 100 items: the poll page itself is the complete listing), or merged if first-paged only. A first-paged
+     * source's poll never sets completeAt, so it renews no gate trust and is no full crawl.
      */
     private boolean poll(String key, String name, InnerState.Source src, long now) throws IOException, ExtractionException {
         List<InnerCorpus.Item> corpus = corpus(key, src);
@@ -780,12 +782,17 @@ public class InnerCrawler {
         if (key.startsWith("playlist:")) {
             List<InnerCorpus.Item> items = mergeKeep(page.items(), List.of()); // stage 9 B13: the corpus is de-duplicated
             List<String> top = ids(corpus.subList(0, Math.min(corpus.size(), items.size())));
-            if (page.count() == src.count && ids(items).equals(top)) {
-                List<InnerCorpus.Item> refreshed = mergeWindow(items, corpus);
-                writeCorpus(key, name, refreshed, corpus, false); // titles refreshed
+            // a first-paged one (polled only while the backfill is held) merges a changed page too: the hold stops its
+            // full crawl, and in the owner's order an id that left the first page may only have moved down (Cubic r6)
+            if ((page.count() == src.count && ids(items).equals(top)) || src.completeAt == 0) {
+                List<InnerCorpus.Item> refreshed = mergeKeep(items, corpus); // unchanged: the titles refreshed
+                int added = added(items, corpus);
+                writeCorpus(key, name, refreshed, corpus, false);
                 src.lastPollAt = now;
+                src.count = page.count();
+                if (added > 0) src.lastChangeAt = now;
                 renewTrust(src, refreshed.size(), page.count(), now);
-                logJob("POLL", key, src, 0, 0);
+                logJob("POLL", key, src, added, 0);
                 return true;
             }
             return fullCrawl(key, name, src, now, page);
