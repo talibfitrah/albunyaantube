@@ -1,4 +1,9 @@
 {
+  "1.0.4": {
+    "en": "Live channels keep playing, video titles stay in their original language, and playlists always show a picture.",
+    "ar": "القنوات المباشرة تستمر في البث، وعناوين المقاطع تبقى بلغتها الأصلية، وقوائم التشغيل تعرض صورة دائمًا.",
+    "nl": "Livekanalen spelen door, videotitels blijven in hun oorspronkelijke taal en playlists tonen altijd een afbeelding."
+  },
   "1.0.3": {
     "en": "Downloads now play inside the app, even offline, and finish much faster. Search forgives typos and updates as you type.",
     "ar": "التنزيلات تعمل الآن داخل التطبيق حتى دون اتصال وتكتمل أسرع بكثير، والبحث يتسامح مع الأخطاء ويتحدّث أثناء الكتابة.",
