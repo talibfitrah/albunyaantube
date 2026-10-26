@@ -47,6 +47,11 @@ public protocol APIProtocol: Sendable {
     func getPublicPlaylist(_ input: Operations.GetPublicPlaylist.Input) async throws -> Operations.GetPublicPlaylist.Output
     /// Current live streams of a live-category channel
     ///
+    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+    /// deleted)
+    ///
+    ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
     /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
     func getLiveChannel(_ input: Operations.GetLiveChannel.Input) async throws -> Operations.GetLiveChannel.Output
@@ -128,6 +133,11 @@ extension APIProtocol {
         ))
     }
     /// Current live streams of a live-category channel
+    ///
+    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+    /// deleted)
+    ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
     /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
@@ -1807,6 +1817,11 @@ public enum Operations {
         }
     }
     /// Current live streams of a live-category channel
+    ///
+    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+    /// deleted)
+    ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
     /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
