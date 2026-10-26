@@ -194,3 +194,25 @@ describe('optional inputs', () => {
     await waitFor(() => expect(approveItemMock).toHaveBeenCalledWith('bare', 'channel', undefined));
   });
 });
+
+describe('LIVE is never offered for a playlist (spec §8)', () => {
+  const live = { id: 'live', label: 'Channels Live', type: 'LIVE', subcategories: [] };
+  const optionTexts = (el: HTMLElement) => Array.from(el.querySelectorAll('option')).map(o => o.textContent);
+
+  it('leaves LIVE out of the per-card and bulk pickers for a playlist, keeps it for a channel', async () => {
+    getAllCategoriesMock.mockResolvedValue([live, { id: 'cat-1', label: 'Education', subcategories: [] }]);
+    const pl = { ...makeItem('p', 'A Playlist', []), type: 'playlist' as const };
+    await renderView([pl, makeItem('c', 'A Channel', [])]);
+
+    await waitFor(() => expect(document.querySelectorAll('.category-override-select').length).toBe(2));
+    const [plSelect, chSelect] = Array.from(document.querySelectorAll<HTMLElement>('.category-override-select'));
+    expect(optionTexts(plSelect)).not.toContain('Channels Live');
+    expect(optionTexts(chSelect)).toContain('Channels Live');
+
+    await selectCard('A Channel');
+    expect(optionTexts(screen.getByLabelText('Category for uncategorised'))).toContain('Channels Live');
+    await selectCard('A Playlist');
+    expect(optionTexts(screen.getByLabelText('Category for uncategorised'))).not.toContain('Channels Live');
+  });
+});
+

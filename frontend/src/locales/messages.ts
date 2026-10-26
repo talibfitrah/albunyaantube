@@ -176,6 +176,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'No valid rows to submit',
+          playlistNeedsCategory: 'A playlist has no category left, because playlists cannot use the live category. Choose a category for it, then submit again.',
+          playlistNeedsCategoryRow: 'Choose a category: playlists cannot use the live category.',
           validCount: 'valid',
           duplicateCount: 'duplicate',
           errorCount: 'error',
@@ -1820,6 +1822,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'لا توجد صفوف صالحة للإرسال',
+          playlistNeedsCategory: 'لم تبقَ لقائمة تشغيل أي فئة، لأن قوائم التشغيل لا يمكن إضافتها إلى فئة البث المباشر. اختر لها فئة ثم أعد الإرسال.',
+          playlistNeedsCategoryRow: 'اختر فئة: لا يمكن إضافة قوائم التشغيل إلى فئة البث المباشر.',
           validCount: 'صالح',
           duplicateCount: 'مكرر',
           errorCount: 'خطأ',
@@ -3257,6 +3261,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'Geen geldige rijen om in te dienen',
+          playlistNeedsCategory: 'Een afspeellijst heeft geen categorie meer, omdat afspeellijsten niet in de livecategorie kunnen. Kies een categorie voor deze afspeellijst en dien opnieuw in.',
+          playlistNeedsCategoryRow: 'Kies een categorie: afspeellijsten kunnen niet in de livecategorie.',
           validCount: 'geldig',
           duplicateCount: 'duplicaat',
           errorCount: 'fout',

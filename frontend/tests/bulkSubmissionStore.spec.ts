@@ -148,4 +148,26 @@ describe('bulkSubmissionStore: coded errors read in the admin language (F20)', (
     expect(rows[0].categoryIds).toEqual(['live-1', 'quran'])
     expect(rows[1].categoryIds).toEqual(['quran'])
   })
+
+  it('runSubmit flags a playlist row left with no category and sends nothing', async () => {
+    vi.mocked(liveCategoryIds).mockResolvedValue(new Set(['live-1']))
+    const s = useBulkSubmissionStore()
+    s.phase = 'PREVIEW'
+    s.defaultCategoryIds = ['live-1']
+    s.previewRows = [
+      { rowIndex: 0, status: 'OK', originalUrl: 'c', detectedType: 'CHANNEL', metadata: {} } as any,
+      { rowIndex: 1, status: 'OK', originalUrl: 'p', detectedType: 'PLAYLIST', metadata: {} } as any,
+    ]
+    await s.runSubmit()
+    expect(mockedSubmit).not.toHaveBeenCalled()
+    expect(s.phase).toBe('PREVIEW')
+    expect(s.rowsNeedingCategory).toEqual([1])
+    expect(s.error).toBe(i18n.global.t('contentSearch.bulk.preview.playlistNeedsCategory'))
+
+    s.setRowCategories(1, ['quran'])
+    expect(s.rowsNeedingCategory).toEqual([])
+    mockedSubmit.mockResolvedValue({ totalSubmitted: 2, added: 2, failed: 0, results: [] } as any)
+    await s.runSubmit()
+    expect(mockedSubmit.mock.calls[0][0].rows[1].categoryIds).toEqual(['quran'])
+  })
 })

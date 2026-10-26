@@ -46,6 +46,8 @@ interface State {
   previewRows: PreviewRowDraft[]
   submitResult: BulkSubmitResponse | null
   error: string | null
+  /** rowIndex of playlist rows left with no category once LIVE is dropped; the batch is not sent until they are fixed. */
+  rowsNeedingCategory: number[]
 }
 
 /**
@@ -67,6 +69,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
     previewRows: [],
     submitResult: null,
     error: null,
+    rowsNeedingCategory: [],
   }),
 
   actions: {
@@ -93,6 +96,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       const idx = this.previewRows.findIndex((r) => r.rowIndex === rowIndex)
       if (idx < 0) return
       this.previewRows[idx] = { ...this.previewRows[idx], categoryIds }
+      this.rowsNeedingCategory = this.rowsNeedingCategory.filter((i) => i !== rowIndex)
     },
 
     removeRow(rowIndex: number) {
@@ -138,6 +142,15 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
             categoryIds: r.detectedType === 'PLAYLIST' ? ids.filter((id) => !live.has(id)) : ids,
           }
         })
+        // The server needs 1-10 categories per row: a playlist row whose only category was LIVE is flagged, not sent.
+        const bare = rows.filter((r) => r.categoryIds.length === 0).map((r) => r.rowIndex)
+        if (bare.length > 0) {
+          this.rowsNeedingCategory = bare
+          this.error = i18n.global.t('contentSearch.bulk.preview.playlistNeedsCategory')
+          this.phase = 'PREVIEW'
+          return
+        }
+        this.rowsNeedingCategory = []
         const resp = await bulkSubmissionService.submitBulk({ rows })
         this.submitResult = resp
         this.phase = 'RESULT'
@@ -155,6 +168,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       this.previewRows = []
       this.submitResult = null
       this.error = null
+      this.rowsNeedingCategory = []
     },
   },
 })

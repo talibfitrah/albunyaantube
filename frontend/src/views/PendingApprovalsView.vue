@@ -165,7 +165,7 @@
           <label for="bulk-category-select">{{ t('approvals.bulk.categoryLabel') }}</label>
           <select id="bulk-category-select" v-model="bulkCategory">
             <option value="">{{ t('approvals.selectCategory') }}</option>
-            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
+            <option v-for="cat in categoriesFor(selectionHasUncategorisedPlaylist)" :key="cat.id" :value="cat.id">{{ cat.label }}</option>
           </select>
         </div>
 
@@ -281,7 +281,7 @@
             @change="onCategoryOverrideChange(item.id, ($event.target as HTMLSelectElement).value)"
           >
             <option value="">{{ t('approvals.selectCategory') }}</option>
-            <option v-for="cat in flatCategories" :key="cat.id" :value="cat.id">
+            <option v-for="cat in categoriesFor(item.type === 'playlist')" :key="cat.id" :value="cat.id">
               {{ cat.label }}
             </option>
           </select>
@@ -533,12 +533,12 @@ const nextCursor = ref<string | null>(null);
 const isLoadingMore = ref(false);
 const categories = ref<any[]>([]);
 const flatCategories = computed(() => {
-  const flattened: { id: string; label: string }[] = [];
+  const flattened: { id: string; label: string; type?: string | null }[] = [];
 
   const traverse = (nodes: any[], depth = 0) => {
     nodes.forEach(node => {
       const prefix = depth > 0 ? `${'— '.repeat(depth)}` : '';
-      flattened.push({ id: node.id, label: `${prefix}${node.label}` });
+      flattened.push({ id: node.id, label: `${prefix}${node.label}`, type: node.type });
       if (node.subcategories?.length) {
         traverse(node.subcategories, depth + 1);
       }
@@ -548,6 +548,10 @@ const flatCategories = computed(() => {
   traverse(categories.value);
   return flattened;
 });
+/** The server refuses the live category on a playlist: its pickers do not offer it. */
+function categoriesFor(playlist: boolean) {
+  return playlist ? flatCategories.value.filter(c => c.type !== 'LIVE') : flatCategories.value;
+}
 // Thumbnail fallback state — DOM-based pattern to avoid reactive cascade re-renders
 const thumbnailFallbackIndex = new Map<string, number>();
 
@@ -624,6 +628,8 @@ const allLoadedSelected = computed(
 const someLoadedSelected = computed(() => selectedIds.value.size > 0 && !allLoadedSelected.value);
 /** True when any selected item would be approved with no category at all. */
 const selectionHasUncategorised = computed(() => selectedItems.value.some(i => !itemHasCategories(i)));
+/** One bulk category goes to every uncategorised item, so a playlist among them rules LIVE out. */
+const selectionHasUncategorisedPlaylist = computed(() => selectedItems.value.some(i => i.type === 'playlist' && !itemHasCategories(i)));
 
 function isSelected(id: string): boolean {
   return selectedIds.value.has(id);
@@ -704,7 +710,10 @@ function categoryOverrideFor(item: any, chosen: string): string | undefined {
   if (itemHasCategories(item)) return undefined;
   // A category picked on the card itself is the more specific instruction; the bulk picker is
   // the fallback for everything the admin did not file by hand.
-  return selectedCategoryOverrides.value[item.id] || chosen || undefined;
+  const pick = selectedCategoryOverrides.value[item.id] || chosen;
+  // A LIVE bulk pick chosen before a playlist joined the selection must not reach the playlist.
+  if (item.type === 'playlist' && flatCategories.value.some(c => c.id === pick && c.type === 'LIVE')) return undefined;
+  return pick || undefined;
 }
 
 const showRejectDialog = ref(false);

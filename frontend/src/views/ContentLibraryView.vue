@@ -591,7 +591,7 @@ import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import * as contentLibraryService from '@/services/contentLibrary';
 import type { ReorderItem } from '@/services/contentLibrary';
 import type { BulkActionItem } from '@/types/api';
-import { apiErrorCode, apiErrorWithOffenders } from '@/services/http';
+import { apiErrorCode, apiErrorWithOffenders, offenderTitles } from '@/services/http';
 
 const { t, locale } = useI18n();
 
@@ -959,14 +959,8 @@ async function bulkChangeStatus(status: string) {
 // A coded refusal reads in the admin's language with each offending row (spec §8, D9); anything else keeps its message.
 function bulkErrorReason(err: any): string {
   return apiErrorCode(err)
-    ? apiErrorWithOffenders(err, t, 'contentLibrary.errorBulkAction', offenderTitle)
+    ? apiErrorWithOffenders(err, t, 'contentLibrary.errorBulkAction', offenderTitles(content.value))
     : (err?.message || String(err));
-}
-
-// Offender refs are "type:docId": show the item's title when it is loaded.
-function offenderTitle(ref: string): string {
-  const id = ref.slice(ref.indexOf(':') + 1);
-  return content.value.find(c => c.id === id)?.title ?? ref;
 }
 
 function openBulkCategoryAssignment() {

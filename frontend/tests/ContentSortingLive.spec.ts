@@ -15,7 +15,11 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
   getCategoryContentOrder: () => Promise.resolve([
     { contentId: 'channel_UCa', contentType: 'channel', title: 'Zad', thumbnailUrl: null, position: 0, youtubeId: 'UCa' },
     { contentId: 'doc-1', contentType: 'video', title: 'A stream', thumbnailUrl: null, position: 1, youtubeId: 'vid00000001' }
-  ])
+  ]),
+  getApprovedContent: () => Promise.resolve({ truncated: false, items: [
+    { id: 'pl-9', type: 'playlist', youtubeId: null, title: 'Some playlist', thumbnailUrl: null },
+    { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null }
+  ] })
 }));
 vi.mock('@/services/liveChannels', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/liveChannels')>()),
@@ -70,5 +74,17 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(screen.queryByText(/Users see each channel's current live streams/)).toBeNull();
     expect(screen.queryByRole('status')).toBeNull();
     expect(screen.queryByText(/^Live ·/)).toBeNull();
+  });
+
+  it('does not offer playlists in the add-content modal of a live category', async () => {
+    status.fn.mockImplementation(ok);
+    mount();
+
+    await fireEvent.click(await screen.findByText('Channels Live'));
+    await screen.findByText('Live · 1');
+    await fireEvent.click(await screen.findByText(/Add Content/));
+
+    expect(await screen.findByText('Some channel')).toBeInTheDocument();
+    expect(screen.queryByText('Some playlist')).not.toBeInTheDocument();
   });
 });

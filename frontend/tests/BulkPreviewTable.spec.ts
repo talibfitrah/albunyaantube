@@ -65,6 +65,15 @@ describe('BulkPreviewTable', () => {
     expect(counts).toContain('1')
   })
 
+  it('flags the playlist row that has no category left', () => {
+    const store = useBulkSubmissionStore()
+    store.previewRows = [okRow(0), { ...okRow(1), detectedType: 'PLAYLIST' }]
+    store.rowsNeedingCategory = [1]
+    const rows = mountTable().findAll('tbody tr')
+    expect(rows[0].find('[role=alert]').exists()).toBe(false)
+    expect(rows[1].find('[role=alert]').text()).toBe(messages.en.contentSearch.bulk.preview.playlistNeedsCategoryRow)
+  })
+
   it('removeRow drops row from rendered table', async () => {
     const store = useBulkSubmissionStore()
     store.previewRows = [okRow(0), okRow(1)]

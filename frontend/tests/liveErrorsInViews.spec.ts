@@ -51,7 +51,7 @@ describe('a live-category refusal is shown in the admin\'s language (spec §8)',
     const reason = 'The live category accepts only channels and streams that are live right now.';
     const box = await screen.findByRole('alert');
     expect(box).toHaveTextContent(reason);
-    expect(box).toHaveTextContent(`playlist:pl-1: ${reason}`);
+    expect(box).toHaveTextContent(`A playlist: ${reason}`);
     expect(toastError).not.toHaveBeenCalled();
   });
 });

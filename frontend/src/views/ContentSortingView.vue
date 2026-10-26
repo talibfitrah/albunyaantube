@@ -338,7 +338,7 @@ import {
   type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
-import { apiErrorWithOffenders } from '@/services/http';
+import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
 import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
@@ -803,7 +803,9 @@ async function openAddContentModal(categoryId: string) {
     if (token !== addModalLoadToken) return;
     addModalTruncated.value = result.truncated;
     const existingKeys = new Set(contentItems.value.map(contentKey));
-    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)));
+    // The server refuses a playlist in the live category: do not offer one.
+    const live = !!liveCategory(categoryId);
+    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)) && !(live && i.type === 'playlist'));
   } catch (e: any) {
     if (token !== addModalLoadToken) return;
     addModalAvailable.value = [];
@@ -844,7 +846,7 @@ async function confirmAddContent() {
     closeAddContentModal();
   } catch (e: any) {
     // Persistent, with each offending row: a toast would vanish before the admin could find the bad item.
-    addModalError.value = apiErrorWithOffenders(e, t, 'contentSorting.addContentError');
+    addModalError.value = apiErrorWithOffenders(e, t, 'contentSorting.addContentError', offenderTitles(addModalAvailable.value));
   } finally {
     addModalSubmitting.value = false;
   }

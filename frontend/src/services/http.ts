@@ -31,6 +31,14 @@ interface ErrorResponseBody {
   details?: Record<string, unknown>;
 }
 
+/** Offender refs are "type:docId": label each with the item's title when it is in `items`, else the raw ref. */
+export function offenderTitles(items: { id: string; title: string }[]): (ref: string) => string {
+  return ref => {
+    const id = ref.slice(ref.indexOf(':') + 1);
+    return items.find(i => i.id === id)?.title ?? ref;
+  };
+}
+
 /**
  * Cubic R-final5 P1 — convert an unknown thrown value to a localized
  * message string. Use this in catch blocks instead of

@@ -8,6 +8,9 @@ import { messages } from '@/locales/messages';
 
 const auth = vi.hoisted(() => ({ isAdmin: true }));
 const service = vi.hoisted(() => ({ updateCategory: vi.fn(() => Promise.resolve({})) }));
+vi.mock('@/services/sortOrder', () => ({
+  getCategoryContentOrder: () => Promise.resolve([{ contentId: 'abc', contentType: 'playlist', title: 'My playlist', thumbnailUrl: null, position: 0, youtubeId: 'PLabc' }])
+}));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
 vi.mock('@/services/categoryService', () => ({
   getAllCategories: () => Promise.resolve([
@@ -134,12 +137,12 @@ describe('CategoriesView and the category type (spec §8, R18)', () => {
   it('lists each offending member when the flip to LIVE is refused (MEMBERS_INVALID)', async () => {
     service.updateCategory.mockRejectedValueOnce(Object.assign(new Error('Request failed with status code 400'), {
       response: { status: 400, data: { code: 'LIVE_CATEGORY_MEMBERS_INVALID', message: 'members invalid',
-        details: { offenders: [{ ref: 'PLabc', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }
+        details: { offenders: [{ ref: 'playlist:abc', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }
     }));
     await saveAsLive('Quran');
 
     const en = messages.en.apiErrors;
-    await waitFor(() => expect(formError()).toBe(`${en.LIVE_CATEGORY_MEMBERS_INVALID}\nPLabc: ${en.LIVE_CATEGORY_TYPE_NOT_ALLOWED}`));
+    await waitFor(() => expect(formError()).toBe(`${en.LIVE_CATEGORY_MEMBERS_INVALID}\nMy playlist: ${en.LIVE_CATEGORY_TYPE_NOT_ALLOWED}`));
   });
 
   it('shows the localized fallback, not axios English, for an uncoded failure', async () => {

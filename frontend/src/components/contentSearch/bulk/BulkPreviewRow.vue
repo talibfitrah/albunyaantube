@@ -13,6 +13,7 @@ interface PreviewRowDraft extends PreviewRow {
 const props = defineProps<{
   row: PreviewRowDraft
   defaultCategoryIds: string[]
+  needsCategory?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -82,6 +83,9 @@ const isActionable = computed(
         @save="(ids) => { emit('updateCategories', row.rowIndex ?? 0, ids); editing = false }"
         @cancel="editing = false"
       />
+      <small v-if="needsCategory" class="bulk-row-error" role="alert">
+        {{ t('contentSearch.bulk.preview.playlistNeedsCategoryRow') }}
+      </small>
     </td>
     <td>
       <button
