@@ -1,0 +1,93 @@
+backend/src/test/java/com/albunyaan/tube/integration/LiveCategoryServingIT.java
+  s_dbb6b1f3671904::t_c85545966577de 17,19,28,125-161
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_599d2558386aae 777-780
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_dbb6b1f3671904::t_cd8dd43712681c 574-593
+backend/src/main/java/com/albunyaan/tube/search/InnerCorpus.java
+  s_dbb6b1f3671904::t_599d2558386aae 88-90
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_0c87bf296a3000 683-734,1210-1213,1274-1275,1304-1305,1336-1339,1400-1401,1430-1431,1520-1528,1589-1592,1621-1624,1685-1693,1697-1707,2367-2375,2710-2713,2783-2786,3050-3053,3142-3145,5581-5608
+  s_dbb6b1f3671904::t_1139ce8714a33f 325-328
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_dbb6b1f3671904::t_e9c7705d42d6a2 71-73,93-94,987,990,1006
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelsMigration.java
+  s_dbb6b1f3671904::t_599d2558386aae 280,292
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_599d2558386aae 165,189,212,233,326,330-331,381-384,386-405,424-425,427-428,442,445,447-450
+  s_dbb6b1f3671904::t_2b2e81275b83b3 385,406-407
+backend/src/main/java/com/albunyaan/tube/service/StreamIndexService.java
+  s_dbb6b1f3671904::t_2b2e81275b83b3 62,64,73
+  s_dbb6b1f3671904::t_599d2558386aae 63,65-72
+backend/src/test/java/com/albunyaan/tube/repository/CatalogChangedEventsTest.java
+  s_dbb6b1f3671904::t_cd8dd43712681c 184-190,199-212
+  s_dbb6b1f3671904::t_941ca85d12ea8a 213-214
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_793d0a635497e5 14,51,728,730-733,736-875
+backend/src/main/java/com/albunyaan/tube/service/PublicContentCacheService.java
+  s_dbb6b1f3671904::t_599d2558386aae 20,45
+  s_dbb6b1f3671904::t_2b2e81275b83b3 21-28
+backend/src/test/java/com/albunyaan/tube/search/InnerCorpusTest.java
+  s_dbb6b1f3671904::t_2bf8ca17eeee2d 79-88
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_13dfe34d756df4 2246-2259
+backend/src/main/java/com/albunyaan/tube/repository/SearchableStreamRepository.java
+  s_dbb6b1f3671904::t_2b2e81275b83b3 93,98-99,109
+  s_dbb6b1f3671904::t_599d2558386aae 94-97,100-108
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelPollerIT.java
+  s_dbb6b1f3671904::t_dddadf389795d8 164-167
+  s_dbb6b1f3671904::t_bb30acb2cc0a62 140-163,168-184
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryWritePathTripwireTest.java
+  s_dbb6b1f3671904::t_599d2558386aae 38
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_f0459fc4efb9a5 446-500
+  s_dbb6b1f3671904::t_bf2e21cf8e6a73 240
+backend/src/test/java/com/albunyaan/tube/service/MidBatchSkippedItemsTest.java
+  s_dbb6b1f3671904::t_e9c7705d42d6a2 85-86
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_dbb6b1f3671904::t_2b2e81275b83b3 66-67,79
+  s_dbb6b1f3671904::t_599d2558386aae 1164-1166
+  s_dbb6b1f3671904::t_e815a2b9c586c2 53
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_2bf8ca17eeee2d 1015-1035
+backend/src/main/java/com/albunyaan/tube/model/Video.java
+  s_dbb6b1f3671904::t_82f4cbda252820 99-104,252-258
+  s_dbb6b1f3671904::t_dc91db9abc28cc 98,259
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_dbb6b1f3671904::t_6347feea83f5f5 54-61,230-243,245-274
+  s_dbb6b1f3671904::t_7298460dd8a46d 244
+  s_dbb6b1f3671904::t_29649291e65f5b 275
+backend/src/main/java/com/albunyaan/tube/model/LiveChannelState.java
+  s_dbb6b1f3671904::t_599d2558386aae 36-37,65,94-95
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheServiceTest.java
+  s_dbb6b1f3671904::t_cd8dd43712681c 1-21
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_599d2558386aae 9,22,40-41,84-87,130-139,212-217,219-227,230-234,237-241,243-258,328,335-339,348,357-359,375-377,381,395-398,400-405,412-413,416,421-437
+  s_dbb6b1f3671904::t_2b2e81275b83b3 218,228-229,235-236,242
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_2b2e81275b83b3 472,476-477
+  s_dbb6b1f3671904::t_599d2558386aae 471,473-475
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_dbb6b1f3671904::t_599d2558386aae 1010-1019
+backend/src/main/java/com/albunyaan/tube/search/CatalogChanged.java
+  s_dbb6b1f3671904::t_599d2558386aae 41-47
+backend/src/test/java/com/albunyaan/tube/service/StreamIndexServiceTest.java
+  s_dbb6b1f3671904::t_13dfe34d756df4 13,56-68
+  s_dbb6b1f3671904::t_e558a17fbf761d 69
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "835164cfb640017452c034f6fc704187fe312b8e",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
