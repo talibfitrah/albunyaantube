@@ -1007,4 +1007,69 @@ struct LiveChannelPlaybackTests {
         #expect(onScreen == ["Rs7St51oDDc.m3u8", "Rs7St51oDDc.m3u8"])        // the switch, then its try
         #expect(Self.file(vm) == "eaOtcUNHDB8.m3u8")
     }
+
+    // MARK: - Stage 9 I19 (Cubic r9 #7): step 4's wake obeys the went-away latch, as the not-live follow-up (I13)
+
+    /// A wait that wakes while the screen is away (a push, a tab switch) asks nothing, resolves nothing and switches
+    /// nothing. The screen's return runs the wake it owed, so a returning user never sits on the loading card.
+    @Test func aHiddenScreensWaitWakesIntoNothingUntilTheReturn() async throws {
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let lookup = Lookup([.success(Self.onAir()), .success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { try await lookup.lives($0) })
+        vm.reconcile(.appear)                                                 // the mount
+
+        await vm.open()
+        await vm.playToEnd()                                                  // nothing listed: wait 15 s
+        try await waitUntil { sleeper.parked == 1 }
+        vm.reconcile(.disappear)                                              // a push or a tab switch
+        sleeper.wake()
+        try await Task.sleep(for: .milliseconds(100))                         // let a wrong wake reach its lookup
+
+        #expect(await lookup.calls == 1)
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+        #expect(sleeper.waits == [.seconds(15)])
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(vm.state == .loading)
+
+        vm.reconcile(.appear)                                                 // back: the owed wake runs now
+        try await waitUntil { vm.state.isLiveNow }
+        #expect(vm.args.videoId == "eaOtcUNHDB8")
+        #expect(await lookup.calls == 2)
+    }
+
+    /// The screen leaves while the wake's lookup is out: `stopUpgrade()` cancels that wake as it cancels the not-live
+    /// follow-up, so the answer is not acted on. The return asks again and switches.
+    @Test func aWakeWhoseScreenLeftDuringItsLookupWaitsForTheReturn() async throws {
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let gate = GatedSleeper(gated: .seconds(1))
+        let lookup = Lookup([.success(Self.onAir()), .success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { id in
+                                   if await lookup.calls > 0 { try await gate.sleep(.seconds(1)) }   // every wake's lookup parks
+                                   return try await lookup.lives(id)
+                               })
+        vm.reconcile(.appear)
+
+        await vm.open()
+        await vm.playToEnd()                                                  // nothing listed: wait 15 s
+        try await waitUntil { sleeper.parked == 1 }
+        sleeper.wake()
+        try await waitUntil { gate.parked == 1 }                              // the wake's lookup is out
+        vm.reconcile(.disappear)
+        gate.wake()                                                           // its answer lands with the screen away
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(vm.state == .loading)
+
+        vm.reconcile(.appear)
+        try await waitUntil { gate.parked == 1 }
+        gate.wake()
+        try await waitUntil { vm.state.isLiveNow }
+        #expect(vm.args.videoId == "eaOtcUNHDB8")
+    }
 }

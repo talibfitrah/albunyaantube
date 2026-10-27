@@ -381,7 +381,7 @@ extension StreamState {
     private var liveIncident: LiveChannelRecovery?
     private var liveRetryTask: Task<Void, Never>?
     /// Set by `performResolve` when a live-channel resolve did not land live now, with the trigger it is; `resolve` acts on it.
-    /// Stage 9 I13: also where a follow-up whose screen went away waits for the screen's return (`resumeLiveMiss`).
+    /// Stage 9 I13/I19: also where a follow-up or a step-4 wake whose screen went away waits for it (`resumeLiveMiss`).
     private var liveMiss: (generation: Int, trigger: LiveChannelRecovery.Trigger)?
     /// Stage 9 I13: the follow-up in flight (`followLiveMiss`), which the screen going away cancels (`stopUpgrade`).
     private var liveFollowUp: Task<Void, Never>?
@@ -862,7 +862,8 @@ extension StreamState {
                 // A wait stops with its incident and its stream, or it would wake over a healthy one.
                 guard !Task.isCancelled, let self, self.liveIncident?.id == incidentId, self.args.videoId == videoId else { return }
                 // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
-                await self.liveStep(trigger)
+                // Stage 9 I19: through the follow-up's latch, so a wake whose screen went away runs on its return.
+                await self.followLiveMiss((self.generation, trigger))
             }
         case .giveUp:
             liveIncident = nil
@@ -900,10 +901,10 @@ extension StreamState {
         }
     }
 
-    /// The not-live follow-up `resolve` owes `miss` (stage 9 I13). Unstructured, so a cancelled `.task` (a tab switch)
-    /// cannot end it and leave `.loading` with no Retry (Cubic r3). And never for a screen that went away (the I-C2 latch,
-    /// `upgradesStopped`): `stopUpgrade()` cancels it, and it waits in `liveMiss` for the screen's return. A popped
-    /// screen never returns, so a stale follow-up never switches, resolves or reconciles a cast.
+    /// The not-live follow-up `resolve` owes `miss` (stage 9 I13), and step 4's wake (I19). Unstructured, so a cancelled
+    /// `.task` (a tab switch) cannot end it and leave `.loading` with no Retry (Cubic r3). And never for a screen that went
+    /// away (the I-C2 latch, `upgradesStopped`): `stopUpgrade()` cancels it, and it waits in `liveMiss` for the screen's
+    /// return. A popped screen never returns, so a stale follow-up never switches, resolves or reconciles a cast.
     private func followLiveMiss(_ miss: (generation: Int, trigger: LiveChannelRecovery.Trigger)) async {
         let task = Task {
             if !upgradesStopped { await liveStep(miss.trigger) }
@@ -995,7 +996,7 @@ extension StreamState {
     }
 
     /// Plan review M11: a screen that went away stops asking for HD, until it is back (stage 6 I-C2's latch). Stage 9
-    /// I13: and stops its live follow-up (`followLiveMiss`), which waits for the return.
+    /// I13: and stops its live follow-up (`followLiveMiss`, step 4's wake included: I19), which waits for the return.
     /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
     func stopUpgrade() {
         upgradesStopped = true
