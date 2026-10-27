@@ -801,7 +801,9 @@ async function openAddContentModal(categoryId: string) {
   const token = ++addModalLoadToken;
   try {
     // The category's own type decides, not the live-status call (still loading, or failed, or a moderator's 403).
-    const [result, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds()]);
+    // Types unknown (the fetch failed): playlists stay offered. Hiding them would hide them from every ordinary
+    // category, and the server refuses one in a live category anyway, naming it in this modal.
+    const [result, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds().catch(() => new Set<string>())]);
     if (token !== addModalLoadToken) return;
     addModalTruncated.value = result.truncated;
     const existingKeys = new Set(contentItems.value.map(contentKey));
@@ -846,8 +848,14 @@ async function confirmAddContent() {
 
   try {
     const updated = await addContentToCategorySort(categoryId, items);
-    // The list is on screen only if that category is still the expanded one.
-    if (expandedCategoryId.value === categoryId) contentItems.value = updated;
+    // The list is on screen only if that category is still the expanded one. This reply is its newest load:
+    // a reload started before it (collapse and expand) is older and must not overwrite it.
+    if (expandedCategoryId.value === categoryId) {
+      ++contentLoadToken;
+      contentLoading.value = false;
+      contentError.value = null;
+      contentItems.value = updated;
+    }
     const cat = categories.value.find(c => c.id === categoryId);
     if (cat) cat.contentCount = updated.length;
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));

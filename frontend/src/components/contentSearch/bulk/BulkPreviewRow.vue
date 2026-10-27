@@ -2,7 +2,7 @@
 import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '@/generated/api/schema'
-import { liveCategoryIds } from './useCategoryPicker'
+import { liveCategoryIds, refusesLive } from './useCategoryPicker'
 import BulkRowCategoryEditor from './BulkRowCategoryEditor.vue'
 
 type PreviewRow = components['schemas']['PreviewRow']
@@ -26,19 +26,20 @@ const { t } = useI18n()
 
 const editing = ref(false)
 
-// The server refuses LIVE on a playlist and submit strips it: the count and the editor must match.
+// The server refuses LIVE on a playlist or a non-live video and submit strips it: the count and the editor must match.
+const noLive = computed(() => refusesLive(props.row))
 const live = ref(new Set<string>())
 onMounted(async () => {
-  if (props.row.detectedType === 'PLAYLIST') live.value = await liveCategoryIds().catch(() => live.value)
+  if (noLive.value) live.value = await liveCategoryIds().catch(() => live.value)
 })
 
 const resolvedCategoryIds = computed(() => {
   const ids = props.row.categoryIds ?? props.defaultCategoryIds
-  return props.row.detectedType === 'PLAYLIST' ? ids.filter((id) => !live.value.has(id)) : ids
+  return noLive.value ? ids.filter((id) => !live.value.has(id)) : ids
 })
 
 const typeChipLabel = computed(() => {
-  if (props.row.detectedType === 'VIDEO' && props.row.videoType === 'LIVE') return 'LIVE'
+  if (props.row.detectedType === 'VIDEO' && !noLive.value) return 'LIVE'
   return props.row.detectedType ?? '—'
 })
 
@@ -89,7 +90,7 @@ const isActionable = computed(
       <BulkRowCategoryEditor
         v-if="editing"
         :model-value="resolvedCategoryIds"
-        :playlist="row.detectedType === 'PLAYLIST'"
+        :playlist="noLive"
         @save="(ids) => { emit('updateCategories', row.rowIndex ?? 0, ids); editing = false }"
         @cancel="editing = false"
       />

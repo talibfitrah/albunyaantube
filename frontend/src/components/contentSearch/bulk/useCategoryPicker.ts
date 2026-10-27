@@ -39,7 +39,15 @@ export async function liveCategoryIds(): Promise<Set<string>> {
   return new Set((await fetchFlat()).filter((c) => c.type === 'LIVE').map((c) => c.id))
 }
 
-/** `playlist`: the picker is for a playlist row, which the live category refuses. Moderators never see LIVE (R1). */
+/**
+ * A bulk row the server refuses LIVE on: a playlist, or a video that is not a live stream (the row's `LIVE` chip).
+ * Such a row never takes a LIVE category, as the single-add modal never carries a LIVE tick onto a video.
+ */
+export function refusesLive(row: { detectedType?: string; videoType?: string }): boolean {
+  return row.detectedType === 'PLAYLIST' || (row.detectedType === 'VIDEO' && row.videoType !== 'LIVE')
+}
+
+/** `playlist`: the picker is for a row the live category refuses (refusesLive). Moderators never see LIVE (R1). */
 export function useCategoryPicker(opts: { playlist?: boolean } = {}) {
   const authStore = useAuthStore()
   const all: Ref<FlatCategory[]> = ref([])

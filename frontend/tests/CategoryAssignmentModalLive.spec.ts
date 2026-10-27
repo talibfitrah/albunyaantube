@@ -5,19 +5,21 @@ import { describe, it, expect, vi } from 'vitest';
 import CategoryAssignmentModal from '@/components/CategoryAssignmentModal.vue';
 import CategoriesView from '@/views/CategoriesView.vue';
 import { messages } from '@/locales/messages';
+import { useToast } from '@/composables/useToast';
 
 const auth = vi.hoisted(() => ({ isAdmin: true }));
 const service = vi.hoisted(() => ({
-  updateCategory: vi.fn(() => Promise.resolve({})),
+  getAllCategories: vi.fn(() => Promise.resolve([
+    { id: 'live', name: 'Channels Live', label: 'Channels Live', type: 'LIVE', subcategories: [] },
+    { id: 'quran', name: 'Quran', label: 'Quran', type: null, subcategories: [] }
+  ])),
+  updateCategory: vi.fn((): Promise<unknown> => Promise.resolve({})),
   getCategoryContentOrder: vi.fn(() => Promise.resolve([{ contentId: 'abc', contentType: 'playlist', title: 'My playlist', thumbnailUrl: null, position: 0, youtubeId: 'PLabc' }]))
 }));
 vi.mock('@/services/sortOrder', () => ({ getCategoryContentOrder: service.getCategoryContentOrder }));
 vi.mock('@/stores/auth', () => ({ useAuthStore: () => auth }));
 vi.mock('@/services/categoryService', () => ({
-  getAllCategories: () => Promise.resolve([
-    { id: 'live', name: 'Channels Live', label: 'Channels Live', type: 'LIVE', subcategories: [] },
-    { id: 'quran', name: 'Quran', label: 'Quran', type: null, subcategories: [] }
-  ]),
+  getAllCategories: service.getAllCategories,
   createCategory: vi.fn(),
   updateCategory: service.updateCategory,
   deleteCategory: vi.fn()
@@ -66,6 +68,15 @@ describe('CategoryAssignmentModal and the live category (spec §8)', () => {
     await fireEvent.click(label);
     expect(label.closest('label')!.querySelector('input[type=checkbox]')).not.toBeChecked();
     expect(screen.getByRole('button', { name: 'Assign' })).toBeDisabled(); // nothing selected
+  });
+
+  it('a click on a category name ticks it once in multi-select (Cubic r9 #28)', async () => {
+    auth.isAdmin = true;
+    renderModal('channel');
+    const label = await screen.findByText('Quran');
+    await fireEvent.click(label);
+    expect(label.closest('label')!.querySelector('input[type=checkbox]')).toBeChecked();
+    expect(screen.getByRole('button', { name: 'Assign' })).toBeEnabled();
   });
 
   it('keeps it selectable for a video (the server checks live)', async () => {
@@ -162,5 +173,45 @@ describe('CategoriesView and the category type (spec §8, R18)', () => {
 
     await waitFor(() => expect(formError()).toBe(messages.en.categories.dialog.error));
     expect(service.getCategoryContentOrder).not.toHaveBeenCalled();
+  });
+});
+
+describe('CategoriesView: a save reply that lands after the dialog moved on (Cubic r9 #5)', () => {
+  /** Saves Quran as LIVE with the reply held, cancels, and opens Channels Live's dialog. */
+  async function saveQuranThenOpenLive() {
+    let settle!: { resolve: (v: unknown) => void; reject: (e: unknown) => void };
+    service.updateCategory.mockImplementationOnce(() => new Promise((resolve, reject) => { settle = { resolve, reject }; }));
+    await saveAsLive('Quran');
+    await fireEvent.click(screen.getByText('Cancel'));
+    const row = (await screen.findByText('Channels Live')).closest('.category-row') as HTMLElement;
+    await fireEvent.click(within(row).getByTitle('Edit'));
+    return settle;
+  }
+  const openName = () => (document.querySelector('#category-name') as HTMLInputElement | null)?.value;
+  const toasts = () => useToast().toasts.value.map(t => t.message);
+
+  it('a refusal is a toast naming the saved category\'s members, not an error in the open dialog', async () => {
+    service.getCategoryContentOrder.mockClear();
+    const settle = await saveQuranThenOpenLive();
+    settle.reject(Object.assign(new Error('Request failed with status code 400'), {
+      response: { status: 400, data: { code: 'LIVE_CATEGORY_MEMBERS_INVALID', message: 'members invalid',
+        details: { offenders: [{ ref: 'playlist:abc', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }
+    }));
+
+    const en = messages.en.apiErrors;
+    await waitFor(() => expect(toasts()).toContain(`${en.LIVE_CATEGORY_MEMBERS_INVALID}\nMy playlist: ${en.LIVE_CATEGORY_TYPE_NOT_ALLOWED}`));
+    expect(service.getCategoryContentOrder).toHaveBeenCalledWith('quran');
+    expect(formError()).toBeUndefined();
+    expect(openName()).toBe('Channels Live');
+  });
+
+  it('a success reloads the list and leaves the open dialog alone', async () => {
+    const settle = await saveQuranThenOpenLive();
+    const loads = service.getAllCategories.mock.calls.length;
+    settle.resolve({});
+
+    await waitFor(() => expect(service.getAllCategories.mock.calls.length).toBe(loads + 1));
+    expect(toasts()).toContain(messages.en.categories.updateSuccess);
+    expect(openName()).toBe('Channels Live');
   });
 });

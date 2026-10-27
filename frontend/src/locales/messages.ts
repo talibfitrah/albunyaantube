@@ -176,8 +176,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'No valid rows to submit',
-          playlistNeedsCategory: 'A playlist has no category left, because playlists cannot use the live category. Choose a category for it, then submit again.',
-          playlistNeedsCategoryRow: 'Choose a category: playlists cannot use the live category.',
+          playlistNeedsCategory: 'A row has no category left, because the live category accepts only channels and streams that are live right now. Choose a category for it, then submit again.',
+          playlistNeedsCategoryRow: 'Choose a category: the live category accepts only channels and streams that are live right now.',
           validCount: 'valid',
           duplicateCount: 'duplicate',
           errorCount: 'error',
@@ -1822,8 +1822,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'لا توجد صفوف صالحة للإرسال',
-          playlistNeedsCategory: 'لم تبقَ لقائمة تشغيل أي فئة، لأن قوائم التشغيل لا يمكن إضافتها إلى فئة البث المباشر. اختر لها فئة ثم أعد الإرسال.',
-          playlistNeedsCategoryRow: 'اختر فئة: لا يمكن إضافة قوائم التشغيل إلى فئة البث المباشر.',
+          playlistNeedsCategory: 'لم تبقَ لأحد الصفوف أي فئة، لأن فئة البث المباشر تقبل القنوات والبث الجاري الآن فقط. اختر له فئة ثم أعد الإرسال.',
+          playlistNeedsCategoryRow: 'اختر فئة: تقبل فئة البث المباشر القنوات والبث الجاري الآن فقط.',
           validCount: 'صالح',
           duplicateCount: 'مكرر',
           errorCount: 'خطأ',
@@ -3261,8 +3261,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'Geen geldige rijen om in te dienen',
-          playlistNeedsCategory: 'Een afspeellijst heeft geen categorie meer, omdat afspeellijsten niet in de livecategorie kunnen. Kies een categorie voor deze afspeellijst en dien opnieuw in.',
-          playlistNeedsCategoryRow: 'Kies een categorie: afspeellijsten kunnen niet in de livecategorie.',
+          playlistNeedsCategory: 'Een rij heeft geen categorie meer, omdat de livecategorie alleen kanalen en streams accepteert die nu live zijn. Kies een categorie voor deze rij en dien opnieuw in.',
+          playlistNeedsCategoryRow: 'Kies een categorie: de livecategorie accepteert alleen kanalen en streams die nu live zijn.',
           validCount: 'geldig',
           duplicateCount: 'duplicaat',
           errorCount: 'fout',

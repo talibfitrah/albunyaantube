@@ -267,6 +267,10 @@ async function handleSubmit() {
 
   isSubmitting.value = true;
   dialogError.value = null;
+  // The reply may land after Cancel or after another dialog opened: every open makes a fresh dialogData object.
+  const dialog = dialogData.value;
+  const mode = dialogMode.value;
+  const sameDialog = () => showDialog.value && dialogData.value === dialog;
 
   try {
     // Build localizedNames map, only include non-empty values
@@ -301,17 +305,21 @@ async function handleSubmit() {
       success(t('categories.updateSuccess'));
     }
 
-    closeDialog();
+    // The save happened either way, so the list reloads; only the dialog it came from closes.
+    if (sameDialog()) closeDialog();
     await loadCategories();
   } catch (err) {
     // A flip to LIVE can be refused with each offending member listed (MEMBERS_INVALID).
     // Offenders are members of this category: name them by title, falling back to the raw ref. Only then is the
     // list read (Cubic r5): a new category has none, and any other failure needs no titles.
-    const members = apiErrorOffenders(err).length && dialogMode.value !== 'add'
-      ? await getCategoryContentOrder(dialogData.value.id).catch(() => [])
+    const members = apiErrorOffenders(err).length && mode !== 'add'
+      ? await getCategoryContentOrder(dialog.id).catch(() => [])
       : [];
-    dialogError.value = apiErrorWithOffenders(err, t, 'categories.dialog.error',
+    const message = apiErrorWithOffenders(err, t, 'categories.dialog.error',
       offenderTitles(members.map(m => ({ id: m.contentId, title: m.title }))));
+    // Only in the dialog the save came from; once it is gone, a toast.
+    if (sameDialog()) dialogError.value = message;
+    else showError(message);
   } finally {
     isSubmitting.value = false;
   }

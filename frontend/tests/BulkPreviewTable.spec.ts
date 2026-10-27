@@ -125,12 +125,18 @@ describe('BulkPreviewTable', () => {
     await backBtn!.trigger('click')
     expect(store.phase).toBe('INPUT')
   })
-  it('a playlist row does not count the LIVE default category', async () => {
+  it('a playlist row and a non-live video row do not count the LIVE default category (Cubic r9 #25)', async () => {
     const store = useBulkSubmissionStore()
     store.defaultCategoryIds = ['cat-1', 'cat-live']
-    store.previewRows = [{ ...okRow(0), detectedType: 'PLAYLIST' }, okRow(1)]
+    store.previewRows = [{ ...okRow(0), detectedType: 'PLAYLIST' }, okRow(1), { ...okRow(2), videoType: 'LIVE' }]
     const wrapper = mountTable()
-    await vi.waitFor(() => expect(wrapper.findAll('.bulk-categories-toggle')[0].text()).toMatch(/^1\s/))
-    expect(wrapper.findAll('.bulk-categories-toggle')[1].text()).toMatch(/^2\s/)
+    const toggles = () => wrapper.findAll('.bulk-categories-toggle')
+    await vi.waitFor(() => expect(toggles()[0].text()).toMatch(/^1\s/))
+    await vi.waitFor(() => expect(toggles()[1].text()).toMatch(/^1\s/))
+    expect(toggles()[2].text()).toMatch(/^2\s/)
+
+    // Nor does the non-live video row's editor offer it: submit would drop it.
+    await toggles()[1].trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('.editor-chip').map((c) => c.text())).toEqual(['Cat 1']))
   })
 })

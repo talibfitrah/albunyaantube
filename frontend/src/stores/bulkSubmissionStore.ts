@@ -3,7 +3,7 @@ import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
 import type { AxiosError } from 'axios'
-import { liveCategoryIds } from '../components/contentSearch/bulk/useCategoryPicker'
+import { liveCategoryIds, refusesLive } from '../components/contentSearch/bulk/useCategoryPicker'
 import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
 
 /**
@@ -46,7 +46,7 @@ interface State {
   previewRows: PreviewRowDraft[]
   submitResult: BulkSubmitResponse | null
   error: string | null
-  /** rowIndex of playlist rows left with no category once LIVE is dropped; the batch is not sent until they are fixed. */
+  /** rowIndex of rows (refusesLive) left with no category once LIVE is dropped; the batch is not sent until they are fixed. */
   rowsNeedingCategory: number[]
 }
 
@@ -130,8 +130,9 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       // succeeds.
       this.error = null
       try {
-        // The server refuses LIVE on a playlist and rejects the whole batch: playlist rows never inherit it.
-        const live = submittable.some((r) => r.detectedType === 'PLAYLIST') ? await liveCategoryIds() : new Set<string>()
+        // The server refuses LIVE on a playlist or a non-live video and rejects the whole batch: such rows never take it.
+        // Types unknown (the fetch failed): nothing is stripped and the server's refusal names any such row.
+        const live = submittable.some(refusesLive) ? await liveCategoryIds().catch(() => new Set<string>()) : new Set<string>()
         const rows: SubmitRow[] = submittable.map((r) => {
           const ids = r.categoryIds ?? this.defaultCategoryIds
           return {
@@ -140,10 +141,10 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
             detectedType: r.detectedType!,
             videoType: r.videoType,
             metadata: r.metadata!,
-            categoryIds: r.detectedType === 'PLAYLIST' ? ids.filter((id) => !live.has(id)) : ids,
+            categoryIds: refusesLive(r) ? ids.filter((id) => !live.has(id)) : ids,
           }
         })
-        // The server needs 1-10 categories per row: a playlist row whose only category was LIVE is flagged, not sent.
+        // The server needs 1-10 categories per row: a row whose only category was LIVE is flagged, not sent.
         const bare = rows.filter((r) => r.categoryIds.length === 0).map((r) => r.rowIndex)
         if (bare.length > 0) {
           this.rowsNeedingCategory = bare

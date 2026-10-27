@@ -11,7 +11,8 @@
       </button>
       <div v-else class="expand-placeholder"></div>
 
-      <label class="node-label" @click="!isDisabled && emit('toggle-select', category.id)">
+      <!-- No handler here: the browser forwards a click on the label to the checkbox, which toggles once. -->
+      <label class="node-label">
         <input
           type="checkbox"
           :checked="isSelected"

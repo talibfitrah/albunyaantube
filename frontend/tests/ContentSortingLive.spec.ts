@@ -7,16 +7,21 @@ import { messages } from '@/locales/messages';
 
 const status = vi.hoisted(() => ({ fn: vi.fn() }));
 const add = vi.hoisted(() => ({ fn: vi.fn(), toastError: vi.fn() }));
+const svc = vi.hoisted(() => ({
+  getAllCategories: vi.fn((): Promise<unknown[]> => Promise.resolve([
+    { id: 'live', name: 'Channels Live', type: 'LIVE', subcategories: [] },
+    { id: 'other', name: 'Other', type: 'REGULAR', subcategories: [] }
+  ])),
+  getCategoryContentOrder: vi.fn((): Promise<unknown[]> => Promise.resolve([
+    { contentId: 'channel_UCa', contentType: 'channel', title: 'Zad', thumbnailUrl: null, position: 0, youtubeId: 'UCa' },
+    { contentId: 'doc-1', contentType: 'video', title: 'A stream', thumbnailUrl: null, position: 1, youtubeId: 'vid00000001' }
+  ]))
+}));
 
 vi.mock('@/utils/toast', () => ({
   toast: { success: vi.fn(), error: (m: string) => add.toastError(m), info: vi.fn(), warning: vi.fn() }
 }));
-vi.mock('@/services/categoryService', () => ({
-  getAllCategories: () => Promise.resolve([
-    { id: 'live', name: 'Channels Live', type: 'LIVE', subcategories: [] },
-    { id: 'other', name: 'Other', type: 'REGULAR', subcategories: [] }
-  ])
-}));
+vi.mock('@/services/categoryService', () => ({ getAllCategories: () => svc.getAllCategories() }));
 
 vi.mock('@/services/sortOrder', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/sortOrder')>()),
@@ -25,10 +30,7 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
     { id: 'other', name: 'Other', icon: null, localizedNames: null, displayOrder: 18, contentCount: 0, parentCategoryId: null }
   ]),
   addContentToCategorySort: (...a: unknown[]) => add.fn(...a),
-  getCategoryContentOrder: () => Promise.resolve([
-    { contentId: 'channel_UCa', contentType: 'channel', title: 'Zad', thumbnailUrl: null, position: 0, youtubeId: 'UCa' },
-    { contentId: 'doc-1', contentType: 'video', title: 'A stream', thumbnailUrl: null, position: 1, youtubeId: 'vid00000001' }
-  ]),
+  getCategoryContentOrder: () => svc.getCategoryContentOrder(),
   getApprovedContent: () => Promise.resolve({ truncated: false, items: [
     { id: 'pl-9', type: 'playlist', youtubeId: null, title: 'Some playlist', thumbnailUrl: null },
     { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null }
@@ -168,5 +170,40 @@ describe('Content Sorting on a live category (spec §8)', () => {
     resolve([{ contentId: 'ch-9', contentType: 'channel', title: 'Late channel', thumbnailUrl: null, position: 0, youtubeId: 'UCz' }]);
     await new Promise(r => setTimeout(r, 20));
     expect(screen.queryByText('Late channel')).toBeNull();
+  });
+
+  it('a failed category fetch still fills the add picker, playlists included (Cubic r9 #26)', async () => {
+    status.fn.mockImplementation(ok);
+    svc.getAllCategories.mockRejectedValueOnce(new Error('Request failed with status code 500'));
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+
+    expect(await screen.findByText('Some channel')).toBeInTheDocument();
+    expect(screen.getByText('Some playlist')).toBeInTheDocument();
+  });
+
+  it('an older reload of the list does not overwrite a newer add reply (Cubic r9 #27)', async () => {
+    let addReply!: (v: unknown) => void;
+    let reloadReply!: (v: unknown[]) => void;
+    add.fn.mockImplementation(() => new Promise(r => { addReply = r; }));
+    status.fn.mockImplementation(ok);
+    mount();
+    await fireEvent.click(await screen.findByText('Channels Live'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(screen.getByText('Add to Category'));
+    await fireEvent.click(screen.getByText('Cancel'));
+    const before = await svc.getCategoryContentOrder();
+    svc.getCategoryContentOrder.mockImplementationOnce(() => new Promise(r => { reloadReply = r; }));
+    await fireEvent.click(screen.getByText('Channels Live')); // collapse
+    await fireEvent.click(screen.getByText('Channels Live')); // expand: the reload starts before the add reply
+    const late = { contentId: 'ch-9', contentType: 'channel', title: 'Late channel', thumbnailUrl: null, position: 2, youtubeId: 'UCz' };
+    addReply([...before, late]);
+    await new Promise(r => setTimeout(r, 20));
+    reloadReply(before);
+    await new Promise(r => setTimeout(r, 20));
+
+    expect(screen.getByText('Late channel')).toBeInTheDocument();
   });
 });
