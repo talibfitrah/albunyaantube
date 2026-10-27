@@ -18,9 +18,12 @@ export const CHALLENGE = /^[A-Za-z0-9_=-]+$/;
 //   (newContext's `delete` line defines no function, so nothing ever imports with it as the referrer);
 // - on the context (newContext): code compiled with no script on the stack, i.e. in a promise job
 //   (`Promise.resolve('return import("z")').then(Function)`, `.then(eval)`), has no referrer and uses the context's (Cubic r9 #1).
-// It needs --experimental-vm-modules (newContext asserts it). A throw, not a rejected/pending promise, so no realm reaction
-// object survives on the host; a primitive, so the realm's rejection reason is never a host object.
-const denyImport = () => { throw 'import() is disabled inside the solver realm'; };
+// It needs --experimental-vm-modules (newContext asserts it). It throws a primitive, so the realm's rejection reason is never a
+// host object. The throw still makes one host object: Node's importModuleDynamicallyCallback is async, so it turns the throw
+// into a rejected HOST promise, and the realm promise import() returns adopts it only in a realm microtask. A vm timeout that
+// cuts the run before that microtask leaves the host promise unhandled with DENIED as its reason (Cubic r10 #2; see rejected).
+const DENIED = 'import() is disabled inside the solver realm';
+const denyImport = () => { throw DENIED; };
 
 const EJS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor', 'ejs-0.8.0');
 const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
@@ -297,9 +300,10 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
 
   /** The process's 'unhandledRejection' listener (Cubic r6 P2). Node reports a realm's rejection once the run that made it has
    *  returned, before any other task, so it is the last-run player's: evicted and skipped until a restart, never a crash that
-   *  each restart repeats. The realm's reason is never read; a host promise's rejection still exits as Node's default does. */
+   *  each restart repeats. So is the host promise Node made for the realm's import(): only denyImport rejects one with DENIED.
+   *  The realm's reason is never read; any other host promise's rejection still exits as Node's default does. */
   function rejected(reason, promise) {
-    if (Object.getPrototypeOf(promise) === Promise.prototype) throw reason;
+    if (Object.getPrototypeOf(promise) === Promise.prototype && reason !== DENIED) throw reason;
     held.delete(ran);
     if (current === ran) current = held.keys().next().value ?? null;
     crashed.add(ran);                           // a Set: a later rejection must not forget an earlier crasher (two players in A/B rotation)

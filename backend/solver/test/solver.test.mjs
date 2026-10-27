@@ -737,6 +737,53 @@ test('a player that leaves an uncaught import() rejection is evicted, never a pr
   assert.deepEqual(JSON.parse(r.stdout), [200, ['bbbbbbbb']], 'the player whose import() rejected is evicted; the other stays');
 });
 
+// ---- stage 9 Cubic r10 #2 (P2): Node wraps each realm import() in a HOST promise that only the realm's next microtask drain
+// adopts. A vm timeout before that drain left it unhandled with denyImport's reason, and rejected() rethrew it: a process exit.
+test('a player that calls import() and then hangs past the vm timeout is evicted and skipped, never a process exit (Cubic r10 #2)', async () => {
+  const hangs = {
+    solveSync: "import('x'); for (;;) {}",
+    solveInJob: "Promise.resolve().then(() => { import('x'); for (;;) {} });",   // the timeout drops the queued adoption job
+    buildSync: "import('x'); for (;;) {}",
+  };
+  const out = {};
+  for (const [name, hang] of Object.entries(hangs)) {
+    const atBuild = name.startsWith('build');
+    const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa']);
+    // compiled by buildPlayer (Function() inside inRealm's run), as base.js is: its import() calls denyImport
+    const r = await child(`import vm from 'node:vm'; import { buildPlayer, createSolver, newContext } from ${SERVER};
+      const ok = '_result.n = (x) => { if (x === "hang") { ' + ${JSON.stringify(hang)} + ' } return x.split("").reverse().join("") + "A"; };'
+        + ' _result.sig = (x) => x.slice(1);';
+      let builds = 0;
+      const build = () => {
+        const ctx = newContext();
+        const pre = (${atBuild} && builds++ === 0 ? ${JSON.stringify(hang)} : '') + ok;   // the build case hangs aaaaaaaa's build
+        vm.runInContext('globalThis.jsc = () => ({ preprocessed_player: ' + JSON.stringify(pre) + ' })', ctx);
+        return buildPlayer(ctx, 'x', 300);
+      };
+      const warnings = [];
+      const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, build, solveTimeoutMs: 300,
+        log: { log() {}, warn: (m) => warnings.push(m) } });
+      process.on('unhandledRejection', solver.rejected);             // as the main block wires it
+      const tick = () => new Promise((r) => setTimeout(r, 80));     // Node reports a rejection once the run has returned
+      await solver.poll(); await tick();                             // aaaaaaaa: adopted, or its build hangs
+      const built = solver.health().lastPoll.step;
+      await solver.poll(); await tick();                             // bbbbbbbb: adopted
+      const first = ${atBuild} ? built : solver.solve({ playerId: 'aaaaaaaa', n: ['hang'], s: [] })[0];
+      await tick();
+      const next = solver.solve({ playerId: 'bbbbbbbb', n: ['abc'], s: [] });
+      await solver.poll();                                           // iframe_api -> aaaaaaaa again
+      console.log(JSON.stringify([first, solver.health().held, next, solver.health().lastPoll.step,
+        warnings.some((w) => /player aaaaaaaa left an unhandled promise rejection; evicted and skipped/.test(w)), builds]));
+      Promise.reject('expected in this test: a host rejection with a string reason still exits the process');`);
+    yt.close();
+    out[name] = r.stdout ? [JSON.parse(r.stdout), r.code, r.signal] : `exited before the next solve: code ${r.code}, signal ${r.signal}`;
+  }
+  // [first, held, next solve, step of the poll that met aaaaaaaa again ('hash' = skipped, not rebuilt), WARN, builds], then the
+  // exit code: 1 is the host's own string rejection at the end, which must still exit
+  const stays = (first, builds) => [[first, ['bbbbbbbb'], [200, { n: { abc: 'cbaA' }, s: {} }], 'hash', true, builds], 1, null];
+  assert.deepEqual(out, { solveSync: stays(500, 0), solveInJob: stays(500, 0), buildSync: stays('build', 2) });
+});
+
 test('two players that each leave a realm rejection are both skipped until a restart (controller P3-2)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa']);
   const warnings = [];
