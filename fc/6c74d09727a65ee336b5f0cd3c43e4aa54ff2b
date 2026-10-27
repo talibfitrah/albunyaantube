@@ -1,0 +1,22 @@
+frontend/src/components/common/ToastContainer.vue
+  s_dbb6b1f3671904::t_978e9593cf24b6 102
+  s_dbb6b1f3671904::t_43b63b11c4ac63 103
+frontend/tests/ToastContainer.spec.ts
+  s_dbb6b1f3671904::t_223d8f481c5a69 1-25
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fc6c74d09727a65ee336b5f0cd3c43e4aa54ff2b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
