@@ -673,6 +673,54 @@ test('player code calling import() in any of the five forms cannot reach the hos
   assert.equal(out.fn, out.direct, 'the Function() form closes exactly like a direct import() (controller)');
 });
 
+// ---- stage 9 Cubic r9 #1 (P1): code a promise job compiles has no active script, so its import() has no referrer and never
+// reaches a per-run callback. Node falls back to the context's callback; without one it rejects with a HOST TypeError.
+test('import() in code a promise job compiles (no referrer) cannot reach the host process (Cubic r9 #1, P1)', async () => {
+  const forms = {
+    thenFunction: "Promise.resolve('return globalThis.ip = import(\"z\")').then(Function).then((f) => f())",
+    thenEval: "Promise.resolve('globalThis.ip = import(\"y\")').then(eval)",
+    thenEvalFunction: "Promise.resolve('Function(decodeURIComponent(\"return%20globalThis.ip%20%3D%20import(%22w%22)\"))()').then(eval)",
+    reflectApply: "Promise.resolve(['return globalThis.ip = import(\"r\")']).then(Reflect.apply.bind(null, Function, null)).then((f) => f())",
+    reflectConstruct: "Promise.resolve(['return globalThis.ip = import(\"c\")']).then(Reflect.construct.bind(null, Function)).then((f) => f())",
+    boundFunction: "Promise.resolve('return globalThis.ip = import(\"b\")').then(Function.bind(null)).then((f) => f())",
+    callBound: "Promise.resolve('return globalThis.ip = import(\"e\")').then(Function.prototype.call.bind(Function, null)).then((f) => f())",
+    asyncInJob: "Promise.resolve('return (async () => { await (globalThis.ip = import(\"q\")); })()').then(Function).then((f) => f())",
+    waitAsyncJob: "Atomics.waitAsync(new Int32Array(new SharedArrayBuffer(4)), 0, 0, 1).value.then(() => 'return globalThis.ip = import(\"t\")').then(Function).then((f) => f())",
+  };
+  // `see` asks a value for constructor.constructor('return process')(): a realm primitive or realm object cannot answer with
+  // the host process, a host object can. It is asked of the rejection reason AND of the import() promise itself (`ip`).
+  const script = `import vm from 'node:vm'; import { buildPlayer, newContext, solveAll } from ${SERVER};
+    const forms = ${JSON.stringify(forms)};
+    const see = "var see=function(v){if(v===null||(typeof v!=='object'&&typeof v!=='function'))return 'prim:'+typeof v;"
+      + "try{var p=v.constructor.constructor('return process')();return (p&&typeof p==='object')?'LEAK pid='+p.pid:'realm';}catch(x){return 'realm';}};"
+      + "var grab=function(e){globalThis.leak=see(e)+' promise:'+(globalThis.ip===undefined?'none':see(globalThis.ip));};";
+    // two drains: a chain that starts in a drain (waitAsyncJob) settles only after the deny rejection's host-queue hop
+    const settle = async (ctx) => {
+      for (let i = 0; i < 2; i++) { await new Promise((r) => setTimeout(r, 30)); vm.runInContext('0', ctx); }
+      return vm.runInContext('String(globalThis.leak)', ctx);
+    };
+    const out = {};
+    for (const [name, f] of Object.entries(forms)) {               // through buildPlayer, as base.js runs
+      const ctx = newContext();
+      const pre = see + '(' + f + ').then(grab, grab); _result.n = (x) => x + "A"; _result.sig = (x) => x.slice(1);';
+      vm.runInContext('globalThis.jsc = () => ({ preprocessed_player: ' + JSON.stringify(pre) + ' })', ctx);
+      buildPlayer(ctx, 'x', 1000);
+      out[name] = await settle(ctx);
+    }
+    const ctx = newContext();                                        // through solveAll, as a held n function runs
+    const player = { ctx, ...vm.runInContext('(() => { ' + see + ' return { n: (x) => { (' + forms.thenFunction + ').then(grab, grab); return x + "A"; }, sig: (x) => x.slice(1) }; })()', ctx) };
+    solveAll(player, ['abc'], [], 1000);
+    out.solveThenFunction = await settle(ctx);
+    console.log(JSON.stringify({ pid: process.pid, out }));`;
+  const r = await child(script);
+  assert.deepEqual([r.code, r.signal], [0, null], 'the probe exited or hung the host');
+  const { pid, out } = JSON.parse(r.stdout);
+  assert.equal(Object.keys(out).length, Object.keys(forms).length + 1);
+  assert.deepEqual(Object.entries(out).filter(([, seen]) => seen.includes('LEAK')), [], `reached the host process (host pid ${pid})`);
+  // the realm primitive denyImport throws, and a realm promise: every form really called import() (no vacuous pass)
+  for (const [name, seen] of Object.entries(out)) assert.equal(seen, 'prim:string promise:realm', name);
+});
+
 test('a player that leaves an uncaught import() rejection is evicted, never a process exit (Cubic r7 #2)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
   const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};

@@ -10,11 +10,16 @@ import { fileURLToPath, pathToFileURL } from 'node:url';
 export const CHALLENGE = /^[A-Za-z0-9_=-]+$/;
 
 // Dynamic import() inside the realm is the one surface vm cannot strip: it is syntax, not a deletable global. Left alone,
-// `import('x')` rejects with a HOST object (a host Error, or with --experimental-vm-modules but no callback the host
-// ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING_FLAG), and `e.constructor.constructor('return process')()` then hands the player the
-// host process (Cubic r7 #1, P1). Passing this on EACH runInContext that compiles realm code makes every import() form
-// (direct, eval, indirect eval, Function, await) reject with a realm primitive string instead. It needs --experimental-vm-modules
-// (newContext asserts it); a throw here, not a rejected/pending promise, so no realm reaction object survives on the host.
+// `import('x')` rejects with a HOST TypeError (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING, or ..._FLAG without
+// --experimental-vm-modules), and `e.constructor.constructor('return process')()` then hands the player the host process
+// (Cubic r7 #1, P1). Node takes the callback from the import()'s referrer, so this is passed in BOTH places; either alone leaks:
+// - on EACH runInContext that runs EJS or player code: code that script compiles (direct, eval, indirect eval, Function, await)
+//   uses the script's own setting, and a script without one gets the host TypeError even when the context has a callback
+//   (newContext's `delete` line defines no function, so nothing ever imports with it as the referrer);
+// - on the context (newContext): code compiled with no script on the stack, i.e. in a promise job
+//   (`Promise.resolve('return import("z")').then(Function)`, `.then(eval)`), has no referrer and uses the context's (Cubic r9 #1).
+// It needs --experimental-vm-modules (newContext asserts it). A throw, not a rejected/pending promise, so no realm reaction
+// object survives on the host; a primitive, so the realm's rejection reason is never a host object.
 const denyImport = () => { throw 'import() is disabled inside the solver realm'; };
 
 const EJS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor', 'ejs-0.8.0');
@@ -25,17 +30,18 @@ const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
 
 /** A fresh realm holding EJS and nothing of Node's (R40). One per player, so eviction drops it whole. */
 export function newContext(timeoutMs = 10_000) {
-  // Fail closed: without --experimental-vm-modules the importModuleDynamically callbacks below are ignored and import() leaks
-  // the host process (Cubic r7 #1). SourceTextModule is the flag's own marker. No realm is ever built unprotected.
+  // Fail closed: without --experimental-vm-modules every importModuleDynamically callback below, the context's and each run's,
+  // is ignored and import() leaks the host process (Cubic r7 #1). SourceTextModule is the flag's own marker. No realm is ever
+  // built unprotected. The context's callback covers import() with no referrer (Cubic r9 #1; see denyImport).
   if (typeof vm.SourceTextModule !== 'function') throw new Error('the solver realm needs --experimental-vm-modules to deny dynamic import (Cubic r7 #1)');
   // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
-  const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate' }); // microtasks drain inside the timeout
+  const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate', importModuleDynamically: denyImport }); // microtasks drain inside the timeout
   // V8 runs these as host tasks, outside every vm timeout: a FinalizationRegistry cleanup (Cubic r2 P2; WeakRef goes with it)
   // and a WebAssembly async compile's resolve, which reads a realm `then` getter off the module (Cubic r6 P2). Node reads
   // promise[async_id_symbol] off each unhandled rejected promise after the run, which only a realm Proxy could answer with code
   // (Cubic r6 P2). Atomics.waitAsync settles with a string, so it only queues microtasks, which drain inside the next timeout.
   // base.js checks `typeof FinalizationRegistry` and `window.WebAssembly`; neither it nor EJS uses Proxy.
-  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx, { importModuleDynamically: denyImport });
+  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx);
   vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs, importModuleDynamically: denyImport });
   return ctx;
 }
