@@ -109,10 +109,13 @@ class PlayerViewModelLiveChannelTest {
     private class Offline(private val live: ResolvedStreams, private var failures: Int) :
         com.albunyaan.tube.player.PlayerRepository by FakePlayerRepository() {
         var calls = 0
+        /** Each call's monotonic time (Robolectric's clock, which [advanceClocks] moves with virtual time). */
+        val at = mutableListOf<Long>()
         override suspend fun resolveStreams(
             videoId: String, forceRefresh: Boolean, priority: com.albunyaan.tube.data.extractor.Priority, sourceChannelId: String?,
         ): ResolvedStreams? {
             calls++
+            at += android.os.SystemClock.elapsedRealtime()
             if (failures > 0) { failures--; throw java.io.IOException("offline") }
             return live
         }
@@ -136,19 +139,78 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
-    /** Spec Rev 5 / iOS (Cubic r4): ONE same-id retry; its failure is the spent budget, so step 4 never loops on the id. */
-    @Test fun `a failed same-id re-resolve is retried once, then step 4`() = runTest(dispatcher) {
+    /** A limiter that always grants the permit, so only the incident's own pacing spaces the re-resolves. */
+    private fun allowAll() = org.mockito.kotlin.mock<com.albunyaan.tube.player.ExtractionRateLimiter> {
+        on { acquire(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer {
+            com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Allowed
+        }
+    }
+
+    /**
+     * Spec Rev 8 (Cubic r8 #3): a failed same-id re-resolve no longer spends the incident; each step-4 wake that still lists
+     * the id re-resolves it once. Rev 6 stays fixed: with a limiter that never refuses, the re-resolves still come one per
+     * wake (a burst of 3 attempts, then a wait of 15 s or more), never back to back at the AUTO_RECOVERY pace.
+     */
+    @Test fun `a failed same-id re-resolve is retried at each wake, never sooner`() = runTest(dispatcher) {
         val repository = Offline(streams("Rs7St51oDDc", isLive = true), failures = Int.MAX_VALUE)
         val content = FakeContentService().apply { channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah"))) }
-        val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
+        val vm = playerViewModel(repository = repository, contentService = content, rateLimiter = allowAll(), ioDispatcher = dispatcher)
         vm.cancelAfter {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceClocks(8_000)
+            assertEquals("3 attempts, then the same-id re-resolve of 3", 6, repository.calls)
+            advanceClocks(12_000)
+            assertEquals("no re-resolve before the 15 s wake", 6, repository.calls)
+
             advanceClocks(8 * 60_000L)
-            assertEquals("3 attempts, then ONE same-id re-resolve of 3", 6, repository.calls)
+            assertTrue("the wakes re-resolve the listed id: ${repository.calls}", repository.calls > 6)
             assertEquals(StreamState.Loading, vm.state.value.streamState)
 
             advanceClocks(3 * 60_000L)
-            assertTrue(vm.state.value.streamState is StreamState.Error)
+            assertTrue("the 10-minute limit is unchanged", vm.state.value.streamState is StreamState.Error)
+
+            // Calls under 3 s apart are one resolve's attempts (1 s, 2 s backoff); a re-resolve starts a new burst.
+            val bursts = mutableListOf(mutableListOf(repository.at.first()))
+            repository.at.zipWithNext { a, b -> if (b - a <= 3_000) bursts.last() += b else bursts += mutableListOf(b) }
+            val gaps = bursts.zipWithNext { a, b -> b.first() - a.last() }
+            assertEquals("the load's 3 attempts + the same-id's 3, then one re-resolve of 3 per wake: $bursts",
+                listOf(6) + List(bursts.size - 1) { 3 }, bursts.map { it.size })
+            assertTrue("every re-resolve waits a step-4 wait first: $gaps", gaps.all { it >= 14_000 })
+        }
+    }
+
+    /**
+     * Spec Rev 8: a permit the limiter refuses (at once, or after its delay) is that wake's try, not an end: the incident
+     * waits, and the next wake asks for the permit again.
+     */
+    @Test fun `a refused same-id permit is not an end`() = runTest(dispatcher) {
+        val kind = com.albunyaan.tube.player.ExtractionRateLimiter.RequestKind.AUTO_RECOVERY
+        val answers = ArrayDeque(listOf(
+            com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Blocked("limit", 60_000),          // the first try
+            com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Delayed(1_000, "minimum interval"),   // wake 1...
+            com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Blocked("limit", 60_000),          // ...refused after it
+        ))
+        val limiter = org.mockito.kotlin.mock<com.albunyaan.tube.player.ExtractionRateLimiter> {
+            on { acquire(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer { inv ->
+                if (inv.arguments[1] == kind) answers.removeFirstOrNull() ?: com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Allowed
+                else com.albunyaan.tube.player.ExtractionRateLimiter.RateLimitResult.Allowed
+            }
+        }
+        val (vm, repository, content) = setup(streams("Rs7St51oDDc", isLive = true), FakeContentService(), rateLimiter = limiter)
+        vm.cancelAfter {
+            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+
+            assertTrue(vm.forceRefreshForAutoRecovery())
+            advanceClocks(20_000)                                                 // refused; wake 1 delayed, then refused
+            assertEquals(1, repository.resolveCallCount)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+
+            advanceClocks(30_000)                                                 // wake 2: the permit is granted
+
+            assertEquals("the listed id is re-resolved at wake 2", 2, repository.resolveCallCount)
+            assertTrue(vm.state.value.streamState is StreamState.Ready)
         }
     }
 

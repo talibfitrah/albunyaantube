@@ -18,16 +18,22 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
     }
 
     private var waits = 0
-    /** Spec Rev 5 / iOS: ONE same-id recovery per incident. A failure after it is that re-resolve failing: step 4. */
-    private var sameIdTried = false
+    /** Spec Rev 8: an incident that began with, or met, an end or a not-live resolve never re-resolves the same id. */
+    private var ended = false
+    /**
+     * Spec Rev 8: [waits] at the last same-id try (-1: none). One try per step-4 wake, so the 15 → 120 s pacing bounds
+     * them and a failed re-resolve never retries at once at the AUTO_RECOVERY pace (Rev 6).
+     */
+    private var sameIdAtWait = -1
 
     fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
-        val step = decide(trigger, lives, nowMs)
+        if (trigger == Trigger.ENDED) ended = true
+        val step = decide(lives, nowMs)
         // Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer.
-        return if (step is Step.SwitchTo && !VIDEO_ID.matches(step.id)) decide(trigger, null, nowMs) else step
+        return if (step is Step.SwitchTo && !VIDEO_ID.matches(step.id)) decide(null, nowMs) else step
     }
 
-    private fun decide(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
+    private fun decide(lives: List<LiveItem>?, nowMs: Long): Step {
         val elapsed = nowMs - startedAtMs
         var deadline = GIVE_UP_MS
         if (!lives.isNullOrEmpty() && lives.none { it.id == currentId }) {
@@ -36,9 +42,12 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
             lives.firstOrNull { it.title == currentTitle?.ifBlank { null } }?.let { return Step.SwitchTo(it.id, it.title) }
             if (elapsed >= TITLE_WAIT_MS) return Step.SwitchTo(lives[0].id, lives[0].title)
             deadline = TITLE_WAIT_MS
-        } else if (trigger == Trigger.FAILURE && !sameIdTried && (lives == null || lives.any { it.id == currentId })) {
-            // Listed, or no answer (the gate fails open; the live check keeps recordings out).
-            sameIdTried = true
+        } else if (!ended && sameIdAtWait != waits && elapsed < GIVE_UP_MS &&
+            (lives?.any { it.id == currentId } ?: (sameIdAtWait < 0))
+        ) {
+            // Listed: once per wake. No answer: the incident's first try only, Rev 5 (the gate fails open; the live
+            // check keeps recordings out).
+            sameIdAtWait = waits
             return Step.SameId
         }
         if (elapsed >= GIVE_UP_MS) return Step.GiveUp

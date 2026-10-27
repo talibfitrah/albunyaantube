@@ -66,17 +66,46 @@ class LiveChannelRecoveryTest {
         val r = recovery()
         assertEquals(Step.SameId, r.next(Trigger.FAILURE, null, at(0)))
         assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, null, at(1)))
+        assertEquals("Rev 8 is for a listed id: no answer at a wake is no second blind try",
+            Step.Wait(30), r.next(Trigger.FAILURE, null, at(16)))
         assertEquals(Step.Wait(15), recovery().next(Trigger.FAILURE, emptyList(), at(0)))   // an answer of none is no blind try
     }
 
-    /** Spec Rev 5 / iOS (Cubic r4): ONE same-id recovery per incident; the failure of that re-resolve is step 4's. */
-    @Test fun `a listed id gets one same-id recovery per incident`() {
+    /**
+     * Spec Rev 8 (Cubic r8 #3): each step-4 wake that still lists the id re-resolves it once, so one transient failure no
+     * longer spends the incident. Rev 6 stays fixed: a failed re-resolve waits for the next wake, never retries at once.
+     */
+    @Test fun `a listed id is re-resolved once per wake`() {
         val listed = listOf(LiveItem("old0000000a", "x"))
         val r = recovery()
         assertEquals(Step.SameId, r.next(Trigger.FAILURE, listed, at(0)))
-        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, listed, at(10)))
+        assertEquals("its failure waits", Step.Wait(15), r.next(Trigger.FAILURE, listed, at(10)))
+        assertEquals("the wake re-resolves", Step.SameId, r.next(Trigger.FAILURE, listed, at(25)))
+        assertEquals("that failure waits again", Step.Wait(30), r.next(Trigger.FAILURE, listed, at(30)))
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, listed, at(60)))
         val blind = recovery().apply { next(Trigger.FAILURE, null, at(0)) }
-        assertEquals("the blind try was the one", Step.Wait(15), blind.next(Trigger.FAILURE, listed, at(1)))
+        assertEquals("the blind try was this wake's", Step.Wait(15), blind.next(Trigger.FAILURE, listed, at(1)))
+        assertEquals(Step.SameId, blind.next(Trigger.FAILURE, listed, at(16)))
+    }
+
+    /** Spec Rev 8: an incident that began with an end, or whose re-resolve came back not live, never re-resolves the id. */
+    @Test fun `an end or a not-live result ends the same-id tries`() {
+        val listed = listOf(LiveItem("old0000000a", "x"))
+        val ended = recovery()
+        assertEquals(Step.Wait(15), ended.next(Trigger.ENDED, listed, at(0)))
+        assertEquals("a failure later in an end incident", Step.Wait(30), ended.next(Trigger.FAILURE, listed, at(15)))
+
+        val notLive = recovery()
+        assertEquals(Step.SameId, notLive.next(Trigger.FAILURE, listed, at(0)))
+        assertEquals("the re-resolve was not live", Step.Wait(15), notLive.next(Trigger.ENDED, listed, at(5)))
+        assertEquals(Step.Wait(30), notLive.next(Trigger.FAILURE, listed, at(20)))
+    }
+
+    /** Spec Rev 8: the 10-minute limit to the error state is unchanged; the wake at the limit gives up. */
+    @Test fun `the wake at ten minutes gives up rather than re-resolve`() {
+        val r = recovery()
+        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, emptyList(), at(0)))
+        assertEquals(Step.GiveUp, r.next(Trigger.FAILURE, listOf(LiveItem("old0000000a", "x")), at(600)))
     }
 
     /** Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer. */

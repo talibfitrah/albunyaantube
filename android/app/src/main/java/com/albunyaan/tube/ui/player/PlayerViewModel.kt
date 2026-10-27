@@ -1418,10 +1418,13 @@ class PlayerViewModel @Inject constructor(
         return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
     }
 
-    /** §9.1 step 3, the same id: one re-resolve on an AUTO_RECOVERY permit. A refused one is the spent budget: step 4. */
+    /**
+     * §9.1 step 3, the same id: one re-resolve on an AUTO_RECOVERY permit. A refused one is this wake's try: step 4 waits,
+     * and the next wake asks again (Rev 8: a refusal is not an end).
+     */
     private fun recoverLiveSameId() {
         if (!forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)) {
-            onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
         }
     }
 
@@ -1471,8 +1474,9 @@ class PlayerViewModel @Inject constructor(
                         currentItem?.let { forceRefreshCurrentStreamInternal(it) }
                     } else {
                         android.util.Log.w("PlayerViewModel", "Delayed refresh still blocked after delay: $newResult")
-                        // A refused refresh is a spent budget (§9.1 step 4), never a Loading with Retry hidden.
-                        if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                        // A refused refresh goes to §9.1 step 4, never a Loading with Retry hidden; as a failure, not an end
+                        // (Rev 8), so the next wake still re-resolves a listed id.
+                        if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
                     }
                 }
                 return true // Refresh scheduled
@@ -1534,7 +1538,7 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Every attempt failed. §9.1 / stage 9 r3: in live-channel mode no answer (a timeout, the network, F3's ended 24/7 id)
-     * is a failure, not an end: the backend's list switches, waits, or retries the same id once per incident (Rev 5).
+     * is a failure, not an end: the backend's list switches, waits, or retries a listed id once per wake (Rev 8).
      */
     private fun resolveExhausted(item: UpNextItem, reason: String, @StringRes messageRes: Int) {
         playbackMetrics.onPlaybackFailed(item.streamId, reason)
@@ -1917,7 +1921,7 @@ class PlayerViewModel @Inject constructor(
                     updateState { it.copy(streamState = StreamState.Loading) }   // the existing reconnecting state
                     kotlinx.coroutines.delay(step.seconds * 1_000L)
                     if (liveIncident !== incident) return@launch
-                    // The same trigger again: a failure that waited still gets its same-id recovery once the id is listed.
+                    // The same trigger again: in a failure incident, each wake re-resolves a listed id once (Rev 8).
                     onLiveChannelTrigger(trigger)
                 }
                 LiveChannelRecovery.Step.GiveUp -> {
@@ -2337,6 +2341,8 @@ class PlayerViewModel @Inject constructor(
      */
     fun setRecoveryExhaustedState() {
         if (currentItem?.liveChannelId != null) {                    // §9.1 step 3: exhausted → the step 4 retries
+            // An end, so no same-id (Rev 8): the fragment's budget is spent. A re-resolve that comes back live, on which
+            // the player fails again, would open a new incident each time and never reach the error state.
             onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
             return
         }
