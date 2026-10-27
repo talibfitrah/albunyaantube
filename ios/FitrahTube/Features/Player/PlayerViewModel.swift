@@ -381,7 +381,8 @@ extension StreamState {
     private var liveIncident: LiveChannelRecovery?
     private var liveRetryTask: Task<Void, Never>?
     /// Set by `performResolve` when a live-channel resolve did not land live now, with the trigger it is; `resolve` acts on it.
-    /// Stage 9 I13/I19: also where a follow-up or a step-4 wake whose screen went away waits for it (`resumeLiveMiss`).
+    /// Stage 9 I13/I19/I20: also where a follow-up, a step-4 wake or any trigger whose screen went away waits for it
+    /// (`resumeLiveMiss`).
     private var liveMiss: (generation: Int, trigger: LiveChannelRecovery.Trigger)?
     /// Stage 9 I13: the follow-up in flight (`followLiveMiss`), which the screen going away cancels (`stopUpgrade`).
     private var liveFollowUp: Task<Void, Never>?
@@ -812,10 +813,16 @@ extension StreamState {
     /// Spec §9.1: ask the backend for the channel's current lives, then switch, recover the same id (returns false:
     /// the caller runs the same-id recovery), wait in the existing loading state, or give up into the error state.
     /// Returns false outside live-channel mode too.
+    /// Stage 9 I20: every trigger comes here (an end, a failure, a spent budget, step 4's wake, the not-live follow-up), so
+    /// this is where a screen that went away (the I-C2 latch) is held to I13's rule: it never switches, resolves or
+    /// reconciles a cast. The trigger waits in `liveMiss` for the screen's return (`resumeLiveMiss`), as not yet happened:
+    /// no lookup, and no incident.
     @discardableResult
     func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger) async -> Bool {
         guard let channel = args.liveChannelId, let liveLookup else { return false }
-        if liveIncident?.currentId != args.videoId {     // an incident belongs to one video id
+        if upgradesStopped { liveMiss = (generation, trigger); return true }
+        let opened = liveIncident?.currentId != args.videoId     // an incident belongs to one video id
+        if opened {
             liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.liveTitle, startedAt: clock())
         }
         let incidentId = liveIncident?.id
@@ -843,6 +850,13 @@ extension StreamState {
         // that landed as the caller was cancelled is no answer either.
         guard !Task.isCancelled, var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId
         else { return true }
+        // Stage 9 I20: the screen went away while the lookup was out. The answer is dropped and the trigger waits, as above;
+        // the incident it opened goes too, or the hidden host's next event would skip step 1 and re-resolve (step 3).
+        if upgradesStopped {
+            if opened { liveIncident = nil }
+            liveMiss = (generation, trigger)
+            return true
+        }
         let step: LiveChannelRecovery.Step = notFound ? .giveUp
             : incident.next(trigger, lives: lives, now: clock(), retryAfter: retryAfter)
         liveIncident = incident

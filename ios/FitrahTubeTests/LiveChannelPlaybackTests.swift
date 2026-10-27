@@ -110,9 +110,10 @@ struct LiveChannelPlaybackTests {
 
     func makeViewModel(_ resolver: RecordingResolver, args: PlayerArgs, sleep: @escaping @Sendable (Duration) async throws -> Void,
                        lookup: @escaping @Sendable (String) async throws -> LiveChannelLives,
-                       clock: @escaping @Sendable () -> Date = { Date() }) -> PlayerViewModel {
+                       clock: @escaping @Sendable () -> Date = { Date() }, cast: CastController? = nil) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
-        return PlayerViewModel(resolver: resolver, settings: settings, args: args, liveLookup: lookup, sleep: sleep, clock: clock)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args, cast: cast, liveLookup: lookup, sleep: sleep,
+                               clock: clock)
     }
 
     func waitUntil(_ condition: () async -> Bool) async throws {
@@ -1071,5 +1072,133 @@ struct LiveChannelPlaybackTests {
         gate.wake()
         try await waitUntil { vm.state.isLiveNow }
         #expect(vm.args.videoId == "eaOtcUNHDB8")
+    }
+
+    // MARK: - Stage 9 I20 (Cubic r11 #3): every live-channel trigger obeys the went-away latch, not only the follow-up
+
+    /// A connected cast session nobody has claimed: a cast reconcile (the switch's `.videoStarted`) shows as a taken stamp.
+    static func castSession() -> CastController {
+        let cast = CastController()
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        return cast
+    }
+
+    /// A lookup that answers from `lookup`, and is out (parked on `gate`) from its `from`-th ask on until `gate.wake()`.
+    static func gatedLookup(_ lookup: Lookup, _ gate: GatedSleeper, from: Int = 1) -> @Sendable (String) async throws -> LiveChannelLives {
+        { id in
+            let answer = try await lookup.lives(id)
+            if await lookup.calls >= from { try await gate.sleep(.seconds(1)) }
+            return answer
+        }
+    }
+
+    /// The broadcast ends and the screen goes away (a pop, a push, a tab switch) while the end's lookup is out. Its answer
+    /// lists the next broadcast, but a screen nobody is on never switches, resolves or takes the cast stamp (a popped one
+    /// would hold it until the session ends). The return runs the end once.
+    @Test func anEndWhoseScreenLeftDuringItsLookupWaitsForTheReturn() async throws {
+        let gate = GatedSleeper(gated: .seconds(1))
+        let lookup = Lookup([.success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let cast = Self.castSession()
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: Self.gatedLookup(lookup, gate), cast: cast)
+        vm.reconcile(.appear)                                                 // the mount
+        await vm.open()
+
+        let ending = Task { await vm.playToEnd() }
+        try await waitUntil { gate.parked == 1 }                              // the end's lookup is out
+        vm.reconcile(.disappear)
+        gate.wake()                                                           // the next broadcast lands, screen away
+        await ending.value
+        try await Task.sleep(for: .milliseconds(100))                         // let a wrong switch's cast start run
+
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(cast.castingClaim == nil)                                     // the stamp stays free for other screens
+
+        vm.reconcile(.appear)                                                 // back: the end runs now
+        try await waitUntil { gate.parked == 1 }
+        gate.wake()
+        try await waitUntil { Self.file(vm) == "eaOtcUNHDB8.m3u8" }
+        try await waitUntil { cast.castingClaim == CastClaim(videoId: "eaOtcUNHDB8", owner: vm.castOwner) }   // on screen
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await lookup.calls == 2)                                      // once
+        #expect(vm.state.isLiveNow)
+    }
+
+    /// A failure's step 1 (no incident yet): the screen goes away while its lookup is out, so the new broadcast it lists
+    /// is not switched to. The hidden host's next event waits too, with no lookup and no same-id recovery. The return runs
+    /// the failure once.
+    @Test func aFailureWhoseScreenLeftDuringItsLookupWaitsForTheReturn() async throws {
+        let gate = GatedSleeper(gated: .seconds(1))
+        let lookup = Lookup([.success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let cast = Self.castSession()
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: Self.gatedLookup(lookup, gate), cast: cast)
+        vm.reconcile(.appear)
+        await vm.open()
+
+        let failing = Task { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        try await waitUntil { gate.parked == 1 }                              // step 1's lookup is out
+        vm.reconcile(.disappear)
+        gate.wake()
+        await failing.value
+        Task { await vm.handleRecoveryEvent(.stall) }                         // the hidden host fires again
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(await lookup.calls == 1)
+        #expect(await resolver.videoIds == ["Rs7St51oDDc"])
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(cast.castingClaim == nil)
+
+        vm.reconcile(.appear)
+        try await waitUntil { gate.parked == 1 }
+        gate.wake()
+        try await waitUntil { Self.file(vm) == "eaOtcUNHDB8.m3u8" }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await lookup.calls == 2)
+        #expect(vm.state.isLiveNow)
+    }
+
+    /// A spent step-3 budget goes to step 4 as an END (I18). The screen goes away while that END's lookup is out: no
+    /// switch, no resolve, no cast. The return runs the END once.
+    @Test func aSpentBudgetWhoseScreenLeftDuringItsLookupWaitsForTheReturn() async throws {
+        let gate = GatedSleeper(gated: .seconds(1))
+        let failureAsks = RecoveryBudget.maxRetries + 1                       // each failure's step 1, the spending one's too
+        let lookup = Lookup(Array(repeating: .success(Self.onAir("Rs7St51oDDc")), count: failureAsks)
+                            + [.success(Self.onAir("eaOtcUNHDB8"))])
+        let resolves = 1 + RecoveryBudget.maxRetries                          // the open, then each recovery
+        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: resolves)
+                                         + [.success(Self.live("eaOtcUNHDB8"))])
+        let cast = Self.castSession()
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: Self.gatedLookup(lookup, gate, from: failureAsks + 1), cast: cast)
+        vm.reconcile(.appear)
+        await vm.open()
+        for _ in 0..<RecoveryBudget.maxRetries { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        #expect(vm.state.isLiveNow)
+
+        let spending = Task { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        try await waitUntil { gate.parked == 1 }                              // the END's lookup is out
+        vm.reconcile(.disappear)
+        gate.wake()
+        await spending.value
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(await resolver.videoIds.count == resolves)
+        #expect(vm.args.videoId == "Rs7St51oDDc")
+        #expect(cast.castingClaim == nil)
+
+        vm.reconcile(.appear)
+        try await waitUntil { gate.parked == 1 }
+        gate.wake()
+        try await waitUntil { Self.file(vm) == "eaOtcUNHDB8.m3u8" }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(await lookup.calls == failureAsks + 2)                        // the END, then its one run on the return
+        #expect(vm.state.isLiveNow)
     }
 }
