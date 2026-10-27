@@ -1,0 +1,24 @@
+frontend/src/views/CategoriesView.vue
+  s_dbb6b1f3671904::t_f2ba0f33e31e1b 326
+  s_dbb6b1f3671904::t_8502ccab1e46c1 172
+  s_dbb6b1f3671904::t_56dd00ed7bbf94 211-213
+  s_dbb6b1f3671904::t_5298a7cb28a77a 274
+frontend/tests/CategoryAssignmentModalLive.spec.ts
+  s_dbb6b1f3671904::t_17f93e87b0cef0 217-241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c5976ec5bf2fe86f5f8e2f6f1105482e03c34a50",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
