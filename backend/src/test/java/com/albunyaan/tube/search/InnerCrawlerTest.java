@@ -4,10 +4,6 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.Logger;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
-import com.albunyaan.tube.model.Category;
-import com.albunyaan.tube.model.Channel;
-import com.albunyaan.tube.repository.CategoryRepository;
-import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.YouTubeThrottler;
 import org.junit.jupiter.api.AfterEach;
@@ -44,7 +40,6 @@ import java.util.TreeMap;
 import java.util.concurrent.CopyOnWriteArrayList;
 import java.util.concurrent.CountDownLatch;
 import java.util.concurrent.TimeUnit;
-import java.util.concurrent.TimeoutException;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.atomic.AtomicInteger;
 import java.util.concurrent.atomic.AtomicReference;
@@ -72,8 +67,6 @@ class InnerCrawlerTest {
     CrawlPacer pacer;
     UploadsFetcher fetcher;
     SearchIndex search;
-    CategoryRepository categories;
-    ChannelRepository channels;
     InnerIndex index;
     InnerCrawler crawler;
     final Map<String, String> admitted = new HashMap<>();
@@ -101,8 +94,6 @@ class InnerCrawlerTest {
         search = mock(SearchIndex.class);
         when(search.sources()).thenAnswer(inv -> new HashMap<>(admitted));
         when(search.awaitBuilt(anyLong())).thenReturn(true);
-        categories = mock(CategoryRepository.class);
-        channels = mock(ChannelRepository.class);
         index = new InnerIndex(tmp.resolve("base").toString(), store, clock);
         index.sleeper = ms -> {};
         index.refreshEveryMs = 0;
@@ -120,7 +111,7 @@ class InnerCrawlerTest {
 
     /** Every crawler a test builds: never the host's /proc/meminfo (R31 tests point it at a fake). */
     InnerCrawler newCrawler(UploadsFetcher f, InnerIndex idx) {
-        InnerCrawler c = new InnerCrawler(store, pacer, f, search, idx, categories, channels, clock);
+        InnerCrawler c = new InnerCrawler(store, pacer, f, search, idx, clock);
         c.meminfo = tmp.resolve("no-meminfo");
         return c;
     }
@@ -160,12 +151,6 @@ class InnerCrawlerTest {
 
     InnerState.Source source(String key) {
         return store.state().sources.get(key);
-    }
-
-    static Channel channel(String youtubeId, String... categoryIds) {
-        Channel c = new Channel(youtubeId);
-        c.setCategoryIds(List.of(categoryIds));
-        return c;
     }
 
     // ---- §6.2 the loop --------------------------------------------------------------------------
@@ -334,39 +319,40 @@ class InnerCrawlerTest {
         assertThrows(AssertionFailedError.class, () -> CrawlPacerTest.neverHoldsTheSharedBreaker(LiveCategoryService.class));
     }
 
+    /** Ruling 3 / Q18: SearchIndex.liveOnly, the admission rule serving applies too (stage 9 Cubic r10 #1). */
     @Test
     void liveOnlyChannelsAndMixesAreNeverCrawled() throws Exception {
-        String liveOnly = "UCliveonlyliveonlyliveon", both = "UCbothbothbothbothbothbo";
-        admitted.put("channel:" + liveOnly, "Live only");
-        admitted.put("channel:" + both, "Live and lectures");
+        String liveOnly = "channel:UCliveonlyliveonlyliveon", both = "channel:UCbothbothbothbothbothbo";
+        admitted.put(liveOnly, "Live only");
+        admitted.put(both, "Live and lectures");
         admitted.put("playlist:RDCMUCfassTU6mGWIj-yb26_ADjQ", "A mix");
         admitted.put(PL, "Verhalen van de Profeten");
         store.state().mode = InnerState.Mode.FIRST_PASS;
-        Category liveCategory = new Category();
-        liveCategory.setId("live");
-        liveCategory.setType(Category.TYPE_LIVE);
-        Category lectures = new Category();
-        lectures.setId("lectures");
-        when(categories.findAll()).thenReturn(List.of(liveCategory, lectures));
-        when(channels.findByCategoryId(eq("live"), anyInt()))
-                .thenReturn(List.of(channel(liveOnly, "live"), channel(both, "live", "lectures")));
+        when(search.liveOnly(liveOnly)).thenReturn(true);
         when(fetcher.first(anyString(), anyString())).thenReturn(batch(1, items("lesson", 0, 1, "x"), false));
         assertEquals(0, step());
         assertEquals(0, step());
         assertEquals(InnerCrawler.IDLE_MS, step());
-        verify(fetcher).first(eq("channel:" + both), anyString());
+        verify(fetcher).first(eq(both), anyString());
         verify(fetcher).first(eq(PL), anyString());
         verifyNoMoreInteractions(fetcher);
         assertEquals(2, crawler.counts().get("admitted"));
     }
 
+    /** No hourly set (Cubic r10 #1): a channel approved into a LIVE category only, a minute after a step, is never crawled. */
     @Test
-    void unreadableLiveCategoriesMeanNoJob() throws Exception {
+    void aChannelApprovedIntoOnlyALiveCategoryBetweenStepsIsNeverCrawled() throws Exception {
         admitted.put(CH, "Dawah Nederland");
         store.state().mode = InnerState.Mode.FIRST_PASS;
-        when(categories.findAll()).thenThrow(new TimeoutException("firestore"));
+        when(fetcher.first(anyString(), anyString())).thenReturn(batch(1, items("lesson", 0, 1, "x"), false));
+        assertEquals(0, step());
+        String live = "channel:UCliveonlyliveonlyliveon";
+        admitted.put(live, "Live only");
+        when(search.liveOnly(live)).thenReturn(true);
+        now.set(now.get().plusSeconds(60));
         assertEquals(InnerCrawler.IDLE_MS, step());
-        verifyNoInteractions(fetcher);
+        verify(fetcher).first(eq(CH), anyString());
+        verifyNoMoreInteractions(fetcher);
     }
 
     // ---- §6.6 outcomes --------------------------------------------------------------------------
@@ -1637,8 +1623,6 @@ class InnerCrawlerTest {
             ctx.registerBean(CrawlPacer.class, () -> pacer);
             ctx.registerBean(UploadsFetcher.class, () -> fetcher);
             ctx.registerBean(SearchIndex.class, () -> search);
-            ctx.registerBean(CategoryRepository.class, () -> categories);
-            ctx.registerBean(ChannelRepository.class, () -> channels);
             ctx.registerBean(Clock.class, () -> clock);
             ctx.refresh();
         }

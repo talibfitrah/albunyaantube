@@ -2,15 +2,18 @@ package com.albunyaan.tube.search;
 
 import com.albunyaan.tube.dto.ContentItemDto;
 import com.albunyaan.tube.dto.ContentItemMapper;
+import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.VisibilityPolicy;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.google.cloud.Timestamp;
@@ -80,6 +83,7 @@ import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.function.LongFunction;
 import java.util.function.UnaryOperator;
+import java.util.stream.Collectors;
 import java.util.stream.Stream;
 
 /**
@@ -134,13 +138,17 @@ public class SearchIndex {
         }
     }
 
-    /** An admitted channel or playlist: its display name (the inner index's channel name, R16) and the ids it excludes. */
-    record Admitted(String name, Set<String> excluded) {}
+    /**
+     * An admitted channel or playlist: its display name (the inner index's channel name, R16), the ids it excludes, and
+     * a channel's category ids (Q18, {@link #liveOnly}); none for a playlist.
+     */
+    record Admitted(String name, Set<String> excluded, List<String> categoryIds) {}
 
     private final ChannelRepository channels;
     private final PlaylistRepository playlists;
     private final VideoRepository videos;
     private final SearchableStreamRepository streams;
+    private final CategoryRepository categories;
     private final Directory dir;
     private final IndexWriter writer;
     private final SearcherManager searchers;
@@ -173,6 +181,9 @@ public class SearchIndex {
     private volatile Map<String, Admitted> admittedSources = new ConcurrentHashMap<>();
     /** youtubeId of every Video document, admitted or not: such an id never shows as a stream. */
     private volatile Set<String> videoIds = ConcurrentHashMap.newKeySet();
+    /** Ids of the LIVE categories (Q18), read with each catalog and at each public-cache eviction; empty while inner search is off. */
+    private volatile Set<String> liveCategories = Set.of();
+    private final AtomicBoolean liveReadQueued = new AtomicBoolean();
 
     /**
      * A fresh temp directory per Spring context, deleted in {@link #close()} (Ruling F15): MMap'd, off-heap, throwaway.
@@ -180,24 +191,26 @@ public class SearchIndex {
      */
     @Autowired
     public SearchIndex(ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
-                       SearchableStreamRepository streams, @Value("${search.index.base-dir:}") String baseDir,
-                       InnerIndex inner) throws IOException {
+                       SearchableStreamRepository streams, CategoryRepository categories,
+                       @Value("${search.index.base-dir:}") String baseDir, InnerIndex inner) throws IOException {
         this(FSDirectory.open(Files.createTempDirectory(Files.createDirectories(
                         Path.of(baseDir.isEmpty() ? System.getProperty("java.io.tmpdir") : baseDir)), "fitrahtube-search-")),
-                channels, playlists, videos, streams, 5_000, inner);
+                channels, playlists, videos, streams, categories, 5_000, inner);
     }
 
     SearchIndex(Directory dir, ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
                 SearchableStreamRepository streams, long readyWaitMs) throws IOException {
-        this(dir, channels, playlists, videos, streams, readyWaitMs, null);
+        this(dir, channels, playlists, videos, streams, null, readyWaitMs, null);
     }
 
     SearchIndex(Directory dir, ChannelRepository channels, PlaylistRepository playlists, VideoRepository videos,
-                SearchableStreamRepository streams, long readyWaitMs, InnerIndex inner) throws IOException {
+                SearchableStreamRepository streams, CategoryRepository categories, long readyWaitMs, InnerIndex inner)
+            throws IOException {
         this.channels = channels;
         this.playlists = playlists;
         this.videos = videos;
         this.streams = streams;
+        this.categories = categories;
         this.dir = dir;
         this.writer = new IndexWriter(dir, new IndexWriterConfig(SearchText.INDEX));
         this.searchers = new SearcherManager(writer, null);
@@ -314,6 +327,7 @@ public class SearchIndex {
      * document is built before the old ones are deleted, so a failure leaves the last good catalog.
      */
     void replaceCatalog() throws Exception {
+        Set<String> live = liveCategoryIds(); // first: unreadable fails the build, never serves an empty LIVE set
         Map<String, Admitted> sources = new ConcurrentHashMap<>();
         Set<String> ids = ConcurrentHashMap.newKeySet();
         List<Document> docs = new ArrayList<>();
@@ -321,6 +335,7 @@ public class SearchIndex {
         int[] p = admitEach(playlists.findByStatusUnordered("APPROVED"), Playlist.class, sources, ids, docs);
         int[] v = admitEach(videos.findAllUnordered(), Video.class, sources, ids, docs);
         replace(new Term("source", "CATALOG"), docs); // one atomic block: a failed add keeps the old catalog
+        liveCategories = live;
         admittedSources = sources;
         videoIds = ids;
         searchers.maybeRefreshBlocking();
@@ -975,6 +990,43 @@ public class SearchIndex {
         return out;
     }
 
+    /**
+     * Q18 (controller ruling 3), the one admission rule that serving ({@link #keeper}) and InnerCrawler share: an admitted
+     * channel whose every category is a LIVE one is no inner-search source (approved for its lives; its back catalogue was
+     * never curated). A channel also in an ordinary category is one, as is one with no category; a playlist never is.
+     * Fresh: a channel's categories change with its CatalogChanged re-read, the LIVE set at each eviction.
+     */
+    boolean liveOnly(String sourceKey) {
+        Admitted source = admittedSources.get(sourceKey);
+        return source != null && liveOnly(source);
+    }
+
+    private boolean liveOnly(Admitted source) {
+        List<String> in = source.categoryIds();
+        return in != null && !in.isEmpty() && liveCategories.containsAll(in);
+    }
+
+    /**
+     * Q18: CategoryController evicts the public caches after every category create, update (LIVE on, or the kill switch
+     * off) and delete, as LiveChannelsMigration does after it sets LIVE; each eviction re-reads the LIVE set on the writer.
+     * A burst queues one read. ponytail: a failed read keeps the last set until the next eviction or the 6-hourly
+     * reconcile; retry it as reread() does if that window ever matters.
+     */
+    @EventListener
+    public void onPublicContentEvicted(PublicContentCacheService.Evicted event) {
+        if (!liveReadQueued.compareAndSet(false, true)) return;
+        submit("LIVE categories", () -> {
+            liveReadQueued.set(false); // first: an eviction during the read queues another
+            liveCategories = liveCategoryIds();
+        });
+    }
+
+    /** Q18's LIVE category ids; none while inner search is off, since only inner serving and the crawler ask. */
+    private Set<String> liveCategoryIds() throws Exception {
+        if (inner == null || !inner.enabled()) return Set.of();
+        return categories.findAll().stream().filter(Category::isLive).map(Category::getId).collect(Collectors.toUnmodifiableSet());
+    }
+
     /** Inner-search R34: every admitted source that lists this video, from the inner index and the stored stream's keys. */
     public List<String> sourcesListing(String youtubeId) throws IOException {
         Set<String> keys = new LinkedHashSet<>();
@@ -1055,7 +1107,8 @@ public class SearchIndex {
 
     /**
      * Spec §4.2, §8.1: the admitted source that keeps a STREAM or INNER document visible, or null (hidden or catalog).
-     * `trace` (nullable) counts the stream gate's lookups.
+     * An INNER copy is kept only by an inner-search source: never a LIVE-only channel (Q18), whenever its corpus was
+     * stored. `trace` (nullable) counts the stream gate's lookups.
      */
     private String keeper(Document doc, Trace trace) {
         String kind = doc.get("source");
@@ -1066,9 +1119,9 @@ public class SearchIndex {
         Map<String, Admitted> sources = admittedSources;
         for (String key : doc.getValues("sourceKey")) {
             Admitted source = sources.get(key);
-            if (source != null && !source.excluded().contains(id) && !(stream && inner != null && inner.gateDrops(key, id, trace))) {
-                return key;
-            }
+            if (source == null || source.excluded().contains(id)) continue;
+            if (stream ? inner != null && inner.gateDrops(key, id, trace) : liveOnly(source)) continue;
+            return key;
         }
         return null;
     }
@@ -1109,12 +1162,12 @@ public class SearchIndex {
             // Its own name in `channel` too: every upload of it matches there, and the channel must not lose to them (P1).
             docs.add(catalogDoc("CHANNEL", c.getId(), c.getYoutubeId(), c.getName(), c.getKeywords(), c.getName(),
                     c.getDescription(), ContentItemMapper.fromChannel(c), null));
-            sources.put("channel:" + c.getYoutubeId(), new Admitted(c.getName(), exclusions(c)));
+            sources.put("channel:" + c.getYoutubeId(), new Admitted(c.getName(), exclusions(c), c.getCategoryIds()));
         } else if (entity instanceof Playlist p) {
             if (!admitted(p.getStatus(), p.getVisibility(), p.getValidationStatus(), p.getYoutubeId())) return false;
             docs.add(catalogDoc("PLAYLIST", p.getId(), p.getYoutubeId(), p.getTitle(), p.getKeywords(), null,
                     p.getDescription(), ContentItemMapper.fromPlaylist(p), null));
-            sources.put("playlist:" + p.getYoutubeId(), new Admitted(p.getTitle(), exclusions(p)));
+            sources.put("playlist:" + p.getYoutubeId(), new Admitted(p.getTitle(), exclusions(p), List.of()));
         } else if (entity instanceof Video v) {
             if (v.getYoutubeId() != null) videoIds.add(v.getYoutubeId());
             if (!admitted(v.getStatus(), v.getVisibility(), v.getValidationStatus(), v.getYoutubeId())) return false;

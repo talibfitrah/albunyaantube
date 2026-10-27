@@ -4,6 +4,7 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.SearchableStream;
@@ -16,6 +17,7 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.LiveCategoryService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.PublicContentService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
@@ -78,6 +80,9 @@ class SearchIndexTest {
     private PlaylistRepository playlistRepo;
     private VideoRepository videoRepo;
     private SearchableStreamRepository streamRepo;
+    private CategoryRepository categoryRepo;
+    /** What categoryRepo.findAll() answers, read at each call: a test changes it to turn a category LIVE or back. */
+    private List<Category> categories = List.of();
     private SearchIndex index;
 
     // ---- fixture -------------------------------------------------------------------------------
@@ -114,6 +119,20 @@ class SearchIndexTest {
         s.setSourceKeys(new ArrayList<>(List.of(sourceKeys)));
         s.setVisible(true);
         return s;
+    }
+
+    /** `c`, filed under exactly these categories. */
+    private static Channel in(Channel c, String... categoryIds) {
+        c.setCategoryIds(List.of(categoryIds));
+        return c;
+    }
+
+    /** A category; `type` null is an ordinary one, Category.TYPE_LIVE a live-channels one. */
+    private static Category category(String id, String type) {
+        Category c = new Category();
+        c.setId(id);
+        c.setType(type);
+        return c;
     }
 
     private static <T> T with(T item, Consumer<T> change) {
@@ -194,12 +213,14 @@ class SearchIndexTest {
         playlistRepo = mock(PlaylistRepository.class);
         videoRepo = mock(VideoRepository.class);
         streamRepo = mock(SearchableStreamRepository.class);
+        categoryRepo = mock(CategoryRepository.class);
+        when(categoryRepo.findAll()).thenAnswer(inv -> categories);
         List<QueryDocumentSnapshot> channelDocs = docs(cs), playlistDocs = docs(ps), videoDocs = docs(vs), streamDocs = docs(ss);
         when(channelRepo.findByStatusUnordered("APPROVED")).thenReturn(channelDocs);
         when(playlistRepo.findByStatusUnordered("APPROVED")).thenReturn(playlistDocs);
         when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
         when(streamRepo.findVisiblePage(isNull(), eq(SearchIndex.STREAM_PAGE))).thenReturn(streamDocs);
-        SearchIndex created = new SearchIndex(new ByteBuffersDirectory(), channelRepo, playlistRepo, videoRepo, streamRepo, readyWaitMs, inner);
+        SearchIndex created = new SearchIndex(new ByteBuffersDirectory(), channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, readyWaitMs, inner);
         opened.add(created);
         return created;
     }
@@ -1142,6 +1163,96 @@ class SearchIndexTest {
         assertFalse(ids("zubdahnoor").contains("reported001"));
     }
 
+    // ---- Q18: a channel only in LIVE categories is no inner source (stage 9 Cubic r10 #1) ------------
+
+    /** Its corpus was stored while it was an ordinary channel; from the save that leaves it LIVE-only, no inner copy is served. */
+    @Test
+    void aChannelThatBecomesLiveOnlyLosesItsInnerCopiesOnSearchTitlesAndPastedIds() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE), category("lectures", null));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live", "lectures")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, zubdahnoor()));
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"), "precondition: served while also in an ordinary category");
+
+        saved(in(channel("UCalafasy", "Alafasy"), "live")); // its last ordinary category removed
+        index.awaitWrites();
+
+        assertTrue(ids("zubdahnoor").isEmpty(), "/search");
+        assertTrue(index.titles(List.of("lesson00001")).map().isEmpty(), "/titles");
+        assertSame(SearchIndex.Hits.NONE, index.byId("lesson00001", null), "a pasted id");
+        assertTrue(index.sources().containsKey(ALAFASY), "still admitted: its catalog entry and lives are today's");
+    }
+
+    /** A boot rebuilds the inner index from every corpus file: a LIVE-only channel's stored corpus never comes back. */
+    @Test
+    void aLiveOnlyChannelsStoredCorpusIsNeverServedAfterABoot() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE));
+        SearchIndex idx = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, zubdahnoor()));
+        assertTrue(ids(idx.search("zubdahnoor", null, 50)).isEmpty());
+        assertTrue(idx.titles(List.of("lesson00001")).map().isEmpty());
+        assertSame(SearchIndex.Hits.NONE, idx.byId("lesson00001", null));
+        assertEquals(List.of("UCalafasy"), ids(idx.search("alafasy", "CHANNEL", 10)), "the channel itself is still found");
+    }
+
+    /** Approved into a LIVE category only: the crawler's own test answers "LIVE-only" from the approval's save on. */
+    @Test
+    void aChannelApprovedIntoOnlyALiveCategoryIsNoInnerSourceFromItsApproval() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE));
+        index = started(newIndex(List.of(), List.of(), List.of(), List.of(), 5_000, zubdahnoor()));
+        saved(in(channel("UCalafasy", "Alafasy"), "live"));
+        index.awaitWrites();
+        assertTrue(index.sources().containsKey(ALAFASY), "admitted");
+        assertTrue(index.liveOnly(ALAFASY), "InnerCrawler never crawls it");
+        assertTrue(ids("zubdahnoor").isEmpty());
+        assertSame(SearchIndex.Hits.NONE, index.byId("lesson00001", null));
+    }
+
+    /** Ruling 3: a channel also in an ordinary category stays a source; a LIVE-only one's stored streams are today's. */
+    @Test
+    void aMixedChannelStaysAnInnerSourceAndALiveOnlyChannelKeepsItsStoredStreams() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE), category("lectures", null));
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600)),
+                "channel:UChalal", List.of(item("lesson00002", "Zubdahnoor halal lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live", "lectures"),
+                        in(channel("UChalal", "Halal Kitchen"), "live"), channel("UCzakir", "Dr Zakir Naik")), List.of(), List.of(),
+                List.of(stream("halal-ok", "Zubdahnoor halal stream", "channel:UChalal")), 5_000, inner));
+        assertEquals(Set.of("lesson00001", "halal-ok"), Set.copyOf(ids("zubdahnoor")));
+        assertFalse(index.liveOnly(ALAFASY), "LIVE and ordinary");
+        assertTrue(index.liveOnly("channel:UChalal"));
+        assertFalse(index.liveOnly("channel:UCzakir"), "no category at all is no LIVE-only channel");
+        assertFalse(index.liveOnly("playlist:PLnotadmitted"));
+    }
+
+    /** A category turned LIVE (or back, the kill switch) evicts the public caches: that eviction re-reads the LIVE set. */
+    @Test
+    void aCategoryTurnedLiveHidesItsOnlyChannelsInnerCopiesAtItsEviction() throws Exception {
+        categories = List.of(category("lectures", null));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "lectures")), List.of(), List.of(), List.of(),
+                5_000, zubdahnoor()));
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"));
+
+        categories = List.of(category("lectures", Category.TYPE_LIVE));
+        index.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+        index.awaitWrites();
+        assertTrue(ids("zubdahnoor").isEmpty(), "LIVE now");
+        assertTrue(index.liveOnly(ALAFASY));
+
+        categories = List.of(category("lectures", null));
+        index.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+        index.awaitWrites();
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"), "ordinary again");
+    }
+
+    /** Fail closed: with LIVE categories unreadable, the build fails and retries; it never serves with an empty LIVE set. */
+    @Test
+    void unreadableCategoriesFailTheBuildInsteadOfServingLiveOnlyChannels() throws Exception {
+        SearchIndex idx = newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live")), List.of(), List.of(), List.of(), 50,
+                zubdahnoor());
+        when(categoryRepo.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"));
+        started(idx);
+        assertThrows(SearchIndex.NotReadyException.class, () -> idx.search("zubdahnoor", null, 50));
+    }
+
     /** Inner titles built to collide with every golden row (spec §14.1): the rows' own words, Zakir uploads, a stream id. */
     private InnerIndex adversarialInner() throws Exception {
         String dawah = "channel:UCfassTU6mGWIj-yb26_ADjQ", zakir = "channel:UC3YmP7nqf514I1zh1eVbzrA";
@@ -1948,8 +2059,8 @@ class SearchIndexTest {
     @Test
     void eachContextGetsItsOwnIndexDirectoryAndClosingDeletesOnlyThatOne() throws Exception {
         // Ruling F15: two Spring contexts in one JVM must not delete each other's index.
-        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "", null));
-        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "", null));
+        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
+        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
         Path firstDir = first.path(), secondDir = second.path();
         assertNotEquals(firstDir, secondDir, "one directory per context");
         assertTrue(Files.isDirectory(firstDir) && Files.isDirectory(secondDir));
@@ -1968,7 +2079,7 @@ class SearchIndexTest {
         // B4: prod ages /tmp (tmpfiles "D /tmp ... 30d"); search.index.base-dir moves the index out of it.
         Path parent = Files.createTempDirectory("fitrahtube-base-");
         Path base = parent.resolve("search-index"); // not there yet: created on start
-        SearchIndex configured = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, base.toString(), null);
+        SearchIndex configured = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, base.toString(), null);
         try {
             assertEquals(base.toRealPath(), configured.path().getParent()); // FSDirectory keeps the real path (macOS /var)
         } finally { // an FSDirectory index closes once: not via opened
@@ -1976,7 +2087,7 @@ class SearchIndexTest {
             Files.delete(base);
             Files.delete(parent);
         }
-        SearchIndex byDefault = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "", null);
+        SearchIndex byDefault = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null);
         opened.add(byDefault);
         assertEquals(Path.of(System.getProperty("java.io.tmpdir")).toRealPath(), byDefault.path().getParent());
     }
@@ -1985,7 +2096,7 @@ class SearchIndexTest {
     void closingAnIndexWhoseCatalogAndEventsAdmitNothingStillDeletesTheDirectory() throws Exception {
         // Empty block + delete term (Lucene asserts under -ea when such an index is rolled back).
         newIndex(List.of(), List.of(), List.of(), List.of(), 5_000); // only for its empty-catalog mocks
-        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "", null));
+        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
         for (int i = 0; i < 5; i++) {
             Channel pending = with(channel("UCpending" + i, "Pending " + i), c -> c.setStatus("PENDING"));
             when(channelRepo.findById(pending.getId())).thenReturn(Optional.of(pending));

@@ -1,12 +1,18 @@
 package com.albunyaan.tube.search;
 
 import com.albunyaan.tube.integration.BaseIntegrationTest;
+import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.repository.ChannelRepository;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.google.cloud.Timestamp;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseToken;
 import org.junit.jupiter.api.AfterAll;
+import org.junit.jupiter.api.MethodOrderer;
+import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.api.TestMethodOrder;
 import org.mockito.Mockito;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
@@ -26,12 +32,16 @@ import java.util.concurrent.TimeUnit;
 import java.util.stream.Stream;
 
 import static org.awaitility.Awaitility.await;
+import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.hamcrest.Matchers.contains;
+import static org.hamcrest.Matchers.containsInAnyOrder;
 import static org.hamcrest.Matchers.everyItem;
 import static org.hamcrest.Matchers.is;
 import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
@@ -45,10 +55,13 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * sourceType and sourceId. Moderators read the admin surface, and only admins write. With the property unset (every
  * other IT), behaviour is exactly today's.
  */
+@TestMethodOrder(MethodOrderer.OrderAnnotation.class)
 class InnerSearchIT extends BaseIntegrationTest {
 
     private static final Path DIR = Path.of(System.getProperty("java.io.tmpdir"), "inner-search-it-" + ProcessHandle.current().pid());
     private static final String C1 = "UCinnerit00000000000001a", C2 = "UCinnerit00000000000002b", P1 = "PLinnerit000000000000001";
+    private static final String LIVE = "UCinnerit00000000000003c", MIXED = "UCinnerit00000000000004d",
+            TURNS = "UCinnerit00000000000005e";
 
     @DynamicPropertySource
     static void innerDir(DynamicPropertyRegistry registry) {
@@ -67,6 +80,9 @@ class InnerSearchIT extends BaseIntegrationTest {
     @MockBean FirebaseAuth firebaseAuth;
     @Autowired SearchIndex searchIndex;
     @Autowired InnerIndex innerIndex;
+    @Autowired InnerCrawler crawler;
+    @Autowired ChannelRepository channelRepository;
+    @Autowired PublicContentCacheService caches;
 
     private void seed(String collection, String id, Map<String, Object> fields) throws Exception {
         firestore.collection(collection).document(id).set(fields).get(10, TimeUnit.SECONDS);
@@ -134,6 +150,57 @@ class InnerSearchIT extends BaseIntegrationTest {
                         .contentType(MediaType.APPLICATION_JSON).content("{\"capPerSource\":0}"))
                 .andExpect(status().isBadRequest());
         mvc.perform(get("/api/admin/inner-search")).andExpect(status().is4xxClientError());
+    }
+
+    /**
+     * Q18 (stage 9 Cubic r10 #1), through Firestore, the events and the running crawler. A channel approved into a LIVE
+     * category only is never crawled. A channel that loses its last ordinary category stops being served at its save. A
+     * category turned LIVE stops its channels' copies at its eviction. Last: the first-pass test counts every inner document.
+     */
+    @Test
+    @Order(Integer.MAX_VALUE)
+    void liveOnlyChannelsAreNeverCrawledAndTheirStoredCopiesAreNeverServed() throws Exception {
+        innerIndex.refreshEveryMs = 0;
+        seed("categories", "it-live", Map.of("name", "Inner IT Live", "type", "LIVE"));
+        seed("categories", "it-lectures", Map.of("name", "Inner IT Lectures"));
+        seed("channels", "c3", Map.of("youtubeId", LIVE, "name", "Inner IT Live Only", "status", "APPROVED",
+                "categoryIds", List.of("it-live"), "createdAt", Timestamp.now()));
+        seed("channels", "c4", Map.of("youtubeId", MIXED, "name", "Inner IT Gemengd", "status", "APPROVED",
+                "categoryIds", List.of("it-live", "it-lectures"), "createdAt", Timestamp.now()));
+        seed("channels", "c5", Map.of("youtubeId", TURNS, "name", "Inner IT Wordt Live", "status", "APPROVED",
+                "categoryIds", List.of("it-lectures"), "createdAt", Timestamp.now()));
+        searchIndex.reconcile();
+        searchIndex.awaitWrites();
+        when(fetcher.first(eq("channel:" + LIVE), anyString())).thenReturn(one("liveonly001", "Qatrunnada live only", null, null));
+        when(fetcher.first(eq("channel:" + MIXED), anyString())).thenReturn(one("mixedchan01", "Qatrunnada gemengd", null, null));
+        when(fetcher.first(eq("channel:" + TURNS), anyString())).thenReturn(one("becomeslive", "Qatrunnada wordt live", null, null));
+        stubToken(seedUser("admin3@inner.it", "admin"), "admin");
+        mvc.perform(put("/api/admin/inner-search").header("Authorization", "Bearer t")
+                        .contentType(MediaType.APPLICATION_JSON).content("{\"mode\":\"FIRST_PASS\",\"serveInner\":true}"))
+                .andExpect(status().isOk());
+        await().atMost(Duration.ofSeconds(20)).until(() -> crawler.counts().get("firstPaged") == 2);
+        assertEquals(2, crawler.counts().get("admitted"), "the LIVE-only channel is no crawlable source");
+        verify(fetcher, never()).first(eq("channel:" + LIVE), anyString());
+        mvc.perform(get("/api/v1/search").param("q", "qatrunnada").param("limit", "50"))
+                .andExpect(jsonPath("$[*].id", containsInAnyOrder("mixedchan01", "becomeslive")));
+
+        Channel turns = channelRepository.findById("c5").orElseThrow();
+        turns.setCategoryIds(List.of("it-live"));                       // its last ordinary category removed
+        channelRepository.save(turns);
+        searchIndex.awaitWrites();
+        mvc.perform(get("/api/v1/search").param("q", "qatrunnada").param("limit", "50"))
+                .andExpect(jsonPath("$[*].id", contains("mixedchan01")));
+        mvc.perform(get("/api/v1/search").param("q", "becomeslive"))  // a pasted id
+                .andExpect(jsonPath("$.length()").value(0));
+        mvc.perform(get("/api/v1/titles").param("ids", "becomeslive,mixedchan01"))
+                .andExpect(jsonPath("$.becomeslive").doesNotExist())
+                .andExpect(jsonPath("$.mixedchan01").value("Qatrunnada gemengd"));
+
+        seed("categories", "it-lectures", Map.of("name", "Inner IT Lectures", "type", "LIVE")); // as CategoryController's PUT
+        caches.evictPublicContentCaches();                               // which it follows with this eviction
+        searchIndex.awaitWrites();
+        mvc.perform(get("/api/v1/search").param("q", "qatrunnada").param("limit", "50"))
+                .andExpect(jsonPath("$.length()").value(0));
     }
 
     /** As MigrationControllerIntegrationTest: an active user document. */

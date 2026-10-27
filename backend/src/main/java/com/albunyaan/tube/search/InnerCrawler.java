@@ -1,9 +1,5 @@
 package com.albunyaan.tube.search;
 
-import com.albunyaan.tube.model.Category;
-import com.albunyaan.tube.model.Channel;
-import com.albunyaan.tube.repository.CategoryRepository;
-import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.service.ChannelOrchestrator;
 import jakarta.annotation.PreDestroy;
 import org.apache.lucene.analysis.CharArraySet;
@@ -50,10 +46,6 @@ import java.util.stream.Collectors;
 public class InnerCrawler {
     private static final Logger log = LoggerFactory.getLogger(InnerCrawler.class);
     static final long DAY_MS = 86_400_000L, IDLE_MS = 60_000, SAVE_EVERY_MS = 300_000, RETRY_MS = 7 * DAY_MS;
-    // ponytail: the live-only set is re-read hourly, at most 500 approved channels per LIVE category; a channel outside
-    // either gets first pages (2 requests each). Refresh on CatalogChanged, or page the query, if that ever matters.
-    static final long LIVE_REFRESH_MS = 3_600_000;
-    static final int LIVE_CHANNELS_MAX = 500;
     static final int DAILY_CAP = 1_000;
     static final long MEMORY_FLOOR_MIB = 512, HOUR_MS = 3_600_000;
     static final int MEMORY_CAP = 2_000, MEMORY_SAMPLES = 3, MEMORY_KEPT = 72;
@@ -83,8 +75,6 @@ public class InnerCrawler {
     private final UploadsFetcher fetcher;
     private final SearchIndex search;
     private final InnerIndex index; // a constructor dependency: Spring stops this crawler before it closes the index
-    private final CategoryRepository categories; // ruling 3, Firestore reads only: no path to the gateway or the breaker
-    private final ChannelRepository channels;
     private final Clock clock;
     private final Object wake = new Object();
     private boolean woken; // guarded by wake
@@ -97,8 +87,6 @@ public class InnerCrawler {
     private long lastSaveAt;
     private String lastDailyLog = "";
     private long jobStartedAt, jobRequestsBefore;
-    private volatile Set<String> liveOnly; // channel keys whose every category is LIVE; null until first read
-    private long liveOnlyAt;
     private boolean steady;
     /** Linux only; off Linux the file is absent and there is no trigger (R31). Tests point it at a fake. */
     Path meminfo = Path.of("/proc/meminfo");
@@ -107,14 +95,12 @@ public class InnerCrawler {
     private long lastMemoryAt = Long.MIN_VALUE / 2;
 
     public InnerCrawler(InnerStore store, CrawlPacer pacer, UploadsFetcher fetcher, SearchIndex search, InnerIndex index,
-                        CategoryRepository categories, ChannelRepository channels, Clock clock) {
+                        Clock clock) {
         this.store = store;
         this.pacer = pacer;
         this.fetcher = fetcher;
         this.search = search;
         this.index = index;
-        this.categories = categories;
-        this.channels = channels;
         this.clock = clock;
     }
 
@@ -336,7 +322,6 @@ public class InnerCrawler {
         housekeeping(now);
         if (store.stopped() || s.mode == InnerState.Mode.OFF) return IDLE_MS;
         if (now < s.breaker.pausedUntil) return s.breaker.pausedUntil - now;
-        if (!readLiveOnly(now)) return IDLE_MS;
         Map<String, String> admitted = crawlable(search.sources());
         Job job = nextJob(admitted, now);
         if (job == null) return IDLE_MS;
@@ -427,35 +412,11 @@ public class InnerCrawler {
     }
 
     /**
-     * Controller ruling 3: the channels whose every category is a LIVE one (a channel also in an ordinary category is
-     * crawled), re-read hourly. False while they cannot be read: no job until then, so none is crawled by mistake.
+     * Ruling 3: the admitted sources (the caller's copy) minus `RD…` mixes, auto-generated and endless, and LIVE-only
+     * channels: SearchIndex.liveOnly, the rule serving applies too (Q18), fresh at every step.
      */
-    private boolean readLiveOnly(long now) {
-        if (liveOnly != null && now - liveOnlyAt < LIVE_REFRESH_MS) return true;
-        try {
-            Set<String> live = categories.findAll().stream().filter(Category::isLive).map(Category::getId)
-                    .collect(Collectors.toSet());
-            Set<String> keys = new HashSet<>();
-            for (String categoryId : live) {
-                for (Channel c : channels.findByCategoryId(categoryId, LIVE_CHANNELS_MAX)) { // APPROVED: what SearchIndex admits
-                    List<String> in = c.getCategoryIds();
-                    if (c.getYoutubeId() != null && in != null && !in.isEmpty() && live.containsAll(in)) keys.add("channel:" + c.getYoutubeId());
-                }
-            }
-            liveOnly = keys;
-            liveOnlyAt = now;
-            return true;
-        } catch (Exception e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            log.warn("inner-crawl: LIVE categories unreadable, no job this step: {}", e.toString());
-            return false;
-        }
-    }
-
-    /** Ruling 3: the admitted sources (the caller's copy) minus `RD…` mixes, auto-generated and endless, and LIVE-only channels. */
     private Map<String, String> crawlable(Map<String, String> admitted) {
-        Set<String> skip = liveOnly != null ? liveOnly : Set.of();
-        admitted.keySet().removeIf(key -> key.startsWith("playlist:RD") || skip.contains(key));
+        admitted.keySet().removeIf(key -> key.startsWith("playlist:RD") || search.liveOnly(key));
         return admitted;
     }
 
