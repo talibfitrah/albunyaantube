@@ -1,0 +1,47 @@
+backend/src/test/java/com/albunyaan/tube/service/ImportExportServiceTest.java
+  s_dbb6b1f3671904::t_c638997c58532e 91-119
+  s_dbb6b1f3671904::t_d5a66aab18beac 4,20
+  s_dbb6b1f3671904::t_47880002450288 120-121
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryWritePathTripwireTest.java
+  s_dbb6b1f3671904::t_2a3cf2f9d67426 46
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_50927ca21ea355 474-480
+  s_dbb6b1f3671904::t_dd08d5bcbd55f4 314-315,335,370,382
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_2b6a15238cd9c7 734-775
+backend/src/main/java/com/albunyaan/tube/controller/RegistryController.java
+  s_dbb6b1f3671904::t_6c44fbd34303e6 1058-1061,1122-1123
+  s_dbb6b1f3671904::t_48e1a0cfb512ed 1124
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_dbb6b1f3671904::t_6c44fbd34303e6 13
+  s_dbb6b1f3671904::t_50927ca21ea355 1015-1023,1025
+docs/architecture/api-specification.yaml
+  s_dbb6b1f3671904::t_d2b6629c919b3f 589-591,1605-1608,1641-1643,2907-2909,3249-3251
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_ab0dce0ce845d1 202-207
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryMarkPendingTest.java
+  s_dbb6b1f3671904::t_a300542277ea02 72-75,86-87,131-151
+  s_dbb6b1f3671904::t_eea7a2e593005f 152
+backend/src/main/java/com/albunyaan/tube/service/ImportExportService.java
+  s_dbb6b1f3671904::t_a19fab979545bf 310-318
+backend/src/test/java/com/albunyaan/tube/controller/RegistryControllerTest.java
+  s_dbb6b1f3671904::t_ab36ed601cd4dd 678-703
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_621075b2bbf07a 543-555
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "55f0da0e0fb65f51489bb54515bd6b6d7ed589e6",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
