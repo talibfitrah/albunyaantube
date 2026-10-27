@@ -311,6 +311,8 @@ public class ContentReportService {
      * Archives the target. A video with no document gets one, its take-down record (stage 9 Cubic r2): any Video document
      * hides its id from search on every source, including one crawled after this resolve (SearchIndex.videoIds). It is
      * also excluded on the sources listing it now, for their channel and playlist screens (R34). Returns a miss, or null.
+     * Stage 9 B21 (Cubic r9 #2): a doc still under review (PENDING, REQUEST_CHANGES) is rejected too. Its submitter may
+     * withdraw (delete) such a doc, and it is all that holds the take-down; REJECTED, no moderator can (B16).
      */
     private String archiveReportedContent(ReportTargetType targetType, String targetId) {
         boolean archived = false;
@@ -330,6 +332,7 @@ public class ContentReportService {
                         }
                         video = opt.orElseGet(() -> takeDownRecord(targetId));
                         video.setValidationStatus(ValidationStatus.ARCHIVED);
+                        if (!"APPROVED".equals(video.getStatus())) video.setStatus("REJECTED");
                         videoRepository.save(video);
                         archived = true;
                         // Stage 9 B19 (r6 P3-3): with no doc too. A record can outlive the doc the poller archived (an
@@ -364,6 +367,7 @@ public class ContentReportService {
                     var opt = channelRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
+                        if (!"APPROVED".equals(opt.get().getStatus())) opt.get().setStatus("REJECTED");
                         channelRepository.save(opt.get());
                         streamIndexService.removeSource("CHANNEL", opt.get().getYoutubeId());
                         archived = true;
@@ -375,6 +379,7 @@ public class ContentReportService {
                     var opt = playlistRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
+                        if (!"APPROVED".equals(opt.get().getStatus())) opt.get().setStatus("REJECTED");
                         playlistRepository.save(opt.get());
                         streamIndexService.removeSource("PLAYLIST", opt.get().getYoutubeId());
                         archived = true;
@@ -466,8 +471,13 @@ public class ContentReportService {
     }
 
     /** A take-down record: the doc exists only to hide the id, so lifting the take-down means deleting it. */
-    static boolean isTakeDownRecord(Video video) {
-        return "REJECTED".equals(video.getStatus()) && TAKE_DOWN_SOURCE.equals(video.getSource());
+    public static boolean isTakeDownRecord(Video video) {
+        return isTakeDownRecord(video.getStatus(), video.getSource());
+    }
+
+    /** The same, on a raw doc's fields. Stage 9 B21 (Cubic r9 #14): no status change moves it out of REJECTED. */
+    public static boolean isTakeDownRecord(String status, String source) {
+        return "REJECTED".equals(status) && TAKE_DOWN_SOURCE.equals(source);
     }
 
     /** After an exclusion write: public listings and the admin Exclusions workspace (a 5-minute cache) show it at once. */

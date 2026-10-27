@@ -675,6 +675,32 @@ class RegistryControllerTest {
         assertEquals("admin-uid", video.getApprovedBy());
     }
 
+    /**
+     * Stage 9 B21 (Cubic r9 #14): a report's take-down record never leaves REJECTED by a status change. Approved it is a
+     * blank public video; pending, the approvals queue approves it. Restore, or adding the video again, lifts it.
+     */
+    @Test
+    void aTakeDownRecordIsNeitherToggledNorUpdatedOutOfRejected() throws Exception {
+        com.albunyaan.tube.model.Video record = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        record.setId("doc-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(record));
+        org.mockito.Mockito.lenient().when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        assertEquals(HttpStatus.CONFLICT, registryController.toggleVideoStatus("doc-takedown", adminUser).getStatusCode());
+        for (String status : List.of("APPROVED", "PENDING", "REQUEST_CHANGES")) {
+            com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+            body.setStatus(status);
+            assertEquals(HttpStatus.CONFLICT, registryController.updateVideo("doc-takedown", body, adminUser).getStatusCode(),
+                    status);
+        }
+
+        assertEquals("REJECTED", record.getStatus());
+        verify(videoRepository, never()).save(any());
+    }
+
     // ===== updateVideo MERGE SEMANTICS (iOS Phase 3, offlineAllowed gate) =====
 
     /** A fully-populated APPROVED video as it sits in the registry. */

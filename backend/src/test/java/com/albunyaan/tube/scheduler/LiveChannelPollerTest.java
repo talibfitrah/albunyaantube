@@ -540,6 +540,19 @@ class LiveChannelPollerTest {
         verify(reader, never()).read(anyString());
     }
 
+    /** Stage 9 B21 (Cubic r9 #21): a cycle that changed the snapshot evicts, even when its view refresh then fails. */
+    @Test
+    void aChangedSnapshotEvictsEvenWhenTheViewRefreshFails() throws Exception {
+        entries(A);
+        when(reader.read(anyString())).thenReturn(live("aaaaaaaaaaa"));
+        when(videos.findByYoutubeIds(any())).thenThrow(new IllegalStateException("Firestore unavailable"));
+
+        cycleAt(T0);
+
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);       // apply() landed
+        verify(caches).evictPublicContentCaches();
+    }
+
     /** D14: a retitled live keeps the caches; a new id evicts them. */
     @Test
     void onlyAServedIdChangeEvicts() {

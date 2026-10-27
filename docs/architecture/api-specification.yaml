@@ -586,7 +586,9 @@ paths:
                   nullable: true
       responses:
         '200':
-          description: Updated report
+          description: |
+            Updated report. RESOLVED with no parent that applies takes the target down (ARCHIVED). A doc still under
+            review (PENDING or REQUEST_CHANGES) also becomes REJECTED, so its submitter can no longer withdraw it.
           content:
             application/json:
               schema:
@@ -1600,6 +1602,10 @@ paths:
       responses:
         '200':
           description: Video updated
+        '409':
+          description: |
+            The video is a report's take-down record and the body moves its status out of REJECTED. Restore it under
+            Archived content, or add the video again.
         '400':
           $ref: '#/components/responses/LiveCategoryRefused'
         '503':
@@ -1632,6 +1638,9 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '409':
+          description: |
+            The video is a report's take-down record. Restore it under Archived content, or add the video again.
         '400':
           $ref: '#/components/responses/LiveCategoryRefused'
         '503':
@@ -2895,7 +2904,9 @@ paths:
                   default: SKIP
       responses:
         '200':
-          description: Import results
+          description: |
+            Import results. A video whose youtubeId has a report's take-down record is skipped (counted in
+            videosSkipped) and named in errors, unless the file's doc is that take-down record itself.
         '400':
           $ref: '#/components/responses/LiveCategoryRefused'
         '503':
@@ -3235,7 +3246,9 @@ paths:
                         type: string
       responses:
         '200':
-          description: Bulk action results
+          description: |
+            Bulk action results. A video that is a report's take-down record is not approved: it is named in errors.
+            Restore it under Archived content, or add the video again.
         '400':
           $ref: '#/components/responses/LiveCategoryRefused'
         '503':

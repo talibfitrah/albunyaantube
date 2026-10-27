@@ -10,6 +10,7 @@ import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.ImportGraduationService;
 import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
@@ -1011,10 +1012,17 @@ public class ContentLibraryController {
                     for (BulkActionItem item : batch) {
                         try {
                             getCollectionName(item.type); // Will throw if invalid type
-                            if (snapshotIndex < snapshots.size() && snapshots.get(snapshotIndex).exists()) {
+                            DocumentSnapshot snap = snapshotIndex < snapshots.size() ? snapshots.get(snapshotIndex) : null;
+                            if (snap != null && snap.exists() && "video".equalsIgnoreCase(item.type) && !"REJECTED".equals(newStatus)
+                                    && ContentReportService.isTakeDownRecord(snap.getString("status"), snap.getString("source"))) {
+                                // Stage 9 B21 (Cubic r9 #14): approved, a take-down record is a blank public video; pending,
+                                // the approvals queue approves it. Restore or a re-add lifts a take-down.
+                                failedKeys.add(item.type.toLowerCase() + ":" + item.id);
+                                errors.add("Video " + item.id + " was taken down by a report: Restore it under Archived "
+                                        + "content, or add the video again");
+                            } else if (snap != null && snap.exists()) {
                                 validatedItems.add(item);
-                                youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id,
-                                        snapshots.get(snapshotIndex).getString("youtubeId"));
+                                youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id, snap.getString("youtubeId"));
                             } else {
                                 failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                                 errors.add(item.type + " not found: " + item.id);

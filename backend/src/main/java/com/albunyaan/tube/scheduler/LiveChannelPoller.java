@@ -199,9 +199,12 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                 }
             }
             live.setSuspectSince(unprovenSince);
-            refreshView(view);
-            if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) {
-                caches.evictPublicContentCaches();                     // D14: ids or visibility, never a title
+            try {
+                refreshView(view);
+            } finally {   // stage 9 B21 (Cubic r9 #21): apply() already changed the snapshot, so a failed refresh evicts too
+                if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) {
+                    caches.evictPublicContentCaches();                 // D14: ids or visibility, never a title
+                }
             }
         } catch (Exception e) {
             log.warn("live poller: cycle failed: {}", e.toString());

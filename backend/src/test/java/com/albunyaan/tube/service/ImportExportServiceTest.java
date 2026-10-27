@@ -1,6 +1,7 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.ImportRequest;
+import com.albunyaan.tube.dto.ImportResponse;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -16,6 +17,7 @@ import java.util.Optional;
 
 import static org.assertj.core.api.Assertions.assertThat;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -84,6 +86,37 @@ class ImportExportServiceTest {
 
             verify(videos).save(imported);
             assertThat(imported.getTakeDownExclusions()).as(strategy).containsExactly("channel:UCfassTU6mGWIj-yb26_ADjQ");
+        }
+    }
+
+    /**
+     * Stage 9 B21 (Cubic r9 #3): an older backup holds the video's doc from before a report took it down. Written beside
+     * the take-down record (another doc id), it is the APPROVED copy findByYoutubeId prefers: served again. It is skipped
+     * and named, as the simple and async imports skip an id that has a doc.
+     */
+    @Test
+    void aVideoAReportTookDownIsSkippedAndNamed() throws Exception {
+        Video record = new Video("ilgiwqpcOC8");
+        record.setId("v-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        when(videos.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(record));
+        for (String strategy : List.of("SKIP", "OVERWRITE", "MERGE")) {
+            Video backedUp = new Video("ilgiwqpcOC8");
+            backedUp.setId("v-before");
+            backedUp.setStatus("APPROVED");
+            ImportRequest request = new ImportRequest();
+            request.setVideos(List.of(backedUp));
+            request.setMergeStrategy(strategy);
+
+            ImportResponse out = service.importAll(request);
+
+            verify(videos, never()).save(backedUp);
+            assertThat(out.getCounts().getVideosSkipped()).as(strategy).isEqualTo(1);
+            assertThat(out.getErrors()).as(strategy).singleElement().satisfies(e -> {
+                assertThat(e.getId()).isEqualTo("v-before");
+                assertThat(e.getError()).contains("ilgiwqpcOC8").contains("taken down");
+            });
         }
     }
 }

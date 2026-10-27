@@ -1055,6 +1055,10 @@ public class RegistryController {
                 return ResponseEntity.badRequest().build();
             }
             video.setStatus(upperStatus);
+            // Stage 9 B21 (Cubic r9 #14): a take-down record stays REJECTED; Restore or a re-add lifts a take-down
+            if (!"REJECTED".equals(upperStatus) && com.albunyaan.tube.service.ContentReportService.isTakeDownRecord(existing)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
         }
 
         String verifiedChannel = liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, existing, existing,
@@ -1114,6 +1118,9 @@ public class RegistryController {
         Video video = videoRepository.findById(id).orElse(null);
         if (video == null) {
             return ResponseEntity.notFound().build();
+        }
+        if (com.albunyaan.tube.service.ContentReportService.isTakeDownRecord(video)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();   // B21 (Cubic r9 #14), as in updateVideo
         }
 
         // Toggle between APPROVED and PENDING

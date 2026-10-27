@@ -69,6 +69,10 @@ class ContentLibraryMarkPendingTest {
     }
 
     private WriteBatch stubOneVideo() {
+        return stubOneVideo(null, null);
+    }
+
+    private WriteBatch stubOneVideo(String status, String source) {
         SecurityContextHolder.getContext().setAuthentication(
                 new UsernamePasswordAuthenticationToken("admin@test", null, List.of()));
 
@@ -79,6 +83,8 @@ class ContentLibraryMarkPendingTest {
         DocumentSnapshot snap = mock(DocumentSnapshot.class);
         when(snap.exists()).thenReturn(true);
         when(snap.getString("youtubeId")).thenReturn("yt-vid-1");
+        when(snap.getString("status")).thenReturn(status);
+        when(snap.getString("source")).thenReturn(source);
         when(firestore.getAll(any(DocumentReference[].class)))
                 .thenReturn(ApiFutures.immediateFuture(List.of(snap)));
 
@@ -120,6 +126,28 @@ class ContentLibraryMarkPendingTest {
 
         verify(importGraduationService, never()).onRejectedAll(any(), any());
         verify(importGraduationService, never()).onApprovedAll(any(), any());
+    }
+
+    /**
+     * Stage 9 B21 (Cubic r9 #14): a report's take-down record (REJECTED, source REPORT) is no submission. Approved, it is a
+     * blank public video, which Restore then keeps instead of deleting; marked pending, the approvals queue approves it.
+     * Both skip it and say why. Restore, or adding the video again, lifts a take-down.
+     */
+    @Test
+    void neitherApproveNorMarkPendingMovesATakeDownRecord() throws Exception {
+        WriteBatch batch = stubOneVideo("REJECTED", "REPORT");
+
+        ContentLibraryController.BulkActionResponse approved = controller.bulkApprove(request()).getBody();
+        ContentLibraryController.BulkActionResponse pending = controller.bulkMarkPending(request()).getBody();
+
+        verify(batch, never()).update(any(DocumentReference.class), any(Map.class));
+        for (ContentLibraryController.BulkActionResponse out : List.of(approved, pending)) {
+            assertEquals(0, out.successCount);
+            assertEquals(java.util.Set.of("video:vid-1"), out.failedKeys);
+            assertEquals(1, out.errors.size());
+            org.junit.jupiter.api.Assertions.assertTrue(out.errors.get(0).contains("taken down"), out.errors.get(0));
+        }
+        verify(sortOrderService, never()).addContentToCategory(any(), any(), any());
     }
 
     @Test

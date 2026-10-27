@@ -731,4 +731,46 @@ class ContentReportServiceTest {
         verify(channelRepository, never()).findByYoutubeId(anyString());
         verify(channelRepository, never()).save(any());
     }
+
+    /**
+     * Stage 9 B21 (Cubic r9 #2): a submission still under review (PENDING, REQUEST_CHANGES) is its submitter's to withdraw,
+     * i.e. delete, and once taken down that doc is all that hides the id. The take-down rejects it, so no moderator can
+     * delete it or take it back (B16). An APPROVED doc stays APPROVED: Restore gives it back.
+     */
+    @Test
+    void aTakeDownRejectsASubmissionStillUnderReviewSoItsSubmitterCannotWithdrawIt() throws Exception {
+        Video pending = new Video("ilgiwqpcOC8");
+        pending.setSource("MODERATOR");
+        pending.setSubmittedBy("mod-uid");
+        Video approved = new Video("xc7keR2piUM");
+        approved.setStatus("APPROVED");
+        Channel bounced = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        bounced.setStatus("REQUEST_CHANGES");
+        Playlist pendingList = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(pending));
+        when(videoRepository.findByYoutubeId("xc7keR2piUM")).thenReturn(Optional.of(approved));
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(bounced));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pendingList));
+        when(reportRepository.update(any())).thenAnswer(i -> i.getArgument(0));
+        for (var target : List.of(java.util.Map.entry(ReportTargetType.VIDEO, "ilgiwqpcOC8"),
+                java.util.Map.entry(ReportTargetType.VIDEO, "xc7keR2piUM"),
+                java.util.Map.entry(ReportTargetType.CHANNEL, "UCfassTU6mGWIj-yb26_ADjQ"),
+                java.util.Map.entry(ReportTargetType.PLAYLIST, "PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"))) {
+            ContentReport report = new ContentReport();
+            report.setTargetType(target.getKey());
+            report.setTargetId(target.getValue());
+            when(reportRepository.findById("report-" + target.getValue())).thenReturn(Optional.of(report));
+
+            service.resolveReport("report-" + target.getValue(), ReportStatus.RESOLVED, "admin", null);
+        }
+
+        verify(videoRepository).save(pending);
+        verify(channelRepository).save(bounced);
+        verify(playlistRepository).save(pendingList);
+        assertThat(List.of(pending.getStatus(), bounced.getStatus(), pendingList.getStatus()))
+                .as("no longer submitter-owned").containsOnly("REJECTED");
+        assertThat(pending.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(pending.getSource()).as("no take-down record: Restore keeps the doc").isEqualTo("MODERATOR");
+        assertThat(approved.getStatus()).isEqualTo("APPROVED");
+    }
 }

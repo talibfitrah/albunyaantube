@@ -307,6 +307,15 @@ public class ImportExportService {
                         counts.incrementVideosSkipped();
                         continue;
                     }
+                    // Stage 9 B21 (Cubic r9 #3): an id a report took down is skipped, as the simple and async imports skip
+                    // an id with a doc. Written beside its take-down record, an older APPROVED doc is the one served.
+                    if (!ContentReportService.isTakeDownRecord(video) && videoRepository.findByYoutubeId(video.getYoutubeId())
+                            .filter(ContentReportService::isTakeDownRecord).isPresent()) {
+                        counts.incrementVideosSkipped();
+                        response.addError("VIDEO", video.getId(), "Skipped: video " + video.getYoutubeId()
+                                + " was taken down by a report. Restore it under Archived content first.");
+                        continue;
+                    }
 
                     if (existingOpt.isPresent()) {
                         // Stage 9 B14: server-only (an export leaves it out), so a later Restore of a take-down lifts it
