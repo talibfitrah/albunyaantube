@@ -152,9 +152,10 @@ class ImportExportServiceTest {
     }
 
     /**
-     * Stage 9 B22 (Cubic r10 #4): an archived channel left the poller's targets, so its stored state keeps the lives it
-     * had then. A file that serves it again (VALID over the stored ARCHIVED) re-enters it as an add (D15, B14): seeded,
-     * and a seed YouTube does not answer serves none of those lives.
+     * Stage 9 B22 (Cubic r10 #4): a channel out of the public listing left the poller's targets, so its stored state keeps
+     * the lives it had then. A file that serves it again re-enters it as an add (D15, B14): seeded, and a seed YouTube does
+     * not answer serves none of those lives. Stage 9 B23 (Cubic r11 #2): an import never un-archives, so the change that
+     * serves it again is a non-archive one, here PERSONAL to PUBLIC.
      */
     @Test
     void aChannelTheImportServesAgainServesNoneOfItsFrozenLives() throws Exception {
@@ -172,7 +173,8 @@ class ImportExportServiceTest {
             frozen.setStatus(LiveChannelState.LIVE);
             frozen.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
             live.loadStates(List.of(frozen));
-            Channel stored = liveChannel(uc, ValidationStatus.ARCHIVED);
+            Channel stored = liveChannel(uc, ValidationStatus.VALID);
+            stored.setVisibility("PERSONAL");
             when(channels.findById("ch-live")).thenReturn(Optional.of(stored));
             when(liveCategories.members("live-cat")).thenReturn(new LiveCategoryService.Members(List.of(stored)));
             Channel backedUp = liveChannel(uc, ValidationStatus.VALID);
@@ -185,6 +187,134 @@ class ImportExportServiceTest {
             verify(channels, atLeastOnce()).save(backedUp);
             assertThat(LiveCategoryService.servedLives(backedUp, live.state(uc), Map.of())).as(strategy).isEmpty();
         }
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #2; r10 re-review #1): an import never un-archives, for every type and strategy. A report's
+     * take-down (or validation) archived the stored doc in place; a backup made before writes VALID over it, and the item
+     * was served again. The stored ARCHIVED (or a video's legacy UNAVAILABLE) is kept: un-archiving is Restore's job.
+     */
+    @Test
+    void anImportNeverUnArchives() throws Exception {
+        for (String strategy : List.of("OVERWRITE", "MERGE")) {
+            Channel storedChannel = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+            storedChannel.setValidationStatus(ValidationStatus.ARCHIVED);
+            Playlist storedPlaylist = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+            storedPlaylist.setValidationStatus(ValidationStatus.ARCHIVED);
+            Video storedVideo = new Video("ilgiwqpcOC8");
+            storedVideo.setValidationStatus(ValidationStatus.ARCHIVED);
+            Video storedGone = new Video("xc7keR2piUM");
+            storedGone.setValidationStatus(ValidationStatus.UNAVAILABLE);
+            when(channels.findById("ch-1")).thenReturn(Optional.of(storedChannel));
+            when(playlists.findById("pl-1")).thenReturn(Optional.of(storedPlaylist));
+            when(videos.findById("v-1")).thenReturn(Optional.of(storedVideo));
+            when(videos.findById("v-2")).thenReturn(Optional.of(storedGone));
+            Channel channel = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+            channel.setId("ch-1");
+            Playlist playlist = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+            playlist.setId("pl-1");
+            Video video = new Video("ilgiwqpcOC8");
+            video.setId("v-1");
+            Video gone = new Video("xc7keR2piUM");
+            gone.setId("v-2");
+            for (var item : List.of(channel, playlist, video, gone)) {   // as a backup made before the archive holds them
+                if (item instanceof Channel c) { c.setStatus("APPROVED"); c.setValidationStatus(ValidationStatus.VALID); }
+                if (item instanceof Playlist p) { p.setStatus("APPROVED"); p.setValidationStatus(ValidationStatus.VALID); }
+                if (item instanceof Video v) { v.setStatus("APPROVED"); v.setValidationStatus(ValidationStatus.VALID); }
+            }
+            ImportRequest request = new ImportRequest();
+            request.setChannels(List.of(channel));
+            request.setPlaylists(List.of(playlist));
+            request.setVideos(List.of(video, gone));
+            request.setMergeStrategy(strategy);
+
+            service.importAll(request);
+
+            verify(channels).save(channel);
+            verify(playlists).save(playlist);
+            verify(videos).save(video);
+            verify(videos).save(gone);
+            assertThat(List.of(channel.getValidationStatus(), playlist.getValidationStatus(), video.getValidationStatus(),
+                    gone.getValidationStatus())).as(strategy).containsExactly(ValidationStatus.ARCHIVED,
+                    ValidationStatus.ARCHIVED, ValidationStatus.ARCHIVED, ValidationStatus.UNAVAILABLE);
+        }
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #2 with B22's reenters): the import keeps an archived channel archived, so it does not
+     * re-enter its LIVE category: nothing is seeded, and it serves nothing (not servable).
+     */
+    @Test
+    void anArchivedChannelTheFileServesStaysArchivedAndIsNotSeeded() throws Exception {
+        String uc = "UCROKYPep-UuODNwyipe6JMw";
+        LiveTabReader reader = mock(LiveTabReader.class);
+        LiveChannelService live = new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC());
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        ImportExportService importer = new ImportExportService(categories, channels, playlists, videos,
+                mock(AuditLogService.class), mock(VideoValidationService.class),
+                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)));
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        when(reader.read(uc)).thenReturn(LiveTabResult.error(1, "boom"));
+        live.loadStates(List.of());
+        for (String strategy : List.of("OVERWRITE", "MERGE")) {
+            Channel stored = liveChannel(uc, ValidationStatus.ARCHIVED);
+            when(channels.findById("ch-live")).thenReturn(Optional.of(stored));
+            when(liveCategories.members("live-cat")).thenReturn(new LiveCategoryService.Members(List.of(stored)));
+            Channel backedUp = liveChannel(uc, ValidationStatus.VALID);
+            ImportRequest request = new ImportRequest();
+            request.setChannels(List.of(backedUp));
+            request.setMergeStrategy(strategy);
+
+            importer.importAll(request);
+
+            verify(channels, atLeastOnce()).save(backedUp);
+            assertThat(backedUp.getValidationStatus()).as(strategy).isEqualTo(ValidationStatus.ARCHIVED);
+            assertThat(LiveCategoryService.servable(backedUp)).as(strategy).isFalse();
+        }
+        verify(reader, never()).read(uc);
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #14): Firestore refuses an empty id or one holding a '/' (IllegalArgumentException, on the read
+     * and on the write). The import's pre-read must not fail the whole import over it: that row is its own error, and the
+     * rest import, as before the pre-read (9a980b4c). Its parent id the same: an id Firestore refuses names no LIVE parent.
+     */
+    @Test
+    void aRowWhoseIdFirestoreRefusesIsThatRowsErrorAndTheRestImport() throws Exception {
+        IllegalArgumentException refused = new IllegalArgumentException("Path should point to a Document Reference: videos/a/b");
+        Category badCategory = new Category("Bad", "a/b");
+        badCategory.setId("");
+        Channel badChannel = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        badChannel.setId("a/b");
+        Playlist badPlaylist = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        badPlaylist.setId("");
+        Video badVideo = new Video("xc7keR2piUM");
+        badVideo.setId("a/b");
+        Video good = new Video("ilgiwqpcOC8");
+        good.setId("v-good");
+        for (String bad : List.of("", "a/b")) {
+            when(categories.findById(bad)).thenThrow(refused);
+            when(channels.findById(bad)).thenThrow(refused);
+            when(playlists.findById(bad)).thenThrow(refused);
+            when(videos.findById(bad)).thenThrow(refused);
+        }
+        when(categories.save(badCategory)).thenThrow(refused);
+        when(channels.save(badChannel)).thenThrow(refused);
+        when(playlists.save(badPlaylist)).thenThrow(refused);
+        when(videos.save(badVideo)).thenThrow(refused);
+        ImportRequest request = new ImportRequest();
+        request.setCategories(List.of(badCategory));
+        request.setChannels(List.of(badChannel));
+        request.setPlaylists(List.of(badPlaylist));
+        request.setVideos(List.of(badVideo, good));
+        request.setMergeStrategy("SKIP");
+
+        ImportResponse out = service.importAll(request);
+
+        verify(videos).save(good);
+        assertThat(out.getCounts().getVideosImported()).isEqualTo(1);
+        assertThat(out.getErrors()).extracting(e -> e.getType() + ":" + e.getId())
+                .containsExactly("CATEGORY:", "CHANNEL:a/b", "PLAYLIST:", "VIDEO:a/b");
     }
 
     private static Channel liveChannel(String uc, ValidationStatus validation) {

@@ -589,8 +589,9 @@ paths:
       responses:
         '200':
           description: |
-            Updated report. RESOLVED with no parent that applies takes the target down (ARCHIVED). A doc still under
-            review (PENDING or REQUEST_CHANGES) also becomes REJECTED, so its submitter can no longer withdraw it.
+            Updated report. RESOLVED with no parent that applies takes the target down (ARCHIVED). The doc keeps its
+            status, so Restore gives a submission back to the review it was in. While ARCHIVED, its submitter cannot
+            withdraw it, whatever its status (409).
           content:
             application/json:
               schema:
@@ -2908,7 +2909,10 @@ paths:
         '200':
           description: |
             Import results. A video whose youtubeId has a report's take-down record is skipped (counted in
-            videosSkipped) and named in errors, unless the file's doc is that take-down record itself.
+            videosSkipped) and named in errors, unless the file's doc is that take-down record itself. An import never
+            un-archives: on every mergeStrategy, a stored ARCHIVED (or a video's UNAVAILABLE) validationStatus is kept
+            over the file's (Restore it under Archived content). A row whose id Firestore refuses (empty, or holding a
+            '/') is named in errors, and the rest import.
         '400':
           $ref: '#/components/responses/LiveCategoryRefused'
         '503':

@@ -341,6 +341,10 @@ public class ChannelRepository {
      * Used by submitter-owned delete to close the TOCTOU window between status read and
      * delete (cubic R3 P1): a row that an admin approves mid-flight will fail the inner
      * status check and surface as IllegalStateException → 409 to the caller.
+     * Stage 9 B23 (r10 re-review #3): never an ARCHIVED doc, whatever its status: under review, that is a report's
+     * take-down, and the doc is all that holds it (Restore lifts it). Only a REJECTED one may go: a take-down record,
+     * whose delete is Restore's own CAS (ContentReportService.liftTakeDown). Here, in the transaction, as a take-down
+     * may land between the caller's read and this delete.
      */
     public void deleteByIdIfStatusIn(String id, java.util.Set<String> expectedStatuses)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -358,6 +362,10 @@ public class ChannelRepository {
                 throw new IllegalStateException(
                         "Cannot delete channel " + id +
                         ": status " + currentStatus + " not in " + expectedStatuses);
+            }
+            if (!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))) {
+                throw new IllegalStateException("Cannot delete channel " + id + ": archived (Restore lifts it)");
             }
             transaction.delete(docRef);
             return null;

@@ -311,8 +311,9 @@ public class ContentReportService {
      * Archives the target. A video with no document gets one, its take-down record (stage 9 Cubic r2): any Video document
      * hides its id from search on every source, including one crawled after this resolve (SearchIndex.videoIds). It is
      * also excluded on the sources listing it now, for their channel and playlist screens (R34). Returns a miss, or null.
-     * Stage 9 B21 (Cubic r9 #2): a doc still under review (PENDING, REQUEST_CHANGES) is rejected too. Its submitter may
-     * withdraw (delete) such a doc, and it is all that holds the take-down; REJECTED, no moderator can (B16).
+     * Stage 9 B23 (Cubic r11 #1, replacing B21's REJECTED): a doc keeps its status, so Restore gives it back to the review
+     * it was in and its importers follow that review. Its ARCHIVED is the hold: the submitter's withdraw refuses an
+     * ARCHIVED doc (the repositories' deleteByIdIfStatusIn), whatever status it is moved to.
      */
     private String archiveReportedContent(ReportTargetType targetType, String targetId) {
         boolean archived = false;
@@ -332,7 +333,6 @@ public class ContentReportService {
                         }
                         video = opt.orElseGet(() -> takeDownRecord(targetId));
                         video.setValidationStatus(ValidationStatus.ARCHIVED);
-                        if (!"APPROVED".equals(video.getStatus())) video.setStatus("REJECTED");
                         videoRepository.save(video);
                         archived = true;
                         // Stage 9 B19 (r6 P3-3): with no doc too. A record can outlive the doc the poller archived (an
@@ -367,7 +367,6 @@ public class ContentReportService {
                     var opt = channelRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
-                        if (!"APPROVED".equals(opt.get().getStatus())) opt.get().setStatus("REJECTED");
                         channelRepository.save(opt.get());
                         streamIndexService.removeSource("CHANNEL", opt.get().getYoutubeId());
                         archived = true;
@@ -379,7 +378,6 @@ public class ContentReportService {
                     var opt = playlistRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
                         opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
-                        if (!"APPROVED".equals(opt.get().getStatus())) opt.get().setStatus("REJECTED");
                         playlistRepository.save(opt.get());
                         streamIndexService.removeSource("PLAYLIST", opt.get().getYoutubeId());
                         archived = true;
@@ -418,8 +416,7 @@ public class ContentReportService {
      */
     public void liftTakeDown(Video record) throws ExecutionException, InterruptedException, TimeoutException {
         try {
-            liftExclusions(record);
-            streamIndexService.markStreamRestored(record.getYoutubeId());
+            lift(record);
             videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
         } finally {
             exclusionsChanged();
@@ -431,17 +428,19 @@ public class ContentReportService {
      * take-down record, the exclusions its report added go too, as on Restore. At add time, PENDING too: the doc itself
      * gates the video until approval (410 at the public gate, its stream blocked in search). After the write, so a lost
      * race lifts nothing; a lift failure then is logged for an admin, and the re-add stands.
+     * Stage 9 B23 (Cubic r11 #13): the same lift as Restore's, so its stream's archive goes too.
      */
     public Video reAdd(Video video) throws ExecutionException, InterruptedException, TimeoutException {
         Video replaced = videoRepository.findById(video.getId()).orElse(null);
         Video saved = videoRepository.saveIfStatus(video, "REJECTED");
         if (replaced != null && isTakeDownRecord(replaced)) {
             try {
-                liftExclusions(replaced);
+                lift(replaced);
             } catch (Exception e) {
                 if (e instanceof InterruptedException) Thread.currentThread().interrupt();
                 log.warn("Video {} re-added over its take-down record, but not every exclusion its report added ({}) was "
-                        + "lifted; lift them by hand: {}", video.getYoutubeId(), replaced.getTakeDownExclusions(), e.toString());
+                        + "lifted, or its stream not shown in search again; lift them by hand: {}", video.getYoutubeId(),
+                        replaced.getTakeDownExclusions(), e.toString());
             } finally {
                 exclusionsChanged();
             }
@@ -449,8 +448,11 @@ public class ContentReportService {
         return saved;
     }
 
-    /** The exclusions a take-down's report added, as its record names them (B13): the id leaves each source's list. */
-    private void liftExclusions(Video record) throws ExecutionException, InterruptedException, TimeoutException {
+    /**
+     * What a take-down hid besides its record, for Restore and a re-add alike: the exclusions its report added, as the
+     * record names them (B13: the id leaves each source's list), then its stream's archive (visible and searchable again).
+     */
+    private void lift(Video record) throws ExecutionException, InterruptedException, TimeoutException {
         String videoId = record.getYoutubeId();
         for (String key : record.getTakeDownExclusions() == null ? List.<String>of() : record.getTakeDownExclusions()) {
             String sourceId = key.substring(key.indexOf(':') + 1);
@@ -468,6 +470,7 @@ public class ContentReportService {
                 }
             }
         }
+        streamIndexService.markStreamRestored(videoId);
     }
 
     /** A take-down record: the doc exists only to hide the id, so lifting the take-down means deleting it. */

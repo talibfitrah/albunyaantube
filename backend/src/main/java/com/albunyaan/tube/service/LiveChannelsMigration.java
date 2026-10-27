@@ -153,7 +153,11 @@ public class LiveChannelsMigration {
             LiveTabResult r = polls.get(pv.channelId());
             boolean liveNow = r != null && r.lives().stream().anyMatch(l -> l.id().equals(pv.youtubeId()));
             boolean inCategory = doc != null && doc.getCategoryIds() != null && doc.getCategoryIds().contains(categoryId);
-            String action = liveNow ? "WRITE_CHANNEL_ID" : "ARCHIVE";
+            // Stage 9 B23 (Cubic r11 #17): idempotent. Step 4 wrote the plan channel onto a link an earlier run found live
+            // (the 6 docs had none, F2), so that run's decision stands: a re-run (a 524 retry) never archives it because
+            // its stream ended since.
+            boolean keptByEarlierRun = doc != null && pv.channelId().equals(doc.getChannelId());
+            String action = liveNow || keptByEarlierRun ? "WRITE_CHANNEL_ID" : "ARCHIVE";
             if (doc == null) blockers.add("video " + pv.youtubeId() + " has no registry doc");
             else videoDocs.put(pv.youtubeId(), doc);
             if (r == null) blockers.add("video " + pv.youtubeId() + " names a channel that is not in the plan");

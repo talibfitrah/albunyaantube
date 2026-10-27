@@ -473,6 +473,10 @@ public class VideoRepository {
                         "Cannot delete video " + id +
                         ": status " + currentStatus + " not in " + expectedStatuses);
             }
+            if (!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))) {
+                throw new IllegalStateException("Cannot delete video " + id + ": archived (Restore lifts it)");
+            }
             transaction.delete(docRef);
             return null;
         });

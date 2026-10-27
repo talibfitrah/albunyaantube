@@ -556,6 +556,28 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(firestore.collection("categories").document("it1-new").get().get().getString("type")).isNull();
     }
 
+    /**
+     * Stage 9 B23 (Cubic r11 #14): Firestore refuses an empty id or one holding a '/'. The pre-read must not turn that into
+     * a bare 400 for the whole file: the row is its own error, and the rest import (as before the pre-read, 9a980b4c).
+     */
+    @Test
+    void row15_aRowWhoseIdFirestoreRefusesIsThatRowsErrorAndTheRestImport() throws Exception {
+        as("admin");
+        String body = json.writeValueAsString(Map.of("playlists", List.of(
+                Map.of("id", "", "youtubeId", "PLit1r15b000000000000000000000000b", "title", "P", "status", "APPROVED",
+                        "categoryIds", List.of(PLAIN)),
+                Map.of("id", "a/b", "youtubeId", "PLit1r15c000000000000000000000000c", "title", "P", "status", "APPROVED",
+                        "categoryIds", List.of(PLAIN)),
+                Map.of("id", "pl-r15ok", "youtubeId", "PLit1r15d000000000000000000000000d", "title", "P", "status", "APPROVED",
+                        "categoryIds", List.of(PLAIN)))));
+        importFile("/api/admin/import-export/import", body, "mergeStrategy", "SKIP")
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.counts.playlistsImported").value(1))
+                .andExpect(jsonPath("$.errors[*].id", org.hamcrest.Matchers.containsInAnyOrder("", "a/b")));
+        assertThat(countDocuments("playlists")).isEqualTo(1);
+        assertThat(firestore.collection("playlists").document("pl-r15ok").get().get().exists()).isTrue();
+    }
+
     // ---- Row 16: simple import (sync refuses the request; async fails its run before the first write) ----
 
     @Test

@@ -54,9 +54,19 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     @Autowired
     private com.albunyaan.tube.repository.VideoRepository videoRepository;
 
+    @Autowired
+    private com.albunyaan.tube.service.ContentReportService reports;
+
+    @Autowired
+    private com.albunyaan.tube.service.ContentValidationService validation;
+
+    @Autowired
+    private com.albunyaan.tube.service.ApprovalService approvals;
+
     @Override
     protected String[] getCollectionsToClean() {
-        return new String[]{"categories", "channels", "playlists", "videos", "users", "audit_logs", "searchable_streams"};
+        return new String[]{"categories", "channels", "playlists", "videos", "users", "audit_logs", "searchable_streams",
+                "contentReports", "adminNotifications"};
     }
 
     /**
@@ -393,6 +403,113 @@ class BulkSubmissionIT extends BaseIntegrationTest {
                 .document("ch-takedown").get().get(5, java.util.concurrent.TimeUnit.SECONDS).get("excludedItems.videos"),
                 "the report's exclusion stays");
         mvc.perform(get("/api/v1/videos/TakeDown006")).andExpect(status().isGone());
+    }
+
+    /** A parentless report on the id, resolved: the take-down (ContentReportService.archiveReportedContent). */
+    private void takeDown(String youtubeId) throws Exception {
+        var report = reports.submitReport(com.albunyaan.tube.model.ReportTargetType.VIDEO, youtubeId,
+                List.of(com.albunyaan.tube.model.ReportReason.OTHER), "it", "it-" + youtubeId);
+        reports.resolveReport(report.getId(), com.albunyaan.tube.model.ReportStatus.RESOLVED, "admin", null);
+    }
+
+    private com.albunyaan.tube.model.Video submission(String youtubeId, String source, String submittedBy) throws Exception {
+        var video = new com.albunyaan.tube.model.Video(youtubeId);
+        video.setId("aaaa-" + youtubeId);
+        video.setTitle("Lesson");
+        video.setStatus("PENDING");
+        video.setSource(source);
+        video.setSubmittedBy(submittedBy);
+        video.setCategoryIds(List.of("cat-1"));
+        firestore.collection("videos").document(video.getId()).set(video).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        return video;
+    }
+
+    private Map<String, Object> stored(String collection, String id) throws Exception {
+        var snap = firestore.collection(collection).document(id).get().get(5, java.util.concurrent.TimeUnit.SECONDS);
+        return snap.exists() ? snap.getData() : null;
+    }
+
+    /**
+     * Stage 9 B23 (r10 re-review #3; B21's sibling 1): while a report's take-down archives a submission, its submitter
+     * cannot withdraw (delete) it, whatever status an admin moves it to: the archive is the take-down's only hold, and
+     * the withdraw's own transaction refuses it. Restore is the way out. Restore's CAS still deletes a take-down record,
+     * and an unarchived submission is still its submitter's to withdraw.
+     */
+    @Test
+    void aSubmissionAReportTookDownIsNotItsSubmittersToWithdraw() throws Exception {
+        submission("TakeDown008", "MODERATOR", "mod-uid");
+        takeDown("TakeDown008");
+        stubAuthAs("admin-uid", "admin");
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put("/api/admin/registry/videos/aaaa-TakeDown008")
+                        .header("Authorization", "Bearer fake-admin-token")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\":\"PENDING\"}"))                  // "send it back to review"
+                .andExpect(status().isOk());
+        firestore.collection("channels").document("ch-td").set(Map.of("youtubeId", "UCtakedown0000000000000b", "name", "C",
+                "status", "PENDING", "validationStatus", "ARCHIVED", "submittedBy", "mod-uid"))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        firestore.collection("playlists").document("pl-td").set(Map.of("youtubeId", "PLtakedown000000000000000000000000b",
+                "title", "P", "status", "REQUEST_CHANGES", "validationStatus", "ARCHIVED", "submittedBy", "mod-uid"))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+        submission("TakeDown010", "MODERATOR", "mod-uid");                       // control: not archived
+
+        stubAuthAs("mod-uid", "moderator");
+        for (String path : List.of("videos/aaaa-TakeDown008", "channels/ch-td", "playlists/pl-td")) {
+            mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                            .delete("/api/admin/registry/" + path + "/submission")
+                            .header("Authorization", "Bearer fake-mod-token"))
+                    .andExpect(status().isConflict());
+        }
+        mvc.perform(org.springframework.test.web.servlet.request.MockMvcRequestBuilders
+                        .delete("/api/admin/registry/videos/aaaa-TakeDown010/submission")
+                        .header("Authorization", "Bearer fake-mod-token"))
+                .andExpect(status().isNoContent());
+
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown008").get("validationStatus"));
+        org.junit.jupiter.api.Assertions.assertNotNull(stored("channels", "ch-td"));
+        org.junit.jupiter.api.Assertions.assertNotNull(stored("playlists", "pl-td"));
+        org.junit.jupiter.api.Assertions.assertNull(stored("videos", "aaaa-TakeDown010"));
+        mvc.perform(get("/api/v1/videos/TakeDown008")).andExpect(status().isGone());
+
+        var record = new com.albunyaan.tube.model.Video("TakeDown009");
+        record.setId("aaaa-TakeDown009");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        firestore.collection("videos").document(record.getId()).set(record).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
+        org.junit.jupiter.api.Assertions.assertNull(stored("videos", "aaaa-TakeDown009"), "Restore's CAS lifts a record");
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #1; r10 re-review #2): a take-down of a submission under review keeps its review state, so
+     * Restore gives it back to the approvals queue, and its importers follow the review (AWAITING, then APPROVED on the
+     * queue's approve) instead of being stranded as AWAITING on a REJECTED doc no decision can reach.
+     */
+    @Test
+    void aTakeDownOfASubmissionUnderReviewIsUndoneByRestoreAndItsImportersFollowTheReview() throws Exception {
+        submission("TakeDown011", "USER_IMPORT", "user-uid");
+        var row = firestore.collection("users").document("user-uid").collection("favorites").document("TakeDown011");
+        row.set(Map.of("youtubeId", "TakeDown011", "approvalStatus", "AWAITING", "deleted", false, "updatedAt", 1000L))
+                .get(5, java.util.concurrent.TimeUnit.SECONDS);
+
+        takeDown("TakeDown011");
+        org.junit.jupiter.api.Assertions.assertEquals("PENDING", stored("videos", "aaaa-TakeDown011").get("status"),
+                "the take-down keeps the review state");
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown011").get("validationStatus"));
+
+        var restored = validation.restoreContent("video", List.of("aaaa-TakeDown011"), "admin-uid", "admin");
+        org.junit.jupiter.api.Assertions.assertEquals(1, restored.getSuccessCount());
+        org.junit.jupiter.api.Assertions.assertEquals("PENDING", stored("videos", "aaaa-TakeDown011").get("status"));
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", stored("videos", "aaaa-TakeDown011").get("validationStatus"));
+        org.junit.jupiter.api.Assertions.assertEquals("AWAITING", row.get().get(5, java.util.concurrent.TimeUnit.SECONDS)
+                .getString("approvalStatus"));
+
+        approvals.approve("aaaa-TakeDown011", new com.albunyaan.tube.dto.ApprovalRequestDto("ok"), "admin-uid", "admin");
+
+        var after = row.get().get(5, java.util.concurrent.TimeUnit.SECONDS);
+        org.junit.jupiter.api.Assertions.assertEquals("APPROVED", after.getString("approvalStatus"));
+        org.junit.jupiter.api.Assertions.assertNotEquals(Boolean.TRUE, after.getBoolean("deleted"));
     }
 
     /**

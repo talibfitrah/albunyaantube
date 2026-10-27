@@ -270,6 +270,27 @@ class LiveChannelsMigrationIT extends BaseIntegrationTest {
                 .andExpect(jsonPath("$.data.length()").value(6));
     }
 
+    /**
+     * Stage 9 B23 (Cubic r11 #17): APPLY is idempotent, so a re-run (a 524 retry) is a no-op for a doc an earlier run
+     * handled. Run 1 kept the live Sunnah link public (its channel id written, out of the category); that stream ending
+     * before the retry must not make the retry archive it.
+     */
+    @Test
+    void aReRunNeverArchivesALinkAnEarlierRunKeptPublic() throws Exception {
+        run("APPLY").andExpect(status().isOk());
+        when(reader.read(SUNNAH)).thenReturn(lives());                       // Rs7St51oDDc has ended by the retry
+
+        run("APPLY").andExpect(status().isOk())
+                .andExpect(jsonPath("$.resumed").value(true))
+                .andExpect(jsonPath("$.videos[?(@.youtubeId=='Rs7St51oDDc')].action").value(contains("WRITE_CHANNEL_ID")));
+
+        var doc = videos.findByYoutubeId("Rs7St51oDDc").orElseThrow();
+        assertThat(doc.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
+        assertThat(doc.getChannelId()).isEqualTo(SUNNAH);
+        assertThat(live.state(SUNNAH).getArchived()).doesNotContainKey("Rs7St51oDDc");
+        assertThat(videos.findByYoutubeId("PLkCnLrKN8Q").orElseThrow().getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
+    }
+
     /** R18: the kill switch serves the four entries as channel cards: valid and never empty. */
     @Test
     void clearingTheTypeServesTheFourChannelCards() throws Exception {

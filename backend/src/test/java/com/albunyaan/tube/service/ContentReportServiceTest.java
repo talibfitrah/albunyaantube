@@ -693,9 +693,11 @@ class ContentReportServiceTest {
      * Cubic r5 #3: a re-add writes into the take-down record (B11) and lifts the exclusions its report added, as Restore
      * does; else the re-added video stays excluded on those sources with no record why. A PENDING re-add too: the doc
      * itself gates it until approval (410 at the public gate, its stream blocked in search).
+     * Stage 9 B23 (Cubic r11 #13): and its stream's archive, as Restore does: the index loads only visible streams, so a
+     * stream left invisible would stay out of search for good once the re-added doc goes.
      */
     @Test
-    void aReAddOverATakeDownRecordLiftsTheExclusionsItsReportAdded() throws Exception {
+    void aReAddOverATakeDownRecordLiftsItAsRestoreDoes() throws Exception {
         Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
         ch.getExcludedItems().getVideos().addAll(List.of("ilgiwqpcOC8", "keptExcl001"));
         Playlist pl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
@@ -711,6 +713,7 @@ class ContentReportServiceTest {
 
         assertThat(service.reAdd(reAdded)).isSameAs(reAdded);
 
+        verify(streamIndexService).markStreamRestored("ilgiwqpcOC8");
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("keptExcl001");
         assertThat(pl.getExcludedVideoIds()).isEmpty();
         verify(channelRepository).save(ch);
@@ -733,12 +736,13 @@ class ContentReportServiceTest {
     }
 
     /**
-     * Stage 9 B21 (Cubic r9 #2): a submission still under review (PENDING, REQUEST_CHANGES) is its submitter's to withdraw,
-     * i.e. delete, and once taken down that doc is all that hides the id. The take-down rejects it, so no moderator can
-     * delete it or take it back (B16). An APPROVED doc stays APPROVED: Restore gives it back.
+     * Stage 9 B23 (Cubic r11 #1; r10 re-review #2, #3), replacing B21's REJECTED: a take-down only archives a doc, so it
+     * keeps its review state. Restore (VALID) then gives the item back to the review it was in, and the importers' rows
+     * follow that review (no reject fan-out: it would delete their rows, which no Restore brings back). The archive is
+     * the hold: its submitter cannot withdraw an ARCHIVED doc, whatever status it is moved to (the repositories' CAS).
      */
     @Test
-    void aTakeDownRejectsASubmissionStillUnderReviewSoItsSubmitterCannotWithdrawIt() throws Exception {
+    void aTakeDownKeepsTheReviewStateOfASubmissionSoRestoreGivesItBack() throws Exception {
         Video pending = new Video("ilgiwqpcOC8");
         pending.setSource("MODERATOR");
         pending.setSubmittedBy("mod-uid");
@@ -767,10 +771,10 @@ class ContentReportServiceTest {
         verify(videoRepository).save(pending);
         verify(channelRepository).save(bounced);
         verify(playlistRepository).save(pendingList);
-        assertThat(List.of(pending.getStatus(), bounced.getStatus(), pendingList.getStatus()))
-                .as("no longer submitter-owned").containsOnly("REJECTED");
-        assertThat(pending.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(List.of(pending.getStatus(), approved.getStatus(), bounced.getStatus(), pendingList.getStatus()))
+                .as("the review state is kept").containsExactly("PENDING", "APPROVED", "REQUEST_CHANGES", "PENDING");
+        assertThat(List.of(pending.getValidationStatus(), approved.getValidationStatus(), bounced.getValidationStatus(),
+                pendingList.getValidationStatus())).containsOnly(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
         assertThat(pending.getSource()).as("no take-down record: Restore keeps the doc").isEqualTo("MODERATOR");
-        assertThat(approved.getStatus()).isEqualTo("APPROVED");
     }
 }

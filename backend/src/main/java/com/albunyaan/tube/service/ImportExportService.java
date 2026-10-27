@@ -7,6 +7,7 @@ import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
@@ -137,8 +138,9 @@ public class ImportExportService {
         // §7 row 15 (D9): a full JSON import is a raw model write. Every stored doc is read once, here: D8 and the live
         // guard below and the writes after them see the same docs, and nothing is saved until both rules pass.
         // A doc whose youtubeId the file swaps is a new item to the guard (its stored LIVE membership proves nothing).
-        // Stage 9 B22 (Cubic r10 #4): so is a channel the file serves again (stored ARCHIVED, UNAVAILABLE or not public):
-        // out of the poller's targets, its stored lives went unread, so it re-enters as an add, seeded (D15, B14).
+        // Stage 9 B22 (Cubic r10 #4): so is a channel the file serves again (stored not APPROVED or not public): out of the
+        // poller's targets, its stored lives went unread, so it re-enters as an add, seeded (D15, B14). Stage 9 B23 (Cubic
+        // r11 #2): never an archived one: an import never un-archives (kept, below), so it stays out of the targets.
         Map<String, Category> oldCategories = new HashMap<>();
         Map<String, Channel> oldChannels = new HashMap<>();
         Map<String, Playlist> oldPlaylists = new HashMap<>();
@@ -146,21 +148,22 @@ public class ImportExportService {
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         if (request.getCategories() != null) {
             for (Category c : request.getCategories()) {
-                Category old = c.getId() == null ? null : categoryRepository.findById(c.getId()).orElse(null);
+                Category old = stored(categoryRepository::findById, c.getId());
                 oldCategories.put(c.getId(), old);
                 if ((old != null && "SKIP".equals(mergeStrategy)) || c.getParentCategoryId() == null) continue;
                 // D8 (a file never sets the type, below): a LIVE category stays top-level, and nothing nests under one.
-                if ((old != null && old.isLive())
-                        || categoryRepository.findById(c.getParentCategoryId()).map(Category::isLive).orElse(false)) {
+                Category parent = stored(categoryRepository::findById, c.getParentCategoryId());
+                if ((old != null && old.isLive()) || (parent != null && parent.isLive())) {
                     throw LiveCategoryException.shape(c.getName());
                 }
             }
         }
         if (request.getChannels() != null) {
             for (Channel c : request.getChannels()) {
-                Channel old = c.getId() == null ? null : channelRepository.findById(c.getId()).orElse(null);
+                Channel old = stored(channelRepository::findById, c.getId());
                 oldChannels.put(c.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                if (old != null) c.setValidationStatus(kept(old.getValidationStatus(), c.getValidationStatus()));
                 boolean reenters = old != null && !LiveCategoryService.servable(old) && LiveCategoryService.servable(c);
                 Channel before = old != null && Objects.equals(old.getYoutubeId(), c.getYoutubeId()) && !reenters ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("channel:" + c.getId(), c, before, c.getCategoryIds(), c.getStatus()));
@@ -168,18 +171,20 @@ public class ImportExportService {
         }
         if (request.getPlaylists() != null) {
             for (Playlist p : request.getPlaylists()) {
-                Playlist old = p.getId() == null ? null : playlistRepository.findById(p.getId()).orElse(null);
+                Playlist old = stored(playlistRepository::findById, p.getId());
                 oldPlaylists.put(p.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                if (old != null) p.setValidationStatus(kept(old.getValidationStatus(), p.getValidationStatus()));
                 Playlist before = old != null && Objects.equals(old.getYoutubeId(), p.getYoutubeId()) ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("playlist:" + p.getId(), p, before, p.getCategoryIds(), p.getStatus()));
             }
         }
         if (request.getVideos() != null) {
             for (Video v : request.getVideos()) {
-                Video old = v.getId() == null ? null : videoRepository.findById(v.getId()).orElse(null);
+                Video old = stored(videoRepository::findById, v.getId());
                 oldVideos.put(v.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                if (old != null) v.setValidationStatus(kept(old.getValidationStatus(), v.getValidationStatus()));
                 Video before = old != null && Objects.equals(old.getYoutubeId(), v.getYoutubeId()) ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("video:" + v.getId(), v, before, v.getCategoryIds(), v.getStatus()));
             }
@@ -372,6 +377,34 @@ public class ImportExportService {
                 counts.getTotalErrors());
 
         return response;
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #14): the stored doc, or null. An id Firestore refuses (empty, or holding a '/') throws
+     * IllegalArgumentException before any I/O and names no doc; that row's own write below then fails the same way, as
+     * its error, and the rest import, as before this pre-read.
+     */
+    private static <T> T stored(Find<T> find, String id) throws ExecutionException, InterruptedException,
+            java.util.concurrent.TimeoutException {
+        if (id == null) return null;
+        try {
+            return find.byId(id).orElse(null);
+        } catch (IllegalArgumentException refusedId) {
+            return null;
+        }
+    }
+
+    private interface Find<T> {
+        Optional<T> byId(String id) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
+    }
+
+    /**
+     * Stage 9 B23 (Cubic r11 #2): an import never un-archives, on any strategy. A stored ARCHIVED (or a video's legacy
+     * UNAVAILABLE) is kept over the file's value: a report's take-down or validation archived the doc in place, and a
+     * backup made before would serve it again. Un-archiving is Restore's job (Archived content).
+     */
+    private static ValidationStatus kept(ValidationStatus stored, ValidationStatus file) {
+        return stored == ValidationStatus.ARCHIVED || stored == ValidationStatus.UNAVAILABLE ? stored : file;
     }
 
     /**

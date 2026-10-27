@@ -437,6 +437,10 @@ public class PlaylistRepository {
                         "Cannot delete playlist " + id +
                         ": status " + currentStatus + " not in " + expectedStatuses);
             }
+            if (!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))) {
+                throw new IllegalStateException("Cannot delete playlist " + id + ": archived (Restore lifts it)");
+            }
             transaction.delete(docRef);
             return null;
         });
