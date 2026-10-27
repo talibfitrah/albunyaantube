@@ -288,6 +288,38 @@ class PlaybackSolverServiceTest {
         assertThat(playerHits.get()).isEqualTo(2);
     }
 
+    /**
+     * Stage 9 Cubic r8 #11: Node's event loop is blocked for ~2-5 s while the sidecar builds a new player, so a refresh
+     * then gets no answer within 1 s (or none at all) though the sidecar still holds the copied player. The copy is
+     * kept and served; the failure is still remembered for 10 s, so a hung sidecar sees one /player call per 10 s.
+     */
+    @ParameterizedTest
+    @ValueSource(booleans = {true, false})
+    void aRefreshWithNoAnswerKeepsTheCopy(boolean hung) {
+        PlaybackSolverService service = service(true);
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        now.set(now.get().plusSeconds(61));                               // the copy expired during a player build
+        if (hung) playerGate = new CountDownLatch(1); else sidecar.stop(0);
+
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        now.set(now.get().plusSeconds(9));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        if (hung) assertThat(playerHits.get()).isEqualTo(2);              // remembered: no call inside the 10 s
+    }
+
+    /** Cubic r8 #11: the sidecar's own answer that it holds no player (503) still drops the copy, as before. */
+    @Test
+    void aSidecarThatSaysItHoldsNoPlayerStillDropsTheCopy() {
+        PlaybackSolverService service = service(true);
+        service.player();
+        now.set(now.get().plusSeconds(61));
+        playerStatus = 503;
+
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+        now.set(now.get().plusSeconds(9));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
+    }
+
     /** Fix round 1: the 200 body is rebuilt from playerId and sts; anything else from the sidecar is a failure. */
     @Test
     void playerAnswersOnlyAValidPlayerIdAndSts() {

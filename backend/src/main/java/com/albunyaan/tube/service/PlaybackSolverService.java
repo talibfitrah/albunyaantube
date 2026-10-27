@@ -87,8 +87,8 @@ public class PlaybackSolverService {
 
     /**
      * The 60 s copy (M8). One refresh at a time: while it runs, others get the stale copy, or 503 + 10 without one. A
-     * failed refresh drops the copy and is remembered for 10 s, so a warming or hung sidecar sees at most one
-     * {@code /player} call per 10 s.
+     * failed refresh is remembered for 10 s, so a warming or hung sidecar sees at most one {@code /player} call per
+     * 10 s. The sidecar's answer that it holds no valid player drops the copy; no answer at all keeps it (Cubic r8 #11).
      */
     public Answer player() {
         if (!enabled) return Answer.of(503, 120);
@@ -109,20 +109,23 @@ public class PlaybackSolverService {
                 playerCopy.set(copy);
                 return Answer.ok(copy.body());
             }
-            playerCopy.set(null);
+            // Stage 9 Cubic r8 #11: no answer (Node is blocked ~2-5 s building a new player, or unreachable) says nothing
+            // about the copied player, which the sidecar still holds: keep it. Only the sidecar's own answer drops it.
+            PlayerCopy kept = reply.status() == -1 ? playerCopy.get() : null;
+            playerCopy.set(kept);
             playerFailedAt = now;
-            return Answer.of(503, 120);
+            return kept != null ? Answer.ok(kept.body()) : Answer.of(503, 120);
         } finally {
             playerRefresh.release();
         }
     }
 
-    /** The fresh copy, or a failure inside its 10 s; null when it is time to ask the sidecar. */
+    /** The fresh copy, or a failure inside its 10 s (the kept copy, if any); null when it is time to ask the sidecar. */
     private Answer rememberedPlayer() {
         Instant now = clock.instant();
         PlayerCopy copy = playerCopy.get();
         if (copy != null && now.isBefore(copy.at().plus(PLAYER_COPY))) return Answer.ok(copy.body());
-        if (now.isBefore(playerFailedAt.plus(PLAYER_RETRY))) return Answer.of(503, 120);
+        if (now.isBefore(playerFailedAt.plus(PLAYER_RETRY))) return copy != null ? Answer.ok(copy.body()) : Answer.of(503, 120);
         return null;
     }
 

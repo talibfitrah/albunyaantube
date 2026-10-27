@@ -286,6 +286,41 @@ class LiveChannelPollerTest {
         verify(reader, times(2)).read(anyString());
     }
 
+    /**
+     * Rev 8 (Cubic r8 #1): a channel whose Live tab empties reads ERROR (D3). Its last lives are served for under an hour
+     * of the streak, then hidden as R10 hides them: served lists drop them, nothing is removed or archived. A later read
+     * with the live serves it again.
+     */
+    @Test
+    void anErrorStreakServesTheLastLivesUnderAnHourThenHidesThem() throws Exception {
+        entries(A, B);
+        endingLink();                                                 // A's link: only the ERROR rule could end it here
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa", "linkid00001"));
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        cycleAt(T0);
+        when(reader.read(A)).thenReturn(LiveTabResult.error(1, "no items after 0 continuation pages"));
+
+        for (int m = 10; m <= 60; m += 10) cycleAt(T0 + m * MIN);   // errors at 10, 20, 40 (errorSince T0 + 10)
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa", "linkid00001");
+        org.mockito.Mockito.clearInvocations(caches);
+
+        cycleAt(T0 + 70 * MIN);                                        // 60 min into the streak
+        assertThat(live.served().getOrDefault(A, List.of())).isEmpty();
+        assertThat(live.served().get(B)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(A).getMisses().values()).allMatch(m -> m.getCount() == 0);
+        verify(caches).evictPublicContentCaches();
+
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa", "linkid00001"));
+        cycleAt(T0 + 150 * MIN);                                       // A's backoff (80 min) is over
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa", "linkid00001");
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(live.state(A).getMisses()).isEmpty();
+        verify(reader, times(6)).read(A);                              // 0, 10, 20, 40, 70, 150
+        verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
+        verify(videos, never()).save(any());
+    }
+
     /** Spec §12 U2: a single-channel category; any LIVE read resets the unproven clock, so the hour restarts. */
     @Test
     void aLiveReadResetsTheUnprovenClock() throws Exception {

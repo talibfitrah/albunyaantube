@@ -58,7 +58,6 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     static final int DAILY_ALLOTMENT = 864;
     static final long MINUTE_MS = 60_000L;
     static final long DAY_MS = 1440 * MINUTE_MS;
-    static final long HIDE_AFTER_UNPROVEN_MS = 60 * MINUTE_MS;
 
     private final LiveCategoryService liveCategories;
     private final VideoRepository videos;
@@ -183,7 +182,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
 
             boolean proven = fetched.values().stream().anyMatch(LiveTabResult::hasLive);
             unprovenSince = proven ? null : (unprovenSince != null ? unprovenSince : now);
-            boolean hideAllowed = proven || now - unprovenSince >= HIDE_AFTER_UNPROVEN_MS;
+            boolean hideAllowed = proven || now - unprovenSince >= LivePollRules.HIDE_AFTER_MS;
             if (!proven && fetched.entrySet().stream()
                     .anyMatch(e -> isRead(e.getValue()) && isLive(live.state(e.getKey())))) {
                 log.error("live poller: no channel read LIVE this cycle; keeping the last lives (suspect since {})",

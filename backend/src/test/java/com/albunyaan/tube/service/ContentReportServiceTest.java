@@ -457,6 +457,34 @@ class ContentReportServiceTest {
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
 
+    /**
+     * Stage 9 Cubic r8 #9: a failed exclusion (one Firestore timeout) is not "no parent". It is a miss the admin sees,
+     * never a fall-through to the site-wide take-down (410, gone from search) under a clean "resolved".
+     */
+    @Test
+    void aParentExclusionThatFailsIsAMissNeverATakeDown() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        report.setParentType(ReportTargetType.CHANNEL);
+        report.setParentId("UCfassTU6mGWIj-yb26_ADjQ");
+        Channel ch = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        when(reportRepository.findById("report-timeout")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
+        when(channelRepository.save(ch)).thenThrow(new TimeoutException("write timed out"));
+
+        ContentReport out = service.resolveReport("report-timeout", ReportStatus.RESOLVED, "admin", "music video");
+
+        verify(videoRepository, never()).findByYoutubeId(anyString());
+        verify(videoRepository, never()).save(any());
+        verify(streamIndexService, never()).markStreamArchived(anyString());
+        verifyNoInteractions(searchIndex);
+        assertThat(out.getResolutionNote()).startsWith("music video\n")
+                .contains("Not excluded on channel:UCfassTU6mGWIj-yb26_ADjQ", "TimeoutException", "not taken down", "by hand");
+        verify(reportRepository, times(2)).update(report);
+    }
+
     // --- Fix round 1: a miss is never a clean "resolved" -----------------------------------------
 
     /** R34 needs the listings loaded: a cold resolve is refused (503, Retry-After) before the report is marked, so it stays PENDING. */

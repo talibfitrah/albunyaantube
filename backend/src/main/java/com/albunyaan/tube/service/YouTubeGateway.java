@@ -752,6 +752,10 @@ public class YouTubeGateway {
             return PreviewFetchResult.error(PreviewErrorCode.GEO_RESTRICTED);
         } catch (ContentNotAvailableException e) {
             return PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE);
+        } catch (SignInConfirmNotBotException e) {
+            // A ParsingException, but YouTube refusing /player from this server for now (and, for 60 min after one,
+            // fetchStreamInfo's local refusal): transient, as the breaker's CircuitOpenException is (stage 9 re-review P3-2)
+            return PreviewFetchResult.error(PreviewErrorCode.NETWORK_ERROR);
         } catch (ExtractionException e) {
             return PreviewFetchResult.error(PreviewErrorCode.NEWPIPE_PARSING_ERROR);
         } catch (IOException e) {

@@ -23,6 +23,8 @@ public final class LivePollRules {
     static final long MISS_MIN_MS = 15 * MINUTE_MS;
     static final int MISSES_TO_END = 2;
     static final int ERROR_MAX = 200;
+    /** R10 and Rev 8: stale lives are served for at most an hour (an unproven streak, or a channel's ERROR streak). */
+    public static final long HIDE_AFTER_MS = 60 * MINUTE_MS;
 
     /** {@code ended}: ids to remove and archive now. {@code restored}: reappeared ids → the status to restore ("" = none). */
     public record Outcome(LiveChannelState next, List<String> ended, Map<String, String> restored) {}
@@ -45,7 +47,14 @@ public final class LivePollRules {
                 String error = read.error() == null ? "" : read.error();
                 next.setLastError(error.length() > ERROR_MAX ? error.substring(0, ERROR_MAX) : error);
                 next.setNextPollAt(now + BASE_BACKOFF_MS * (1L << Math.min(next.getErrorCount() - 1, 3)));
-                yield new Outcome(next, List.of(), Map.of());                    // D3: lives, status, misses unchanged
+                // D3: misses unchanged. Rev 8 (Cubic r8 #1): the last lives are kept for under an hour of the streak (an
+                // empty Live tab is an ERROR too), then hidden as R10 hides them; read again when that hour ends.
+                long hideAt = next.getErrorSince() + HIDE_AFTER_MS;
+                if (!next.getLives().isEmpty()) {
+                    if (now >= hideAt) hide(next, now);
+                    else next.setNextPollAt(Math.min(next.getNextPollAt(), hideAt));
+                }
+                yield new Outcome(next, List.of(), Map.of());
             }
             case RATE_LIMITED -> {
                 // R7: YouTube pushed back, not this channel: no hide, miss or backoff. checkedAt advances so the
@@ -75,11 +84,7 @@ public final class LivePollRules {
             next.setStatus(LiveChannelState.LIVE);
             next.setOfflineSince(null);
         } else if (hideAllowed) {
-            next.setLives(new ArrayList<>());
-            next.setStatus(LiveChannelState.OFFLINE);
-            if (next.getOfflineSince() == null) {
-                next.setOfflineSince(now);
-            }
+            hide(next, now);
         }                                                                         // else: suspect, keep (R10)
 
         Map<String, String> restored = new LinkedHashMap<>();
@@ -118,5 +123,18 @@ public final class LivePollRules {
             }
         }
         return new Outcome(next, ended, restored);
+    }
+
+    /**
+     * The hide (R10; Rev 8 for an ERROR streak): nothing served. A hidden live stays tracked at count 0, which is not a
+     * miss (R12c), so a proven read counts it like any departed live; this never removes or archives.
+     */
+    private static void hide(LiveChannelState next, long now) {
+        next.getLives().forEach(l -> next.getMisses().putIfAbsent(l.getVideoId(), new LiveChannelState.Miss(0, now)));
+        next.setLives(new ArrayList<>());
+        next.setStatus(LiveChannelState.OFFLINE);
+        if (next.getOfflineSince() == null) {
+            next.setOfflineSince(now);
+        }
     }
 }

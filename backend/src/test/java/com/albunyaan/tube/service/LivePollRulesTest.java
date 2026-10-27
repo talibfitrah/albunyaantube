@@ -112,7 +112,10 @@ class LivePollRulesTest {
         assertThat(next.getOfflineSince()).isEqualTo(T0);
     }
 
-    /** D3: errors back off 10/20/40/80 min and change nothing else; errorSince is the first error. */
+    /**
+     * D3: errors back off 10/20/40/80 min and change nothing else inside the hour; errorSince is the first error. Rev 8:
+     * while lives are held, the next read never falls after the hour's end.
+     */
     @Test
     void errorsKeepTheLivesAndBackOff() {
         Set<String> links = Set.of("pqC-1yfFvu8");
@@ -122,7 +125,7 @@ class LivePollRulesTest {
             long now = T0 + i * MIN;
             LivePollRules.Outcome o = LivePollRules.apply(s, ZAD, LiveTabResult.error(1, "IOException: x"), true, true, links, now);
             s = o.next();
-            assertThat(s.getNextPollAt()).isEqualTo(now + expected[i] * MIN);
+            assertThat(s.getNextPollAt()).isEqualTo(Math.min(now + expected[i] * MIN, T0 + 60 * MIN));
             assertThat(s.getMisses()).isEmpty();
             assertThat(o.ended()).isEmpty();
         }
@@ -130,6 +133,68 @@ class LivePollRulesTest {
         assertThat(s.getErrorSince()).isEqualTo(T0);
         assertThat(ids(s)).containsExactly("eaOtcUNHDB8");
         assertThat(s.getStatus()).isEqualTo(LiveChannelState.LIVE);
+    }
+
+    /**
+     * Rev 8 (Cubic r8 #1): an empty Live tab is ERROR (D3). The streak keeps the last lives for under 60 min, then hides
+     * them as R10's unproven hide does: nothing served, each hidden id tracked at count 0 (no miss), nothing ended. The
+     * next OK read decides as usual.
+     */
+    @Test
+    void anErrorStreakHidesTheLastLivesAfterAnHourAsR10Does() {
+        Set<String> links = Set.of("pqC-1yfFvu8");
+        LiveTabResult empty = LiveTabResult.error(1, "no items after 0 continuation pages");
+        LivePollRules.Outcome first = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, empty, true, true, links, T0);
+        LivePollRules.Outcome held = LivePollRules.apply(first.next(), ZAD, empty, true, true, links, T0 + 59 * MIN);
+        LivePollRules.Outcome hidden = LivePollRules.apply(held.next(), ZAD, empty, true, true, links, T0 + 60 * MIN);
+
+        assertThat(held.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(ids(held.next())).containsExactly("eaOtcUNHDB8");
+        assertThat(hidden.next().getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(hidden.next().getLives()).isEmpty();
+        assertThat(hidden.next().getOfflineSince()).isEqualTo(T0 + 60 * MIN);
+        assertThat(hidden.next().getMisses()).containsOnlyKeys("eaOtcUNHDB8");
+        assertThat(hidden.next().getMisses().get("eaOtcUNHDB8").getCount()).isZero();
+        assertThat(hidden.next().getErrorCount()).isEqualTo(3);
+        assertThat(hidden.ended()).isEmpty();
+        assertThat(hidden.restored()).isEmpty();
+
+        LivePollRules.Outcome back = LivePollRules.apply(hidden.next(), ZAD, live("eaOtcUNHDB8"), true, true, Set.of(),
+                T0 + 140 * MIN);
+        assertThat(back.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(ids(back.next())).containsExactly("eaOtcUNHDB8");
+        assertThat(back.next().getOfflineSince()).isNull();
+        assertThat(back.next().getMisses()).isEmpty();
+        assertThat(back.ended()).isEmpty();
+    }
+
+    /** Rev 8: while lives are held the next read lands at the hour's end (10, 30, 60), not the backoff's 70 min. */
+    @Test
+    void anErrorStreakHoldingLivesIsReadAgainWhenTheHourEnds() {
+        LiveChannelState s = liveState("eaOtcUNHDB8");
+        long now = T0;
+        for (long expected : new long[]{10, 30, 60}) {
+            s = LivePollRules.apply(s, ZAD, LiveTabResult.error(1, "x"), true, true, Set.of(), now).next();
+            assertThat(s.getNextPollAt()).isEqualTo(T0 + expected * MIN);
+            now = s.getNextPollAt();
+        }
+        assertThat(s.getStatus()).isEqualTo(LiveChannelState.LIVE);
+    }
+
+    /** Rev 8: the breaker path is unaffected. A refusal after the hour neither hides nor counts. */
+    @Test
+    void aBreakerRefusalAfterTheHourStillChangesNothing() {
+        LiveChannelState erroring = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, LiveTabResult.error(1, "x"), true,
+                true, Set.of(), T0).next();
+
+        LivePollRules.Outcome o = LivePollRules.apply(erroring, ZAD, LiveTabResult.breaker(0, "open"), true, true,
+                Set.of("pqC-1yfFvu8"), T0 + 70 * MIN);
+
+        assertThat(o.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(ids(o.next())).containsExactly("eaOtcUNHDB8");
+        assertThat(o.next().getErrorCount()).isEqualTo(1);
+        assertThat(o.next().getMisses()).isEmpty();
+        assertThat(o.ended()).isEmpty();
     }
 
     @Test

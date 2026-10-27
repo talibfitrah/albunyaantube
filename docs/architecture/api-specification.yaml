@@ -2157,7 +2157,9 @@ paths:
       tags: [Playback]
       responses:
         '200':
-          description: The solver's current player
+          description: |
+            The solver's current player. While the solver gives no answer (it cannot be reached, or answers late or
+            unreadably: building a new player blocks it for seconds), the last copy, which it still holds.
           content:
             application/json:
               schema:
@@ -2185,10 +2187,10 @@ paths:
                     type: string
         '503':
           description: |
-            No player now. `Retry-After: 120`: the solver is switched off, cannot be reached, answers late (1 s) or
-            unreadably, or holds no player (none fetched yet, or its last one was dropped); a failed lookup is
-            remembered for 10 s and answered the same way. `Retry-After: 10`: another call is fetching the player
-            right now and no earlier copy is held. Body `{}`.
+            No player now. `Retry-After: 120`: the solver is switched off, holds no player (none fetched yet, or its
+            last one was dropped), or cannot be reached, answers late (1 s) or unreadably while no earlier copy is held
+            (with one, that copy is the 200); a failed lookup is remembered for 10 s and answered the same way.
+            `Retry-After: 10`: another call is fetching the player right now and no earlier copy is held. Body `{}`.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (10 or 120)

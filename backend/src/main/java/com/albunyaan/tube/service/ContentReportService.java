@@ -163,17 +163,25 @@ public class ContentReportService {
             // archive-everywhere behaviour so existing reports keep
             // working.
             boolean excluded = false;
-            if (parented) {
-                excluded = excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
-                        report.getTargetId(), report.getContentSubType(), null);
-            }
             String miss = null;
-            if (!excluded) {
-                miss = archiveReportedContent(report.getTargetType(), report.getTargetId());
-            } else {
+            if (parented) {
+                try {
+                    excluded = excludeFromParent(report.getParentType(), report.getParentId(), report.getTargetType(),
+                            report.getTargetId(), report.getContentSubType(), null);
+                } catch (Exception e) { // stage 9 Cubic r8 #9: a failure is not "no parent", so never the take-down
+                    if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                    log.warn("Failed to add target {} to parent {} exclusion list: {}", report.getTargetId(),
+                            report.getParentId(), e.getMessage());
+                    miss = "Not excluded on " + report.getParentType().name().toLowerCase() + ":" + report.getParentId()
+                            + " (" + e.getClass().getSimpleName() + "), and not taken down. Exclude it there by hand.";
+                }
+            }
+            if (excluded) {
                 // Exclusion changes affect public listings and the admin
                 // Exclusions workspace — bust both caches so they show it now.
                 exclusionsChanged();
+            } else if (miss == null) {   // no parent context, or none that applies
+                miss = archiveReportedContent(report.getTargetType(), report.getTargetId());
             }
             if (miss != null) { // never a clean "resolved": the admin sees the miss and does it by hand
                 report.setResolutionNote(note == null || note.isBlank() ? miss : note + "\n" + miss);
@@ -184,66 +192,62 @@ public class ContentReportService {
     }
 
     /**
-     * Add the target to its parent's exclusion list.
-     * Returns true if the exclusion was applied (parent existed and add
-     * succeeded), false otherwise (caller should fall back to archive).
+     * Add the target to its parent's exclusion list. True when it is there now (added, or already there); false when it
+     * does not apply (no such parent, or no exclusion bucket for the target), so resolveReport takes the target down
+     * instead. A failed read or write throws (stage 9 Cubic r8 #9): never read as "does not apply".
      */
     private boolean excludeFromParent(ReportTargetType parentType, String parentId, ReportTargetType targetType,
-                                      String targetId, String contentSubType, List<String> addedTo) {
+                                      String targetId, String contentSubType, List<String> addedTo)
+            throws ExecutionException, InterruptedException, TimeoutException {
         if (parentType == null || parentId == null || targetId == null || targetType == null) return false;
 
-        try {
-            switch (parentType) {
-                case CHANNEL -> {
-                    var opt = channelRepository.findByYoutubeId(parentId);
-                    if (opt.isEmpty()) {
-                        log.warn("Cannot exclude target {}: parent channel {} not found", targetId, parentId);
-                        return false;
-                    }
-                    var channel = opt.get();
-                    var excluded = channel.getExcludedItems();
-                    if (excluded == null) excluded = new com.albunyaan.tube.model.Channel.ExcludedItems();
-                    String storageType = resolveChannelStorageType(targetType, contentSubType);
-                    if (storageType == null) {
-                        log.warn("Cannot map report target ({}, sub={}) to a channel exclusion bucket", targetType, contentSubType);
-                        return false;
-                    }
-                    boolean added = addToChannelExclusions(excluded, storageType, targetId);
-                    if (added) {
-                        channel.setExcludedItems(excluded);
-                        channelRepository.save(channel);
-                        if (addedTo != null) addedTo.add("channel:" + parentId);
-                    }
-                    return true; // even no-op (already excluded) counts — don't fall back to archive
-                }
-                case PLAYLIST -> {
-                    if (targetType != ReportTargetType.VIDEO) {
-                        log.warn("Playlist parent only supports VIDEO target, got {}", targetType);
-                        return false;
-                    }
-                    var opt = playlistRepository.findByYoutubeId(parentId);
-                    if (opt.isEmpty()) {
-                        log.warn("Cannot exclude target {}: parent playlist {} not found", targetId, parentId);
-                        return false;
-                    }
-                    var playlist = opt.get();
-                    var ids = playlist.getExcludedVideoIds();
-                    if (ids == null) ids = new java.util.ArrayList<>();
-                    if (!ids.contains(targetId)) {
-                        ids.add(targetId);
-                        playlist.setExcludedVideoIds(ids);
-                        playlistRepository.save(playlist);
-                        if (addedTo != null) addedTo.add("playlist:" + parentId);
-                    }
-                    return true;
-                }
-                default -> {
+        switch (parentType) {
+            case CHANNEL -> {
+                var opt = channelRepository.findByYoutubeId(parentId);
+                if (opt.isEmpty()) {
+                    log.warn("Cannot exclude target {}: parent channel {} not found", targetId, parentId);
                     return false;
                 }
+                var channel = opt.get();
+                var excluded = channel.getExcludedItems();
+                if (excluded == null) excluded = new com.albunyaan.tube.model.Channel.ExcludedItems();
+                String storageType = resolveChannelStorageType(targetType, contentSubType);
+                if (storageType == null) {
+                    log.warn("Cannot map report target ({}, sub={}) to a channel exclusion bucket", targetType, contentSubType);
+                    return false;
+                }
+                boolean added = addToChannelExclusions(excluded, storageType, targetId);
+                if (added) {
+                    channel.setExcludedItems(excluded);
+                    channelRepository.save(channel);
+                    if (addedTo != null) addedTo.add("channel:" + parentId);
+                }
+                return true; // even no-op (already excluded) counts — don't fall back to archive
             }
-        } catch (Exception e) {
-            log.warn("Failed to add target {} to parent {} exclusion list: {}", targetId, parentId, e.getMessage());
-            return false;
+            case PLAYLIST -> {
+                if (targetType != ReportTargetType.VIDEO) {
+                    log.warn("Playlist parent only supports VIDEO target, got {}", targetType);
+                    return false;
+                }
+                var opt = playlistRepository.findByYoutubeId(parentId);
+                if (opt.isEmpty()) {
+                    log.warn("Cannot exclude target {}: parent playlist {} not found", targetId, parentId);
+                    return false;
+                }
+                var playlist = opt.get();
+                var ids = playlist.getExcludedVideoIds();
+                if (ids == null) ids = new java.util.ArrayList<>();
+                if (!ids.contains(targetId)) {
+                    ids.add(targetId);
+                    playlist.setExcludedVideoIds(ids);
+                    playlistRepository.save(playlist);
+                    if (addedTo != null) addedTo.add("playlist:" + parentId);
+                }
+                return true;
+            }
+            default -> {
+                return false;
+            }
         }
     }
 
@@ -496,9 +500,19 @@ public class ContentReportService {
             return null;
         }
         List<String> added = new java.util.ArrayList<>();
-        List<String> missed = keys.stream().filter(key -> !excludeFromParent(
-                key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
-                key.substring(key.indexOf(':') + 1), ReportTargetType.VIDEO, videoId, null, added)).toList();
+        List<String> missed = new java.util.ArrayList<>();
+        for (String key : keys) {
+            String sourceId = key.substring(key.indexOf(':') + 1);
+            boolean done = false;
+            try {
+                done = excludeFromParent(key.startsWith("channel:") ? ReportTargetType.CHANNEL : ReportTargetType.PLAYLIST,
+                        sourceId, ReportTargetType.VIDEO, videoId, null, added);
+            } catch (Exception e) {   // this source only: the next ones are still tried, and it is named in the miss
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.warn("Failed to add target {} to parent {} exclusion list: {}", videoId, sourceId, e.getMessage());
+            }
+            if (!done) missed.add(key);
+        }
         if (missed.size() < keys.size()) exclusionsChanged();
         if (!added.isEmpty()) {   // stage 9 B14: that one field, only while the doc is still the record (a re-add wins)
             videoRepository.updateIfStatusAndSource(record.getId(), "REJECTED", TAKE_DOWN_SOURCE, "takeDownExclusions", added);
