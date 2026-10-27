@@ -1,0 +1,26 @@
+backend/solver/test/solver.test.mjs
+  s_dbb6b1f3671904::t_ac0a3a39ec9658 769,771
+  s_dbb6b1f3671904::t_049fd79b296707 748
+  s_dbb6b1f3671904::t_9e9326fe06e55a 775,779,781-784
+  s_dbb6b1f3671904::t_c77a35141afbc4 740-747,749-768,770,772-774,776-778,780,785-786
+backend/solver/server.mjs
+  s_dbb6b1f3671904::t_1a6ab9e3e9bc70 303-304
+  s_dbb6b1f3671904::t_3de095cec875bf 306
+  s_dbb6b1f3671904::t_780ecd7b795ee6 21-26
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "52b06673c0295c18dfddf0a2f7252cfbdbbaeb1d",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
