@@ -152,4 +152,21 @@ describe('Content Sorting on a live category (spec §8)', () => {
       expect(screen.queryByRole('alert')).toBeNull();
     });
   });
+
+  it("a slow add reply does not put its list under another category opened meanwhile", async () => {
+    let resolve!: (v: unknown) => void;
+    add.fn.mockImplementation(() => new Promise(r => { resolve = r; }));
+    status.fn.mockImplementation(ok);
+    mount();
+    await fireEvent.click(await screen.findByText('Channels Live'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await fireEvent.click(await screen.findByText('Some channel'));
+    await fireEvent.click(screen.getByText('Add to Category'));
+    await fireEvent.click(screen.getByText('Cancel'));
+    await fireEvent.click(await screen.findByText('Other'));
+    await screen.findByText('Zad');
+    resolve([{ contentId: 'ch-9', contentType: 'channel', title: 'Late channel', thumbnailUrl: null, position: 0, youtubeId: 'UCz' }]);
+    await new Promise(r => setTimeout(r, 20));
+    expect(screen.queryByText('Late channel')).toBeNull();
+  });
 });

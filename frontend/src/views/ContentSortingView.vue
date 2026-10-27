@@ -845,9 +845,11 @@ async function confirmAddContent() {
   const items = Array.from(addModalSelected.value).map(parseContentKey);
 
   try {
-    contentItems.value = await addContentToCategorySort(categoryId, items);
+    const updated = await addContentToCategorySort(categoryId, items);
+    // The list is on screen only if that category is still the expanded one.
+    if (expandedCategoryId.value === categoryId) contentItems.value = updated;
     const cat = categories.value.find(c => c.id === categoryId);
-    if (cat) cat.contentCount = contentItems.value.length;
+    if (cat) cat.contentCount = updated.length;
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
     if (sameModal()) closeAddContentModal();
   } catch (e: any) {
