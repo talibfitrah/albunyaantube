@@ -91,7 +91,8 @@ class ContentValidationServiceTest {
                 publicContentCacheService,
                 streamIndexService,
                 thumbnailRepair,
-                contentReportService
+                contentReportService,
+                mock(LiveCategoryGuard.class)
         );
     }
 
@@ -1007,5 +1008,46 @@ class ContentValidationServiceTest {
         verify(videoRepository, never()).save(takeDown);
         verify(videoRepository).save(archived);
         assertEquals(ValidationStatus.VALID, archived.getValidationStatus());
+    }
+
+    /**
+     * Stage 9 B22 (Cubic r10 #4): an archived channel left the poller's targets, so its stored state keeps the lives it
+     * had then. Restored into a LIVE category, it re-enters as an add does (D15, B14): seeded. A seed YouTube does not
+     * answer serves none of those lives; one that reads the channel serves what is live now.
+     */
+    @Test
+    void aChannelRestoredIntoALiveCategoryServesNoneOfItsFrozenLives() throws Exception {
+        String uc = "UCROKYPep-UuODNwyipe6JMw";
+        LiveTabReader reader = mock(LiveTabReader.class);
+        LiveChannelService live = new LiveChannelService(reader, mock(LiveChannelStateRepository.class), java.time.Clock.systemUTC());
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        ContentValidationService restorer = new ContentValidationService(channelRepository, playlistRepository,
+                videoRepository, channelOrchestrator, auditLogService, validationRunRepository, validationProperties,
+                publicContentCacheService, streamIndexService, thumbnailRepair, contentReportService,
+                new LiveCategoryGuard(liveCategories, live, videoRepository, channelRepository, playlistRepository,
+                        new CategoryMappingService(mock(CategoryRepository.class))));
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        Map<LiveTabResult, List<String>> served = new LinkedHashMap<>();
+        served.put(LiveTabResult.error(1, "boom"), List.of());
+        served.put(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("FreshLive01", "now")), 1), List.of("FreshLive01"));
+        for (Map.Entry<LiveTabResult, List<String>> e : served.entrySet()) {
+            LiveChannelState frozen = LiveChannelState.unknown(uc);          // as the poller left it when archived
+            frozen.setStatus(LiveChannelState.LIVE);
+            frozen.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
+            live.loadStates(List.of(frozen));
+            Channel channel = new Channel(uc);
+            channel.setId("ch-live");
+            channel.setStatus("APPROVED");
+            channel.setCategoryIds(List.of("live-cat"));
+            channel.setValidationStatus(ValidationStatus.ARCHIVED);
+            when(channelRepository.findById("ch-live")).thenReturn(Optional.of(channel));
+            when(liveCategories.members("live-cat")).thenReturn(new LiveCategoryService.Members(List.of(channel)));
+            when(reader.read(uc)).thenReturn(e.getKey());
+
+            assertEquals(1, restorer.restoreContent("channel", List.of("ch-live"), "admin-uid", "Admin").getSuccessCount());
+
+            assertEquals(e.getValue(), LiveCategoryService.servedLives(channel, live.state(uc), Map.of()).stream()
+                    .map(LiveChannelState.Live::getVideoId).toList(), e.getKey().outcome().name());
+        }
     }
 }

@@ -137,6 +137,8 @@ public class ImportExportService {
         // §7 row 15 (D9): a full JSON import is a raw model write. Every stored doc is read once, here: D8 and the live
         // guard below and the writes after them see the same docs, and nothing is saved until both rules pass.
         // A doc whose youtubeId the file swaps is a new item to the guard (its stored LIVE membership proves nothing).
+        // Stage 9 B22 (Cubic r10 #4): so is a channel the file serves again (stored ARCHIVED, UNAVAILABLE or not public):
+        // out of the poller's targets, its stored lives went unread, so it re-enters as an add, seeded (D15, B14).
         Map<String, Category> oldCategories = new HashMap<>();
         Map<String, Channel> oldChannels = new HashMap<>();
         Map<String, Playlist> oldPlaylists = new HashMap<>();
@@ -159,7 +161,8 @@ public class ImportExportService {
                 Channel old = c.getId() == null ? null : channelRepository.findById(c.getId()).orElse(null);
                 oldChannels.put(c.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
-                Channel before = old != null && Objects.equals(old.getYoutubeId(), c.getYoutubeId()) ? old : null;
+                boolean reenters = old != null && !LiveCategoryService.servable(old) && LiveCategoryService.servable(c);
+                Channel before = old != null && Objects.equals(old.getYoutubeId(), c.getYoutubeId()) && !reenters ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("channel:" + c.getId(), c, before, c.getCategoryIds(), c.getStatus()));
             }
         }
@@ -438,7 +441,8 @@ public class ImportExportService {
                     counts.incrementTotalErrors();
                     continue;
                 }
-                if (video.getTitle() == null || video.getTitle().isEmpty()) {
+                // Stage 9 B22 (Cubic r10 #3): a take-down record has no title, and the import writes it as it is
+                if ((video.getTitle() == null || video.getTitle().isEmpty()) && !ContentReportService.isTakeDownRecord(video)) {
                     response.addError("VIDEO", video.getId(), "Missing video title");
                     counts.incrementTotalErrors();
                     continue;

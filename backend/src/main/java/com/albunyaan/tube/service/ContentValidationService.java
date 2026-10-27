@@ -52,6 +52,7 @@ public class ContentValidationService {
     private final StreamIndexService streamIndexService;
     private final ContentReportService contentReportService;
     private final ThumbnailRepairMigration thumbnailRepair;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ContentValidationService(
             ChannelRepository channelRepository,
@@ -64,7 +65,8 @@ public class ContentValidationService {
             PublicContentCacheService publicContentCacheService,
             StreamIndexService streamIndexService,
             ThumbnailRepairMigration thumbnailRepair,
-            ContentReportService contentReportService
+            ContentReportService contentReportService,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -77,6 +79,7 @@ public class ContentValidationService {
         this.streamIndexService = streamIndexService;
         this.thumbnailRepair = thumbnailRepair;
         this.contentReportService = contentReportService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     // ==================== Validation Triggers ====================
@@ -1136,7 +1139,15 @@ public class ContentValidationService {
                     case "channel":
                         Channel channel = channelRepository.findById(id).orElse(null);
                         if (channel != null) {
+                            boolean wasServed = LiveCategoryService.servable(channel);
                             channel.setValidationStatus(ValidationStatus.VALID);
+                            if (!wasServed && LiveCategoryService.servable(channel)) {
+                                // Stage 9 B22 (Cubic r10 #4): archived, it left the poller's targets and its stored lives
+                                // went unread. Served again, it re-enters a LIVE category as an add (no before): seeded
+                                // (D15, B14), as the library's bulk approve passes a doc new to the public listing.
+                                liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, channel, null,
+                                        channel.getCategoryIds(), channel.getStatus()));
+                            }
                             channel.setLastValidatedAt(Timestamp.now());
                             channelRepository.save(channel);
                             auditLogService.logSystem("channel_restored", "channel", id, actorName);

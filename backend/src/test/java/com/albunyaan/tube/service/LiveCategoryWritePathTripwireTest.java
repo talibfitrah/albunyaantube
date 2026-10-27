@@ -63,6 +63,7 @@ class LiveCategoryWritePathTripwireTest {
             Map.entry("service/ContentImportService.java", 1),
             Map.entry("service/BulkSubmissionService.java", 1),
             Map.entry("service/ApprovalService.java", 3),
+            Map.entry("service/ContentValidationService.java", 1),        // Restore re-enters a channel as an add (B22)
             Map.entry("service/SortOrderService.java", 1),
             Map.entry("service/ImportExportService.java", 1));
 

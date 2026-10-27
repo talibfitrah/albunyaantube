@@ -353,7 +353,8 @@ paths:
         '404':
           description: |
             Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
-            channel added to a live category in the last 20 minutes that no poll has listed yet
+            channel added to a live category (or served there again after an archive) in the last 20 minutes that no
+            poll has listed yet
           content:
             application/json:
               schema:
@@ -361,8 +362,9 @@ paths:
         '503':
           description: |
             The live states are still loading after a server start (no view built from them has been published yet),
-            or the channel was added to a live category in the last 20 minutes and the poller (every 10 minutes) has
-            not listed it yet. Empty body; retry after `Retry-After` seconds.
+            or the channel was added to a live category (or served there again after an archive) in the last 20
+            minutes and the poller (every 10 minutes) has not listed it yet. Empty body; retry after `Retry-After`
+            seconds.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (60)
