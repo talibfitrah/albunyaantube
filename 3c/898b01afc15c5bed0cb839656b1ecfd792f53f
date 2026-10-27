@@ -1,0 +1,31 @@
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_d09a9d85749004 7,20,83-85,124-137,216-217,223,1166-1255,2062-2063,2082,2090,2099
+backend/src/test/java/com/albunyaan/tube/search/InnerSearchIT.java
+  s_dbb6b1f3671904::t_5c5c6791fb2b45 167,169,171
+  s_dbb6b1f3671904::t_655c8a7cdad8f2 4,6-7,12-13,15,35,37,43-44,58,63-64,83-85,155-166,168,170,172-203
+  s_dbb6b1f3671904::t_28146754f66b8e 204-205
+backend/src/test/java/com/albunyaan/tube/search/InnerCrawlerTest.java
+  s_dbb6b1f3671904::t_fbf239f7f74cc5 114
+  s_dbb6b1f3671904::t_0ca1234996a8af 322,325-327,331,336,342,344,347-352,354-355
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_1924daaff27c27 11,16,151,194-195,198,203,207-208,213,999,1015-1016
+  s_dbb6b1f3671904::t_280cda6c2cc1db 5,86,141-145,184-186,330,338,993-998,1000-1014,1017-1029,1110-1111,1122-1124,1165,1170
+backend/src/main/java/com/albunyaan/tube/search/InnerCrawler.java
+  s_dbb6b1f3671904::t_c2a4253b360a4c 98,415-416,419
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3c898b01afc15c5bed0cb839656b1ecfd792f53f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
