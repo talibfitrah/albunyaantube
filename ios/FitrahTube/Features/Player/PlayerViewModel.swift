@@ -374,6 +374,8 @@ extension StreamState {
     private let liveLookup: (@Sendable (String) async throws -> LiveChannelLives)?
     /// Injected so the live refresh timer, step 4's waits and the lookup's cap are testable without waiting.
     private let sleep: @Sendable (Duration) async throws -> Void
+    /// The incident clock (§9.1 step 4's 2-min title wait and 10-min give-up), injected beside `sleep` for the same reason.
+    private let clock: @Sendable () -> Date
     private var liveRefreshTask: Task<Void, Never>?
     /// Spec §9.1: the live-channel incident in progress (one per video id) and its step 4 wait.
     private var liveIncident: LiveChannelRecovery?
@@ -400,7 +402,8 @@ extension StreamState {
     init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
          queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil, hd: HDUpgrade? = nil,
          liveLookup: (@Sendable (String) async throws -> LiveChannelLives)? = nil,
-         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) }) {
+         sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
+         clock: @escaping @Sendable () -> Date = { Date() }) {
         self.resolver = resolver
         self.settings = settings
         self.args = args
@@ -409,6 +412,7 @@ extension StreamState {
         self.hd = hd
         self.liveLookup = liveLookup
         self.sleep = sleep
+        self.clock = clock
         self.audioOnly = settings.audioOnly
     }
 
@@ -754,9 +758,11 @@ extension StreamState {
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
-            // §9.1 step 3: in live-channel mode a spent budget goes to step 4. Still a failure, not an end (spec Revision
-            // 8), so step 4's wakes re-resolve a listed id; `liveStep` runs whatever the incident decides.
-            if isLiveChannelMode { return await liveStep(.failure) }
+            // §9.1 step 3: in live-channel mode a spent budget goes to step 4 as an END, with no same-id re-resolve (spec
+            // Revision 8; Android A15 alike). A re-resolve that lands live ends the incident while the budget stays spent,
+            // so a stream whose player keeps failing would open a new incident each time and never reach the 10-min
+            // give-up. As an end, a flapping stream still terminates. (false: not live-channel mode.)
+            if await liveChannelTrigger(.ended) { return }
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
             // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
             // so Retry starts at the next rung instead of walking the one that kept failing. Not
@@ -810,7 +816,7 @@ extension StreamState {
     func liveChannelTrigger(_ trigger: LiveChannelRecovery.Trigger) async -> Bool {
         guard let channel = args.liveChannelId, let liveLookup else { return false }
         if liveIncident?.currentId != args.videoId {     // an incident belongs to one video id
-            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.liveTitle, startedAt: Date())
+            liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.liveTitle, startedAt: clock())
         }
         let incidentId = liveIncident?.id
         var lives: [LiveChannelLives.Live]?
@@ -838,7 +844,7 @@ extension StreamState {
         guard !Task.isCancelled, var incident = liveIncident, incident.id == incidentId, incident.currentId == args.videoId
         else { return true }
         let step: LiveChannelRecovery.Step = notFound ? .giveUp
-            : incident.next(trigger, lives: lives, now: Date(), retryAfter: retryAfter)
+            : incident.next(trigger, lives: lives, now: clock(), retryAfter: retryAfter)
         liveIncident = incident
         switch step {
         case .sameId:
@@ -885,7 +891,7 @@ extension StreamState {
     }
 
     /// §9.1: a trigger, then the same-id re-resolve it may answer with. The one copy of this step (stage 9 I13), for the
-    /// wait, the not-live follow-up and a spent budget. Stage 9 I18: `showLoading: false`, as `switchLive` (I16). A
+    /// wait and the not-live follow-up. Stage 9 I18: `showLoading: false`, as `switchLive` (I16). A
     /// `.loading` hop dismantles the host, which detaches the audio session and the lock screen before the re-resolve
     /// lands; the player on screen stays until it does. A step 4 wait is already `.loading` (spec K12).
     private func liveStep(_ trigger: LiveChannelRecovery.Trigger) async {

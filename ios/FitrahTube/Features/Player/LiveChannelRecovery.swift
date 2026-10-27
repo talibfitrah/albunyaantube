@@ -24,7 +24,7 @@ nonisolated struct LiveChannelRecovery: Sendable {
     /// makes the incident an end one for good: it never re-resolves the same id.
     private var ended = false
     /// Spec Revision 8: one same-id try per wake. Set by every `.sameId`, cleared only by a `.wait`, so a try that fails
-    /// waits for the next wake instead of trying again at once.
+    /// waits for the next wake instead of trying again at once. None at or after `giveUpAfter` (Android A15 parity).
     private var sameIdSpent = false
 
     init(currentId: String, currentTitle: String?, startedAt: Date) {
@@ -53,10 +53,10 @@ nonisolated struct LiveChannelRecovery: Sendable {
                let same = lives.first(where: { $0.title == title }) { return .switchTo(id: same.id, title: same.title) }
             if elapsed >= Self.titleWait { return .switchTo(id: lives[0].id, title: lives[0].title) }
             deadline = Self.titleWait
-        } else if !ended, !sameIdSpent, lives?.contains(where: { $0.id == currentId }) == true {
+        } else if !ended, !sameIdSpent, elapsed < Self.giveUpAfter, lives?.contains(where: { $0.id == currentId }) == true {
             sameIdSpent = true
             return .sameId
-        } else if !ended, !sameIdSpent, lives == nil, !triedBlind {
+        } else if !ended, !sameIdSpent, elapsed < Self.giveUpAfter, lives == nil, !triedBlind {
             triedBlind = true
             sameIdSpent = true
             return .sameId

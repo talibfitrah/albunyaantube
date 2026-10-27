@@ -68,6 +68,21 @@ struct LiveChannelPlaybackTests {
         }
     }
 
+    /// Stage 9 I18 follow-up: step 4's waits pass at once and move this clock (the incident's), so ten minutes of waits run
+    /// in milliseconds. Any other sleep (the lookup's 10 s cap, the live refresh timer) parks until cancelled.
+    nonisolated final class WaitClock: @unchecked Sendable {
+        private let lock = NSLock()
+        private var slept: [Duration] = []
+        var waits: [Duration] { lock.withLock { slept } }
+        var now: Date { Date(timeIntervalSince1970: TimeInterval(waits.reduce(0) { $0 + $1.components.seconds })) }
+        func sleep(_ duration: Duration) async throws {
+            guard LiveChannelRecovery.backoff.contains(where: { .seconds($0) == duration }) else {
+                return try await Task.sleep(for: .seconds(3600))
+            }
+            lock.withLock { slept.append(duration) }
+        }
+    }
+
     /// Scripted lives answers in call order; the last one repeats.
     actor Lookup {
         private var answers: [Result<LiveChannelLives, Error>]
@@ -94,9 +109,10 @@ struct LiveChannelPlaybackTests {
     }
 
     func makeViewModel(_ resolver: RecordingResolver, args: PlayerArgs, sleep: @escaping @Sendable (Duration) async throws -> Void,
-                       lookup: @escaping @Sendable (String) async throws -> LiveChannelLives) -> PlayerViewModel {
+                       lookup: @escaping @Sendable (String) async throws -> LiveChannelLives,
+                       clock: @escaping @Sendable () -> Date = { Date() }) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
-        return PlayerViewModel(resolver: resolver, settings: settings, args: args, liveLookup: lookup, sleep: sleep)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args, liveLookup: lookup, sleep: sleep, clock: clock)
     }
 
     func waitUntil(_ condition: () async -> Bool) async throws {
@@ -937,23 +953,41 @@ struct LiveChannelPlaybackTests {
         #expect(sleeper.waits == [.seconds(15), .seconds(30)])
     }
 
-    /// Cubic r8 #2: a spent recovery budget is still a failure, not an end, so step 4's wakes re-resolve the listed stream.
-    @Test func aSpentBudgetsWakeReResolvesTheListedStream() async throws {
-        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 2 + RecoveryBudget.maxRetries))
-        let sleeper = GatedSleeper(gated: .seconds(15))
+    /// I18 follow-up (Android A15 parity: its same-id branch needs `elapsed < GIVE_UP_MS`): no same-id try at or after the
+    /// 10-min give-up, listed or blind. The wake that lands at 10:00 gives up instead of starting one more resolve.
+    @Test func theTenMinuteWakeGivesUpWithoutASameIdTry() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var listed = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(listed.next(.failure, lives: [], now: t0 + 590) == .wait(seconds: 10))          // the last wait
+        #expect(listed.next(.failure, lives: [.init(id: "old0000000a", title: "x")], now: t0 + 600) == .giveUp)
+        var blind = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(blind.next(.failure, lives: [], now: t0 + 590) == .wait(seconds: 10))
+        #expect(blind.next(.failure, lives: nil, now: t0 + 600) == .giveUp)
+    }
+
+    /// I18 follow-up (controller ruling, Android A15 `setRecoveryExhaustedState`): a spent step-3 budget is an END. A stream
+    /// that resolves live but whose player fails every time would otherwise open a new incident at each landing (one
+    /// resolve per 15 s, forever) and never reach the 10-min give-up.
+    @Test func aFlappingStreamWithASpentBudgetGivesUpAtTenMinutes() async throws {
+        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 40))
+        let clock = WaitClock()
         let onAir = Self.onAir("Rs7St51oDDc")
-        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
-                               lookup: { _ in onAir })
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await clock.sleep($0) },
+                               lookup: { _ in onAir }, clock: { clock.now })
 
         await vm.open()
-        for _ in 0...RecoveryBudget.maxRetries { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
-        #expect(vm.state == .loading)                                         // the last incident's budget is spent
-        try await waitUntil { sleeper.parked == 1 }
-        sleeper.wake()
+        for _ in 0..<RecoveryBudget.maxRetries { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        let spent = await resolver.videoIds.count                            // each recovered; the budget is spent
+        for _ in 0..<10 {                                                     // the player fails whenever it lands
+            await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)
+            try await waitUntil { vm.state.isLiveNow || vm.state == .error(messageKey: "player_error_message") }
+            if !vm.state.isLiveNow { break }
+        }
 
-        try await waitUntil { vm.state.isLiveNow }
+        #expect(vm.state == .error(messageKey: "player_error_message"))
         let calls = await resolver.videoIds.count
-        #expect(calls == 2 + RecoveryBudget.maxRetries)
+        #expect(calls == spent)                                               // no same-id resolve after the budget
+        #expect(clock.now == Date(timeIntervalSince1970: 600))                // the give-up, at 10 min of incident time
     }
 
     /// Cubic r8 #4: `liveStep`'s same-id try keeps the player on screen, as the switch does (I16). Here the switch to the
