@@ -754,8 +754,9 @@ extension StreamState {
         recoveryBudget.apply(action, for: event)
         switch action {
         case .exhausted:
-            // §9.1 step 3: in live-channel mode a spent budget goes to step 4 (false: not live-channel mode).
-            if await liveChannelTrigger(.ended) { return }
+            // §9.1 step 3: in live-channel mode a spent budget goes to step 4. Still a failure, not an end (spec Revision
+            // 8), so step 4's wakes re-resolve a listed id; `liveStep` runs whatever the incident decides.
+            if isLiveChannelMode { return await liveStep(.failure) }
             // Stage 3b F1: with no CDN status, progress between failures keeps re-resolving the same
             // rung, so the budget can run out with the rung on screen never demoted. Demote it then,
             // so Retry starts at the next rung instead of walking the one that kept failing. Not
@@ -884,9 +885,13 @@ extension StreamState {
     }
 
     /// §9.1: a trigger, then the same-id re-resolve it may answer with. The one copy of this step (stage 9 I13), for the
-    /// wait and the not-live follow-up.
+    /// wait, the not-live follow-up and a spent budget. Stage 9 I18: `showLoading: false`, as `switchLive` (I16). A
+    /// `.loading` hop dismantles the host, which detaches the audio session and the lock screen before the re-resolve
+    /// lands; the player on screen stays until it does. A step 4 wait is already `.loading` (spec K12).
     private func liveStep(_ trigger: LiveChannelRecovery.Trigger) async {
-        if await !liveChannelTrigger(trigger) { await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false) }
+        if await !liveChannelTrigger(trigger) {
+            await resolve(forceRefresh: true, kind: .autoRecovery, resetBudget: false, showLoading: false)
+        }
     }
 
     /// The not-live follow-up `resolve` owes `miss` (stage 9 I13). Unstructured, so a cancelled `.task` (a tab switch)
@@ -1514,8 +1519,9 @@ extension StreamState {
         }
         resolveTask = task
         await task.value
-        // §9.1: not live now, or failed (F3): step 4, never a recording or an error. A failed open, Retry or switch is a
-        // FAILURE, so a listed id gets its same-id re-resolve first; that re-resolve's own miss is an END, so nothing loops.
+        // §9.1: not live now, or failed (F3): step 4, never a recording or an error. A failed resolve is a FAILURE (spec
+        // Revision 8: a transient failure is not an end), so a listed id gets its same-id re-resolve; a recording is an
+        // END. Nothing loops: `LiveChannelRecovery` allows one same-id try per wake, so a failed try waits.
         if myGeneration == generation, let miss = liveMiss, miss.generation == generation {
             liveMiss = nil
             await followLiveMiss(miss)
@@ -1542,7 +1548,7 @@ extension StreamState {
         // proactive refresh included) and a failed resolve (F3: an ended 24/7 id fails to resolve) are step 4's, never
         // played or shown as an error; `resolve` runs the trigger. A failed silent refresh keeps the stream (below).
         if isLiveChannelMode, !result.isLiveNow, result.isPlayable || !silent {
-            liveMiss = (generation, result.isPlayable || kind == .autoRecovery ? .ended : .failure)
+            liveMiss = (generation, result.isPlayable ? .ended : .failure)
             return
         }
         // A silent (proactive TTL) refresh runs WHILE a healthy stream is playing -- that is why it

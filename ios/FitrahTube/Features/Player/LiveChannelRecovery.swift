@@ -20,6 +20,12 @@ nonisolated struct LiveChannelRecovery: Sendable {
     private var waits = 0
     /// Spec Revision 5: a failure with no backend answer gets ONE same-id try per incident before the waits.
     private var triedBlind = false
+    /// Spec Revision 8 (stage 9 I18): an end or not-live (any `.ended`, including a same-id try that came back not live)
+    /// makes the incident an end one for good: it never re-resolves the same id.
+    private var ended = false
+    /// Spec Revision 8: one same-id try per wake. Set by every `.sameId`, cleared only by a `.wait`, so a try that fails
+    /// waits for the next wake instead of trying again at once.
+    private var sameIdSpent = false
 
     init(currentId: String, currentTitle: String?, startedAt: Date) {
         self.currentId = currentId
@@ -37,6 +43,7 @@ nonisolated struct LiveChannelRecovery: Sendable {
     }
 
     private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int?) -> Step {
+        if trigger == .ended { ended = true }
         let elapsed = now.timeIntervalSince(startedAt)
         var deadline = Self.giveUpAfter
         if let lives, !lives.isEmpty, !lives.contains(where: { $0.id == currentId }) {
@@ -46,14 +53,16 @@ nonisolated struct LiveChannelRecovery: Sendable {
                let same = lives.first(where: { $0.title == title }) { return .switchTo(id: same.id, title: same.title) }
             if elapsed >= Self.titleWait { return .switchTo(id: lives[0].id, title: lives[0].title) }
             deadline = Self.titleWait
-        } else if trigger == .failure, lives?.contains(where: { $0.id == currentId }) == true {
+        } else if !ended, !sameIdSpent, lives?.contains(where: { $0.id == currentId }) == true {
+            sameIdSpent = true
             return .sameId
-        } else if trigger == .failure, lives == nil, !triedBlind {
+        } else if !ended, !sameIdSpent, lives == nil, !triedBlind {
             triedBlind = true
+            sameIdSpent = true
             return .sameId
         }
         if elapsed >= Self.giveUpAfter { return .giveUp }
-        defer { waits += 1 }
+        defer { waits += 1; sameIdSpent = false }
         // Clamped, so the title wait ends at 2 min and the give-up lands at 10 min, not up to a backoff step later.
         let backoff = max(Self.backoff[min(waits, Self.backoff.count - 1)], retryAfter ?? 0)
         return .wait(seconds: min(backoff, Int((deadline - elapsed).rounded(.up))))

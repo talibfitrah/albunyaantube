@@ -45,17 +45,22 @@ struct LiveChannelPlaybackTests {
         }
     }
 
-    /// A sleep of `gated` parks until `wake()`, cancelled or not, so only a wait's own checks can stop it. Any other
-    /// sleep (the live refresh timer) parks until cancelled.
+    /// A sleep of a `gated` length parks until `wake()`, cancelled or not, so only a wait's own checks can stop it. Any
+    /// other sleep (the live refresh timer) parks until cancelled.
     final class GatedSleeper: @unchecked Sendable {
         private let lock = NSLock()
-        private let gated: Duration
+        private let gated: Set<Duration>
         private var continuations: [CheckedContinuation<Void, Never>] = []
-        init(gated: Duration) { self.gated = gated }
+        private var gatedCalls: [Duration] = []
+        init(gated: Duration...) { self.gated = Set(gated) }
         var parked: Int { lock.withLock { continuations.count } }
+        /// Every gated sleep, in order: the wake schedule (stage 9 I18).
+        var waits: [Duration] { lock.withLock { gatedCalls } }
         func sleep(_ duration: Duration) async throws {
-            guard duration == gated else { return try await Task.sleep(for: .seconds(3600)) }
-            await withCheckedContinuation { continuation in lock.withLock { continuations.append(continuation) } }
+            guard gated.contains(duration) else { return try await Task.sleep(for: .seconds(3600)) }
+            await withCheckedContinuation { continuation in
+                lock.withLock { gatedCalls.append(duration); continuations.append(continuation) }
+            }
         }
         func wake() {
             let woken = lock.withLock { defer { continuations = [] }; return continuations }
@@ -734,8 +739,8 @@ struct LiveChannelPlaybackTests {
     // MARK: - §9.1 fix round 1
 
     /// Important 1: a failed open, Retry or switched-to id is a FAILURE, so a listed id gets its same-id re-resolve
-    /// before step 4 (a blip is not ten minutes of loading). That re-resolve's own miss is an END, so nothing loops, and a
-    /// recording is an END from the start.
+    /// before step 4 (a blip is not ten minutes of loading). That re-resolve's own failure waits for the next wake (stage 9
+    /// I18: one try per wake), so nothing loops, and a recording is an END from the start.
     @Test func aFailedOpenRetryOrSwitchGetsTheSameIdTryFirst() async throws {
         let blip = URLError(.timedOut)
         let listed = [Self.channel: Self.onAir("Rs7St51oDDc")]
@@ -880,5 +885,92 @@ struct LiveChannelPlaybackTests {
         let ending = Task { await vm.playToEnd() }
         try await waitUntil { vm.state == .loading }
         ending.cancel()
+    }
+
+    // MARK: - §9.1 Revision 8 (stage 9 I18, Cubic r8 #2 and #4)
+
+    /// Cubic r8 #2: in an incident that began with a failure, each wake whose answer still lists the id re-resolves it
+    /// once, never more often: a failed try (or no answer) waits for the next wake. A try that comes back not live makes
+    /// the incident an end one, which never re-resolves.
+    @Test func aFailureIncidentReResolvesAListedIdOncePerWakeUntilItIsNotLive() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let listed: [LiveChannelLives.Live] = [.init(id: "old0000000a", title: "x")]
+        var r = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(r.next(.failure, lives: listed, now: t0) == .sameId)                      // step 3
+        #expect(r.next(.failure, lives: listed, now: t0 + 1) == .wait(seconds: 15))       // its failure waits
+        #expect(r.next(.failure, lives: listed, now: t0 + 16) == .sameId)                 // the wake: one try
+        #expect(r.next(.failure, lives: nil, now: t0 + 17) == .wait(seconds: 30))         // not the blind one either
+        #expect(r.next(.failure, lives: listed, now: t0 + 47) == .sameId)
+        #expect(r.next(.ended, lives: listed, now: t0 + 48) == .wait(seconds: 60))        // not live: an end from here
+        #expect(r.next(.failure, lives: listed, now: t0 + 108) == .wait(seconds: 120))
+    }
+
+    /// Cubic r8 #2: a transient failure of the same-id try is not an end. While the backend still lists the stream, each
+    /// wake re-resolves it once, so a short outage costs a wait or two, not ten minutes of loading with no Retry.
+    @Test func eachWakeReResolvesTheListedStreamOnceAfterAFailedTry() async throws {
+        let blip = URLError(.notConnectedToInternet)
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .failure(blip), .failure(blip),
+                                          .success(Self.live("Rs7St51oDDc"))])
+        let sleeper = GatedSleeper(gated: .seconds(15), .seconds(30))
+        let onAir = Self.onAir("Rs7St51oDDc")
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { _ in onAir })
+
+        await vm.open()
+        await resolver.watch(vm)
+        await vm.handleRecoveryEvent(.stall)                                  // step 3's same-id try fails: wait 15 s
+        try await waitUntil { sleeper.parked == 1 }
+        let beforeWake = await resolver.videoIds.count
+        #expect(beforeWake == 2)                                              // no second try before the wake
+        let onScreen = await resolver.onScreenAtCall
+        #expect(onScreen == ["Rs7St51oDDc.m3u8"])                             // the stalled player stayed for it
+
+        sleeper.wake()                                                        // listed: one try, which fails; wait 30 s
+        try await waitUntil { sleeper.waits.count == 2 && sleeper.parked == 1 }
+        let afterFirstWake = await resolver.videoIds.count
+        #expect(afterFirstWake == 3)
+
+        sleeper.wake()                                                        // listed: one try, which lands
+        try await waitUntil { vm.state.isLiveNow }
+        let afterSecondWake = await resolver.videoIds.count
+        #expect(afterSecondWake == 4)
+        #expect(sleeper.waits == [.seconds(15), .seconds(30)])
+    }
+
+    /// Cubic r8 #2: a spent recovery budget is still a failure, not an end, so step 4's wakes re-resolve the listed stream.
+    @Test func aSpentBudgetsWakeReResolvesTheListedStream() async throws {
+        let resolver = RecordingResolver(Array(repeating: .success(Self.live("Rs7St51oDDc")), count: 2 + RecoveryBudget.maxRetries))
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let onAir = Self.onAir("Rs7St51oDDc")
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { _ in onAir })
+
+        await vm.open()
+        for _ in 0...RecoveryBudget.maxRetries { await vm.handleRecoveryEvent(.playbackError, httpStatus: 403) }
+        #expect(vm.state == .loading)                                         // the last incident's budget is spent
+        try await waitUntil { sleeper.parked == 1 }
+        sleeper.wake()
+
+        try await waitUntil { vm.state.isLiveNow }
+        let calls = await resolver.videoIds.count
+        #expect(calls == 2 + RecoveryBudget.maxRetries)
+    }
+
+    /// Cubic r8 #4: `liveStep`'s same-id try keeps the player on screen, as the switch does (I16). Here the switch to the
+    /// new broadcast fails, and its same-id try goes out with the ended broadcast still on screen: no `.loading` hop,
+    /// which would dismantle the host and its background audio session before the try lands.
+    @Test func aSameIdTryKeepsThePlayerOnScreen() async throws {
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .failure(URLError(.timedOut)),
+                                          .success(Self.live("eaOtcUNHDB8"))])
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleeper: Sleeper(immediate: 0),
+                               lives: [Self.channel: Self.onAir("eaOtcUNHDB8")])
+
+        await vm.open()
+        await resolver.watch(vm)
+        await vm.playToEnd()
+
+        let onScreen = await resolver.onScreenAtCall
+        #expect(onScreen == ["Rs7St51oDDc.m3u8", "Rs7St51oDDc.m3u8"])        // the switch, then its try
+        #expect(Self.file(vm) == "eaOtcUNHDB8.m3u8")
     }
 }
