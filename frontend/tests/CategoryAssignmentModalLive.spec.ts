@@ -214,4 +214,29 @@ describe('CategoriesView: a save reply that lands after the dialog moved on (Cub
     expect(toasts()).toContain(messages.en.categories.updateSuccess);
     expect(openName()).toBe('Channels Live');
   });
+
+  it('the open dialog\'s Save is its own: usable at once, and the old reply never clears it (F20)', async () => {
+    const { save, saving } = messages.en.categories.dialog;
+    const submit = () => document.querySelector('.modal button[type=submit]') as HTMLButtonElement;
+    const settleA = await saveQuranThenOpenLive();
+    expect(submit()).toBeEnabled();
+    expect(submit()).toHaveTextContent(save);
+
+    // B's own save is in flight when A's reply lands.
+    let settleB!: (v: unknown) => void;
+    service.updateCategory.mockImplementationOnce(() => new Promise(resolve => { settleB = resolve; }));
+    await fireEvent.submit(submit().closest('form')!);
+    expect(submit()).toBeDisabled();
+    expect(submit()).toHaveTextContent(saving);
+
+    const loads = service.getAllCategories.mock.calls.length;
+    settleA.resolve({});
+    await waitFor(() => expect(service.getAllCategories.mock.calls.length).toBe(loads + 1));
+    expect(openName()).toBe('Channels Live');
+    expect(submit()).toBeDisabled();
+    expect(submit()).toHaveTextContent(saving);
+
+    settleB({});
+    await waitFor(() => expect(openName()).toBeUndefined());
+  });
 });

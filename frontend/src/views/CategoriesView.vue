@@ -169,7 +169,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, onMounted } from 'vue';
+import { ref, computed, onMounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { getAllCategories, createCategory, updateCategory, deleteCategory } from '@/services/categoryService';
 import { apiErrorOffenders, apiErrorWithOffenders, offenderTitles } from '@/services/http';
@@ -208,7 +208,9 @@ const dialogData = ref({
   localizedNames: { en: '', ar: '', nl: '' },
   type: null as 'LIVE' | null
 });
-const isSubmitting = ref(false);
+// The dialog whose save is in flight: Save is busy only in that dialog, not in one opened after it (F20).
+const submittingDialog = ref<typeof dialogData.value | null>(null);
+const isSubmitting = computed(() => submittingDialog.value === dialogData.value);
 const dialogError = ref<string | null>(null);
 
 async function loadCategories() {
@@ -265,11 +267,11 @@ async function handleSubmit() {
     return;
   }
 
-  isSubmitting.value = true;
   dialogError.value = null;
   // The reply may land after Cancel or after another dialog opened: every open makes a fresh dialogData object.
   const dialog = dialogData.value;
   const mode = dialogMode.value;
+  submittingDialog.value = dialog;
   const sameDialog = () => showDialog.value && dialogData.value === dialog;
 
   try {
@@ -321,7 +323,7 @@ async function handleSubmit() {
     if (sameDialog()) dialogError.value = message;
     else showError(message);
   } finally {
-    isSubmitting.value = false;
+    if (submittingDialog.value === dialog) submittingDialog.value = null;
   }
 }
 
