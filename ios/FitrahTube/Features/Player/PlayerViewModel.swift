@@ -504,7 +504,11 @@ extension StreamState {
         playToEndCalls += 1
         #endif
         if isLiveChannelMode {                  // §9.1: never advance the queue in live-channel mode
-            await liveChannelTrigger(.ended)
+            // Stage 9 I21 (Cubic r12 #4): the end is the stream on screen's, as a failure is (`handleRecoveryEvent`, M1).
+            // A switch keeps the ended broadcast on screen until the new one lands (I16) while `args` already names the new
+            // one, so an end that item posts meanwhile would open an `.ended` incident on the new broadcast: a wait that
+            // discards the switch and loops to the give-up.
+            if resolvedVideoId == args.videoId { await liveChannelTrigger(.ended) }
             return
         }
         // `isAdvancing`: one advance per end -- a second end posted for the same ended item (a
@@ -1580,7 +1584,13 @@ extension StreamState {
         // still perfectly playable. Dropping the result leaves the unexpired stream playing;
         // reactive recovery (`handleRecoveryEvent`, which never passes `silent`) owns real failures,
         // because by then the stream has actually stopped working.
-        if silent, !result.isPlayable { return }
+        if silent, !result.isPlayable {
+            // Stage 9 I21 (Cubic r12 #10): it lands nothing, so a trigger parked for the stream on screen (I20, a hidden
+            // screen) is still that stream's: it moves to this generation, or the return would read it as stale. Only one
+            // current when this refresh began (`resolve` bumps by one); a miss a landed resolve superseded stays dead.
+            if let miss = liveMiss, miss.generation == generation - 1 { liveMiss = (generation, miss.trigger) }
+            return
+        }
         // §9.3(a): a proactive refresh of a live stream only ever replaces it with a stream that is still live now.
         if silent, state.isLiveNow, !result.isLiveNow { return }
         // Together, always: `.error`/`.contentUnavailable` results move it too --

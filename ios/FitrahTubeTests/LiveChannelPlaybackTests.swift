@@ -15,16 +15,20 @@ struct LiveChannelPlaybackTests {
         /// Stage 9 I16: the stream on the watched screen as each resolve went out (nil: nothing playable).
         private(set) var onScreenAtCall: [String?] = []
         private var screen: PlayerViewModel?
+        private var gate: GatedSleeper?
 
         init(_ outcomes: [Result<Resolved, Error>]) { self.outcomes = outcomes }
 
         func watch(_ vm: PlayerViewModel) { screen = vm }
+        /// Stage 9 I21: the next resolve stays out (parked on `gate`) until `gate.wake()`.
+        func holdNext(on gate: GatedSleeper) { self.gate = gate }
 
         func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
                      requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
             videoIds.append(videoId)
             sourceChannelIds.append(sourceChannelId)
             if let screen { onScreenAtCall.append(await MainActor.run { LiveChannelPlaybackTests.file(screen) }) }
+            if let gate { self.gate = nil; try await gate.sleep(.seconds(1)) }
             guard !outcomes.isEmpty else { throw ExtractionError.unavailable(videoId: videoId) }
             return try outcomes.removeFirst().get()
         }
@@ -1199,6 +1203,82 @@ struct LiveChannelPlaybackTests {
         try await waitUntil { Self.file(vm) == "eaOtcUNHDB8.m3u8" }
         try await Task.sleep(for: .milliseconds(100))
         #expect(await lookup.calls == failureAsks + 2)                        // the END, then its one run on the return
+        #expect(vm.state.isLiveNow)
+    }
+
+    // MARK: - Stage 9 I21 (Cubic r12 #4, #10)
+
+    /// #4: a switch keeps the ended broadcast on screen until the new one lands (I16), so that item can end again meanwhile.
+    /// The end is the old stream's, as a failure is in `handleRecoveryEvent`: it opens no `.ended` incident on the new id
+    /// (whose wait would discard the switch and loop to the ten-minute give-up), asks nothing, and the switch lands.
+    @Test func anEndOfTheOldBroadcastWhileTheSwitchIsOutIsIgnored() async throws {
+        let gate = GatedSleeper(gated: .seconds(1))
+        let lookup = Lookup([.success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("eaOtcUNHDB8"))])
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { try await lookup.lives($0) })
+        await vm.open()
+
+        await resolver.holdNext(on: gate)
+        let switching = Task { await vm.playToEnd() }
+        try await waitUntil { gate.parked == 1 }                              // the switch's resolve is out
+        #expect(vm.args.videoId == "eaOtcUNHDB8")
+        #expect(Self.file(vm) == "Rs7St51oDDc.m3u8")                          // the ended broadcast is still on screen
+        await vm.playToEnd()                                                  // and its item ends again
+        gate.wake()
+        await switching.value
+
+        #expect(await lookup.calls == 1)
+        #expect(vm.state.isLiveNow)
+        #expect(Self.file(vm) == "eaOtcUNHDB8.m3u8")
+    }
+
+    /// #10 (I20's known ceiling): a trigger parked on a hidden screen is the stream on screen's. The live timer's silent
+    /// refresh moves `generation`, and when it fails it lands nothing, so the trigger is still that stream's and must still
+    /// run on the return, not leave the screen on the ended frame.
+    @Test func aFailedSilentRefreshOnAHiddenScreenKeepsItsParkedEnd() async throws {
+        let lookup = Lookup([.success(Self.onAir("eaOtcUNHDB8"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .failure(URLError(.timedOut)),
+                                          .success(Self.live("eaOtcUNHDB8"))])
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { try await lookup.lives($0) })
+        vm.reconcile(.appear)
+        await vm.open()
+        vm.reconcile(.disappear)
+        await vm.playToEnd()                                                  // parked for the return (I20)
+        await vm.refreshLiveStream()                                          // the live timer's refresh, which fails
+        #expect(await resolver.videoIds == ["Rs7St51oDDc", "Rs7St51oDDc"])
+        #expect(await lookup.calls == 0)
+
+        vm.reconcile(.appear)                                                 // back: the end runs now
+        try await waitUntil { Self.file(vm) == "eaOtcUNHDB8.m3u8" }
+        #expect(await lookup.calls == 1)
+        #expect(vm.state.isLiveNow)
+    }
+
+    /// #10's limit: only a trigger that was current when the refresh began carries over. One a landed refresh superseded
+    /// (a fresh live stream replaced the ended item) stays dead, so a later failed refresh never revives an old end over a
+    /// healthy stream (an `.ended` wait would take it to Loading).
+    @Test func aFailedSilentRefreshNeverRevivesASupersededEnd() async throws {
+        let lookup = Lookup([.success(Self.onAir("Rs7St51oDDc"))])
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("Rs7St51oDDc")),
+                                          .failure(URLError(.timedOut))])
+        let sleeper = Sleeper(immediate: 0)
+        let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
+                               lookup: { try await lookup.lives($0) })
+        vm.reconcile(.appear)
+        await vm.open()
+        vm.reconcile(.disappear)
+        await vm.playToEnd()                                                  // parked for the return (I20)
+        await vm.refreshLiveStream()                                          // lands live: the end is superseded
+        vm.reconcile(.appear)                                                 // nothing to run
+        await vm.refreshLiveStream()                                          // fails
+        try await Task.sleep(for: .milliseconds(100))
+
+        #expect(await resolver.videoIds.count == 3)
+        #expect(await lookup.calls == 0)
         #expect(vm.state.isLiveNow)
     }
 }
