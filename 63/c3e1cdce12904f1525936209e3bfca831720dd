@@ -1,0 +1,36 @@
+backend/src/test/java/com/albunyaan/tube/repository/ConditionalSaveKeepsArchiveTest.java
+  s_dbb6b1f3671904::t_ba91dcdaed9a63 1-129
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_dbb6b1f3671904::t_6261fc7326ad43 87,95
+  s_dbb6b1f3671904::t_b3828a1cfd86ec 109-111
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dbb6b1f3671904::t_71d34ea11f0daa 78-80,88
+  s_dbb6b1f3671904::t_a935c2215f15b4 102-104
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_dbb6b1f3671904::t_a323fb2ec72d7f 85,95
+  s_dbb6b1f3671904::t_77c229b9c4ccdc 109-111
+backend/src/test/java/com/albunyaan/tube/service/LiveTabReaderTest.java
+  s_dbb6b1f3671904::t_d17275715192f0 353-376
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_dbb6b1f3671904::t_165feb3ebd04e4 516-545
+  s_dbb6b1f3671904::t_8224f2ace4f3c5 515
+backend/src/main/java/com/albunyaan/tube/service/LiveTabReader.java
+  s_dbb6b1f3671904::t_333f2aaf711687 33-35,37
+  s_dbb6b1f3671904::t_c364ea84722436 38
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "63c3e1cdce12904f1525936209e3bfca831720dd",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
