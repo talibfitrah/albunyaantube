@@ -30,9 +30,12 @@ public class LiveTabReader {
 
     /**
      * R7 beyond HTTP 429 (which the prod downloader already turns into a ReCaptchaException): the HTML a followed
-     * consent or bot-check redirect lands on, whose URL NewPipe puts in its "Got HTML document" ParsingException.
+     * consent or bot-check redirect lands on, whose URL NewPipe puts in its "Got HTML document" ParsingException; and
+     * the bot-check alert, Got error: "Sign in to confirm you're not a bot" (stage 9 B24; sign-in wording is a rate
+     * limit only there, as YouTubeCircuitBreaker reads it).
      */
-    private static final Pattern RATE_LIMITED = Pattern.compile("consent\\.youtube\\.com|google\\.com/sorry");
+    private static final Pattern RATE_LIMITED =
+            Pattern.compile("consent\\.youtube\\.com|google\\.com/sorry|not a bot", Pattern.CASE_INSENSITIVE);
 
     private final YouTubeGateway gateway;
     private final YouTubeOEmbedClient oEmbed;

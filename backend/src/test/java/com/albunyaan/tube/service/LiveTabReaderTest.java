@@ -350,6 +350,30 @@ class LiveTabReaderTest {
         }
     }
 
+    /**
+     * Stage 9 B24 (Cubic r12 #3): YouTube's bot check on the Live tab reaches NewPipe 0.26.5 as an ERROR alert, which it
+     * throws as Got error: "Sign in to confirm you're not a bot". That is a rate limit (R7: never a hide), as
+     * YouTubeCircuitBreaker reads it. Other sign-in wording stays ERROR (newpipe-extractor.md: only the bot check).
+     */
+    @Test
+    void onlyTheBotCheckAmongSignInAlertsIsRateLimited() {
+        String[] botChecks = {"Sign in to confirm you're not a bot", "Sign in to confirm you’re not a bot",
+                "Sign In To Confirm You're Not A Bot"};
+        for (String text : botChecks) {
+            downloader.respond(200, "{\"alerts\":[{\"alertRenderer\":{\"type\":\"ERROR\",\"text\":{\"simpleText\":\""
+                    + text + "\"}}}]}", null, false);
+
+            LiveTabResult r = reader.read("UCOll3M-P7oKs5cSrQ9ytt6g");
+
+            assertThat(r.outcome()).as(text).isEqualTo(LiveTabResult.Outcome.RATE_LIMITED);
+            assertThat(r.error()).contains("Got error: \"" + text + "\"");
+        }
+        downloader.respond(200, "{\"alerts\":[{\"alertRenderer\":{\"type\":\"ERROR\",\"text\":{\"simpleText\":"
+                + "\"Sign in to confirm your age\"}}}]}", null, false);
+
+        assertThat(reader.read("UCOll3M-P7oKs5cSrQ9ytt6g").outcome()).isEqualTo(LiveTabResult.Outcome.ERROR);
+    }
+
     /** D10: an /@handle author resolves to its UC id through the (cached) channel details. */
     @Test
     void aHandleAuthorResolvesToItsChannelId() throws IOException {

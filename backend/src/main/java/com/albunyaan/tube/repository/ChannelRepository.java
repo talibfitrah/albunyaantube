@@ -82,6 +82,7 @@ public class ChannelRepository {
     /**
      * Atomically save a channel only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     * Stage 9 B24: a stored ARCHIVED is kept unless the doc is REJECTED (see VideoRepository.saveIfStatus).
      */
     public Channel saveIfStatus(Channel channel, String expectedStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -91,6 +92,7 @@ public class ChannelRepository {
         channel.touch();
         channel.setStatus(channel.getStatus());
         channel.setExcludedItems(channel.getExcludedItems());
+        ValidationStatus incoming = channel.getValidationStatus();
 
         DocumentReference docRef = getCollection().document(channel.getId());
         ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
@@ -104,6 +106,9 @@ public class ChannelRepository {
                         "Cannot update channel " + channel.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
+            channel.setValidationStatus(!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, channel);
             return channel;
         });

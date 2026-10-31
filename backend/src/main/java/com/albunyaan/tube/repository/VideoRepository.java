@@ -75,6 +75,9 @@ public class VideoRepository {
     /**
      * Atomically save a video only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     * Stage 9 B24 (Cubic r12 #1): a stored ARCHIVED is kept unless the doc is REJECTED, as deleteByIdIfStatusIn refuses
+     * it: under review, that is a report's take-down (B23), which may land after the caller read the doc it writes back.
+     * A REJECTED one is a take-down record a re-add replaces (ContentReportService.reAdd). Restore lifts the hold.
      */
     public Video saveIfStatus(Video video, String expectedStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -82,6 +85,7 @@ public class VideoRepository {
             throw new IllegalArgumentException("Video, video ID, and expectedStatus must not be null for conditional save");
         }
         video.touch();
+        ValidationStatus incoming = video.getValidationStatus();   // each run of a retried transaction decides afresh
 
         DocumentReference docRef = getCollection().document(video.getId());
         ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
@@ -95,6 +99,9 @@ public class VideoRepository {
                         "Cannot update video " + video.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
+            video.setValidationStatus(!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, video);
             return video;
         });

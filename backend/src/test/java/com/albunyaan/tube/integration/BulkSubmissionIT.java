@@ -513,6 +513,37 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     }
 
     /**
+     * Stage 9 B24 (Cubic r12 #1): an approve that read the submission before a report took it down writes back the doc it
+     * read; the take-down's ARCHIVED survives (APPROVED, still not served, until Restore). A re-add over a take-down
+     * record (REJECTED) still lifts it.
+     */
+    @Test
+    void anApproveReadBeforeATakeDownKeepsTheArchiveAndAReAddOverARecordStillLiftsIt() throws Exception {
+        var stale = submission("TakeDown012", "MODERATOR", "mod-uid");    // what the approve read
+        takeDown("TakeDown012");
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown012").get("validationStatus"));
+
+        stale.setStatus("APPROVED");
+        videoRepository.saveIfStatus(stale, "PENDING");                     // as ApprovalService.approveVideo does
+
+        org.junit.jupiter.api.Assertions.assertEquals("APPROVED", stored("videos", "aaaa-TakeDown012").get("status"));
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown012").get("validationStatus"));
+        mvc.perform(get("/api/v1/videos/TakeDown012")).andExpect(status().isGone());
+
+        takeDown("TakeDown013");                                             // no doc: its take-down record
+        var record = videoRepository.findByYoutubeId("TakeDown013").orElseThrow();
+        org.junit.jupiter.api.Assertions.assertEquals("REJECTED", record.getStatus());
+        var readd = new com.albunyaan.tube.model.Video("TakeDown013");
+        readd.setId(record.getId());
+        readd.setStatus("APPROVED");
+        readd.setTitle("Lesson");
+        reports.reAdd(readd);
+
+        org.junit.jupiter.api.Assertions.assertNull(stored("videos", record.getId()).get("validationStatus"), "lifted");
+        mvc.perform(get("/api/v1/videos/TakeDown013")).andExpect(status().isOk());
+    }
+
+    /**
      * §7.1 — Non-admin, non-moderator (plain USER role) must receive 403 Forbidden.
      */
     @Test

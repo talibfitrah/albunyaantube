@@ -84,6 +84,7 @@ public class PlaylistRepository {
     /**
      * Atomically save a playlist only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     * Stage 9 B24: a stored ARCHIVED is kept unless the doc is REJECTED (see VideoRepository.saveIfStatus).
      */
     public Playlist saveIfStatus(Playlist playlist, String expectedStatus)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -91,6 +92,7 @@ public class PlaylistRepository {
             throw new IllegalArgumentException("Playlist, playlist ID, and expectedStatus must not be null for conditional save");
         }
         playlist.touch();
+        ValidationStatus incoming = playlist.getValidationStatus();
 
         DocumentReference docRef = getCollection().document(playlist.getId());
         ApiFuture<Playlist> committed = firestore.runTransaction(transaction -> {
@@ -104,6 +106,9 @@ public class PlaylistRepository {
                         "Cannot update playlist " + playlist.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
+            playlist.setValidationStatus(!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, playlist);
             return playlist;
         });
