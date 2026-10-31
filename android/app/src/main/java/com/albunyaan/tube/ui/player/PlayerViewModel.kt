@@ -856,7 +856,8 @@ class PlayerViewModel @Inject constructor(
         }
         // Stage 3 M6: R3 is about saving, not about forcing audio. An audio-only copy stands in for the video only offline;
         // online it would hide the video, its quality, cast and Up Next.
-        savedCopyOf(videoId)?.takeIf { !it.request.audioOnly || !networkMonitor.isCurrentlyOnline() }
+        // Cubic r12 #11: never in live-channel mode (§9.1): a saved copy of the id is a recording, not the channel's live.
+        savedCopyOf(videoId)?.takeIf { liveChannelId == null && (!it.request.audioOnly || !networkMonitor.isCurrentlyOnline()) }
             ?.let { loadDownload(it.request.id, channelName, durationSeconds); return }
         leaveDownload()
 

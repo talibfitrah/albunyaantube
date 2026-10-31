@@ -346,6 +346,27 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
+    /** Cubic r12 #11: a saved copy of the entry's id (an ended broadcast saved earlier) never bypasses live-channel mode. */
+    @Test fun `a saved copy of the live id never replaces the live`() = runTest(dispatcher) {
+        val file = java.io.File.createTempFile("a16-live", ".mp4").apply { deleteOnExit() }
+        val downloads = FakeDownloadRepository().apply {
+            entries.value = listOf(com.albunyaan.tube.download.DownloadEntry(
+                com.albunyaan.tube.download.DownloadRequest(id = "d1", title = "Sunnah", videoId = "Rs7St51oDDc", audioOnly = false),
+                com.albunyaan.tube.download.DownloadStatus.COMPLETED, filePath = file.absolutePath,
+            ))
+        }
+        val repository = FakePlayerRepository().apply { resolvedStreams = streams("Rs7St51oDDc", isLive = true) }
+        val vm = playerViewModel(repository = repository, downloadRepository = downloads, ioDispatcher = dispatcher)
+        vm.cancelAfter {
+            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+            advanceTimeBy(1_000); runCurrent()
+
+            assertFalse("the saved file must not play", vm.state.value.playingDownload)
+            assertEquals(channel, vm.state.value.currentItem?.liveChannelId)
+            assertEquals("the live is resolved", listOf("Rs7St51oDDc"), repository.resolvedVideoIds)
+        }
+    }
+
     /** Regression pin (passes before this task too): live-channel mode never touches an ordinary video's end. */
     @Test fun `an ordinary video keeps today's end behaviour`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
