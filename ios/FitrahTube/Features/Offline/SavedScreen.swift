@@ -171,7 +171,8 @@ extension PlayerArgs {
     /// would play saved items inside a playlist too.
     @MainActor func preferringSavedCopy(store: OfflineStore, base: URL, isOnline: Bool) -> PlayerArgs {
         // Stage 9 I-C10.2 (Android A-M6): an audio-only copy has no picture, so it stands in for the stream only offline.
-        guard offlineItemId == nil, playlistId == nil, let item = store.item(videoId: videoId),
+        // Cubic P2 (Android 4a7fa2df): never in live-channel mode (§9.1): a saved copy of the id is a recording, not the live.
+        guard offlineItemId == nil, playlistId == nil, liveChannelId == nil, let item = store.item(videoId: videoId),
               item.status == OfflineStatus.completed.rawValue, !item.audioOnly || !isOnline, let localPath = item.localPath,
               FileManager.default.fileExists(
                 atPath: OfflineStorage.fileURL(relativePath: localPath, base: base).path(percentEncoded: false))

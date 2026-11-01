@@ -90,6 +90,21 @@ struct OfflinePlaybackTests {
         }
     }
 
+    /// Cubic P2 (Android 4a7fa2df): a saved copy of the id a live-category row opens (an ended broadcast
+    /// saved earlier) never replaces live-channel mode (§9.1) -- the live lookup, the channel switch
+    /// and the end/failure handling must run.
+    @Test func aSavedCopyOfTheLiveIdNeverReplacesTheLive() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: "mp4")
+        var args = PlayerArgs(videoId: item.videoId)
+        args.liveChannelId = "UCOll3M-P7oKs5cSrQ9ytt6g"
+
+        let routed = args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true)
+
+        #expect(routed.offlineItemId == nil)
+        #expect(routed.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
+
     /// Stage 9 I-C10.2 (Cubic r2, Android A-M6): an audio-only save has no picture, so online it never replaces the video
     /// stream (and its quality menu and cast). Offline it is what plays.
     @Test func anAudioOnlySaveIsPlayedOnlyWhileOffline() throws {
