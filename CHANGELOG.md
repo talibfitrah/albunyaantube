@@ -16,6 +16,7 @@ stable release.
 - Video titles (both apps): the player, channel pages and playlists show each video's original title instead of an English machine translation.
 - Playlists (both apps): a playlist always shows a picture; the server also repairs playlist pictures whose source image is gone.
 - iOS: a video opened from a playlist lists the rest of that playlist in Up Next.
+- iOS (1.0.5): some playlists that opened empty (e.g. "White Noise for Babies") list their videos again.
 
 ## [1.0.3] - 2026-10-16
 
