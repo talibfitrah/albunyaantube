@@ -1,0 +1,27 @@
+frontend/src/services/adminUsers.ts
+  s_dbb6b1f3671904::t_c68f73dd6225ff 10
+  s_dbb6b1f3671904::t_7a407533479484 20,22,24
+  s_dbb6b1f3671904::t_a7309b56583199 82
+  s_dbb6b1f3671904::t_a57752e8f045ef 90-91,95-102
+  s_dbb6b1f3671904::t_29f347f4b894ee 131
+  s_dbb6b1f3671904::t_a1e16a330678a8 103-104
+frontend/tests/adminUsers.spec.ts
+  s_dbb6b1f3671904::t_f4ab31df51a1c2 1-35,37-39
+  s_dbb6b1f3671904::t_18b9e09fc34d94 36
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d3dfe661490de18679b90b4814eff4dc4c5d5a9f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
