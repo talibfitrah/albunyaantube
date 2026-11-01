@@ -1,0 +1,32 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_dbb6b1f3671904::t_b3192c60e9e76b 24-26,185-230,251-277
+  s_dbb6b1f3671904::t_f8b5e705896372 28-29
+  s_dbb6b1f3671904::t_fddcdec7949bb9 278
+  s_dbb6b1f3671904::t_e58731b7df156f 231-250
+  s_dbb6b1f3671904::t_1045f5c863e688 27
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-playlist-videolist-page2.json
+  s_dbb6b1f3671904::t_7e442d2c8b4254 1
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/Fixtures/browse-playlist-videolist.json
+  s_dbb6b1f3671904::t_7e442d2c8b4254 1
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_dbb6b1f3671904::t_ca441f5374f256 489
+  s_dbb6b1f3671904::t_b3192c60e9e76b 216,229-241,322-323,379-380,400-402,423-424,426-429,470-488,491
+  s_dbb6b1f3671904::t_b7fa537b90ba9b 490
+  s_dbb6b1f3671904::t_6211e20c4ed12e 492
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e7f8ac5fd12909f66744f4cbab93ae306be4d09a",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
