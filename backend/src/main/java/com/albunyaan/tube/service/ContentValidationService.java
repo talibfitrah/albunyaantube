@@ -1149,7 +1149,7 @@ public class ContentValidationService {
                                         channel.getCategoryIds(), channel.getStatus()));
                             }
                             channel.setLastValidatedAt(Timestamp.now());
-                            channelRepository.save(channel);
+                            channelRepository.saveLiftingArchive(channel);   // B25: save() keeps a stored ARCHIVED
                             auditLogService.logSystem("channel_restored", "channel", id, actorName);
                             restored = true;
                         } else {
@@ -1161,7 +1161,7 @@ public class ContentValidationService {
                         if (playlist != null) {
                             playlist.setValidationStatus(ValidationStatus.VALID);
                             playlist.setLastValidatedAt(Timestamp.now());
-                            playlistRepository.save(playlist);
+                            playlistRepository.saveLiftingArchive(playlist);
                             auditLogService.logSystem("playlist_restored", "playlist", id, actorName);
                             restored = true;
                         } else {
@@ -1180,7 +1180,7 @@ public class ContentValidationService {
                         } else if (video != null) {
                             video.setValidationStatus(ValidationStatus.VALID);
                             video.setLastValidatedAt(Timestamp.now());
-                            videoRepository.save(video);
+                            videoRepository.saveLiftingArchive(video);
                             auditLogService.logSystem("video_restored", "video", id, actorName);
                             restored = true;
                         } else {

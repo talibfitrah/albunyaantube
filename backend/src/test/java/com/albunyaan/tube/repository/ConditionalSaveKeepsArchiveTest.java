@@ -24,6 +24,7 @@ import static org.mockito.ArgumentMatchers.same;
 import static org.mockito.Mockito.RETURNS_DEEP_STUBS;
 import static org.mockito.Mockito.doAnswer;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -125,5 +126,92 @@ class ConditionalSaveKeepsArchiveTest {
         Video saved = new VideoRepository(firestore, timeouts, events).saveIfStatus(video, "PENDING");
 
         assertEquals(ValidationStatus.VALID, saved.getValidationStatus());
+    }
+    // ---- Stage 9 B25 (Cubic r13 #2-#4): the plain save() every read-modify-write path uses keeps it too ----
+
+    /** ContentValidationService's run: it read the video minutes before a take-down, then writes VALID back. */
+    @Test
+    void aValidationRunSaveReadBeforeATakeDownKeepsItsArchive() throws Exception {
+        storedDoc("APPROVED", "ARCHIVED");
+        Video video = new Video("sCQwxFEMlZ4");
+        video.setId("v1");
+        video.setStatus("APPROVED");
+        video.setValidationStatus(ValidationStatus.VALID);
+
+        Video saved = new VideoRepository(firestore, timeouts, events).save(video);
+
+        verify(tx).set(any(DocumentReference.class), same(video));
+        assertEquals(ValidationStatus.ARCHIVED, saved.getValidationStatus());
+    }
+
+    /** RegistryController.updateChannel / toggleChannelStatus: a stale ERROR is not written over the take-down. */
+    @Test
+    void aChannelUpdateSaveReadBeforeATakeDownKeepsItsArchive() throws Exception {
+        storedDoc("APPROVED", "ARCHIVED");
+        Channel channel = new Channel("UCOll3M-P7oKs5cSrQ9ytt6g");
+        channel.setId("c1");
+        channel.setStatus("APPROVED");
+        channel.setValidationStatus(ValidationStatus.ERROR);
+
+        Channel saved = new ChannelRepository(firestore, timeouts, events).save(channel);
+
+        verify(tx).set(any(DocumentReference.class), same(channel));
+        assertEquals(ValidationStatus.ARCHIVED, saved.getValidationStatus());
+    }
+
+    /** ContentReportService.excludeFromParent: a parent playlist's exclusion edit keeps its own take-down. */
+    @Test
+    void aPlaylistExclusionSaveReadBeforeATakeDownKeepsItsArchive() throws Exception {
+        storedDoc("APPROVED", "ARCHIVED");
+        Playlist playlist = new Playlist("PLtakedown000000000000000000000000b");
+        playlist.setId("p1");
+        playlist.setStatus("APPROVED");
+
+        Playlist saved = new PlaylistRepository(firestore, timeouts, events).save(playlist);
+
+        verify(tx).set(any(DocumentReference.class), same(playlist));
+        assertEquals(ValidationStatus.ARCHIVED, saved.getValidationStatus());
+    }
+
+    /** A take-down record is REJECTED: a save over it keeps nothing (B23's and B24's rule). */
+    @Test
+    void aSaveOverATakeDownRecordKeepsNothing() throws Exception {
+        storedDoc("REJECTED", "ARCHIVED");
+        Video video = new Video("sCQwxFEMlZ4");
+        video.setId("v1");
+        video.setStatus("REJECTED");
+
+        assertNull(new VideoRepository(firestore, timeouts, events).save(video).getValidationStatus());
+    }
+
+    @Test
+    void aRetriedSaveDecidesOnTheDocItReadsLast() throws Exception {
+        storedDoc("APPROVED", "ARCHIVED", "VALID");
+        Video video = new Video("sCQwxFEMlZ4");
+        video.setId("v1");
+        video.setStatus("APPROVED");
+        video.setValidationStatus(ValidationStatus.ERROR);
+
+        assertEquals(ValidationStatus.ERROR, new VideoRepository(firestore, timeouts, events).save(video).getValidationStatus());
+    }
+
+    /** Restore and the live poller's restore un-archive on purpose: the lifting save writes the caller's value. */
+    @Test
+    void theLiftingSaveWritesTheCallersValueOverAnArchive() throws Exception {
+        storedDoc("APPROVED", "ARCHIVED");
+        Video video = new Video("sCQwxFEMlZ4");
+        video.setId("v1");
+        video.setValidationStatus(ValidationStatus.VALID);
+        Channel channel = new Channel("UCOll3M-P7oKs5cSrQ9ytt6g");
+        channel.setId("c1");
+        channel.setValidationStatus(ValidationStatus.VALID);
+        Playlist playlist = new Playlist("PLtakedown000000000000000000000000b");
+        playlist.setId("p1");
+        playlist.setValidationStatus(ValidationStatus.VALID);
+
+        assertEquals(ValidationStatus.VALID, new VideoRepository(firestore, timeouts, events).saveLiftingArchive(video).getValidationStatus());
+        assertEquals(ValidationStatus.VALID, new ChannelRepository(firestore, timeouts, events).saveLiftingArchive(channel).getValidationStatus());
+        assertEquals(ValidationStatus.VALID, new PlaylistRepository(firestore, timeouts, events).saveLiftingArchive(playlist).getValidationStatus());
+        verify(firestore, never()).runTransaction(any(Transaction.Function.class));
     }
 }

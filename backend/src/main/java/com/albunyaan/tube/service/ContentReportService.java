@@ -418,6 +418,7 @@ public class ContentReportService {
         try {
             lift(record);
             videoRepository.deleteByIdIfStatusIn(record.getId(), java.util.Set.of("REJECTED"));
+            streamIndexService.releaseVideoId(record.getYoutubeId());   // B25 (r13 #5): the record's id blocked its stream
         } finally {
             exclusionsChanged();
         }

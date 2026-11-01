@@ -544,6 +544,34 @@ class BulkSubmissionIT extends BaseIntegrationTest {
     }
 
     /**
+     * Stage 9 B25 (Cubic r13 #2): a validation run read the video, a report took it down while the run checked YouTube,
+     * then the run wrote its stale copy back VALID with plain save(). The take-down's ARCHIVED survives; Restore lifts it.
+     */
+    @Test
+    void aValidationRunsStaleSaveAfterATakeDownKeepsTheArchiveAndRestoreLiftsIt() throws Exception {
+        var seeded = submission("TakeDown014", "MODERATOR", "mod-uid");
+        seeded.setStatus("APPROVED");
+        firestore.collection("videos").document(seeded.getId()).set(seeded).get(5, java.util.concurrent.TimeUnit.SECONDS);
+        var stale = videoRepository.findById("aaaa-TakeDown014").orElseThrow();   // what the run read
+        mvc.perform(get("/api/v1/videos/TakeDown014")).andExpect(status().isOk());
+        takeDown("TakeDown014");
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown014").get("validationStatus"));
+
+        stale.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.VALID);   // as ContentValidationService:711
+        stale.setLastValidatedAt(com.google.cloud.Timestamp.now());
+        videoRepository.save(stale);
+
+        org.junit.jupiter.api.Assertions.assertEquals("ARCHIVED", stored("videos", "aaaa-TakeDown014").get("validationStatus"));
+        org.junit.jupiter.api.Assertions.assertNotNull(stored("videos", "aaaa-TakeDown014").get("lastValidatedAt"), "the run's write landed");
+        mvc.perform(get("/api/v1/videos/TakeDown014")).andExpect(status().isGone());
+
+        org.junit.jupiter.api.Assertions.assertEquals(1,
+                validation.restoreContent("video", List.of("aaaa-TakeDown014"), "admin-uid", "admin").getSuccessCount());
+        org.junit.jupiter.api.Assertions.assertEquals("VALID", stored("videos", "aaaa-TakeDown014").get("validationStatus"));
+        mvc.perform(get("/api/v1/videos/TakeDown014")).andExpect(status().isOk());
+    }
+
+    /**
      * §7.1 — Non-admin, non-moderator (plain USER role) must receive 403 Forbidden.
      */
     @Test

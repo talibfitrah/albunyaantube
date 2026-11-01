@@ -426,7 +426,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             return null;
         }
         doc.setValidationStatus(previous.isEmpty() ? null : ValidationStatus.valueOf(previous));
-        videos.save(doc);
+        videos.saveLiftingArchive(doc);                                     // B25: save() would keep the ARCHIVED
         audit.logSystem("live_stream_restored", "video", doc.getId(), "live-poller");
         return doc.getId();
     }

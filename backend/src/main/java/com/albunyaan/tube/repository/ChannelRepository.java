@@ -60,7 +60,36 @@ public class ChannelRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
+     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
+     */
     public Channel save(Channel channel) throws ExecutionException, InterruptedException, TimeoutException {
+        if (channel.getId() == null) return saveLiftingArchive(channel);   // a new doc: nothing stored to keep
+        channel.touch();
+        // Ensure derived fields stay in sync with status/exclusions
+        channel.setStatus(channel.getStatus());
+        channel.setExcludedItems(channel.getExcludedItems());
+        ValidationStatus incoming = channel.getValidationStatus();   // each run of a retried transaction decides afresh
+        DocumentReference docRef = getCollection().document(channel.getId());
+        ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            channel.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
+            transaction.set(docRef, channel);
+            return channel;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
+        return channel;
+    }
+
+    /**
+     * The plain whole-doc write: a stored ARCHIVED is replaced too. Only for a deliberate un-archive (Restore, the live
+     * poller's restore of its own archive) and for a new doc; everything else uses {@link #save}.
+     */
+    public Channel saveLiftingArchive(Channel channel) throws ExecutionException, InterruptedException, TimeoutException {
         channel.touch();
         // Ensure derived fields stay in sync with status/exclusions
         channel.setStatus(channel.getStatus());

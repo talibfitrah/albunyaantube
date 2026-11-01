@@ -65,7 +65,33 @@ public class PlaylistRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
+     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
+     */
     public Playlist save(Playlist playlist) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if (playlist.getId() == null) return saveLiftingArchive(playlist);   // a new doc: nothing stored to keep
+        playlist.touch();
+        ValidationStatus incoming = playlist.getValidationStatus();   // each run of a retried transaction decides afresh
+        DocumentReference docRef = getCollection().document(playlist.getId());
+        ApiFuture<Playlist> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            playlist.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
+            transaction.set(docRef, playlist);
+            return playlist;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
+        return playlist;
+    }
+
+    /**
+     * The plain whole-doc write: a stored ARCHIVED is replaced too. Only for a deliberate un-archive (Restore, the live
+     * poller's restore of its own archive) and for a new doc; everything else uses {@link #save}.
+     */
+    public Playlist saveLiftingArchive(Playlist playlist) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         playlist.touch();
 
         if (playlist.getId() == null) {

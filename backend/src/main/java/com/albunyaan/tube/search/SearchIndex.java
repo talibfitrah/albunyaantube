@@ -490,6 +490,18 @@ public class SearchIndex {
                 () -> writer.updateDocument(streamKey(stream.getStreamId()), streamDoc(streamDto(stream), stream.getSourceKeys())));
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #5): after Restore deleted a take-down record, its id stops blocking the stream. The record's
+     * delete event carries no youtubeId and applyCatalogChange only adds, so without this the stream stayed hidden until
+     * reconcile(). On the writer, after that event's re-read; a Video doc that holds the id again (a re-add) keeps it.
+     */
+    public void releaseVideoId(String youtubeId) {
+        if (youtubeId == null) return;
+        submit("releaseVideoId " + youtubeId, () -> {
+            if (videos.findByYoutubeId(youtubeId).isEmpty()) videoIds.remove(youtubeId);
+        });
+    }
+
     /** Stored values of `field` on the document with `key` (as of the last refresh), or none. */
     private List<String> storedValues(String key, String field) throws IOException {
         IndexSearcher searcher = searchers.acquire();

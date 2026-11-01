@@ -32,6 +32,7 @@ import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.Mockito.doThrow;
+import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
@@ -642,7 +643,9 @@ class ContentReportServiceTest {
         verify(channelRepository).save(ch);
         verify(playlistRepository).save(pl);
         verify(streamIndexService).markStreamRestored("ilgiwqpcOC8");
-        verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
+        var order = inOrder(videoRepository, streamIndexService);
+        order.verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
+        order.verify(streamIndexService).releaseVideoId("ilgiwqpcOC8");   // B25 (r13 #5): after the delete, search shows it at once
         verify(publicContentCacheService).evictPublicContentCaches();
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }

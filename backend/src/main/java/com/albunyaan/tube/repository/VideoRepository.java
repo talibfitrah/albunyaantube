@@ -56,7 +56,33 @@ public class VideoRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
+     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
+     */
     public Video save(Video video) throws ExecutionException, InterruptedException, TimeoutException {
+        if (video.getId() == null) return saveLiftingArchive(video);   // a new doc: nothing stored to keep
+        video.touch();
+        ValidationStatus incoming = video.getValidationStatus();   // each run of a retried transaction decides afresh
+        DocumentReference docRef = getCollection().document(video.getId());
+        ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            video.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
+            transaction.set(docRef, video);
+            return video;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
+        return video;
+    }
+
+    /**
+     * The plain whole-doc write: a stored ARCHIVED is replaced too. Only for a deliberate un-archive (Restore, the live
+     * poller's restore of its own archive) and for a new doc; everything else uses {@link #save}.
+     */
+    public Video saveLiftingArchive(Video video) throws ExecutionException, InterruptedException, TimeoutException {
         video.touch();
 
         if (video.getId() == null) {

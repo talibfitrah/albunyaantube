@@ -363,7 +363,8 @@ class LiveChannelPollerTest {
 
         assertThat(own.getValidationStatus()).isEqualTo(ValidationStatus.ERROR);
         assertThat(admins.getValidationStatus()).isEqualTo(ValidationStatus.ARCHIVED);
-        verify(videos, times(1)).save(any());
+        verify(videos, times(1)).saveLiftingArchive(own);                // B25: the poller's own restore lifts on purpose
+        verify(videos, never()).save(any());
         verify(audit).logSystem("live_stream_restored", "video", "doc-own", "live-poller");
     }
 
@@ -485,7 +486,7 @@ class LiveChannelPollerTest {
 
         cycleAt(T0);
 
-        verify(videos).save(own);
+        verify(videos).saveLiftingArchive(own);                          // B25: the poller's restore lifts on purpose
         verify(caches).evictPublicContentCaches();
     }
 

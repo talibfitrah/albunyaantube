@@ -1006,8 +1006,35 @@ class ContentValidationServiceTest {
         assertEquals(2, result.getSuccessCount());
         verify(contentReportService).liftTakeDown(takeDown);
         verify(videoRepository, never()).save(takeDown);
-        verify(videoRepository).save(archived);
+        verify(videoRepository, never()).saveLiftingArchive(takeDown);
+        verify(videoRepository).saveLiftingArchive(archived);           // B25: Restore un-archives on purpose
+        verify(videoRepository, never()).save(archived);
         assertEquals(ValidationStatus.VALID, archived.getValidationStatus());
+    }
+
+    /** Stage 9 B25 (Cubic r13 #2-#4): save() keeps a stored ARCHIVED, so Restore's channel and playlist writes lift it. */
+    @Test
+    void restoreLiftsAChannelsAndAPlaylistsArchive() throws Exception {
+        Channel channel = new Channel("UCOll3M-P7oKs5cSrQ9ytt6g");
+        channel.setId("doc-ch");
+        channel.setStatus("APPROVED");
+        channel.setValidationStatus(ValidationStatus.ARCHIVED);
+        Playlist playlist = new Playlist("PLtakedown000000000000000000000000b");
+        playlist.setId("doc-pl");
+        playlist.setStatus("APPROVED");
+        playlist.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(channelRepository.findById("doc-ch")).thenReturn(Optional.of(channel));
+        when(playlistRepository.findById("doc-pl")).thenReturn(Optional.of(playlist));
+
+        assertEquals(1, service.restoreContent("channel", List.of("doc-ch"), "admin-uid", "Admin").getSuccessCount());
+        assertEquals(1, service.restoreContent("playlist", List.of("doc-pl"), "admin-uid", "Admin").getSuccessCount());
+
+        verify(channelRepository).saveLiftingArchive(channel);
+        verify(playlistRepository).saveLiftingArchive(playlist);
+        verify(channelRepository, never()).save(any(Channel.class));
+        verify(playlistRepository, never()).save(any(Playlist.class));
+        assertEquals(ValidationStatus.VALID, channel.getValidationStatus());
+        assertEquals(ValidationStatus.VALID, playlist.getValidationStatus());
     }
 
     /**

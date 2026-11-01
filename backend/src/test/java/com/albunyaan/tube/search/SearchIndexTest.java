@@ -2368,6 +2368,47 @@ class SearchIndexTest {
         assertEquals(List.of("fresh-2"), ids(hooks.search("quxtar", "VIDEO", 10)));
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #5): a take-down of a video with no doc saves a REJECTED record, whose id blocks the stream
+     * (videoIds). Restore lifts the stream, then deletes the record; the delete's event carries no youtubeId, so only the
+     * release after it un-blocks the id. Before, the stream stayed hidden until the 6-hourly reconcile.
+     */
+    @Test
+    void aRestoredTakeDownRecordsStreamIsFoundAtOnce() throws Exception {
+        SearchableStream orphan = streams().stream().filter(s -> "orphan-lecture".equals(s.getStreamId())).findFirst().orElseThrow();
+        Video record = with(video("orphan-lecture", "Orphan Lecture", null), v -> {
+            v.setStatus("REJECTED");
+            v.setValidationStatus(ValidationStatus.ARCHIVED);
+        });
+        saved(record);                                                    // the take-down's record
+        index.removeStream("orphan-lecture");                             // markStreamArchived
+        index.awaitWrites();
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
+
+        index.restoreStream(orphan);                                      // Restore: lift() first
+        when(videoRepo.findById(record.getId())).thenReturn(Optional.empty());
+        index.onCatalogChanged(new CatalogChanged("VIDEO", record.getId(), false)); // then the record's delete
+        index.releaseVideoId("orphan-lecture");
+        index.awaitWrites();
+
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
+    }
+
+    /** The release re-reads: a Video doc that holds the id again (a re-add landed meanwhile) keeps its stream blocked. */
+    @Test
+    void aReleaseWhileAVideoDocHoldsTheIdKeepsItsStreamHidden() throws Exception {
+        Video readded = with(video("orphan-lecture", "Orphan Lecture", null), v -> v.setStatus("PENDING"));
+        saved(readded);
+        index.awaitWrites();
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
+        when(videoRepo.findByYoutubeId("orphan-lecture")).thenReturn(Optional.of(readded));
+
+        index.releaseVideoId("orphan-lecture");
+        index.awaitWrites();
+
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
+    }
+
     // ---- build and swap hardening (B3 review) --------------------------------------------------
 
     @Test
