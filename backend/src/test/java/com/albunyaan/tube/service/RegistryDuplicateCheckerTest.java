@@ -124,15 +124,35 @@ class RegistryDuplicateCheckerTest {
         com.albunyaan.tube.model.Video takenDown = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
         takenDown.setId("b");
         takenDown.setStatus("REJECTED");
+        takenDown.setSource(com.albunyaan.tube.model.Video.TAKE_DOWN_SOURCE);   // a record beside: not lifted by a's re-add
         takenDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
         when(videos.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(plain));
         when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(plain, takenDown));
-        when(videos.findByYoutubeId("xc7keR2piUM")).thenReturn(Optional.of(takenDown));
-        when(videos.findAllByYoutubeId("xc7keR2piUM")).thenReturn(List.of(takenDown));
+        com.albunyaan.tube.model.Video record = new com.albunyaan.tube.model.Video("xc7keR2piUM");   // a take-down record
+        record.setId("c");
+        record.setStatus("REJECTED");
+        record.setSource(com.albunyaan.tube.model.Video.TAKE_DOWN_SOURCE);
+        record.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("xc7keR2piUM")).thenReturn(Optional.of(record));
+        when(videos.findAllByYoutubeId("xc7keR2piUM")).thenReturn(List.of(record));
 
         var batch = checker.newBatch();
 
         org.junit.jupiter.api.Assertions.assertTrue(batch.findExisting(YouTubeContentType.VIDEO, "ilgiwqpcOC8").get().held());
         org.junit.jupiter.api.Assertions.assertFalse(batch.findExisting(YouTubeContentType.VIDEO, "xc7keR2piUM").get().held());
+    }
+
+    /** Cubic b26-r2: a REJECTED video archived in place (not a take-down record) holds its own re-add, as channels do. */
+    @Test
+    void aRejectedVideoArchivedInPlaceIsHeld() throws Exception {
+        com.albunyaan.tube.model.Video inPlace = new com.albunyaan.tube.model.Video("InPlace0001");
+        inPlace.setId("a");
+        inPlace.setStatus("REJECTED");
+        inPlace.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("InPlace0001")).thenReturn(Optional.of(inPlace));
+        when(videos.findAllByYoutubeId("InPlace0001")).thenReturn(List.of(inPlace));
+
+        org.junit.jupiter.api.Assertions.assertTrue(
+                checker.newBatch().findExisting(YouTubeContentType.VIDEO, "InPlace0001").get().held());
     }
 }

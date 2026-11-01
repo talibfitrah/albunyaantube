@@ -596,6 +596,25 @@ class RegistryControllerTest {
         verify(contentReportService, never()).reAdd(any());
     }
 
+    /** Cubic b26-r2: an admin's add of a REJECTED video archived in place (not a take-down record) is 409, not a hidden success. */
+    @Test
+    void addVideo_aReAddOfAnInPlaceArchiveIs409() throws Exception {
+        com.albunyaan.tube.model.Video inPlace = new com.albunyaan.tube.model.Video("InPlace0001");
+        inPlace.setId("a");
+        inPlace.setStatus("REJECTED");
+        inPlace.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("InPlace0001")).thenReturn(Optional.of(inPlace));
+        when(videoRepository.findAllByYoutubeId("InPlace0001")).thenReturn(List.of(inPlace));
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("InPlace0001");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(contentReportService, never()).reAdd(any());
+    }
+
     /** Stage 9 B13: a re-add that loses its race (another re-add, or a Restore deleted the record) is 409, not 500. */
     @Test
     void addVideo_aReAddThatLosesItsRaceIs409() throws Exception {

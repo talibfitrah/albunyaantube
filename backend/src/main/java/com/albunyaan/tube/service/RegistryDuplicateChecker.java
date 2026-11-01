@@ -44,12 +44,13 @@ public class RegistryDuplicateChecker {
     }
 
     /**
-     * Cubic b26-r1: a video's docs hold an admin's re-add into doc `docId` when another of them is a take-down's ARCHIVED
-     * (a pre-B11 duplicate): the re-add would serve the id beside it. The doc itself archived is no hold: a take-down
-     * record's re-add lifts it (B14), and save() keeps an in-place one. Bulk (here) and single add alike.
+     * Cubic b26-r1/r2: a video's docs hold an admin's re-add into doc `docId` when one of them holds (ARCHIVED or
+     * UNAVAILABLE): another doc (a pre-B11 duplicate) would be served beside, and the doc itself would stay hidden, as
+     * save() keeps its hold. Only a take-down record's own hold is no bar: its re-add lifts it (B14). Bulk and single add.
      */
     public static boolean heldBeside(java.util.List<Video> docs, String docId) {
-        return docs.stream().anyMatch(d -> !docId.equals(d.getId()) && ValidationStatus.holds(d.getValidationStatus()));
+        return docs.stream().anyMatch(d -> ValidationStatus.holds(d.getValidationStatus())
+                && !(docId.equals(d.getId()) && Video.isTakeDownRecord(d.getStatus(), d.getSource())));
     }
 
     /** Snapshot of an existing registry entry sufficient for duplicate reporting. */
@@ -119,7 +120,7 @@ public class RegistryDuplicateChecker {
                                 .stream().anyMatch(d -> ValidationStatus.holds(d.getValidationStatus()));
                         yield p.map(x -> new ExistingMatch(x.getId(), x.getStatus(), held));
                     }
-                    // Cubic b26-r1: a re-add goes into the REJECTED match itself, so only another doc's take-down holds it
+                    // Cubic b26-r1/r2: the REJECTED match is re-added into, so its own hold counts unless it is a record
                     case VIDEO    -> {
                         Optional<Video> v = videos.findByYoutubeId(youtubeId);
                         boolean held = v.isPresent() && "REJECTED".equals(v.get().getStatus())
