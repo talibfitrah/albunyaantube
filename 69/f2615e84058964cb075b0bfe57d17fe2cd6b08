@@ -1,0 +1,21 @@
+frontend/tests/useCursorPagination.spec.ts
+  s_dbb6b1f3671904::t_640d65f33a8a38 1-25
+frontend/src/composables/useCursorPagination.ts
+  s_dbb6b1f3671904::t_7100fed7c12762 19-20,23,28,44,51
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "69f2615e84058964cb075b0bfe57d17fe2cd6b08",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
