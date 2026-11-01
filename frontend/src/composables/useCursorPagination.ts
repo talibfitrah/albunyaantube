@@ -16,12 +16,16 @@ export function useCursorPagination<T>(fetcher: Fetcher<T>, options: CursorPagin
   const isLoading = ref(false);
   const error = ref<string | null>(null);
   const history = ref<(string | null)[]>([]);
+  /** Bumped per load, so a reply that a newer load (a filter or page change) replaced is dropped. */
+  let loadToken = 0;
 
   async function load(cursor: string | null = null, mode: LoadMode = 'replace'): Promise<void> {
+    const token = ++loadToken;
     isLoading.value = true;
     error.value = null;
     try {
       const page = await fetcher(cursor, limit);
+      if (token !== loadToken) return;
       items.value = page.data;
       pageInfo.value = page.pageInfo;
 
@@ -37,13 +41,14 @@ export function useCursorPagination<T>(fetcher: Fetcher<T>, options: CursorPagin
         }
       }
     } catch (err) {
+      if (token !== loadToken) return;
       if (err instanceof Error) {
         error.value = err.message;
       } else {
         error.value = 'Unknown error occurred.';
       }
     } finally {
-      isLoading.value = false;
+      if (token === loadToken) isLoading.value = false;
     }
   }
 
