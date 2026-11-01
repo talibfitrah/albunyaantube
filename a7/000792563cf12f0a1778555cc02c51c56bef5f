@@ -1,0 +1,50 @@
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_dbb6b1f3671904::t_b245e0bf818410 59-63,65-85
+backend/src/main/java/com/albunyaan/tube/service/ContentReportService.java
+  s_dbb6b1f3671904::t_b245e0bf818410 421
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_dbb6b1f3671904::t_b245e0bf818410 68-72,74-94
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_dbb6b1f3671904::t_b245e0bf818410 63-67,69-92
+backend/src/test/java/com/albunyaan/tube/repository/ConditionalSaveKeepsArchiveTest.java
+  s_dbb6b1f3671904::t_f04a33413efdfa 27,130-196,199,201-206,208-209,216
+  s_dbb6b1f3671904::t_11653219d10768 197-198,200,207,210-215
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_b245e0bf818410 493-504
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_dbb6b1f3671904::t_b245e0bf818410 1152,1164,1183
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_b245e0bf818410 429
+backend/src/test/java/com/albunyaan/tube/service/LiveCategoryWritePathTripwireTest.java
+  s_dbb6b1f3671904::t_b245e0bf818410 37
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_c198e2b49f3304 489
+  s_dbb6b1f3671904::t_0684137efb6900 366-367
+backend/src/test/java/com/albunyaan/tube/integration/BulkSubmissionIT.java
+  s_dbb6b1f3671904::t_0c2f8681099cb1 547-573
+  s_dbb6b1f3671904::t_a451d2e53610d4 546
+backend/src/main/java/com/albunyaan/tube/service/StreamIndexService.java
+  s_dbb6b1f3671904::t_b245e0bf818410 65-69
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_dbb6b1f3671904::t_7ff97584362fb4 2371-2411
+backend/src/test/java/com/albunyaan/tube/service/ContentReportServiceTest.java
+  s_dbb6b1f3671904::t_89ff4c8d455a04 35,646-648
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_dbb6b1f3671904::t_74374b1396d64f 1009-1011,1015-1039
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a7000792563cf12f0a1778555cc02c51c56bef5f",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
