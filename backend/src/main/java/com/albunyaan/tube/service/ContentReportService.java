@@ -33,7 +33,7 @@ public class ContentReportService {
     private static final String ANONYMOUS_DEVICE_KEY = "ANONYMOUS_DEVICE";
     private static final java.util.regex.Pattern VIDEO_ID = java.util.regex.Pattern.compile("[A-Za-z0-9_-]{11}");
     /** Video.source of a take-down record (stage 9 B11): Restore deletes such a record, a re-add replaces it. */
-    static final String TAKE_DOWN_SOURCE = "REPORT";
+    static final String TAKE_DOWN_SOURCE = Video.TAKE_DOWN_SOURCE;
 
     private final ContentReportRepository reportRepository;
     private final Cache<String, AtomicInteger> rateLimitCache;
@@ -219,7 +219,14 @@ public class ContentReportService {
                 boolean added = addToChannelExclusions(excluded, storageType, targetId);
                 if (added) {
                     channel.setExcludedItems(excluded);
-                    channelRepository.save(channel);
+                    // Cubic users3: on the doc as stored now, so a validation run's stale copy or another report's
+                    // exclusion written since this read is not lost (and does not lose this one)
+                    channelRepository.update(channel, c -> {
+                        var stored = c.getExcludedItems() == null ? new com.albunyaan.tube.model.Channel.ExcludedItems()
+                                : c.getExcludedItems();
+                        addToChannelExclusions(stored, storageType, targetId);
+                        c.setExcludedItems(stored);
+                    });
                     if (addedTo != null) addedTo.add("channel:" + parentId);
                 }
                 return true; // even no-op (already excluded) counts — don't fall back to archive
@@ -240,7 +247,11 @@ public class ContentReportService {
                 if (!ids.contains(targetId)) {
                     ids.add(targetId);
                     playlist.setExcludedVideoIds(ids);
-                    playlistRepository.save(playlist);
+                    playlistRepository.update(playlist, p -> {   // Cubic users3: as the channel's
+                        List<String> stored = p.getExcludedVideoIds() == null ? new java.util.ArrayList<>() : p.getExcludedVideoIds();
+                        if (!stored.contains(targetId)) stored.add(targetId);
+                        p.setExcludedVideoIds(stored);
+                    });
                     if (addedTo != null) addedTo.add("playlist:" + parentId);
                 }
                 return true;
@@ -461,13 +472,17 @@ public class ContentReportService {
                 var channel = channelRepository.findByYoutubeId(sourceId).orElse(null);
                 if (channel != null && channel.getExcludedItems() != null && channel.getExcludedItems().getVideos().remove(videoId)) {
                     channel.setExcludedItems(channel.getExcludedItems());      // recounts
-                    channelRepository.save(channel);
+                    channelRepository.update(channel, c -> {                  // Cubic users3: on the doc as stored now
+                        if (c.getExcludedItems() != null) c.getExcludedItems().getVideos().remove(videoId);
+                    });
                 }
             } else {
                 var playlist = playlistRepository.findByYoutubeId(sourceId).orElse(null);
                 if (playlist != null && playlist.getExcludedVideoIds() != null && playlist.getExcludedVideoIds().remove(videoId)) {
                     playlist.setExcludedVideoIds(playlist.getExcludedVideoIds()); // recounts
-                    playlistRepository.save(playlist);
+                    playlistRepository.update(playlist, p -> {
+                        if (p.getExcludedVideoIds() != null) p.getExcludedVideoIds().remove(videoId);
+                    });
                 }
             }
         }
@@ -481,7 +496,7 @@ public class ContentReportService {
 
     /** The same, on a raw doc's fields. Stage 9 B21 (Cubic r9 #14): no status change moves it out of REJECTED. */
     public static boolean isTakeDownRecord(String status, String source) {
-        return "REJECTED".equals(status) && TAKE_DOWN_SOURCE.equals(source);
+        return Video.isTakeDownRecord(status, source);
     }
 
     /** After an exclusion write: public listings and the admin Exclusions workspace (a 5-minute cache) show it at once. */

@@ -31,6 +31,7 @@ import static org.assertj.core.api.Assertions.assertThat;
 import static org.assertj.core.api.Assertions.assertThatThrownBy;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
+import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.inOrder;
 import static org.mockito.Mockito.never;
@@ -232,8 +233,8 @@ class ContentReportServiceTest {
 
         service.resolveReport("report-inner", ReportStatus.RESOLVED, "admin", null);
 
-        verify(channelRepository).save(ch);
-        verify(playlistRepository).save(pl);
+        verify(channelRepository).update(eq(ch), any());
+        verify(playlistRepository).update(eq(pl), any());
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
         assertThat(pl.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
         verify(publicContentCacheService, org.mockito.Mockito.atLeastOnce()).evictPublicContentCaches();
@@ -434,8 +435,8 @@ class ContentReportServiceTest {
         service.resolveReport("report-none", ReportStatus.RESOLVED, "admin", null);
 
         takenDown("lesson99999");
-        verify(channelRepository, never()).save(any());
-        verify(playlistRepository, never()).save(any());
+        verify(channelRepository, never()).update(any(), any());
+        verify(playlistRepository, never()).update(any(), any());
         verify(publicContentCacheService).evictPublicContentCaches();
     }
 
@@ -453,7 +454,7 @@ class ContentReportServiceTest {
 
         service.resolveReport("report-parent", ReportStatus.RESOLVED, "admin", null);
 
-        verify(channelRepository).save(ch);
+        verify(channelRepository).update(eq(ch), any());
         verifyNoInteractions(searchIndex);
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
@@ -473,7 +474,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-timeout")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
-        when(channelRepository.save(ch)).thenThrow(new TimeoutException("write timed out"));
+        when(channelRepository.update(eq(ch), any())).thenThrow(new TimeoutException("write timed out"));
 
         ContentReport out = service.resolveReport("report-timeout", ReportStatus.RESOLVED, "admin", "music video");
 
@@ -543,11 +544,11 @@ class ContentReportServiceTest {
         Playlist pl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
         when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(ch));
         when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pl));
-        when(playlistRepository.save(pl)).thenThrow(new TimeoutException("write timed out"));
+        when(playlistRepository.update(eq(pl), any())).thenThrow(new TimeoutException("write timed out"));
 
         ContentReport out = service.resolveReport("report-partial", ReportStatus.RESOLVED, "admin", "music video");
 
-        verify(channelRepository).save(ch);
+        verify(channelRepository).update(eq(ch), any());
         assertThat(out.getStatus()).isEqualTo(ReportStatus.RESOLVED);
         assertThat(out.getResolutionNote()).startsWith("music video")
                 .contains("playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe").doesNotContain("channel:UCfassTU6mGWIj-yb26_ADjQ");
@@ -575,8 +576,8 @@ class ContentReportServiceTest {
 
         ContentReport out = service.resolveReport("report-again", ReportStatus.RESOLVED, "admin", null);
 
-        verify(channelRepository, never()).save(any());
-        verify(playlistRepository, never()).save(any());
+        verify(channelRepository, never()).update(any(), any());
+        verify(playlistRepository, never()).update(any(), any());
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
         assertThat(pl.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
         verify(reportRepository, times(1)).update(any());
@@ -640,8 +641,8 @@ class ContentReportServiceTest {
 
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("keptExcl001");
         assertThat(pl.getExcludedVideoIds()).isEmpty();
-        verify(channelRepository).save(ch);
-        verify(playlistRepository).save(pl);
+        verify(channelRepository).update(eq(ch), any());
+        verify(playlistRepository).update(eq(pl), any());
         verify(streamIndexService).markStreamRestored("ilgiwqpcOC8");
         var order = inOrder(videoRepository, streamIndexService);
         order.verify(videoRepository).deleteByIdIfStatusIn("doc-takedown", java.util.Set.of("REJECTED"));
@@ -687,7 +688,7 @@ class ContentReportServiceTest {
         assertThatThrownBy(() -> service.liftTakeDown(recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ")))
                 .isInstanceOf(IllegalStateException.class);
 
-        verify(channelRepository).save(ch);
+        verify(channelRepository).update(eq(ch), any());
         verify(publicContentCacheService).evictPublicContentCaches();
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
@@ -719,8 +720,8 @@ class ContentReportServiceTest {
         verify(streamIndexService).markStreamRestored("ilgiwqpcOC8");
         assertThat(ch.getExcludedItems().getVideos()).containsExactly("keptExcl001");
         assertThat(pl.getExcludedVideoIds()).isEmpty();
-        verify(channelRepository).save(ch);
-        verify(playlistRepository).save(pl);
+        verify(channelRepository).update(eq(ch), any());
+        verify(playlistRepository).update(eq(pl), any());
         assertThat(workspaceCache.getIfPresent("exclusions")).as("the admin Exclusions workspace re-reads").isNull();
     }
 
@@ -735,7 +736,7 @@ class ContentReportServiceTest {
         assertThatThrownBy(() -> service.reAdd(reAdded)).isInstanceOf(IllegalStateException.class);
 
         verify(channelRepository, never()).findByYoutubeId(anyString());
-        verify(channelRepository, never()).save(any());
+        verify(channelRepository, never()).update(any(), any());
     }
 
     /**
@@ -779,5 +780,75 @@ class ContentReportServiceTest {
         assertThat(List.of(pending.getValidationStatus(), approved.getValidationStatus(), bounced.getValidationStatus(),
                 pendingList.getValidationStatus())).containsOnly(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
         assertThat(pending.getSource()).as("no take-down record: Restore keeps the doc").isEqualTo("MODERATOR");
+    }
+
+    // ---- Cubic users3: a report's exclusion add and Restore's remove change the doc as stored now ----
+
+    /** update() as the repository runs it: `change` on the doc as stored now, not on the copy the caller read. */
+    private void storedNow(Channel channel, Playlist playlist) throws Exception {
+        when(channelRepository.update(any(), any())).thenAnswer(inv -> {
+            inv.<java.util.function.Consumer<Channel>>getArgument(1).accept(channel);
+            return channel;
+        });
+        when(playlistRepository.update(any(), any())).thenAnswer(inv -> {
+            inv.<java.util.function.Consumer<Playlist>>getArgument(1).accept(playlist);
+            return playlist;
+        });
+    }
+
+    /** Another report excluded a video on both sources after this one read them: both exclusions are stored. */
+    @Test
+    void aReportsExclusionKeepsOneWrittenSinceItsRead() throws Exception {
+        ContentReport report = new ContentReport();
+        report.setTargetType(ReportTargetType.VIDEO);
+        report.setTargetId("ilgiwqpcOC8");
+        when(reportRepository.findById("report-race")).thenReturn(Optional.of(report));
+        when(reportRepository.update(any())).thenReturn(report);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.empty());
+        when(searchIndex.listingsLoaded()).thenReturn(true);
+        when(searchIndex.sourcesListing("ilgiwqpcOC8")).thenReturn(List.of(
+                "channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(new Channel("UCfassTU6mGWIj-yb26_ADjQ")));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"))
+                .thenReturn(Optional.of(new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")));
+        Channel storedCh = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        storedCh.getExcludedItems().getVideos().add("xc7keR2piUM");
+        Playlist storedPl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        storedPl.getExcludedVideoIds().add("xc7keR2piUM");
+        storedNow(storedCh, storedPl);
+
+        service.resolveReport("report-race", ReportStatus.RESOLVED, "admin", null);
+
+        verify(channelRepository, never()).save(any());
+        verify(playlistRepository, never()).save(any());
+        assertThat(storedCh.getExcludedItems().getVideos()).containsExactly("xc7keR2piUM", "ilgiwqpcOC8");
+        assertThat(storedCh.getExcludedItems().getTotalExcludedCount()).isEqualTo(2);
+        assertThat(storedPl.getExcludedVideoIds()).containsExactly("xc7keR2piUM", "ilgiwqpcOC8");
+        assertThat(storedPl.getExcludedVideoCount()).isEqualTo(2);
+    }
+
+    /** Restore lifts its own exclusion from the doc as stored now: one added since its read stays. */
+    @Test
+    void aRestoreLiftKeepsAnExclusionWrittenSinceItsRead() throws Exception {
+        Video record = recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ");
+        record.setTakeDownExclusions(List.of("channel:UCfassTU6mGWIj-yb26_ADjQ", "playlist:PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"));
+        Channel readCh = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        readCh.getExcludedItems().getVideos().add("ilgiwqpcOC8");
+        Playlist readPl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        readPl.getExcludedVideoIds().add("ilgiwqpcOC8");
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(readCh));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(readPl));
+        Channel storedCh = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        storedCh.getExcludedItems().getVideos().addAll(List.of("ilgiwqpcOC8", "xc7keR2piUM"));
+        Playlist storedPl = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        storedPl.getExcludedVideoIds().addAll(List.of("ilgiwqpcOC8", "xc7keR2piUM"));
+        storedNow(storedCh, storedPl);
+
+        service.liftTakeDown(record);
+
+        verify(channelRepository, never()).save(any());
+        verify(playlistRepository, never()).save(any());
+        assertThat(storedCh.getExcludedItems().getVideos()).containsExactly("xc7keR2piUM");
+        assertThat(storedPl.getExcludedVideoIds()).containsExactly("xc7keR2piUM");
     }
 }

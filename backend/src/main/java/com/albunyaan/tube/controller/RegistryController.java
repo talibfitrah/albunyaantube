@@ -972,7 +972,9 @@ public class RegistryController {
                 // Stage 9 B11: an admin's add of a REJECTED video (a report's take-down record too) is re-added into its
                 // doc, as bulk does: no 409, no second doc. Anything else is a duplicate. B16 (Cubic r6 P1): a moderator's
                 // add would make that doc their own PENDING one, which they could delete: the take-down undone.
-                if (!"REJECTED".equals(ex.getStatus()) || !user.isAdmin()) {
+                if (!"REJECTED".equals(ex.getStatus()) || !user.isAdmin()   // Cubic b26-r1: nor beside an archived sibling
+                        || com.albunyaan.tube.service.RegistryDuplicateChecker.heldBeside(
+                                videoRepository.findAllByYoutubeId(ex.getYoutubeId()), ex.getId())) {
                     return ResponseEntity.status(HttpStatus.CONFLICT).build();
                 }
                 rejectedDocId = ex.getId();

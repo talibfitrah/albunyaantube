@@ -58,7 +58,7 @@ public class VideoRepository {
 
     /**
      * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
-     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * a take-down record, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
      * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
      */
     public Video save(Video video) throws ExecutionException, InterruptedException, TimeoutException {
@@ -68,7 +68,7 @@ public class VideoRepository {
         DocumentReference docRef = getCollection().document(video.getId());
         ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-            video.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+            video.setValidationStatus(snapshot.exists() && !takeDownRecord(snapshot)
                     && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, video);
@@ -76,6 +76,14 @@ public class VideoRepository {
         });
         CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
         return video;
+    }
+
+    /**
+     * Cubic r14: a take-down record (REJECTED from REPORT) is the one doc whose ARCHIVED a write replaces (a re-add lifts
+     * it). Not any REJECTED doc: rejecting an in-place take-down (B23) keeps its ARCHIVED, and a re-add must keep it too.
+     */
+    private static boolean takeDownRecord(com.google.cloud.firestore.DocumentSnapshot snapshot) {
+        return Video.isTakeDownRecord(snapshot.getString("status"), snapshot.getString("source"));
     }
 
     /**
@@ -101,9 +109,9 @@ public class VideoRepository {
     /**
      * Atomically save a video only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
-     * Stage 9 B24 (Cubic r12 #1): a stored ARCHIVED is kept unless the doc is REJECTED, as deleteByIdIfStatusIn refuses
-     * it: under review, that is a report's take-down (B23), which may land after the caller read the doc it writes back.
-     * A REJECTED one is a take-down record a re-add replaces (ContentReportService.reAdd). Restore lifts the hold.
+     * Stage 9 B24 (Cubic r12 #1): a stored ARCHIVED is kept unless the doc is a take-down record (Cubic r14): that is a
+     * report's take-down (B23), which may land after the caller read the doc it writes back, and stays when an admin
+     * rejects the doc. A take-down record is what a re-add replaces (ContentReportService.reAdd). Restore lifts the hold.
      */
     public Video saveIfStatus(Video video, String expectedStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -125,7 +133,7 @@ public class VideoRepository {
                         "Cannot update video " + video.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
-            video.setValidationStatus(!"REJECTED".equals(currentStatus)
+            video.setValidationStatus(!takeDownRecord(snapshot)
                     && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, video);
@@ -163,11 +171,13 @@ public class VideoRepository {
     }
 
     public Optional<Video> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("youtubeId", youtubeId)
-                .get();
+        return preferred(findAllByYoutubeId(youtubeId));
+    }
 
-        return preferred(query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class));
+    /** Every doc of the youtubeId (B26: an import checks each for a take-down). */
+    public List<Video> findAllByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("youtubeId", youtubeId).get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class);
     }
 
     /**
@@ -176,8 +186,13 @@ public class VideoRepository {
      * (a query's default order). Without it, limit(1) answered whichever doc id sorted first.
      */
     static Optional<Video> preferred(List<Video> docs) {
+        return preferred(docs, Video::getStatus);
+    }
+
+    /** The same rule for a channel's or playlist's docs (Cubic r14: a take-down archives the one served). */
+    static <T> Optional<T> preferred(List<T> docs, java.util.function.Function<T, String> status) {
         return docs.stream().min(java.util.Comparator.comparingInt(
-                v -> "APPROVED".equals(v.getStatus()) ? 0 : "REJECTED".equals(v.getStatus()) ? 2 : 1));
+                d -> "APPROVED".equals(status.apply(d)) ? 0 : "REJECTED".equals(status.apply(d)) ? 2 : 1));
     }
 
     /**

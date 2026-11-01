@@ -452,23 +452,30 @@ public class ContentValidationService {
 
                 if (validationResult.isValid(youtubeId)) {
                     // Channel exists on YouTube - mark as VALID and refresh metadata
-                    channel.setValidationStatus(ValidationStatus.VALID);
-                    channel.setLastValidatedAt(Timestamp.now());
-
-                    // Refresh cached metadata from YouTube
+                    Timestamp now = Timestamp.now();
                     ChannelDetailsDto dto = validationResult.getContent(youtubeId);
-                    if (dto != null) {
-                        refreshChannelMetadata(channel, dto);
-                    }
-
-                    channelRepository.save(channel);
+                    java.util.function.Consumer<Channel> validated = c -> {
+                        c.setValidationStatus(ValidationStatus.VALID);
+                        c.setLastValidatedAt(now);
+                        if (dto != null) {
+                            refreshChannelMetadata(c, dto);   // Refresh cached metadata from YouTube
+                        }
+                    };
+                    validated.accept(channel);
+                    // Cubic users3: only the run's own fields, on the doc as stored now: its copy is minutes old, and a
+                    // report's exclusion written since would be lost by a whole-doc save
+                    channelRepository.update(channel, validated);
                     logger.debug("Channel validated as VALID - youtubeId: {}", youtubeId);
 
                 } else if (validationResult.isNotFound(youtubeId)) {
                     // Channel DEFINITIVELY doesn't exist on YouTube - auto-archive
-                    channel.setValidationStatus(ValidationStatus.ARCHIVED);
-                    channel.setLastValidatedAt(Timestamp.now());
-                    channelRepository.save(channel);
+                    Timestamp now = Timestamp.now();
+                    java.util.function.Consumer<Channel> archived = c -> {
+                        c.setValidationStatus(ValidationStatus.ARCHIVED);
+                        c.setLastValidatedAt(now);
+                    };
+                    archived.accept(channel);
+                    channelRepository.update(channel, archived);   // Cubic users3: as above
                     streamIndexService.removeSource("CHANNEL", channel.getYoutubeId());
 
                     run.incrementChannelsArchived();
@@ -486,9 +493,13 @@ public class ContentValidationService {
 
                 } else if (validationResult.isError(youtubeId)) {
                     // Transient error - DO NOT archive, mark as ERROR for retry later
-                    channel.setValidationStatus(ValidationStatus.ERROR);
-                    channel.setLastValidatedAt(Timestamp.now());
-                    channelRepository.save(channel);
+                    Timestamp now = Timestamp.now();
+                    java.util.function.Consumer<Channel> failed = c -> {
+                        c.setValidationStatus(ValidationStatus.ERROR);
+                        c.setLastValidatedAt(now);
+                    };
+                    failed.accept(channel);
+                    channelRepository.update(channel, failed);   // Cubic users3: as above
 
                     run.incrementError();
                     errorChannelIds.add(channel.getId());
@@ -574,17 +585,18 @@ public class ContentValidationService {
 
                 if (validationResult.isValid(youtubeId)) {
                     // Playlist exists on YouTube - mark as VALID and refresh metadata
-                    playlist.setValidationStatus(ValidationStatus.VALID);
-                    playlist.setLastValidatedAt(Timestamp.now());
-
-                    // Refresh cached metadata from YouTube
+                    Timestamp now = Timestamp.now();
                     PlaylistDetailsDto dto = validationResult.getContent(youtubeId);
                     boolean wasBroken = ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl());
-                    if (dto != null) {
-                        refreshPlaylistMetadata(playlist, dto);
-                    }
-
-                    playlistRepository.save(playlist);
+                    java.util.function.Consumer<Playlist> validated = p -> {
+                        p.setValidationStatus(ValidationStatus.VALID);
+                        p.setLastValidatedAt(now);
+                        if (dto != null) {
+                            refreshPlaylistMetadata(p, dto);   // Refresh cached metadata from YouTube
+                        }
+                    };
+                    validated.accept(playlist);
+                    playlistRepository.update(playlist, validated);   // Cubic users3: as the channel's
                     if (wasBroken && !ThumbnailUrls.isBrokenPlaylistThumbnail(playlist.getThumbnailUrl())) {
                         brokenThumbnailsHealed++;
                     }
@@ -592,9 +604,13 @@ public class ContentValidationService {
 
                 } else if (validationResult.isNotFound(youtubeId)) {
                     // Playlist DEFINITIVELY doesn't exist on YouTube - auto-archive
-                    playlist.setValidationStatus(ValidationStatus.ARCHIVED);
-                    playlist.setLastValidatedAt(Timestamp.now());
-                    playlistRepository.save(playlist);
+                    Timestamp now = Timestamp.now();
+                    java.util.function.Consumer<Playlist> archived = p -> {
+                        p.setValidationStatus(ValidationStatus.ARCHIVED);
+                        p.setLastValidatedAt(now);
+                    };
+                    archived.accept(playlist);
+                    playlistRepository.update(playlist, archived);   // Cubic users3: as the channel's
                     streamIndexService.removeSource("PLAYLIST", playlist.getYoutubeId());
 
                     run.incrementPlaylistsArchived();
@@ -612,9 +628,13 @@ public class ContentValidationService {
 
                 } else if (validationResult.isError(youtubeId)) {
                     // Transient error - DO NOT archive, mark as ERROR for retry later
-                    playlist.setValidationStatus(ValidationStatus.ERROR);
-                    playlist.setLastValidatedAt(Timestamp.now());
-                    playlistRepository.save(playlist);
+                    Timestamp now = Timestamp.now();
+                    java.util.function.Consumer<Playlist> failed = p -> {
+                        p.setValidationStatus(ValidationStatus.ERROR);
+                        p.setLastValidatedAt(now);
+                    };
+                    failed.accept(playlist);
+                    playlistRepository.update(playlist, failed);   // Cubic users3: as the channel's
 
                     run.incrementError();
                     errorPlaylistIds.add(playlist.getId());

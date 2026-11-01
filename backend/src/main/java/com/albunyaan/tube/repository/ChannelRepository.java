@@ -61,8 +61,8 @@ public class ChannelRepository {
     }
 
     /**
-     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
-     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept (Cubic users4: on
+     * any status, as a channel or playlist has no take-down record), decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
      * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
      */
     public Channel save(Channel channel) throws ExecutionException, InterruptedException, TimeoutException {
@@ -75,7 +75,7 @@ public class ChannelRepository {
         DocumentReference docRef = getCollection().document(channel.getId());
         ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-            channel.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+            channel.setValidationStatus(snapshot.exists()   // Cubic users4: any status; a channel or playlist has no take-down record
                     && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, channel);
@@ -83,6 +83,30 @@ public class ChannelRepository {
         });
         CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", channel.getId());
         return channel;
+    }
+
+    /**
+     * Cubic users3: a few fields changed on the doc as stored now, in a transaction (`change` runs again on a retry). For a
+     * writer whose copy may be stale: a validation run read it before minutes of YouTube calls, and a report's exclusion
+     * (or another report's) landed since. save() would write that copy whole, the exclusion lost. save()'s ARCHIVED rule
+     * applies. IllegalArgumentException when the doc is gone (never written back).
+     */
+    public Channel update(Channel read, java.util.function.Consumer<Channel> change)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(read.getId());
+        ApiFuture<Channel> committed = firestore.runTransaction(transaction -> {
+            Channel stored = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Channel.class);
+            if (stored == null) throw new IllegalArgumentException("Channel not found: " + read.getId());
+            boolean held = stored.getValidationStatus() == ValidationStatus.ARCHIVED;   // save()'s rule (users4: any status)
+            change.accept(stored);
+            if (held) stored.setValidationStatus(ValidationStatus.ARCHIVED);
+            stored.touch();
+            stored.setStatus(stored.getStatus());
+            stored.setExcludedItems(stored.getExcludedItems());   // recounts
+            transaction.set(docRef, stored);
+            return stored;
+        });
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "CHANNEL", read.getId());
     }
 
     /**
@@ -111,7 +135,8 @@ public class ChannelRepository {
     /**
      * Atomically save a channel only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
-     * Stage 9 B24: a stored ARCHIVED is kept unless the doc is REJECTED (see VideoRepository.saveIfStatus).
+     * Stage 9 B24: a stored ARCHIVED is kept (see VideoRepository.saveIfStatus); Cubic users4: a REJECTED one too, as
+     * rejecting a doc a report archived in place keeps its ARCHIVED, and there is no take-down record to replace.
      */
     public Channel saveIfStatus(Channel channel, String expectedStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -135,8 +160,7 @@ public class ChannelRepository {
                         "Cannot update channel " + channel.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
-            channel.setValidationStatus(!"REJECTED".equals(currentStatus)
-                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+            channel.setValidationStatus(ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))   // users4
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, channel);
             return channel;
@@ -151,13 +175,14 @@ public class ChannelRepository {
     }
 
     public Optional<Channel> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("youtubeId", youtubeId)
-                .limit(1)
-                .get();
+        // Cubic r14: a re-add after a rejection writes a second doc; answer by the one that counts (the video rule)
+        return VideoRepository.preferred(findAllByYoutubeId(youtubeId), Channel::getStatus);
+    }
 
-        List<Channel> channels = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Channel.class);
-        return channels.isEmpty() ? Optional.empty() : Optional.of(channels.get(0));
+    /** Every doc of the youtubeId (B26: an import or a bulk re-add checks each for a take-down's ARCHIVED). */
+    public List<Channel> findAllByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("youtubeId", youtubeId).get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
     /**

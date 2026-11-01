@@ -66,8 +66,8 @@ public class PlaylistRepository {
     }
 
     /**
-     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
-     * REJECTED, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept (Cubic users4: on
+     * any status, as a channel or playlist has no take-down record), decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
      * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
      */
     public Playlist save(Playlist playlist) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -77,7 +77,7 @@ public class PlaylistRepository {
         DocumentReference docRef = getCollection().document(playlist.getId());
         ApiFuture<Playlist> committed = firestore.runTransaction(transaction -> {
             com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-            playlist.setValidationStatus(snapshot.exists() && !"REJECTED".equals(snapshot.getString("status"))
+            playlist.setValidationStatus(snapshot.exists()   // Cubic users4: any status; a channel or playlist has no take-down record
                     && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, playlist);
@@ -85,6 +85,29 @@ public class PlaylistRepository {
         });
         CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", playlist.getId());
         return playlist;
+    }
+
+    /**
+     * Cubic users3: a few fields changed on the doc as stored now, in a transaction (`change` runs again on a retry). For a
+     * writer whose copy may be stale: a validation run read it before minutes of YouTube calls, and a report's exclusion
+     * (or another report's) landed since. save() would write that copy whole, the exclusion lost. save()'s ARCHIVED rule
+     * applies. IllegalArgumentException when the doc is gone (never written back).
+     */
+    public Playlist update(Playlist read, java.util.function.Consumer<Playlist> change)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(read.getId());
+        ApiFuture<Playlist> committed = firestore.runTransaction(transaction -> {
+            Playlist stored = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObject(Playlist.class);
+            if (stored == null) throw new IllegalArgumentException("Playlist not found: " + read.getId());
+            boolean held = stored.getValidationStatus() == ValidationStatus.ARCHIVED;   // save()'s rule (users4: any status)
+            change.accept(stored);
+            if (held) stored.setValidationStatus(ValidationStatus.ARCHIVED);
+            stored.touch();
+            stored.setExcludedVideoIds(stored.getExcludedVideoIds());   // recounts
+            transaction.set(docRef, stored);
+            return stored;
+        });
+        return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "PLAYLIST", read.getId());
     }
 
     /**
@@ -110,7 +133,8 @@ public class PlaylistRepository {
     /**
      * Atomically save a playlist only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
-     * Stage 9 B24: a stored ARCHIVED is kept unless the doc is REJECTED (see VideoRepository.saveIfStatus).
+     * Stage 9 B24: a stored ARCHIVED is kept (see VideoRepository.saveIfStatus); Cubic users4: a REJECTED one too, as
+     * rejecting a doc a report archived in place keeps its ARCHIVED, and there is no take-down record to replace.
      */
     public Playlist saveIfStatus(Playlist playlist, String expectedStatus)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
@@ -132,8 +156,7 @@ public class PlaylistRepository {
                         "Cannot update playlist " + playlist.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
-            playlist.setValidationStatus(!"REJECTED".equals(currentStatus)
-                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+            playlist.setValidationStatus(ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))   // users4
                     ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, playlist);
             return playlist;
@@ -148,13 +171,14 @@ public class PlaylistRepository {
     }
 
     public Optional<Playlist> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("youtubeId", youtubeId)
-                .limit(1)
-                .get();
+        // Cubic r14: a re-add after a rejection writes a second doc; answer by the one that counts (the video rule)
+        return VideoRepository.preferred(findAllByYoutubeId(youtubeId), Playlist::getStatus);
+    }
 
-        List<Playlist> playlists = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Playlist.class);
-        return playlists.isEmpty() ? Optional.empty() : Optional.of(playlists.get(0));
+    /** Every doc of the youtubeId (B26: an import or a bulk re-add checks each for a take-down's ARCHIVED). */
+    public List<Playlist> findAllByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("youtubeId", youtubeId).get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Playlist.class);
     }
 
     /**

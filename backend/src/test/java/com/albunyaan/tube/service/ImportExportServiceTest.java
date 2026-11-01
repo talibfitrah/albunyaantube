@@ -107,7 +107,7 @@ class ImportExportServiceTest {
         record.setId("v-takedown");
         record.setStatus("REJECTED");
         record.setSource("REPORT");
-        when(videos.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(record));
+        when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(record));
         for (String strategy : List.of("SKIP", "OVERWRITE", "MERGE")) {
             Video backedUp = new Video("ilgiwqpcOC8");
             backedUp.setId("v-before");
@@ -125,6 +125,196 @@ class ImportExportServiceTest {
                 assertThat(e.getError()).contains("ilgiwqpcOC8").contains("taken down");
             });
         }
+    }
+
+    /**
+     * Cubic r14: a take-down archives the doc in place (B23), and so does validation. A backup row of the same youtubeId
+     * under another doc id would be a second, VALID doc: served again. Each type skips it and names it.
+     */
+    @Test
+    void aRowBesideAnArchivedDocOfItsIdIsSkippedAndNamed() throws Exception {
+        Channel archivedChannel = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        archivedChannel.setId("ch-held");
+        archivedChannel.setStatus("APPROVED");
+        archivedChannel.setValidationStatus(ValidationStatus.ARCHIVED);
+        Playlist archivedPlaylist = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        archivedPlaylist.setId("pl-held");
+        archivedPlaylist.setStatus("APPROVED");
+        archivedPlaylist.setValidationStatus(ValidationStatus.ARCHIVED);
+        Video archivedVideo = new Video("ilgiwqpcOC8");
+        archivedVideo.setId("v-held");
+        archivedVideo.setStatus("APPROVED");
+        archivedVideo.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(channels.findAllByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(List.of(archivedChannel));
+        when(playlists.findAllByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(List.of(archivedPlaylist));
+        when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(archivedVideo));
+        for (String strategy : List.of("SKIP", "OVERWRITE", "MERGE")) {
+            Channel channel = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+            channel.setId("ch-before");
+            channel.setStatus("APPROVED");
+            Playlist playlist = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+            playlist.setId("pl-before");
+            playlist.setStatus("APPROVED");
+            Video video = new Video("ilgiwqpcOC8");
+            video.setId("v-before");
+            video.setStatus("APPROVED");
+            ImportRequest request = new ImportRequest();
+            request.setChannels(List.of(channel));
+            request.setPlaylists(List.of(playlist));
+            request.setVideos(List.of(video));
+            request.setMergeStrategy(strategy);
+
+            ImportResponse out = service.importAll(request);
+
+            verify(channels, never()).save(channel);
+            verify(playlists, never()).save(playlist);
+            verify(videos, never()).save(video);
+            assertThat(List.of(out.getCounts().getChannelsSkipped(), out.getCounts().getPlaylistsSkipped(),
+                    out.getCounts().getVideosSkipped())).as(strategy).containsExactly(1, 1, 1);
+            assertThat(out.getErrors()).as(strategy).extracting(e -> e.getType() + ":" + e.getId())
+                    .containsExactly("CHANNEL:ch-before", "PLAYLIST:pl-before", "VIDEO:v-before");
+        }
+    }
+
+    /**
+     * Cubic users4: every doc of the youtubeId counts, not only the one findByYoutubeId prefers. A PENDING doc and a
+     * REJECTED one archived by a take-down (in place, then rejected): the row is skipped.
+     */
+    @Test
+    void aRowBesideAnArchivedDocTheLookupDoesNotPreferIsSkipped() throws Exception {
+        Video pending = new Video("ilgiwqpcOC8");
+        pending.setId("v-pending");
+        pending.setStatus("PENDING");
+        Video takenDown = new Video("ilgiwqpcOC8");
+        takenDown.setId("v-held");
+        takenDown.setStatus("REJECTED");
+        takenDown.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(pending));
+        when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(pending, takenDown));
+        Video row = new Video("ilgiwqpcOC8");
+        row.setId("v-third");
+        row.setStatus("APPROVED");
+        ImportRequest request = new ImportRequest();
+        request.setVideos(List.of(row));
+        request.setMergeStrategy("OVERWRITE");
+
+        ImportResponse out = service.importAll(request);
+
+        verify(videos, never()).save(row);
+        assertThat(out.getCounts().getVideosSkipped()).isEqualTo(1);
+    }
+
+    /**
+     * Cubic users5: a row whose own doc is stored and served overwrites that doc (kept() keeps its own hold): no second
+     * doc, nothing brought back, so another doc's archive does not skip it. A row whose own doc is not served (here
+     * REJECTED) still is: written APPROVED, it would serve the id beside the take-down.
+     */
+    @Test
+    void aRowOverItsOwnServedDocIsNotSkippedForAnotherDocsArchive() throws Exception {
+        Video legacy = new Video("ilgiwqpcOC8");
+        legacy.setId("v-legacy");
+        legacy.setStatus("APPROVED");
+        legacy.setValidationStatus(ValidationStatus.UNAVAILABLE);
+        Video served = new Video("ilgiwqpcOC8");
+        served.setId("v-served");
+        served.setStatus("APPROVED");
+        Video rejected = new Video("ilgiwqpcOC8");
+        rejected.setId("v-rejected");
+        rejected.setStatus("REJECTED");
+        when(videos.findById("v-served")).thenReturn(Optional.of(served));
+        when(videos.findById("v-rejected")).thenReturn(Optional.of(rejected));
+        when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(legacy, served, rejected));
+        Video servedRow = new Video("ilgiwqpcOC8");
+        servedRow.setId("v-served");
+        servedRow.setStatus("APPROVED");
+        Video rejectedRow = new Video("ilgiwqpcOC8");
+        rejectedRow.setId("v-rejected");
+        rejectedRow.setStatus("APPROVED");
+        ImportRequest request = new ImportRequest();
+        request.setVideos(List.of(servedRow, rejectedRow));
+        request.setMergeStrategy("OVERWRITE");
+
+        ImportResponse out = service.importAll(request);
+
+        verify(videos).save(servedRow);
+        verify(videos, never()).save(rejectedRow);
+        assertThat(out.getErrors()).extracting(e -> e.getId()).containsExactly("v-rejected");
+    }
+
+    /**
+     * Cubic b26-r1: a row whose stored doc is APPROVED but which now carries another youtubeId is a new item for that
+     * id: a take-down of it skips the row (record or archived doc), as for a new doc.
+     */
+    @Test
+    void aRowThatMovesItsServedDocToATakenDownIdIsSkipped() throws Exception {
+        Video storedVideo = new Video("ilgiwqpcOC8");
+        storedVideo.setId("v1");
+        storedVideo.setStatus("APPROVED");
+        Video record = new Video("xc7keR2piUM");
+        record.setId("v-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        record.setValidationStatus(ValidationStatus.ARCHIVED);
+        Channel storedChannel = new Channel("UCOll3M-P7oKs5cSrQ9ytt6g");
+        storedChannel.setId("ch-1");
+        storedChannel.setStatus("APPROVED");
+        Channel archived = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        archived.setId("ch-held");
+        archived.setStatus("APPROVED");
+        archived.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videos.findById("v1")).thenReturn(Optional.of(storedVideo));
+        when(videos.findAllByYoutubeId("xc7keR2piUM")).thenReturn(List.of(record));
+        when(channels.findById("ch-1")).thenReturn(Optional.of(storedChannel));
+        when(channels.findAllByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(List.of(archived));
+        Video videoRow = new Video("xc7keR2piUM");                // v1, now the taken-down id
+        videoRow.setId("v1");
+        videoRow.setStatus("APPROVED");
+        Channel channelRow = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        channelRow.setId("ch-1");
+        channelRow.setStatus("APPROVED");
+        ImportRequest request = new ImportRequest();
+        request.setVideos(List.of(videoRow));
+        request.setChannels(List.of(channelRow));
+        request.setMergeStrategy("OVERWRITE");
+
+        ImportResponse out = service.importAll(request);
+
+        verify(videos, never()).save(videoRow);
+        verify(channels, never()).save(channelRow);
+        assertThat(out.getErrors()).extracting(e -> e.getType() + ":" + e.getId()).containsExactly("CHANNEL:ch-1", "VIDEO:v1");
+    }
+
+    /**
+     * Cubic users4: a skipped row never reaches the live guard. A LIVE-category channel row whose youtubeId an archived
+     * doc holds is skipped, so nothing seeds it: no Live-tab read, no 503 for a row the import skips anyway.
+     */
+    @Test
+    void aSkippedLiveChannelRowIsNeverSeeded() throws Exception {
+        String uc = "UCROKYPep-UuODNwyipe6JMw";
+        LiveTabReader reader = mock(LiveTabReader.class);
+        LiveChannelService live = new LiveChannelService(reader, mock(LiveChannelStateRepository.class), Clock.systemUTC());
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        ImportExportService importer = new ImportExportService(categories, channels, playlists, videos,
+                mock(AuditLogService.class), mock(VideoValidationService.class),
+                new LiveCategoryGuard(liveCategories, live, videos, channels, playlists, new CategoryMappingService(categories)));
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        when(reader.read(uc)).thenReturn(LiveTabResult.error(1, "boom"));
+        live.loadStates(List.of());
+        Channel takenDown = liveChannel(uc, ValidationStatus.ARCHIVED);
+        takenDown.setId("ch-held");
+        when(channels.findByYoutubeId(uc)).thenReturn(Optional.of(takenDown));
+        when(channels.findAllByYoutubeId(uc)).thenReturn(List.of(takenDown));
+        when(liveCategories.members("live-cat")).thenReturn(new LiveCategoryService.Members(List.of()));
+        Channel row = liveChannel(uc, ValidationStatus.VALID);   // id ch-live: another doc id
+        ImportRequest request = new ImportRequest();
+        request.setChannels(List.of(row));
+        request.setMergeStrategy("OVERWRITE");
+
+        ImportResponse out = importer.importAll(request);
+
+        verify(reader, never()).read(uc);
+        verify(channels, never()).save(row);
+        assertThat(out.getCounts().getChannelsSkipped()).isEqualTo(1);
     }
 
     /**

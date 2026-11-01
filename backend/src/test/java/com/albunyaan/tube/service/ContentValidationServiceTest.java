@@ -129,7 +129,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.VALID, savedChannel.getValidationStatus());
@@ -137,6 +137,38 @@ class ContentValidationServiceTest {
             assertEquals(5000L, savedChannel.getSubscribers());
             assertEquals(50, savedChannel.getVideoCount());
             assertEquals("https://example.com/thumb.jpg", savedChannel.getThumbnailUrl());
+        }
+
+        /**
+         * Cubic users3: the run read the channel before its YouTube calls; a report excluded a video on it meanwhile.
+         * The run writes only what it owns onto the doc as stored then: the exclusion stays.
+         */
+        @Test
+        void validateChannel_keepsAnExclusionWrittenSinceTheRunReadIt() throws Exception {
+            Channel read = createChannel("UC123", "Old Name", ValidationStatus.VALID);
+            Channel stored = createChannel("UC123", "Old Name", ValidationStatus.VALID);
+            Channel.ExcludedItems excluded = new Channel.ExcludedItems();
+            excluded.setVideos(new java.util.ArrayList<>(List.of("sCQwxFEMlZ4")));
+            stored.setExcludedItems(excluded);
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(read));
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+            ChannelDetailsDto dto = new ChannelDetailsDto();
+            dto.setName("Updated Name");
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("UC123", dto);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(channelRepository.update(any(), any())).thenAnswer(inv -> {
+                inv.<java.util.function.Consumer<Channel>>getArgument(1).accept(stored);
+                return stored;
+            });
+
+            service.validateChannels("MANUAL", "test-user", "Test User", 100);
+
+            verify(channelRepository, never()).save(any(Channel.class));
+            assertEquals(ValidationStatus.VALID, stored.getValidationStatus());
+            assertEquals("Updated Name", stored.getName());
+            assertEquals(List.of("sCQwxFEMlZ4"), stored.getExcludedItems().getVideos());
         }
 
         @Test
@@ -158,7 +190,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.ARCHIVED, savedChannel.getValidationStatus());
@@ -184,7 +216,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.ERROR, savedChannel.getValidationStatus());
@@ -274,6 +306,30 @@ class ContentValidationServiceTest {
             verify(playlistRepository).findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt());
         }
 
+        /** Cubic users3: the same for a playlist's excludedVideoIds. */
+        @Test
+        void validatePlaylist_keepsAnExclusionWrittenSinceTheRunReadIt() throws Exception {
+            Playlist read = createPlaylist("PL123", "Old Title", null);
+            Playlist stored = createPlaylist("PL123", "Old Title", null);
+            stored.setExcludedVideoIds(new java.util.ArrayList<>(List.of("sCQwxFEMlZ4")));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(List.of(read));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(Collections.emptyList());
+            BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
+            result.addError("PL123", "Network timeout");
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(playlistRepository.update(any(), any())).thenAnswer(inv -> {
+                inv.<java.util.function.Consumer<Playlist>>getArgument(1).accept(stored);
+                return stored;
+            });
+
+            service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
+
+            verify(playlistRepository, never()).save(any(Playlist.class));
+            assertEquals(ValidationStatus.ERROR, stored.getValidationStatus());
+            assertEquals(List.of("sCQwxFEMlZ4"), stored.getExcludedVideoIds());
+        }
+
         @Test
         @DisplayName("Should refresh playlist metadata when found")
         void validatePlaylist_whenFound_shouldRefreshMetadata() throws Exception {
@@ -300,7 +356,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
-            verify(playlistRepository).save(playlistCaptor.capture());
+            verify(playlistRepository).update(playlistCaptor.capture(), any());
 
             Playlist savedPlaylist = playlistCaptor.getValue();
             assertEquals(ValidationStatus.VALID, savedPlaylist.getValidationStatus());
@@ -754,7 +810,7 @@ class ContentValidationServiceTest {
 
             // Channel was still persisted as ARCHIVED before the failed eviction
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
             assertEquals(ValidationStatus.ARCHIVED, channelCaptor.getValue().getValidationStatus());
         }
 
@@ -780,7 +836,7 @@ class ContentValidationServiceTest {
             assertEquals("COMPLETED", run.getStatus());
 
             ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
-            verify(playlistRepository).save(playlistCaptor.capture());
+            verify(playlistRepository).update(playlistCaptor.capture(), any());
             assertEquals(ValidationStatus.ARCHIVED, playlistCaptor.getValue().getValidationStatus());
         }
 

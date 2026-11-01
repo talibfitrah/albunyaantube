@@ -606,6 +606,43 @@ class BulkSubmissionServiceSubmitTest {
         verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
     }
 
+    /**
+     * Cubic users4: a report took a channel and a playlist down in place, then an admin rejected them. An admin's bulk
+     * re-add would write a second, unarchived doc that the listings serve: it is a DUPLICATE, nothing written.
+     */
+    @Test
+    void anAdminsBulkReAddOfARejectedTakeDownIsADuplicate() throws Exception {
+        var channels = mock(com.albunyaan.tube.repository.ChannelRepository.class);
+        var playlists = mock(com.albunyaan.tube.repository.PlaylistRepository.class);
+        var channel = new com.albunyaan.tube.model.Channel(CHANNEL_ID);
+        channel.setId("doc-ch-held");
+        channel.setStatus("REJECTED");
+        channel.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        var playlist = new com.albunyaan.tube.model.Playlist(PLAYLIST_ID);
+        playlist.setId("doc-pl-held");
+        playlist.setStatus("REJECTED");
+        playlist.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(channels.findByYoutubeId(CHANNEL_ID)).thenReturn(Optional.of(channel));
+        when(channels.findAllByYoutubeId(CHANNEL_ID)).thenReturn(List.of(channel));
+        when(playlists.findByYoutubeId(PLAYLIST_ID)).thenReturn(Optional.of(playlist));
+        when(playlists.findAllByYoutubeId(PLAYLIST_ID)).thenReturn(List.of(playlist));
+        var real = new BulkSubmissionService(new YouTubeUrlParser(), gateway,
+                new RegistryDuplicateChecker(channels, playlists, mock(com.albunyaan.tube.repository.VideoRepository.class)),
+                writer, Executors.newFixedThreadPool(1), mock(PublicContentCacheService.class), mock(SortOrderService.class),
+                categoryRepository, submissionRateLimiter, liveCategoryGuard);
+        var rows = List.of(
+                new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")),
+                new SubmitRow(1, PLAYLIST_URL, YouTubeContentType.PLAYLIST, null,
+                        new PreviewMetadata(PLAYLIST_ID, "Pl", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = real.submit(new BulkSubmitRequest(rows, "APPROVED"), "admin-uid", true);
+
+        assertEquals(List.of("DUPLICATE", "DUPLICATE"), resp.results().stream().map(SubmitResult::errorCode).toList());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+        verify(writer, never()).writePlaylist(any(), any(), any(), any(), anyBoolean());
+    }
+
     /** Fix round 1: a failed categories read inside the guard is a retryable 503, not a 409, and nothing is written. */
     @Test
     void aFailedLiveCategoryCheckIs503CheckUnavailable() throws Exception {

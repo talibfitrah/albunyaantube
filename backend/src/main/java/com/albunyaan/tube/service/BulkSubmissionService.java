@@ -125,7 +125,7 @@ public class BulkSubmissionService {
      * PENDING second doc that can shadow a rejected channel's or playlist's 410; either undoes the rejection.
      */
     private static boolean duplicate(RegistryDuplicateChecker.ExistingMatch existing, boolean isAdmin) {
-        return !isAdmin || !"REJECTED".equals(existing.status());
+        return !isAdmin || !"REJECTED".equals(existing.status()) || existing.held();   // users4: a take-down holds it
     }
 
     public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
@@ -475,7 +475,7 @@ public class BulkSubmissionService {
             // Previously only PENDING/APPROVED were caught — REQUEST_CHANGES (a real status
             // per RegistryController.VALID_STATUSES) and any future status string would
             // fall through and silently create a duplicate Firestore doc.
-            if (existing.isPresent() && !"REJECTED".equals(existing.get().status())) {
+            if (existing.isPresent() && (!"REJECTED".equals(existing.get().status()) || existing.get().held())) {
                 return new PreviewRow(rowIndex, originalUrl, parsed.type(), null, null,
                         RowStatus.DUPLICATE, existing.get().registryId(), existing.get().status(),
                         PreviewError.of(PreviewErrorCode.DUPLICATE));

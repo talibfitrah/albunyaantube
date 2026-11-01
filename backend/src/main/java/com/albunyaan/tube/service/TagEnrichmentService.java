@@ -127,8 +127,9 @@ public class TagEnrichmentService {
                     );
 
                     channel.setKeywords(tags);
-                    channel.touch();
-                    channelRepository.save(channel);
+                    // Cubic users5: only its keywords, on the doc as stored now: this copy is from before the YouTube
+                    // calls, and a report's exclusion written since would be lost by a whole-doc save
+                    channelRepository.update(channel, c -> c.setKeywords(tags));
                     result.enriched++;
 
                     log.debug("Enriched channel '{}' with {} tags", channel.getName(), tags.size());
@@ -168,8 +169,7 @@ public class TagEnrichmentService {
                     );
 
                     playlist.setKeywords(tags);
-                    playlist.touch();
-                    playlistRepository.save(playlist);
+                    playlistRepository.update(playlist, p -> p.setKeywords(tags));   // Cubic users5: as the channel's
                     result.enriched++;
 
                     log.debug("Enriched playlist '{}' with {} tags", playlist.getTitle(), tags.size());

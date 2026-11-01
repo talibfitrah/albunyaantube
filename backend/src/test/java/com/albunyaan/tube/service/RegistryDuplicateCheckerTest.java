@@ -10,6 +10,7 @@ import com.albunyaan.tube.repository.VideoRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 
+import java.util.List;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
@@ -108,5 +109,30 @@ class RegistryDuplicateCheckerTest {
 
         // Repository was queried only once — the second findExisting hit the cache.
         verify(channels, times(1)).findByYoutubeId("UCnew");
+    }
+
+    /**
+     * Cubic b26-r1: two REJECTED docs of a video (a pre-B11 duplicate). The match is the plain one; its sibling is a
+     * take-down's ARCHIVED doc. A re-add into the match would serve the id beside it: held. The match itself archived
+     * (a take-down record a re-add lifts, or an in-place archive save() keeps) is not.
+     */
+    @Test
+    void aRejectedVideoBesideAnArchivedSiblingIsHeld() throws Exception {
+        com.albunyaan.tube.model.Video plain = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        plain.setId("a");
+        plain.setStatus("REJECTED");
+        com.albunyaan.tube.model.Video takenDown = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        takenDown.setId("b");
+        takenDown.setStatus("REJECTED");
+        takenDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videos.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(plain));
+        when(videos.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(plain, takenDown));
+        when(videos.findByYoutubeId("xc7keR2piUM")).thenReturn(Optional.of(takenDown));
+        when(videos.findAllByYoutubeId("xc7keR2piUM")).thenReturn(List.of(takenDown));
+
+        var batch = checker.newBatch();
+
+        org.junit.jupiter.api.Assertions.assertTrue(batch.findExisting(YouTubeContentType.VIDEO, "ilgiwqpcOC8").get().held());
+        org.junit.jupiter.api.Assertions.assertFalse(batch.findExisting(YouTubeContentType.VIDEO, "xc7keR2piUM").get().held());
     }
 }

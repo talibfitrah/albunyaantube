@@ -19,6 +19,17 @@ import java.util.List;
 @IgnoreExtraProperties
 public class Video {
 
+    /** The source of a report's take-down record (ContentReportService.takeDownRecord). */
+    public static final String TAKE_DOWN_SOURCE = "REPORT";
+
+    /**
+     * Stage 9 B21: a report's take-down record, REJECTED from REPORT. A model rule (Cubic users5), so the repository's
+     * whole-doc writes check it without depending on the service layer.
+     */
+    public static boolean isTakeDownRecord(String status, String source) {
+        return "REJECTED".equals(status) && TAKE_DOWN_SOURCE.equals(source);
+    }
+
     @DocumentId
     private String id;
 

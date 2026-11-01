@@ -100,6 +100,18 @@ class BulkSubmissionServicePreviewTest {
         assertNotNull(resp.rows().get(0).metadata(), "metadata must be present so admin sees what they'd re-submit");
     }
 
+    /** Cubic users4: a REJECTED channel a take-down holds is no re-add offer: a DUPLICATE, as submit answers. */
+    @Test
+    void aRejectedTakeDownIsADuplicateNotAReAddOffer() {
+        when(batch.findExisting(any(), any()))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("held-doc", "REJECTED", true)));
+
+        var resp = svc.preview(new BulkPreviewRequest(List.of("https://www.youtube.com/channel/UCOll3M-P7oKs5cSrQ9ytt6g")));
+
+        assertEquals(RowStatus.DUPLICATE, resp.rows().get(0).status());
+        assertEquals("held-doc", resp.rows().get(0).duplicateOf());
+    }
+
     @Test
     void newpipeError_passesThroughErrorCode() {
         when(batch.findExisting(any(), any())).thenReturn(Optional.empty());

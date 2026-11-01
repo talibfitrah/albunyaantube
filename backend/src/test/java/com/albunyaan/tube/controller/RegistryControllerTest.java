@@ -574,6 +574,28 @@ class RegistryControllerTest {
         verify(videoRepository, never()).save(any());
     }
 
+    /** Cubic b26-r1: a re-add into a REJECTED video doc beside its archived sibling (a take-down) is 409: never served. */
+    @Test
+    void addVideo_aReAddBesideAnArchivedSiblingIs409() throws Exception {
+        com.albunyaan.tube.model.Video plain = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        plain.setId("a");
+        plain.setStatus("REJECTED");
+        com.albunyaan.tube.model.Video takenDown = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        takenDown.setId("b");
+        takenDown.setStatus("REJECTED");
+        takenDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(plain));
+        when(videoRepository.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(plain, takenDown));
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(contentReportService, never()).reAdd(any());
+    }
+
     /** Stage 9 B13: a re-add that loses its race (another re-add, or a Restore deleted the record) is 409, not 500. */
     @Test
     void addVideo_aReAddThatLosesItsRaceIs409() throws Exception {

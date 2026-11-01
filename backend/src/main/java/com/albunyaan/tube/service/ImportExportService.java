@@ -146,6 +146,9 @@ public class ImportExportService {
         Map<String, Playlist> oldPlaylists = new HashMap<>();
         Map<String, Video> oldVideos = new HashMap<>();
         List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
+        // Stage 9 B26 (Cubic users4): a row whose youtubeId a take-down holds ("TYPE:id" -> why), decided here, so the
+        // live guard never seeds a row the import then skips
+        Map<String, String> held = new HashMap<>();
         if (request.getCategories() != null) {
             for (Category c : request.getCategories()) {
                 Category old = stored(categoryRepository::findById, c.getId());
@@ -163,6 +166,11 @@ public class ImportExportService {
                 Channel old = stored(channelRepository::findById, c.getId());
                 oldChannels.put(c.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                if (writesServable(old, c, Channel::getStatus, Channel::getYoutubeId)
+                        && heldElsewhere(channelRepository.findAllByYoutubeId(c.getYoutubeId()), Channel::getId, Channel::getValidationStatus, c.getId())) {
+                    held.put("CHANNEL:" + c.getId(), archivedElsewhere("channel", c.getYoutubeId()));
+                    continue;
+                }
                 if (old != null) c.setValidationStatus(kept(old.getValidationStatus(), c.getValidationStatus()));
                 boolean reenters = old != null && !LiveCategoryService.servable(old) && LiveCategoryService.servable(c);
                 Channel before = old != null && Objects.equals(old.getYoutubeId(), c.getYoutubeId()) && !reenters ? old : null;
@@ -174,6 +182,11 @@ public class ImportExportService {
                 Playlist old = stored(playlistRepository::findById, p.getId());
                 oldPlaylists.put(p.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                if (writesServable(old, p, Playlist::getStatus, Playlist::getYoutubeId)
+                        && heldElsewhere(playlistRepository.findAllByYoutubeId(p.getYoutubeId()), Playlist::getId, Playlist::getValidationStatus, p.getId())) {
+                    held.put("PLAYLIST:" + p.getId(), archivedElsewhere("playlist", p.getYoutubeId()));
+                    continue;
+                }
                 if (old != null) p.setValidationStatus(kept(old.getValidationStatus(), p.getValidationStatus()));
                 Playlist before = old != null && Objects.equals(old.getYoutubeId(), p.getYoutubeId()) ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("playlist:" + p.getId(), p, before, p.getCategoryIds(), p.getStatus()));
@@ -184,6 +197,19 @@ public class ImportExportService {
                 Video old = stored(videoRepository::findById, v.getId());
                 oldVideos.put(v.getId(), old);
                 if (old != null && "SKIP".equals(mergeStrategy)) continue;
+                // Stage 9 B21 (Cubic r9 #3): an id a report took down is skipped, as the simple and async imports skip an id
+                // with a doc. Written beside its take-down record, an older APPROVED doc is the one served. B26: any doc.
+                List<Video> docs = ContentReportService.isTakeDownRecord(v) || !writesServable(old, v, Video::getStatus, Video::getYoutubeId) ? List.of()
+                        : videoRepository.findAllByYoutubeId(v.getYoutubeId());
+                if (docs.stream().anyMatch(ContentReportService::isTakeDownRecord)) {
+                    held.put("VIDEO:" + v.getId(), "Skipped: video " + v.getYoutubeId()
+                            + " was taken down by a report. Restore it under Archived content first.");
+                    continue;
+                }
+                if (heldElsewhere(docs, Video::getId, Video::getValidationStatus, v.getId())) {
+                    held.put("VIDEO:" + v.getId(), archivedElsewhere("video", v.getYoutubeId()));
+                    continue;
+                }
                 if (old != null) v.setValidationStatus(kept(old.getValidationStatus(), v.getValidationStatus()));
                 Video before = old != null && Objects.equals(old.getYoutubeId(), v.getYoutubeId()) ? old : null;
                 liveChanges.add(LiveCategoryGuard.Change.of("video:" + v.getId(), v, before, v.getCategoryIds(), v.getStatus()));
@@ -248,6 +274,11 @@ public class ImportExportService {
                         counts.incrementChannelsSkipped();
                         continue;
                     }
+                    if (held.containsKey("CHANNEL:" + channel.getId())) {
+                        counts.incrementChannelsSkipped();
+                        response.addError("CHANNEL", channel.getId(), held.get("CHANNEL:" + channel.getId()));
+                        continue;
+                    }
 
                     if (existingOpt.isPresent() && "MERGE".equals(mergeStrategy)) {
                         // MERGE: Preserve timestamps, audit fields, update content
@@ -279,6 +310,11 @@ public class ImportExportService {
 
                     if (existingOpt.isPresent() && "SKIP".equals(mergeStrategy)) {
                         counts.incrementPlaylistsSkipped();
+                        continue;
+                    }
+                    if (held.containsKey("PLAYLIST:" + playlist.getId())) {
+                        counts.incrementPlaylistsSkipped();
+                        response.addError("PLAYLIST", playlist.getId(), held.get("PLAYLIST:" + playlist.getId()));
                         continue;
                     }
 
@@ -315,13 +351,9 @@ public class ImportExportService {
                         counts.incrementVideosSkipped();
                         continue;
                     }
-                    // Stage 9 B21 (Cubic r9 #3): an id a report took down is skipped, as the simple and async imports skip
-                    // an id with a doc. Written beside its take-down record, an older APPROVED doc is the one served.
-                    if (!ContentReportService.isTakeDownRecord(video) && videoRepository.findByYoutubeId(video.getYoutubeId())
-                            .filter(ContentReportService::isTakeDownRecord).isPresent()) {
+                    if (held.containsKey("VIDEO:" + video.getId())) {   // B21/B26: decided before the live guard
                         counts.incrementVideosSkipped();
-                        response.addError("VIDEO", video.getId(), "Skipped: video " + video.getYoutubeId()
-                                + " was taken down by a report. Restore it under Archived content first.");
+                        response.addError("VIDEO", video.getId(), held.get("VIDEO:" + video.getId()));
                         continue;
                     }
 
@@ -404,7 +436,32 @@ public class ImportExportService {
      * backup made before would serve it again. Un-archiving is Restore's job (Archived content).
      */
     private static ValidationStatus kept(ValidationStatus stored, ValidationStatus file) {
-        return stored == ValidationStatus.ARCHIVED || stored == ValidationStatus.UNAVAILABLE ? stored : file;
+        return ValidationStatus.holds(stored) ? stored : file;
+    }
+
+    /**
+     * Cubic r14: kept() covers the row's own doc. Another doc of its youtubeId that is archived (a take-down in place,
+     * B23, or validation) holds the id too: the row, written beside it as a second doc, would serve it again. Every doc
+     * of the id (Cubic users4): the one findByYoutubeId prefers may not be the archived one.
+     */
+    private static <T> boolean heldElsewhere(List<T> docs, java.util.function.Function<T, String> id,
+                                             java.util.function.Function<T, ValidationStatus> validation, String rowId) {
+        return docs.stream().anyMatch(d -> !Objects.equals(id.apply(d), rowId) && ValidationStatus.holds(validation.apply(d)));
+    }
+
+    /**
+     * Cubic users5: whether the row can serve an id its stored doc does not: a new doc, one stored not APPROVED, or (Cubic
+     * b26-r1) one the row moves to another youtubeId. A row over its own APPROVED doc of the same id brings nothing back
+     * (kept() keeps that doc's own hold), so another doc's hold skips it not.
+     */
+    private static <T> boolean writesServable(T old, T row, java.util.function.Function<T, String> status,
+                                              java.util.function.Function<T, String> youtubeId) {
+        return old == null || !"APPROVED".equals(status.apply(old)) || !Objects.equals(youtubeId.apply(old), youtubeId.apply(row));
+    }
+
+    private static String archivedElsewhere(String type, String youtubeId) {
+        return "Skipped: " + type + " " + youtubeId + " is archived under another doc (a take-down, or gone from YouTube). "
+                + "Restore it under Archived content first.";
     }
 
     /**
