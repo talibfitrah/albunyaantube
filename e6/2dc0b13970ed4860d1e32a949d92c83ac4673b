@@ -1,0 +1,21 @@
+ios/FitrahTubeTests/OfflinePlaybackTests.swift
+  s_dbb6b1f3671904::t_630a44b4d7fd6a 93-107
+ios/FitrahTube/Features/Offline/SavedScreen.swift
+  s_dbb6b1f3671904::t_0c87e5a27f70c5 174-175
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e62dc0b13970ed4860d1e32a949d92c83ac4673b",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
