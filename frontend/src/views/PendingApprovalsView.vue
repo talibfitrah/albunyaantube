@@ -51,16 +51,16 @@
       <button
         type="button"
         :class="['filter-tab', { active: adminTab === 'queue' }]"
-        @click="selectAdminTab('queue')"
+        @click="tabChosen = true; selectAdminTab('queue')"
       >
-        {{ t('approvals.tabs.queue') }}
+        {{ t('approvals.tabs.queue') }}<template v-if="queueCount !== null"> ({{ formatNumber(queueCount) }})</template>
       </button>
       <button
         type="button"
         :class="['filter-tab', { active: adminTab === 'byUser' }]"
-        @click="selectAdminTab('byUser')"
+        @click="tabChosen = true; selectAdminTab('byUser')"
       >
-        {{ t('approvals.tabs.byUser') }}
+        {{ t('approvals.tabs.byUser') }}<template v-if="importCount !== null"> ({{ formatNumber(importCount) }})</template>
       </button>
     </div>
 
@@ -450,6 +450,8 @@ const statusFilter = ref<SubmissionStatus>('PENDING');
  * ordinary users, which are reviewed per person.
  */
 const adminTab = ref<'queue' | 'byUser'>('queue');
+/** Set once the admin picks a tab or changes a filter, so the on-load switch never overrides their work. */
+const tabChosen = ref(false);
 const submitters = ref<PendingSubmitter[]>([]);
 const selectedSubmitter = ref<PendingSubmitter | null>(null);
 const submittersError = ref<string | null>(null);
@@ -753,6 +755,19 @@ const displayPendingCount = computed(() => {
   return approvals.value.length;
 });
 
+/** Phone imports waiting, or null while the roll-up is loading, failed, or out of date. */
+const importCount = computed(() =>
+  isLoadingSubmitters.value || submittersError.value || submitterCountsStale.value
+    ? null
+    : userImportTotal.value
+);
+/** Admin queue size: the exact total minus the imports; null unless both numbers are trustworthy. */
+const queueCount = computed(() =>
+  totalPending.value === null || countUnavailable.value || importCount.value === null
+    ? null
+    : Math.max(0, totalPending.value - importCount.value)
+);
+
 const categoriesError = ref<string | null>(null);
 
 async function loadCategories() {
@@ -769,7 +784,11 @@ async function loadCategories() {
   }
 }
 
+/** Bumped per load, so a reply that a newer load (filter, tab, submitter) has replaced is dropped. */
+let approvalsLoadToken = 0;
+
 async function loadApprovals(append = false) {
+  const token = ++approvalsLoadToken;
   if (append) {
     isLoadingMore.value = true;
   } else {
@@ -785,6 +804,7 @@ async function loadApprovals(append = false) {
         type: contentType.value,
         cursor: append ? (nextCursor.value || undefined) : undefined
       });
+      if (token !== approvalsLoadToken) return;
       if (append) {
         approvals.value = [...approvals.value, ...result.items];
       } else {
@@ -808,6 +828,7 @@ async function loadApprovals(append = false) {
           scope: selectedSubmitter.value ? undefined : 'MODERATOR_QUEUE',
           cursor
         });
+        if (token !== approvalsLoadToken) return;
         collected.push(...result.items.map(item => ({ ...item, status: 'PENDING' as const })));
         cursor = result.nextCursor || undefined;
         nextCursor.value = result.nextCursor;
@@ -817,18 +838,22 @@ async function loadApprovals(append = false) {
       approvals.value = append ? [...approvals.value, ...collected] : collected;
     }
   } catch (err) {
+    if (token !== approvalsLoadToken) return;
     if (!append) {
       error.value = err instanceof Error ? err.message : t('approvals.error');
     } else {
       toast.warning(t('approvals.loadMoreError'));
     }
   } finally {
-    isLoading.value = false;
-    isLoadingMore.value = false;
+    if (token === approvalsLoadToken) {
+      isLoading.value = false;
+      isLoadingMore.value = false;
+    }
   }
 }
 
 function handleFilterChange() {
+  tabChosen.value = true;
   // The selection refers to the list being replaced. Keeping it would leave the bulk bar
   // claiming "3 selected" over cards that are no longer loaded, with buttons that do nothing.
   clearSelection();
@@ -1030,12 +1055,17 @@ async function loadPendingCount() {
   }
 }
 
-onMounted(() => {
+onMounted(async () => {
   loadCategories();
   loadApprovals();
-  loadPendingCount();
+  const counted = loadPendingCount();
+  if (isModeratorView.value) return;
   // Needed by the queue badge too, which subtracts the imports it no longer lists.
-  if (!isModeratorView.value) loadSubmitters();
+  await Promise.all([counted, loadSubmitters()]);
+  // An empty queue must not hide imports that are waiting on the other tab.
+  if (!tabChosen.value && adminTab.value === 'queue' && queueCount.value === 0 && (importCount.value ?? 0) > 0) {
+    selectAdminTab('byUser');
+  }
 });
 </script>
 
