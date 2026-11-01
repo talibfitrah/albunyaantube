@@ -187,7 +187,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-ch1")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(channelRepository.findByYoutubeId("UCabc")).thenReturn(Optional.of(ch));
-        when(channelRepository.save(any())).thenReturn(ch);
+        when(channelRepository.update(eq(ch), any())).thenReturn(ch);
 
         service.resolveReport("report-ch1", ReportStatus.RESOLVED, "admin", null);
 
@@ -206,7 +206,7 @@ class ContentReportServiceTest {
         when(reportRepository.findById("report-pl1")).thenReturn(Optional.of(report));
         when(reportRepository.update(any())).thenReturn(report);
         when(playlistRepository.findByYoutubeId("PLxyz")).thenReturn(Optional.of(pl));
-        when(playlistRepository.save(any())).thenReturn(pl);
+        when(playlistRepository.update(eq(pl), any())).thenReturn(pl);
 
         service.resolveReport("report-pl1", ReportStatus.RESOLVED, "admin", null);
 
@@ -760,6 +760,14 @@ class ContentReportServiceTest {
         when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(bounced));
         when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(pendingList));
         when(reportRepository.update(any())).thenAnswer(i -> i.getArgument(0));
+        when(channelRepository.update(any(), any())).thenAnswer(inv -> {             // as stored now: the doc itself
+            inv.<java.util.function.Consumer<Channel>>getArgument(1).accept(inv.getArgument(0));
+            return inv.getArgument(0);
+        });
+        when(playlistRepository.update(any(), any())).thenAnswer(inv -> {
+            inv.<java.util.function.Consumer<Playlist>>getArgument(1).accept(inv.getArgument(0));
+            return inv.getArgument(0);
+        });
         for (var target : List.of(java.util.Map.entry(ReportTargetType.VIDEO, "ilgiwqpcOC8"),
                 java.util.Map.entry(ReportTargetType.VIDEO, "xc7keR2piUM"),
                 java.util.Map.entry(ReportTargetType.CHANNEL, "UCfassTU6mGWIj-yb26_ADjQ"),
@@ -773,8 +781,8 @@ class ContentReportServiceTest {
         }
 
         verify(videoRepository).save(pending);
-        verify(channelRepository).save(bounced);
-        verify(playlistRepository).save(pendingList);
+        verify(channelRepository).update(eq(bounced), any());
+        verify(playlistRepository).update(eq(pendingList), any());
         assertThat(List.of(pending.getStatus(), approved.getStatus(), bounced.getStatus(), pendingList.getStatus()))
                 .as("the review state is kept").containsExactly("PENDING", "APPROVED", "REQUEST_CHANGES", "PENDING");
         assertThat(List.of(pending.getValidationStatus(), approved.getValidationStatus(), bounced.getValidationStatus(),
@@ -794,6 +802,48 @@ class ContentReportServiceTest {
             inv.<java.util.function.Consumer<Playlist>>getArgument(1).accept(playlist);
             return playlist;
         });
+    }
+
+    /**
+     * Cubic rev9-r1 #2: a channel or playlist take-down sets ARCHIVED on the doc as stored now. Another report's exclusion
+     * written after this take-down read the doc is kept; no whole-doc save() writes the stale copy back.
+     */
+    @Test
+    void aChannelOrPlaylistTakeDownKeepsAnExclusionWrittenSinceItsRead() throws Exception {
+        Channel read = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        read.setId("ch-doc");
+        Playlist readList = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        readList.setId("pl-doc");
+        Channel stored = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
+        stored.setId("ch-doc");
+        stored.getExcludedItems().getVideos().add("ilgiwqpcOC8");          // another report's exclusion, after the read
+        Playlist storedList = new Playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
+        storedList.setId("pl-doc");
+        storedList.getExcludedVideoIds().add("ilgiwqpcOC8");
+        storedNow(stored, storedList);
+        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(read));
+        when(playlistRepository.findByYoutubeId("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe")).thenReturn(Optional.of(readList));
+        when(reportRepository.update(any())).thenAnswer(i -> i.getArgument(0));
+        for (var target : List.of(java.util.Map.entry(ReportTargetType.CHANNEL, "UCfassTU6mGWIj-yb26_ADjQ"),
+                java.util.Map.entry(ReportTargetType.PLAYLIST, "PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe"))) {
+            ContentReport report = new ContentReport();
+            report.setTargetType(target.getKey());
+            report.setTargetId(target.getValue());
+            when(reportRepository.findById("report-" + target.getValue())).thenReturn(Optional.of(report));
+
+            service.resolveReport("report-" + target.getValue(), ReportStatus.RESOLVED, "admin", null);
+        }
+
+        verify(channelRepository, never()).save(any());
+        verify(playlistRepository, never()).save(any());
+        verify(channelRepository).update(eq(read), any());
+        verify(playlistRepository).update(eq(readList), any());
+        assertThat(stored.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(storedList.getValidationStatus()).isEqualTo(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        assertThat(stored.getExcludedItems().getVideos()).containsExactly("ilgiwqpcOC8");
+        assertThat(storedList.getExcludedVideoIds()).containsExactly("ilgiwqpcOC8");
+        verify(streamIndexService).removeSource("CHANNEL", "UCfassTU6mGWIj-yb26_ADjQ");
+        verify(streamIndexService).removeSource("PLAYLIST", "PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe");
     }
 
     /** Another report excluded a video on both sources after this one read them: both exclusions are stored. */

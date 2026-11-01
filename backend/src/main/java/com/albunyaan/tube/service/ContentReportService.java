@@ -377,8 +377,8 @@ public class ContentReportService {
                 case CHANNEL -> {
                     var opt = channelRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
-                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
-                        channelRepository.save(opt.get());
+                        // Cubic rev9-r1 #2: on the doc as stored now, so another report's exclusion since this read stays
+                        channelRepository.update(opt.get(), c -> c.setValidationStatus(ValidationStatus.ARCHIVED));
                         streamIndexService.removeSource("CHANNEL", opt.get().getYoutubeId());
                         archived = true;
                     } else {
@@ -388,8 +388,7 @@ public class ContentReportService {
                 case PLAYLIST -> {
                     var opt = playlistRepository.findByYoutubeId(targetId);
                     if (opt.isPresent()) {
-                        opt.get().setValidationStatus(ValidationStatus.ARCHIVED);
-                        playlistRepository.save(opt.get());
+                        playlistRepository.update(opt.get(), p -> p.setValidationStatus(ValidationStatus.ARCHIVED));
                         streamIndexService.removeSource("PLAYLIST", opt.get().getYoutubeId());
                         archived = true;
                     } else {
