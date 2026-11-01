@@ -223,7 +223,7 @@ class LiveChannelPollerTest {
         assertThat(live.state(A)).isNull();
     }
 
-    /** R7: the first rate limit stops the cycle with one WARN; only that channel's checkedAt moves (no error, no hide). */
+    /** R7: the first rate limit stops the cycle with one WARN; no error, no hide, and no read time (Rev 9). */
     @Test
     void aRateLimitStopsTheCycleWithOneWarning() {
         entries(A, B);
@@ -233,7 +233,7 @@ class LiveChannelPollerTest {
 
         verify(reader, never()).read(B);
         LiveChannelState a = live.state(A);
-        assertThat(a.getCheckedAt()).isEqualTo(T0);
+        assertThat(a.getCheckedAt()).isNull();
         assertThat(a.getStatus()).isEqualTo(LiveChannelState.UNKNOWN);
         assertThat(a.getErrorCount()).isZero();
         assertThat(logged(Level.WARN)).singleElement()
@@ -272,6 +272,85 @@ class LiveChannelPollerTest {
         order.verify(reader).read(B);
         order.verify(reader).read(A);
         verify(reader, times(2)).read(B);
+    }
+
+    /**
+     * Rev 9 (owner, 2026-11-01): while YouTube rate-limits, each cycle stops at its first read, so most channels go
+     * unread. The rate-limited channel and the unread one both hide an hour after their last real read; nothing is
+     * removed or archived, and the next read that lists a live serves it again.
+     */
+    @Test
+    void rateLimitsHideLivesUnprovenForAnHourAndAReadServesThemAgain() throws Exception {
+        entries(A, B);
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        cycleAt(T0);
+        when(reader.read(anyString())).thenReturn(LiveTabResult.rateLimited(1, "ReCaptchaException: 429"));
+
+        for (int m = 10; m <= 50; m += 10) cycleAt(T0 + m * MIN);   // one rate-limited read per cycle
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        assertThat(live.served().get(B)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
+        org.mockito.Mockito.clearInvocations(caches, reader);
+
+        cycleAt(T0 + 60 * MIN);
+        verify(reader, times(1)).read(anyString());                   // still one try per cycle, no extra traffic
+        assertThat(live.served()).doesNotContainKeys(A, B);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(B).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(B).getMisses().get("bbbbbbbbbbb").getCount()).isZero();
+        verify(caches).evictPublicContentCaches();
+
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        cycleAt(T0 + 70 * MIN);                                        // the rate limit ends
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        assertThat(live.served().get(B)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
+        assertThat(live.state(B).getMisses()).isEmpty();
+        verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
+        verify(videos, never()).save(any());
+    }
+
+    /**
+     * Rev 9 / Cubic rev9-r1 #1: only a block hides an unread channel. A restart after 2 h down with more targets than one
+     * cycle reads (the 90-request ceiling) leaves the unreached ones served while YouTube answers.
+     */
+    @Test
+    void aHealthyCycleNeverHidesTheTargetsTheCeilingLeftUnread() throws Exception {
+        List<LiveChannelState> saved = new ArrayList<>();
+        for (int i = 0; i < 20; i++) {
+            String uc = String.format("UC%022d", i);
+            entries(uc);
+            LiveChannelState s = LiveChannelState.unknown(uc);
+            s.setStatus(LiveChannelState.LIVE);
+            s.getLives().add(new LiveChannelState.Live("aaaaaaaaaaa", "t"));
+            s.setCheckedAt(T0 - 120 * MIN);
+            saved.add(s);
+        }
+        when(states.findAll()).thenReturn(saved);
+        poller.afterSingletonsInstantiated();
+        when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("aaaaaaaaaaa", "t")), 6));
+
+        cycleAt(T0);
+
+        verify(reader, times(15)).read(anyString());                  // 15 x 6 = 90: five channels unread
+        assertThat(saved).allSatisfy(s -> assertThat(live.state(s.getChannelId()).getStatus()).isEqualTo(LiveChannelState.LIVE));
+        assertThat(live.served()).hasSize(20);
+    }
+
+    /** Rev 9: a breaker refusal mid-cycle is a block too: the refused channel and the ones after it hide after the hour. */
+    @Test
+    void aBreakerRefusalMidCycleHidesTheUnreadLivesUnprovenForAnHour() {
+        entries(A, B);
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        cycleAt(T0);
+        when(reader.read(A)).thenReturn(LiveTabResult.breaker(0, "probe already in progress"));
+
+        cycleAt(T0 + 60 * MIN);
+
+        verify(reader, times(1)).read(B);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(B).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
     }
 
     /** D3: errors back off 10, 20, 40, 80 min; a cycle inside the backoff skips the channel. */
@@ -627,12 +706,17 @@ class LiveChannelPollerTest {
         assertThat(live.state(A).getArchived()).containsEntry("ownarchive1", "ERROR");
     }
 
-    /** L1 (scenario B): an open breaker skips the YouTube reads, never the reload and the served view. */
+    /**
+     * L1 (scenario B): an open breaker skips the YouTube reads, never the reload and the served view. Rev 9: lives read
+     * under an hour ago are still served.
+     */
     @Test
     void anOpenBreakerStillReloadsAndRefreshesTheServedView() throws Exception {
         entries(A);
+        LiveChannelState saved = savedWithRestoreRecord();
+        saved.setCheckedAt(T0 - 59 * MIN);
         when(states.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"))
-                .thenReturn(List.of(savedWithRestoreRecord()));
+                .thenReturn(List.of(saved));
         when(breaker.isOpen()).thenReturn(true);
         poller.afterSingletonsInstantiated();
 
@@ -643,6 +727,58 @@ class LiveChannelPollerTest {
         verify(reader, never()).read(anyString());
         verify(states, never()).save(any());
         verify(caches).evictPublicContentCaches();                     // pages cached while nothing was loaded
+    }
+
+    /**
+     * Rev 9 (owner, 2026-11-01): with the breaker open no channel is read, so lives unproven for an hour are hidden
+     * (time only, no YouTube call; never a removal, archive or miss). Once the breaker closes, the read that lists the
+     * live serves it again with no admin action.
+     */
+    @Test
+    void anOpenBreakerHidesLivesUnprovenForAnHourAndAReadServesThemAgain() throws Exception {
+        entries(A, B);
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        when(reader.read(B)).thenReturn(live("bbbbbbbbbbb"));
+        cycleAt(T0);
+        when(breaker.isOpen()).thenReturn(true);
+        org.mockito.Mockito.clearInvocations(reader);
+
+        cycleAt(T0 + 50 * MIN);
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        org.mockito.Mockito.clearInvocations(caches);
+
+        cycleAt(T0 + 60 * MIN);
+        verify(reader, never()).read(anyString());
+        assertThat(live.served()).doesNotContainKeys(A, B);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(live.state(A).getMisses().get("aaaaaaaaaaa").getCount()).isZero();
+        verify(states).save(argThat(s -> A.equals(s.getChannelId()) && s.getLives().isEmpty()));
+        verify(caches).evictPublicContentCaches();
+
+        when(breaker.isOpen()).thenReturn(false);                      // the HALF_OPEN probe got through
+        cycleAt(T0 + 300 * MIN);
+        assertThat(live.served().get(A)).extracting(LiveTabResult.LiveItem::id).containsExactly("aaaaaaaaaaa");
+        assertThat(live.served().get(B)).extracting(LiveTabResult.LiveItem::id).containsExactly("bbbbbbbbbbb");
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(live.state(A).getMisses()).isEmpty();
+        verify(sortOrder, never()).removeContentFromCategoryAndUpdate(anyString(), anyString(), anyString());
+        verify(videos, never()).save(any());
+    }
+
+    /** Rev 9: under an open breaker an ERROR streak's hold still counts from errorSince (Rev 8), not the last read. */
+    @Test
+    void anOpenBreakerCountsAnErrorStreaksHoldFromItsStart() {
+        entries(A);
+        when(reader.read(A)).thenReturn(live("aaaaaaaaaaa"));
+        cycleAt(T0);
+        when(reader.read(A)).thenReturn(LiveTabResult.error(1, "IOException: x"));
+        cycleAt(T0 + 30 * MIN);                                        // errorSince T0 + 30
+        when(breaker.isOpen()).thenReturn(true);
+
+        cycleAt(T0 + 80 * MIN);                                        // 80 min since the read, 50 into the streak
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.LIVE);
+        cycleAt(T0 + 90 * MIN);
+        assertThat(live.state(A).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
     }
 
     /** The public endpoint's status for channel A: its 404 is the apps' definitive "not live" stop. */

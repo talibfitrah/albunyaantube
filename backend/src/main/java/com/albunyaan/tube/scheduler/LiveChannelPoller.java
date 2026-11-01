@@ -141,9 +141,14 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             Map<String, List<LiveTabResult.LiveItem>> servedBefore = live.served();
             View view = view();
             if (breaker.isOpen()) {
-                // L1: no YouTube request, so an open breaker (1-48 h) never freezes the view or the endpoint's 404s
-                refreshView(view);
-                if (!servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+                // L1: no YouTube request, so an open breaker (1-48 h) never freezes the view or the endpoint's 404s.
+                // Rev 9: lives no read has proven for an hour hide meanwhile; a read after the breaker closes serves them.
+                boolean changed = expireHolds(view.targets(), now);
+                try {
+                    refreshView(view);
+                } finally {
+                    if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+                }
                 log.info("live poller: circuit breaker open, YouTube reads skipped");
                 return;
             }
@@ -163,15 +168,20 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             int budget = CYCLE_BUDGET;
             int spent = 0;
             Map<String, LiveTabResult> fetched = new LinkedHashMap<>();
+            boolean blocked = false;                                    // Rev 9: YouTube refused or rate-limited a read
             for (String uc : targets) {
                 if (budget < MAX_PER_CHANNEL) break;                    // D16: the next cycle resumes here
                 LiveTabResult r = live.livesNow(uc);
                 budget -= r.requests();
                 spent += r.requests();
-                if (r.outcome() == LiveTabResult.Outcome.BREAKER) break; // D3: not counted
+                if (r.outcome() == LiveTabResult.Outcome.BREAKER) {      // D3: not counted
+                    blocked = true;
+                    break;
+                }
                 tried.put(uc, now);
-                fetched.put(uc, r);                             // a rate limit too: apply advances its checkedAt
+                fetched.put(uc, r);                             // a rate limit too: apply runs its Rev 9 hold
                 if (r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
+                    blocked = true;
                     // R7: stop at the first rate limit; oldest-first then reads this channel last next cycle
                     log.warn("live poller: YouTube rate-limited {}; cycle at {} stopped ({})", uc,
                             Instant.ofEpochMilli(now), r.error());
@@ -197,6 +207,11 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                     changed = true;                                     // a restore may have landed before the failure
                     log.warn("live poller: {} not applied this cycle: {}", e.getKey(), ex.toString());
                 }
+            }
+            if (blocked) {   // Rev 9 (Cubic rev9-r1 #1): a block only; the ceiling or the 30 cap alone never hides
+                Set<String> unread = new LinkedHashSet<>(view.targets());
+                unread.removeAll(fetched.keySet());
+                changed |= expireHolds(unread, now);
             }
             live.setSuspectSince(unprovenSince);
             try {
@@ -314,6 +329,29 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                     .map(l -> new LiveTabResult.LiveItem(l.getVideoId(), l.getTitle())).toList());
         });
         live.publish(view.entries(), served);
+    }
+
+    /**
+     * Rev 9 (owner, 2026-11-01): channels no read reached this cycle hide lives unproven for an hour
+     * ({@link LivePollRules#expireHold}). Time only, no YouTube call. A failed write is logged; the next cycle retries.
+     */
+    private boolean expireHolds(Set<String> ucs, long now) {
+        boolean changed = false;
+        for (String uc : ucs) {
+            try {
+                synchronized (live.stateLock()) {
+                    LiveChannelState prev = live.state(uc);
+                    if (prev == null) continue;
+                    LiveChannelState next = prev.copy();
+                    if (!LivePollRules.expireHold(next, now)) continue;
+                    live.put(next);
+                    changed = true;
+                }
+            } catch (Exception e) {
+                log.warn("live poller: {} not hidden this cycle: {}", uc, e.toString());
+            }
+        }
+        return changed;
     }
 
     private record Ending(Video doc, boolean archive) {}

@@ -218,24 +218,73 @@ class LivePollRulesTest {
     }
 
     /**
-     * R7 / Task 2 hand-off: a rate limit is YouTube pushing back, not this channel. No hide, no miss, no end, no
-     * backoff; only checkedAt advances, so the oldest-first order rotates past it and it cannot starve the others.
+     * R7 / Task 2 hand-off: a rate limit is YouTube pushing back, not this channel. No miss, no end, no backoff.
+     * Rev 9: checkedAt stays the last real read (the poller's L2 attempt time rotates the channel behind the others),
+     * and under an hour since that read the lives are still served.
      */
     @Test
-    void aRateLimitedReadOnlyAdvancesCheckedAt() {
+    void aRateLimitedReadUnderAnHourChangesNothing() {
         Set<String> links = Set.of("pqC-1yfFvu8");
         LiveChannelState counted = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, live("eaOtcUNHDB8"), true, true, links, T0).next();
 
         LivePollRules.Outcome o = LivePollRules.apply(counted, ZAD,
-                LiveTabResult.rateLimited(1, "ReCaptchaException: HTTP 429"), true, true, links, T0 + 20 * MIN);
+                LiveTabResult.rateLimited(1, "ReCaptchaException: HTTP 429"), true, true, links, T0 + 59 * MIN);
 
         assertThat(o.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
         assertThat(ids(o.next())).containsExactly("eaOtcUNHDB8");
         assertThat(o.next().getMisses().get("pqC-1yfFvu8").getCount()).isEqualTo(1);
         assertThat(o.next().getErrorCount()).isZero();
         assertThat(o.next().getNextPollAt()).isNull();
-        assertThat(o.next().getCheckedAt()).isEqualTo(T0 + 20 * MIN);
+        assertThat(o.next().getCheckedAt()).isEqualTo(T0);
         assertThat(o.ended()).isEmpty();
+    }
+
+    /**
+     * Rev 9 (owner, 2026-11-01): rate limits that last an hour past the last real read hide the lives as R10 does
+     * (tracked at count 0, never a miss, removal or archive). The next read that lists the live serves it again.
+     */
+    @Test
+    void aRateLimitedReadAnHourAfterTheLastReadHidesTheLives() {
+        Set<String> links = Set.of("pqC-1yfFvu8");
+        LiveChannelState counted = LivePollRules.apply(liveState("eaOtcUNHDB8"), ZAD, live("eaOtcUNHDB8"), true, true, links, T0).next();
+        LiveTabResult limited = LiveTabResult.rateLimited(1, "ReCaptchaException: HTTP 429");
+        LiveChannelState held = LivePollRules.apply(counted, ZAD, limited, true, true, links, T0 + 50 * MIN).next();
+
+        LivePollRules.Outcome hidden = LivePollRules.apply(held, ZAD, limited, true, true, links, T0 + 60 * MIN);
+
+        assertThat(hidden.next().getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(hidden.next().getLives()).isEmpty();
+        assertThat(hidden.next().getOfflineSince()).isEqualTo(T0 + 60 * MIN);
+        assertThat(hidden.next().getMisses().get("eaOtcUNHDB8").getCount()).isZero();
+        assertThat(hidden.next().getMisses().get("pqC-1yfFvu8").getCount()).isEqualTo(1);   // unchanged
+        assertThat(hidden.next().getErrorCount()).isZero();
+        assertThat(hidden.next().getNextPollAt()).isNull();
+        assertThat(hidden.ended()).isEmpty();
+
+        LivePollRules.Outcome back = LivePollRules.apply(hidden.next(), ZAD, live("eaOtcUNHDB8"), true, true, Set.of(),
+                T0 + 70 * MIN);
+        assertThat(back.next().getStatus()).isEqualTo(LiveChannelState.LIVE);
+        assertThat(ids(back.next())).containsExactly("eaOtcUNHDB8");
+        assertThat(back.next().getMisses()).doesNotContainKey("eaOtcUNHDB8");
+    }
+
+    /** Rev 9: the time-only hold (no read) counts from the last real read, or from the ERROR streak's start. */
+    @Test
+    void theTimeOnlyHoldEndsAnHourAfterTheLastProof() {
+        LiveChannelState read = liveState("eaOtcUNHDB8");                       // read at T0 - 60 min
+        LiveChannelState justRead = LivePollRules.apply(null, ZAD, live("eaOtcUNHDB8"), true, true, Set.of(), T0 - 59 * MIN).next();
+        LiveChannelState erroring = LivePollRules.apply(read, ZAD, LiveTabResult.error(1, "x"), true, true, Set.of(),
+                T0 - 30 * MIN).next();                                         // errorSince T0 - 30 min
+
+        assertThat(LivePollRules.expireHold(read, T0)).isTrue();
+        assertThat(read.getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+        assertThat(read.getLives()).isEmpty();
+        assertThat(read.getMisses().get("eaOtcUNHDB8").getCount()).isZero();
+        assertThat(LivePollRules.expireHold(justRead, T0)).isFalse();
+        assertThat(ids(justRead)).containsExactly("eaOtcUNHDB8");
+        assertThat(LivePollRules.expireHold(erroring, T0)).isFalse();           // 30 min into the streak
+        assertThat(LivePollRules.expireHold(erroring, T0 + 30 * MIN)).isTrue();
+        assertThat(LivePollRules.expireHold(LiveChannelState.unknown(ZAD), T0)).isFalse();   // nothing held
     }
 
     /** D3 / RV M6: a terminated channel is an empty read with reason TERMINATED. */

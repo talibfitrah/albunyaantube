@@ -23,7 +23,7 @@ public final class LivePollRules {
     static final long MISS_MIN_MS = 15 * MINUTE_MS;
     static final int MISSES_TO_END = 2;
     static final int ERROR_MAX = 200;
-    /** R10 and Rev 8: stale lives are served for at most an hour (an unproven streak, or a channel's ERROR streak). */
+    /** R10, Rev 8 and Rev 9: stale lives are served for at most an hour (an unproven streak, an ERROR streak, no read). */
     public static final long HIDE_AFTER_MS = 60 * MINUTE_MS;
 
     /** {@code ended}: ids to remove and archive now. {@code restored}: reappeared ids → the status to restore ("" = none). */
@@ -57,9 +57,9 @@ public final class LivePollRules {
                 yield new Outcome(next, List.of(), Map.of());
             }
             case RATE_LIMITED -> {
-                // R7: YouTube pushed back, not this channel: no hide, miss or backoff. checkedAt advances so the
-                // oldest-first order rotates past it and one channel cannot sit first and starve the rest.
-                next.setCheckedAt(now);
+                // R7: YouTube pushed back, not this channel: no miss or backoff. checkedAt stays the last real read
+                // (the poller's L2 attempt time rotates it behind the others); Rev 9: an hour after it, the lives hide.
+                expireHold(next, now);
                 yield new Outcome(next, List.of(), Map.of());
             }
             case BREAKER -> new Outcome(next, List.of(), Map.of());              // never counted (RV M3)
@@ -123,6 +123,18 @@ public final class LivePollRules {
             }
         }
         return new Outcome(next, ended, restored);
+    }
+
+    /**
+     * Rev 9 (owner, 2026-11-01): the time-only hold, for a channel no read can prove (breaker open, rate-limited, or
+     * not reached this cycle). Its lives were last proven at its ERROR streak's start (Rev 8), else at its last real
+     * read (checkedAt); an hour later they hide as R10 hides them. Mutates {@code s}; true when it hid. No YouTube call.
+     */
+    public static boolean expireHold(LiveChannelState s, long now) {
+        Long since = s.getErrorSince() != null ? s.getErrorSince() : s.getCheckedAt();
+        if (s.getLives().isEmpty() || since == null || now - since < HIDE_AFTER_MS) return false;
+        hide(s, now);
+        return true;
     }
 
     /**
