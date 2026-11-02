@@ -370,8 +370,24 @@ extension StreamState {
     /// whose `GCKCastContext` could not be created already has.
     private let cast: CastController?
 
-    /// Spec §9.1 (Task 32): the backend's current lives for a live-category channel; nil = no live-channel mode.
-    private let liveLookup: (@Sendable (String) async throws -> LiveChannelLives)?
+    /// Spec §9.1 (Task 32): the backend's current lives for a live-category channel; nil = no live-channel mode. The
+    /// second argument hears a 404 that lands after the answer (the not-live page's plain call, Cubic K3).
+    private let liveLookup: LiveLookup?
+    typealias LiveLookup = @Sendable (_ channelId: String, _ notFound: @escaping @Sendable () async -> Void) async throws
+        -> LiveChannelLives
+    /// Owner 2026-11-02 (admin removal reaches a watching phone): the catalog's `liveChannel(id:live:)`, asked by the
+    /// heartbeat with the current video id. Catalog only, never the page lookup. nil = no heartbeat.
+    private let liveCheck: (@Sendable (_ channelId: String, _ videoId: String) async throws -> LiveChannelLives)?
+    /// The catalog's `liveLink(videoId:)`, the heartbeat's question for an exact live link (`args.liveLink`). nil = none.
+    private let linkCheck: (@Sendable (_ videoId: String) async throws -> Void)?
+    /// The heartbeat loop (`startLiveHeartbeat`). Ignored by observation so `deinit` can cancel it.
+    @ObservationIgnored private var liveHeartbeat: Task<Void, Never>?
+    /// What the running heartbeat checks (id|channel|link) and which run it is: a cancelled run's exit never clears a newer one.
+    @ObservationIgnored private var heartbeatRun: (key: String, run: UUID)?
+    /// Cubic round 7: `deinit` hands the heartbeat to the app-lifetime cast seam (`CastController.watchRemoval`), which
+    /// keeps it only while the receiver plays this screen's load. Set with the heartbeat (`startLiveHeartbeat`).
+    @ObservationIgnored private var castHandover: (@MainActor @Sendable () -> Void)?
+    static let liveHeartbeatInterval: Duration = .seconds(60)
     /// Injected so the live refresh timer, step 4's waits and the lookup's cap are testable without waiting.
     private let sleep: @Sendable (Duration) async throws -> Void
     /// The incident clock (§9.1 step 4's 2-min title wait and 10-min give-up), injected beside `sleep` for the same reason.
@@ -399,7 +415,9 @@ extension StreamState {
     /// touches the catalog.
     init(resolver: any StreamResolving, settings: any SettingsStore, args: PlayerArgs,
          queueSource: (any PlaylistQueueSource)? = nil, cast: CastController? = nil, hd: HDUpgrade? = nil,
-         liveLookup: (@Sendable (String) async throws -> LiveChannelLives)? = nil,
+         liveLookup: LiveLookup? = nil,
+         liveCheck: (@Sendable (_ channelId: String, _ videoId: String) async throws -> LiveChannelLives)? = nil,
+         linkCheck: (@Sendable (_ videoId: String) async throws -> Void)? = nil,
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
          clock: @escaping @Sendable () -> Date = { Date() }) {
         self.resolver = resolver
@@ -409,9 +427,16 @@ extension StreamState {
         self.cast = cast
         self.hd = hd
         self.liveLookup = liveLookup
+        self.liveCheck = liveCheck
+        self.linkCheck = linkCheck
         self.sleep = sleep
         self.clock = clock
         self.audioOnly = settings.audioOnly
+    }
+
+    deinit {
+        liveHeartbeat?.cancel()
+        if let castHandover { Task { @MainActor in castHandover() } }   // a popped player's cast plays on
     }
 
     /// The Settings "Background play" value, read live so a change made in Settings while the player
@@ -608,6 +633,7 @@ extension StreamState {
         if let claimedVideoId { cast?.releaseClaim(claimedVideoId, owner: castOwner) }
         claimedVideoId = nil
         pausedForCast = false
+        liveHeartbeat?.cancel()              // it asks for the old id; the new stream's landing starts its own
         args = next
         currentTime = 0                      // a new video starts at the beginning
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
@@ -827,19 +853,25 @@ extension StreamState {
             liveIncident = LiveChannelRecovery(currentId: args.videoId, currentTitle: args.liveTitle, startedAt: clock())
         }
         let incidentId = liveIncident?.id
+        let videoId = args.videoId
         var lives: [LiveChannelLives.Live]?
+        var partial = false
         var notFound = false
         var retryAfter: Int?
         do {
-            lives = try await withThrowingTaskGroup(of: LiveChannelLives.self) { [sleep] group in
-                group.addTask { try await liveLookup(channel) }
+            let answer = try await withThrowingTaskGroup(of: LiveChannelLives.self) { [sleep] group in
+                group.addTask {
+                    try await liveLookup(channel) { [weak self] in await self?.liveChannelNotFound(incidentId, videoId) }
+                }
                 group.addTask {                 // a backend that never answers is no answer, not a frozen screen
                     try await sleep(.seconds(10))
                     throw URLError(.timedOut)
                 }
                 defer { group.cancelAll() }
                 return try await group.next()!
-            }.lives
+            }
+            lives = answer.lives
+            partial = answer.partial
         } catch is LiveChannelNotFound {
             notFound = true                     // not a servable live channel: stop, never ten minutes of waits
         } catch let error where error is CancellationError || Task.isCancelled {
@@ -859,7 +891,7 @@ extension StreamState {
             return true
         }
         let step: LiveChannelRecovery.Step = notFound ? .giveUp
-            : incident.next(trigger, lives: lives, now: clock(), retryAfter: retryAfter)
+            : incident.next(trigger, lives: lives, now: clock(), retryAfter: retryAfter, partial: partial)
         liveIncident = incident
         switch step {
         case .sameId:
@@ -881,12 +913,25 @@ extension StreamState {
                 await self.followLiveMiss((self.generation, trigger))
             }
         case .giveUp:
-            liveIncident = nil
-            generation += 1
-            resolveTask?.cancel()
-            state = .error(messageKey: "player_error_message")
+            giveUpLive()
         }
         return true
+    }
+
+    /// Cubic K3: the not-live page's plain call answered 404 (the channel left its live category) after its answer was
+    /// acted on. The incident, if still the same one on the same video, gives up at once, as the lookup's own 404 does.
+    /// A screen that went away drops it (I20): its return asks again.
+    private func liveChannelNotFound(_ incidentId: UUID?, _ videoId: String) {
+        guard !upgradesStopped, let incidentId, liveIncident?.id == incidentId, args.videoId == videoId else { return }
+        liveRetryTask?.cancel()
+        giveUpLive()
+    }
+
+    private func giveUpLive() {
+        liveIncident = nil
+        generation += 1
+        resolveTask?.cancel()
+        state = .error(messageKey: "player_error_message")
     }
 
     /// §9.1 step 2: a new broadcast is a new timeline (a 1-3 s transition). Stage 9 I16: the ended broadcast stays on
@@ -930,6 +975,78 @@ extension StreamState {
         }
         liveFollowUp = task
         await task.value
+    }
+
+    /// Owner 2026-11-02: an admin's removal of a live channel, of one live stream or of an exact live link reaches a phone
+    /// already watching it. Every 60 s the catalog is asked whether the current id is still allowed (it answers from the
+    /// backend's in-memory view, no YouTube read). Removed: shown as the take-down is (`.contentUnavailable`), with no
+    /// live-channel recovery, and this screen's cast stops too. Any other error is no answer and the stream plays on.
+    /// Restarted by every landed resolve, so one loop per stream; skipped while an incident owns the stream. Not stopped
+    /// by the screen going away: background audio keeps playing, so it keeps asking.
+    private func startLiveHeartbeat() {
+        // Cubic r8: a re-resolve of the same live keeps the running tick; restarting it on each one, under 60 s apart on a
+        // flaky network, would never let the removal check run.
+        let key = "\(args.videoId)|\(args.liveChannelId ?? "")|\(args.liveLink)"
+        // Codex r4: the TV playing this screen's load needs the check too, whatever the phone's own resolve landed.
+        let needed = state.isPlayable || cast?.castsLoad(args.videoId, owner: castOwner) == true
+        if needed, heartbeatRun?.key == key, liveHeartbeat?.isCancelled == false { return }
+        liveHeartbeat?.cancel()
+        liveHeartbeat = nil
+        heartbeatRun = nil
+        castHandover = nil
+        guard needed, let isRemoved = removalCheck() else { return }
+        let videoId = args.videoId
+        let run = UUID()
+        heartbeatRun = (key, run)
+        if let cast {
+            cast.releaseRemovalWatch(videoId)                                 // a reopened player asks for itself
+            castHandover = { [owner = castOwner, sleep] in
+                cast.watchRemoval(videoId, owner: owner, tick: { try await sleep(Self.liveHeartbeatInterval) },
+                                  removed: isRemoved)
+            }
+        }
+        liveHeartbeat = Task { [weak self, sleep = self.sleep] in
+            defer { if self?.heartbeatRun?.run == run { self?.heartbeatRun = nil } }   // ended: the next landing starts one
+            while true {
+                do { try await sleep(Self.liveHeartbeatInterval) } catch { return }
+                guard !Task.isCancelled, let self, self.args.videoId == videoId else { return }
+                guard self.isHeartbeatDue(videoId) else { continue }
+                guard await isRemoved(videoId), !Task.isCancelled, self.args.videoId == videoId,
+                      self.isHeartbeatDue(videoId) else { continue }
+                self.generation += 1             // supersedes any resolve still in flight
+                self.resolveTask?.cancel()
+                self.liveRetryTask?.cancel()     // Codex r5: and a recovery in progress, which would play it again
+                self.liveIncident = nil
+                self.dropUpgrade()
+                self.state = .contentUnavailable
+                self.cast?.stopReceiver(videoId, owner: self.castOwner)   // the TV must not play on what the phone stopped
+                return
+            }
+        }
+    }
+
+    /// The heartbeat's question for the item on screen: a live-channel item asks its channel (not found, or a list without
+    /// the id, is removed), an exact live link asks the link endpoint (only its 404 is removed). nil: nothing to ask.
+    /// Every other error (503, 5xx, 400, transport, timeout) is no answer: ask again next tick.
+    private func removalCheck() -> (@Sendable (String) async -> Bool)? {
+        if isLiveChannelMode, let liveCheck, let channel = args.liveChannelId {
+            return { videoId in
+                do { return try await !liveCheck(channel, videoId).lives.contains { $0.id == videoId } }
+                catch { return error is LiveChannelNotFound }
+            }
+        }
+        if args.liveLink, let linkCheck {
+            return { videoId in
+                do { try await linkCheck(videoId); return false } catch { return error is LiveLinkNotFound }
+            }
+        }
+        return nil
+    }
+
+    private func isHeartbeatDue(_ videoId: String) -> Bool {
+        // Codex r4, r5: or the TV plays it, whatever the phone's own resolve or recovery is doing
+        resolvedVideoId == videoId
+            && ((liveIncident == nil && state.isPlayable) || cast?.castsLoad(videoId, owner: castOwner) == true)
     }
 
     /// The screen is back (`resumeUpgrades`): the follow-up it left waiting runs now, unless a newer resolve owns the stream.
@@ -1590,6 +1707,7 @@ extension StreamState {
         dropUpgrade()                           // a landed stream is not the one any upgrade in hand was for
         state = result
         scheduleLiveRefresh()
+        startLiveHeartbeat()
         if isLiveChannelMode, result.isPlayable {
             liveIncident = nil                  // live again: the incident is over, and its wait stops
         }

@@ -156,7 +156,16 @@ struct PlayerScreen: View {
                                      queueSource: Self.queueSource(container: container),
                                      cast: container.castController,
                                      hd: Self.hdUpgrade(container: container),
-                                     liveLookup: { [catalog = container.catalog] id in try await catalog.liveChannel(id: id) })
+                                     liveLookup: { [catalog = container.catalog, page = container.liveChannelPage] id, notFound in
+                                         try await page.lives(channelId: id, backend: { try await catalog.liveChannel(id: id, live: $0) },
+                                                              notFound: notFound)
+                                     },
+                                     liveCheck: { [catalog = container.catalog] channel, video in
+                                         try await catalog.liveChannel(id: channel, live: video)
+                                     },
+                                     linkCheck: { [catalog = container.catalog] video in
+                                         try await catalog.liveLink(videoId: video)
+                                     })
             }
             model = vm
             // Minor 1 (r8 review): the model is live from here and `open()` can take seconds — a

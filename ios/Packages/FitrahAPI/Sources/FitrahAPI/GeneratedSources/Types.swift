@@ -47,14 +47,27 @@ public protocol APIProtocol: Sendable {
     func getPublicPlaylist(_ input: Operations.GetPublicPlaylist.Input) async throws -> Operations.GetPublicPlaylist.Output
     /// Current live streams of a live-category channel
     ///
-    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
-    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
-    /// deleted)
+    /// Served from the poller's snapshot: a channel showing a live is re-read about once a day and one showing none
+    /// about every 4 hours (sooner after a call that shows the snapshot is stale), and the snapshot follows a moderation change (a take-down, an exclusion, an un-approve,
+    /// a channel leaving a live category, a category losing LIVE or deleted) within about 15 seconds
     ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
     /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
     func getLiveChannel(_ input: Operations.GetLiveChannel.Input) async throws -> Operations.GetLiveChannel.Output
+    /// Whether an exact live link is still served in a live category
+    ///
+    /// The removal check for an exact live link (a live-category item with `liveLink: true`) while it plays. Answered
+    /// from the poller's in-memory view, which follows a moderation change (the link leaving every live category, a
+    /// take-down, an un-approve, a category losing LIVE or deleted) within about 15 seconds. A link the poller found
+    /// ENDED (its stream ended: hidden from the category's list) is still served here, since an ended stream is never a
+    /// removal; its check asks the poller for an on-demand read of its channel, which shows it again once it is live.
+    /// No YouTube or registry read per call.
+    ///
+    ///
+    /// - Remark: HTTP `GET /v1/live/links/{videoId}`.
+    /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)`.
+    func getLiveLink(_ input: Operations.GetLiveLink.Input) async throws -> Operations.GetLiveLink.Output
     /// Search across all content types
     ///
     /// - Remark: HTTP `GET /v1/search`.
@@ -134,18 +147,41 @@ extension APIProtocol {
     }
     /// Current live streams of a live-category channel
     ///
-    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
-    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
-    /// deleted)
+    /// Served from the poller's snapshot: a channel showing a live is re-read about once a day and one showing none
+    /// about every 4 hours (sooner after a call that shows the snapshot is stale), and the snapshot follows a moderation change (a take-down, an exclusion, an un-approve,
+    /// a channel leaving a live category, a category losing LIVE or deleted) within about 15 seconds
     ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
     /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
     public func getLiveChannel(
         path: Operations.GetLiveChannel.Input.Path,
+        query: Operations.GetLiveChannel.Input.Query = .init(),
         headers: Operations.GetLiveChannel.Input.Headers = .init()
     ) async throws -> Operations.GetLiveChannel.Output {
         try await getLiveChannel(Operations.GetLiveChannel.Input(
+            path: path,
+            query: query,
+            headers: headers
+        ))
+    }
+    /// Whether an exact live link is still served in a live category
+    ///
+    /// The removal check for an exact live link (a live-category item with `liveLink: true`) while it plays. Answered
+    /// from the poller's in-memory view, which follows a moderation change (the link leaving every live category, a
+    /// take-down, an un-approve, a category losing LIVE or deleted) within about 15 seconds. A link the poller found
+    /// ENDED (its stream ended: hidden from the category's list) is still served here, since an ended stream is never a
+    /// removal; its check asks the poller for an on-demand read of its channel, which shows it again once it is live.
+    /// No YouTube or registry read per call.
+    ///
+    ///
+    /// - Remark: HTTP `GET /v1/live/links/{videoId}`.
+    /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)`.
+    public func getLiveLink(
+        path: Operations.GetLiveLink.Input.Path,
+        headers: Operations.GetLiveLink.Input.Headers = .init()
+    ) async throws -> Operations.GetLiveLink.Output {
+        try await getLiveLink(Operations.GetLiveLink.Input(
             path: path,
             headers: headers
         ))
@@ -627,6 +663,10 @@ public enum Components {
             ///
             /// - Remark: Generated from `#/components/schemas/ContentItemDto/liveChannelId`.
             public var liveChannelId: Swift.String?
+            /// True on an exact live link of a live category (a VIDEO item without liveChannelId); while it plays the app asks GET /v1/live/links/{videoId} every minute and stops on 404
+            ///
+            /// - Remark: Generated from `#/components/schemas/ContentItemDto/liveLink`.
+            public var liveLink: Swift.Bool?
             /// CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
             ///
             /// - Remark: Generated from `#/components/schemas/ContentItemDto/sourceType`.
@@ -653,6 +693,7 @@ public enum Components {
             ///   - videoCount: Number of videos (channels only)
             ///   - itemCount: Number of items (playlists only)
             ///   - liveChannelId: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+            ///   - liveLink: True on an exact live link of a live category (a VIDEO item without liveChannelId); while it plays the app asks GET /v1/live/links/{videoId} every minute and stops on 404
             ///   - sourceType: CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
             ///   - sourceId: The YouTube id of that source (UC... or PL...); search results only
             public init(
@@ -671,6 +712,7 @@ public enum Components {
                 videoCount: Swift.Int? = nil,
                 itemCount: Swift.Int? = nil,
                 liveChannelId: Swift.String? = nil,
+                liveLink: Swift.Bool? = nil,
                 sourceType: Swift.String? = nil,
                 sourceId: Swift.String? = nil
             ) {
@@ -689,6 +731,7 @@ public enum Components {
                 self.videoCount = videoCount
                 self.itemCount = itemCount
                 self.liveChannelId = liveChannelId
+                self.liveLink = liveLink
                 self.sourceType = sourceType
                 self.sourceId = sourceId
             }
@@ -708,6 +751,7 @@ public enum Components {
                 case videoCount
                 case itemCount
                 case liveChannelId
+                case liveLink
                 case sourceType
                 case sourceId
             }
@@ -1818,9 +1862,9 @@ public enum Operations {
     }
     /// Current live streams of a live-category channel
     ///
-    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
-    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
-    /// deleted)
+    /// Served from the poller's snapshot: a channel showing a live is re-read about once a day and one showing none
+    /// about every 4 hours (sooner after a call that shows the snapshot is stale), and the snapshot follows a moderation change (a take-down, an exclusion, an un-approve,
+    /// a channel leaving a live category, a category losing LIVE or deleted) within about 15 seconds
     ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
@@ -1843,6 +1887,26 @@ public enum Operations {
                 }
             }
             public var path: Operations.GetLiveChannel.Input.Path
+            /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/query`.
+            public struct Query: Sendable, Hashable {
+                /// A live video id the app read on the channel's own YouTube page. The answer is then this id's verdict alone:
+                /// LIVE with only this id when it passes curation (not excluded on the channel, not taken down or un-approved),
+                /// else OFFLINE with no lives; the snapshot's other lives are never listed. An id the poller found ENDED still
+                /// passes: an ended stream is never a removal, and the app's page shows it live. The backend never reads
+                /// YouTube for it on the request; when the snapshot does not list it, the poller is asked for an on-demand read
+                ///
+                ///
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/query/live`.
+                public var live: Swift.String?
+                /// Creates a new `Query`.
+                ///
+                /// - Parameters:
+                ///   - live: A live video id the app read on the channel's own YouTube page. The answer is then this id's verdict alone:
+                public init(live: Swift.String? = nil) {
+                    self.live = live
+                }
+            }
+            public var query: Operations.GetLiveChannel.Input.Query
             /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/header`.
             public struct Headers: Sendable, Hashable {
                 public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetLiveChannel.AcceptableContentType>]
@@ -1859,12 +1923,15 @@ public enum Operations {
             ///
             /// - Parameters:
             ///   - path:
+            ///   - query:
             ///   - headers:
             public init(
                 path: Operations.GetLiveChannel.Input.Path,
+                query: Operations.GetLiveChannel.Input.Query = .init(),
                 headers: Operations.GetLiveChannel.Input.Headers = .init()
             ) {
                 self.path = path
+                self.query = query
                 self.headers = headers
             }
         }
@@ -1872,14 +1939,14 @@ public enum Operations {
             public struct Ok: Sendable, Hashable {
                 /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/headers`.
                 public struct Headers: Sendable, Hashable {
-                    /// max-age=15, public
+                    /// `max-age=15, public` without `live`; `no-store` with it
                     ///
                     /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/200/headers/Cache-Control`.
                     public var cacheControl: Swift.String?
                     /// Creates a new `Headers`.
                     ///
                     /// - Parameters:
-                    ///   - cacheControl: max-age=15, public
+                    ///   - cacheControl: `max-age=15, public` without `live`; `no-store` with it
                     public init(cacheControl: Swift.String? = nil) {
                         self.cacheControl = cacheControl
                     }
@@ -1941,6 +2008,57 @@ public enum Operations {
                     }
                 }
             }
+            public struct BadRequest: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/400/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/400/content/application\/json`.
+                    case json(Components.Schemas.ErrorResponse)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.ErrorResponse {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.GetLiveChannel.Output.BadRequest.Body
+                /// Creates a new `BadRequest`.
+                ///
+                /// - Parameters:
+                ///   - body: Received HTTP response body
+                public init(body: Operations.GetLiveChannel.Output.BadRequest.Body) {
+                    self.body = body
+                }
+            }
+            /// `live` is not an 11-character video id
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/400`.
+            ///
+            /// HTTP response code: `400 badRequest`.
+            case badRequest(Operations.GetLiveChannel.Output.BadRequest)
+            /// The associated value of the enum case if `self` is `.badRequest`.
+            ///
+            /// - Throws: An error if `self` is not `.badRequest`.
+            /// - SeeAlso: `.badRequest`.
+            public var badRequest: Operations.GetLiveChannel.Output.BadRequest {
+                get throws {
+                    switch self {
+                    case let .badRequest(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "badRequest",
+                            response: self
+                        )
+                    }
+                }
+            }
             public struct NotFound: Sendable, Hashable {
                 /// - Remark: Generated from `#/paths/v1/live/channels/{channelId}/GET/responses/404/content`.
                 @frozen public enum Body: Sendable, Hashable {
@@ -1970,7 +2088,8 @@ public enum Operations {
                 }
             }
             /// Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
-            /// channel added to a live category in the last 20 minutes that no poll has listed yet
+            /// channel added to a live category (or served there again after an archive) in the last 20 minutes that no
+            /// poll has listed yet, nor while a moderation refresh or a poll is pending
             ///
             ///
             /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/404`.
@@ -2020,8 +2139,12 @@ public enum Operations {
                 }
             }
             /// The live states are still loading after a server start (no view built from them has been published yet),
-            /// or the channel was added to a live category in the last 20 minutes and the poller (every 10 minutes) has
-            /// not listed it yet. Empty body; retry after `Retry-After` seconds.
+            /// or the channel was added to a live category (or served there again after an archive) in the last 20
+            /// minutes and the poller (a cycle every 10 minutes) has not listed it yet, or the channel is not listed while
+            /// a moderation refresh is pending or a poll runs (it may have just been added). With `live`, also when the candidate
+            /// could not be judged: its registry lookup failed, the server-wide budget for such lookups is spent (a
+            /// candidate known to be excluded or taken down is answered OFFLINE without it), or the snapshot changed while
+            /// it was judged. This is no verdict, never OFFLINE: keep playing and ask again. Empty body; retry after `Retry-After` seconds.
             ///
             ///
             /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)/responses/503`.
@@ -2033,6 +2156,298 @@ public enum Operations {
             /// - Throws: An error if `self` is not `.serviceUnavailable`.
             /// - SeeAlso: `.serviceUnavailable`.
             public var serviceUnavailable: Operations.GetLiveChannel.Output.ServiceUnavailable {
+                get throws {
+                    switch self {
+                    case let .serviceUnavailable(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "serviceUnavailable",
+                            response: self
+                        )
+                    }
+                }
+            }
+            /// Undocumented response.
+            ///
+            /// A response with a code that is not documented in the OpenAPI document.
+            case undocumented(statusCode: Swift.Int, OpenAPIRuntime.UndocumentedPayload)
+        }
+        @frozen public enum AcceptableContentType: AcceptableProtocol {
+            case json
+            case other(Swift.String)
+            public init?(rawValue: Swift.String) {
+                switch rawValue.lowercased() {
+                case "application/json":
+                    self = .json
+                default:
+                    self = .other(rawValue)
+                }
+            }
+            public var rawValue: Swift.String {
+                switch self {
+                case let .other(string):
+                    return string
+                case .json:
+                    return "application/json"
+                }
+            }
+            public static var allCases: [Self] {
+                [
+                    .json
+                ]
+            }
+        }
+    }
+    /// Whether an exact live link is still served in a live category
+    ///
+    /// The removal check for an exact live link (a live-category item with `liveLink: true`) while it plays. Answered
+    /// from the poller's in-memory view, which follows a moderation change (the link leaving every live category, a
+    /// take-down, an un-approve, a category losing LIVE or deleted) within about 15 seconds. A link the poller found
+    /// ENDED (its stream ended: hidden from the category's list) is still served here, since an ended stream is never a
+    /// removal; its check asks the poller for an on-demand read of its channel, which shows it again once it is live.
+    /// No YouTube or registry read per call.
+    ///
+    ///
+    /// - Remark: HTTP `GET /v1/live/links/{videoId}`.
+    /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)`.
+    public enum GetLiveLink {
+        public static let id: Swift.String = "getLiveLink"
+        public struct Input: Sendable, Hashable {
+            /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/path`.
+            public struct Path: Sendable, Hashable {
+                /// YouTube video id of the link
+                ///
+                /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/path/videoId`.
+                public var videoId: Swift.String
+                /// Creates a new `Path`.
+                ///
+                /// - Parameters:
+                ///   - videoId: YouTube video id of the link
+                public init(videoId: Swift.String) {
+                    self.videoId = videoId
+                }
+            }
+            public var path: Operations.GetLiveLink.Input.Path
+            /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/header`.
+            public struct Headers: Sendable, Hashable {
+                public var accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetLiveLink.AcceptableContentType>]
+                /// Creates a new `Headers`.
+                ///
+                /// - Parameters:
+                ///   - accept:
+                public init(accept: [OpenAPIRuntime.AcceptHeaderContentType<Operations.GetLiveLink.AcceptableContentType>] = .defaultValues()) {
+                    self.accept = accept
+                }
+            }
+            public var headers: Operations.GetLiveLink.Input.Headers
+            /// Creates a new `Input`.
+            ///
+            /// - Parameters:
+            ///   - path:
+            ///   - headers:
+            public init(
+                path: Operations.GetLiveLink.Input.Path,
+                headers: Operations.GetLiveLink.Input.Headers = .init()
+            ) {
+                self.path = path
+                self.headers = headers
+            }
+        }
+        @frozen public enum Output: Sendable, Hashable {
+            public struct NoContent: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/204/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// `no-store`
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/204/headers/Cache-Control`.
+                    public var cacheControl: Swift.String?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - cacheControl: `no-store`
+                    public init(cacheControl: Swift.String? = nil) {
+                        self.cacheControl = cacheControl
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetLiveLink.Output.NoContent.Headers
+                /// Creates a new `NoContent`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                public init(headers: Operations.GetLiveLink.Output.NoContent.Headers = .init()) {
+                    self.headers = headers
+                }
+            }
+            /// Still served as a link of a live category (ENDED included)
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)/responses/204`.
+            ///
+            /// HTTP response code: `204 noContent`.
+            case noContent(Operations.GetLiveLink.Output.NoContent)
+            /// The associated value of the enum case if `self` is `.noContent`.
+            ///
+            /// - Throws: An error if `self` is not `.noContent`.
+            /// - SeeAlso: `.noContent`.
+            public var noContent: Operations.GetLiveLink.Output.NoContent {
+                get throws {
+                    switch self {
+                    case let .noContent(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "noContent",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct BadRequest: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/400/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/400/content/application\/json`.
+                    case json(Components.Schemas.ErrorResponse)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.ErrorResponse {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.GetLiveLink.Output.BadRequest.Body
+                /// Creates a new `BadRequest`.
+                ///
+                /// - Parameters:
+                ///   - body: Received HTTP response body
+                public init(body: Operations.GetLiveLink.Output.BadRequest.Body) {
+                    self.body = body
+                }
+            }
+            /// `videoId` is not an 11-character video id
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)/responses/400`.
+            ///
+            /// HTTP response code: `400 badRequest`.
+            case badRequest(Operations.GetLiveLink.Output.BadRequest)
+            /// The associated value of the enum case if `self` is `.badRequest`.
+            ///
+            /// - Throws: An error if `self` is not `.badRequest`.
+            /// - SeeAlso: `.badRequest`.
+            public var badRequest: Operations.GetLiveLink.Output.BadRequest {
+                get throws {
+                    switch self {
+                    case let .badRequest(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "badRequest",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct NotFound: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/404/content`.
+                @frozen public enum Body: Sendable, Hashable {
+                    /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/404/content/application\/json`.
+                    case json(Components.Schemas.ErrorResponse)
+                    /// The associated value of the enum case if `self` is `.json`.
+                    ///
+                    /// - Throws: An error if `self` is not `.json`.
+                    /// - SeeAlso: `.json`.
+                    public var json: Components.Schemas.ErrorResponse {
+                        get throws {
+                            switch self {
+                            case let .json(body):
+                                return body
+                            }
+                        }
+                    }
+                }
+                /// Received HTTP response body
+                public var body: Operations.GetLiveLink.Output.NotFound.Body
+                /// Creates a new `NotFound`.
+                ///
+                /// - Parameters:
+                ///   - body: Received HTTP response body
+                public init(body: Operations.GetLiveLink.Output.NotFound.Body) {
+                    self.body = body
+                }
+            }
+            /// Not (or no longer) a served link of any live category: removed from it, un-approved, blocked or taken
+            /// down (never for ENDED). Definitive; never sent while the live states load,
+            /// nor while a moderation refresh is pending or a poll runs: a removal answers 404 about 15 seconds after it
+            /// (after the poll, when one runs)
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)/responses/404`.
+            ///
+            /// HTTP response code: `404 notFound`.
+            case notFound(Operations.GetLiveLink.Output.NotFound)
+            /// The associated value of the enum case if `self` is `.notFound`.
+            ///
+            /// - Throws: An error if `self` is not `.notFound`.
+            /// - SeeAlso: `.notFound`.
+            public var notFound: Operations.GetLiveLink.Output.NotFound {
+                get throws {
+                    switch self {
+                    case let .notFound(response):
+                        return response
+                    default:
+                        try throwUnexpectedResponseStatus(
+                            expectedStatus: "notFound",
+                            response: self
+                        )
+                    }
+                }
+            }
+            public struct ServiceUnavailable: Sendable, Hashable {
+                /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/503/headers`.
+                public struct Headers: Sendable, Hashable {
+                    /// Seconds to wait before retrying (60)
+                    ///
+                    /// - Remark: Generated from `#/paths/v1/live/links/{videoId}/GET/responses/503/headers/Retry-After`.
+                    public var retryAfter: Swift.Int?
+                    /// Creates a new `Headers`.
+                    ///
+                    /// - Parameters:
+                    ///   - retryAfter: Seconds to wait before retrying (60)
+                    public init(retryAfter: Swift.Int? = nil) {
+                        self.retryAfter = retryAfter
+                    }
+                }
+                /// Received HTTP response headers
+                public var headers: Operations.GetLiveLink.Output.ServiceUnavailable.Headers
+                /// Creates a new `ServiceUnavailable`.
+                ///
+                /// - Parameters:
+                ///   - headers: Received HTTP response headers
+                public init(headers: Operations.GetLiveLink.Output.ServiceUnavailable.Headers = .init()) {
+                    self.headers = headers
+                }
+            }
+            /// The live states are still loading after a server start, or the link is not in the poller's view while a
+            /// moderation refresh is pending or a poll runs (a link just added to a live category). This is no verdict:
+            /// keep playing and ask again. Empty body; retry after `Retry-After` seconds.
+            ///
+            ///
+            /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)/responses/503`.
+            ///
+            /// HTTP response code: `503 serviceUnavailable`.
+            case serviceUnavailable(Operations.GetLiveLink.Output.ServiceUnavailable)
+            /// The associated value of the enum case if `self` is `.serviceUnavailable`.
+            ///
+            /// - Throws: An error if `self` is not `.serviceUnavailable`.
+            /// - SeeAlso: `.serviceUnavailable`.
+            public var serviceUnavailable: Operations.GetLiveLink.Output.ServiceUnavailable {
                 get throws {
                     switch self {
                     case let .serviceUnavailable(response):

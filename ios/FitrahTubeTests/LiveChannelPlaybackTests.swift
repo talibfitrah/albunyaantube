@@ -116,7 +116,8 @@ struct LiveChannelPlaybackTests {
                        lookup: @escaping @Sendable (String) async throws -> LiveChannelLives,
                        clock: @escaping @Sendable () -> Date = { Date() }, cast: CastController? = nil) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
-        return PlayerViewModel(resolver: resolver, settings: settings, args: args, cast: cast, liveLookup: lookup, sleep: sleep,
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args, cast: cast, liveLookup: { id, _ in try await lookup(id) },
+                               sleep: sleep,
                                clock: clock)
     }
 
@@ -299,6 +300,29 @@ struct LiveChannelPlaybackTests {
                 == .switchTo(id: "new0000000a", title: "Laith & Layla"))
         var late = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Laith & Layla", startedAt: t0)
         #expect(late.next(.ended, lives: siblings, now: t0 + 120) == .switchTo(id: "kazwa000001", title: "Kazwa & Bilal"))
+    }
+
+    /// Cubic r9: the phone's page shows one live, not the channel's list, so it never proves the current id ended. Makkah
+    /// failing twice while the page shows Madinah keeps re-resolving Makkah once per wake; Madinah only after the D12 title
+    /// wait, or at once when Makkah is known ended or the page's live carries its title (a 24/7 rotation).
+    @Test func aPageLiveOfAnotherShowKeepsTheFailingCurrentIdUntilTheTitleWait() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let madinah: [LiveChannelLives.Live] = [.init(id: "madinah0001", title: "Madinah")]
+        var r = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Makkah", startedAt: t0)
+        #expect(r.next(.failure, lives: madinah, now: t0, partial: true) == .sameId)
+        #expect(r.next(.failure, lives: madinah, now: t0 + 5, partial: true) == .wait(seconds: 15))     // its failure waits
+        #expect(r.next(.failure, lives: madinah, now: t0 + 20, partial: true) == .sameId)              // the wake tries again
+        #expect(r.next(.failure, lives: madinah, now: t0 + 120, partial: true) == .switchTo(id: "madinah0001", title: "Madinah"))
+
+        var ended = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Makkah", startedAt: t0)
+        #expect(ended.next(.ended, lives: madinah, now: t0, partial: true) == .switchTo(id: "madinah0001", title: "Madinah"))
+        var rotation = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Makkah", startedAt: t0)
+        _ = rotation.next(.failure, lives: nil, now: t0)
+        #expect(rotation.next(.failure, lives: [.init(id: "new0000000a", title: "Makkah")], now: t0 + 5, partial: true)
+                == .switchTo(id: "new0000000a", title: "Makkah"))
+        var full = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "Makkah", startedAt: t0)
+        _ = full.next(.failure, lives: nil, now: t0)
+        #expect(full.next(.failure, lives: madinah, now: t0 + 5) == .switchTo(id: "madinah0001", title: "Madinah"))  // backend list
     }
 
     @Test func theSameIdAfterAFailureRecoversAndAfterAnEndWaits() {
@@ -534,6 +558,65 @@ struct LiveChannelPlaybackTests {
         }
     }
 
+    /// Each lookup answers "not live" (the page) and keeps its plain call's 404 report, to fire when the test says.
+    nonisolated final class NotLivePage: @unchecked Sendable {
+        private let lock = NSLock()
+        private var kept: [@Sendable () async -> Void] = []
+        var reports: [@Sendable () async -> Void] { lock.withLock { kept } }
+        func lookup(_ channelId: String, _ notFound: @escaping @Sendable () async -> Void) -> LiveChannelLives {
+            lock.withLock { kept.append(notFound) }
+            return LiveChannelLives(lives: [])
+        }
+    }
+
+    func makeViewModel(_ resolver: RecordingResolver, page: NotLivePage, sleeper: GatedSleeper) -> PlayerViewModel {
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "LiveChannelPlaybackTests.\(UUID().uuidString)")!)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: Self.channelArgs("Rs7St51oDDc"),
+                               liveLookup: { page.lookup($0, $1) }, sleep: { try await sleeper.sleep($0) })
+    }
+
+    /// Cubic K3: a not-live page decides at once (step 4 waits); its plain call's 404 then gives up at once, as the
+    /// backend's 404 did before the page, instead of ten minutes of waits.
+    @Test func aNotLivePageWhosePlainCallIs404GivesUpAtOnce() async throws {
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let page = NotLivePage()
+        let vm = makeViewModel(RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), page: page, sleeper: sleeper)
+
+        await vm.open()
+        await vm.playToEnd()
+        try await waitUntil { sleeper.parked == 1 }
+        #expect(vm.state == .loading)                                         // the not-live decision, unchanged
+
+        await page.reports[0]()                                               // the plain call's 404 lands
+        #expect(vm.state == .error(messageKey: "player_error_message"))
+        sleeper.wake()
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(page.reports.count == 1)                                      // the wait asks nothing more
+    }
+
+    /// A 404 from an older incident's plain call stops nothing.
+    @Test func aStalePlainCall404IsIgnored() async throws {
+        let sleeper = GatedSleeper(gated: .seconds(15))
+        let page = NotLivePage()
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("Rs7St51oDDc"))])
+        let vm = makeViewModel(resolver, page: page, sleeper: sleeper)
+
+        await vm.open()
+        await vm.playToEnd()                                                  // incident 1: not live, waits
+        try await waitUntil { sleeper.parked == 1 }
+        await vm.retry()                                                      // the stream is back; incident 1 is over
+        #expect(vm.state.isLiveNow)
+        await page.reports[0]()
+        #expect(vm.state.isLiveNow)
+
+        await vm.playToEnd()                                                  // incident 2
+        try await waitUntil { sleeper.parked == 2 }
+        await page.reports[0]()                                               // incident 1's, late
+        #expect(vm.state == .loading)
+        await page.reports[1]()
+        #expect(vm.state == .error(messageKey: "player_error_message"))
+    }
+
     /// Hand-off 1: every other lookup error (a 5xx, transport, decode) is no answer, so step 4 waits and asks again.
     @Test func anyOtherLookupErrorWaitsAndAsksAgain() async throws {
         let sleeper = GatedSleeper(gated: .seconds(15))
@@ -573,7 +656,7 @@ struct LiveChannelPlaybackTests {
         #expect(blind.state.resolved == nil)
     }
 
-    @Test func theBlindSameIdTryIsOncePerIncidentAndOnlyForAFailureWithNoAnswer() {
+    @Test func theBlindSameIdTryIsOncePerIncidentAndOnlyForAFailure() {
         let t0 = Date(timeIntervalSince1970: 0)
         var failure = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
         #expect(failure.next(.failure, lives: nil, now: t0) == .sameId)
@@ -581,7 +664,26 @@ struct LiveChannelPlaybackTests {
         var ended = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
         #expect(ended.next(.ended, lives: nil, now: t0) == .wait(seconds: 15))
         var offline = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
-        #expect(offline.next(.failure, lives: [], now: t0) == .wait(seconds: 15))  // "no lives" is an answer
+        // Cubic R4-1: "no lives" is an answer, but a failure's first decision re-resolves the id anyway.
+        #expect(offline.next(.failure, lives: [], now: t0) == .sameId)
+    }
+
+    /// Cubic R4-1: the page shows one live, so a multi-live channel's other running live (this one) is missing from the
+    /// answer. A failure's first decision re-resolves the current id whatever the list says; later ones apply the rules.
+    @Test func aFailuresFirstDecisionIsAlwaysTheSameId() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        let other: [LiveChannelLives.Live] = [.init(id: "zzz0000000a", title: "Other show")]
+        var r = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(r.next(.failure, lives: other, now: t0) == .sameId)
+        #expect(r.next(.failure, lives: other, now: t0 + 5) == .switchTo(id: "zzz0000000a", title: "Other show"))
+        var notLive = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(notLive.next(.failure, lives: [], now: t0) == .sameId)          // a wrong not-live page never blocks it
+        var ended = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(ended.next(.ended, lives: other, now: t0) == .switchTo(id: "zzz0000000a", title: "Other show"))
+        // The same-id try found it ended: a single-live rotation still reaches the new live.
+        var rotation = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(rotation.next(.failure, lives: other, now: t0) == .sameId)
+        #expect(rotation.next(.ended, lives: other, now: t0 + 5) == .switchTo(id: "zzz0000000a", title: "Other show"))
     }
 
     /// Hand-off 3 (F3: an ended 24/7 id FAILS to resolve): a failed same-id re-resolve, a switched-to id that fails, a cold
@@ -648,20 +750,23 @@ struct LiveChannelPlaybackTests {
     /// Hand-off 6: a wait re-sends its own trigger. A failure that waited (the backend briefly listed nothing) still gets
     /// its same-id recovery once the id is listed again; re-sent as an end, it would wait out the ten minutes.
     @Test func aWaitRepeatsTheFailureThatStartedIt() async throws {
-        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")), .success(Self.live("Rs7St51oDDc"))])
+        // Cubic R4-1: the failure's first decision re-resolves the id whatever the list says; here that try fails.
+        let resolver = RecordingResolver([.success(Self.live("Rs7St51oDDc")),
+                                          .failure(ExtractionError.unavailable(videoId: "Rs7St51oDDc")),
+                                          .success(Self.live("Rs7St51oDDc"))])
         let sleeper = GatedSleeper(gated: .seconds(15))
-        let lookup = Lookup([.success(Self.onAir()), .success(Self.onAir("Rs7St51oDDc"))])
+        let lookup = Lookup([.success(Self.onAir()), .success(Self.onAir()), .success(Self.onAir("Rs7St51oDDc"))])
         let vm = makeViewModel(resolver, args: Self.channelArgs("Rs7St51oDDc"), sleep: { try await sleeper.sleep($0) },
                                lookup: { try await lookup.lives($0) })
 
         await vm.open()
-        await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)       // nothing listed: wait 15 s
+        await vm.handleRecoveryEvent(.playbackError, httpStatus: 403)       // the first try fails, nothing listed: wait 15 s
         #expect(vm.state == .loading)
         try await waitUntil { sleeper.parked == 1 }
         sleeper.wake()
 
         try await waitUntil { vm.state.isLiveNow }
-        #expect(await resolver.videoIds == ["Rs7St51oDDc", "Rs7St51oDDc"])
+        #expect(await resolver.videoIds == ["Rs7St51oDDc", "Rs7St51oDDc", "Rs7St51oDDc"])
     }
 
     /// Stage 7 I-P1 (Android e632edbb; replaces hand-off 7's "keep the backend title"): a live item shows the stream's
@@ -730,7 +835,7 @@ struct LiveChannelPlaybackTests {
         let sleeper = Sleeper(immediate: 0)
         let vm = PlayerViewModel(resolver: RecordingResolver([.success(Self.live("Rs7St51oDDc"))]), settings: settings, args: args,
                                  queueSource: FakeQueueSource(pages: [(ids: ["Rs7St51oDDc", "b"], next: nil)]),
-                                 liveLookup: { _ in onAir }, sleep: { try await sleeper.sleep($0) })
+                                 liveLookup: { _, _ in onAir }, sleep: { try await sleeper.sleep($0) })
 
         await vm.open()
         await vm.playToEnd()
@@ -963,9 +1068,11 @@ struct LiveChannelPlaybackTests {
     @Test func theTenMinuteWakeGivesUpWithoutASameIdTry() {
         let t0 = Date(timeIntervalSince1970: 0)
         var listed = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(listed.next(.failure, lives: [], now: t0) == .sameId)                           // Cubic R4-1: the first try
         #expect(listed.next(.failure, lives: [], now: t0 + 590) == .wait(seconds: 10))          // the last wait
         #expect(listed.next(.failure, lives: [.init(id: "old0000000a", title: "x")], now: t0 + 600) == .giveUp)
         var blind = LiveChannelRecovery(currentId: "old0000000a", currentTitle: "x", startedAt: t0)
+        #expect(blind.next(.failure, lives: [], now: t0) == .sameId)
         #expect(blind.next(.failure, lives: [], now: t0 + 590) == .wait(seconds: 10))
         #expect(blind.next(.failure, lives: nil, now: t0 + 600) == .giveUp)
     }

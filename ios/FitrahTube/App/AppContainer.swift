@@ -121,6 +121,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return URL.applicationSupportDirectory
     }()
     private(set) lazy var categories: any CategoriesCache = LiveCategoriesCache(client: catalog)
+    /// Live-channel mode's channel-page read: ONE transport (`URLSession`) for every player, not one per player model.
+    private(set) lazy var liveChannelPage = LiveChannelPage()
     private(set) lazy var network = NetworkMonitor()
     /// Phase 3 Task 5: the per-video `offlineAllowed` gate — ONE client shared by the player's
     /// Save button (via `PlayerScreen`) and the manager's revalidation sweep.

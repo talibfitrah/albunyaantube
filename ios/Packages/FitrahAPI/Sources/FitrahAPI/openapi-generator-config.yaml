@@ -10,5 +10,6 @@ filter:
     - /v1/home
     - /v1/channels/{channelId}
     - /v1/live/channels/{channelId}
+    - /v1/live/links/{videoId}
     - /v1/playlists/{playlistId}
     - /v1/search
