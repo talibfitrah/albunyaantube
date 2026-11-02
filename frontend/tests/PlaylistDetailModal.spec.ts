@@ -543,6 +543,18 @@ describe('PlaylistDetailModal', () => {
     expect(getPlaylistVideos).toHaveBeenCalledTimes(1);
   });
 
+  it('re-runs initialization when searching after it failed', async () => {
+    vi.mocked(fetchPlaylistExclusions).mockRejectedValueOnce(new Error('Exclusions down'));
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Exclusions down')).toBeInTheDocument());
+
+    await search('video');
+
+    await waitFor(() => expect(screen.getByText('Video 1').closest('.item')).toHaveClass('excluded'));
+    expect(fetchPlaylistExclusions).toHaveBeenCalledTimes(2);
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', undefined, 'video');
+  });
+
   it('keeps a late exclusion write when the same playlist is reopened', async () => {
     let finishAdd!: () => void;
     vi.mocked(addPlaylistExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));

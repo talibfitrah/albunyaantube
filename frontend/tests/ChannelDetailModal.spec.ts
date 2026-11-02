@@ -520,6 +520,18 @@ describe('ChannelDetailModal', () => {
     expect(screen.getByText('Same id playlist').closest('.item')).not.toHaveClass('excluded');
   });
 
+  it('re-runs initialization when searching after it failed', async () => {
+    vi.mocked(fetchChannelExclusions).mockRejectedValueOnce(new Error('Exclusions down'));
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Exclusions down')).toBeInTheDocument());
+
+    await fireEvent.update(screen.getByPlaceholderText(/search within channel/i), 'video');
+    await fireEvent.click(screen.getByText('🔍'));
+
+    await waitFor(() => expect(screen.getByText('Video 1').closest('.item')).toHaveClass('excluded'));
+    expect(fetchChannelExclusions).toHaveBeenCalledTimes(2);
+  });
+
   it('stops initializing once unmounted', async () => {
     let releaseDetails!: () => void;
     vi.mocked(getChannelDetails).mockReturnValueOnce(new Promise((resolve) => { releaseDetails = () => resolve({ channel: { name: 'C' }, videos: [] } as any); }));

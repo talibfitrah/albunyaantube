@@ -438,7 +438,9 @@ function performSearch() {
   items.value = []
   nextPageToken.value = null
   reset()
-  loadMore()
+  // After an error the exclusion state may be missing: re-run init (with this query) instead.
+  if (error.value) loadInitialData()
+  else loadMore()
 }
 
 function isExcluded(id: string): boolean {
