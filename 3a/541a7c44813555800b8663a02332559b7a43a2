@@ -1,0 +1,27 @@
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_ece2c24f226db2 159,162-166,200,228-229,240,258-259,262-263,385,428-433,450-454,457-458,462-463,474-475,479-480
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_a0a5e6e4cf9c67 112,115-119,143,179,194-195,198-199,288,313-318,335,337,341-342,352,356-357
+frontend/src/locales/messages.ts
+  s_543f5b01a05d75::t_89c9207c93089b 559,2221,3663
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_d71437c6059b14 15-16,28-29,448-485
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_9c541c9b45d523 435-438,463-535
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3a541a7c44813555800b8663a02332559b7a43a2",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
