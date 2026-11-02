@@ -1,0 +1,21 @@
+frontend/src/composables/useInfiniteScroll.ts
+  s_543f5b01a05d75::t_186a49ff873d54 6,25-28
+frontend/tests/useInfiniteScroll.spec.ts
+  s_543f5b01a05d75::t_f40262c8758517 233-263
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f42b49bf194278543196333f78cc6d3bf405da76",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
