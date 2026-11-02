@@ -90,11 +90,26 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
     }
   }
 
+  // Content that doesn't overflow never fires a scroll event, so re-check when the container
+  // attaches and after every load. A macrotask lets the DOM render and the caller's post-load
+  // code (e.g. clearing its own initial-load flag) run first.
+  const checkFill = () => {
+    if (throttleTimeout) return // a pending check runs anyway
+    throttleTimeout = setTimeout(() => {
+      throttleTimeout = null
+      // clientHeight 0 = not laid out (hidden, or jsdom), so fill can't be judged.
+      if (containerRef.value?.clientHeight) checkScroll()
+    }, 0)
+  }
+
+  watch(isLoading, (loading) => { if (!loading) checkFill() })
+
   // Watch, not onMounted: the container may sit inside a v-if (e.g. a modal mounted closed),
   // so it can appear, disappear and be re-created after mount.
   watch(containerRef, (el, oldEl) => {
     oldEl?.removeEventListener('scroll', handleScroll)
     el?.addEventListener('scroll', handleScroll, { passive: true })
+    if (el) checkFill()
   })
 
   onBeforeUnmount(() => {

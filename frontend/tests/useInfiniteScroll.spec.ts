@@ -261,6 +261,27 @@ describe('useInfiniteScroll', () => {
     expect(onLoadMore).toHaveBeenCalledTimes(1);
   });
 
+  // Underfill: a page that doesn't overflow the container never fires a scroll event.
+  it('loads more without a scroll when the content does not fill the container', async () => {
+    const onLoadMore = vi.fn();
+    const wrapper = mount(createTestComponent({ onLoadMore }));
+    const container = wrapper.vm.containerRef as HTMLElement;
+    Object.defineProperty(container, 'scrollHeight', { value: 500 });
+    Object.defineProperty(container, 'clientHeight', { value: 500 });
+
+    await wrapper.vm.$nextTick(); // container attached
+    vi.advanceTimersByTime(0);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+
+    // The caller's load ends and the page still fits: check again.
+    wrapper.vm.isLoading = true;
+    await wrapper.vm.$nextTick();
+    wrapper.vm.isLoading = false;
+    await wrapper.vm.$nextTick();
+    vi.advanceTimersByTime(500);
+    expect(onLoadMore).toHaveBeenCalledTimes(2);
+  });
+
   it('should not trigger when scrolled far from bottom', async () => {
     const onLoadMore = vi.fn();
     const wrapper = mount(createTestComponent({

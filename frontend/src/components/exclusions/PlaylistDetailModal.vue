@@ -171,6 +171,10 @@ const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const playlistDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
+// Bumped on every open, close and re-init: late init/exclusion results from an older one are dropped.
+// Separate from requestIdCounter, which a search or page load bumps mid-open.
+let openId = 0
+let emptyPages = 0 // consecutive empty pages after the first (see loadMore)
 
 // Video preview state
 const showVideoPreview = ref(false)
@@ -192,6 +196,7 @@ watch(() => props.open, (isOpen) => {
   } else {
     // Invalidate any in-flight requests when closing
     requestIdCounter++
+    openId++
     isLoading.value = false
 
     // Reset state when closed
@@ -205,6 +210,7 @@ watch(() => props.open, (isOpen) => {
 }, { immediate: true })
 
 async function loadInitialData() {
+  const id = ++openId
   initialLoading.value = true
   error.value = null
   items.value = []
@@ -214,11 +220,13 @@ async function loadInitialData() {
   try {
     // Load playlist details
     const details = await getPlaylistDetails(props.playlistYoutubeId)
+    if (id !== openId) return
     playlistDetails.value = details
 
     // Load exclusions only if we have a registry document ID
     if (hasRegistryId.value) {
       const exclusions = await fetchPlaylistExclusions(props.playlistId)
+      if (id !== openId) return
       excludedIds.value = new Set(exclusions)
     } else {
       excludedIds.value = new Set()
@@ -227,9 +235,9 @@ async function loadInitialData() {
     // Load initial items
     await loadMore()
   } catch (err: any) {
-    error.value = err.message || $t('common.error')
+    if (id === openId) error.value = err.message || $t('common.error')
   } finally {
-    initialLoading.value = false
+    if (id === openId) initialLoading.value = false
   }
 }
 
@@ -268,7 +276,10 @@ async function loadMore() {
     // Append new items
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
-    hasMore.value = !!result.nextPageToken
+    // Pages can come back empty (playlist search filters each page client-side), and an
+    // under-filled list auto-loads the next one: stop after 5 empty pages in a row.
+    emptyPages = result.items.length || !capturedPageToken ? 0 : emptyPages + 1
+    hasMore.value = !!result.nextPageToken && emptyPages < 5
   } catch (err: any) {
     // Verify context still matches before updating error state
     if (
@@ -308,11 +319,12 @@ function isExcluded(videoId: string): boolean {
 }
 
 async function addExclusion(videoId: string) {
+  const id = openId
   actionLoading[videoId] = true
 
   try {
     await addPlaylistExclusion(props.playlistId, videoId)
-    excludedIds.value.add(videoId)
+    if (id === openId) excludedIds.value.add(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.excludeError'))
@@ -322,11 +334,12 @@ async function addExclusion(videoId: string) {
 }
 
 async function removeExclusion(videoId: string) {
+  const id = openId
   actionLoading[videoId] = true
 
   try {
     await removePlaylistExclusion(props.playlistId, videoId)
-    excludedIds.value.delete(videoId)
+    if (id === openId) excludedIds.value.delete(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.removeError'))

@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import { messages } from '@/locales/messages';
 import {
@@ -404,5 +404,62 @@ describe('ChannelDetailModal', () => {
     releaseDetails();
     await waitFor(() => expect(screen.getByText('Playlist 1')).toBeInTheDocument());
     expect(getChannelPlaylists).toHaveBeenCalledTimes(1);
+  });
+
+  // A page too short to scroll must still pull the next one (no scroll event ever fires).
+  it('loads the next page when the first page does not fill the list', async () => {
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    onTestFinished(() => spy.mockRestore());
+    vi.mocked(getChannelVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockResolvedValueOnce({ items: [{ id: 'video4', title: 'Video 4' }], nextPageToken: null } as any);
+    renderModal();
+
+    await waitFor(() => expect(screen.getByText('Video 4')).toBeInTheDocument());
+    expect(getChannelVideos).toHaveBeenCalledTimes(2);
+  });
+
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+  const propsFor = (id: string) => ({ channelId: `reg-${id}`, channelYoutubeId: `UC${id}` });
+
+  it('drops a late initial load from the previously opened channel', async () => {
+    let releaseA!: () => void;
+    vi.mocked(getChannelDetails).mockImplementation((id: string) =>
+      id === 'UCA'
+        ? new Promise((resolve) => { releaseA = () => resolve({ channel: { name: 'Channel A' }, videos: [] } as any); })
+        : Promise.resolve({ channel: { name: 'Channel B' }, videos: [] } as any)
+    );
+    vi.mocked(fetchChannelExclusions).mockImplementation(async (id: string) =>
+      ({ videos: id === 'reg-A' ? ['video3'] : [], playlists: [] } as any)
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Channel B')).toBeInTheDocument();
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+    expect(fetchChannelExclusions).not.toHaveBeenCalledWith('reg-A');
+  });
+
+  it('drops a late exclusion write from the previously opened channel', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addChannelExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    vi.mocked(fetchChannelExclusions).mockResolvedValue({ videos: [], playlists: [] } as any);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
   });
 });

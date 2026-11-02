@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import { messages } from '@/locales/messages';
 import {
@@ -386,5 +386,93 @@ describe('PlaylistDetailModal', () => {
     await rerender({ open: true, playlistId: 'playlist-123', playlistYoutubeId: 'PLxxxxxx' });
 
     await scrollToBottomLoadsPage2();
+  });
+
+  // jsdom lays nothing out; give the list a height so an under-filled page is detectable.
+  function layOutList() {
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    onTestFinished(() => spy.mockRestore());
+  }
+
+  async function search(query: string) {
+    await fireEvent.update(screen.getByPlaceholderText(/search within playlist/i), query);
+    await fireEvent.click(screen.getByText('🔍'));
+  }
+
+  // Search filters each page client-side, so a page can hold 0 matches but have a next page.
+  it('keeps loading when a search page has no matches but more pages exist', async () => {
+    layOutList();
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'i1', videoId: 'v1', title: 'Video 1' }], nextPageToken: null } as any)
+      .mockResolvedValueOnce({ items: [], nextPageToken: 'p2' } as any)
+      .mockResolvedValueOnce({ items: [{ id: 'i9', videoId: 'v9', title: 'Needle' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    await search('needle');
+
+    await waitFor(() => expect(screen.getByText('Needle')).toBeInTheDocument());
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', 'p2', 'needle');
+  });
+
+  it('stops auto-loading after 5 empty pages in a row', async () => {
+    layOutList();
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'i1', videoId: 'v1', title: 'Video 1' }], nextPageToken: null } as any)
+      .mockResolvedValue({ items: [], nextPageToken: 'more' } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    await search('absent');
+
+    // init page + search page 1 + 5 empty follow-ups, then nothing more.
+    await waitFor(() => expect(getPlaylistVideos).toHaveBeenCalledTimes(7), { timeout: 5000 });
+    await new Promise((r) => setTimeout(r, 1200));
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(7);
+    expect(screen.getByText(/No results found/i)).toBeInTheDocument();
+  }, 10000);
+
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+  const propsFor = (id: string) => ({ playlistId: `reg-${id}`, playlistYoutubeId: `PL${id}` });
+
+  // Close A, open B: A's late init must not overwrite B.
+  it('drops a late initial load from the previously opened playlist', async () => {
+    let releaseA!: () => void;
+    vi.mocked(getPlaylistDetails).mockImplementation((id: string) =>
+      id === 'PLA'
+        ? new Promise((resolve) => { releaseA = () => resolve({ title: 'Playlist A' } as any); })
+        : Promise.resolve({ title: 'Playlist B' } as any)
+    );
+    vi.mocked(fetchPlaylistExclusions).mockImplementation(async (id: string) => (id === 'reg-A' ? ['video3'] : []));
+    const { rerender } = renderModal(propsFor('A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Playlist B')).toBeInTheDocument();
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+    expect(fetchPlaylistExclusions).not.toHaveBeenCalledWith('reg-A');
+  });
+
+  it('drops a late exclusion write from the previously opened playlist', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addPlaylistExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
   });
 });

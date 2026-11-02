@@ -230,6 +230,10 @@ const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const channelDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
+// Bumped on every open, close and re-init: late init/exclusion results from an older one are dropped.
+// Separate from requestIdCounter, which a search or page load bumps mid-open.
+let openId = 0
+let emptyPages = 0 // consecutive empty pages after the first (see loadMore)
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -254,6 +258,7 @@ watch(() => props.open, (isOpen) => {
   } else {
     // Invalidate any in-flight requests when closing
     requestIdCounter++
+    openId++
     isLoading.value = false
 
     // Reset state when closed
@@ -267,6 +272,7 @@ watch(() => props.open, (isOpen) => {
 }, { immediate: true })
 
 async function loadInitialData() {
+  const id = ++openId
   initialLoading.value = true
   error.value = null
   items.value = []
@@ -276,6 +282,7 @@ async function loadInitialData() {
   try {
     // Load channel details
     const detailsResponse = await getChannelDetails(props.channelYoutubeId)
+    if (id !== openId) return
     channelDetails.value = {
       name: detailsResponse.channel?.name || '',
       thumbnailUrl: detailsResponse.channel?.avatarUrl || '',
@@ -287,6 +294,7 @@ async function loadInitialData() {
     // Skip when channelId is empty (e.g., previewing from search results)
     if (props.channelId) {
       const exclusions = await fetchChannelExclusions(props.channelId)
+      if (id !== openId) return
       excludedIds.value = new Set(
         activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
       )
@@ -297,6 +305,7 @@ async function loadInitialData() {
     // Load initial items
     await loadMore()
   } catch (err: any) {
+    if (id !== openId) return
     const status = err?.response?.status;
     if (status === 404) {
       error.value = $t('exclusions.channelDetail.fetchError');
@@ -304,7 +313,7 @@ async function loadInitialData() {
       error.value = err.message || $t('common.error');
     }
   } finally {
-    initialLoading.value = false
+    if (id === openId) initialLoading.value = false
   }
 }
 
@@ -362,7 +371,10 @@ async function loadMore() {
     // Append new items
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
-    hasMore.value = !!result.nextPageToken
+    // Pages can come back empty (playlist search filters each page client-side), and an
+    // under-filled list auto-loads the next one: stop after 5 empty pages in a row.
+    emptyPages = result.items.length || !capturedPageToken ? 0 : emptyPages + 1
+    hasMore.value = !!result.nextPageToken && emptyPages < 5
   } catch (err: any) {
     // Verify context still matches before updating error state
     if (
@@ -421,12 +433,13 @@ function isExcluded(id: string): boolean {
 
 async function addExclusion(itemId: string) {
   if (!hasRegistryId.value) return
+  const id = openId
   actionLoading[itemId] = true
 
   try {
     const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
     await addChannelExclusion(props.channelId, type, itemId)
-    excludedIds.value.add(itemId)
+    if (id === openId) excludedIds.value.add(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.excludeError'))
@@ -437,12 +450,13 @@ async function addExclusion(itemId: string) {
 
 async function removeExclusion(itemId: string) {
   if (!hasRegistryId.value) return
+  const id = openId
   actionLoading[itemId] = true
 
   try {
     const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
     await removeChannelExclusion(props.channelId, type, itemId)
-    excludedIds.value.delete(itemId)
+    if (id === openId) excludedIds.value.delete(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.removeError'))
