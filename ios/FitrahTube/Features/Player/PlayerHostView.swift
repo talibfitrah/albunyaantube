@@ -87,6 +87,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
+        let path = context.coordinator.path
+        let freshItem = QualityOption.needsFreshItem(from: context.coordinator.appliedQuality, to: quality,
+                                                     layerSize: context.coordinator.layerSize,
+                                                     isExpensive: path.isExpensive, isConstrained: path.isConstrained)
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime,
@@ -94,7 +98,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         airPlayFellBack: model.airPlayFellBack,
                                         failedItem: context.coordinator.failedItem,
                                         interrupted: context.coordinator.background.interrupted,
-                                        onRefused: model.hdRefusalHook(for: state.resolved))
+                                        onRefused: model.hdRefusalHook(for: state.resolved), freshItem: freshItem)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -341,6 +345,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let scale = controller.view.window?.screen.scale ?? controller.traitCollection.displayScale
         let layerSize = QualityOption.pixelSize(points: controller.view.bounds.size, scale: scale > 0 ? scale : 2)
         context.coordinator.layerSize = layerSize
+        context.coordinator.appliedQuality = quality
         quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path)
     }
 
@@ -429,6 +434,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) var stager: HDStager?
         /// The layer's pixel size from the last `applyQuality`, so a staged item gets the same quality ceiling.
         var layerSize: CGSize = .zero
+        /// The pick `applyQuality` last applied, so the update pass can tell a lower pick (`QualityOption.needsFreshItem`).
+        var appliedQuality: QualityOption?
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
         /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
         /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
@@ -904,7 +911,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
                        pausedForCast: Bool = false, airPlayFellBack: Bool = false,
                        failedItem: AVPlayerItem? = nil, interrupted: Bool = false,
-                       onRefused: (@Sendable () -> Void)? = nil) -> AVPlayer? {
+                       onRefused: (@Sendable () -> Void)? = nil, freshItem: Bool = false) -> AVPlayer? {
         guard let resolved = state.resolved else {
             existing?.pause()
             return nil
@@ -918,7 +925,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // B5 Task 4: a DIFFERENT video (`continuesCurrentVideo == false`) never reuses the item
         // either -- a same-URL advance handed the ended item back and the queue stalled one short
         // of its terminus.
-        if continuesCurrentVideo, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
+        // `freshItem`: a lower quality pick (`QualityOption.needsFreshItem`) -- the live item's buffer holds the higher rendition.
+        if continuesCurrentVideo, !freshItem, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
            existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
@@ -978,7 +986,13 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // fallback in the turn it was made. `swapArgs` is what re-enables it, per stream.
         if url.isFileURL { existing.allowsExternalPlayback = false }
         existing.replaceCurrentItem(with: item)
-        if resume > 0 { existing.seek(to: resumeTime) }
+        // A quality pick is exact, as `HDStager.handOver` is: the default tolerance snapped a live HLS back to the previous
+        // segment boundary (measured 19 s -> 15 s on C3BXt0zJr3o).
+        if resume > 0, freshItem {
+            existing.seek(to: resumeTime, toleranceBefore: .zero, toleranceAfter: .zero)
+        } else if resume > 0 {
+            existing.seek(to: resumeTime)
+        }
         if wasPlaying { existing.play() }
         return existing
     }

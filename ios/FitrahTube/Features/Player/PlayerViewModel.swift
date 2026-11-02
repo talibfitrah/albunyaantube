@@ -182,6 +182,29 @@ extension StreamState {
     /// re-resolve.
     var selectedQuality: QualityOption = .auto
 
+    /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
+    /// renditions load, and for a single file.
+    private(set) var qualityOptions: [QualityOption] = []
+    private(set) var qualityLoad: Task<Void, Never>?
+    /// The stream `qualityOptions` belong to.
+    private var qualityStreamURL: URL?
+
+    /// Called for every item the host builds. Another stream (another video, the HD hand-over) reloads the rows and clears
+    /// the old ones at once; the same stream (a lower pick's rebuild, the audio-only swap) keeps them, so no flicker.
+    private func loadQualityOptions() {
+        let resolved = currentItem == nil ? nil : state.resolved
+        let url = resolved.map { PlayerHostView.streamURL($0.stream) }
+        guard url != qualityStreamURL else { return }
+        qualityStreamURL = url
+        qualityOptions = []
+        qualityLoad = resolved.map { resolved in
+            Task {
+                let menu = QualityOption.menu(for: await QualityOption.variantSizes(of: resolved))
+                if url == qualityStreamURL { qualityOptions = menu }
+            }
+        }
+    }
+
     /// The audio-language menu's sticky pick (`AudioLanguageMenu.swift`, player.md §2.2/§8.6): an
     /// extended-language-tag (or, for a track the asset gives no tag, its display name -- see
     /// `AudioLanguageMenu`'s glue). Session-only, re-applied to every new/replaced `AVPlayerItem`
@@ -201,6 +224,7 @@ extension StreamState {
     var currentItem: AVPlayerItem? {
         didSet {
             guard currentItem !== oldValue else { return }
+            loadQualityOptions()
             audioLanguageGroup = nil
             audioLanguageOptions = []
             audioLanguageLoad = Task { await AudioLanguageMenu.load(self) }

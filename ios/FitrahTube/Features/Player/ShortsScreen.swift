@@ -110,18 +110,21 @@ struct ShortsScreen: View {
     /// -- and Report: the one `ReportSheet` (Plan C task 3), as a SHORT with its channel parent.
     private func kebab(_ model: PlayerViewModel) -> some View {
         Menu {
-            Section(String(localized: "player_quality_dialog_title")) {
-                ForEach(QualityOption.allCases, id: \.self) { option in
-                    Button {
-                        model.selectedQuality = option
-                    } label: {
-                        if option == model.selectedQuality {
-                            Label(option.label, systemImage: "checkmark")
-                        } else {
-                            Text(option.label)
+            // Only while the stream has renditions to choose from (`qualityOptions`).
+            if !model.qualityOptions.isEmpty {
+                Section(String(localized: "player_quality_dialog_title")) {
+                    ForEach(model.qualityOptions, id: \.self) { option in
+                        Button {
+                            model.selectedQuality = option
+                        } label: {
+                            if option == model.selectedQuality {
+                                Label(option.label, systemImage: "checkmark")
+                            } else {
+                                Text(option.label)
+                            }
                         }
+                        .accessibilityIdentifier("shorts.qualityOption.\(option.id)")
                     }
-                    .accessibilityIdentifier("shorts.qualityOption.\(option)")
                 }
             }
             Button {

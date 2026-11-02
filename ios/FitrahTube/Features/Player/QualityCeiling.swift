@@ -1,4 +1,5 @@
 import AVFoundation
+import InnerTubeKit
 import Network
 
 /// The manual quality menu, reduced to what AVFoundation actually exposes for HLS (spec §10, plan
@@ -6,8 +7,13 @@ import Network
 /// `preferredMaximumResolution` + `preferredPeakBitRate`, clamped further on cellular
 /// (`…ForExpensiveNetworks`-equivalent ceiling, applied manually below -- see `apply` doc) and by
 /// Low Data Mode (`NWPath.isConstrained`). Android's `QualityTrackSelector` equivalent.
-enum QualityOption: CaseIterable {
-    case auto, p1080, p720, p480, dataSaver
+/// Owner request 2026-11-02: the rows are the current stream's REAL renditions (`menu(for:)`), so a pick capped at a
+/// rendition's own size is that rendition.
+enum QualityOption: Hashable {
+    case auto
+    /// One of the stream's video variants (`variantSizes(of:)`), capped at exactly its pixel size.
+    case rendition(width: Int, height: Int)
+    case dataSaver
 
     /// player.md §3's LTE/5G ceiling: every option is clamped to this on an `isExpensive` path
     /// (Wi-Fi/offline: no clamp).
@@ -15,7 +21,7 @@ enum QualityOption: CaseIterable {
     private static let cellularBitrate: Double = 2_500_000 // 2.5 Mbps
 
     /// player.md §3's 3G/metered ceiling doubles as Data Saver's own fixed cap (spec §10: "the
-    /// lowest sensible cap") and as what Low Data Mode forces regardless of the picked option.
+    /// lowest sensible cap") and as what Low Data Mode forces on Auto.
     private static let dataSaverResolution = CGSize(width: 854, height: 480)
     private static let dataSaverBitrate: Double = 1_200_000 // 1.2 Mbps
 
@@ -24,9 +30,7 @@ enum QualityOption: CaseIterable {
     private var explicitResolution: CGSize? {
         switch self {
         case .auto: return nil
-        case .p1080: return CGSize(width: 1920, height: 1080)
-        case .p720: return CGSize(width: 1280, height: 720)
-        case .p480: return CGSize(width: 854, height: 480)
+        case .rendition(let width, let height): return CGSize(width: width, height: height)
         case .dataSaver: return Self.dataSaverResolution
         }
     }
@@ -36,20 +40,62 @@ enum QualityOption: CaseIterable {
         self == .dataSaver ? Self.dataSaverBitrate : 0
     }
 
-    /// "Auto", "1080p (1920×1080)", … -- no `asset.variants` peak-resolution list exists anywhere
-    /// in InnerTubeKit's `Resolved`/`ResolvedStream` (checked: `.hls` carries one opaque manifest
-    /// URL, no per-rendition data), so every label is the "else the option name" branch the brief
-    /// allows. I5 (B1 final review): the two word-labels are catalog strings, not English
-    /// literals -- they are user-visible menu rows and a VoiceOver value, and B4's Shorts kebab
-    /// reuses this same type. The resolution labels stay literal (digits + "p" + a ×-separated
-    /// pixel pair, identical in all three locales).
+    /// "Auto", "1080p (1920×1080)", … -- Android's "720p (1280x720)" row format. I5 (B1 final review): the two
+    /// word-labels are catalog strings, not English literals -- they are user-visible menu rows and a VoiceOver value,
+    /// and B4's Shorts kebab reuses this same type. The rendition labels stay literal (digits + "p" + a ×-separated
+    /// pixel pair, identical in all three locales); the "p" number is the short side, so a vertical Short reads as
+    /// YouTube labels it.
     var label: String {
         switch self {
         case .auto: return String(localized: "player_quality_auto")
         case .dataSaver: return String(localized: "player_quality_data_saver")
-        default:
-            guard let size = explicitResolution else { return "" }
-            return "\(Int(size.height))p (\(Int(size.width))×\(Int(size.height)))"
+        case .rendition(let width, let height): return "\(min(width, height))p (\(width)×\(height))"
+        }
+    }
+
+    /// The menu rows' accessibility identifier suffix: `auto`, `720`, `dataSaver`.
+    var id: String {
+        switch self {
+        case .auto: return "auto"
+        case .dataSaver: return "dataSaver"
+        case .rendition(let width, let height): return "\(min(width, height))"
+        }
+    }
+
+    /// The menu for a stream whose video variants are `sizes`: Auto, one row per distinct rendition (biggest first; a
+    /// master repeats a size once per codec or frame rate), then Data Saver. Empty -- no menu -- with fewer than two
+    /// renditions: a single file (rung 2's itag 18, an offline save) has nothing to choose.
+    static func menu(for sizes: [CGSize]) -> [QualityOption] {
+        var largest: [Int: CGSize] = [:]
+        for size in sizes where area(size) > 0 {
+            let key = Int(min(size.width, size.height))
+            if area(size) > area(largest[key] ?? .zero) { largest[key] = size }
+        }
+        let renditions = largest.keys.sorted(by: >).compactMap { largest[$0] }
+            .map { QualityOption.rendition(width: Int($0.width), height: Int($0.height)) }
+        return renditions.count > 1 ? [.auto] + renditions + [.dataSaver] : []
+    }
+
+    /// The stream's video rendition sizes. Not `AVURLAsset.variants`: that fetches every rendition's media playlist
+    /// first (measured), which on tv_samsung is a `sidx` GET each, past `SyntheticHLSLoader`'s 2-GET ceiling. tv_samsung's
+    /// model carries the sizes; a native master costs one GET of its text; a progressive file is one rendition.
+    static func variantSizes(of resolved: Resolved) async -> [CGSize] {
+        guard case .hls(let url, _, _, _, let synthetic) = resolved.stream else { return [] }
+        if let synthetic {
+            return synthetic.video.compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
+        }
+        var request = URLRequest(url: url)
+        request.setValue(resolved.userAgent, forHTTPHeaderField: "User-Agent")
+        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return [] }
+        return masterSizes(String(decoding: data, as: UTF8.self))
+    }
+
+    /// Each `#EXT-X-STREAM-INF`'s `RESOLUTION` (RFC 8216 §4.3.4.2); I-frame playlists and audio-only variants have none.
+    static func masterSizes(_ master: String) -> [CGSize] {
+        master.split(whereSeparator: \.isNewline).compactMap { line in
+            guard line.hasPrefix("#EXT-X-STREAM-INF:"), let match = line.firstMatch(of: /RESOLUTION=(\d+)x(\d+)/),
+                  let width = Int(match.1), let height = Int(match.2) else { return nil }
+            return CGSize(width: width, height: height)
         }
     }
 
@@ -72,8 +118,10 @@ enum QualityOption: CaseIterable {
         // is still capped even though nothing re-applies the manual clamp above until the next
         // prepare/pick. The manual clamp stays the source of truth the tests pin; this never
         // raises it (AVFoundation applies the more restrictive of the two on an expensive path).
-        item.preferredMaximumResolutionForExpensiveNetworks = Self.cellularResolution
-        item.preferredPeakBitRateForExpensiveNetworks = Self.cellularBitrate
+        // A picked rendition sets its own cap here too, or AVFoundation would clamp it to 720p on cellular.
+        let picked = if case .rendition = self { true } else { false }
+        item.preferredMaximumResolutionForExpensiveNetworks = picked ? ceiling.resolution : Self.cellularResolution
+        item.preferredPeakBitRateForExpensiveNetworks = picked ? ceiling.bitrate : Self.cellularBitrate
     }
 
     /// Fix-round-1 F1: `preferredMaximumResolution` is a PIXEL dimension; `UIView.bounds.size` is
@@ -87,7 +135,12 @@ enum QualityOption: CaseIterable {
 
     static func ceiling(for option: QualityOption, layerSize: CGSize, isExpensive: Bool,
                          isConstrained: Bool) -> (resolution: CGSize, bitrate: Double) {
-        // Low Data Mode wins outright over both the picked option and the cellular clamp.
+        // Owner request 2026-11-02: a rendition the user picked is delivered, network or not (Android parity: a manual
+        // pick overrides `QualityTrackSelector`'s network ceiling). The clamps below bind Auto and Data Saver.
+        if case .rendition(let width, let height) = option {
+            return (CGSize(width: width, height: height), 0)
+        }
+        // Low Data Mode wins outright over Auto, Data Saver and the cellular clamp.
         if isConstrained {
             return (dataSaverResolution, dataSaverBitrate)
         }
@@ -103,6 +156,22 @@ enum QualityOption: CaseIterable {
         }
         return (resolution, bitrate)
     }
+
+    /// Owner report 2026-11-02: a LOWER ceiling binds only the segments fetched after it, so AVPlayer plays out what it
+    /// already buffered above it (measured on the iPhone 17 simulator: 1920x1080 still drawn 36 s after a 480p pick; a
+    /// fresh item on the same asset drew 854x480 within 3 s). True when a pick lowers the effective ceiling, so the host
+    /// rebuilds the item at the live position. A raise needs nothing (1080p drawn within 3 s), and `old == nil` is the
+    /// first prepare, not a pick.
+    static func needsFreshItem(from old: QualityOption?, to new: QualityOption, layerSize: CGSize, isExpensive: Bool,
+                               isConstrained: Bool) -> Bool {
+        guard let old, old != new else { return false }
+        let before = ceiling(for: old, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
+        let after = ceiling(for: new, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
+        return isLower(area(after.resolution), than: area(before.resolution)) || isLower(after.bitrate, than: before.bitrate)
+    }
+
+    /// `0` is AVFoundation's "unbounded" for both the resolution and the bitrate cap.
+    private static func isLower(_ new: Double, than old: Double) -> Bool { new > 0 && (old == 0 || new < old) }
 
     private static func area(_ size: CGSize) -> Double { Double(size.width) * Double(size.height) }
 }

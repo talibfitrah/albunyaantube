@@ -186,6 +186,31 @@ struct PlayerHostTests {
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
     }
 
+    /// Owner report 2026-11-02, issue 2: a lower quality pick on the SAME url must not hand the item back -- its buffer
+    /// still holds the higher rendition (`QualityOption.needsFreshItem`). The item is rebuilt on the same player at the
+    /// same position, exactly as a re-resolve's is.
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestRebuildsTheSameURLAtTheSamePosition() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        #expect(position >= 1)
+        let oldItem = player.currentItem
+
+        let rebuilt = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+
+        #expect(rebuilt === player)
+        #expect(rebuilt?.currentItem !== oldItem)
+        #expect((rebuilt?.currentItem?.asset as? AVURLAsset)?.url == url)
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+        #expect(player.timeControlStatus == .paused, "a paused player stays paused (I5)")
+    }
+
     // MARK: - Recovery chain at the host (Task 7: resume intent; fix round 2: the wall-clock sampler)
 
     /// Task 7 fix round 1 (review N1): `lastPlayingAt` is per player and only the periodic sampler

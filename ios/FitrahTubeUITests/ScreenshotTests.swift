@@ -207,23 +207,26 @@ final class ScreenshotTests: XCTestCase {
     /// Plan B1 task 4: proof the quality menu is FitrahTube's own SwiftUI control, not AVKit chrome
     /// -- it's found and driven purely by `player.qualityMenu.button` / `player.qualityOption.*`
     /// (`PlayerScreen.qualityMenu`), the identifiers this app defines, never an AVKit accessibility
-    /// element. `-fitrah-fake-player-hls` (not `-fitrah-fake-player`) is required: the plain fixture
-    /// resolves `.rung2Progressive`, where the control is hidden by contract (spec §10).
+    /// element. Owner request 2026-11-02: the rows are the stream's real renditions, so only a live
+    /// catalog HLS has a menu (a bundled single file has one rendition -- no menu); opt-in with the other live
+    /// checks (SHORTS_LIVE=1). C3BXt0zJr3o carries 144p-1080p; run it on iPhone and on iPad.
     func testPlayerQualityMenu() throws {
+        try requireShortsLive()
         let directory = try shotsDirectory()
-        let screen = Screen(key: "player-quality",
-                            arguments: ["-fitrah-fake-player-hls", "-fitrah-route", "player", "fixture-video"],
-                            anchor: .element("Video"))
-        XCUIDevice.shared.orientation = .portrait
-        let app = launch(screen, locale: Self.locales[0], extraArguments: [])
-        let content = element(for: screen.anchor, in: app)
-        XCTAssertTrue(content.waitForExistence(timeout: 20), "player-quality: AVPlayerViewController's content view never appeared")
-        let button = app.buttons["player.qualityMenu.button"]
-        XCTAssertTrue(button.waitForExistence(timeout: 10), "player-quality: quality menu button never appeared")
-        button.tap()
-        let option = app.buttons["player.qualityOption.p720"]
-        XCTAssertTrue(option.waitForExistence(timeout: 10), "player-quality: quality menu never opened")
-        try write(named: "player-quality-menu", into: directory)
+        let device = UIDevice.current.userInterfaceIdiom == .pad ? "ipad" : "iphone"
+        let screen = Screen(key: "player-quality", arguments: ["-fitrah-route", "player", "C3BXt0zJr3o"],
+                            anchor: .button("unused"))
+        for locale in Self.locales {
+            XCUIDevice.shared.orientation = .portrait
+            let app = launch(screen, locale: locale, extraArguments: [])
+            let button = app.buttons["player.qualityMenu.button"]
+            XCTAssertTrue(button.waitForExistence(timeout: 60), "\(locale.key): quality menu button never appeared")
+            button.tap()
+            for id in ["auto", "1080", "720", "480", "360", "240", "144", "dataSaver"] {
+                XCTAssertTrue(app.buttons["player.qualityOption.\(id)"].waitForExistence(timeout: 10), "\(locale.key): no \(id) row")
+            }
+            try write(named: "player-quality-menu-\(device)-\(locale.key)", into: directory)
+        }
     }
 
     /// Plan B1 task 5: `AudioLanguageMenu` (`player.audioLanguageMenu.button` /
@@ -776,17 +779,14 @@ final class ScreenshotTests: XCTestCase {
         if app.buttons["Close"].exists { app.buttons["Close"].tap() } else { app.swipeDown() }
         _ = like.waitForExistence(timeout: 5)
 
-        // Kebab: five quality options, pick 480p, Report presents the ReportSheet.
+        // Kebab: no quality rows for the single-file fixture, Report presents the ReportSheet.
         app.buttons["shorts.kebab.button"].tap()
         XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10), "b4t4 en kebab: never opened")
-        let options = ["auto", "p1080", "p720", "p480", "dataSaver"].map { app.buttons["shorts.qualityOption.\($0)"].exists }
+        // The fixture is a single file: one rendition, so no quality rows (`QualityOption.menu(for:)`).
+        let options = ["auto", "dataSaver"].map { app.buttons["shorts.qualityOption.\($0)"].exists }
         notes.append("iphone-en kebab quality options present=\(options)")
-        XCTAssertEqual(options.filter { $0 }.count, 5, "b4t4 en kebab: expected 5 quality options, present=\(options)")
+        XCTAssertEqual(options.filter { $0 }.count, 0, "b4t4 en kebab: a single file offers no quality rows, present=\(options)")
         try write(named: "shorts-b4t4-iphone-en-kebab", into: directory)
-        app.buttons["shorts.qualityOption.p480"].tap()
-        app.buttons["shorts.kebab.button"].tap()
-        XCTAssertTrue(app.buttons["shorts.kebab.report"].waitForExistence(timeout: 10))
-        try write(named: "shorts-b4t4-iphone-en-kebab-480p", into: directory)
         app.buttons["shorts.kebab.report"].tap()
         // The ReportSheet presents over the stage; dismiss it or the Back tap below hits the dimming layer.
         XCTAssertTrue(app.buttons["report.cancel"].waitForExistence(timeout: 5), "b4t4 en report: sheet never presented")
@@ -1057,8 +1057,8 @@ final class ScreenshotTests: XCTestCase {
 
         // 6. Quality: 480p pick applies through the shared ladder; AUTO's cap is the host's own bounds.
         app.buttons["shorts.kebab.button"].tap()
-        XCTAssertTrue(app.buttons["shorts.qualityOption.p480"].waitForExistence(timeout: 10), "live 6: kebab never opened")
-        app.buttons["shorts.qualityOption.p480"].tap()
+        XCTAssertTrue(app.buttons["shorts.qualityOption.480"].waitForExistence(timeout: 10), "live 6: kebab never opened")
+        app.buttons["shorts.qualityOption.480"].tap()
         Thread.sleep(forTimeInterval: 8)
         try write(named: "shorts-b4t4-live-480p", into: directory)
 
