@@ -88,11 +88,11 @@ import UIKit
         hidden.replaceCurrentItem(with: nil)
         let fresh = AVPlayerItem(asset: item.asset)
         configure(fresh)
-        let now = player.currentTime()
+        let now = PlayerHostView.position(of: player)
         player.replaceCurrentItem(with: fresh)
-        player.seek(to: now, toleranceBefore: .zero, toleranceAfter: .zero)
+        PlayerHostView.seek(player, to: now, exact: true)
         #if DEBUG
-        print("HDStager: HD swapped in at \(now.seconds) s")   // read by the device leg (Task 23), deleted in Task 24
+        print("HDStager: HD swapped in at \(now) s")   // read by the device leg (Task 23), deleted in Task 24
         #endif
     }
 

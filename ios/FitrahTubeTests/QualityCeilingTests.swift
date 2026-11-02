@@ -315,8 +315,9 @@ struct QualityCeilingTests {
     /// 3 s. A raise needs nothing: the same run drew 1080p within 3 s of the pick.
     private func needsFreshItem(_ old: QualityOption?, _ new: QualityOption, layer: CGSize = layerSize,
                                 playing: CGSize = .zero, expensive: Bool = false, constrained: Bool = false) -> Bool {
-        QualityOption.needsFreshItem(from: old, to: new, layerSize: layer, playing: playing, isExpensive: expensive,
-                                     isConstrained: constrained)
+        let applied = old.map { ($0, QualityOption.ceiling(for: $0, layerSize: layer, isExpensive: expensive, isConstrained: constrained)) }
+        return QualityOption.needsFreshItem(from: applied, to: new, layerSize: layer, playing: playing, isExpensive: expensive,
+                                            isConstrained: constrained)
     }
 
     /// Cubic r2 P2: a lower SIZE cap flushes only what is drawn above it. Picking the stream's top rendition from a
@@ -359,6 +360,27 @@ struct QualityCeilingTests {
     @Test func aPickThatLeavesTheEffectiveCeilingUnchangedKeepsTheItem() {
         #expect(!needsFreshItem(.auto, Self.p720, layer: CGSize(width: 2532, height: 1170), expensive: true))
         #expect(!needsFreshItem(.auto, .dataSaver, constrained: true))
+    }
+
+    /// Codex review: the item holds the ceiling applied with the network flags of ITS pass, not today's. Nothing re-applies
+    /// it when the path changes, so a pick compares against what was applied (`apply`'s result), not a recomputation.
+    @Test func aPickComparesAgainstTheCeilingTheItemHolds() {
+        let fullscreen = CGSize(width: 2556, height: 1179)
+        let wifiAuto = QualityOption.ceiling(for: .auto, layerSize: fullscreen, isExpensive: false, isConstrained: false)
+        let cellularAuto = QualityOption.ceiling(for: .auto, layerSize: fullscreen, isExpensive: true, isConstrained: false)
+        // Auto applied on Wi-Fi (1080p drawn), then cellular: 720p lowers what the item holds -- rebuild.
+        #expect(QualityOption.needsFreshItem(from: (.auto, wifiAuto), to: Self.p720, layerSize: fullscreen,
+                                             playing: CGSize(width: 1920, height: 1080), isExpensive: true, isConstrained: false))
+        // Auto applied on cellular (720p cap), then Wi-Fi: 1080p raises what the item holds -- keep it.
+        #expect(!QualityOption.needsFreshItem(from: (.auto, cellularAuto), to: Self.p1080, layerSize: fullscreen,
+                                              isExpensive: false, isConstrained: false))
+    }
+
+    @Test func applyReturnsTheCeilingItSet() {
+        let item = item()
+        let applied = QualityOption.auto.apply(to: item, layerSize: Self.layerSize, isExpensive: true, isConstrained: false)
+        #expect(applied.resolution == item.preferredMaximumResolution)
+        #expect(applied.bitrate == item.preferredPeakBitRate)
     }
 
     @Test func labelsMatchTheAndroidFormat() {

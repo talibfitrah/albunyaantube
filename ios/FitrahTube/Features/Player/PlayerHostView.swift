@@ -346,8 +346,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let scale = controller.view.window?.screen.scale ?? controller.traitCollection.displayScale
         let layerSize = QualityOption.pixelSize(points: controller.view.bounds.size, scale: scale > 0 ? scale : 2)
         context.coordinator.layerSize = layerSize
-        context.coordinator.appliedQuality = quality
-        quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path)
+        context.coordinator.appliedQuality = (quality, quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path))
     }
 
     /// `!==` guard: writing the same reference every `updateUIViewController` pass (most of
@@ -435,8 +434,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) var stager: HDStager?
         /// The layer's pixel size from the last `applyQuality`, so a staged item gets the same quality ceiling.
         var layerSize: CGSize = .zero
-        /// The pick `applyQuality` last applied, so the update pass can tell a lower pick (`QualityOption.needsFreshItem`).
-        var appliedQuality: QualityOption?
+        /// The pick `applyQuality` last applied and the ceiling it set on the item, so the update pass can tell a lower pick
+        /// (`QualityOption.needsFreshItem`) even after the network flags changed.
+        var appliedQuality: (option: QualityOption, ceiling: (resolution: CGSize, bitrate: Double))?
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
         /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
         /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
@@ -863,6 +863,26 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// reach one whose host AND coordinator are gone while AVKit's PiP window still holds it.
     static let builtPlayers = NSHashTable<AVPlayer>.weakObjects()
 
+    /// Codex review: a swapped-in item's clock reads 0 until its seek lands, so a second swap inside that window (two
+    /// quick lower picks) restarted the video. Each item's target stands in for its position until the seek completes.
+    private static var landingSeeks: [ObjectIdentifier: TimeInterval] = [:]
+
+    /// The position a replacement item carries: the current item's seek target while that seek is landing, else its clock.
+    static func position(of player: AVPlayer) -> TimeInterval {
+        player.currentItem.flatMap { landingSeeks[ObjectIdentifier($0)] } ?? player.currentTime().seconds
+    }
+
+    /// Seeks a just-swapped item, keeping its target readable (`position(of:)`) until the seek completes or is cut off.
+    static func seek(_ player: AVPlayer, to seconds: TimeInterval, exact: Bool) {
+        guard let item = player.currentItem else { return }
+        let key = ObjectIdentifier(item)
+        landingSeeks[key] = seconds
+        let tolerance = exact ? CMTime.zero : .positiveInfinity
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) { _ in
+            Task { @MainActor in landingSeeks[key] = nil }
+        }
+    }
+
     /// Owner ruling 2026-09-24: nothing plays behind the sign-in wall. Pause and empty, which ends
     /// the audio and blanks a PiP window regardless of the deferred PiP teardown. `players` is a
     /// parameter only so a test can stop ITS player without stopping the suite's parallel ones.
@@ -945,8 +965,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
         // auto-advance or an Up Next tap) means neither applies -- the next video starts at 0.
         let resume = Self.resumePosition(isLive: state.isLiveNow, continuesCurrentVideo: continuesCurrentVideo,
-                                         live: existing?.currentTime().seconds, fallback: resumeFallback)
-        let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
+                                         live: existing.map(Self.position(of:)), fallback: resumeFallback)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
             builtPlayers.add(player)
@@ -969,7 +988,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // `AUTOSELECT=YES` subtitles on by itself. Audio is unaffected: `AudioLanguageMenu`
             // selects it explicitly on every item.
             player.appliesMediaSelectionCriteriaAutomatically = false
-            if resume > 0 { player.seek(to: resumeTime) }
+            if resume > 0 { seek(player, to: resume, exact: false) }
             if !pausedForCast, !interrupted { player.play() }
             return player
         }
@@ -996,11 +1015,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         existing.replaceCurrentItem(with: item)
         // A quality pick is exact, as `HDStager.handOver` is: the default tolerance snapped the playing HLS back to the
         // previous segment boundary (measured 19 s -> 15 s on C3BXt0zJr3o).
-        if resume > 0, rebuild {
-            existing.seek(to: resumeTime, toleranceBefore: .zero, toleranceAfter: .zero)
-        } else if resume > 0 {
-            existing.seek(to: resumeTime)
-        }
+        if resume > 0 { seek(existing, to: resume, exact: rebuild) }
         if wasPlaying { existing.play() }
         return existing
     }

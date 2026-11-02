@@ -212,6 +212,27 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus == .paused, "a paused player stays paused (I5)")
     }
 
+    /// Codex review: two lower picks in a row (1080p -> 720p -> 480p within a second). The first rebuild's exact seek has
+    /// not landed when the second rebuild reads the position, and the new item's clock reads 0 until it does: the second
+    /// rebuild must carry the first one's target, not restart the video.
+    @Test(.timeLimit(.minutes(1))) func aSecondFreshItemRequestBeforeTheFirstSeekLandsKeepsThePosition() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        #expect(position >= 1)
+
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+    }
+
     /// Re-review of the fix: a rebuild never reuses the asset of the item recovery just reported failed (M4: never handed
     /// back, whatever its status says).
     @Test(.timeLimit(.minutes(1))) func aFreshItemRequestNeverReusesTheFailedItemsAsset() throws {

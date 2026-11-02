@@ -114,14 +114,16 @@ enum QualityOption: Hashable {
 
     /// Production entry point (`PlayerHostView`): sets the ceiling for `item`, clamped by the
     /// current network path.
-    func apply(to item: AVPlayerItem, layerSize: CGSize, network: NWPath) {
+    @discardableResult
+    func apply(to item: AVPlayerItem, layerSize: CGSize, network: NWPath) -> (resolution: CGSize, bitrate: Double) {
         apply(to: item, layerSize: layerSize, isExpensive: network.isExpensive, isConstrained: network.isConstrained)
     }
 
     /// The `NWPath`-free core `QualityCeilingTests` drives directly -- `NWPath` has no public
     /// initializer, so a real one can't be constructed in a test (same reason
     /// `NetworkMonitor.isOnline(for:)` takes `NWPath.Status`, not `NWPath`, in this codebase).
-    func apply(to item: AVPlayerItem, layerSize: CGSize, isExpensive: Bool, isConstrained: Bool) {
+    @discardableResult
+    func apply(to item: AVPlayerItem, layerSize: CGSize, isExpensive: Bool, isConstrained: Bool) -> (resolution: CGSize, bitrate: Double) {
         let ceiling = Self.ceiling(for: self, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         item.preferredMaximumResolution = ceiling.resolution
         item.preferredPeakBitRate = ceiling.bitrate
@@ -135,6 +137,7 @@ enum QualityOption: Hashable {
         let picked = if case .rendition = self { true } else { false }
         item.preferredMaximumResolutionForExpensiveNetworks = picked ? ceiling.resolution : Self.cellularResolution
         item.preferredPeakBitRateForExpensiveNetworks = picked ? ceiling.bitrate : Self.cellularBitrate
+        return ceiling
     }
 
     /// Fix-round-1 F1: `preferredMaximumResolution` is a PIXEL dimension; `UIView.bounds.size` is
@@ -178,10 +181,12 @@ enum QualityOption: Hashable {
     /// has more area than 720p yet a narrower width (review of a2c737ba). A lower SIZE cap rebuilds only when what is
     /// drawn (`playing`, the item's `presentationSize`; `.zero` = nothing yet, unknown) is above it (Cubic r2): picking the
     /// top rendition from a fullscreen Auto lowers the cap past the layer while ABR already plays under it.
-    static func needsFreshItem(from old: QualityOption?, to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
+    static func needsFreshItem(from old: (option: QualityOption, ceiling: (resolution: CGSize, bitrate: Double))?,
+                               to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
                                isExpensive: Bool, isConstrained: Bool) -> Bool {
-        guard let old, old != new else { return false }
-        let before = ceiling(for: old, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
+        guard let old, old.option != new else { return false }
+        // What the item holds (`apply`'s result), not a recomputation: nothing re-applies it when the network flags change.
+        let before = old.ceiling
         let after = ceiling(for: new, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         let sizeLowered = isLower(after.resolution.width, than: before.resolution.width)
             || isLower(after.resolution.height, than: before.resolution.height)
