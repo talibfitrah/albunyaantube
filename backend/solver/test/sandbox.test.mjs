@@ -14,6 +14,7 @@ import { signatureTimestamp } from '../server.mjs';
 
 const SOLVER = path.dirname(path.dirname(fileURLToPath(import.meta.url)));
 const UNIT = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'systemd', 'fitrah-solver.service'), 'utf8');
+const WATCHDOG = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'systemd', 'fitrah-solver-watchdog.service'), 'utf8');
 const PLAYER = process.env.SOLVER_TEST_PLAYER
   ?? path.join(SOLVER, '..', '..', '.superpowers/sdd/2026-10-14-playback-phase2/spike/out/base.js');
 const playerText = fs.existsSync(PLAYER) ? fs.readFileSync(PLAYER, 'utf8') : null;
@@ -191,11 +192,17 @@ test('a player that leaves an unhandled rejection is dropped and the real server
   });
 
 /** S20: a realm run can outrun the vm timeout (Node's one TerminateExecution is lost inside its promise-reject callback), and
- *  systemd never restarts a hung process. fitrah-solver-watchdog.service runs healthcheck.mjs every 10 s and SIGKILLs the
- *  solver on exit 2. Exit 2 must mean exactly "connected, but the event loop never answered": a warming 503 or a refused
- *  port (stopped, or in RestartSec) is 0, so systemd's own restart logic keeps those. A preload busy-loops the main thread
- *  as an escaped realm run would. */
-test('healthcheck.mjs exits 2 only for a solver whose event loop is blocked (S20)', { timeout: 30_000 }, async (t) => {
+ *  systemd never restarts a hung process. fitrah-solver-watchdog.service curls /health every 10 s and SIGKILLs the solver only
+ *  on curl's exit 28 ("connected, but no answer in time"): a warming 503 is 0 and a refused port (stopped, or in RestartSec)
+ *  is 7, so systemd's own restart logic keeps those. The limit must outlast one poll's legitimate block: newContext, buildPlayer
+ *  and selfTest run back to back on the event loop, each under its own 10 s vm timeout, so a slow but bounded build is not a
+ *  hang. The unit's own probe runs here with only its port and limit swapped. A preload busy-loops the main thread as an
+ *  escaped realm run would. */
+test('the watchdog kills only a solver whose event loop is blocked past a legitimate build (S20)', { timeout: 30_000 }, async (t) => {
+  const loop = WATCHDOG.match(/^ExecStart=\/bin\/sh -c '(.*)'$/m)[1];
+  const probe = loop.match(/do (curl [^;]*);/)[1];
+  assert.ok(Number(probe.match(/--max-time (\d+)/)[1]) > 3 * 10, 'the limit kills a build that every vm timeout still bounds');
+  assert.match(loop, /\[ \$\$\? -eq 28 \] && .*systemctl kill --signal=SIGKILL fitrah-solver\.service/);
   const { root, cache } = install(t);
   fs.writeFileSync(path.join(root, 'app', 'hang.mjs'), 'setTimeout(() => { for (;;); }, 1000);');
   const start = async (preload) => {
@@ -207,19 +214,11 @@ test('healthcheck.mjs exits 2 only for a solver whose event loop is blocked (S20
     return port;
   };
   const check = (port) => new Promise((resolve) => {
-    const run = spawn(process.execPath, [path.join(SOLVER, 'healthcheck.mjs')], { env: { ...process.env, SOLVER_PORT: String(port) } });
-    let stderr = '';
-    run.stderr.on('data', (d) => { stderr += d; });
-    run.on('exit', (code) => resolve({ code, stderr: stderr.trim() }));
+    spawn('/bin/sh', ['-c', probe.replace('4417', String(port)).replace(/--max-time \d+/, '--max-time 3')]).on('exit', resolve);
   });
   const [hung, warming, refused] = await Promise.all([start([`--import=${path.join(root, 'app', 'hang.mjs')}`]), start([]), freePort()]);
   await new Promise((r) => setTimeout(r, 1500));                       // the hung server's loop is blocked from here on
-  const started = Date.now();
-  const [h, w, r] = await Promise.all([check(hung), check(warming), check(refused)]);
-  assert.deepEqual([w.code, r.code], [0, 0], `warming: ${w.stderr}; refused: ${r.stderr}`);
-  assert.equal(h.code, 2, h.stderr);
-  assert.match(h.stderr, /FATAL solver on port \d+ accepted but did not answer \/health within 20 s/);
-  assert.ok(Date.now() - started >= 19_000, 'gave up before its 20 s timeout');
+  assert.deepEqual(await Promise.all([check(hung), check(warming), check(refused)]), [28, 0, 7]);
 });
 
 /** Cubic r7 #1: without --experimental-vm-modules the deny callback cannot run and import() leaks the host process, so the

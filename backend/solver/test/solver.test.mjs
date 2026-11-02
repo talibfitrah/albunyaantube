@@ -636,6 +636,39 @@ test('a stop during the startup build clears the crash marker and keeps the heal
     }
   });
 
+/** S20 review: the watchdog SIGKILLs a solver whose realm escaped the vm timeout. A hang in a SOLVE must name its player to the
+ *  next process exactly as a hang in a build does, or each restart rebuilds it from the cache, hangs on the next solve, and
+ *  the unit's StartLimitBurst leaves the solver dead. The spin is long enough for the kill to land inside it. */
+test('a solver killed while a player hangs in a solve does not rebuild that player (S20 review)', { timeout: 30_000 }, async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  const server = spawn(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', `import vm from 'node:vm';
+    import { createSolver, newContext } from ${SERVER};
+    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(dir)}, log: { log() {}, warn() {} },
+      solveTimeoutMs: 60_000, build: () => { const ctx = newContext();
+        return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') for (;;); return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
+    await solver.poll();
+    console.log(solver.health().status);
+    solver.solve({ playerId: 'aaaaaaaa', n: ['spin'], s: [] });`], { stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    const [line] = await once(server.stdout, 'data');
+    assert.equal(String(line).trim(), 'ok', 'the player was adopted');
+    const marker = path.join(dir, 'building');
+    for (let i = 0; i < 200 && !fs.existsSync(marker); i++) await new Promise((r) => setTimeout(r, 10));
+    server.kill('SIGKILL');                                          // the watchdog
+    await once(server, 'exit');
+    const builds = [];
+    const warnings = [];
+    const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), log: { log() {}, warn: (m) => warnings.push(m) } });
+    await restarted.poll();
+    assert.deepEqual([builds.length, restarted.health().status], [0, 'warming'], 'the hung player was built again');
+    assert.match(warnings[0], /^WARN player aaaaaaaa crashed the solver/);
+  } finally {
+    server.kill('SIGKILL');
+    yt.close();
+  }
+});
+
 // ---- stage 9 Cubic r7 #1 (P1): dynamic import() inside the realm must not reach the host process
 test('player code calling import() in any of the five forms cannot reach the host process (Cubic r7 #1, P1)', async () => {
   const forms = {

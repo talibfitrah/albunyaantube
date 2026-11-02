@@ -140,8 +140,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
                                now = Date.now, log = console, solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 } = {}) {
   const held = new Map();                       // hash -> { sts, player }; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
-  // Names the player being built. A fatal V8 OOM skips every catch, so a marker left at start means that player killed the
-  // last process: it is deleted and not built again by this process, or each restart would rebuild it and crash (Cubic P3).
+  // Names the player being built or solving. A fatal V8 OOM or the watchdog's SIGKILL (S20) skips every catch, so a marker left
+  // at start means that player killed the last process: it is deleted and not built again by this process, or each restart
+  // would rebuild it and crash (Cubic P3).
   const marker = path.join(cacheDir, 'building');
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
@@ -157,7 +158,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       fs.rmSync(marker, { force: true });
       if (!/^[0-9a-f]{8}$/.test(hash)) return null;
       fs.rmSync(path.join(cacheDir, `${hash}.js`), { force: true });
-      log.warn(`WARN player ${hash} crashed the solver while building; deleted and skipped until a restart`);
+      log.warn(`WARN player ${hash} crashed the solver; deleted and skipped until a restart`);
       return hash;
     } catch {
       return null;                                // no marker: the last process did not die building
@@ -264,9 +265,12 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   function solve({ playerId, n, s }) {
     const entry = held.get(playerId);
     if (!entry) return [409, { error: 'unknown player' }];
-    const cpu0 = process.cpuUsage();
     let answers;
     ran = playerId;
+    // S20 review: a realm that escapes the vm timeout here is SIGKILLed by the watchdog, and the marker makes the next process
+    // drop this player, as for a build; else each restart rebuilds it and hangs again until StartLimitBurst stops the unit.
+    try { fs.writeFileSync(marker, playerId); } catch { /* as in pollOnce */ }
+    const cpu0 = process.cpuUsage();
     try {
       answers = solveAll(entry.player, n, s, solveTimeoutMs);
     } catch {                                   // a hung or broken player: evict it, others stay served (ruling 1)
@@ -274,6 +278,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       if (current === playerId) current = held.keys().next().value ?? null;
       log.warn(`WARN solve failed for player ${playerId}; evicted`);
       return [500, { error: 'solve failed' }];
+    } finally {
+      try { fs.rmSync(marker, { force: true }); } catch { /* as in pollOnce */ }
     }
     const cpu = process.cpuUsage(cpu0);
     cpuRing.push((cpu.user + cpu.system) / 1000);
