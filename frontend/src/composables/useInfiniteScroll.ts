@@ -1,4 +1,4 @@
-import { ref, Ref, onMounted, onBeforeUnmount } from 'vue'
+import { ref, Ref, watch, onBeforeUnmount } from 'vue'
 
 export interface InfiniteScrollOptions {
   threshold?: number        // Distance from bottom to trigger load (default: 200px)
@@ -59,9 +59,7 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
       // Throttle: only trigger if enough time has passed
       if (timeSinceLastTrigger >= throttleMs) {
         lastTriggerTime = now
-        isLoading.value = true
-
-        // Execute the callback
+        // The caller's onLoadMore owns isLoading; pre-setting it here made its guard return early.
         onLoadMore()
       } else {
         // Schedule a delayed trigger
@@ -89,10 +87,11 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
     }
   }
 
-  onMounted(() => {
-    if (containerRef.value) {
-      containerRef.value.addEventListener('scroll', handleScroll, { passive: true })
-    }
+  // Watch, not onMounted: the container may sit inside a v-if (e.g. a modal mounted closed),
+  // so it can appear, disappear and be re-created after mount.
+  watch(containerRef, (el, oldEl) => {
+    oldEl?.removeEventListener('scroll', handleScroll)
+    el?.addEventListener('scroll', handleScroll, { passive: true })
   })
 
   onBeforeUnmount(() => {

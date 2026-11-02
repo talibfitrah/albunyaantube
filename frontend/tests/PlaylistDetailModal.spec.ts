@@ -344,4 +344,47 @@ describe('PlaylistDetailModal', () => {
     const result = await vi.mocked(getPlaylistVideos).mock.results[0].value;
     expect(result).toHaveProperty('nextPageToken', 'token123');
   });
+
+  // Regression (prod): scrolling to the bottom showed "Loading more…" forever.
+  function mockTwoPages() {
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({
+        items: [{ id: 'item1', videoId: 'video1', title: 'Video 1', position: 1 }],
+        nextPageToken: 'token123'
+      } as any)
+      .mockResolvedValueOnce({
+        items: [{ id: 'item4', videoId: 'video4', title: 'Video 4', position: 2 }],
+        nextPageToken: null
+      } as any);
+  }
+
+  async function scrollToBottomLoadsPage2() {
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    // jsdom reports 0 for scroll metrics, so the container is "at the bottom".
+    const container = document.body.querySelector('.content-list') as HTMLElement;
+    container.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', 'token123', undefined);
+      expect(screen.getByText('Video 4')).toBeInTheDocument();
+    });
+    expect(document.body.querySelector('.loading-more')).toBeNull();
+  }
+
+  it('loads the next page when scrolled to the bottom', async () => {
+    mockTwoPages();
+    renderModal();
+
+    await scrollToBottomLoadsPage2();
+  });
+
+  it('loads the next page on scroll when mounted closed and opened later', async () => {
+    mockTwoPages();
+    const { rerender } = renderModal({ open: false });
+    await rerender({ open: true, playlistId: 'playlist-123', playlistYoutubeId: 'PLxxxxxx' });
+
+    await scrollToBottomLoadsPage2();
+  });
 });

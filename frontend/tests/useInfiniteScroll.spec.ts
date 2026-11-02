@@ -65,8 +65,9 @@ describe('useInfiniteScroll', () => {
 
       await wrapper.vm.$nextTick();
 
-      expect(wrapper.vm.isLoading).toBe(true);
       expect(onLoadMore).toHaveBeenCalledTimes(1);
+      // The caller owns isLoading; pre-setting it made callers' guards skip the fetch (prod bug).
+      expect(wrapper.vm.isLoading).toBe(false);
     }
   });
 
@@ -118,7 +119,8 @@ describe('useInfiniteScroll', () => {
 
   it('should throttle scroll events', async () => {
     const onLoadMore = vi.fn().mockImplementation((wrapper: any) => {
-      // Simulate async load completion
+      // Like the real callers: set isLoading, then clear it when the async load completes
+      wrapper.vm.isLoading = true;
       setTimeout(() => {
         wrapper.vm.isLoading = false;
       }, 50);
