@@ -1,0 +1,30 @@
+frontend/tests/useInfiniteScroll.spec.ts
+  s_543f5b01a05d75::t_8b7293255bce4a 264-283
+  s_543f5b01a05d75::t_e112fad29067a4 284
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_3a7165dfc4b567 233-236,261,275,285,297,308,316,374-377,436,442,453,459
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_777d96a1ffee07 174-177,199,213,223,229,238,240,279-282,322,327,337,342
+frontend/src/composables/useInfiniteScroll.ts
+  s_543f5b01a05d75::t_fa9d1923e04b02 93-106,112
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_6f9347f52ed224 4,408-464
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_a2e89a2063f9af 4,390-477
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7053f441e911c79bc22e567b5a95f86d93d2ecbc",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
