@@ -386,9 +386,6 @@ extension StreamState {
     private var liveMiss: (generation: Int, trigger: LiveChannelRecovery.Trigger)?
     /// Stage 9 I13: the follow-up in flight (`followLiveMiss`), which the screen going away cancels (`stopUpgrade`).
     private var liveFollowUp: Task<Void, Never>?
-    #if DEBUG
-    private var debugForceEndTask: Task<Void, Never>?
-    #endif
     /// Live-channel mode needs the lookup too: an offline player built from a live item's args has none.
     private var isLiveChannelMode: Bool { args.liveChannelId != nil && liveLookup != nil }
     /// The proactive refresh in flight (the live timer's or the foreground check's). The other one joins it: two forced
@@ -1452,18 +1449,6 @@ extension StreamState {
         max(0, expiresAt.timeIntervalSince(now) - liveRefreshLead)
     }
 
-    #if DEBUG
-    /// DEBUG only (L3, L5): `-fitrah-live-refresh-seconds N`.
-    static var debugLiveRefreshSeconds: TimeInterval? {
-        LaunchArguments.value(after: "-fitrah-live-refresh-seconds").flatMap { TimeInterval($0) }
-    }
-
-    /// DEBUG only (L5): `-fitrah-live-force-end-seconds N` forces an end N s after a live-channel item plays.
-    static var debugLiveForceEndSeconds: TimeInterval? {
-        LaunchArguments.value(after: "-fitrah-live-force-end-seconds").flatMap { TimeInterval($0) }
-    }
-    #endif
-
     /// Fix round 1: a refresh that does not land (a blip, a cooldown, not live now) is retried this often inside the
     /// lead (Android parity), so one blip at T − 10 min does not bring back the 6 h cut.
     static let liveRefreshRetry: TimeInterval = 120
@@ -1474,10 +1459,7 @@ extension StreamState {
         liveRefreshTask?.cancel()
         liveRefreshTask = nil
         guard state.isLiveNow, let expiresAt = state.resolved?.expiresAt else { return }
-        var delay = Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
-        #if DEBUG
-        delay = Self.debugLiveRefreshSeconds ?? delay
-        #endif
+        let delay = Self.liveRefreshDelay(expiresAt: expiresAt, now: Date())
         liveRefreshTask = Task { [weak self, sleep = self.sleep] in
             try? await sleep(.seconds(delay))
             let stop = min(expiresAt, Date().addingTimeInterval(Self.liveRefreshLead)).addingTimeInterval(-Self.liveRefreshRetry)
@@ -1610,16 +1592,6 @@ extension StreamState {
         scheduleLiveRefresh()
         if isLiveChannelMode, result.isPlayable {
             liveIncident = nil                  // live again: the incident is over, and its wait stops
-            #if DEBUG
-            if let seconds = Self.debugLiveForceEndSeconds {
-                debugForceEndTask?.cancel()     // one armed force-end: a re-arm replaces it
-                debugForceEndTask = Task { [weak self] in
-                    try? await Task.sleep(for: .seconds(seconds))
-                    guard !Task.isCancelled, self?.args.videoId == videoId else { return }
-                    await self?.liveChannelTrigger(.ended)
-                }
-            }
-            #endif
         }
         // Spec R43: 360p is on screen; ask for HD in the background.
         if case .rung2Progressive(let standard) = result { startUpgrade(for: standard, videoId: videoId) }

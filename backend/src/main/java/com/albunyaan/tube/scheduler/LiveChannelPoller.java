@@ -449,8 +449,8 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                 && archivableOnceRemoved(doc, liveCategoryIds);
     }
 
-    /** R12 once the link has left its LIVE categories (end(), the migration's step 7): no other category came since. */
-    public static boolean archivableOnceRemoved(Video doc, Set<String> liveCategoryIds) {
+    /** R12 once the link has left its LIVE categories (end()): no other category came since. */
+    private static boolean archivableOnceRemoved(Video doc, Set<String> liveCategoryIds) {
         ValidationStatus vs = doc.getValidationStatus();
         return "APPROVED".equals(doc.getStatus())
                 && (doc.getCategoryIds() == null || liveCategoryIds.containsAll(doc.getCategoryIds()))

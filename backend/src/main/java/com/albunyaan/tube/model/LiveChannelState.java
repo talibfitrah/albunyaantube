@@ -9,7 +9,7 @@ import java.util.Map;
 
 /**
  * Spec §3: {@code live_channel_state/{UC id}}, one per polled channel. Times are epoch milliseconds. Served from
- * LiveChannelService's in-memory snapshot (D1); written by the poller, the add-time seed (D15) and the migration.
+ * LiveChannelService's in-memory snapshot (D1); written by the poller and the add-time seed (D15).
  */
 public class LiveChannelState {
 

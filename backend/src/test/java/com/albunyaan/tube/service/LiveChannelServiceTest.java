@@ -86,16 +86,6 @@ class LiveChannelServiceTest {
     }
 
     @Test
-    void aFreshReadSkipsTheMemo() {
-        when(reader.read(SUNNAH)).thenReturn(sunnahLive());
-
-        service.livesNow(SUNNAH);
-        service.readFresh(SUNNAH);
-
-        verify(reader, times(2)).read(SUNNAH);
-    }
-
-    @Test
     void anErrorIsNeverMemoized() {
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.error(1, "x"));
 
@@ -116,16 +106,16 @@ class LiveChannelServiceTest {
         verify(states).save(any(LiveChannelState.class));
     }
 
-    /** Spec §10: the migration seeds from its own fresh read, under seed()'s rules (restore records kept for the poller). */
+    /** A seed keeps the poller's restore records (R12). */
     @Test
-    void aSeedWithTheMigrationsReadSendsNoRequestAndKeepsRestoreRecords() {
+    void aSeedKeepsRestoreRecords() {
         LiveChannelState known = LiveChannelState.unknown(SUNNAH);
         known.getArchived().put("Rs7St51oDDc", "VALID");
         service.loadStates(List.of(known));
+        when(reader.read(SUNNAH)).thenReturn(sunnahLive());
 
-        service.seedWith(SUNNAH, sunnahLive());
+        service.seed(SUNNAH);
 
-        verify(reader, never()).read(any());
         assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.LIVE);
         assertThat(service.state(SUNNAH).getArchived()).containsEntry("Rs7St51oDDc", "VALID");
     }

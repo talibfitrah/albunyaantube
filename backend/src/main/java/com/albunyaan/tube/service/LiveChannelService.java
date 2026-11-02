@@ -71,12 +71,6 @@ public class LiveChannelService {
         return r;
     }
 
-    /** Spec §10: the migration polls fresh; skips the memo and refreshes it. */
-    public LiveTabResult readFresh(String ucId) {
-        memo.remove(ucId);
-        return livesNow(ucId);
-    }
-
     /** D10: empty = no channel; an IOException = no signal (R7), see {@link LiveTabReader#resolveChannelId}. */
     public Optional<String> resolveChannelId(String videoId) throws IOException {
         return reader.resolveChannelId(videoId);
@@ -103,11 +97,8 @@ public class LiveChannelService {
         seedWith(ucId, livesNow(ucId));                         // the YouTube read stays outside the lock
     }
 
-    /**
-     * {@link #seed} from a read the caller already made (spec §10: the migration's fresh poll). Sends no request. Before
-     * the states load, put() refuses; the migration is blocked then (F2).
-     */
-    public void seedWith(String ucId, LiveTabResult r) {
+    /** {@link #seed} from its read. Sends no request. */
+    private void seedWith(String ucId, LiveTabResult r) {
         boolean noSignal = r.outcome() == LiveTabResult.Outcome.BREAKER || r.outcome() == LiveTabResult.Outcome.RATE_LIMITED;
         synchronized (stateLock) {
             LiveChannelState next = state(ucId);
@@ -196,7 +187,7 @@ public class LiveChannelService {
     }
 
     /**
-     * Stage 9 Cubic r2 P2: seeded within {@link #ADDED_MS}. Only the poller's cycle (or the migration) republishes the
+     * Stage 9 Cubic r2 P2: seeded within {@link #ADDED_MS}. Only the poller's cycle republishes the
      * entries, so the public endpoint answers 503, not its definitive 404, for such a channel until a view lists it.
      * ponytail: a time window, not "until the first view built after the write"; two failed cycles in a row end it early.
      */

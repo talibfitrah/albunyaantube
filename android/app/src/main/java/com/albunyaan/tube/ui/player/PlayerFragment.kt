@@ -420,16 +420,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
 
-        if (BuildConfig.DEBUG) {
-            // L2/L3 hooks: adb shell settings put global fitrah_live_refresh_ms 120000 (delete it after the leg).
-            val resolver = requireContext().contentResolver
-            viewModel.debugLiveRefreshOverrideMs =
-                ResolvedStreams.debugLiveRefreshOverrideMs(android.provider.Settings.Global.getString(resolver, "fitrah_live_refresh_ms"))
-            // L5: adb shell settings put global fitrah_live_force_end_ms 60000 forces a live-channel end (delete it after).
-            viewModel.debugLiveForceEndMs =
-                android.provider.Settings.Global.getString(resolver, "fitrah_live_force_end_ms")?.toLongOrNull()
-        }
-
         when {
             // Offline downloads (1.0.3): Downloads "Open" and the player's Download button
             // play the completed file in this player, never the network.
@@ -1208,7 +1198,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
-                if (BuildConfig.DEBUG) android.util.Log.d("LiveSwap", "state=$playbackState t=${android.os.SystemClock.elapsedRealtime()}")
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
 
                 // Phase 0 metrics: track rebuffering
@@ -1264,13 +1253,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     if (advanced) {
                         player.playWhenReady = true
                     }
-                }
-            }
-
-            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
-                if (BuildConfig.DEBUG) {
-                    val seq = (player.currentManifest as? androidx.media3.exoplayer.hls.HlsManifest)?.mediaPlaylist?.mediaSequence
-                    if (seq != null) android.util.Log.d("LiveSwap", "mediaSequence=$seq t=${android.os.SystemClock.elapsedRealtime()}")
                 }
             }
 

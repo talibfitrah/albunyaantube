@@ -46,7 +46,6 @@ class LiveCategoryWritePathTripwireTest {
             Map.entry("service/ContentReportService.java", 3),            // report status (B23: a take-down keeps the doc's status)
             Map.entry("service/LiveCategoryService.java", 2),             // admin status map (Task 12), no doc write
             Map.entry("service/LiveChannelService.java", 1),              // a re-entering channel's state UNKNOWN (B14), no doc write
-            Map.entry("service/LiveChannelsMigration.java", 1),           // Task 13 (deleted with it in Task 37)
             Map.entry("service/LivePollRules.java", 2),                   // state transition (Task 3), no doc write
             Map.entry("service/RegistrySubmissionWriter.java", 3),        // row 10
             Map.entry("service/SimpleImportService.java", 6),             // row 16 (sync)

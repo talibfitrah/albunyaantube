@@ -257,17 +257,11 @@ class PlayerViewModel @Inject constructor(
      */
     @Volatile private var liveSourceStreams: ResolvedStreams? = null
 
-    /** DEBUG only: L2/L3 shorten the refresh (PlayerFragment reads Settings.Global "fitrah_live_refresh_ms"). */
-    var debugLiveRefreshOverrideMs: Long? = null
-
     // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
     private var liveIncident: LiveChannelRecovery? = null
     private var liveRetryJob: Job? = null
     /** §9.1 step 4 retries only while the screen is open (Cubic r4): false from [onPlayerViewDestroyed] to the next load. */
     private var liveScreenOpen = true
-    private var liveForceEndJob: Job? = null
-    /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
-    var debugLiveForceEndMs: Long? = null
 
     // Playlist playback state
     private var isPlaylistMode: Boolean = false
@@ -867,7 +861,7 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel(); liveScreenOpen = true
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveScreenOpen = true
         updateState { it.copy(liveStarted = false) }
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
@@ -1740,13 +1734,6 @@ class PlayerViewModel @Inject constructor(
 
             // Schedule proactive URL refresh for live streams
             scheduleLiveStreamRefresh(resolved)
-            debugLiveForceEndMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG && item.liveChannelId != null }?.let { ms ->
-                liveForceEndJob?.cancel()                                 // one arming, for this item only
-                liveForceEndJob = viewModelScope.launch(dispatcher) {
-                    kotlinx.coroutines.delay(ms)
-                    if (currentItem?.streamId == item.streamId) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
-                }
-            }
 
             // Apply pending quality cap if set (stored when URLs expired during quality switch)
             val pendingCap = pendingQualityCap
@@ -1773,15 +1760,14 @@ class PlayerViewModel @Inject constructor(
         // Only schedule for live streams
         if (!resolved.isLive) return
 
-        val delayMs = debugLiveRefreshOverrideMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG }
-            ?: resolved.timeUntilLiveRefreshMs() ?: return
+        val delayMs = resolved.timeUntilLiveRefreshMs() ?: return
 
         android.util.Log.d("PlayerViewModel", "Live stream: scheduling proactive refresh in ${delayMs / 1000}s")
 
         liveRefreshJob = viewModelScope.launch(ioDispatcher) {
             kotlinx.coroutines.delay(delayMs)
             // A failed refresh retries in this same job while a retry still starts before the player's URLs expire
-            // (at most one lead from now, so the DEBUG override retries like prod). After that the 403 at expiry takes
+            // (at most one lead from now). After that the 403 at expiry takes
             // today's rebuild (PlayerFragment.requestStreamRefreshAndResume).
             val expiryAt = minOf(
                 (resolved.liveRefreshAtElapsedMs() ?: return@launch) + ResolvedStreams.LIVE_REFRESH_LEAD_MS,

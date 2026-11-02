@@ -795,8 +795,8 @@ class LiveChannelPollerTest {
     }
 
     /**
-     * Stage 9 Cubic r2 P2: every channel add runs the guard, which seeds the channel before the write. Only a cycle (or
-     * the migration) republishes the endpoint's entries, so until one lists the channel it answers 503, never the 404.
+     * Stage 9 Cubic r2 P2: every channel add runs the guard, which seeds the channel before the write. Only a cycle republishes
+     * the endpoint's entries, so until one lists the channel it answers 503, never the 404.
      */
     @Test
     void aChannelAddedSinceTheLastViewAnswers503UntilACycleListsIt() throws Exception {

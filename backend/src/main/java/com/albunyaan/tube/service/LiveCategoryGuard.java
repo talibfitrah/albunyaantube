@@ -149,7 +149,7 @@ public class LiveCategoryGuard {
 
     /**
      * Spec D8: a LIVE category is top-level and nothing nests under it. True when a category with this parent may be
-     * LIVE: no parent and no subcategories. The category update and the live-channels migration (stage 9 B16) both ask.
+     * LIVE: no parent and no subcategories. The category update asks.
      */
     public static boolean liveShape(com.albunyaan.tube.repository.CategoryRepository categories, String categoryId,
                                     String parentId) throws ExecutionException, InterruptedException, TimeoutException {

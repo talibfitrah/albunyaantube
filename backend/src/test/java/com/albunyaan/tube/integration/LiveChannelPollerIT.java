@@ -17,6 +17,8 @@ import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.boot.test.mock.mockito.MockBean;
+import org.springframework.test.util.AopTestUtils;
+import org.springframework.test.util.ReflectionTestUtils;
 
 import java.time.Clock;
 import java.util.List;
@@ -73,6 +75,12 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         sortOrder.addContentToCategory(LIVE_CAT, "doc-" + linkId, "video");
     }
 
+    /** The next cycle reads again: the service's memo runs on the wall clock, not the cycle's. */
+    private void forgetMemo() {
+        Object target = AopTestUtils.getUltimateTargetObject(live);
+        ((Map<?, ?>) ReflectionTestUtils.getField(target, "memo")).clear();
+    }
+
     private static LiveTabResult liveRead(String id) {
         return LiveTabResult.ok(List.of(new LiveTabResult.LiveItem(id, "t")), 1);
     }
@@ -127,13 +135,13 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         verify(spyCaches, times(1)).evictPublicContentCaches();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening")), 1));
-        live.readFresh(uc);                                      // the service's 60 s memo runs on the wall clock here
+        forgetMemo();                                            // the service's 60 s memo runs on the wall clock here
         poller.cycle(T0 + 10 * MIN);
         verify(spyCaches, times(1)).evictPublicContentCaches();
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3link001d", "Evening"),
                 new LiveTabResult.LiveItem("it3live002d", "Second")), 1));
-        live.readFresh(uc);
+        forgetMemo();
         poller.cycle(T0 + 20 * MIN);
         verify(spyCaches, times(2)).evictPublicContentCaches();
     }
@@ -151,7 +159,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
         poller.cycle(T0);                                            // the VOD's stream is live on the channel
 
         when(reader.read(anyString())).thenReturn(liveRead("it3link001f"));
-        live.readFresh(uc);                                          // the service's 60 s memo runs on the wall clock here
+        forgetMemo();                                                // the service's 60 s memo runs on the wall clock here
         for (int i = 1; i <= 3; i++) poller.cycle(T0 + i * 10 * MIN); // it departs and ends
 
         assertThat(videos.findById("doc-it3vod0001f").orElseThrow().getValidationStatus()).isNull();
@@ -173,7 +181,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3otherliv", "t"),
                 new LiveTabResult.LiveItem("it3link001e", "t")), 1));
-        live.readFresh(uc);
+        forgetMemo();
         poller.cycle(T0 + 30 * MIN);
 
         Video doc = videos.findById("doc-it3link001e").orElseThrow();
@@ -203,7 +211,7 @@ class LiveChannelPollerIT extends BaseIntegrationTest {
 
         when(reader.read(anyString())).thenReturn(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("it3otherliv", "t"),
                 new LiveTabResult.LiveItem("it3link001g", "t")), 1));
-        live.readFresh(uc);
+        forgetMemo();
         poller.cycle(T0 + 30 * MIN);
 
         Video doc = videos.findById("doc-it3link001g").orElseThrow();

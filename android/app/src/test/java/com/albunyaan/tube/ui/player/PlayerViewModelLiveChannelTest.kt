@@ -588,24 +588,6 @@ class PlayerViewModelLiveChannelTest {
         }
     }
 
-    /** Minor 3: the DEBUG force-end belongs to the item it was armed for. */
-    @Test fun `the debug force-end follows the item`() = runTest(dispatcher) {
-        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
-        vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
-            vm.debugLiveForceEndMs = 60_000
-            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
-            advanceTimeBy(30_000); runCurrent()
-            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)   // reopened
-            runCurrent()
-
-            advanceTimeBy(31_000); runCurrent()
-            assertTrue("the first arming was cancelled", content.channelLivesCalls.isEmpty())
-            advanceTimeBy(30_000); runCurrent()
-            assertEquals(listOf(channel), content.channelLivesCalls)
-        }
-    }
-
     /** Task 28: step 4 shows the fragment's reconnecting overlay; a first load and an ordinary video never do. */
     @Test fun `only a reconnect shows the reconnecting state`() = runTest(dispatcher) {
         val (vm, _, content) = setup(streams("pqC-1yfFvu8", isLive = false))
