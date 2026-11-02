@@ -325,9 +325,9 @@ paths:
     get:
       summary: Current live streams of a live-category channel
       description: |
-        Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
-        change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
-        deleted)
+        Served from the poller's snapshot: a channel showing a live is re-read about once a day and one showing none
+        about every 4 hours (sooner after a call that shows the snapshot is stale), and the snapshot follows a moderation change (a take-down, an exclusion, an un-approve,
+        a channel leaving a live category, a category losing LIVE or deleted) within about 15 seconds
       operationId: getLiveChannel
       tags: [Public Content]
       security: []
@@ -338,6 +338,18 @@ paths:
           schema:
             type: string
           description: YouTube channel ID (UC…)
+        - name: live
+          in: query
+          required: false
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{11}$'
+          description: |
+            A live video id the app read on the channel's own YouTube page. The answer is then this id's verdict alone:
+            LIVE with only this id when it passes curation (not excluded on the channel, not taken down or un-approved),
+            else OFFLINE with no lives; the snapshot's other lives are never listed. An id the poller found ENDED still
+            passes: an ended stream is never a removal, and the app's page shows it live. The backend never reads
+            YouTube for it on the request; when the snapshot does not list it, the poller is asked for an on-demand read
       responses:
         '200':
           description: The channel's current lives, filtered so every id plays; OFFLINE with no lives when none
@@ -345,16 +357,22 @@ paths:
             Cache-Control:
               schema:
                 type: string
-              description: max-age=15, public
+              description: "`max-age=15, public` without `live`; `no-store` with it"
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/LiveChannelLives'
+        '400':
+          description: "`live` is not an 11-character video id"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
         '404':
           description: |
             Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
             channel added to a live category (or served there again after an archive) in the last 20 minutes that no
-            poll has listed yet
+            poll has listed yet, nor while a moderation refresh or a poll is pending
           content:
             application/json:
               schema:
@@ -363,8 +381,67 @@ paths:
           description: |
             The live states are still loading after a server start (no view built from them has been published yet),
             or the channel was added to a live category (or served there again after an archive) in the last 20
-            minutes and the poller (every 10 minutes) has not listed it yet. Empty body; retry after `Retry-After`
-            seconds.
+            minutes and the poller (a cycle every 10 minutes) has not listed it yet, or the channel is not listed while
+            a moderation refresh is pending or a poll runs (it may have just been added). With `live`, also when the candidate
+            could not be judged: its registry lookup failed, the server-wide budget for such lookups is spent (a
+            candidate known to be excluded or taken down is answered OFFLINE without it), or the snapshot changed while
+            it was judged. This is no verdict, never OFFLINE: keep playing and ask again. Empty body; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (60)
+              schema:
+                type: integer
+
+  /v1/live/links/{videoId}:
+    get:
+      summary: Whether an exact live link is still served in a live category
+      description: |
+        The removal check for an exact live link (a live-category item with `liveLink: true`) while it plays. Answered
+        from the poller's in-memory view, which follows a moderation change (the link leaving every live category, a
+        take-down, an un-approve, a category losing LIVE or deleted) within about 15 seconds. A link the poller found
+        ENDED (its stream ended: hidden from the category's list) is still served here, since an ended stream is never a
+        removal; its check asks the poller for an on-demand read of its channel, which shows it again once it is live.
+        No YouTube or registry read per call.
+      operationId: getLiveLink
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: videoId
+          in: path
+          required: true
+          schema:
+            type: string
+            pattern: '^[A-Za-z0-9_-]{11}$'
+          description: YouTube video id of the link
+      responses:
+        '204':
+          description: Still served as a link of a live category (ENDED included)
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: "`no-store`"
+        '400':
+          description: "`videoId` is not an 11-character video id"
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '404':
+          description: |
+            Not (or no longer) a served link of any live category: removed from it, un-approved, blocked or taken
+            down (never for ENDED). Definitive; never sent while the live states load,
+            nor while a moderation refresh is pending or a poll runs: a removal answers 404 about 15 seconds after it
+            (after the poll, when one runs)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            The live states are still loading after a server start, or the link is not in the poller's view while a
+            moderation refresh is pending or a poll runs (a link just added to a live category). This is no verdict:
+            keep playing and ask again. Empty body; retry after `Retry-After` seconds.
           headers:
             Retry-After:
               description: Seconds to wait before retrying (60)
@@ -5302,6 +5379,10 @@ components:
           type: string
           nullable: true
           description: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+        liveLink:
+          type: boolean
+          nullable: true
+          description: True on an exact live link of a live category (a VIDEO item without liveChannelId); while it plays the app asks GET /v1/live/links/{videoId} every minute and stops on 404
         # Search provenance (inner search, 2026-10-17): set only on videos found inside an approved source
         sourceType:
           type: string
@@ -5343,10 +5424,10 @@ components:
           format: date-time
           nullable: true
           description: |
-            When the current run of unproven cycles began: the first cycle in which no polled channel read LIVE
-            (live spec R10); null after any cycle with a LIVE read. Meanwhile a channel that reads empty keeps its
-            last lives for up to 1 h and is then hidden, and nothing is removed. Also set while every channel is
-            really offline.
+            When the current unproven run began (live spec R10): the first Live-tab read after 2 h of reads in which
+            none showed a live; null again after any read that shows one. Meanwhile a channel that reads empty keeps
+            its last lives for up to 1 h more and is then hidden, and nothing is removed. Also set while every
+            channel is really offline.
         categories:
           type: array
           items:
@@ -5378,7 +5459,10 @@ components:
           nullable: true
         status:
           type: string
-          description: Channel UNKNOWN, LIVE or OFFLINE; link LIVE, MISSING, BLOCKED or NO_CHANNEL
+          description: |
+            Channel UNKNOWN, LIVE or OFFLINE; link LIVE, MISSING, ENDED, BLOCKED or NO_CHANNEL. A link takes the
+            first that applies: NO_CHANNEL (no channel id), BLOCKED (not served), ENDED (its stream ended; hidden until a
+            read lists it live again), MISSING (a read missed it), else LIVE
         name:
           type: string
           nullable: true
@@ -5402,7 +5486,10 @@ components:
                 nullable: true
               served:
                 type: string
-                enum: [SERVED, EXCLUDED, BLOCKED]
+                enum: [SERVED, EXCLUDED, BLOCKED, ENDED]
+                description: |
+                  The public endpoint's rule, first that applies: EXCLUDED, BLOCKED (also every live of an unservable
+                  channel), ENDED (a link whose stream ended), else SERVED
         checkedAt:
           type: string
           format: date-time

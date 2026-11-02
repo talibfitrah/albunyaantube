@@ -2,7 +2,6 @@ package com.albunyaan.tube.scheduler;
 
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.LiveChannelState;
-import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.LiveChannelStateRepository;
 import com.albunyaan.tube.repository.VideoRepository;
@@ -13,7 +12,6 @@ import com.albunyaan.tube.service.LiveChannelService;
 import com.albunyaan.tube.service.LivePollRules;
 import com.albunyaan.tube.service.LiveTabResult;
 import com.albunyaan.tube.service.PublicContentCacheService;
-import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -27,6 +25,7 @@ import java.time.Clock;
 import java.time.Instant;
 import java.time.LocalDate;
 import java.util.ArrayList;
+import java.util.Collection;
 import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
@@ -36,42 +35,72 @@ import java.util.List;
 import java.util.Map;
 import java.util.Objects;
 import java.util.Set;
+import java.util.concurrent.ConcurrentHashMap;
+import java.util.concurrent.Executor;
+import java.util.concurrent.Executors;
+import java.util.concurrent.RejectedExecutionException;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.atomic.AtomicBoolean;
 import java.util.concurrent.locks.ReentrantLock;
 
 /**
- * Spec §5: every 10 minutes, read the Live tab of each distinct channel behind a LIVE category, apply
- * LivePollRules, remove/archive ended streams, persist, republish the snapshot, and evict caches only when what is
- * served changed (D14). ponytail: no distributed lock, single instance; adopt the validators' Firestore lock if the backend
- * scales out (D7).
+ * Spec §5: every 10 minutes, read the Live tab of each due channel behind a LIVE category (a daily sweep, a 4 h
+ * recheck of channels read with no lives, plus R15 confirmations and suspect keeps), apply LivePollRules, persist, republish the snapshot, and evict caches only
+ * when what is served changed (D14). An ended link is hidden and audited, never removed or archived (owner ruling
+ * 2026-11-02). The public endpoint asks for an on-demand read after a stream rotation ({@link #refreshOnDemand}).
+ * ponytail: no distributed lock, single instance; adopt the validators' Firestore lock if the backend scales out (D7).
  */
 @Component
 public class LiveChannelPoller implements SmartInitializingSingleton {
 
     private static final Logger log = LoggerFactory.getLogger(LiveChannelPoller.class);
 
+    /**
+     * Burst caps: at most 30 reads and 90 tokens (requests) in one cycle. CYCLE_BUDGET also caps each bucket's balance,
+     * the on-demand one included, so neither can save up more than one cycle's burst.
+     */
     static final int MAX_TARGETS = 30;
     static final int CYCLE_BUDGET = 90;
-    static final int MAX_PER_CHANNEL = 6;
-    /** Owner rule: the shared IP carries the inner-search crawler (≤ 1,000/day) and this poller (864/day today). Log only. */
-    static final int DAILY_ALLOTMENT = 864;
     static final long MINUTE_MS = 60_000L;
+    static final long CYCLE_MS = 10 * MINUTE_MS;
+    /** How much sooner an urgent target counts as tried; any other never waits more than this longer. */
+    static final long URGENT_HEAD_START_MS = 60 * MINUTE_MS;
     static final long DAY_MS = 1440 * MINUTE_MS;
+    /** An endpoint call reads its channel only if it was not read or tried this recently (one read per retry). */
+    static final long ON_DEMAND_MIN_MS = 2 * MINUTE_MS;
+    /** Cubic r8, r9: a heartbeat asks for a read ({@link #refreshStale}) only when the channel's last is older than this. */
+    static final long STALE_ASK_MS = 30 * MINUTE_MS;
+    /**
+     * Cubic r2 #2, R10: reads are proven while some read, a cycle's or an on-demand one, listed a live this recently.
+     * A LIVE channel is read only daily, so a small setup can go hours with no live read; once this lapses, a cycle's
+     * first read re-reads the channel that listed a live last (the proof probe, Cubic r5 R5-1), at most once per window.
+     * Reads that are empty after that probe is empty too are a real signal (a YouTube-wide empty answer), not a quiet
+     * spell. The hide still waits {@link LivePollRules#HIDE_AFTER_MS} after it.
+     */
+    static final long PROVEN_WINDOW_MS = 120 * MINUTE_MS;
 
     private final LiveCategoryService liveCategories;
     private final VideoRepository videos;
     private final LiveChannelStateRepository states;
     private final LiveChannelService live;
-    private final SortOrderService sortOrder;
     private final AuditLogService audit;
     private final PublicContentCacheService caches;
     private final YouTubeCircuitBreaker breaker;
     private final Clock clock;
     private final boolean enabled;
+    /** The fixed daily request cap (the shared-IP allotment): 2/3 for the cycles, 1/3 for the on-demand reads. */
+    private final int dailyRequests;
+    private final Bucket cycleTokens;
+    /** Only the on-demand thread touches it (spends under cycleLock, for requestsToday). */
+    private final Bucket onDemandTokens;
 
-    /** In memory only (spec §3): a restart starts it over, which only delays an unproven hide. */
+    /**
+     * The first read after {@link #PROVEN_WINDOW_MS} ran out with no live; null while proven. In memory only (spec §3):
+     * a restart starts it over, which only delays an unproven hide. The proof it counts from (liveSeenAt) is persisted.
+     */
     private Long unprovenSince;
+    /** Cubic r5 R5-1: when the last proof probe was read. In memory: a restart may probe once more. */
+    private Long lastProbeAt;
     private long requestDay = -1;
     private int requestsToday;
     /**
@@ -79,33 +108,53 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
      * targets. Pruned to the current targets each cycle. ponytail: in memory; a restart orders by checkedAt until each
      * target is read once.
      */
-    private final Map<String, Long> tried = new HashMap<>();
+    private final Map<String, Long> tried = new ConcurrentHashMap<>();
+    /**
+     * Cubic r2 #1: when a never-tried target was first seen. Its place in the queue is fixed from then on, so it ages
+     * like a read one; a place relative to now would let channels coming due every 4 h starve it under the cap.
+     */
+    private final Map<String, Long> firstSeen = new ConcurrentHashMap<>();
+    /** On-demand reads in flight: one per channel. */
+    private final Set<String> onDemandInFlight = ConcurrentHashMap.newKeySet();
+    /** Off the request thread; one at a time, so a burst of calls never runs reads in parallel. Tests run it inline. */
+    Executor onDemand = Executors.newSingleThreadExecutor(r -> {
+        Thread t = new Thread(r, "live-on-demand");
+        t.setDaemon(true);
+        return t;
+    });
     /** The cycle's lock; the moderation refresh only tries it (stage 9 B13): a cycle's YouTube reads take minutes. */
     private final ReentrantLock cycleLock = new ReentrantLock();
     /** Stage 9 B13: a moderation write since the last view; the next tick republishes the view (Firestore only). */
     private final AtomicBoolean viewStale = new AtomicBoolean();
 
     public LiveChannelPoller(LiveCategoryService liveCategories, VideoRepository videos,
-                             LiveChannelStateRepository states, LiveChannelService live, SortOrderService sortOrder,
+                             LiveChannelStateRepository states, LiveChannelService live,
                              AuditLogService audit, PublicContentCacheService caches,
                              YouTubeCircuitBreaker breaker, Clock clock,
-                             @Value("${app.live-channels.poller.enabled:true}") boolean enabled) {
+                             @Value("${app.live-channels.poller.enabled:true}") boolean enabled,
+                             @Value("${app.live-channels.poller.daily-requests:864}") int dailyRequests) {
         this.liveCategories = liveCategories;
         this.videos = videos;
         this.states = states;
         this.live = live;
-        this.sortOrder = sortOrder;
         this.audit = audit;
         this.caches = caches;
         this.breaker = breaker;
         this.clock = clock;
         this.enabled = enabled;
+        this.dailyRequests = Math.max(1, dailyRequests);
+        this.cycleTokens = new Bucket(this.dailyRequests * 2 / 3.0);
+        this.onDemandTokens = new Bucket(this.dailyRequests / 3.0);
     }
 
     @Scheduled(fixedDelay = 10, initialDelay = 1, timeUnit = TimeUnit.MINUTES)
     public void scheduledCycle() {
-        if (enabled) {
+        if (!enabled) return;
+        cycleLock.lock();         // Codex r6 C3: the time is taken once the lock is held, never before a wait on it
+        try {
             cycle(clock.millis());
+        } finally {
+            cycleLock.unlock();
         }
     }
 
@@ -126,6 +175,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         }
     }
 
+    /** One cycle at {@code now}: a time taken under cycleLock ({@link #scheduledCycle}), or a test's fixed one. */
     public void cycle(long now) {
         cycleLock.lock();
         try {
@@ -137,24 +187,26 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
 
     private void cycleLocked(long now) {
         try {
+            boolean open = breaker.isOpen();
+            cycleTokens.accrue(now, open);
+            closeDay(now);                                              // Before this cycle's reads
             if (!live.loaded()) live.loadStates(states.findAll());     // L1: a failed boot load retries before any write
             Map<String, List<LiveTabResult.LiveItem>> servedBefore = live.served();
             View view = view();
-            if (breaker.isOpen()) {
+            if (open) {
                 // L1: no YouTube request, so an open breaker (1-48 h) never freezes the view or the endpoint's 404s.
-                // Rev 9: lives no read has proven for an hour hide meanwhile; a read after the breaker closes serves them.
-                boolean changed = expireHolds(view.targets(), now);
-                try {
-                    refreshView(view);
-                } finally {
-                    if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
-                }
+                // Lives unproven for LivePollRules.HOLD_MS hide meanwhile
+                publish(view, Map.of(), false, view.targets(), servedBefore, now);
                 log.info("live poller: circuit breaker open, YouTube reads skipped");
                 return;
             }
             tried.keySet().retainAll(view.targets());                   // F4: a channel left in no LIVE category
+            firstSeen.keySet().retainAll(view.targets());
+            view.targets().forEach(uc -> {
+                if (lastAttempt(uc) == null) firstSeen.putIfAbsent(uc, now); else firstSeen.remove(uc);
+            });
             if (view.liveCategoryIds().isEmpty()) {
-                live.publish(Map.of(), Map.of());
+                refreshView(view);                                      // publishes nothing served; prunes ENDED (C4)
                 return;
             }
             List<String> targets = view.targets().stream()
@@ -162,88 +214,149 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
                         LiveChannelState s = live.state(uc);
                         return s == null || s.getNextPollAt() == null || s.getNextPollAt() <= now;
                     })
-                    .sorted(Comparator.comparingLong(this::lastTried))
+                    .sorted(Comparator.comparingLong((String uc) ->
+                            lastTried(uc, now) - (urgent(uc) ? URGENT_HEAD_START_MS : 0)))
                     .limit(MAX_TARGETS)
                     .toList();
-            int budget = CYCLE_BUDGET;
-            int spent = 0;
+            targets = withProbe(view.targets(), targets, now);
             Map<String, LiveTabResult> fetched = new LinkedHashMap<>();
-            boolean blocked = false;                                    // Rev 9: YouTube refused or rate-limited a read
             for (String uc : targets) {
-                if (budget < MAX_PER_CHANNEL) break;                    // D16: the next cycle resumes here
+                if (cycleTokens.tokens < 1) break;                      // D16: the next cycle resumes here
                 LiveTabResult r = live.livesNow(uc);
-                budget -= r.requests();
-                spent += r.requests();
-                if (r.outcome() == LiveTabResult.Outcome.BREAKER) {      // D3: not counted
-                    blocked = true;
-                    break;
-                }
-                tried.put(uc, now);
-                fetched.put(uc, r);                             // a rate limit too: apply runs its Rev 9 hold
+                spend(cycleTokens, uc, r, now);
+                if (r.outcome() == LiveTabResult.Outcome.BREAKER) break; // D3: not counted
+                fetched.put(uc, r);                             // a rate limit too: apply runs its HOLD_MS hold
                 if (r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
-                    blocked = true;
                     // R7: stop at the first rate limit; oldest-first then reads this channel last next cycle
                     log.warn("live poller: YouTube rate-limited {}; cycle at {} stopped ({})", uc,
                             Instant.ofEpochMilli(now), r.error());
                     break;
                 }
             }
-            count(spent, now);
 
-            boolean proven = fetched.values().stream().anyMatch(LiveTabResult::hasLive);
-            unprovenSince = proven ? null : (unprovenSince != null ? unprovenSince : now);
-            boolean hideAllowed = proven || now - unprovenSince >= LivePollRules.HIDE_AFTER_MS;
+            boolean proven = proven(fetched.values(), now);
             if (!proven && fetched.entrySet().stream()
                     .anyMatch(e -> isRead(e.getValue()) && isLive(live.state(e.getKey())))) {
-                log.error("live poller: no channel read LIVE this cycle; keeping the last lives (suspect since {})",
-                        Instant.ofEpochMilli(unprovenSince));
+                log.error("live poller: no read listed a live for {} min; keeping the last lives (suspect since {})",
+                        PROVEN_WINDOW_MS / MINUTE_MS, Instant.ofEpochMilli(unprovenSince));
             }
-            boolean changed = false;
-            for (Map.Entry<String, LiveTabResult> e : fetched.entrySet()) {
-                try {
-                    changed |= apply(e.getKey(), e.getValue(), proven, hideAllowed,
-                            view.links().getOrDefault(e.getKey(), Set.of()), view.liveCategoryIds(), now);
-                } catch (Exception ex) {
-                    changed = true;                                     // a restore may have landed before the failure
-                    log.warn("live poller: {} not applied this cycle: {}", e.getKey(), ex.toString());
-                }
-            }
-            if (blocked) {   // Rev 9 (Cubic rev9-r1 #1): a block only; the ceiling or the 30 cap alone never hides
-                Set<String> unread = new LinkedHashSet<>(view.targets());
-                unread.removeAll(fetched.keySet());
-                changed |= expireHolds(unread, now);
-            }
-            live.setSuspectSince(unprovenSince);
-            try {
-                refreshView(view);
-            } finally {   // stage 9 B21 (Cubic r9 #21): apply() already changed the snapshot, so a failed refresh evicts too
-                if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) {
-                    caches.evictPublicContentCaches();                 // D14: ids or visibility, never a title
-                }
-            }
+            // Every target left unread is held LivePollRules.HOLD_MS at most
+            Set<String> unread = new LinkedHashSet<>(view.targets());
+            unread.removeAll(fetched.keySet());
+            publish(view, fetched, proven, unread, servedBefore, now);
         } catch (Exception e) {
             log.warn("live poller: cycle failed: {}", e.toString());
         }
     }
 
     /**
+     * Cubic r2 #2, under cycleLock: R10's verdict on these reads, before they are applied. Proven when one lists a live,
+     * or one did within {@link #PROVEN_WINDOW_MS} (liveSeenAt, persisted). Otherwise a real read (not an error, rate
+     * limit or refusal) starts the unproven clock; no read leaves it. A proven verdict clears it.
+     */
+    private boolean proven(Collection<LiveTabResult> reads, long now) {
+        Long seen = lastLiveSeen();
+        boolean proven = reads.stream().anyMatch(LiveTabResult::hasLive) || (seen != null && now - seen < PROVEN_WINDOW_MS);
+        if (proven) unprovenSince = null;
+        else if (unprovenSince == null && reads.stream().anyMatch(LiveChannelPoller::isRead)) unprovenSince = now;
+        live.setSuspectSince(unprovenSince);
+        return proven;
+    }
+
+    /** The latest liveSeenAt of any channel (persisted), or null if no read ever listed a live. */
+    private Long lastLiveSeen() {
+        return live.snapshot().values().stream().map(LiveChannelState::getLiveSeenAt).filter(Objects::nonNull)
+                .max(Long::compare).orElse(null);
+    }
+
+    /**
+     * Cubic r5 R5-1, under cycleLock: the cycle's reads, led by a proof probe when they are about to be judged with the
+     * proof window lapsed: a re-read of the target that listed a live last (not one in an ERROR backoff), on the cycle's
+     * budget and within its cap. At most one per {@link #PROVEN_WINDOW_MS}; none if no read ever listed a live.
+     */
+    private List<String> withProbe(Set<String> all, List<String> due, long now) {
+        Long seen = lastLiveSeen();
+        if (due.isEmpty() || cycleTokens.tokens < 1 || seen == null || now - seen < PROVEN_WINDOW_MS
+                || (lastProbeAt != null && now - lastProbeAt < PROVEN_WINDOW_MS)) return due;
+        String probe = all.stream()
+                .filter(uc -> {
+                    LiveChannelState s = live.state(uc);
+                    return s != null && s.getLiveSeenAt() != null
+                            && (s.getErrorCount() == 0 || s.getNextPollAt() == null || s.getNextPollAt() <= now);
+                })
+                .max(Comparator.comparingLong(uc -> live.state(uc).getLiveSeenAt()))
+                .orElse(null);
+        if (probe == null) return due;
+        lastProbeAt = now;
+        List<String> reads = new ArrayList<>(List.of(probe));
+        due.stream().filter(uc -> !uc.equals(probe)).limit(MAX_TARGETS - 1).forEach(reads::add);
+        return reads;
+    }
+
+    /** Under cycleLock: apply the reads (D7), hold the unread, republish, evict on a served change (D14). */
+    private void publish(View view, Map<String, LiveTabResult> fetched, boolean proven, Set<String> unread,
+                         Map<String, List<LiveTabResult.LiveItem>> servedBefore, long now) throws Exception {
+        boolean hideAllowed = proven || (unprovenSince != null && now - unprovenSince >= LivePollRules.HIDE_AFTER_MS);
+        boolean changed = false;
+        for (Map.Entry<String, LiveTabResult> e : fetched.entrySet()) {
+            try {
+                changed |= apply(e.getKey(), e.getValue(), proven, hideAllowed,
+                        view.links().getOrDefault(e.getKey(), Set.of()), now);
+            } catch (Exception ex) {
+                log.warn("live poller: {} not applied this cycle: {}", e.getKey(), ex.toString());
+            }
+        }
+        changed |= expireHolds(unread, now);
+        try {
+            refreshView(view);
+        } finally {
+            if (changed || !servedIds(servedBefore).equals(servedIds(live.served()))) caches.evictPublicContentCaches();
+        }
+    }
+
+    /** Pays a read's real request count (a small debt is repaid later) and records the attempt (L2). Under cycleLock. */
+    private void spend(Bucket bucket, String uc, LiveTabResult r, long now) {
+        bucket.tokens -= r.requests();
+        requestsToday += r.requests();
+        if (r.outcome() != LiveTabResult.Outcome.BREAKER) tried.merge(uc, now, Math::max);   // D3: a refusal is no attempt
+    }
+
+    /**
      * Stage 9 B13: the poller's view was the only thing a moderation write left stale for 10-20 minutes. Every moderation
      * path but the exclusions evicts the public caches (a take-down, an un-approve, a channel leaving a LIVE category,
      * a category losing LIVE or deleted): that marks the view stale. Stage 9 B14: only while something is served (prod
-     * has no LIVE category, and no write then changes what the endpoint serves), or while a cycle runs: its view, read
-     * before this write, may publish the first entries.
+     * has no LIVE category, and no write then changes what the endpoint serves; a refresh still re-reads every category
+     * doc), or while a cycle runs: its view, read before this write, may publish the first entries. Cubic r4 R4-1: the
+     * guard's check of an add counts as served ({@link LiveChannelService#servesAnything}), so the first link's write does too.
+     * Cubic r5: the poller's own eviction (a cycle's or a refresh's served change, delivered synchronously on the thread
+     * holding cycleLock) follows the view it just published, so it is no pending write: else a removal's 404 would wait a
+     * second tick, and with no tick (or a failing one) the endpoints would answer 503 for good.
      */
     @EventListener
     public void onPublicContentEvicted(PublicContentCacheService.Evicted event) {
-        if (cycleLock.isLocked() || !live.entries().isEmpty()) viewStale.set(true);
+        live.clearVerdicts();                                                // Cubic r2 #3: before the next tick
+        if (cycleLock.isHeldByCurrentThread()) return;
+        if (cycleLock.isLocked() || live.servesAnything()) viewStale.set(true);
     }
 
-    /** Stage 9 B13: an exclusion writes only its channel doc, with no eviction: a write to a served channel's doc counts. */
+    /**
+     * Stage 9 B13: an exclusion writes only its channel doc, with no eviction: a write to a served channel's doc counts.
+     * Any catalog write re-judges the endpoint's candidates (Cubic r2 #3).
+     */
     @EventListener
     public void onCatalogChanged(CatalogChanged event) {
+        live.clearVerdicts();                                                // e.g. a candidate's registry doc
         if ("CHANNEL".equals(event.type()) && live.entries().values().stream().anyMatch(c -> Objects.equals(event.docId(), c.getId()))) {
             viewStale.set(true);
         }
+    }
+
+    /**
+     * Cubic r4 R4-1: a moderation refresh is pending or a cycle runs, so the published view may lack an entry or link the
+     * apps already list (LiveCategoryService reads Firestore). The endpoints answer 503, not their definitive 404, meanwhile.
+     */
+    public boolean viewPending() {
+        return viewStale.get() || cycleLock.isLocked();
     }
 
     @Scheduled(fixedDelay = 15, initialDelay = 15, timeUnit = TimeUnit.SECONDS)
@@ -275,11 +388,43 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         }
     }
 
-    /** D16 oldest first: the later of the last check and this process's last read (L2). */
-    private long lastTried(String uc) {
+    /** An in-memory elapsed-time token bucket; a read starts only with one token and may leave a small debt. */
+    private static final class Bucket {
+        private final double perDay;
+        private double tokens;
+        private Long accruedAt;
+
+        Bucket(double perDay) {
+            this.perDay = perDay;
+        }
+
+        /** One cycle's share at first (a restart never bursts), at most CYCLE_BUDGET, none while the breaker is open. */
+        void accrue(long now, boolean open) {
+            long elapsed = accruedAt == null ? CYCLE_MS : Math.max(0, now - accruedAt);
+            if (!open) tokens = Math.min(CYCLE_BUDGET, tokens + perDay * elapsed / DAY_MS);
+            accruedAt = accruedAt == null ? now : Math.max(accruedAt, now);
+        }
+    }
+
+    /** A head start for an end being confirmed (R15) or a suspect keep (LIVE, no next poll); not links. */
+    private boolean urgent(String uc) {
         LiveChannelState s = live.state(uc);
-        long checked = s == null || s.getCheckedAt() == null ? 0L : s.getCheckedAt();
-        return Math.max(checked, tried.getOrDefault(uc, 0L));
+        return s != null && (LivePollRules.countingMisses(s) || (isLive(s) && s.getNextPollAt() == null));
+    }
+
+    /** D16 oldest first: the last attempt; never tried = a head start before it was first seen (Cubic r2 #1). */
+    private long lastTried(String uc, long now) {
+        Long last = lastAttempt(uc);
+        return last == null ? firstSeen.getOrDefault(uc, now) - URGENT_HEAD_START_MS : last;
+    }
+
+    /** The later of the last check and this process's last read (L2), or null if neither. */
+    private Long lastAttempt(String uc) {
+        LiveChannelState s = live.state(uc);
+        Long checked = s == null ? null : s.getCheckedAt();
+        Long attempt = tried.get(uc);
+        if (checked == null && attempt == null) return null;
+        return Math.max(checked == null ? 0L : checked, attempt == null ? 0L : attempt);
     }
 
     /** Recompute the published entries and R11-filtered lives from Firestore (no YouTube traffic). */
@@ -315,6 +460,7 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
     }
 
     private void refreshView(View view) throws Exception {
+        pruneEnded(view.links());
         Set<String> ids = new HashSet<>();
         view.entries().keySet().forEach(uc -> {
             LiveChannelState s = live.state(uc);
@@ -328,11 +474,38 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
             served.put(uc, LiveCategoryService.servedLives(channel, s, docs).stream()
                     .map(l -> new LiveTabResult.LiveItem(l.getVideoId(), l.getTitle())).toList());
         });
-        live.publish(view.entries(), served);
+        Set<String> blocked = new HashSet<>();                          // Codex r6 C1: the endpoint's local denials
+        docs.forEach((id, doc) -> {
+            if (LiveCategoryService.wouldDraw410(doc)) blocked.add(id);
+        });
+        live.publish(view.entries(), served, view.links(), blocked);
     }
 
     /**
-     * Rev 9 (owner, 2026-11-01): channels no read reached this cycle hide lives unproven for an hour
+     * Codex r6 C4: before each view publish, every state's ENDED ids are cut to its channel's links in that view, so the
+     * set never outgrows the category. Written only on a change; a failed write is logged and retried by the next view.
+     */
+    private void pruneEnded(Map<String, Set<String>> links) {
+        if (!live.loaded()) return;
+        for (String uc : live.snapshot().keySet()) {
+            try {
+                synchronized (live.stateLock()) {
+                    LiveChannelState prev = live.state(uc);
+                    Set<String> keep = links.getOrDefault(uc, Set.of());
+                    if (prev == null || keep.containsAll(prev.getEnded())) continue;
+                    LiveChannelState next = prev.copy();
+                    next.getEnded().retainAll(keep);
+                    live.put(next);
+                }
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.warn("live poller: ended links of {} not pruned this time: {}", uc, e.toString());
+            }
+        }
+    }
+
+    /**
+     * Channels no read reached this cycle hide lives unproven for {@link LivePollRules#HOLD_MS}
      * ({@link LivePollRules#expireHold}). Time only, no YouTube call. A failed write is logged; the next cycle retries.
      */
     private boolean expireHolds(Set<String> ucs, long now) {
@@ -354,153 +527,124 @@ public class LiveChannelPoller implements SmartInitializingSingleton {
         return changed;
     }
 
-    private record Ending(Video doc, boolean archive) {}
-
-    /**
-     * One channel: rules and restores, then persist + publish, then the ended ids leave and archive. True when what is
-     * served changed. Compute-and-put runs under the seed's monitor (D7); the YouTube read is already done. R12 order:
-     * a restore saves its doc before the state drops the record, and nothing else changes for an ended id until the
-     * state holding its restore record is written. A failed state write therefore changes no membership or doc; the id
-     * stays tracked and the next cycle ends it again. A failure after the write is logged with the ids (see end()), and
-     * so is a restored link's rejoin that a later failure loses (stage 9 B14: the next cycle finds it no longer ARCHIVED).
-     */
-    private boolean apply(String uc, LiveTabResult read, boolean proven, boolean hideAllowed, Set<String> links,
-                          Set<String> liveCategoryIds, long now) throws Exception {
+    /** One channel: rules, persist + publish (D7), and the audit of each link R15 hid (owner ruling 2026-11-02). */
+    private boolean apply(String uc, LiveTabResult read, boolean proven, boolean hideAllowed, Set<String> links, long now)
+            throws Exception {
+        LivePollRules.Outcome o;
         boolean changed;
-        List<Ending> endings = new ArrayList<>();
-        List<String[]> rejoins = new ArrayList<>();                         // {LIVE category, doc id} (stage 9 B13)
-        try {
-            synchronized (live.stateLock()) {
-                LiveChannelState prev = live.state(uc);
-                LivePollRules.Outcome o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
-                LiveChannelState next = o.next();
-                changed = !Objects.equals(servedIds(prev), servedIds(next));
-                for (Map.Entry<String, String> r : o.restored().entrySet()) {
-                    List<String> from = next.getArchivedFrom().remove(r.getKey());
-                    String docId = restore(r.getKey(), r.getValue());
-                    if (docId == null) continue;
-                    changed = true;
-                    if (from != null) from.stream().filter(liveCategoryIds::contains).forEach(cat -> rejoins.add(new String[]{cat, docId}));
-                }
-                for (String id : o.ended()) {
-                    Video doc = videos.findByYoutubeId(id).orElse(null);
-                    if (doc == null) continue;
-                    boolean archive = archivable(doc, liveCategoryIds);
-                    if (archive) {
-                        ValidationStatus vs = doc.getValidationStatus();
-                        next.getArchived().put(id, vs == null ? "" : vs.name());
-                        next.getArchivedFrom().put(id, List.copyOf(doc.getCategoryIds()));   // archivable: all LIVE ones
-                    }
-                    endings.add(new Ending(doc, archive));
-                }
-                live.put(next);
+        synchronized (live.stateLock()) {
+            LiveChannelState prev = live.state(uc);
+            o = LivePollRules.apply(prev, uc, read, proven, hideAllowed, links, now);
+            changed = !Objects.equals(servedIds(prev), servedIds(o.next()))
+                    || !Objects.equals(prev == null ? List.of() : prev.getEnded(), o.next().getEnded());
+            live.put(o.next());
+        }
+        for (String id : o.ended()) {
+            try {
+                String docId = videos.findByYoutubeId(id).map(Video::getId).orElse(id);
+                audit.logSystem("live_link_hidden_ended", "video", docId, "live-poller");
+            } catch (Exception e) {
+                if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+                log.warn("live poller: link {} on {} hidden as ended; audit not written: {}", id, uc, e.toString());
             }
-        } catch (Exception e) {
-            for (String[] r : rejoins) addByHand(r[1], r[0], e);
-            throw e;
-        }
-        for (Ending e : endings) {
-            changed |= end(e.doc(), e.archive(), liveCategoryIds);
-        }
-        for (String[] r : rejoins) {
-            changed |= rejoin(r[0], r[1]);
         }
         return changed;
     }
 
     /**
-     * §5 end(), after the state is written: leave every LIVE category, then archive when decided (R12). A failure is
-     * logged with both ids: a link still in a LIVE category is tracked again and ends later, but a failed archive is
-     * not retried, so an admin archives it by hand.
+     * A heartbeat's ask for a read of a channel whose last read may be behind: an ENDED link's (Cubic r6 K1 b, a stream
+     * live again is shown again) and a judged candidate the snapshot lacks (the snapshot catches up). At most one per
+     * {@link #STALE_ASK_MS} of the channel's last read (Cubic r8, r9): a read that just missed it would miss it again,
+     * and its state write clears the verdict, so a watched stream would otherwise ask every {@link #ON_DEMAND_MIN_MS}
+     * out of the shared on-demand budget.
      */
-    private boolean end(Video doc, boolean archive, Set<String> liveCategoryIds) {
-        boolean changed = false;
+    public void refreshStale(String uc) {
+        if (readWithin(uc, STALE_ASK_MS, clock.millis())) return;
+        refreshOnDemand(uc, STALE_ASK_MS);
+    }
+
+    /** Read or tried within [ms] (Codex r5: a failed read counts too, not only checkedAt). */
+    private boolean readWithin(String uc, long ms, long now) {
+        Long last = lastAttempt(uc);
+        return last != null && now - last < ms;
+    }
+
+    /**
+     * An endpoint asks for one async read of a channel the last view polls, an entry or (Cubic r6 K1 b) a link's channel;
+     * never an unlisted id (I8). One per channel.
+     */
+    public void refreshOnDemand(String uc) {
+        refreshOnDemand(uc, 0);
+    }
+
+    /** [minAgeMs]: checked again when the read runs (Codex r6: a cycle can read the channel while it waits in the queue). */
+    private void refreshOnDemand(String uc, long minAgeMs) {
+        if (!enabled || !live.pollTarget(uc) || breaker.isOpen() || !onDemandInFlight.add(uc)) return;
         try {
-            // every LIVE category, not just the doc's own: an order row can outlive the doc's id, and members() lists it
-            // (the removal is idempotent). ponytail: a few LIVE categories at most, so no per-category membership read.
-            for (String cat : liveCategoryIds) {
-                sortOrder.removeContentFromCategoryAndUpdate(cat, doc.getId(), "video");
-                if (doc.getCategoryIds() != null && doc.getCategoryIds().contains(cat)) {   // stage 9 B13: only where it was
-                    audit.logSystem("live_link_removed_ended", "video", doc.getId(), "live-poller");
+            onDemand.execute(() -> {
+                try {
+                    readOnDemand(uc, minAgeMs);
+                } finally {
+                    onDemandInFlight.remove(uc);
                 }
-                changed = true;
-            }
-            Video fresh = archive ? videos.findById(doc.getId()).orElse(null) : null;   // removal saved categoryIds
-            if (fresh != null && archivableOnceRemoved(fresh, liveCategoryIds)) {
-                fresh.setValidationStatus(ValidationStatus.ARCHIVED);
-                videos.save(fresh);
-                audit.logSystem("live_stream_archived_ended", "video", fresh.getId(), "live-poller");
-                changed = true;
-            }
-        } catch (Exception e) {
-            log.warn("live poller: ending video {} (doc {}) failed after its state was written; archive it by hand if "
-                    + "it is still listed: {}", doc.getYoutubeId(), doc.getId(), e.toString());
-            return true;                                                    // something may have landed
+            });
+        } catch (RejectedExecutionException e) {
+            onDemandInFlight.remove(uc);
         }
-        return changed;
     }
 
     /**
-     * R12: APPROVED, in a LIVE category and in no other, and not already UNAVAILABLE or ARCHIVED. Stage 9 B13: a doc in
-     * no LIVE category is never the poller's to archive (a departed live's own VOD: it never returns to be restored).
+     * The YouTube read runs outside cycleLock (a cycle never waits on it); the rest under it, on a fresh view and at the
+     * time the lock was taken. A cycle may read the channel meanwhile: its newer result stands, and this one is only
+     * counted, so lives never flap and no timestamp moves back.
      */
-    public static boolean archivable(Video doc, Set<String> liveCategoryIds) {
-        return doc.getCategoryIds() != null && doc.getCategoryIds().stream().anyMatch(liveCategoryIds::contains)
-                && archivableOnceRemoved(doc, liveCategoryIds);
-    }
-
-    /** R12 once the link has left its LIVE categories (end()): no other category came since. */
-    private static boolean archivableOnceRemoved(Video doc, Set<String> liveCategoryIds) {
-        ValidationStatus vs = doc.getValidationStatus();
-        return "APPROVED".equals(doc.getStatus())
-                && (doc.getCategoryIds() == null || liveCategoryIds.containsAll(doc.getCategoryIds()))
-                && vs != ValidationStatus.UNAVAILABLE && vs != ValidationStatus.ARCHIVED;
-    }
-
-    /** R12: only a doc this poller archived, and only while it is still ARCHIVED (an admin's later change wins). Its id. */
-    private String restore(String youtubeId, String previous) throws Exception {
-        Video doc = videos.findByYoutubeId(youtubeId).orElse(null);
-        if (doc == null || doc.getValidationStatus() != ValidationStatus.ARCHIVED) {
-            return null;
-        }
-        doc.setValidationStatus(previous.isEmpty() ? null : ValidationStatus.valueOf(previous));
-        videos.saveLiftingArchive(doc);                                     // B25: save() would keep the ARCHIVED
-        audit.logSystem("live_stream_restored", "video", doc.getId(), "live-poller");
-        return doc.getId();
-    }
-
-    /**
-     * Stage 9 B13 (R12): a restored link goes back into the LIVE category it left, through the guarded add (the 30-entry
-     * cap; live on its channel now, which this cycle's read just showed). A refusal or a failure leaves it out, logged.
-     */
-    private boolean rejoin(String categoryId, String docId) {
+    private void readOnDemand(String uc, long minAgeMs) {
+        long start = clock.millis();
+        boolean open = breaker.isOpen();
+        onDemandTokens.accrue(start, open);
+        if (open || cycleLock.isLocked() || !onDemandDue(uc, start) || readWithin(uc, minAgeMs, start)
+                || onDemandTokens.tokens < 1) return;
+        LiveTabResult r = live.livesNow(uc);
+        cycleLock.lock();
         try {
-            sortOrder.addMultipleContentToCategory(categoryId, List.<String[]>of(new String[]{docId, "video"}));
-            return true;
+            long now = clock.millis();
+            closeDay(now);
+            Long last = lastAttempt(uc);                   // before spend records this read
+            spend(onDemandTokens, uc, r, now);
+            if (r.outcome() == LiveTabResult.Outcome.BREAKER) return;
+            if (r.outcome() == LiveTabResult.Outcome.RATE_LIMITED) {
+                log.warn("live poller: YouTube rate-limited the on-demand read of {} ({})", uc, r.error());
+            }
+            if (last != null && last >= start) return;   // a cycle read it after this read began: that result stands
+            View view = view();
+            if (!view.targets().contains(uc)) return;                         // removed meanwhile
+            publish(view, Map.of(uc, r), proven(List.of(r), now), Set.of(), live.served(), now);
         } catch (Exception e) {
-            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
-            addByHand(docId, categoryId, e);
-            return false;
+            log.warn("live poller: on-demand read of {} failed: {}", uc, e.toString());
+        } finally {
+            cycleLock.unlock();
         }
     }
 
-    private static void addByHand(String docId, String categoryId, Exception e) {
-        log.warn("live poller: restored video doc {} not put back in live category {}; add it by hand: {}",
-                docId, categoryId, e.toString());
+    /** Not read or tried in the last 2 min, and not inside an ERROR backoff (D3); the sweep and 4 h recheck do not apply. */
+    private boolean onDemandDue(String uc, long now) {
+        LiveChannelState s = live.state(uc);
+        Long last = lastAttempt(uc);
+        return (last == null || now - last >= ON_DEMAND_MIN_MS)
+                && (s == null || s.getErrorCount() == 0 || s.getNextPollAt() == null || s.getNextPollAt() <= now);
     }
 
-    private void count(int requests, long now) {
+    /** Before any read: a new UTC day logs the last one's request count against the allotment. Never goes back a day. */
+    private void closeDay(long now) {
         long day = now / DAY_MS;
-        if (day != requestDay) {
-            if (requestDay >= 0) {
-                String line = "live poller: " + requestsToday + " YouTube requests on " + LocalDate.ofEpochDay(requestDay)
-                        + " (shared-IP allotment " + DAILY_ALLOTMENT + "/day)";
-                if (requestsToday > DAILY_ALLOTMENT) log.warn(line); else log.info(line);
-            }
-            requestDay = day;
-            requestsToday = 0;
+        if (day <= requestDay) return;                    // a `now` taken before a lock wait across midnight
+        if (requestDay >= 0) {
+            String line = "live poller: " + requestsToday + " YouTube requests on " + LocalDate.ofEpochDay(requestDay)
+                    + " (shared-IP allotment " + dailyRequests + "/day)";
+            if (requestsToday > dailyRequests) log.warn(line); else log.info(line);
         }
-        requestsToday += requests;
+        requestDay = day;
+        requestsToday = 0;
     }
 
     /** A real Live-tab read (an empty one when the cycle is unproven), not an error, rate limit or refusal. */

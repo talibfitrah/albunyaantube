@@ -111,6 +111,18 @@ class LiveCategoryGuardTest {
         verify(live).seed(SUNNAH);
     }
 
+    /** Cubic r4 R4-1 (b): a checked add tells the service, so its write's eviction refreshes the view (the first link too). */
+    @Test
+    void aCheckedAddIsNotedSoItsWriteRefreshesTheView() throws Exception {
+        when(live.livesNow(SUNNAH)).thenReturn(lives("Rs7St51oDDc"));
+        guard.check(true, add("video", "Rs7St51oDDc", SUNNAH, "APPROVED"));
+        verify(live).liveAddChecked();
+
+        org.mockito.Mockito.clearInvocations(live);
+        refused(true, add("playlist", "PLabc", null, "APPROVED"));
+        verify(live, never()).liveAddChecked();
+    }
+
     @Test
     void anAdminPlaylistAddIs400TypeNotAllowed() {
         LiveCategoryException e = refused(true, add("playlist", "PLabc", null, "APPROVED"));
@@ -126,6 +138,16 @@ class LiveCategoryGuardTest {
 
         assertThat(guard.check(true, add("video", "Rs7St51oDDc", SUNNAH, "APPROVED"))).isEqualTo(SUNNAH);
         verify(live, never()).resolveChannelId(anyString());
+    }
+
+    /** Cubic r6 K1 (c): a link the guard just saw live on its channel (an add or re-add) leaves ENDED at once. */
+    @Test
+    void aLinkConfirmedLiveLeavesEnded() throws Exception {
+        when(live.livesNow(SUNNAH)).thenReturn(lives("Rs7St51oDDc"));
+
+        guard.check(true, add("video", "Rs7St51oDDc", SUNNAH, "APPROVED"));
+
+        verify(live).liveAgain(SUNNAH, "Rs7St51oDDc");
     }
 
     @Test

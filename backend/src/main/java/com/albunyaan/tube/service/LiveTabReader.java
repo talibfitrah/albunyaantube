@@ -25,6 +25,8 @@ public class LiveTabReader {
 
     /** R16: follow up to 5 continuation-only pages, as both apps do (Zad needs 2 today). */
     static final int MAX_CONTINUATIONS = 5;
+    /** The ERROR of an empty Live tab (no items after the continuations); LivePollRules reads it. */
+    static final String NO_ITEMS = "no items after";
 
     private static final Pattern UC_ID = Pattern.compile("UC[A-Za-z0-9_-]{22}");
 
@@ -68,7 +70,7 @@ public class LiveTabReader {
                 page = gateway.getTabPage(tab, page.getNextPage());
             }
             if (page.getItems().isEmpty()) {
-                return LiveTabResult.error(requests, "no items after " + (requests - 1) + " continuation pages");
+                return LiveTabResult.error(requests, NO_ITEMS + " " + (requests - 1) + " continuation pages");
             }
             // ponytail: only the first page with items is scanned (spec §5); a live listed below it is missed, read one more page if that is ever seen.
             Map<String, LiveTabResult.LiveItem> lives = new LinkedHashMap<>();

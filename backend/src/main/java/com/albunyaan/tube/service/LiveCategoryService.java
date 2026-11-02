@@ -32,7 +32,7 @@ import java.util.stream.Collectors;
 @Service
 public class LiveCategoryService {
 
-    public enum Served { SERVED, EXCLUDED, BLOCKED }
+    public enum Served { SERVED, EXCLUDED, BLOCKED, ENDED }
 
     /** A category's members in display order: order rows first, then members without a row (today's fallback, F16). */
     public record Members(List<Object> ordered) {
@@ -126,8 +126,11 @@ public class LiveCategoryService {
                         out.add(ContentItemMapper.fromLive(c, l.getVideoId(), l.getTitle()));
                     }
                 }
-            } else if (member instanceof Video v && servable(v) && v.getChannelId() != null && seen.add(v.getYoutubeId())) {
-                out.add(ContentItemMapper.fromVideo(v));
+            } else if (member instanceof Video v && servable(v) && v.getChannelId() != null
+                    && !ended(snapshot.get(v.getChannelId()), v.getYoutubeId()) && seen.add(v.getYoutubeId())) {
+                ContentItemDto link = ContentItemMapper.fromVideo(v);
+                link.setLiveLink(true);                         // the apps' removal check: GET /api/v1/live/links/{id}
+                out.add(link);
             }
         }
         return out;
@@ -164,15 +167,36 @@ public class LiveCategoryService {
         return doc != null && wouldDraw410(doc) ? Served.BLOCKED : Served.SERVED;
     }
 
+    /**
+     * R11, owner ruling 2026-11-02: a link R15 ended is hidden from its live category's list (the expansion) and flagged
+     * ENDED on the admin status until a read lists it live again. It stays an approved video: search and the public video
+     * endpoints still serve it (an ended stream is just a video). Cubic r6 K2: ENDED is never a removal, so the live
+     * endpoints (the apps' removal check, a candidate's verdict) ignore it.
+     */
+    public static boolean ended(LiveChannelState state, String videoId) {
+        return state != null && state.getEnded().contains(videoId);
+    }
+
     /** R11, pre-flight D10: a channel entry's lives that are served now (state LIVE, then the one filter). */
     public static List<LiveChannelState.Live> servedLives(Channel channel, LiveChannelState state, Map<String, Video> docs) {
         if (state == null || !LiveChannelState.LIVE.equals(state.getStatus())) {
             return List.of();
         }
-        return state.getLives().stream().filter(l -> served(channel, l.getVideoId(), docs) == Served.SERVED).toList();
+        return state.getLives().stream().filter(l -> servedLive(channel, state, l.getVideoId(), docs)).toList();
     }
 
-    /** Spec §4.2: per LIVE category, every channel entry's live state and every link's miss count, for the admin. */
+    /** R11 for the category list: a live is served when it is not excluded, not a blocked registry doc and not ended. */
+    public static boolean servedLive(Channel channel, LiveChannelState state, String videoId, Map<String, Video> docs) {
+        return servedAs(channel, state, videoId, docs) == Served.SERVED;
+    }
+
+    /** R11 with its reason, for the category list and the admin status: EXCLUDED, BLOCKED, then ENDED. */
+    public static Served servedAs(Channel channel, LiveChannelState state, String videoId, Map<String, Video> docs) {
+        Served served = served(channel, videoId, docs);
+        return served == Served.SERVED && ended(state, videoId) ? Served.ENDED : served;
+    }
+
+    /** Spec §4.2: per LIVE category, channel states and link statuses (NO_CHANNEL, BLOCKED, ENDED, MISSING, LIVE). */
     public Map<String, Object> status() throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, LiveChannelState> snapshot = live.snapshot();   // one read: every entry sees the same states
         List<Map<String, Object>> categoriesOut = new ArrayList<>();
@@ -216,7 +240,7 @@ public class LiveCategoryService {
                 Map<String, Object> item = new LinkedHashMap<>();
                 item.put("id", l.getVideoId());
                 item.put("title", l.getTitle());
-                item.put("served", (servable(c) ? served(c, l.getVideoId(), docs) : Served.BLOCKED).name());
+                item.put("served", (servable(c) ? servedAs(c, s, l.getVideoId(), docs) : Served.BLOCKED).name());
                 lives.add(item);
             }
         }
@@ -236,7 +260,8 @@ public class LiveCategoryService {
         e.put("channelId", v.getChannelId());
         LiveChannelState s = v.getChannelId() == null ? null : snapshot.get(v.getChannelId());
         LiveChannelState.Miss miss = s == null ? null : s.getMisses().get(v.getYoutubeId());
-        e.put("status", v.getChannelId() == null ? "NO_CHANNEL" : !servable(v) ? "BLOCKED" : miss == null ? "LIVE" : "MISSING");
+        e.put("status", v.getChannelId() == null ? "NO_CHANNEL" : !servable(v) ? "BLOCKED"
+                : ended(s, v.getYoutubeId()) ? "ENDED" : miss == null ? "LIVE" : "MISSING");
         e.put("misses", miss == null ? 0 : miss.getCount());
         e.put("missingSince", iso(miss == null ? null : miss.getSince()));
         return e;

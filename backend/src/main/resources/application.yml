@@ -150,6 +150,10 @@ app:
   migrations:
     user-backfill:
       enabled: false
+  live-channels:
+    poller:
+      # Daily YouTube request cap of the live poller (shared server IP): its sweep and on-demand reads share it.
+      daily-requests: 864
   # iOS Universal Links (AASA) + Android App Links (assetlinks.json) --
   # WellKnownController, spec docs/superpowers/specs/2026-08-23-ios-app-design.md §12.
   ios:

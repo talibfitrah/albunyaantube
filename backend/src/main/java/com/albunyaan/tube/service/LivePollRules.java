@@ -3,31 +3,39 @@ package com.albunyaan.tube.service;
 import com.albunyaan.tube.model.LiveChannelState;
 
 import java.util.ArrayList;
-import java.util.LinkedHashMap;
 import java.util.LinkedHashSet;
 import java.util.List;
-import java.util.Map;
 import java.util.Set;
 import java.util.stream.Collectors;
 
 /**
  * Spec §5 apply(): one channel's next state from its previous state and this cycle's read. Pure, so U2 drives every
- * R10/R12/R15/D3 case without Firestore or YouTube; LiveChannelPoller performs the side effects it returns.
+ * R10/R12c/R15/D3 case without Firestore or YouTube; LiveChannelPoller performs the side effects it returns.
  */
 public final class LivePollRules {
 
     static final long MINUTE_MS = 60_000L;
-    /** D3, R7: 10 → 20 → 40 → 80 min. */
+    /** D3, R7: 10 → 20 → 40 → 80 min, doubling on up to the daily sweep (SWEEP_MS). Not OFFLINE_RECHECK_MS. */
     static final long BASE_BACKOFF_MS = 10 * MINUTE_MS;
+    /** Every channel, links included, is swept once a day. */
+    static final long SWEEP_MS = 24 * 60 * MINUTE_MS;
+    /**
+     * Cubic r2 #1: a channel read with no lives is read again after this, since an OFFLINE entry is not listed and a
+     * stream starting later must be noticed within hours, not a day. The daily cap still bounds the total: when it
+     * cannot keep up, oldest-first ordering spreads the reads and the cadence slows.
+     */
+    static final long OFFLINE_RECHECK_MS = 4 * 60 * MINUTE_MS;
     /** R15: two proven misses AND at least 15 min since the first. */
     static final long MISS_MIN_MS = 15 * MINUTE_MS;
     static final int MISSES_TO_END = 2;
     static final int ERROR_MAX = 200;
-    /** R10, Rev 8 and Rev 9: stale lives are served for at most an hour (an unproven streak, an ERROR streak, no read). */
+    /** R10: stale lives are served for at most an hour (an unproven streak, an ERROR streak). */
     public static final long HIDE_AFTER_MS = 60 * MINUTE_MS;
+    /** With no read at all (breaker, rate limit, not reached), lives are held one sweep plus an hour. */
+    static final long HOLD_MS = SWEEP_MS + 60 * MINUTE_MS;
 
-    /** {@code ended}: ids to remove and archive now. {@code restored}: reappeared ids → the status to restore ("" = none). */
-    public record Outcome(LiveChannelState next, List<String> ended, Map<String, String> restored) {}
+    /** {@code ended}: the links R15 ended now (also kept, hidden, in the state's {@code ended}). */
+    public record Outcome(LiveChannelState next, List<String> ended) {}
 
     private LivePollRules() {
     }
@@ -46,7 +54,15 @@ public final class LivePollRules {
                 }
                 String error = read.error() == null ? "" : read.error();
                 next.setLastError(error.length() > ERROR_MAX ? error.substring(0, ERROR_MAX) : error);
-                next.setNextPollAt(now + BASE_BACKOFF_MS * (1L << Math.min(next.getErrorCount() - 1, 3)));
+                // shift capped at 8: 10 min x 256 is past a day, and never overflows on a long streak
+                next.setNextPollAt(now + Math.min(BASE_BACKOFF_MS << Math.min(next.getErrorCount() - 1, 8), SWEEP_MS));
+                if (next.getLives().isEmpty() && error.startsWith(LiveTabReader.NO_ITEMS)) {
+                    // An empty Live tab serving nothing (never streamed, or streams hidden) is read again at the 4 h
+                    // offline recheck, not the doubling backoff: unlisted, no app request can show a first stream sooner.
+                    // Set, not a floor (Codex r3): a long streak would otherwise climb back to the daily sweep. The token
+                    // bucket caps the total, as for any off-air channel.
+                    next.setNextPollAt(now + OFFLINE_RECHECK_MS);
+                }
                 // D3: misses unchanged. Rev 8 (Cubic r8 #1): the last lives are kept for under an hour of the streak (an
                 // empty Live tab is an ERROR too), then hidden as R10 hides them; read again when that hour ends.
                 long hideAt = next.getErrorSince() + HIDE_AFTER_MS;
@@ -54,15 +70,15 @@ public final class LivePollRules {
                     if (now >= hideAt) hide(next, now);
                     else next.setNextPollAt(Math.min(next.getNextPollAt(), hideAt));
                 }
-                yield new Outcome(next, List.of(), Map.of());
+                yield new Outcome(next, List.of());
             }
             case RATE_LIMITED -> {
                 // R7: YouTube pushed back, not this channel: no miss or backoff. checkedAt stays the last real read
-                // (the poller's L2 attempt time rotates it behind the others); Rev 9: an hour after it, the lives hide.
+                // (the poller's L2 attempt time rotates it behind the others); HOLD_MS after it, the lives hide.
                 expireHold(next, now);
-                yield new Outcome(next, List.of(), Map.of());
+                yield new Outcome(next, List.of());
             }
-            case BREAKER -> new Outcome(next, List.of(), Map.of());              // never counted (RV M3)
+            case BREAKER -> new Outcome(next, List.of());              // never counted (RV M3)
         };
     }
 
@@ -75,25 +91,21 @@ public final class LivePollRules {
         next.setErrorCount(0);
         next.setErrorSince(null);
         next.setLastError(null);
-        next.setNextPollAt(null);
-        next.setCheckedAt(now);
+        next.setCheckedAt(later(next.getCheckedAt(), now));   // Codex r6 C3: persisted times never move back
         next.setReason(read.outcome() == LiveTabResult.Outcome.TERMINATED ? LiveChannelState.TERMINATED : null);
         if (!newIds.isEmpty()) {
             next.setLives(read.lives().stream().map(l -> new LiveChannelState.Live(l.id(), l.title()))
                     .collect(Collectors.toCollection(ArrayList::new)));
             next.setStatus(LiveChannelState.LIVE);
             next.setOfflineSince(null);
+            next.setLiveSeenAt(later(next.getLiveSeenAt(), now));
         } else if (hideAllowed) {
             hide(next, now);
         }                                                                         // else: suspect, keep (R10)
 
-        Map<String, String> restored = new LinkedHashMap<>();
         for (String id : newIds) {
             next.getMisses().remove(id);
-            String previous = next.getArchived().remove(id);
-            if (previous != null) {
-                restored.put(id, previous);
-            }
+            next.getEnded().remove(id);                  // owner ruling 2026-11-02: live again, shown again
         }
 
         List<String> ended = new ArrayList<>();
@@ -110,6 +122,7 @@ public final class LivePollRules {
             tracked.addAll(links);
             tracked.addAll(next.getMisses().keySet());
             tracked.removeAll(newIds);
+            tracked.removeAll(next.getEnded());          // already ended: never counted, ended or audited again
             for (String id : tracked) {
                 LiveChannelState.Miss miss = next.getMisses().computeIfAbsent(id, k -> new LiveChannelState.Miss(0, now));
                 if (miss.getCount() == 0) {
@@ -118,28 +131,52 @@ public final class LivePollRules {
                 miss.setCount(miss.getCount() + 1);
                 if (miss.getCount() >= MISSES_TO_END && now - miss.getSince() >= MISS_MIN_MS) {
                     next.getMisses().remove(id);
-                    ended.add(id);
+                    if (links.contains(id)) {                    // hidden, kept in its LIVE category; a live just goes
+                        ended.add(id);
+                        next.getEnded().add(id);
+                    }
                 }
             }
         }
-        return new Outcome(next, ended, restored);
+        next.setNextPollAt(nextPoll(next, !newIds.isEmpty(), now));
+        return new Outcome(next, ended);
+    }
+
+    /** When a channel just read is due again (null = every cycle); first match wins. */
+    private static Long nextPoll(LiveChannelState next, boolean listed, long now) {
+        if (countingMisses(next)) return null;                               // R15: an end being confirmed
+        if (LiveChannelState.LIVE.equals(next.getStatus()) && !listed) return null;   // R10 suspect keep
+        if (LiveChannelState.TERMINATED.equals(next.getReason())) return now + SWEEP_MS;
+        // Cubic r6 K1 (a): an ENDED link may come back live; the 4 h recheck shows it again, a sweep would take a day
+        if (listed && next.getEnded().isEmpty()) return now + SWEEP_MS;
+        return now + OFFLINE_RECHECK_MS;                                     // Cubic r2 #1
+    }
+
+    private static long later(Long stored, long now) {
+        return stored == null ? now : Math.max(stored, now);
+    }
+
+    /** An end in progress (R15): a miss counted by a proven read. Count-0 ids (R12c) are only tracked. */
+    public static boolean countingMisses(LiveChannelState s) {
+        return s.getMisses().values().stream().anyMatch(m -> m.getCount() >= 1);
     }
 
     /**
      * Rev 9 (owner, 2026-11-01): the time-only hold, for a channel no read can prove (breaker open, rate-limited, or
      * not reached this cycle). Its lives were last proven at its ERROR streak's start (Rev 8), else at its last real
-     * read (checkedAt); an hour later they hide as R10 hides them. Mutates {@code s}; true when it hid. No YouTube call.
+     * read (checkedAt); {@link #HOLD_MS} later (every channel is swept once a day) they hide as R10 hides them.
+     * Mutates {@code s}; true when it hid. No YouTube call.
      */
     public static boolean expireHold(LiveChannelState s, long now) {
         Long since = s.getErrorSince() != null ? s.getErrorSince() : s.getCheckedAt();
-        if (s.getLives().isEmpty() || since == null || now - since < HIDE_AFTER_MS) return false;
+        if (s.getLives().isEmpty() || since == null || now - since < HOLD_MS) return false;
         hide(s, now);
         return true;
     }
 
     /**
      * The hide (R10; Rev 8 for an ERROR streak): nothing served. A hidden live stays tracked at count 0, which is not a
-     * miss (R12c), so a proven read counts it like any departed live; this never removes or archives.
+     * miss (R12c), so a proven read counts it like any departed live; this never removes, archives or ends.
      */
     private static void hide(LiveChannelState next, long now) {
         next.getLives().forEach(l -> next.getMisses().putIfAbsent(l.getVideoId(), new LiveChannelState.Miss(0, now)));

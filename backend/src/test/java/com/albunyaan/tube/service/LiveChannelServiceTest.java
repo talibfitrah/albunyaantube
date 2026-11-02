@@ -106,41 +106,18 @@ class LiveChannelServiceTest {
         verify(states).save(any(LiveChannelState.class));
     }
 
-    /** A seed keeps the poller's restore records (R12). */
+    /** A seed keeps the ended links it does not list, and shows again one it lists live (owner ruling 2026-11-02). */
     @Test
-    void aSeedKeepsRestoreRecords() {
+    void aSeedKeepsEndedLinksItDoesNotList() {
         LiveChannelState known = LiveChannelState.unknown(SUNNAH);
-        known.getArchived().put("Rs7St51oDDc", "VALID");
+        known.getEnded().addAll(List.of("Rs7St51oDDc", "endedlink01"));
         service.loadStates(List.of(known));
         when(reader.read(SUNNAH)).thenReturn(sunnahLive());
 
         service.seed(SUNNAH);
 
         assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.LIVE);
-        assertThat(service.state(SUNNAH).getArchived()).containsEntry("Rs7St51oDDc", "VALID");
-    }
-
-    /**
-     * Stage 9 B16 (Cubic r6 P2, R12): a report took a link the poller archived down. Its restore record goes, saved, so
-     * the poller never restores it; before the states load that cannot be done, and the caller is told.
-     */
-    @Test
-    void aTakeDownDropsThePollersRestoreRecordOfTheLink() throws Exception {
-        LiveChannelState known = LiveChannelState.unknown(SUNNAH);
-        known.getArchived().put("TakeDown007", "VALID");
-        known.getArchivedFrom().put("TakeDown007", List.of("cat-live"));
-        known.getArchived().put("Rs7St51oDDc", "");
-        service.loadStates(List.of(known));
-
-        service.dropRestore("TakeDown007");
-
-        var saved = org.mockito.ArgumentCaptor.forClass(LiveChannelState.class);
-        verify(states).save(saved.capture());
-        assertThat(saved.getValue().getArchived()).containsOnlyKeys("Rs7St51oDDc");
-        assertThat(saved.getValue().getArchivedFrom()).isEmpty();
-        assertThat(service.state(SUNNAH).getArchived()).containsOnlyKeys("Rs7St51oDDc");
-        assertThatThrownBy(() -> new LiveChannelService(reader, states, clock).dropRestore("TakeDown007"))
-                .isInstanceOf(IllegalStateException.class);
+        assertThat(service.state(SUNNAH).getEnded()).containsExactly("endedlink01");
     }
 
     @Test
@@ -196,7 +173,7 @@ class LiveChannelServiceTest {
     @Test
     void aReSeedOfAServedChannelNeverHides() {
         knownLive();
-        service.publish(Map.of(SUNNAH, new Channel(SUNNAH)), Map.of());
+        service.publish(Map.of(SUNNAH, new Channel(SUNNAH)), Map.of(), Map.of(), java.util.Set.of());
         when(reader.read(SUNNAH)).thenReturn(LiveTabResult.ok(List.of(), 1));
 
         service.seed(SUNNAH);
@@ -220,7 +197,7 @@ class LiveChannelServiceTest {
     /**
      * Stage 9 B14 (Cubic r5 #6): a channel out of every LIVE category is not polled, so its stored lives may have ended
      * days ago. Re-added, only a read shows lives again: a seed YouTube does not answer (breaker, rate limit, error)
-     * leaves it serving none. Its restore records stay for the poller (R12).
+     * leaves it serving none. Its ended links stay ended.
      */
     @Test
     void aReAddedChannelYouTubeDoesNotAnswerServesNoneOfItsOldLives() {
@@ -229,7 +206,7 @@ class LiveChannelServiceTest {
             LiveChannelState frozen = LiveChannelState.unknown(SUNNAH);   // as the poller left it, days ago
             frozen.setStatus(LiveChannelState.LIVE);
             frozen.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
-            frozen.getArchived().put("oldarchive1", "VALID");
+            frozen.getEnded().add("endedlink01");
             service.loadStates(List.of(frozen));
             when(reader.read(SUNNAH)).thenReturn(noAnswer);
 
@@ -238,7 +215,7 @@ class LiveChannelServiceTest {
             LiveChannelState s = service.state(SUNNAH);
             assertThat(LiveCategoryService.servedLives(new Channel(SUNNAH), s, Map.of()))
                     .as(noAnswer.outcome().name()).isEmpty();
-            assertThat(s.getArchived()).as(noAnswer.outcome().name()).containsEntry("oldarchive1", "VALID");
+            assertThat(s.getEnded()).as(noAnswer.outcome().name()).containsExactly("endedlink01");
         }
     }
 
@@ -249,5 +226,88 @@ class LiveChannelServiceTest {
         service.seed(SUNNAH);
 
         assertThat(service.state(SUNNAH).getStatus()).isEqualTo(LiveChannelState.OFFLINE);
+    }
+
+    // ---- Cubic r3 P2: a global budget for the public endpoint's candidate registry lookups ----
+
+    /** Judges {@code n} distinct candidates; returns how many judges ran. */
+    private int judgeDistinct(int from, int n) {
+        java.util.concurrent.atomic.AtomicInteger ran = new java.util.concurrent.atomic.AtomicInteger();
+        for (int i = from; i < from + n; i++) {
+            service.candidateVerdict(SUNNAH, "v" + i, () -> { ran.incrementAndGet(); return true; });
+        }
+        return ran.get();
+    }
+
+    @Test
+    void overTheLookupBudgetNothingIsJudged() {
+        int budget = LiveChannelService.CANDIDATE_LOOKUPS_PER_MINUTE;
+        assertThat(judgeDistinct(0, budget)).isEqualTo(budget);
+
+        java.util.concurrent.atomic.AtomicInteger ran = new java.util.concurrent.atomic.AtomicInteger();
+        Boolean v = service.candidateVerdict(SUNNAH, "over", () -> { ran.incrementAndGet(); return true; });
+
+        assertThat(v).isNull();                                 // the endpoint's 503: no verdict, no lookup
+        assertThat(ran.get()).isZero();
+    }
+
+    @Test
+    void aCachedVerdictCostsNoBudget() {
+        int budget = LiveChannelService.CANDIDATE_LOOKUPS_PER_MINUTE;
+        service.candidateVerdict(SUNNAH, "cached", () -> true);
+        for (int i = 0; i < 3 * budget; i++) {
+            assertThat(service.candidateVerdict(SUNNAH, "cached", () -> { throw new AssertionError("judged again"); })).isTrue();
+        }
+        assertThat(judgeDistinct(0, budget - 1)).isEqualTo(budget - 1);   // the one first judge was the only spend
+    }
+
+    @Test
+    void theLookupBudgetRefillsOverTime() {
+        int budget = LiveChannelService.CANDIDATE_LOOKUPS_PER_MINUTE;
+        judgeDistinct(0, budget);
+        assertThat(judgeDistinct(budget, 1)).isZero();
+
+        now.addAndGet(30_000);                                  // half a minute: half the budget back
+        assertThat(judgeDistinct(1_000, budget)).isEqualTo(budget / 2);
+
+        now.addAndGet(10 * 60_000);                             // a long idle never banks more than one minute's worth
+        assertThat(judgeDistinct(2_000, 2 * budget)).isEqualTo(budget);
+    }
+
+    /** A failed lookup (null) is not cached: the next call judges again. */
+    @Test
+    void aFailedJudgementIsNotCached() {
+        assertThat(service.candidateVerdict(SUNNAH, "x", () -> null)).isNull();
+        assertThat(service.candidateVerdict(SUNNAH, "x", () -> false)).isFalse();
+    }
+
+    /**
+     * Codex r6 C2: a judge whose inputs a publish replaced (the generation moved while it ran) gives no verdict (503), and
+     * nothing is cached: the next call judges the new inputs.
+     */
+    @Test
+    void aVerdictJudgedAcrossAPublishIsNoVerdictAndNotCached() {
+        Boolean v = service.candidateVerdict(SUNNAH, "x", () -> {
+            service.publish(Map.of(), Map.of(), Map.of(), java.util.Set.of());
+            return false;
+        });
+
+        assertThat(v).isNull();
+        assertThat(service.candidateVerdict(SUNNAH, "x", () -> true)).isTrue();
+    }
+
+    /** Cubic r6 K1 (c): the guard saw the id live: it leaves ENDED at once, persisted. Other ended ids stay. */
+    @Test
+    void anIdSeenLiveAgainLeavesEnded() throws Exception {
+        LiveChannelState known = LiveChannelState.unknown(SUNNAH);
+        known.getEnded().addAll(List.of("Rs7St51oDDc", "endedlink01"));
+        service.loadStates(List.of(known));
+
+        service.liveAgain(SUNNAH, "Rs7St51oDDc");
+        service.liveAgain(SUNNAH, "notended001");                 // nothing to clear: no write
+        service.liveAgain("UCunknown0000000000000000", "Rs7St51oDDc");
+
+        assertThat(service.state(SUNNAH).getEnded()).containsExactly("endedlink01");
+        verify(states, times(1)).save(any());
     }
 }
