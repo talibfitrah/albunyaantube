@@ -1,0 +1,19 @@
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_8de713dc7c264b 524-525,528,536-537,541-542,544
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f275510462bde870bb9dea759bb46b643aee7c6a",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
