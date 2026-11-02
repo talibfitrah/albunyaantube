@@ -230,6 +230,37 @@ describe('useInfiniteScroll', () => {
     expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', expect.any(Function));
   });
 
+  it('moves the listener when the container is re-created (v-if)', async () => {
+    const onLoadMore = vi.fn();
+    const Comp = defineComponent({
+      props: { show: Boolean },
+      setup(_, { expose }) {
+        const s = useInfiniteScroll({ onLoadMore });
+        expose(s);
+        return s;
+      },
+      render() {
+        return this.show ? h('div', { ref: 'containerRef' }) : h('span');
+      }
+    });
+    const wrapper = mount(Comp, { props: { show: true } });
+    await wrapper.vm.$nextTick();
+    const first = wrapper.vm.containerRef as HTMLElement;
+    expect(first).toBeInstanceOf(HTMLElement);
+
+    await wrapper.setProps({ show: false });
+    await wrapper.setProps({ show: true });
+    const second = wrapper.vm.containerRef as HTMLElement;
+    expect(second).toBeInstanceOf(HTMLElement);
+    expect(second).not.toBe(first);
+
+    // jsdom scroll metrics are 0, so any attached listener fires onLoadMore.
+    first.dispatchEvent(new Event('scroll'));
+    expect(onLoadMore).not.toHaveBeenCalled();
+    second.dispatchEvent(new Event('scroll'));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
   it('should not trigger when scrolled far from bottom', async () => {
     const onLoadMore = vi.fn();
     const wrapper = mount(createTestComponent({

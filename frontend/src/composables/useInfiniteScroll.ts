@@ -3,7 +3,7 @@ import { ref, Ref, watch, onBeforeUnmount } from 'vue'
 export interface InfiniteScrollOptions {
   threshold?: number        // Distance from bottom to trigger load (default: 200px)
   throttleMs?: number       // Throttle delay in milliseconds (default: 500ms)
-  onLoadMore: () => void    // Callback to load more items
+  onLoadMore: () => void    // Must set isLoading = true before its first await; the composable never does
 }
 
 export interface InfiniteScrollReturn {
@@ -22,7 +22,10 @@ export interface InfiniteScrollReturn {
  *   threshold: 200,
  *   throttleMs: 500,
  *   onLoadMore: async () => {
- *     // Load more data
+ *     if (isLoading.value) return
+ *     isLoading.value = true
+ *     try { // Load more data
+ *     } finally { isLoading.value = false }
  *   }
  * })
  * ```
