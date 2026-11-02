@@ -12,7 +12,8 @@ import {
 import {
   getChannelDetails,
   getChannelVideos,
-  getChannelPlaylists
+  getChannelPlaylists,
+  getChannelShorts
 } from '@/services/youtubeService';
 
 vi.mock('@/services/exclusions', () => ({
@@ -24,7 +25,8 @@ vi.mock('@/services/exclusions', () => ({
 vi.mock('@/services/youtubeService', () => ({
   getChannelDetails: vi.fn(),
   getChannelVideos: vi.fn(),
-  getChannelPlaylists: vi.fn()
+  getChannelPlaylists: vi.fn(),
+  getChannelShorts: vi.fn()
 }));
 
 const i18n = createI18n({
@@ -443,7 +445,44 @@ describe('ChannelDetailModal', () => {
 
     expect(screen.getByText('Channel B')).toBeInTheDocument();
     expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
-    expect(fetchChannelExclusions).not.toHaveBeenCalledWith('reg-A');
+  });
+
+  it('drops a late exclusions fetch from the previously opened channel', async () => {
+    let releaseA!: () => void;
+    vi.mocked(fetchChannelExclusions).mockImplementation((id: string) =>
+      id === 'reg-A'
+        ? new Promise((resolve) => { releaseA = () => resolve({ videos: ['video3'], playlists: [] } as any); })
+        : Promise.resolve({ videos: [], playlists: [] } as any)
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(fetchChannelExclusions).toHaveBeenCalledWith('reg-A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  // Videos and Shorts share the video exclusion list.
+  it('keeps a late video exclusion write after switching to Shorts', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addChannelExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    vi.mocked(fetchChannelExclusions).mockResolvedValue({ videos: [], playlists: [] } as any);
+    vi.mocked(getChannelShorts).mockResolvedValue({ items: [{ id: 'video3', title: 'Video 3' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await fireEvent.click(screen.getByText('Shorts'));
+    await waitFor(() => expect(getChannelShorts).toHaveBeenCalled());
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).toHaveClass('excluded');
   });
 
   it('drops a late exclusion write from the previously opened channel', async () => {

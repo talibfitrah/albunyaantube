@@ -432,6 +432,10 @@ describe('PlaylistDetailModal', () => {
     await new Promise((r) => setTimeout(r, 1200));
     expect(getPlaylistVideos).toHaveBeenCalledTimes(7);
     expect(screen.getByText(/No results found/i)).toBeInTheDocument();
+
+    // Paused, not exhausted: the user can keep scanning.
+    await fireEvent.click(screen.getByText('Load more'));
+    await waitFor(() => expect(getPlaylistVideos).toHaveBeenCalledTimes(8));
   }, 10000);
 
   const flush = () => new Promise((r) => setTimeout(r, 20));
@@ -456,7 +460,79 @@ describe('PlaylistDetailModal', () => {
 
     expect(screen.getByText('Playlist B')).toBeInTheDocument();
     expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
-    expect(fetchPlaylistExclusions).not.toHaveBeenCalledWith('reg-A');
+  });
+
+  it('drops a late exclusions fetch from the previously opened playlist', async () => {
+    let releaseA!: () => void;
+    vi.mocked(fetchPlaylistExclusions).mockImplementation((id: string) =>
+      id === 'reg-A'
+        ? new Promise((resolve) => { releaseA = () => resolve(['video3']); })
+        : Promise.resolve([])
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(fetchPlaylistExclusions).toHaveBeenCalledWith('reg-A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  it('stops initializing once unmounted', async () => {
+    let releaseDetails!: () => void;
+    vi.mocked(getPlaylistDetails).mockReturnValue(new Promise((resolve) => { releaseDetails = () => resolve({ title: 'P' } as any); }));
+    const { unmount } = renderModal();
+    unmount();
+
+    releaseDetails();
+    await flush();
+
+    expect(fetchPlaylistExclusions).not.toHaveBeenCalled();
+  });
+
+  // Init failed while a search page was in flight: auto-fill must not clear the error and show
+  // rows without their exclusion state.
+  it('keeps an initialization error when an in-flight search page lands', async () => {
+    layOutList();
+    let failExclusions!: () => void;
+    vi.mocked(fetchPlaylistExclusions).mockReturnValue(new Promise((_, reject) => { failExclusions = () => reject(new Error('Exclusions down')); }));
+    let finishSearch!: () => void;
+    vi.mocked(getPlaylistVideos).mockReset().mockImplementation(
+      (_id: string, token?: string) => token
+        ? Promise.resolve({ items: [{ id: 'i2', videoId: 'video2', title: 'Video 2' }], nextPageToken: null } as any)
+        : new Promise((resolve) => { finishSearch = () => resolve({ items: [{ id: 'i1', videoId: 'video1', title: 'Video 1' }], nextPageToken: 'p2' } as any); })
+    );
+    renderModal();
+    await waitFor(() => expect(fetchPlaylistExclusions).toHaveBeenCalled());
+    await search('video');
+
+    failExclusions();
+    await waitFor(() => expect(screen.getByText('Exclusions down')).toBeInTheDocument());
+    finishSearch();
+    await new Promise((r) => setTimeout(r, 100));
+
+    expect(screen.getByText('Exclusions down')).toBeInTheDocument();
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(1);
+  });
+
+  it('keeps a late exclusion write when the same playlist is reopened', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addPlaylistExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('A') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).toHaveClass('excluded');
   });
 
   it('drops a late exclusion write from the previously opened playlist', async () => {

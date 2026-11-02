@@ -109,8 +109,13 @@
             </div>
 
             <!-- No More Items -->
-            <div v-if="!hasMore && items.length > 0" class="no-more">
+            <div v-if="!hasMore && !nextPageToken && items.length > 0" class="no-more">
               {{ $t('exclusions.playlistDetail.noMoreItems') }}
+            </div>
+
+            <!-- Auto-loading paused after a run of empty pages; more pages exist -->
+            <div v-if="!hasMore && nextPageToken && !error" class="no-more">
+              <button class="retry-btn" @click="continueLoading">{{ $t('common.loadMore') }}</button>
             </div>
           </div>
 
@@ -135,7 +140,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, computed, watch, reactive } from 'vue'
+import { ref, computed, watch, reactive, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchPlaylistExclusions, addPlaylistExclusion, removePlaylistExclusion } from '@/services/exclusions'
@@ -171,7 +176,7 @@ const initialLoading = ref(false)
 const error = ref<string | null>(null)
 const playlistDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
-// Bumped on every open, close and re-init: late init/exclusion results from an older one are dropped.
+// Bumped on every open, close, re-init and unmount: a late init from an older one is dropped.
 // Separate from requestIdCounter, which a search or page load bumps mid-open.
 let openId = 0
 let emptyPages = 0 // consecutive empty pages after the first (see loadMore)
@@ -186,8 +191,11 @@ const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
   threshold: 200,
   throttleMs: 500,
   // Init loads page 1 itself; a scroll during it would steal that load and flash "No results".
-  onLoadMore: () => { if (!initialLoading.value) loadMore() }
+  // After an init error, loading would clear it and show rows without their exclusion state.
+  onLoadMore: () => { if (!initialLoading.value && !error.value) loadMore() }
 })
+
+onBeforeUnmount(() => { openId++ })
 
 // Watch for modal open
 watch(() => props.open, (isOpen) => {
@@ -277,7 +285,7 @@ async function loadMore() {
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
     // Pages can come back empty (playlist search filters each page client-side), and an
-    // under-filled list auto-loads the next one: stop after 5 empty pages in a row.
+    // under-filled list auto-loads the next one: pause after 5 more empty pages in a row.
     emptyPages = result.items.length || !capturedPageToken ? 0 : emptyPages + 1
     hasMore.value = !!result.nextPageToken && emptyPages < 5
   } catch (err: any) {
@@ -302,6 +310,12 @@ async function loadMore() {
   }
 }
 
+function continueLoading() {
+  emptyPages = 0
+  hasMore.value = true
+  loadMore()
+}
+
 function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
@@ -318,13 +332,14 @@ function isExcluded(videoId: string): boolean {
   return excludedIds.value.has(videoId)
 }
 
+// Writes apply to the local set only if the modal still shows the same playlist.
 async function addExclusion(videoId: string) {
-  const id = openId
+  const playlistId = props.playlistId
   actionLoading[videoId] = true
 
   try {
-    await addPlaylistExclusion(props.playlistId, videoId)
-    if (id === openId) excludedIds.value.add(videoId)
+    await addPlaylistExclusion(playlistId, videoId)
+    if (playlistId === props.playlistId) excludedIds.value.add(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.excludeError'))
@@ -334,12 +349,12 @@ async function addExclusion(videoId: string) {
 }
 
 async function removeExclusion(videoId: string) {
-  const id = openId
+  const playlistId = props.playlistId
   actionLoading[videoId] = true
 
   try {
-    await removePlaylistExclusion(props.playlistId, videoId)
-    if (id === openId) excludedIds.value.delete(videoId)
+    await removePlaylistExclusion(playlistId, videoId)
+    if (playlistId === props.playlistId) excludedIds.value.delete(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.removeError'))
