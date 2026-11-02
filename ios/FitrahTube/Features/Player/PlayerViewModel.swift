@@ -188,6 +188,7 @@ extension StreamState {
     private(set) var qualityLoad: Task<Void, Never>?
     /// The stream `qualityOptions` belong to.
     private var qualityStreamURL: URL?
+    private let masterTransport: any BoundedHTTPTransport
 
     /// Called for every item the host builds. Another stream (another video, the HD hand-over) reloads the rows and clears
     /// the old ones at once; the same stream (a lower pick's rebuild, the audio-only swap) keeps them, so no flicker.
@@ -200,7 +201,7 @@ extension StreamState {
         qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
         qualityLoad = resolved.map { resolved in
             Task {
-                let sizes = await QualityOption.variantSizes(of: resolved)
+                let sizes = await QualityOption.variantSizes(of: resolved, transport: masterTransport)
                 guard !Task.isCancelled, url == qualityStreamURL else { return }
                 // A master that could not be read is read again for the next item built on this stream.
                 if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else { qualityStreamURL = nil }
@@ -446,8 +447,10 @@ extension StreamState {
          liveCheck: (@Sendable (_ channelId: String, _ videoId: String) async throws -> LiveChannelLives)? = nil,
          linkCheck: (@Sendable (_ videoId: String) async throws -> Void)? = nil,
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-         clock: @escaping @Sendable () -> Date = { Date() }) {
+         clock: @escaping @Sendable () -> Date = { Date() },
+         masterTransport: any BoundedHTTPTransport = QualityOption.masterTransport) {
         self.resolver = resolver
+        self.masterTransport = masterTransport
         self.settings = settings
         self.args = args
         self.queueSource = queueSource

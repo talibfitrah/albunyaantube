@@ -15,8 +15,8 @@ enum QualityOption: Hashable {
     case rendition(width: Int, height: Int)
     case dataSaver
 
-    /// player.md §3's LTE/5G ceiling: every option is clamped to this on an `isExpensive` path
-    /// (Wi-Fi/offline: no clamp).
+    /// player.md §3's LTE/5G ceiling: Auto and Data Saver are clamped to this on an `isExpensive` path
+    /// (Wi-Fi/offline: no clamp); a picked rendition is not (`ceiling(for:)`).
     private static let cellularResolution = CGSize(width: 1280, height: 720)
     private static let cellularBitrate: Double = 2_500_000 // 2.5 Mbps
 
@@ -80,21 +80,25 @@ enum QualityOption: Hashable {
     /// The stream's video rendition sizes. Not `AVURLAsset.variants`: that fetches every rendition's media playlist
     /// first (measured), which on tv_samsung is a `sidx` GET each, past `SyntheticHLSLoader`'s 2-GET ceiling. tv_samsung's
     /// model carries the sizes; a native master costs one GET of its text; a progressive file is one rendition.
-    /// nil: the master could not be read (no network for a moment, an error status), which is not "one rendition".
-    static func variantSizes(of resolved: Resolved) async -> [CGSize]? {
+    /// nil: the master could not be read (no network for a moment, an error status, a body past `maxMasterBytes`), which
+    /// is not "one rendition".
+    static func variantSizes(of resolved: Resolved, transport: any BoundedHTTPTransport = masterTransport) async -> [CGSize]? {
         guard case .hls(let url, _, _, _, let synthetic) = resolved.stream else { return [] }
         if let synthetic {
             return synthetic.video.compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
         }
-        var request = URLRequest(url: url)
-        request.setValue(resolved.userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, response) = try? await session.data(for: request),
-              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else { return nil }
-        return masterSizes(String(decoding: data, as: UTF8.self))
+        let request = HTTPRequest(method: "GET", url: url, headers: ["User-Agent": resolved.userAgent], body: nil)
+        guard let response = try? await transport.send(request, maxBodyBytes: maxMasterBytes),
+              (200..<300).contains(response.status), response.body.count <= maxMasterBytes else { return nil }
+        return masterSizes(String(decoding: response.body, as: UTF8.self))
     }
 
-    /// Ephemeral: the signed, IP-bound master URL and its body are never written to the shared disk cache or cookie jar.
-    private static let session = URLSession(configuration: .ephemeral)
+    /// `URLSessionTransport`: ephemeral and cookieless (the signed, IP-bound master never reaches a shared disk cache or
+    /// cookie jar), a 15 s timeout, and a body read only as far as the cap (gstack review: a CDN error page or a wrong
+    /// redirect is never buffered whole just to fill a menu).
+    static let masterTransport: any BoundedHTTPTransport = URLSessionTransport()
+    /// A master lists each rendition once per codec and frame rate on a few hundred bytes each: tens of KB.
+    nonisolated static let maxMasterBytes = 1 << 20
 
     /// Each `#EXT-X-STREAM-INF`'s `RESOLUTION` (RFC 8216 §4.3.4.2); I-frame playlists and audio-only variants have none.
     static func masterSizes(_ master: String) -> [CGSize] {

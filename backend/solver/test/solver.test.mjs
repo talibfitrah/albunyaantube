@@ -297,6 +297,7 @@ test('a solve that times out evicts only that player and answers 500 (ruling 1)'
   const solver = createSolver({ origin: yt.url, cacheDir: dir, build: spin, log: quiet, solveTimeoutMs: 200 });
   await solver.poll(); await solver.poll();
   assert.deepEqual(solver.solve({ playerId: 'bbbbbbbb', n: ['spin'], s: [] }), [500, { error: 'solve failed' }]);
+  assert.equal(fs.existsSync(path.join(dir, 'building')), false, 'a failed solve left its crash marker');
   assert.deepEqual(solver.health().held, ['aaaaaaaa']);
   assert.deepEqual(solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
   // S20 review: a solve that returns, either way, clears its crash marker, or a clean restart would drop a healthy player.

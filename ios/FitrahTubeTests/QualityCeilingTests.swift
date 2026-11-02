@@ -107,24 +107,27 @@ struct QualityCeilingTests {
         func demote(_ videoId: String, failed: ClientFamily) async {}
     }
 
-    /// The model reads the native master of the stream on screen once its item is built (a file URL here: the same
-    /// GET, no network), and a new item on the SAME stream -- a lower pick's rebuild, the audio-only swap -- keeps the
-    /// rows, so the button does not flicker.
+    /// A native master: one bounded GET with the stream's own User-Agent, read no further than `maxMasterBytes`.
+    @Test func aNativeMasterIsOneBoundedGETWithTheStreamsUserAgent() async {
+        let transport = StubTransport(status: 200, body: Self.master)
+        #expect(await QualityOption.variantSizes(of: Self.native, transport: transport)
+            == [CGSize(width: 1280, height: 720), CGSize(width: 640, height: 360)])
+        #expect(transport.requests.map(\.headers) == [["User-Agent": "UA"]])
+        #expect(transport.caps == [QualityOption.maxMasterBytes])
+    }
+
+    /// Gstack review: an error status (an expired signed URL answers 403 with an HTML page) and a body past the cap
+    /// are no answer, not "one rendition": the rows stay unread so the next item asks again.
+    @Test(arguments: [(403, master), (200, String(repeating: "#", count: QualityOption.maxMasterBytes + 1))])
+    func anErrorStatusOrAnOversizeBodyIsNoAnswer(status: Int, body: String) async {
+        #expect(await QualityOption.variantSizes(of: Self.native, transport: StubTransport(status: status, body: body)) == nil)
+    }
+
+    /// The model reads the native master of the stream on screen once its item is built, and a new item on the SAME
+    /// stream -- a lower pick's rebuild, the audio-only swap -- keeps the rows, so the button does not flicker.
     @MainActor @Test(.timeLimit(.minutes(1))) func theModelLoadsTheMenuOfTheStreamOnScreen() async throws {
-        let master = FileManager.default.temporaryDirectory.appending(path: "quality-\(UUID().uuidString).m3u8")
-        try """
-        #EXTM3U
-        #EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1280x720
-        720.m3u8
-        #EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=640x360
-        360.m3u8
-        """.write(to: master, atomically: true, encoding: .utf8)
-        defer { try? FileManager.default.removeItem(at: master) }
-        let resolved = Resolved(stream: .hls(url: master, isLive: false, audioOnlyURL: nil, captionTracks: []),
-                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
-        let model = PlayerViewModel(resolver: OneStream(resolved: resolved),
-                                    settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "QualityCeilingTests.\(UUID().uuidString)")!),
-                                    args: PlayerArgs(videoId: "quality"))
+        let transport = StubTransport(status: 200, body: Self.master)
+        let model = model(transport)
         await model.open()
         #expect(model.qualityOptions.isEmpty, "no rows before the host builds an item")
         let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
@@ -133,28 +136,53 @@ struct QualityCeilingTests {
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
         model.currentItem = AVPlayerItem(url: clip)
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
+        #expect(transport.requests.count == 1)
     }
 
     /// Review of a2c737ba: a master that could not be read (offline for a moment, an error status) is not "one rendition".
     /// The rows stay empty, and the next item built for the same stream reads it again instead of keeping the menu gone.
     @MainActor @Test(.timeLimit(.minutes(1))) func aMasterThatFailedToLoadIsReadAgainForTheNextItem() async throws {
-        let master = FileManager.default.temporaryDirectory.appending(path: "quality-\(UUID().uuidString).m3u8")
-        defer { try? FileManager.default.removeItem(at: master) }
-        let resolved = Resolved(stream: .hls(url: master, isLive: false, audioOnlyURL: nil, captionTracks: []),
-                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
-        let model = PlayerViewModel(resolver: OneStream(resolved: resolved),
-                                    settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "QualityCeilingTests.\(UUID().uuidString)")!),
-                                    args: PlayerArgs(videoId: "quality"))
+        let transport = StubTransport(status: 503, body: "")
+        let model = model(transport)
         await model.open()
         let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
         model.currentItem = AVPlayerItem(url: clip)
         await model.qualityLoad?.value
-        #expect(model.qualityOptions.isEmpty, "the master is missing")
-        try "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=640x360\n360.m3u8\n"
-            .write(to: master, atomically: true, encoding: .utf8)
+        #expect(model.qualityOptions.isEmpty, "the master answered 503")
+        transport.answer(status: 200, body: Self.master)
         model.currentItem = AVPlayerItem(url: clip)
         await model.qualityLoad?.value
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
+    }
+
+    private nonisolated static let master = "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1280x720\n720.m3u8\n"
+        + "#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=640x360\n360.m3u8\n"
+    private static let native = Resolved(stream: .hls(url: URL(string: "https://fixture.invalid/master.m3u8")!, isLive: false,
+                                                      audioOnlyURL: nil, captionTracks: []),
+                                         client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+
+    @MainActor private func model(_ transport: StubTransport) -> PlayerViewModel {
+        PlayerViewModel(resolver: OneStream(resolved: Self.native),
+                        settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "QualityCeilingTests.\(UUID().uuidString)")!),
+                        args: PlayerArgs(videoId: "quality"), masterTransport: transport)
+    }
+
+    private nonisolated final class StubTransport: BoundedHTTPTransport, @unchecked Sendable {
+        private let lock = NSLock()
+        private var response: HTTPResponse
+        private var sent: [(HTTPRequest, Int)] = []
+        init(status: Int, body: String) { response = HTTPResponse(status: status, headers: [:], body: Data(body.utf8)) }
+        func answer(status: Int, body: String) {
+            lock.withLock { response = HTTPResponse(status: status, headers: [:], body: Data(body.utf8)) }
+        }
+        var requests: [HTTPRequest] { lock.withLock { sent.map(\.0) } }
+        var caps: [Int] { lock.withLock { sent.map(\.1) } }
+        func send(_ request: HTTPRequest, maxBodyBytes: Int) async throws -> HTTPResponse {
+            lock.withLock {
+                sent.append((request, maxBodyBytes))
+                return response
+            }
+        }
     }
 
     // MARK: - Ceilings

@@ -203,6 +203,8 @@ test('the watchdog kills only a solver whose event loop is blocked past a legiti
   const probe = loop.match(/do (curl [^;]*);/)[1];
   assert.ok(Number(probe.match(/--max-time (\d+)/)[1]) > 3 * 10, 'the limit kills a build that every vm timeout still bounds');
   assert.match(loop, /\[ \$\$\? -eq 28 \] && .*systemctl kill --signal=SIGKILL fitrah-solver\.service/);
+  const solverPort = UNIT.match(/SOLVER_PORT=(\d+)/)[1];
+  assert.match(probe, new RegExp(`http://127\\.0\\.0\\.1:${solverPort}/health`), 'the probe watches the port the solver unit binds');
   const { root, cache } = install(t);
   fs.writeFileSync(path.join(root, 'app', 'hang.mjs'), 'setTimeout(() => { for (;;); }, 1000);');
   const start = async (preload) => {
@@ -210,7 +212,7 @@ test('the watchdog kills only a solver whose event loop is blocked past a legiti
     const child = spawn(process.execPath, [...unitFlags(root, cache), ...preload, path.join(root, 'app', 'server.mjs')], {
       env: { ...process.env, SOLVER_ORIGIN: 'http://127.0.0.1:1', SOLVER_CACHE_DIR: cache, SOLVER_PORT: String(port) }, stdio: 'ignore' });
     t.after(() => child.kill('SIGKILL'));
-    for (let i = 0; i < 50 && !(await fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
+    for (let i = 0; i < 50 && !(await fetch(`http://127.0.0.1:${port}/health`, { signal: AbortSignal.timeout(500) }).then(() => true, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
     return port;
   };
   const check = (port) => new Promise((resolve) => {
