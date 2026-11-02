@@ -293,11 +293,14 @@ test('a solve that times out evicts only that player and answers 500 (ruling 1)'
     const ctx = newContext();
     return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') { const e = Date.now() + 2000; while (Date.now() < e) {} } return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
   };
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: spin, log: quiet, solveTimeoutMs: 200 });
+  const dir = tempDir();
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: spin, log: quiet, solveTimeoutMs: 200 });
   await solver.poll(); await solver.poll();
   assert.deepEqual(solver.solve({ playerId: 'bbbbbbbb', n: ['spin'], s: [] }), [500, { error: 'solve failed' }]);
   assert.deepEqual(solver.health().held, ['aaaaaaaa']);
   assert.deepEqual(solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
+  // S20 review: a solve that returns, either way, clears its crash marker, or a clean restart would drop a healthy player.
+  assert.equal(fs.existsSync(path.join(dir, 'building')), false);
   yt.close();
 });
 

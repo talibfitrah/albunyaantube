@@ -265,7 +265,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   function solve({ playerId, n, s }) {
     const entry = held.get(playerId);
     if (!entry) return [409, { error: 'unknown player' }];
-    let answers;
+    let answers, cpu;
     ran = playerId;
     // S20 review: a realm that escapes the vm timeout here is SIGKILLed by the watchdog, and the marker makes the next process
     // drop this player, as for a build; else each restart rebuilds it and hangs again until StartLimitBurst stops the unit.
@@ -273,6 +273,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     const cpu0 = process.cpuUsage();
     try {
       answers = solveAll(entry.player, n, s, solveTimeoutMs);
+      cpu = process.cpuUsage(cpu0);             // R30 is the realm run's CPU; the marker's two syscalls stay outside it
     } catch {                                   // a hung or broken player: evict it, others stay served (ruling 1)
       held.delete(playerId);
       if (current === playerId) current = held.keys().next().value ?? null;
@@ -281,7 +282,6 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     } finally {
       try { fs.rmSync(marker, { force: true }); } catch { /* as in pollOnce */ }
     }
-    const cpu = process.cpuUsage(cpu0);
     cpuRing.push((cpu.user + cpu.system) / 1000);
     if (cpuRing.length > 1000) cpuRing.shift();
     solves++;
@@ -371,10 +371,10 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
   const solver = createSolver({ origin: process.env.SOLVER_ORIGIN || undefined,
                                 cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });
-  // A stop is a clean exit, never Node's default kill (Cubic r2 P2). The build and self-test are synchronous, so this
-  // handler runs only after pollOnce's finally removed the crash marker: a restart never drops a healthy player.
+  // A stop is a clean exit, never Node's default kill (Cubic r2 P2). The build, self-test and each solve are synchronous, so
+  // this handler runs only after their finally removed the crash marker: a restart never drops a healthy player.
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => process.exit(0));
-  process.on('unhandledRejection', solver.rejected);   // Node's default exit came after pollOnce's finally cleared the marker
+  process.on('unhandledRejection', solver.rejected);   // Node's default exit came after the run's finally cleared the marker
   const pollSafely = () => solver.poll().catch((e) => console.warn(`WARN poll rejected: ${e.message}`));   // never kill the process
   pollSafely();
   setInterval(pollSafely, 30 * 60_000);     // at startup and every 30 min (§4.5)

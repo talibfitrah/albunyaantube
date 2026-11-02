@@ -17,7 +17,8 @@ Type=simple
 ExecStart=/bin/sh -c 'while sleep 10; do curl -so /dev/null --max-time 45 http://127.0.0.1:4417/health; [ $$? -eq 28 ] && echo "FATAL solver accepted but did not answer /health within 45 s; SIGKILL" && systemctl kill --signal=SIGKILL fitrah-solver.service; done'
 Restart=always
 RestartSec=10
-# Root only for `systemctl kill` (systemd authorizes it on CAP_KILL); the rest mirrors fitrah-solver.service.
+# Root only for `systemctl kill` (systemd may check CAP_KILL as well as uid 0: keep it); the rest mirrors fitrah-solver.service,
+# minus ProtectProc=invisible, which hides /proc/1 and can make systemctl take itself for chrooted and skip the kill.
 CapabilityBoundingSet=CAP_KILL
 RestrictAddressFamilies=AF_UNIX AF_INET
 ProtectSystem=strict
@@ -33,7 +34,6 @@ ProtectKernelTunables=yes
 ProtectKernelModules=yes
 ProtectKernelLogs=yes
 ProtectControlGroups=yes
-ProtectProc=invisible
 
 [Install]
 WantedBy=multi-user.target
