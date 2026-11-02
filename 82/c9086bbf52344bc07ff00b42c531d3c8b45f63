@@ -1,0 +1,24 @@
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_19ff52653ccf73 348-389
+  s_543f5b01a05d75::t_d2e5b40c6a3972 347
+frontend/src/composables/useInfiniteScroll.ts
+  s_543f5b01a05d75::t_19ff52653ccf73 1,62,90-94
+frontend/tests/useInfiniteScroll.spec.ts
+  s_543f5b01a05d75::t_19ff52653ccf73 69-70,122-123
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "82c9086bbf52344bc07ff00b42c531d3c8b45f63",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
