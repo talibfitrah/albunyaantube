@@ -521,9 +521,11 @@ describe('PlaylistDetailModal', () => {
   // Init failed while a search page was in flight: auto-fill must not clear the error and show
   // rows without their exclusion state.
   it('keeps an initialization error when an in-flight search page lands', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
     layOutList();
     let failExclusions!: () => void;
-    vi.mocked(fetchPlaylistExclusions).mockReturnValue(new Promise((_, reject) => { failExclusions = () => reject(new Error('Exclusions down')); }));
+    vi.mocked(fetchPlaylistExclusions).mockReturnValueOnce(new Promise((_, reject) => { failExclusions = () => reject(new Error('Exclusions down')); }));
     let finishSearch!: () => void;
     vi.mocked(getPlaylistVideos).mockReset().mockImplementation(
       (_id: string, token?: string) => token
@@ -531,13 +533,15 @@ describe('PlaylistDetailModal', () => {
         : new Promise((resolve) => { finishSearch = () => resolve({ items: [{ id: 'i1', videoId: 'video1', title: 'Video 1' }], nextPageToken: 'p2' } as any); })
     );
     renderModal();
-    await waitFor(() => expect(fetchPlaylistExclusions).toHaveBeenCalled());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchPlaylistExclusions).toHaveBeenCalled();
     await search('video');
 
     failExclusions();
-    await waitFor(() => expect(screen.getByText('Exclusions down')).toBeInTheDocument());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText('Exclusions down')).toBeInTheDocument();
     finishSearch();
-    await new Promise((r) => setTimeout(r, 100));
+    await vi.advanceTimersByTimeAsync(5_000); // well past any throttled auto-load
 
     expect(screen.getByText('Exclusions down')).toBeInTheDocument();
     expect(getPlaylistVideos).toHaveBeenCalledTimes(1);
