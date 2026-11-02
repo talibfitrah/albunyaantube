@@ -212,6 +212,18 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus == .paused, "a paused player stays paused (I5)")
     }
 
+    /// Re-review of the fix: a rebuild never reuses the asset of the item recovery just reported failed (M4: never handed
+    /// back, whatever its status says).
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestNeverReusesTheFailedItemsAsset() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        player.pause()
+        let failed = player.currentItem
+        let rebuilt = PlayerHostView.player(for: state, replacing: player, failedItem: failed, freshItem: true)
+        #expect(rebuilt?.currentItem?.asset !== failed?.asset)
+    }
+
     /// Review of a2c737ba: a live stream keeps its item on a lower pick. A replacement live item starts at the live edge
     /// (`resumePosition`), so a viewer behind live would lose their place; the lower cap binds the next segments anyway.
     @Test(.timeLimit(.minutes(1))) func aFreshItemRequestOnALiveStreamKeepsTheItem() throws {

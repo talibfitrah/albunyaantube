@@ -935,7 +935,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         }
         // A rebuild reuses the playing item's asset, as `HDStager.handOver` does: no new master, playlist or `sidx` request.
         let reused = rebuild && continuesCurrentVideo ? existing?.currentItem.flatMap { current in
-            current.status != .failed && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
+            current.status != .failed && current !== failedItem && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
         } : nil
         let item = AVPlayerItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
                                                        onRefused: onRefused))

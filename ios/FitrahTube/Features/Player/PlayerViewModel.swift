@@ -197,10 +197,11 @@ extension StreamState {
         guard url != qualityStreamURL else { return }
         qualityStreamURL = url
         qualityOptions = []
+        qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
         qualityLoad = resolved.map { resolved in
             Task {
                 let sizes = await QualityOption.variantSizes(of: resolved)
-                guard url == qualityStreamURL else { return }
+                guard !Task.isCancelled, url == qualityStreamURL else { return }
                 // A master that could not be read is read again for the next item built on this stream.
                 if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else { qualityStreamURL = nil }
             }
