@@ -179,7 +179,7 @@ extension StreamState {
     /// The quality menu's current pick (spec §10, `QualityCeiling.swift`). Session-only, like
     /// Android's -- `QualityTrackSelector` never persists it either (player.md §4.3). `PlayerHostView`
     /// re-applies this to every new `AVPlayerItem` it builds, so a pick made mid-play survives a
-    /// re-resolve.
+    /// re-resolve. A picked rendition ends with its video (`beginStream`).
     var selectedQuality: QualityOption = .auto
 
     /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
@@ -666,6 +666,8 @@ extension StreamState {
         liveHeartbeat?.cancel()              // it asks for the old id; the new stream's landing starts its own
         args = next
         currentTime = 0                      // a new video starts at the beginning
+        // A picked rendition is the old stream's own size (Cubic r1 P2); Data Saver is a mode and carries.
+        if case .rendition = selectedQuality { selectedQuality = .auto }
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
         videoIsPortrait = false              // unknown reads as landscape until the new item is ready
         airPlayFellBack = false              // Task 8: the mirroring fallback is per stream too

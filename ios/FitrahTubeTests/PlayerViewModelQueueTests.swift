@@ -90,6 +90,22 @@ struct PlayerViewModelQueueTests {
         #expect(vm.queue.upcoming.map(\.title) == ["T-c"])
     }
 
+    /// Cubic r1 P2 (review of a2c737ba): a picked rendition is the old stream's own size -- carried onto a video of
+    /// another shape it caps it oddly, matches no row (no checkmark) and still skips the network clamps -- so the next
+    /// video starts on Auto. Data Saver is a mode, not a size: it carries.
+    @Test func theNextVideoStartsOnAutoButKeepsDataSaver() async {
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        vm.selectedQuality = .rendition(width: 1280, height: 720)
+        await vm.play(at: 1)
+        #expect(vm.args.videoId == "b")
+        #expect(vm.selectedQuality == .auto)
+        vm.selectedQuality = .dataSaver
+        await vm.play(at: 2)
+        #expect(vm.args.videoId == "c")
+        #expect(vm.selectedQuality == .dataSaver)
+    }
+
     /// Captions bug: Up Next keeps the chosen caption LANGUAGE, like Android's
     /// `setPreferredTextLanguage` on its one player (`PlayerFragment.kt:549-553`). The next video's
     /// track is the same language at a different URL, so matching by URL dropped the captions AND
