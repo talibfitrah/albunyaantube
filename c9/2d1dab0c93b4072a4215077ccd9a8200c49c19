@@ -1,0 +1,23 @@
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_caf22ebc472d0c 246-247
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_e8d6441a054be0 184-185
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_bb5845a437c3fc 389-407
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c92d1dab0c93b4072a4215077ccd9a8200c49c19",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
