@@ -243,7 +243,8 @@ const nestedPlaylistRegistryId = ref('')
 const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
   threshold: 200,
   throttleMs: 500,
-  onLoadMore: loadMore
+  // Init loads page 1 itself; a scroll during it would steal that load and flash "No results".
+  onLoadMore: () => { if (!initialLoading.value) loadMore() }
 })
 
 // Watch for modal open

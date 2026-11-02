@@ -386,4 +386,23 @@ describe('ChannelDetailModal', () => {
     });
     expect(document.body.querySelector('.loading-more')).toBeNull();
   });
+
+  // A scroll fired while a tab switch re-initializes must not start page 1 itself:
+  // init's own loadMore would then return early and flash "No results".
+  it('ignores scroll while the tab is initializing', async () => {
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    let releaseDetails!: () => void;
+    vi.mocked(getChannelDetails).mockImplementationOnce(
+      () => new Promise((resolve) => { releaseDetails = () => resolve({ channel: { name: 'Test Channel' }, videos: [] } as any); })
+    );
+    await fireEvent.click(screen.getByText('Playlists'));
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+    expect(getChannelPlaylists).not.toHaveBeenCalled();
+
+    releaseDetails();
+    await waitFor(() => expect(screen.getByText('Playlist 1')).toBeInTheDocument());
+    expect(getChannelPlaylists).toHaveBeenCalledTimes(1);
+  });
 });
