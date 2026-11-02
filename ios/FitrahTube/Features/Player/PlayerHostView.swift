@@ -90,6 +90,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let path = context.coordinator.path
         let freshItem = QualityOption.needsFreshItem(from: context.coordinator.appliedQuality, to: quality,
                                                      layerSize: context.coordinator.layerSize,
+                                                     playing: controller.player?.currentItem?.presentationSize ?? .zero,
                                                      isExpensive: path.isExpensive, isConstrained: path.isConstrained)
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),

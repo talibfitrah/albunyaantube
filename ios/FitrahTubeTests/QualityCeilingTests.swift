@@ -116,6 +116,17 @@ struct QualityCeilingTests {
         #expect(transport.caps == [QualityOption.maxMasterBytes])
     }
 
+    /// An offline save (`OfflineResolver`) or a fixture is a local `.hls`: one rendition, no remote master to ask for --
+    /// no request, no menu (a bounded HTTP read of a file URL would fail and read as "unknown", offering rows).
+    @Test func aLocalStreamHasNoSizesAndSendsNothing() async {
+        let local = Resolved(stream: .hls(url: URL(fileURLWithPath: "/tmp/saved.movpkg"), isLive: false, audioOnlyURL: nil,
+                                          captionTracks: []),
+                             client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        let transport = StubTransport(status: 200, body: Self.master)
+        #expect(await QualityOption.variantSizes(of: local, transport: transport) == [])
+        #expect(transport.requests.isEmpty)
+    }
+
     /// Gstack review: an error status (an expired signed URL answers 403 with an HTML page) and a body past the cap
     /// are no answer, not "one rendition": the rows stay unread so the next item asks again.
     @Test(arguments: [(403, master), (200, String(repeating: "#", count: QualityOption.maxMasterBytes + 1))])
@@ -139,8 +150,9 @@ struct QualityCeilingTests {
         #expect(transport.requests.count == 1)
     }
 
-    /// Review of a2c737ba: a master that could not be read (offline for a moment, an error status) is not "one rendition".
-    /// The rows stay empty, and the next item built for the same stream reads it again instead of keeping the menu gone.
+    /// Review of a2c737ba: a master that could not be read (offline for a moment, an error status) is not "one rendition":
+    /// the next item built for the same stream reads it again. Meanwhile the menu keeps the two rows no rendition decides
+    /// (Cubic r2 P3), so a Data Saver carried from the last video can still be turned off.
     @MainActor @Test(.timeLimit(.minutes(1))) func aMasterThatFailedToLoadIsReadAgainForTheNextItem() async throws {
         let transport = StubTransport(status: 503, body: "")
         let model = model(transport)
@@ -148,7 +160,7 @@ struct QualityCeilingTests {
         let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
         model.currentItem = AVPlayerItem(url: clip)
         await model.qualityLoad?.value
-        #expect(model.qualityOptions.isEmpty, "the master answered 503")
+        #expect(model.qualityOptions == [.auto, .dataSaver], "the master answered 503")
         transport.answer(status: 200, body: Self.master)
         model.currentItem = AVPlayerItem(url: clip)
         await model.qualityLoad?.value
@@ -299,9 +311,21 @@ struct QualityCeilingTests {
     /// 36 s and more (the buffered segments), while a fresh item on the same asset drew 854x480 within
     /// 3 s. A raise needs nothing: the same run drew 1080p within 3 s of the pick.
     private func needsFreshItem(_ old: QualityOption?, _ new: QualityOption, layer: CGSize = layerSize,
-                                expensive: Bool = false, constrained: Bool = false) -> Bool {
-        QualityOption.needsFreshItem(from: old, to: new, layerSize: layer, isExpensive: expensive,
+                                playing: CGSize = .zero, expensive: Bool = false, constrained: Bool = false) -> Bool {
+        QualityOption.needsFreshItem(from: old, to: new, layerSize: layer, playing: playing, isExpensive: expensive,
                                      isConstrained: constrained)
+    }
+
+    /// Cubic r2 P2: a lower SIZE cap flushes only what is drawn above it. Picking the stream's top rendition from a
+    /// fullscreen Auto lowers the cap past the layer, yet what plays already fits -- a rebuild would only restart ABR.
+    /// Nothing drawn yet (`.zero`) is unknown: rebuild as before. A lower BITRATE cap (Data Saver) always rebuilds.
+    @Test func aLowerSizeCapRebuildsOnlyWhenWhatPlaysIsAboveIt() {
+        let fullscreen = CGSize(width: 2556, height: 1179)
+        #expect(!needsFreshItem(.auto, Self.p1080, layer: fullscreen, playing: CGSize(width: 1920, height: 1080)))
+        #expect(!needsFreshItem(.auto, Self.p720, layer: fullscreen, playing: CGSize(width: 640, height: 360)))
+        #expect(needsFreshItem(.auto, Self.p720, layer: fullscreen, playing: CGSize(width: 1920, height: 1080)))
+        #expect(needsFreshItem(.auto, Self.p1080, layer: fullscreen))
+        #expect(needsFreshItem(Self.p480, .dataSaver, playing: CGSize(width: 854, height: 480)))
     }
 
     @Test func aLowerResolutionPickNeedsAFreshItem() {

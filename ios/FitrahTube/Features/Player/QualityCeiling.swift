@@ -83,7 +83,8 @@ enum QualityOption: Hashable {
     /// nil: the master could not be read (no network for a moment, an error status, a body past `maxMasterBytes`), which
     /// is not "one rendition".
     static func variantSizes(of resolved: Resolved, transport: any BoundedHTTPTransport = masterTransport) async -> [CGSize]? {
-        guard case .hls(let url, _, _, _, let synthetic) = resolved.stream else { return [] }
+        // A progressive file, an offline save or a fixture (a local `.hls`): one rendition, no remote master.
+        guard case .hls(let url, _, _, _, let synthetic) = resolved.stream, !url.isFileURL else { return [] }
         if let synthetic {
             return synthetic.video.compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
         }
@@ -172,14 +173,18 @@ enum QualityOption: Hashable {
     /// fresh item on the same asset drew 854x480 within 3 s). True when a pick lowers the effective ceiling, so the host
     /// rebuilds the item at the live position. A raise needs nothing (1080p drawn within 3 s), and `old == nil` is the
     /// first prepare, not a pick. Width and height are compared apart, as AVFoundation caps them: a portrait layer's Auto
-    /// has more area than 720p yet a narrower width (review of a2c737ba).
-    static func needsFreshItem(from old: QualityOption?, to new: QualityOption, layerSize: CGSize, isExpensive: Bool,
-                               isConstrained: Bool) -> Bool {
+    /// has more area than 720p yet a narrower width (review of a2c737ba). A lower SIZE cap rebuilds only when what is
+    /// drawn (`playing`, the item's `presentationSize`; `.zero` = nothing yet, unknown) is above it (Cubic r2): picking the
+    /// top rendition from a fullscreen Auto lowers the cap past the layer while ABR already plays under it.
+    static func needsFreshItem(from old: QualityOption?, to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
+                               isExpensive: Bool, isConstrained: Bool) -> Bool {
         guard let old, old != new else { return false }
         let before = ceiling(for: old, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         let after = ceiling(for: new, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
-        return isLower(after.resolution.width, than: before.resolution.width)
-            || isLower(after.resolution.height, than: before.resolution.height) || isLower(after.bitrate, than: before.bitrate)
+        let sizeLowered = isLower(after.resolution.width, than: before.resolution.width)
+            || isLower(after.resolution.height, than: before.resolution.height)
+        let drawnAbove = playing == .zero || playing.width > after.resolution.width || playing.height > after.resolution.height
+        return sizeLowered && drawnAbove || isLower(after.bitrate, than: before.bitrate)
     }
 
     /// `0` is AVFoundation's "unbounded" for both the resolution and the bitrate cap.

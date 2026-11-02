@@ -183,7 +183,7 @@ extension StreamState {
     var selectedQuality: QualityOption = .auto
 
     /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
-    /// renditions load, and for a single file.
+    /// renditions load, and for a single file; Auto and Data Saver alone while its master could not be read.
     private(set) var qualityOptions: [QualityOption] = []
     private(set) var qualityLoad: Task<Void, Never>?
     /// The stream `qualityOptions` belong to.
@@ -203,8 +203,12 @@ extension StreamState {
             Task {
                 let sizes = await QualityOption.variantSizes(of: resolved, transport: masterTransport)
                 guard !Task.isCancelled, url == qualityStreamURL else { return }
-                // A master that could not be read is read again for the next item built on this stream.
-                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else { qualityStreamURL = nil }
+                // A master that could not be read is read again for the next item built on this stream; meanwhile the two
+                // rows no rendition decides stay, so a carried Data Saver can be turned off (Cubic r2 P3).
+                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else {
+                    qualityOptions = [.auto, .dataSaver]
+                    qualityStreamURL = nil
+                }
             }
         }
     }
