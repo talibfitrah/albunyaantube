@@ -80,8 +80,8 @@ enum QualityOption: Hashable {
     /// The stream's video rendition sizes. Not `AVURLAsset.variants`: that fetches every rendition's media playlist
     /// first (measured), which on tv_samsung is a `sidx` GET each, past `SyntheticHLSLoader`'s 2-GET ceiling. tv_samsung's
     /// model carries the sizes; a native master costs one GET of its text; a progressive file is one rendition.
-    /// nil: the master could not be read (no network for a moment, an error status, a body past `maxMasterBytes`), which
-    /// is not "one rendition".
+    /// nil: the master could not be read (no network for a moment, an error status, a body past `maxMasterBytes`, a 2xx
+    /// that is no playlist), which is not "one rendition".
     static func variantSizes(of resolved: Resolved, transport: any BoundedHTTPTransport = masterTransport) async -> [CGSize]? {
         // A progressive file, an offline save or a fixture (a local `.hls`): one rendition, no remote master.
         guard case .hls(let url, _, _, _, let synthetic) = resolved.stream, !url.isFileURL else { return [] }
@@ -91,7 +91,9 @@ enum QualityOption: Hashable {
         let request = HTTPRequest(method: "GET", url: url, headers: ["User-Agent": resolved.userAgent], body: nil)
         guard let response = try? await transport.send(request, maxBodyBytes: maxMasterBytes),
               (200..<300).contains(response.status), response.body.count <= maxMasterBytes else { return nil }
-        return masterSizes(String(decoding: response.body, as: UTF8.self))
+        // A master opens with #EXTM3U (RFC 8216 §4.3.1.1); an empty body (a declared length past the cap) or a page is none.
+        let master = String(decoding: response.body, as: UTF8.self)
+        return master.hasPrefix("#EXTM3U") ? masterSizes(master) : nil
     }
 
     /// `URLSessionTransport`: ephemeral and cookieless (the signed, IP-bound master never reaches a shared disk cache or

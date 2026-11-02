@@ -128,8 +128,10 @@ struct QualityCeilingTests {
     }
 
     /// Gstack review: an error status (an expired signed URL answers 403 with an HTML page) and a body past the cap
-    /// are no answer, not "one rendition": the rows stay unread so the next item asks again.
-    @Test(arguments: [(403, master), (200, String(repeating: "#", count: QualityOption.maxMasterBytes + 1))])
+    /// are no answer, not "one rendition": the rows stay unread so the next item asks again. So is a 2xx that is no
+    /// master (Cubic r4): an empty body -- what the bounded read returns for a declared length past the cap -- or a page.
+    @Test(arguments: [(403, master), (200, String(repeating: "#", count: QualityOption.maxMasterBytes + 1)), (200, ""),
+                      (200, "<html>Sorry</html>")])
     func anErrorStatusOrAnOversizeBodyIsNoAnswer(status: Int, body: String) async {
         #expect(await QualityOption.variantSizes(of: Self.native, transport: StubTransport(status: status, body: body)) == nil)
     }
