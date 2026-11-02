@@ -44,8 +44,8 @@ vi.mock('@/services/liveChannels', async (importOriginal) => ({
 const ok = () => Promise.resolve({
   suspectSince: '2026-10-17T01:20:00Z',
   categories: [{ id: 'live', entries: [
-    { contentType: 'channel', contentId: 'channel_UCa', status: 'LIVE', lives: [{ id: 'x', title: 't', served: 'SERVED' }] },
-    { contentType: 'video', contentId: 'doc-1', status: 'MISSING', misses: 1 }
+    { contentType: 'channel', contentId: 'channel_UCa', channelId: 'UCaaaaaaaaaaaaaaaaaaaaaa', status: 'LIVE', lives: [{ id: 'x', title: 't', served: 'SERVED' }] },
+    { contentType: 'video', contentId: 'doc-1', youtubeId: 'vid00000001', status: 'MISSING', misses: 1 }
   ] }]
 });
 const mount = (locale = 'en') =>
@@ -62,6 +62,22 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(screen.getByRole('status')).toHaveTextContent('Live check suspect since');
     expect(screen.getByText('Live · 1')).toBeInTheDocument();
     expect(screen.getByText('Not live (1 of 2)')).toBeInTheDocument();
+  });
+
+  it('links every live row to YouTube in a new tab', async () => {
+    status.fn.mockImplementation(ok);
+    mount();
+
+    await fireEvent.click(await screen.findByText('Channels Live'));
+    await screen.findByText('Live · 1');
+
+    const links = screen.getAllByRole('link', { name: 'Open on YouTube' });
+    expect(links.map(a => a.getAttribute('href'))).toEqual([
+      'https://www.youtube.com/channel/UCaaaaaaaaaaaaaaaaaaaaaa/live', 'https://www.youtube.com/watch?v=vid00000001']);
+    for (const a of links) {
+      expect(a).toHaveAttribute('target', '_blank');
+      expect(a).toHaveAttribute('rel', 'noopener noreferrer');
+    }
   });
 
   it('renders in Arabic', async () => {
