@@ -367,4 +367,23 @@ describe('ChannelDetailModal', () => {
       expect(getChannelDetails).toHaveBeenCalledTimes(2);
     });
   });
+
+  // Regression (prod): scrolling to the bottom showed "Loading more…" forever.
+  it('loads the next page when scrolled to the bottom', async () => {
+    vi.mocked(getChannelVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockResolvedValueOnce({ items: [{ id: 'video4', title: 'Video 4' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    // jsdom reports 0 for scroll metrics, so the container is "at the bottom".
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+
+    await waitFor(() => {
+      expect(getChannelVideos).toHaveBeenLastCalledWith('UCxxxxxx', 'token123', undefined);
+      expect(screen.getByText('Video 4')).toBeInTheDocument();
+    });
+    expect(document.body.querySelector('.loading-more')).toBeNull();
+  });
 });
