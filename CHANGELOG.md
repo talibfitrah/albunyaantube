@@ -6,6 +6,9 @@ stable release.
 ## [Unreleased]
 
 - iOS (1.0.5): some playlists that opened empty (e.g. "White Noise for Babies") list their videos again.
+- Live channels (backend + both apps, 1.0.5): the "Channels Live" category scales to hundreds of channels. The apps find each channel's current stream on the phone, and the server only checks it against the catalog. The server checks each channel at most once a day while it is live, and an off-air channel every 4 hours at most, within a fixed daily budget of 864 requests; with a few hundred off-air channels that budget stretches each one's check to about once a day, so a channel that goes live can take that long to appear (before, about 4 channels hit the source's rate limit).
+- Live removal (both apps, 1.0.5): a channel or stream that an admin removes, or a stream link taken out of the live category, stops within about a minute on every phone that is playing it, and on the TV it is cast to, even after the player screen is closed. A busy or unreachable server never stops playback.
+- Admin: a stream link that has ended is hidden from the live category and flagged "Ended" in the sorting view for manual removal.
 
 ## [1.0.4] - 2026-11-01
 
