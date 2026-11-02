@@ -1,0 +1,21 @@
+ios/FitrahTubeTests/QualityCeilingTests.swift
+  s_543f5b01a05d75::t_0314df20def46f 131-134
+ios/FitrahTube/Features/Player/QualityCeiling.swift
+  s_543f5b01a05d75::t_af5c86e7fd9624 83-84,94-96
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "8b99c214675203f56e145c5b250c4451072b40e4",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
