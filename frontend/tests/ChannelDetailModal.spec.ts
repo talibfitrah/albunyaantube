@@ -469,9 +469,9 @@ describe('ChannelDetailModal', () => {
   // Videos and Shorts share the video exclusion list.
   it('keeps a late video exclusion write after switching to Shorts', async () => {
     let finishAdd!: () => void;
-    vi.mocked(addChannelExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
     vi.mocked(fetchChannelExclusions).mockResolvedValue({ videos: [], playlists: [] } as any);
-    vi.mocked(getChannelShorts).mockResolvedValue({ items: [{ id: 'video3', title: 'Video 3' }], nextPageToken: null } as any);
+    vi.mocked(getChannelShorts).mockResolvedValueOnce({ items: [{ id: 'video3', title: 'Video 3' }], nextPageToken: null } as any);
     renderModal();
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
     await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
@@ -487,7 +487,7 @@ describe('ChannelDetailModal', () => {
 
   it('drops a late exclusion write from the previously opened channel', async () => {
     let finishAdd!: () => void;
-    vi.mocked(addChannelExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
     vi.mocked(fetchChannelExclusions).mockResolvedValue({ videos: [], playlists: [] } as any);
     const { rerender } = renderModal(propsFor('A'));
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
@@ -500,5 +500,52 @@ describe('ChannelDetailModal', () => {
     await flush();
 
     expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  it('drops a late video exclusion write after switching to Playlists', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    vi.mocked(fetchChannelExclusions).mockResolvedValue({ videos: [], playlists: [] } as any);
+    // A playlist row whose id equals the video id: the video write must not mark it.
+    vi.mocked(getChannelPlaylists).mockResolvedValueOnce({ items: [{ id: 'video3', title: 'Same id playlist' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await fireEvent.click(screen.getByText('Playlists'));
+    await waitFor(() => expect(screen.getByText('Same id playlist')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Same id playlist').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  it('stops initializing once unmounted', async () => {
+    let releaseDetails!: () => void;
+    vi.mocked(getChannelDetails).mockReturnValueOnce(new Promise((resolve) => { releaseDetails = () => resolve({ channel: { name: 'C' }, videos: [] } as any); }));
+    const { unmount } = renderModal();
+    unmount();
+
+    releaseDetails();
+    await flush();
+
+    expect(fetchChannelExclusions).not.toHaveBeenCalled();
+  });
+
+  it('pauses auto-loading after 5 empty pages and continues on Load more', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    onTestFinished(() => spy.mockRestore());
+    vi.mocked(getChannelVideos).mockReset().mockResolvedValue({ items: [], nextPageToken: 'more' } as any);
+    renderModal();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(getChannelVideos).toHaveBeenCalledTimes(5);
+    expect(screen.queryByText(/No more items/i)).toBeNull();
+
+    await fireEvent.click(screen.getByText('Load more'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(getChannelVideos).toHaveBeenCalledTimes(10); // 5 more, paused again
   });
 });

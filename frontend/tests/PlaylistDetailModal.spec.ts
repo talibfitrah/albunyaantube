@@ -416,27 +416,33 @@ describe('PlaylistDetailModal', () => {
     expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', 'p2', 'needle');
   });
 
-  it('stops auto-loading after 5 empty pages in a row', async () => {
+  it('pauses auto-loading after 5 empty pages in a row, then continues on demand', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
     layOutList();
     vi.mocked(getPlaylistVideos)
       .mockReset()
       .mockResolvedValueOnce({ items: [{ id: 'i1', videoId: 'v1', title: 'Video 1' }], nextPageToken: null } as any)
       .mockResolvedValue({ items: [], nextPageToken: 'more' } as any);
     renderModal();
-    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
 
     await search('absent');
+    await vi.advanceTimersByTimeAsync(0);
+    // Still scanning: a spinner, not a premature "No results".
+    expect(screen.getByText(/Loading more/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No results found/i)).toBeNull();
 
-    // init page + search page 1 + 5 empty follow-ups, then nothing more.
-    await waitFor(() => expect(getPlaylistVideos).toHaveBeenCalledTimes(7), { timeout: 5000 });
-    await new Promise((r) => setTimeout(r, 1200));
-    expect(getPlaylistVideos).toHaveBeenCalledTimes(7);
+    await vi.advanceTimersByTimeAsync(10_000);
+    // init page + 5 empty search pages, then paused (not exhausted).
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(6);
     expect(screen.getByText(/No results found/i)).toBeInTheDocument();
 
-    // Paused, not exhausted: the user can keep scanning.
     await fireEvent.click(screen.getByText('Load more'));
-    await waitFor(() => expect(getPlaylistVideos).toHaveBeenCalledTimes(8));
-  }, 10000);
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(11); // 5 more, paused again
+  });
 
   const flush = () => new Promise((r) => setTimeout(r, 20));
   const propsFor = (id: string) => ({ playlistId: `reg-${id}`, playlistYoutubeId: `PL${id}` });
@@ -481,6 +487,25 @@ describe('PlaylistDetailModal', () => {
     expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
   });
 
+  it('drops a late initial-load failure from the previously opened playlist', async () => {
+    let failA!: () => void;
+    vi.mocked(getPlaylistDetails).mockImplementation((id: string) =>
+      id === 'PLA'
+        ? new Promise((_, reject) => { failA = () => reject(new Error('A down')); })
+        : Promise.resolve({ title: 'Playlist B' } as any)
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    failA();
+    await flush();
+
+    expect(screen.queryByText('A down')).toBeNull();
+    expect(screen.getByText('Video 3')).toBeInTheDocument();
+  });
+
   it('stops initializing once unmounted', async () => {
     let releaseDetails!: () => void;
     vi.mocked(getPlaylistDetails).mockReturnValue(new Promise((resolve) => { releaseDetails = () => resolve({ title: 'P' } as any); }));
@@ -520,7 +545,7 @@ describe('PlaylistDetailModal', () => {
 
   it('keeps a late exclusion write when the same playlist is reopened', async () => {
     let finishAdd!: () => void;
-    vi.mocked(addPlaylistExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(addPlaylistExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
     vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
     const { rerender } = renderModal(propsFor('A'));
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
@@ -537,7 +562,7 @@ describe('PlaylistDetailModal', () => {
 
   it('drops a late exclusion write from the previously opened playlist', async () => {
     let finishAdd!: () => void;
-    vi.mocked(addPlaylistExclusion).mockReturnValue(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(addPlaylistExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
     vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
     const { rerender } = renderModal(propsFor('A'));
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());

@@ -11,7 +11,13 @@ export interface InfiniteScrollReturn {
   isLoading: Ref<boolean>
   hasMore: Ref<boolean>
   reset: () => void
+  pageLoaded: (itemCount: number, hasNextPage: boolean) => void
+  resume: () => void
 }
+
+// Pages can come back empty (e.g. a search filtered client-side) while more exist; auto-fill
+// would fetch them back to back forever, so it pauses after this many in a row.
+const MAX_EMPTY_PAGES = 5
 
 /**
  * Composable for infinite scroll functionality with throttling
@@ -42,6 +48,7 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
   const hasMore = ref(true)
   let throttleTimeout: ReturnType<typeof setTimeout> | null = null
   let lastTriggerTime = 0
+  let emptyPages = 0
 
   const checkScroll = () => {
     if (!containerRef.value || isLoading.value || !hasMore.value) {
@@ -80,9 +87,21 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
     checkScroll()
   }
 
+  // Callers report each page; hasMore turns false at the end or when paused (resume() continues).
+  const pageLoaded = (itemCount: number, hasNextPage: boolean) => {
+    emptyPages = itemCount ? 0 : emptyPages + 1
+    hasMore.value = hasNextPage && emptyPages < MAX_EMPTY_PAGES
+  }
+
+  const resume = () => {
+    emptyPages = 0
+    hasMore.value = true
+  }
+
   const reset = () => {
     isLoading.value = false
     hasMore.value = true
+    emptyPages = 0
     lastTriggerTime = 0
     if (throttleTimeout) {
       clearTimeout(throttleTimeout)
@@ -125,6 +144,8 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
     containerRef,
     isLoading,
     hasMore,
-    reset
+    reset,
+    pageLoaded,
+    resume
   }
 }

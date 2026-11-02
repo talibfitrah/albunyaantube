@@ -97,7 +97,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="items.length === 0" class="empty-state">
+            <div v-else-if="items.length === 0 && !scanning" class="empty-state">
               <p>{{ $t('exclusions.channelDetail.noResults') }}</p>
             </div>
 
@@ -150,7 +150,7 @@
             </div>
 
             <!-- Load More Indicator -->
-            <div v-if="isLoading && items.length > 0" class="loading-more">
+            <div v-if="(isLoading && items.length > 0) || scanning" class="loading-more">
               <div class="spinner"></div>
               <p>{{ $t('exclusions.channelDetail.loadingMore') }}</p>
             </div>
@@ -240,7 +240,6 @@ let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
 // Bumped on every open, close, re-init and unmount: a late init from an older one is dropped.
 // Separate from requestIdCounter, which a search or page load bumps mid-open.
 let openId = 0
-let emptyPages = 0 // consecutive empty pages after the first (see loadMore)
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -251,7 +250,7 @@ const nestedPlaylistYoutubeId = ref('')
 const nestedPlaylistRegistryId = ref('')
 
 // Infinite scroll
-const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
+const { containerRef, isLoading, hasMore, reset, pageLoaded, resume } = useInfiniteScroll({
   threshold: 200,
   throttleMs: 500,
   // Init loads page 1 itself; a scroll during it would steal that load and flash "No results".
@@ -260,6 +259,9 @@ const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
 })
 
 onBeforeUnmount(() => { openId++ })
+
+// No rows yet but more pages are on the way (e.g. a search whose first pages had no matches).
+const scanning = computed(() => !items.value.length && hasMore.value && !!nextPageToken.value && !error.value)
 
 // Watch for modal open
 watch(() => props.open, (isOpen) => {
@@ -381,10 +383,7 @@ async function loadMore() {
     // Append new items
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
-    // Pages can come back empty (playlist search filters each page client-side), and an
-    // under-filled list auto-loads the next one: pause after 5 more empty pages in a row.
-    emptyPages = result.items.length || !capturedPageToken ? 0 : emptyPages + 1
-    hasMore.value = !!result.nextPageToken && emptyPages < 5
+    pageLoaded(result.items.length, !!result.nextPageToken)
   } catch (err: any) {
     // Verify context still matches before updating error state
     if (
@@ -426,8 +425,7 @@ function switchTab(tab: 'videos' | 'shorts' | 'live' | 'playlists') {
 }
 
 function continueLoading() {
-  emptyPages = 0
-  hasMore.value = true
+  resume()
   loadMore()
 }
 

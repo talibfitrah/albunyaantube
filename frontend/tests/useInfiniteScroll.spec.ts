@@ -282,6 +282,27 @@ describe('useInfiniteScroll', () => {
     expect(onLoadMore).toHaveBeenCalledTimes(2);
   });
 
+  it('does not auto-load a container that is not laid out', async () => {
+    const onLoadMore = vi.fn();
+    mount(createTestComponent({ onLoadMore })); // jsdom: clientHeight 0
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('pauses after 5 empty pages in a row until resume()', async () => {
+    const wrapper = mount(createTestComponent({ onLoadMore: vi.fn() }));
+    for (let i = 0; i < 4; i++) wrapper.vm.pageLoaded(0, true);
+    expect(wrapper.vm.hasMore).toBe(true);
+    wrapper.vm.pageLoaded(1, true); // a non-empty page restarts the count
+    for (let i = 0; i < 5; i++) wrapper.vm.pageLoaded(0, true);
+    expect(wrapper.vm.hasMore).toBe(false);
+
+    wrapper.vm.resume();
+    expect(wrapper.vm.hasMore).toBe(true);
+    wrapper.vm.pageLoaded(0, false);
+    expect(wrapper.vm.hasMore).toBe(false);
+  });
+
   it('should not trigger when scrolled far from bottom', async () => {
     const onLoadMore = vi.fn();
     const wrapper = mount(createTestComponent({
