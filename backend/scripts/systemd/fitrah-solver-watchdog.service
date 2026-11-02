@@ -1,0 +1,18 @@
+[Unit]
+Description=FitrahTube solver watchdog: SIGKILL a solver whose event loop stopped answering (S20; see app/healthcheck.mjs)
+After=fitrah-solver.service
+
+[Service]
+Type=simple
+# Every 10 s; healthcheck.mjs exits 2 only when the solver accepted but never answered within 20 s, so a hang is killed
+# within 30 s. SIGKILL is an unclean exit, so the solver's Restart=on-failure restarts it after its RestartSec=60.
+ExecStart=/bin/sh -c 'while sleep 10; do /opt/fitrah-solver/node/bin/node /opt/fitrah-solver/app/healthcheck.mjs; [ $$? -eq 2 ] && systemctl kill --signal=SIGKILL fitrah-solver.service; done'
+Restart=always
+RestartSec=10
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+NoNewPrivileges=yes
+
+[Install]
+WantedBy=multi-user.target

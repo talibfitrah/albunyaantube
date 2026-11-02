@@ -190,6 +190,38 @@ test('a player that leaves an unhandled rejection is dropped and the real server
     assert.match(stderr, /WARN player dddddddd left an unhandled promise rejection/);
   });
 
+/** S20: a realm run can outrun the vm timeout (Node's one TerminateExecution is lost inside its promise-reject callback), and
+ *  systemd never restarts a hung process. fitrah-solver-watchdog.service runs healthcheck.mjs every 10 s and SIGKILLs the
+ *  solver on exit 2. Exit 2 must mean exactly "connected, but the event loop never answered": a warming 503 or a refused
+ *  port (stopped, or in RestartSec) is 0, so systemd's own restart logic keeps those. A preload busy-loops the main thread
+ *  as an escaped realm run would. */
+test('healthcheck.mjs exits 2 only for a solver whose event loop is blocked (S20)', { timeout: 30_000 }, async (t) => {
+  const { root, cache } = install(t);
+  fs.writeFileSync(path.join(root, 'app', 'hang.mjs'), 'setTimeout(() => { for (;;); }, 1000);');
+  const start = async (preload) => {
+    const port = await freePort();
+    const child = spawn(process.execPath, [...unitFlags(root, cache), ...preload, path.join(root, 'app', 'server.mjs')], {
+      env: { ...process.env, SOLVER_ORIGIN: 'http://127.0.0.1:1', SOLVER_CACHE_DIR: cache, SOLVER_PORT: String(port) }, stdio: 'ignore' });
+    t.after(() => child.kill('SIGKILL'));
+    for (let i = 0; i < 50 && !(await fetch(`http://127.0.0.1:${port}/health`).then(() => true, () => false)); i++) await new Promise((r) => setTimeout(r, 100));
+    return port;
+  };
+  const check = (port) => new Promise((resolve) => {
+    const run = spawn(process.execPath, [path.join(SOLVER, 'healthcheck.mjs')], { env: { ...process.env, SOLVER_PORT: String(port) } });
+    let stderr = '';
+    run.stderr.on('data', (d) => { stderr += d; });
+    run.on('exit', (code) => resolve({ code, stderr: stderr.trim() }));
+  });
+  const [hung, warming, refused] = await Promise.all([start([`--import=${path.join(root, 'app', 'hang.mjs')}`]), start([]), freePort()]);
+  await new Promise((r) => setTimeout(r, 1500));                       // the hung server's loop is blocked from here on
+  const started = Date.now();
+  const [h, w, r] = await Promise.all([check(hung), check(warming), check(refused)]);
+  assert.deepEqual([w.code, r.code], [0, 0], `warming: ${w.stderr}; refused: ${r.stderr}`);
+  assert.equal(h.code, 2, h.stderr);
+  assert.match(h.stderr, /FATAL solver on port \d+ accepted but did not answer \/health within 20 s/);
+  assert.ok(Date.now() - started >= 19_000, 'gave up before its 20 s timeout');
+});
+
 /** Cubic r7 #1: without --experimental-vm-modules the deny callback cannot run and import() leaks the host process, so the
  *  server must refuse to start rather than run a leaky realm. Spawned WITHOUT the unit flags (no --experimental-vm-modules). */
 test('the server refuses to start without --experimental-vm-modules (Cubic r7 #1)', (t) => {
