@@ -542,7 +542,7 @@ describe('ChannelDetailModal', () => {
 
     await vi.advanceTimersByTimeAsync(10_000);
     expect(getChannelVideos).toHaveBeenCalledTimes(5);
-    expect(screen.queryByText(/No more items/i)).toBeNull();
+    expect(screen.queryByText(/No more items|No results found/i)).toBeNull();
 
     await fireEvent.click(screen.getByText('Load more'));
     await vi.advanceTimersByTimeAsync(10_000);

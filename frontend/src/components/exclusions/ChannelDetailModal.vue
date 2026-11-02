@@ -97,7 +97,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="items.length === 0 && !scanning" class="empty-state">
+            <div v-else-if="items.length === 0 && !nextPageToken" class="empty-state">
               <p>{{ $t('exclusions.channelDetail.noResults') }}</p>
             </div>
 

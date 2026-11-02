@@ -435,9 +435,9 @@ describe('PlaylistDetailModal', () => {
     expect(screen.queryByText(/No results found/i)).toBeNull();
 
     await vi.advanceTimersByTimeAsync(10_000);
-    // init page + 5 empty search pages, then paused (not exhausted).
+    // init page + 5 empty search pages, then paused: not exhausted, so no "No results".
     expect(getPlaylistVideos).toHaveBeenCalledTimes(6);
-    expect(screen.getByText(/No results found/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No results found/i)).toBeNull();
 
     await fireEvent.click(screen.getByText('Load more'));
     await vi.advanceTimersByTimeAsync(10_000);
