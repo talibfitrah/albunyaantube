@@ -1,0 +1,25 @@
+backend/solver/server.mjs
+  s_543f5b01a05d75::t_0b16dcb878cf06 151-155,163,215
+  s_543f5b01a05d75::t_630a5c0cb1343f 144-145
+backend/solver/test/sandbox.test.mjs
+  s_543f5b01a05d75::t_ee6b249a8b7237 209-211,224-225
+backend/solver/test/solver.test.mjs
+  s_543f5b01a05d75::t_d552528e5ccac5 666,676
+  s_543f5b01a05d75::t_8c3162ed93de0e 667-668,672-675
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "98148a70e4486193c8d581bd856adcb850607cb8",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
