@@ -133,15 +133,26 @@ struct OfflineEngineTests {
         #expect(rebased.lastPathComponent == "ABC123.mp4")
     }
 
-    @Test func usedBytesSumsTheRows() {
+    @Test func usedBytesSumsTheRows() throws {
         let a = OfflineItem(videoId: "vidA", title: "A", channelName: nil, thumbnailUrl: nil,
                             qualityLabel: "360p", audioOnly: false)
         a.bytesWritten = 100
         let b = OfflineItem(videoId: "vidB", title: "B", channelName: nil, thumbnailUrl: nil,
                             qualityLabel: "360p", audioOnly: true)
         b.bytesWritten = 250
-        #expect(OfflineStorage.usedBytes(items: [a, b]) == 350)
-        #expect(OfflineStorage.usedBytes(items: []) == 0)
+        let base = FileManager.default.temporaryDirectory.appending(path: "usedBytes-\(UUID().uuidString)", directoryHint: .isDirectory)
+        defer { try? FileManager.default.removeItem(at: base) }
+        #expect(OfflineStorage.usedBytes(items: [a, b], thumbnailBytes: nil, base: base) == 350)
+        #expect(OfflineStorage.usedBytes(items: [], thumbnailBytes: nil, base: base) == 0)
+
+        // 1.0.4 round 2: a row's thumbnail copy (I9) is on disk too, so the total counts it.
+        try FileManager.default.createDirectory(at: OfflineStorage.directoryURL(base: base), withIntermediateDirectories: true)
+        try Data(count: 40).write(to: OfflineStorage.fileURL(relativePath: OfflineStorage.thumbnailName(itemId: a.id), base: base))
+        #expect(OfflineStorage.thumbnailBytes(items: [a, b], base: base) == 40)
+        #expect(OfflineStorage.usedBytes(items: [a, b], thumbnailBytes: nil, base: base) == 390)   // the first frame reads
+        // Stage 9 I13 (Cubic r4 P3): the footer re-renders every 0.5 s per running save, so a render sums the rows and
+        // takes the screen's cached copy total; it stats no file.
+        #expect(OfflineStorage.usedBytes(items: [a, b], thumbnailBytes: 7, base: base) == 357)
     }
 
     @Test func theFooterRendersThroughFormatWithLocaleAwareNumerals() {

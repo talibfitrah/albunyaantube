@@ -1,9 +1,9 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useCategoryPicker, toggleCategoryId, categoryDisplayName } from './useCategoryPicker'
 
-const props = defineProps<{ modelValue: string[] }>()
+const props = defineProps<{ modelValue: string[]; playlist?: boolean }>()
 const emit = defineEmits<{
   (e: 'save', categoryIds: string[]): void
   (e: 'cancel'): void
@@ -11,7 +11,7 @@ const emit = defineEmits<{
 
 const { t } = useI18n()
 
-const { flatCategories, isLoading, load } = useCategoryPicker()
+const { flatCategories, isLoading, load } = useCategoryPicker({ playlist: props.playlist })
 onMounted(load)
 
 const selected = ref<string[]>([...props.modelValue])
@@ -19,6 +19,9 @@ const selected = ref<string[]>([...props.modelValue])
 function toggle(id: string) {
   selected.value = toggleCategoryId(selected.value, id)
 }
+
+// A tick carried in from the defaults must not be saved once its chip is hidden.
+const visibleSelected = computed(() => selected.value.filter((id) => flatCategories.value.some((c) => c.id === id)))
 </script>
 
 <template>
@@ -48,8 +51,8 @@ function toggle(id: string) {
       <button
         type="button"
         class="editor-btn-primary"
-        :disabled="selected.length === 0"
-        @click="emit('save', selected)"
+        :disabled="visibleSelected.length === 0"
+        @click="emit('save', visibleSelected)"
       >
         {{ t('contentSearch.bulk.preview.save') }}
       </button>

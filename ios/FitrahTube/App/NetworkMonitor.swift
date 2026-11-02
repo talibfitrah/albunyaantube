@@ -16,6 +16,8 @@ import Observation
     /// scheduling pass on this signal would thread launch ordering through OfflineManager for a
     /// milliseconds-wide window — upgrade there if the window ever bites.
     private(set) var isOnCellular = false
+    /// Stage 6 I-M2: which network the device is on (`identity(for:)`).
+    private(set) var identity = ""
 
     private let monitor = NWPathMonitor()
 
@@ -39,9 +41,11 @@ import Observation
             monitor.pathUpdateHandler = { [weak self] path in
                 let online = Self.isOnline(for: path.status)
                 let cellular = path.usesInterfaceType(.cellular)
+                let identity = Self.identity(for: path)
                 MainActor.assumeIsolated {
                     guard let self else { return }
                     if self.isOnCellular != cellular { self.isOnCellular = cellular }
+                    if self.identity != identity { self.identity = identity }
                     guard self.isOnline != online else { return }
                     self.isOnline = online
                 }
@@ -52,6 +56,14 @@ import Observation
 
     deinit {
         monitor.cancel()
+    }
+
+    /// The interfaces the path can use and its gateways: what changes when the device leaves home Wi-Fi for cellular or
+    /// another Wi-Fi, so a googlevideo URL minted under one identity is IP-bound to another network than the current one.
+    /// ponytail: not the public IP; two networks behind the same gateway address (a 192.168.1.1 router) read as one, and
+    /// a refusal there pauses HD as it did before. Ask a public-IP echo if that ever matters.
+    nonisolated static func identity(for path: NWPath) -> String {
+        (path.availableInterfaces.map(\.name) + path.gateways.map { "\($0)" }).joined(separator: " ")
     }
 
     nonisolated static func isOnline(for status: NWPath.Status) -> Bool {

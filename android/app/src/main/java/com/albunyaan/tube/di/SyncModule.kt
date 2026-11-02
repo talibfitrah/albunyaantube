@@ -1,6 +1,5 @@
 package com.albunyaan.tube.di
 
-import com.albunyaan.tube.auth.AccountStatusEvent
 import com.albunyaan.tube.auth.AuthRepository
 import com.albunyaan.tube.data.sync.SyncManager
 import dagger.Module
@@ -12,7 +11,6 @@ import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.cancel
-import kotlinx.coroutines.flow.filter
 import kotlinx.coroutines.launch
 import javax.inject.Singleton
 
@@ -32,7 +30,7 @@ object SyncModule {
 
     /**
      * Side-effect bean: collects AuthRepository.accountStatusEvents and
-     * invokes SyncManager.unbind() when a SignedOut event arrives. Singleton
+     * invokes SyncManager.unbind() on every sign-out event (SignedOut, Blocked, Deleted). Singleton
      * scope so the collector starts exactly once at app graph creation; the
      * scope lives for the app's lifetime alongside the SingletonComponent.
      *
@@ -48,9 +46,9 @@ object SyncModule {
         val job = SupervisorJob()
         val scope = CoroutineScope(job + Dispatchers.Default)
         scope.launch {
-            authRepository.accountStatusEvents
-                .filter { it is AccountStatusEvent.SignedOut }
-                .collect { syncManager.unbind() }
+            // Cubic r4: every event is a sign-out. Blocked/Deleted (AccountStatusInterceptor) unbind too, so the old
+            // account's queued retry is cancelled and no work runs for it until the next bind.
+            authRepository.accountStatusEvents.collect { syncManager.unbind() }
         }
         return SignOutSyncCollector(scope, job)
     }

@@ -416,8 +416,19 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val durationSeconds = arguments?.getInt("durationSeconds", 0) ?: 0
         val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
         val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
+        val liveChannelId = arguments?.getString("liveChannelId")?.takeIf { it.isNotBlank() }
 
         val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
+
+        if (BuildConfig.DEBUG) {
+            // L2/L3 hooks: adb shell settings put global fitrah_live_refresh_ms 120000 (delete it after the leg).
+            val resolver = requireContext().contentResolver
+            viewModel.debugLiveRefreshOverrideMs =
+                ResolvedStreams.debugLiveRefreshOverrideMs(android.provider.Settings.Global.getString(resolver, "fitrah_live_refresh_ms"))
+            // L5: adb shell settings put global fitrah_live_force_end_ms 60000 forces a live-channel end (delete it after).
+            viewModel.debugLiveForceEndMs =
+                android.provider.Settings.Global.getString(resolver, "fitrah_live_force_end_ms")?.toLongOrNull()
+        }
 
         when {
             // Offline downloads (1.0.3): Downloads "Open" and the player's Download button
@@ -439,9 +450,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     durationSeconds = durationSeconds,
                     viewCount = viewCount,
                     sourceChannelId = sourceChannelId,
+                    liveChannelId = liveChannelId,
                 )
             }
-            // If no arguments, ViewModel will use default stub queue (for testing)
         }
 
         // Workaround for Media3 PlayerControlView RecyclerView crash:
@@ -465,9 +476,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         binding.audioOnlyToggle.setOnCheckedChangeListener { _, isChecked ->
             viewModel.setAudioOnly(isChecked)
-        }
-        binding.completeButton.setOnClickListener {
-            viewModel.markCurrentComplete()
         }
 
         // Setup description dropdown
@@ -839,6 +847,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
         // Cancel the buffering-stall watchdog to prevent stale refresh triggers
         cancelStallWatchdog()
+        viewModel.onPlayerViewDestroyed()   // §9.1 step 4: no live reconnect polling once the screen is gone (Cubic r4)
 
         // Release MediaSession BEFORE releasing player (service doesn't own player lifecycle)
         playbackService?.releaseSession()
@@ -1199,6 +1208,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             }
 
             override fun onPlaybackStateChanged(playbackState: Int) {
+                if (BuildConfig.DEBUG) android.util.Log.d("LiveSwap", "state=$playbackState t=${android.os.SystemClock.elapsedRealtime()}")
                 if (BuildConfig.DEBUG) android.util.Log.d("PlayerFragment", "onPlaybackStateChanged: state=$playbackState")
 
                 // Phase 0 metrics: track rebuffering
@@ -1254,6 +1264,13 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     if (advanced) {
                         player.playWhenReady = true
                     }
+                }
+            }
+
+            override fun onTimelineChanged(timeline: androidx.media3.common.Timeline, reason: Int) {
+                if (BuildConfig.DEBUG) {
+                    val seq = (player.currentManifest as? androidx.media3.exoplayer.hls.HlsManifest)?.mediaPlaylist?.mediaSequence
+                    if (seq != null) android.util.Log.d("LiveSwap", "mediaSequence=$seq t=${android.os.SystemClock.elapsedRealtime()}")
                 }
             }
 
@@ -1523,10 +1540,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     if (state.isFavorite) R.string.player_action_favorited else R.string.player_action_favorite
                 )
 
-            binding.currentlyPlaying.text = currentItem?.let {
-                getString(R.string.player_current_item, it.title)
-            } ?: getString(R.string.player_no_current_item)
-            binding.completeButton.isEnabled = state.streamState is StreamState.Ready
             updateDownloadControls(binding, state)
             // Show audio-language button only when the current video exposes
             // multiple language tracks (NewPipe-surfaced dub locales). For
@@ -1548,26 +1561,15 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             binding.castButton.isVisible = !state.playingDownload
             binding.upNextHeader.isVisible = !state.playingDownload
             // The server rejects a favourite with no channel, and older downloads have none.
-            binding.favoriteButton.isVisible =
-                !state.playingDownload || currentItem?.channelName?.isNotBlank() == true
+            binding.favoriteButton.isVisible = state.canFavorite
             // Audio does nothing on a local file with no video track, or with no file at all.
             binding.audioButton.isVisible = !state.playingDownload || ready?.selection?.video != null
             upNextAdapter.submitList(state.upNext)
             binding.upNextList.isVisible = state.upNext.isNotEmpty()
-            binding.upNextEmpty.isVisible = state.upNext.isEmpty()
-                // Update ExoPlayer prev/next buttons based on playlist position
-                // Always keep buttons visible but visually indicate disabled state
-                updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
-            binding.excludedMessage.isVisible = state.excludedItems.isNotEmpty()
-            if (state.excludedItems.isNotEmpty()) {
-                binding.excludedMessage.text = getString(
-                    R.string.player_excluded_message,
-                    state.excludedItems.size
-                    )
-                }
-                binding.analyticsStatus.text = renderAnalytics(state.lastAnalyticsEvent)
-                maybePrepareStream(state)
-                // Future: apply real track selection when backend streams available.
+            // Update ExoPlayer prev/next buttons based on playlist position
+            // Always keep buttons visible but visually indicate disabled state
+            updatePlaylistNavigationButtons(state.hasPrevious, state.hasNext)
+            maybePrepareStream(state)
             }
         }
     }
@@ -2036,53 +2038,29 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         }
     }
 
-    private fun renderAnalytics(event: PlaybackAnalyticsEvent?): String {
-        return when (event) {
-            is PlaybackAnalyticsEvent.QueueHydrated -> getString(
-                R.string.player_event_queue_hydrated,
-                event.totalItems,
-                event.excludedItems
-            )
-            is PlaybackAnalyticsEvent.PlaybackStarted -> getString(
-                R.string.player_event_play_started,
-                event.item.title,
-                getString(event.reason.labelRes)
-            )
-            is PlaybackAnalyticsEvent.PlaybackCompleted -> getString(
-                R.string.player_event_play_completed,
-                event.item.title
-            )
-            is PlaybackAnalyticsEvent.AudioOnlyToggled -> if (event.enabled) {
-                getString(R.string.player_event_audio_only_on)
-            } else {
-                getString(R.string.player_event_audio_only_off)
-            }
-            null -> getString(R.string.player_analytics_none)
-            is PlaybackAnalyticsEvent.StreamResolved -> getString(
-                R.string.player_event_stream_resolved,
-                event.qualityLabel ?: getString(R.string.player_event_stream_resolved_unknown)
-            )
-            is PlaybackAnalyticsEvent.StreamFailed -> getString(R.string.player_event_stream_failed)
-            is PlaybackAnalyticsEvent.QualityChanged -> "Quality changed to ${event.qualityLabel}"
-            is PlaybackAnalyticsEvent.SubtitleChanged -> "Subtitles: ${event.languageName}"
-            is PlaybackAnalyticsEvent.VideoSkipped -> "Skipped unavailable video (${event.consecutiveSkipCount}/3)"
-        }
-    }
-
     private fun updatePlayerStatus(binding: FragmentPlayerBinding, state: PlayerState) {
+        // §9.1 step 4: a live channel's reconnect (up to ~12 min over an ended or stopped player, where ExoPlayer shows
+        // no spinner) shows the recovery overlay as laid out: spinner, "Resolving stream…", no Retry. A first load keeps
+        // today's look. The overlay's spinner is the only one meanwhile; otherwise the layouts' show_buffering="always".
+        val reconnecting = state.liveReconnecting
+        binding.playerView.setShowBuffering(
+            if (reconnecting) PlayerView.SHOW_BUFFERING_NEVER else PlayerView.SHOW_BUFFERING_ALWAYS
+        )
         when (val streamState = state.streamState) {
             StreamState.Idle -> {
-                binding.playerStatus.text = getString(R.string.player_status_initializing)
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
             StreamState.Loading -> {
-                binding.playerStatus.text = getString(R.string.player_status_resolving)
                 binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerRecoveryOverlay.visibility = View.GONE
+                binding.playerRecoveryOverlay.isVisible = reconnecting
+                if (reconnecting) {
+                    binding.playerRecoveryProgress.isVisible = true
+                    binding.playerRecoveryMessage.text = getString(R.string.player_status_resolving)
+                    binding.playerRecoveryRetryButton.isVisible = false
+                }
             }
             is StreamState.Error -> {
-                binding.playerStatus.text = getString(streamState.messageRes)
                 // Show error overlay with retry options; ensure buttons are visible
                 // (they may have been hidden by a prior ContentUnavailable state)
                 binding.playerErrorOverlay.visibility = View.VISIBLE
@@ -2102,13 +2080,8 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 binding.playerRetryButton.visibility = View.GONE
                 binding.playerRefreshStreamButton.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.content_unavailable_title)
             }
             is StreamState.Ready -> {
-                binding.playerStatus.text = when {
-                    state.audioOnly -> getString(R.string.player_status_audio_only)
-                    else -> getString(R.string.player_status_video_playing)
-                }
                 binding.playerErrorOverlay.visibility = View.GONE
                 binding.playerRecoveryOverlay.visibility = View.GONE
             }
@@ -2120,7 +2093,6 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 // A local file has nothing to re-resolve: Retry would only hide this overlay.
                 binding.playerRecoveryRetryButton.isVisible = !state.playingDownload
                 binding.playerErrorOverlay.visibility = View.GONE
-                binding.playerStatus.text = getString(R.string.player_recovery_exhausted)
             }
         }
     }
@@ -4301,6 +4273,22 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     companion object {
         /** Nav arg: id of a completed download to play from its local file (see [PlayerViewModel.loadDownload]). */
         const val ARG_DOWNLOAD_ID = "downloadId"
+
+        /**
+         * Nav args that open a list's [video] in the player: Home, Search, Featured and the Videos tab.
+         * The channel is the video's own (1.0.4: these four passed the category, so the player showed "General").
+         */
+        fun argsFor(video: com.albunyaan.tube.data.model.ContentItem.Video): Bundle = androidx.core.os.bundleOf(
+            "videoId" to video.id,
+            "title" to video.title,
+            "channelName" to video.channelName,
+            "thumbnailUrl" to video.thumbnailUrl,
+            "description" to video.description,
+            "durationSeconds" to video.durationSeconds,
+            "viewCount" to (video.viewCount ?: -1L),
+            "channelId" to video.liveChannelId,
+            "liveChannelId" to video.liveChannelId,
+        )
 
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"
         private const val DEFAULT_VIDEO_MIME = "video/mp4"

@@ -62,7 +62,8 @@ class PublicContentServicePaginationTest {
                 categoryRepository,
                 orderRepository,
                 Runnable::run,  // Direct executor for synchronous test execution
-                searchIndex
+                searchIndex,
+                mock(LiveCategoryService.class)
         );
     }
 

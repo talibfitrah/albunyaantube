@@ -36,10 +36,9 @@
     <string name="playlist_detail_download_hint">Downloads volgen beleid AC-DL-001. Inhoud wordt offline beschikbaar na voltooiing.</string>
     <string name="detail_excluded_banner">Dit item is momenteel niet beschikbaar vanwege beleidsregels.</string>
     <string name="player_audio_only_label">Alleen audio</string>
+    <!-- Unused on Android since 1.0.4; kept because iOS reads it through ios/scripts/convert-strings.py (PlayerScreen.swift). -->
     <string name="player_status_audio_only">Alleen audio afspelen.</string>
-    <string name="player_status_video_playing">Video afspelen.</string>
-    <string name="player_status_initializing">Speler initialiseren…</string>
-    <string name="player_status_resolving">Stream oplossen…</string>
+    <string name="player_status_resolving">Stream laden…</string>
     <string name="player_stream_error">Afspelen niet beschikbaar. Probeer het later opnieuw.</string>
     <string name="player_stream_unavailable">Deze video is niet beschikbaar voor afspelen.</string>
     <string name="player_resize_mode_zoom">Scherm vullen</string>
@@ -67,26 +66,10 @@
     <string name="player_no_views">Nog geen weergaven</string>
     <string name="player_description">Beschrijving</string>
     <string name="player_no_description">Geen beschrijving beschikbaar</string>
-    <string name="player_mark_current_complete">Markeer als voltooid</string>
     <string name="player_up_next_header">Volgende</string>
     <string name="player_up_next_meta">%1$s • %2$s</string>
     <string name="player_up_next_empty">Wachtrij is leeg.</string>
-    <string name="player_excluded_placeholder">Geen uitsluitingen toegepast.</string>
-    <string name="player_excluded_message">%1$d item(s) overgeslagen vanwege beleidsregels.</string>
-    <string name="player_analytics_header">Laatste analytisch evenement</string>
-    <string name="player_analytics_none">Nog geen evenementen geregistreerd.</string>
-    <string name="player_event_queue_hydrated">Wachtrij geladen (%1$d totaal, %2$d gefilterd)</string>
-    <string name="player_event_play_started">Afspelen gestart: %1$s (%2$s)</string>
-    <string name="player_event_play_completed">Afspelen voltooid: %1$s</string>
-    <string name="player_event_audio_only_on">Alleen audio ingeschakeld</string>
-    <string name="player_event_audio_only_off">Alleen audio uitgeschakeld</string>
-    <string name="player_event_stream_resolved">Stream opgelost (%1$s)</string>
-    <string name="player_event_stream_resolved_unknown">onbekende kwaliteit</string>
-    <string name="player_event_stream_failed">Stream oplossen mislukt</string>
-    <string name="player_start_reason_auto">Automatisch volgende</string>
-    <string name="player_start_reason_user_selected">Handmatige selectie</string>
     <string name="player_duration_minutes_seconds">%1$d:%2$02d</string>
-    <string name="player_current_item">Nu afspelen: %1$s</string>
     <string name="player_download_current">Downloaden voor offline</string>
     <string name="player_open_download">Offline openen</string>
     <string name="player_download_in_progress">Downloaden (%1$d%%)</string>
@@ -614,7 +597,6 @@
     <string name="player_error_message">Er is een probleem opgetreden bij het laden van deze video. Probeer het opnieuw.</string>
     <string name="player_retry">Opnieuw proberen</string>
     <string name="player_refresh_stream">Stream vernieuwen</string>
-    <string name="player_recovery_exhausted">Afspelen herstellen mislukt</string>
     <string name="player_recovery_exhausted_message">Kan afspelen niet automatisch herstellen. Probeer het opnieuw.</string>
     <string name="player_refresh_rate_limited">Wacht even voordat u opnieuw vernieuwt</string>
     <string name="player_auto_audio_stall">Overgeschakeld naar alleen audio vanwege trage verbinding</string>

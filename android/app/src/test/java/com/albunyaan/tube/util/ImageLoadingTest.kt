@@ -40,6 +40,17 @@ class ImageLoadingTest {
     }
 
     @Test
+    fun `getErrorForItem returns the playlist placeholder for Playlist`() {
+        assertEquals(R.drawable.playlist_thumbnail_placeholder, ImageLoading.getErrorForItem(createPlaylist("1", "Test Playlist")))
+    }
+
+    @Test
+    fun `getErrorForItem keeps the loading placeholder for Video and Channel`() {
+        assertEquals(R.drawable.home_thumbnail_bg, ImageLoading.getErrorForItem(createVideo("1", "Test Video")))
+        assertEquals(R.drawable.home_channel_avatar_bg, ImageLoading.getErrorForItem(createChannel("1", "Test Channel")))
+    }
+
+    @Test
     fun `getUrlForItem returns thumbnailUrl for Video`() {
         val video = createVideo("1", "Test Video", thumbnailUrl = "https://example.com/video.jpg")
         val url = ImageLoading.getUrlForItem(video)
@@ -84,21 +95,8 @@ class ImageLoadingTest {
     }
 
     @Test
-    fun `shouldApplyCircleCrop returns true for Channel`() {
-        val channel = createChannel("1", "Test Channel")
-        assertTrue(ImageLoading.shouldApplyCircleCrop(channel))
-    }
-
-    @Test
-    fun `shouldApplyCircleCrop returns false for Video`() {
-        val video = createVideo("1", "Test Video")
-        assertFalse(ImageLoading.shouldApplyCircleCrop(video))
-    }
-
-    @Test
-    fun `shouldApplyCircleCrop returns false for Playlist`() {
-        val playlist = createPlaylist("1", "Test Playlist")
-        assertFalse(ImageLoading.shouldApplyCircleCrop(playlist))
+    fun `isUrlValid returns false for YouTube's no_thumbnail image`() {
+        assertFalse(ImageLoading.isUrlValid("https://i.ytimg.com/img/no_thumbnail.jpg"))
     }
 
     // Test data helpers

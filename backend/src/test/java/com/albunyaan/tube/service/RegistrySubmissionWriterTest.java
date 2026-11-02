@@ -17,6 +17,8 @@ import java.util.List;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -31,6 +33,7 @@ class RegistrySubmissionWriterTest {
     private ChannelRepository channels;
     private PlaylistRepository playlists;
     private VideoRepository videos;
+    private ContentReportService reports;
     private RegistrySubmissionWriter writer;
 
     @BeforeEach
@@ -38,7 +41,8 @@ class RegistrySubmissionWriterTest {
         channels = mock(ChannelRepository.class);
         playlists = mock(PlaylistRepository.class);
         videos = mock(VideoRepository.class);
-        writer = new RegistrySubmissionWriter(channels, playlists, videos);
+        reports = mock(ContentReportService.class);
+        writer = new RegistrySubmissionWriter(channels, playlists, videos, reports);
     }
 
     @Test
@@ -93,7 +97,7 @@ class RegistrySubmissionWriterTest {
         var meta = new PreviewMetadata("vid123", "A Live", "thumb.jpg",
                 "Some Channel", "UC123", null, null, null, 999L);
 
-        writer.writeVideo(meta, VideoType.LIVE, List.of("cat1"), "PENDING", "u", false);
+        writer.writeVideo(meta, VideoType.LIVE, List.of("cat1"), "PENDING", "u", false, null);
 
         ArgumentCaptor<Video> cap = ArgumentCaptor.forClass(Video.class);
         verify(videos).save(cap.capture());
@@ -110,11 +114,23 @@ class RegistrySubmissionWriterTest {
         var meta = new PreviewMetadata("vid123", "Plain", null,
                 null, null, null, null, null, null);
 
-        writer.writeVideo(meta, null, List.of("cat1"), "PENDING", "u", false);
+        writer.writeVideo(meta, null, List.of("cat1"), "PENDING", "u", false, null);
 
         ArgumentCaptor<Video> cap = ArgumentCaptor.forClass(Video.class);
         verify(videos).save(cap.capture());
         assertEquals(VideoType.STANDARD, cap.getValue().getVideoType());
+    }
+
+    /** Stage 9 B11: a re-add of a REJECTED video writes into that doc (a CAS on REJECTED), never a second one. */
+    @Test
+    void writeVideo_intoARejectedDoc_reusesItsId() throws Exception {
+        when(reports.reAdd(any(Video.class))).thenAnswer(inv -> inv.getArgument(0));   // the CAS on REJECTED (B14)
+        var meta = new PreviewMetadata("TakeDown001", "Lesson", null, null, null, null, null, null, null);
+
+        String id = writer.writeVideo(meta, null, List.of("cat1"), "APPROVED", "admin-uid", true, "doc-takedown");
+
+        assertEquals("doc-takedown", id);
+        verify(videos, never()).save(any());
     }
 
     @Test

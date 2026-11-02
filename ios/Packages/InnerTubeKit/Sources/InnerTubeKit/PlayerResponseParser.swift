@@ -18,7 +18,11 @@ public struct StreamingData: Sendable, Equatable {
     public var itag140URL: URL?
     public var expiresInSeconds: Int?
     public var isLive: Bool
+    public var isLiveNow: Bool
     public var captionTracks: [CaptionTrack]
+    /// `videoDetails.title`: the uploader's own title, untranslated at hl=en, ar and nl (VISIONOS live probes 2026-08-23
+    /// and 2026-10-17). Owner issue 1: the player shows this, never a list's translation.
+    public var title: String?
 
     public init(
         hlsManifestURL: URL? = nil,
@@ -26,14 +30,18 @@ public struct StreamingData: Sendable, Equatable {
         itag140URL: URL? = nil,
         expiresInSeconds: Int? = nil,
         isLive: Bool = false,
-        captionTracks: [CaptionTrack] = []
+        isLiveNow: Bool = false,
+        captionTracks: [CaptionTrack] = [],
+        title: String? = nil
     ) {
         self.hlsManifestURL = hlsManifestURL
         self.itag18URL = itag18URL
         self.itag140URL = itag140URL
         self.expiresInSeconds = expiresInSeconds
         self.isLive = isLive
+        self.isLiveNow = isLiveNow
         self.captionTracks = captionTracks
+        self.title = title
     }
 }
 
@@ -104,7 +112,9 @@ public struct PlayerResponseParser: Sendable {
             itag140URL: url(forItag: 140, in: adaptive) ?? url(forItag: 140, in: formats),
             expiresInSeconds: wire.streamingData?.expiresInSeconds.flatMap(Int.init),
             isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
-            captionTracks: captionTracks(from: wire.captions)
+            isLiveNow: wire.videoDetails?.isLive == true,
+            captionTracks: captionTracks(from: wire.captions),
+            title: wire.videoDetails?.title
         )
     }
 
@@ -211,6 +221,18 @@ public struct PlayerResponseParser: Sendable {
         struct VideoDetails: Decodable {
             var isLive: Bool?
             var isLiveContent: Bool?
+            /// Display-only, so read leniently (stage 9 I-C9c, the `messages` rule): a title that is not a string is no
+            /// title, never a failed decode of the response every resolve needs.
+            var title: String?
+
+            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title }
+
+            init(from decoder: Decoder) throws {
+                let container = try decoder.container(keyedBy: CodingKeys.self)
+                isLive = try container.decodeIfPresent(Bool.self, forKey: .isLive)
+                isLiveContent = try container.decodeIfPresent(Bool.self, forKey: .isLiveContent)
+                title = try? container.decodeIfPresent(String.self, forKey: .title)
+            }
         }
         struct ResponseContext: Decodable {
             var visitorData: String?
@@ -222,4 +244,84 @@ public struct PlayerResponseParser: Sendable {
         var captions: Captions?
         var videoDetails: VideoDetails?
     }
+}
+
+/// One `adaptiveFormats` entry with the fields the `tv_samsung` upgrade reads (spec §4.2 Parser).
+struct AdaptiveFormat: Sendable, Equatable {
+    var itag: Int
+    var url: String?
+    var signatureCipher: String?
+    var mimeType: String
+    var bitrate: Int
+    var averageBitrate: Int?
+    var width: Int?
+    var height: Int?
+    var fps: Int?
+    var initRange: ClosedRange<Int>?
+    var indexRange: ClosedRange<Int>?
+    var contentLength: Int?
+    var isDrc: Bool
+    var xtags: String?
+    var audioTrackId: String?
+    var audioTrackName: String?
+    var audioIsDefault: Bool
+    var hasDRM: Bool
+}
+
+extension PlayerResponseParser {
+    /// `streamingData.adaptiveFormats` with byte ranges and track fields, for the TV rung only. A separate decode on
+    /// purpose: no field this rung needs can ever break the VISIONOS/ANDROID parse above. Entries without an itag,
+    /// mimeType or bitrate are dropped.
+    func adaptiveFormats(_ body: Data) throws -> [AdaptiveFormat] {
+        try JSONDecoder().decode(AdaptiveWire.self, from: body).streamingData?.adaptiveFormats?.compactMap { $0.value?.format } ?? []
+    }
+}
+
+private struct AdaptiveWire: Decodable {
+    struct Range: Decodable { var start: String; var end: String }
+    struct Track: Decodable { var id: String?; var displayName: String?; var audioIsDefault: Bool? }
+    /// Present in any shape counts: `drmFamilies` is never decoded, only noticed.
+    struct Present: Decodable { init(from decoder: Decoder) {} }
+    struct Format: Decodable {
+        var itag: Int?
+        var url: String?
+        var signatureCipher: String?
+        var mimeType: String?
+        var bitrate: Int?
+        var averageBitrate: Int?
+        var width: Int?
+        var height: Int?
+        var fps: Int?
+        var initRange: Range?
+        var indexRange: Range?
+        var contentLength: String?
+        var isDrc: Bool?
+        var xtags: String?
+        var audioTrack: Track?
+        var drmFamilies: Present?
+
+        var format: AdaptiveFormat? {
+            guard let itag, let mimeType, let bitrate else { return nil }
+            return AdaptiveFormat(
+                itag: itag, url: url, signatureCipher: signatureCipher, mimeType: mimeType, bitrate: bitrate,
+                averageBitrate: averageBitrate, width: width, height: height, fps: fps,
+                initRange: Self.closed(initRange), indexRange: Self.closed(indexRange),
+                contentLength: contentLength.flatMap(Int.init), isDrc: isDrc ?? false, xtags: xtags,
+                audioTrackId: audioTrack?.id, audioTrackName: audioTrack?.displayName,
+                audioIsDefault: audioTrack?.audioIsDefault ?? false, hasDRM: drmFamilies != nil)
+        }
+
+        private static func closed(_ range: Range?) -> ClosedRange<Int>? {
+            guard let range, let lower = Int(range.start), let upper = Int(range.end), lower <= upper else { return nil }
+            return lower...upper
+        }
+    }
+    /// One entry that does not decode is nil, not a throw: it must not cost the video its HD (stage 9; `TVAdaptive.select`
+    /// drops a bad entry by the same rule).
+    struct Lossy: Decodable {
+        var value: Format?
+        init(from decoder: Decoder) throws { value = try? Format(from: decoder) }
+    }
+    struct StreamingData: Decodable { var adaptiveFormats: [Lossy]? }
+    var streamingData: StreamingData?
 }

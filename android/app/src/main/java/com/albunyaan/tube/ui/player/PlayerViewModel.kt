@@ -48,6 +48,7 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.flow.map
+import kotlinx.coroutines.flow.update
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.sync.Mutex
@@ -74,6 +75,9 @@ class PlayerViewModel @Inject constructor(
     private val dubAudioEnumerator: DubAudioEnumerator,
     private val dubAudioResolver: DubAudioResolver,
     @javax.inject.Named("real") private val contentService: com.albunyaan.tube.data.source.ContentService,
+    private val livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector,
+    @javax.inject.Named("io") private val ioDispatcher: CoroutineDispatcher,
+    private val networkMonitor: com.albunyaan.tube.util.NetworkMonitor,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -187,8 +191,13 @@ class PlayerViewModel @Inject constructor(
     private var prefetchJob: Job? = null
     private var latestDownloads: List<DownloadEntry> = emptyList()
 
-    /** Set by [loadDownload]: this player plays that download's local file and never resolves online. */
+    /** Set by [loadDownload]: this player plays that download's local file and never resolves online, until a stream plays. */
     private var playingDownloadId: String? = null
+
+    /** [loadVideo] waits for the download list's startup load once per player; a cancelled wait does not count. */
+    private var waitedForStartupLoad = false
+    /** That wait. Cubic r5 #9: a newer load or a gone view cancels it, so its late call never replaces either. */
+    private var startupWait: Job? = null
 
     /**
      * Cached prefetch result paired with the wall-clock timestamp at which it
@@ -241,6 +250,25 @@ class PlayerViewModel @Inject constructor(
     // Live stream proactive refresh: job that schedules URL refresh before expiration
     private var liveRefreshJob: Job? = null
 
+    /**
+     * The streams a seamless swap put behind the player while Ready keeps the selection the source was built from (a
+     * fresh Ready would make the fragment rebuild). A rebuild that starts from Ready ([setAudioOnly], [selectAudioTrack])
+     * starts from these instead, via [rebuildSelection]. Null once Ready is current.
+     */
+    @Volatile private var liveSourceStreams: ResolvedStreams? = null
+
+    /** DEBUG only: L2/L3 shorten the refresh (PlayerFragment reads Settings.Global "fitrah_live_refresh_ms"). */
+    var debugLiveRefreshOverrideMs: Long? = null
+
+    // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
+    private var liveIncident: LiveChannelRecovery? = null
+    private var liveRetryJob: Job? = null
+    /** §9.1 step 4 retries only while the screen is open (Cubic r4): false from [onPlayerViewDestroyed] to the next load. */
+    private var liveScreenOpen = true
+    private var liveForceEndJob: Job? = null
+    /** DEBUG only: L5 forces an end this long after a live-channel item becomes Ready (Settings.Global "fitrah_live_force_end_ms"). */
+    var debugLiveForceEndMs: Long? = null
+
     // Playlist playback state
     private var isPlaylistMode: Boolean = false
 
@@ -270,13 +298,6 @@ class PlayerViewModel @Inject constructor(
     // Quality switching debounce: prevents rapid re-prepares when user quickly changes quality
     private var qualitySwitchJob: Job? = null
 
-    private val _analyticsEvents = MutableSharedFlow<PlaybackAnalyticsEvent>(
-        replay = 0,
-        extraBufferCapacity = 8,
-        onBufferOverflow = BufferOverflow.DROP_OLDEST
-    )
-    val analyticsEvents: SharedFlow<PlaybackAnalyticsEvent> = _analyticsEvents
-
     /** Expose playback metrics for fragment-level tracking (first frame, rebuffer, 403 errors) */
     val metrics: PlaybackMetricsCollector get() = playbackMetrics
 
@@ -287,7 +308,6 @@ class PlayerViewModel @Inject constructor(
     }
 
     init {
-        hydrateQueue()
         observeDownloads()
         observeFavoriteStatus()
     }
@@ -321,7 +341,9 @@ class PlayerViewModel @Inject constructor(
      * Emits UI event on failure for toast/snackbar display.
      */
     fun toggleFavorite() {
-        val item = _state.value.currentItem ?: return
+        // S7-N5: the raw item, not the shown one. A standalone playlist blanks the channel on screen
+        // (gateChannelName), and a blank channelName is a 400 that sync then drops for good.
+        val item = currentItem ?: return
         viewModelScope.launch(dispatcher) {
             try {
                 val isNowFavorite = favoritesRepository.toggleFavorite(
@@ -353,8 +375,22 @@ class PlayerViewModel @Inject constructor(
 
     fun setAudioOnly(audioOnly: Boolean) {
         if (_state.value.audioOnly == audioOnly) return
-        updateState { it.copy(audioOnly = audioOnly) }
-        publishAnalytics(PlaybackAnalyticsEvent.AudioOnlyToggled(audioOnly))
+        // The toggle rebuilds the source from Ready, read inside the update so no Ready written meanwhile is lost (M1).
+        updateState { s ->
+            val ready = (s.streamState as? StreamState.Ready)?.let { StreamState.Ready(it.streamId, rebuildSelection(it)) }
+            s.copy(audioOnly = audioOnly, streamState = ready ?: s.streamState)
+        }
+    }
+
+    /**
+     * [selection] for a rebuild that starts from [ready]: after a live swap, rebuilt on the swapped-in streams, not on
+     * Ready's (which die at the old expire). The caller puts the result in Ready, so the swapped-in streams are used up.
+     */
+    private fun rebuildSelection(ready: StreamState.Ready, selection: PlaybackSelection = ready.selection): PlaybackSelection {
+        val swapped = liveSourceStreams?.takeIf { it.streamId == ready.streamId } ?: return selection
+        val fresh = buildFreshSelection(swapped, selection) ?: return selection
+        liveSourceStreams = null
+        return fresh
     }
 
     fun playItem(item: UpNextItem) {
@@ -387,13 +423,18 @@ class PlayerViewModel @Inject constructor(
         currentItem = target
         applyQueueState()
         hydrateCurrentItemMetadataIfNeeded(target)
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(target, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(target, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(target)
     }
 
-    fun markCurrentComplete(): Boolean = advanceToNext(PlaybackStartReason.AUTO, markComplete = true)
+    fun markCurrentComplete(): Boolean {
+        if (currentItem?.liveChannelId != null) {                    // §9.1: never advance in live-channel mode
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+            return false
+        }
+        return advanceToNext()
+    }
 
-    fun skipToNext(): Boolean = advanceToNext(PlaybackStartReason.USER_SELECTED, markComplete = false)
+    fun skipToNext(): Boolean = advanceToNext()
 
     fun skipToPrevious(): Boolean {
         val current = currentItem ?: return false
@@ -410,8 +451,7 @@ class PlayerViewModel @Inject constructor(
         queue.add(0, current)
         currentItem = previous
         applyQueueState()
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(previous, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(previous, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(previous)
         return true
     }
 
@@ -432,7 +472,7 @@ class PlayerViewModel @Inject constructor(
             audioOnly = audioOnly,
             targetHeight = targetHeight,
             thumbnailUrl = item.thumbnailUrl,
-            channelName = item.channelName,
+            channelName = currentItem?.channelName ?: item.channelName, // raw, as toggleFavorite (A7)
             durationSeconds = item.durationSeconds
         )
         downloadRepository.enqueue(request)
@@ -547,7 +587,6 @@ class PlayerViewModel @Inject constructor(
                 selectionOrigin = QualitySelectionOrigin.MANUAL
             )
             updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-            publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
             return
         }
 
@@ -566,7 +605,6 @@ class PlayerViewModel @Inject constructor(
         )
 
         updateState { it.copy(streamState = StreamState.Ready(streamState.streamId, newSelection)) }
-        publishAnalytics(PlaybackAnalyticsEvent.QualityChanged(track.qualityLabel ?: "Unknown"))
     }
 
     /**
@@ -663,7 +701,7 @@ class PlayerViewModel @Inject constructor(
         // audio track baked in) and the language never changes.
         // No-op for real DASH/HLS — the registry isn't used there.
         mpdRegistry.unregisterBoth(ready.streamId)
-        val newSelection = ready.selection.copy(audio = track)
+        val newSelection = rebuildSelection(ready, ready.selection.copy(audio = track))
         android.util.Log.d(
             "PlayerViewModel",
             "selectAudioTrack: streamId=${ready.streamId} lang=${track.language} trackName=${track.trackName}"
@@ -764,11 +802,6 @@ class PlayerViewModel @Inject constructor(
      */
     fun selectSubtitle(track: SubtitleTrack?) {
         updateState { it.copy(selectedSubtitle = track) }
-        track?.let {
-            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged(it.languageName))
-        } ?: run {
-            publishAnalytics(PlaybackAnalyticsEvent.SubtitleChanged("Off"))
-        }
     }
 
     /**
@@ -795,13 +828,47 @@ class PlayerViewModel @Inject constructor(
         durationSeconds: Int = 0,
         viewCount: Long? = null,
         sourceChannelId: String? = null,
+        liveChannelId: String? = null,
     ) {
+        // 1.0.4 R3, local-first: Home, Search, Favorites, History, Me, channel tabs and deep links all
+        // open one video here, so a saved copy plays from its file as it does from Downloads. The
+        // first open of a process can come before the repository's startup load has listed the
+        // files; it waits for that once. A playlist keeps its streaming queue.
+        startupWait?.cancel()
+        val startupLoad = downloadRepository.startupLoad
+        if (startupLoad != null && !startupLoad.isCompleted && !waitedForStartupLoad) {
+            // The player shows "No video is currently playing." for a null item: give it the one being opened.
+            val opening = UpNextItem(
+                id = videoId, title = title, channelName = channelName, thumbnailUrl = thumbnailUrl,
+                durationSeconds = durationSeconds, viewCount = viewCount, streamId = videoId,
+                sourceChannelId = sourceChannelId, liveChannelId = liveChannelId,
+            )
+            currentItem = opening
+            updateState { it.copy(streamState = StreamState.Loading, currentItem = opening) }
+            startupWait = viewModelScope.launch(dispatcher) {
+                // ponytail: a load slower than this streams; raise it if real devices list files slower.
+                withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
+                waitedForStartupLoad = true
+                startupWait = null
+                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId)
+            }
+            return
+        }
+        // Stage 3 M6: R3 is about saving, not about forcing audio. An audio-only copy stands in for the video only offline;
+        // online it would hide the video, its quality, cast and Up Next.
+        // Cubic r12 #11: never in live-channel mode (§9.1): a saved copy of the id is a recording, not the channel's live.
+        savedCopyOf(videoId)?.takeIf { liveChannelId == null && (!it.request.audioOnly || !networkMonitor.isCurrentlyOnline()) }
+            ?.let { loadDownload(it.request.id, channelName, durationSeconds); return }
+        leaveDownload()
+
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
+        liveRetryJob?.cancel(); liveRetryJob = null; liveIncident = null; liveForceEndJob?.cancel(); liveScreenOpen = true
+        updateState { it.copy(liveStarted = false) }
 
         // PR6.6: Clear playlist mode and paging state to prevent stale hasNext
         isPlaylistMode = false
@@ -823,6 +890,8 @@ class PlayerViewModel @Inject constructor(
             description = description,
             viewCount = viewCount,
             sourceChannelId = sourceChannelId,
+            liveChannelId = liveChannelId,
+            liveTitle = title.takeIf { liveChannelId != null },   // the entry point's title is the backend's live title
         )
 
         currentItem = item
@@ -830,8 +899,6 @@ class PlayerViewModel @Inject constructor(
         previousItems.clear()
         applyQueueState()
         hydrateCurrentItemMetadataIfNeeded(item)
-
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
 
         // A1 fix (Stage-3 review): the duplicate availability gate that used to
         // live here is gone. The chokepoint inside [GlobalStreamResolver] runs
@@ -844,7 +911,7 @@ class PlayerViewModel @Inject constructor(
         // synchronously before launching its background job, so the UI
         // transitions away from any previous video's Ready / Error state
         // immediately on the main thread.
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(item)
     }
 
     /**
@@ -853,8 +920,11 @@ class PlayerViewModel @Inject constructor(
      * or dub lookup runs, and there is no queue, so Up Next and paging stay off. Every
      * re-resolve (retry, refresh, auto-recovery) re-reads the file through
      * [resolveDownload]; a deleted or expired file ends in the error state.
+     *
+     * [knownChannelName] and [knownDurationSeconds]: what the entry point knows (local-first from
+     * Home, search, a channel), used when the saved copy has none, so its favourite stays valid.
      */
-    fun loadDownload(downloadId: String) {
+    fun loadDownload(downloadId: String, knownChannelName: String = "", knownDurationSeconds: Int = 0) {
         pendingRefreshJob?.cancel()
         pendingRefreshJob = null
         liveRefreshJob?.cancel()
@@ -875,19 +945,20 @@ class PlayerViewModel @Inject constructor(
             // A player restored after process death gets here before the repository's startup
             // load has listed the files; refreshPersistedDownloads() waits for that load.
             if (completedDownload(downloadId) == null) downloadRepository.refreshPersistedDownloads()
-            startDownload(downloadId)
+            startDownload(downloadId, knownChannelName, knownDurationSeconds)
         }
     }
 
-    private fun startDownload(downloadId: String) {
+    private fun startDownload(downloadId: String, knownChannelName: String, knownDurationSeconds: Int) {
         val entry = completedDownload(downloadId)
         currentItem = entry?.let {
             UpNextItem(
                 id = it.request.videoId,
                 title = it.metadata?.title ?: it.request.title,
-                // Blank for downloads that predate these fields; the fragment then hides Favorite.
-                channelName = it.request.channelName.orEmpty(),
-                durationSeconds = it.request.durationSeconds ?: 0,
+                // Blank only when neither the saved copy nor the entry point knows it (a download that
+                // predates these fields, opened from Downloads); the fragment then hides Favorite.
+                channelName = it.request.channelName?.takeIf { name -> name.isNotBlank() } ?: knownChannelName,
+                durationSeconds = it.request.durationSeconds?.takeIf { seconds -> seconds > 0 } ?: knownDurationSeconds,
                 streamId = it.request.videoId,
                 thumbnailUrl = it.metadata?.thumbnailUrl ?: it.request.thumbnailUrl,
             )
@@ -898,9 +969,18 @@ class PlayerViewModel @Inject constructor(
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
             return
         }
-        publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(item, PlaybackStartReason.USER_SELECTED))
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+        resolveStreamFor(item)
     }
+
+    /** A stream after a local file (stage 9 r3): [resolveWithRetry] reads [playingDownloadId] first, so it must go. */
+    private fun leaveDownload() {
+        if (playingDownloadId == null) return
+        playingDownloadId = null
+        // Cubic r4: so must the audio-only startDownload took from the copy; online the video streams (stage 3 M6).
+        updateState { it.copy(playingDownload = false, audioOnly = false) }
+    }
+
+    private fun savedCopyOf(videoId: String): DownloadEntry? = downloadRepository.savedCopyOf(videoId)
 
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
@@ -951,6 +1031,7 @@ class PlayerViewModel @Inject constructor(
         startIndexHint: Int = 0,
         shuffled: Boolean = false
     ) {
+        leaveDownload()
         isPlaylistMode = true
         consecutiveSkips = 0  // Reset auto-skip counter
 
@@ -1191,46 +1272,9 @@ class PlayerViewModel @Inject constructor(
         applyQueueState()
 
         currentItem?.let { item ->
-            publishAnalytics(
-                PlaybackAnalyticsEvent.PlaybackStarted(
-                    item,
-                    PlaybackStartReason.USER_SELECTED
-                )
-            )
-            resolveStreamFor(item, PlaybackStartReason.USER_SELECTED)
+            resolveStreamFor(item)
         } ?: run {
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-        }
-    }
-
-    private fun hydrateQueue() {
-        val stubItems = stubUpNextItems()
-        val (playable, excluded) = stubItems.partition { !it.isExcluded }
-        queue.clear()
-        previousItems.clear()
-        queue.addAll(playable)
-        currentItem = if (queue.isNotEmpty()) queue.removeAt(0) else null
-        updateState {
-            it.copy(
-                currentItem = currentItem?.gateChannelName(),
-                upNext = queue.map { item -> item.gateChannelName() },
-                excludedItems = excluded,
-                currentDownload = findDownloadFor(currentItem, latestDownloads),
-                hasNext = queue.isNotEmpty(),
-                hasPrevious = previousItems.isNotEmpty()
-            )
-        }
-        publishAnalytics(
-            PlaybackAnalyticsEvent.QueueHydrated(
-                totalItems = stubItems.size,
-                excludedItems = excluded.size,
-                firstItem = currentItem
-            )
-        )
-        currentItem?.let {
-            hydrateCurrentItemMetadataIfNeeded(it)
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(it, PlaybackStartReason.AUTO))
-            resolveStreamFor(it, PlaybackStartReason.AUTO)
         }
     }
 
@@ -1276,6 +1320,19 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
+    /**
+     * Owner issue 1: the resolved stream's title (StreamInfo.name = videoDetails.title, the uploader's original), never
+     * the list row's hl=en translation. Called BEFORE the Ready emission: the prepare-time MediaSession sync reads
+     * state.currentItem. A live-channel item too: its D12 recovery matches [UpNextItem.liveTitle], never this one.
+     */
+    private fun adoptOriginalTitle(resolved: ResolvedStreams) {
+        val title = resolved.title ?: return
+        val current = currentItem ?: return
+        if (current.streamId != resolved.streamId || current.title == title) return
+        currentItem = current.copy(title = title)
+        applyQueueState()
+    }
+
     private fun needsMetadataHydration(item: UpNextItem): Boolean {
         return item.title.isBlank() ||
             item.title.equals("Video", ignoreCase = true) ||
@@ -1307,6 +1364,9 @@ class PlayerViewModel @Inject constructor(
         updateState { state ->
             state.copy(
                 currentItem = currentItem?.gateChannelName(),
+                // Round 4 (m3): one rule in both modes, from the raw name (a standalone playlist
+                // shows none but keeps its heart, A7); no name anywhere means no heart.
+                canFavorite = currentItem?.channelName?.isNotBlank() == true,
                 upNext = queue.map { it.gateChannelName() },
                 currentDownload = findDownloadFor(currentItem, latestDownloads),
                 hasNext = queue.isNotEmpty() || hasMorePages,
@@ -1321,7 +1381,7 @@ class PlayerViewModel @Inject constructor(
      */
     fun retryCurrentStream() {
         val item = currentItem ?: return
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = false)
+        resolveStreamFor(item, forceRefresh = false)
     }
 
     /**
@@ -1347,7 +1407,26 @@ class PlayerViewModel @Inject constructor(
      * @return true if refresh was initiated, false if rate-limited
      */
     fun forceRefreshForAutoRecovery(): Boolean {
+        if (currentItem?.liveChannelId != null && liveIncident?.currentId != currentItem?.streamId) {
+            // §9.1 step 1: ask the backend first; the same id runs today's recovery (step 3). A refused refresh is a
+            // spent budget: step 4, never a stopped player waiting for a Ready that never comes.
+            // Stage 3 I1: Loading at once, as resolveStreamFor sets it. The caller stops the player next, and a Ready(old)
+            // left up while the backend answers would make the fragment re-prepare the failed source (a second permit).
+            updateState { it.copy(streamState = StreamState.Loading) }
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
+            return true
+        }
         return forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)
+    }
+
+    /**
+     * §9.1 step 3, the same id: one re-resolve on an AUTO_RECOVERY permit. A refused one is this wake's try: step 4 waits,
+     * and the next wake asks again (Rev 8: a refusal is not an end).
+     */
+    private fun recoverLiveSameId() {
+        if (!forceRefreshCurrentStreamWithKind(ExtractionRateLimiter.RequestKind.AUTO_RECOVERY)) {
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
+        }
     }
 
     /**
@@ -1396,6 +1475,9 @@ class PlayerViewModel @Inject constructor(
                         currentItem?.let { forceRefreshCurrentStreamInternal(it) }
                     } else {
                         android.util.Log.w("PlayerViewModel", "Delayed refresh still blocked after delay: $newResult")
+                        // A refused refresh goes to §9.1 step 4, never a Loading with Retry hidden; as a failure, not an end
+                        // (Rev 8), so the next wake still re-resolves a listed id.
+                        if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
                     }
                 }
                 return true // Refresh scheduled
@@ -1414,12 +1496,11 @@ class PlayerViewModel @Inject constructor(
         mpdRegistry.unregister(item.streamId)
         // Invalidate the prefetch cache as well since URLs are likely stale
         synchronized(prefetchCache) { prefetchCache.remove(item.streamId) }
-        resolveStreamFor(item, PlaybackStartReason.USER_SELECTED, forceRefresh = true)
+        resolveStreamFor(item, forceRefresh = true)
     }
 
     private fun resolveStreamFor(
         item: UpNextItem,
-        @Suppress("UNUSED_PARAMETER") reason: PlaybackStartReason,
         forceRefresh: Boolean = false
     ) {
         resolveJob?.cancel()
@@ -1452,11 +1533,21 @@ class PlayerViewModel @Inject constructor(
 
         android.util.Log.d("PlayerViewModel", "Auto-skipping unplayable video ${item.streamId} ($consecutiveSkips/$MAX_CONSECUTIVE_SKIPS)")
 
-        // Emit UI event for toast
-        _analyticsEvents.tryEmit(PlaybackAnalyticsEvent.VideoSkipped(item, consecutiveSkips))
-
         // Advance to next item
-        return advanceToNext(PlaybackStartReason.AUTO, markComplete = false)
+        return advanceToNext()
+    }
+
+    /**
+     * Every attempt failed. §9.1 / stage 9 r3: in live-channel mode no answer (a timeout, the network, F3's ended 24/7 id)
+     * is a failure, not an end: the backend's list switches, waits, or retries a listed id once per wake (Rev 8).
+     */
+    private fun resolveExhausted(item: UpNextItem, reason: String, @StringRes messageRes: Int) {
+        playbackMetrics.onPlaybackFailed(item.streamId, reason)
+        when {
+            item.liveChannelId != null -> onLiveChannelTrigger(LiveChannelRecovery.Trigger.FAILURE)
+            handleStreamResolutionFailure(item) -> Unit                // auto-skipped to the next playlist item
+            else -> updateState { it.copy(streamState = StreamState.Error(messageRes)) }
+        }
     }
 
     /**
@@ -1501,9 +1592,11 @@ class PlayerViewModel @Inject constructor(
      */
     private suspend fun resolveWithRetry(item: UpNextItem, maxAttempts: Int, forceRefresh: Boolean = false) {
         playingDownloadId?.let { resolveDownload(it); return }
+        // §9.1 / RV I11: a live-channel item always resolves below, through the live check (a prefetch can be a recording).
+        val useCaches = !forceRefresh && item.liveChannelId == null
         // Check tap-to-prefetch service first (triggered when user taps video in list)
         // This will await in-flight prefetch for up to 3 seconds, providing in-flight dedupe
-        if (!forceRefresh) {
+        if (useCaches) {
             val tapPrefetched = try {
                 prefetchService.awaitOrConsumePrefetch(item.streamId)
             } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
@@ -1518,7 +1611,6 @@ class PlayerViewModel @Inject constructor(
                     "Content unavailable for ${item.streamId} via prefetch await; halting retries",
                 )
                 playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 if (handleStreamResolutionFailure(item)) {
                     return  // Auto-skipped to next item in playlist
                 }
@@ -1529,7 +1621,7 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.d("PlayerViewModel", "Using tap-prefetched stream for ${item.streamId}")
                 val selection = tapPrefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    adoptOriginalTitle(tapPrefetched)
                     updateState { it.copy(streamState = StreamState.Ready(tapPrefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1539,13 +1631,13 @@ class PlayerViewModel @Inject constructor(
         }
 
         // Check local prefetch cache (for queue items) - skip if forceRefresh
-        if (!forceRefresh) {
+        if (useCaches) {
             val prefetched = consumeFreshPrefetchCache(item.streamId)
             if (prefetched != null) {
                 android.util.Log.d("PlayerViewModel", "Using queue-prefetched stream for ${item.streamId}")
                 val selection = prefetched.toSelectionWithPreferredAudio(stickyAudioLanguage)
                 if (selection != null) {
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+                    adoptOriginalTitle(prefetched)
                     updateState { it.copy(streamState = StreamState.Ready(prefetched.streamId, selection), retryCount = 0) }
                     maybeEnumerateDubs(selection)
                     return
@@ -1554,7 +1646,7 @@ class PlayerViewModel @Inject constructor(
                 android.util.Log.w("PlayerViewModel", "Queue-prefetched stream invalid, resolving fresh")
             }
         } else {
-            android.util.Log.d("PlayerViewModel", "Force refresh requested for ${item.streamId}, bypassing caches")
+            android.util.Log.d("PlayerViewModel", "Bypassing caches for ${item.streamId} (force refresh or live channel)")
         }
 
         for (attempt in 1..maxAttempts) {
@@ -1582,7 +1674,6 @@ class PlayerViewModel @Inject constructor(
                     "Content unavailable for ${item.streamId} per backend gate; halting retries",
                 )
                 playbackMetrics.onPlaybackFailed(item.streamId, "content_unavailable")
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 if (handleStreamResolutionFailure(item)) {
                     return  // Auto-skipped to next item in playlist
                 }
@@ -1607,13 +1698,7 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    // All retries exhausted - try auto-skip in playlist mode
-                    playbackMetrics.onPlaybackFailed(item.streamId, "extraction_timeout")
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                    if (handleStreamResolutionFailure(item)) {
-                        return  // Auto-skipped to next item
-                    }
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_error)) }
+                    resolveExhausted(item, "extraction_timeout", R.string.player_stream_error)
                     return
                 }
             }
@@ -1625,22 +1710,23 @@ class PlayerViewModel @Inject constructor(
                     kotlinx.coroutines.delay(delayMs)
                     continue
                 } else {
-                    // All retries exhausted - try auto-skip in playlist mode
-                    playbackMetrics.onPlaybackFailed(item.streamId, "stream_null")
-                    publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
-                    if (handleStreamResolutionFailure(item)) {
-                        return  // Auto-skipped to next item
-                    }
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    resolveExhausted(item, "stream_null", R.string.player_stream_unavailable)
                     return
                 }
             }
 
+            if (item.liveChannelId != null) {
+                if (!resolved.isLive) {                               // §9.1 / RV I11: never play a recording here
+                    onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                    return
+                }
+                liveIncident = null                                   // live again: the incident is over
+                updateState { it.copy(liveStarted = true) }
+            }
             val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
                 playbackMetrics.onPlaybackFailed(item.streamId, "no_selection")
                 updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
-                publishAnalytics(PlaybackAnalyticsEvent.StreamFailed(item.streamId))
                 return
             }
 
@@ -1648,12 +1734,19 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "Stream resolved successfully on attempt $attempt")
             // PR5: Signal success to reset backoff state (attempt was already recorded in acquire())
             rateLimiter.onExtractionSuccess(item.streamId)
-            publishAnalytics(PlaybackAnalyticsEvent.StreamResolved(item.streamId, selection.video?.qualityLabel))
+            adoptOriginalTitle(resolved)
             updateState { it.copy(streamState = StreamState.Ready(resolved.streamId, selection), retryCount = 0) }
             maybeEnumerateDubs(selection)
 
             // Schedule proactive URL refresh for live streams
-            scheduleLiveStreamRefresh(resolved, selection)
+            scheduleLiveStreamRefresh(resolved)
+            debugLiveForceEndMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG && item.liveChannelId != null }?.let { ms ->
+                liveForceEndJob?.cancel()                                 // one arming, for this item only
+                liveForceEndJob = viewModelScope.launch(dispatcher) {
+                    kotlinx.coroutines.delay(ms)
+                    if (currentItem?.streamId == item.streamId) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                }
+            }
 
             // Apply pending quality cap if set (stored when URLs expired during quality switch)
             val pendingCap = pendingQualityCap
@@ -1669,46 +1762,56 @@ class PlayerViewModel @Inject constructor(
 
     /**
      * Schedule proactive URL refresh for live streams before they expire.
-     * This fetches fresh URLs in the background and emits an event for seamless swap.
+     * This fetches fresh URLs in the background and swaps them in place (or, failing that, emits the rebuild event).
      */
-    private fun scheduleLiveStreamRefresh(resolved: ResolvedStreams, currentSelection: PlaybackSelection) {
+    private fun scheduleLiveStreamRefresh(resolved: ResolvedStreams) {
         // Cancel any existing refresh job
         liveRefreshJob?.cancel()
+        // A new schedule follows a new Ready or a refresh outcome; the refresh sets this again after it.
+        liveSourceStreams = null
 
         // Only schedule for live streams
         if (!resolved.isLive) return
 
-        val delayMs = resolved.timeUntilProactiveRefreshMs() ?: return
-        if (delayMs <= 0) {
-            // Already time to refresh - do it immediately in a coroutine
-            android.util.Log.d("PlayerViewModel", "Live stream: immediate proactive refresh needed")
-            liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
-                performLiveStreamRefresh(resolved.streamId, currentSelection)
-            }
-            return
-        }
+        val delayMs = debugLiveRefreshOverrideMs?.takeIf { com.albunyaan.tube.BuildConfig.DEBUG }
+            ?: resolved.timeUntilLiveRefreshMs() ?: return
 
         android.util.Log.d("PlayerViewModel", "Live stream: scheduling proactive refresh in ${delayMs / 1000}s")
 
-        liveRefreshJob = viewModelScope.launch(Dispatchers.IO) {
+        liveRefreshJob = viewModelScope.launch(ioDispatcher) {
             kotlinx.coroutines.delay(delayMs)
-
-            // Verify we're still playing the same stream
-            val currentState = _state.value.streamState
-            if (currentState !is StreamState.Ready || currentState.streamId != resolved.streamId) {
-                android.util.Log.d("PlayerViewModel", "Live stream: skipping refresh, stream changed")
-                return@launch
+            // A failed refresh retries in this same job while a retry still starts before the player's URLs expire
+            // (at most one lead from now, so the DEBUG override retries like prod). After that the 403 at expiry takes
+            // today's rebuild (PlayerFragment.requestStreamRefreshAndResume).
+            val expiryAt = minOf(
+                (resolved.liveRefreshAtElapsedMs() ?: return@launch) + ResolvedStreams.LIVE_REFRESH_LEAD_MS,
+                android.os.SystemClock.elapsedRealtime() + ResolvedStreams.LIVE_REFRESH_LEAD_MS,
+            )
+            while (true) {
+                // Verify we're still playing the same stream
+                val currentState = _state.value.streamState
+                if (currentState !is StreamState.Ready || currentState.streamId != resolved.streamId) {
+                    android.util.Log.d("PlayerViewModel", "Live stream: skipping refresh, stream changed")
+                    return@launch
+                }
+                if (performLiveStreamRefresh(resolved.streamId, currentState.selection)) return@launch
+                if (android.os.SystemClock.elapsedRealtime() + LIVE_REFRESH_RETRY_MS >= expiryAt) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: refresh retries spent; expiry takes the rebuild")
+                    return@launch
+                }
+                kotlinx.coroutines.delay(LIVE_REFRESH_RETRY_MS)
             }
-
-            performLiveStreamRefresh(resolved.streamId, currentState.selection)
         }
     }
 
     /**
      * Perform the actual live stream URL refresh in the background.
+     * @return false when it should be retried (no fresh streams, no selection, an error); true otherwise.
      */
-    private suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection) {
+    internal suspend fun performLiveStreamRefresh(streamId: String, currentSelection: PlaybackSelection): Boolean {
         android.util.Log.d("PlayerViewModel", "Live stream: proactively refreshing URLs for $streamId")
+        // The source this refresh is for. Any Ready written after this (an audio-only toggle, a recovery) built another.
+        val source = _state.value.streamState
 
         try {
             // Force refresh to get new URLs. Pass sourceChannelId so channel-sourced live
@@ -1718,36 +1821,135 @@ class PlayerViewModel @Inject constructor(
                 forceRefresh = true,
                 sourceChannelId = currentItem?.sourceChannelId,
             )
-            if (freshStreams == null || !freshStreams.isLive) {
-                android.util.Log.w("PlayerViewModel", "Live stream: refresh failed or stream no longer live")
-                return
+            if (freshStreams == null) {
+                android.util.Log.w("PlayerViewModel", "Live stream: refresh failed")
+                return false
             }
-
-            // Build selection maintaining current audio-only and quality preferences
-            val freshSelection = buildFreshSelection(freshStreams, currentSelection)
-            if (freshSelection == null) {
-                android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
-                return
+            // Spec §9.2(a): swap the media-playlist URLs in place. No event, no setMediaSource, no prepare, no seek,
+            // so it also lands while the fragment's view is gone (background audio, F13). An audio-only player plays
+            // a progressive audio URL the redirector never sees, so it takes the rebuild below.
+            val swapped = freshStreams.isLive && !_state.value.audioOnly &&
+                livePlaylistRedirector.refresh(currentSelection.resolved, freshStreams)
+            // Stage 3 M1: this runs on the IO dispatcher. What follows touches Main-only state (currentItem, the resolve
+            // job, liveRefreshJob, liveSourceStreams, Ready), so it runs on Main, where every other writer runs.
+            return kotlinx.coroutines.withContext(dispatcher) {
+                if (!freshStreams.isLive) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: no longer live")
+                    if (currentItem?.liveChannelId != null) onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+                    return@withContext true
+                }
+                // Codex C1: the master fetch suspends. A Ready written meanwhile (an audio-only toggle) rebuilt the source
+                // from the old URLs, which the swap does not reach: that source takes the rebuild on the fresh ones.
+                if (swapped && _state.value.streamState === source && !_state.value.audioOnly) {
+                    scheduleLiveStreamRefresh(freshStreams)
+                    liveSourceStreams = freshStreams
+                    return@withContext true
+                }
+                // Fallback (another client, a vanished itag, a failed master fetch, a source rebuilt meanwhile): today's
+                // rebuild at the live edge.
+                val freshSelection = buildFreshSelection(freshStreams, currentSelection)
+                if (freshSelection == null) {
+                    android.util.Log.w("PlayerViewModel", "Live stream: failed to build fresh selection")
+                    return@withContext false
+                }
+                android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")   // L2/soak criterion (Task 34)
+                _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
+                // Ready follows the rebuilt source: the event is posted before the state collector resumes, so the
+                // fragment's next state pass is a cache hit, never a rebuild from the old URLs (if the order ever flipped,
+                // both rebuilds would use fresh URLs).
+                updateState { s ->
+                    if ((s.streamState as? StreamState.Ready)?.streamId != streamId) s
+                    else s.copy(streamState = StreamState.Ready(streamId, freshSelection))
+                }
+                scheduleLiveStreamRefresh(freshStreams)
+                true
             }
-
-            android.util.Log.d("PlayerViewModel", "Live stream: fresh URLs ready, emitting event")
-            _uiEvents.emit(PlayerUiEvent.LiveStreamRefreshReady(streamId, freshSelection))
-
-            // Schedule next refresh
-            scheduleLiveStreamRefresh(freshStreams, freshSelection)
-
         } catch (cu: com.albunyaan.tube.player.ContentUnavailableException) {
             // Live stream became unavailable mid-broadcast (channel removed, video
             // archived, geo-changed). Surface ContentUnavailable instead of an
             // opaque error — same as the regular resolve path. No need to schedule
             // another refresh attempt.
             android.util.Log.i("PlayerViewModel", "Live stream: ${cu.videoId} now unavailable per backend; emitting ContentUnavailable")
-            updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+            kotlinx.coroutines.withContext(dispatcher) { updateState { it.copy(streamState = StreamState.ContentUnavailable) } }
+            return true
         } catch (e: Exception) {
+            // Includes the cancellation a refresh's own scheduleLiveStreamRefresh (Main) gives the job it runs in.
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Live stream: proactive refresh failed", e)
-            // Will fall back to error-based refresh when URLs actually expire
+            return false
         }
+    }
+
+    /** PlayerFragment.onDestroyView: the player is released, so the §9.1 step 4 retries stop until the next load. */
+    fun onPlayerViewDestroyed() {
+        liveScreenOpen = false
+        liveRetryJob?.cancel()
+        startupWait?.cancel()   // Cubic r5 #9: its late loadVideo would reopen the latch with no view
+    }
+
+    /**
+     * §9.1: ask the backend for the channel's current lives, then switch, wait, recover the same id, or give up.
+     * Main thread only (it and [switchLive] touch [currentItem], the queue state and the resolve job).
+     */
+    private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger) {
+        if (!liveScreenOpen) return                                    // every trigger comes here, a late one included
+        val item = currentItem ?: return
+        val channelId = item.liveChannelId ?: return
+        updateState { it.copy(liveStarted = true) }   // a Loading already up (an ended id opened cold) is a reconnect now
+        // An incident belongs to one stream id: a stale one (the user picked another item) never blocks this one.
+        val incident = liveIncident?.takeIf { it.currentId == item.streamId }
+            ?: LiveChannelRecovery(item.streamId, item.liveTitle, android.os.SystemClock.elapsedRealtime()).also { liveIncident = it }
+        liveRetryJob?.cancel()
+        liveRetryJob = viewModelScope.launch(dispatcher) {
+            var notLiveChannel = false
+            val lives = try {
+                contentService.fetchChannelLives(channelId).lives
+            } catch (e: kotlinx.coroutines.CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                // A 404 is the backend saying this is not a servable live channel: stop. Anything else is no answer.
+                notLiveChannel = (e as? retrofit2.HttpException)?.code() == 404
+                null
+            }
+            // The incident ended (a live resolve, a give-up, a new load) or the user moved on.
+            if (liveIncident !== incident || currentItem?.streamId != incident.currentId) return@launch
+            val step = if (notLiveChannel) LiveChannelRecovery.Step.GiveUp
+            else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime())
+            when (step) {
+                is LiveChannelRecovery.Step.SwitchTo -> switchLive(step.id, step.title)
+                LiveChannelRecovery.Step.SameId -> recoverLiveSameId()
+                is LiveChannelRecovery.Step.Wait -> {
+                    updateState { it.copy(streamState = StreamState.Loading) }   // the existing reconnecting state
+                    kotlinx.coroutines.delay(step.seconds * 1_000L)
+                    if (liveIncident !== incident) return@launch
+                    // The same trigger again: in a failure incident, each wake re-resolves a listed id once (Rev 8).
+                    onLiveChannelTrigger(trigger)
+                }
+                LiveChannelRecovery.Step.GiveUp -> {
+                    liveIncident = null
+                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                }
+            }
+        }
+    }
+
+    /**
+     * §9.1 step 2: a new broadcast is a new timeline; the item's id and titles are replaced in place. Stage 3 M4: the
+     * backend sends "" for an unknown title, so the screen keeps the old one until the stream's own arrives, and the
+     * old broadcast's details go. Recovery keeps the backend's [title] as it is (Codex C2).
+     */
+    private fun switchLive(newId: String, title: String) {
+        val item = currentItem ?: return
+        liveIncident = null
+        pendingRefreshJob?.cancel()
+        liveRefreshJob?.cancel()
+        val next = item.copy(id = newId, streamId = newId, title = title.ifBlank { item.title }, liveTitle = title,
+            thumbnailUrl = "https://i.ytimg.com/vi/$newId/hqdefault_live.jpg",
+            description = null, viewCount = null, durationSeconds = 0)
+        currentItem = next
+        applyQueueState()
+        hydrateCurrentItemMetadataIfNeeded(next)
+        resolveStreamFor(next)
     }
 
     /**
@@ -1875,7 +2077,11 @@ class PlayerViewModel @Inject constructor(
         private const val MAX_RETRY_ATTEMPTS = 3
         private const val RETRY_BASE_DELAY_MS = 1000L
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
+        /** Longest a first open waits for the download list's startup load before it streams. */
+        private const val STARTUP_LOAD_WAIT_MS = 2_000L
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
+        /** A failed live refresh retries this often inside the lead window (Task 26 hand-off). */
+        private const val LIVE_REFRESH_RETRY_MS = 2 * 60 * 1000L
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
@@ -1961,16 +2167,12 @@ class PlayerViewModel @Inject constructor(
         }
     }
 
-    private fun publishAnalytics(event: PlaybackAnalyticsEvent) {
-        _analyticsEvents.tryEmit(event)
-        updateState { it.copy(lastAnalyticsEvent = event) }
-    }
-
     private fun updateState(transform: (PlayerState) -> PlayerState) {
-        _state.value = transform(_state.value)
+        // Every writer runs on Main (stage 3 M1: the live refresh too), so this never retries.
+        _state.update(transform)
     }
 
-    private fun advanceToNext(reason: PlaybackStartReason, markComplete: Boolean): Boolean {
+    private fun advanceToNext(): Boolean {
         val finished = currentItem ?: return false
         // PR5: Cancel any pending delayed refresh for the old video
         pendingRefreshJob?.cancel()
@@ -1978,9 +2180,6 @@ class PlayerViewModel @Inject constructor(
         // Cancel live stream refresh for the old video
         liveRefreshJob?.cancel()
         liveRefreshJob = null
-        if (markComplete) {
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackCompleted(finished))
-        }
 
         // PR6.6: If queue is empty but more pages exist, fetch asynchronously (no runBlocking)
         if (queue.isEmpty() && playlistPagingState?.hasMore == true && !playlistPagingState!!.pagingFailed) {
@@ -1997,8 +2196,7 @@ class PlayerViewModel @Inject constructor(
                     currentItem = next
                     consecutiveSkips = 0
                     applyQueueState()
-                    publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
-                    resolveStreamFor(next, reason)
+                    resolveStreamFor(next)
                 } else {
                     // Failed to load more or still empty - end of playlist
                     android.util.Log.w("PlayerViewModel", "advanceToNext: async fetch failed or empty")
@@ -2021,8 +2219,7 @@ class PlayerViewModel @Inject constructor(
 
         return if (next != null) {
             consecutiveSkips = 0  // Reset on successful advance
-            publishAnalytics(PlaybackAnalyticsEvent.PlaybackStarted(next, reason))
-            resolveStreamFor(next, reason)
+            resolveStreamFor(next)
             true
         } else {
             updateState { state -> state.copy(streamState = StreamState.Idle) }
@@ -2144,6 +2341,12 @@ class PlayerViewModel @Inject constructor(
      * show the manual-retry escape hatch.
      */
     fun setRecoveryExhaustedState() {
+        if (currentItem?.liveChannelId != null) {                    // §9.1 step 3: exhausted → the step 4 retries
+            // An end, so no same-id (Rev 8): the fragment's budget is spent. A re-resolve that comes back live, on which
+            // the player fails again, would open a new incident each time and never reach the error state.
+            onLiveChannelTrigger(LiveChannelRecovery.Trigger.ENDED)
+            return
+        }
         val current = _state.value.streamState
         val (streamId, selection) = when (current) {
             is StreamState.Ready -> current.streamId to current.selection
@@ -2167,11 +2370,9 @@ data class PlayerState(
     val hasVideoTrack: Boolean = true,
     val currentItem: UpNextItem? = null,
     val upNext: List<UpNextItem> = emptyList(),
-    val excludedItems: List<UpNextItem> = emptyList(),
     val currentDownload: DownloadEntry? = null,
     val streamState: StreamState = StreamState.Idle,
     val selectedSubtitle: SubtitleTrack? = null,
-    val lastAnalyticsEvent: PlaybackAnalyticsEvent? = null,
     val hasNext: Boolean = false,
     val hasPrevious: Boolean = false,
     /** Current retry attempt (0 = first attempt, 1 = first retry, etc.) */
@@ -2180,20 +2381,33 @@ data class PlayerState(
     val isFavorite: Boolean = false,
     /** True while a completed download plays from its local file (see [PlayerViewModel.loadDownload]). */
     val playingDownload: Boolean = false,
-)
+    /** Whether the heart is offered: the server rejects a favourite with no channel name (400). */
+    val canFavorite: Boolean = false,
+    /** This live-channel item reached live or had an incident: a later load (a Retry, a switch) is a reconnect. */
+    val liveStarted: Boolean = false,
+) {
+    /**
+     * §9.1 step 4 on screen: this Loading is a live channel's reconnect (step 4's waits, a switch, a Retry), so the
+     * fragment shows the recovery overlay. True for every load of a live-channel item after it reached live or had an
+     * incident (an ended id opened cold included); its first load is not, whatever played before it. Cubic r4: derived
+     * from this state alone, so it is current in every emission with no extra write.
+     */
+    val liveReconnecting: Boolean get() = liveStarted && streamState is StreamState.Loading && currentItem?.liveChannelId != null
+}
 
 data class UpNextItem(
     val id: String,
     val title: String,
     val channelName: String,
     val durationSeconds: Int,
-    val isExcluded: Boolean = false,
-    val exclusionReason: String? = null,
     val streamId: String,
     val thumbnailUrl: String? = null,
     val description: String? = null,
     val viewCount: Long? = null,
     val sourceChannelId: String? = null,
+    val liveChannelId: String? = null,
+    /** Live-channel mode: the backend's title for this live, which D12 recovery matches. Display metadata never writes it. */
+    val liveTitle: String? = null,
 )
 
 sealed class StreamState {
@@ -2233,39 +2447,6 @@ data class PlaylistPagingState(
     val pagingFailed: Boolean,
     val lastPageFetchMs: Long
 )
-
-sealed class PlaybackAnalyticsEvent {
-    data class QueueHydrated(
-        val totalItems: Int,
-        val excludedItems: Int,
-        val firstItem: UpNextItem?
-    ) : PlaybackAnalyticsEvent()
-
-    data class PlaybackStarted(
-        val item: UpNextItem,
-        val reason: PlaybackStartReason
-    ) : PlaybackAnalyticsEvent()
-
-    data class PlaybackCompleted(val item: UpNextItem) : PlaybackAnalyticsEvent()
-
-    data class AudioOnlyToggled(val enabled: Boolean) : PlaybackAnalyticsEvent()
-
-    data class StreamResolved(val streamId: String, val qualityLabel: String?) : PlaybackAnalyticsEvent()
-
-    data class StreamFailed(val streamId: String) : PlaybackAnalyticsEvent()
-
-    data class QualityChanged(val qualityLabel: String) : PlaybackAnalyticsEvent()
-
-    data class SubtitleChanged(val languageName: String) : PlaybackAnalyticsEvent()
-
-    /** PR6.6: Emitted when an unplayable video is auto-skipped in playlist mode */
-    data class VideoSkipped(val item: UpNextItem, val consecutiveSkipCount: Int) : PlaybackAnalyticsEvent()
-}
-
-enum class PlaybackStartReason(@StringRes val labelRes: Int) {
-    AUTO(R.string.player_start_reason_auto),
-    USER_SELECTED(R.string.player_start_reason_user_selected)
-}
 
 /**
  * Smart quality selection based on available tracks.
@@ -2323,8 +2504,6 @@ private fun ResolvedStreams.toSelectionWithPreferredAudio(preferredLanguage: Str
         ?: return base
     return base.copy(audio = matchingAudio)
 }
-
-private fun stubUpNextItems(): List<UpNextItem> = emptyList()
 
 /**
  * UI events emitted by PlayerViewModel for user feedback.

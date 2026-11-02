@@ -1,5 +1,6 @@
 package com.albunyaan.tube.config;
 
+import com.albunyaan.tube.search.CrawlPacer;
 import okhttp3.OkHttpClient;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.ServiceList;
@@ -81,13 +82,14 @@ public class NewPipeConfiguration {
      * Creates NewPipe downloader wrapping OkHttp client
      */
     @Bean
-    public Downloader newPipeDownloader(OkHttpClient okHttpClient) {
+    public Downloader newPipeDownloader(OkHttpClient okHttpClient, CrawlPacer pacer) {
         logger.info("Creating NewPipe downloader with user-agent: {}", userAgent);
         logger.info("HTTP body logging enabled: {} (max {} chars)", logBodyEnabled, logBodyChars);
 
         return new Downloader() {
             @Override
             public Response execute(Request request) throws IOException, ReCaptchaException {
+                pacer.before(request.url()); // inner-search R11/R37: paces and gates the crawler thread, counts every thread
                 okhttp3.Request.Builder builder = new okhttp3.Request.Builder()
                         .url(request.url());
 
@@ -180,10 +182,15 @@ public class NewPipeConfiguration {
                             }
                         }
 
+                        // inner-search R33: classifies the crawler thread's responses before the shared 429 rule below,
+                        // so a crawler 429 becomes its own HTTP_429 signal (CrawlPausedException), not a ReCaptchaException
+                        pacer.after(request.url(), response.code(), response.request().url().toString(),
+                                response.header("Content-Type"), responseBody);
+
                         if (response.code() == 429) {
                             // YouTube is rate-limiting this IP, for every caller. NewPipe's own convention (its
-                            // reference DownloaderImpl) is ReCaptchaException, which the circuit breaker and admin
-                            // search read as a rate limit. Logged above with its retry-after.
+                            // reference DownloaderImpl) is ReCaptchaException, which the circuit breaker, admin search
+                            // and LiveTabReader all read as a rate limit. Logged above with its retry-after.
                             throw new ReCaptchaException("HTTP 429 Too Many Requests", response.request().url().toString());
                         }
 

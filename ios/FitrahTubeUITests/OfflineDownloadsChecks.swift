@@ -137,7 +137,17 @@ final class OfflineDownloadsChecks: XCTestCase {
         let exitFullscreen = app.buttons["player.fullscreenExit"]
         if exitFullscreen.waitForExistence(timeout: 20) { exitFullscreen.tap() }
         let save = app.buttons["player.saveButton"]
-        XCTAssertTrue(save.waitForExistence(timeout: 60) && save.isHittable, "no Save button\n\(app.debugDescription)")
+        let probe = app.descendants(matching: .any)["player.debugRoute"]
+        if !save.waitForExistence(timeout: 60), probe.exists {
+            // 1.0.4 I10: already saved, so the open played the file (local-first), which offers no
+            // Save. Round 3 (m6): the probe must say so; a streaming open with Save hidden is a failure.
+            XCTAssertTrue((probe.value as? String ?? "").contains("offline=true"),
+                          "no Save button, and the open is not the saved file: \(probe.value ?? "nil")")
+            note("leg0 \(Self.lectureId) already saved: opened locally")
+            app.terminate()
+            return
+        }
+        XCTAssertTrue(save.exists && save.isHittable, "no Save button\n\(app.debugDescription)")
         if save.value as? String != "Saved" {
             save.tap()
             let confirm = app.buttons.matching(NSPredicate(format: "label == 'Save for offline' AND identifier != 'player.saveButton'")).firstMatch

@@ -163,7 +163,7 @@ import Testing
         )
         let resolved = try await innerTube.resolver.resolve(
             Self.lectureVideoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        guard case let .hls(manifestURL, isLive, _, _) = resolved.stream else {
+        guard case let .hls(manifestURL, isLive, _, _, _) = resolved.stream else {
             Issue.record("expected .hls from the ladder, got \(resolved.stream) — spike unanswerable without a manifest")
             return
         }

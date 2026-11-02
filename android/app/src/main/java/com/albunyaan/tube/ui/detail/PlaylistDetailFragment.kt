@@ -52,6 +52,8 @@ import kotlinx.coroutines.flow.onEach
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.withContext
 import javax.inject.Inject
+import com.albunyaan.tube.util.ImageLoading
+import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.albunyaan.tube.util.showIcons
 
 /**
@@ -477,8 +479,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             is PlaylistDetailViewModel.PlaylistUiEvent.NavigateToPlayer -> {
                 navigateToPlayer(startIndex = event.startIndex, shuffled = event.shuffled)
             }
-            is PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet -> {
-                showDownloadQualitySheet(event)
+            PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet -> {
+                showDownloadQualitySheet()
             }
             is PlaylistDetailViewModel.PlaylistUiEvent.StartPlaylistDownload -> {
                 executePlaylistDownload(event)
@@ -500,8 +502,8 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
             playlistTitle.text = header.title
 
             // Hero component (YouTube-style: blurred background + centered thumbnail)
-            val thumbnailUrl = header.thumbnailUrl ?: header.bannerUrl
-            if (!thumbnailUrl.isNullOrEmpty()) {
+            val thumbnailUrl = listOf(header.thumbnailUrl, header.bannerUrl).firstOrNull { ImageLoading.isUrlValid(it) }
+            if (thumbnailUrl != null) {
                 // Load blurred background (scaled down for softening + RenderEffect on API 31+)
                 heroBackgroundBlurred.load(thumbnailUrl) {
                     placeholder(R.drawable.thumbnail_placeholder)
@@ -517,14 +519,9 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
                         }
                     })
                 }
-
-                // Load sharp foreground thumbnail
-                (heroThumbnail as? android.widget.ImageView)?.load(thumbnailUrl) {
-                    placeholder(R.drawable.thumbnail_placeholder)
-                    error(R.drawable.thumbnail_placeholder)
-                    crossfade(true)
-                }
             }
+            // Owner issue 3: the sharp foreground always shows something; the playlist glyph when no picture is coming.
+            (heroThumbnail as? android.widget.ImageView)?.loadThumbnailUrl(thumbnailUrl, error = R.drawable.playlist_thumbnail_placeholder)
 
             // Channel name (clickable) — only shown when the parent channel is APPROVED
             // in our registry. Standalone playlists (whose parent channel is intentionally
@@ -691,9 +688,7 @@ class PlaylistDetailFragment : Fragment(R.layout.fragment_playlist_detail) {
         alpha = if (enabled) 1f else 0.4f
     }
 
-    private fun showDownloadQualitySheet(
-        @Suppress("UNUSED_PARAMETER") event: PlaylistDetailViewModel.PlaylistUiEvent.ShowDownloadQualitySheet
-    ) {
+    private fun showDownloadQualitySheet() {
         // Simple quality selection dialog
         val qualities = PlaylistQualityOption.entries.toTypedArray()
         val qualityNames = qualities.map { it.label }.toTypedArray()

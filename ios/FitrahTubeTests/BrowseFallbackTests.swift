@@ -44,6 +44,7 @@ struct BrowseFallbackTests {
             atom: AtomFeedFetcher(transport: transport, keyValueStore: store),
             latch: DegradedLatch(store: store),
             index: IndexClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "t")),
+            titles: TitlesClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "t")),
             gate: BackendAvailabilityGate(transport: transport, baseURL: base),
             degradedHeader: nil)
         await #expect(throws: BrowseError.botCheck) { try await source.channelTab("UC1", tab: .live, continuation: nil) }

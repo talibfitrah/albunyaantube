@@ -48,19 +48,33 @@ func videoAccessibilityLabel(_ item: ContentItem, locale: Locale, position: Int6
 struct RemoteImage: View {
     let url: URL?
     var contentMode: ContentMode = .fill
+    /// 1.0.4 I9: a saved item's own copy of this image (`OfflineStorage.thumbnailName`), read instead
+    /// of the network -- so it is there offline.
+    var savedCopy: URL?
+    /// Owner issue 3: an SF Symbol drawn on the skeleton once it is clear no picture is coming (no URL, a failed or
+    /// refused load). nil keeps the plain skeleton -- every caller but the playlist ones.
+    var missingSymbol: String?
 
     @State private var image: UIImage?
+    /// The URL a load last ended with no picture for (fix round 1, A2). The glyph shows only while that is still `url`:
+    /// a new URL never inherits the old verdict, and a re-appearing cell keeps its glyph instead of flickering
+    /// through the skeleton. Double optional: `.some(nil)` is "no URL, decided"; `nil` is "nothing decided yet".
+    @State private var missingFor: URL??
 
-    init(url: URL?, contentMode: ContentMode = .fill) {
+    init(url: URL?, contentMode: ContentMode = .fill, savedCopy: URL? = nil, missingSymbol: String? = nil) {
         self.url = url
         self.contentMode = contentMode
+        self.savedCopy = savedCopy
+        self.missingSymbol = missingSymbol
     }
 
     /// Bounded (gate cso-F4 / A-M6): with neither limit set, decoded bitmaps accumulated until the
     /// system raised memory pressure -- on an iPad grid of 16:9 thumbnails that is tens of MB
     /// before any eviction. `totalCostLimit` only means anything if every `setObject` supplies a
     /// cost, which `load()` below does.
-    private static let cache: NSCache<NSURL, UIImage> = {
+    /// Internal, not private: `SavedScreenTests` reads it in the same main-actor turn as the load, so
+    /// a concurrent account-wipe purge cannot land in between (round 5, N5).
+    static let cache: NSCache<NSURL, UIImage> = {
         let cache = NSCache<NSURL, UIImage>()
         cache.countLimit = 200
         cache.totalCostLimit = 50 << 20 // 50 MB of decoded pixels
@@ -105,7 +119,13 @@ struct RemoteImage: View {
             } else if let image {
                 Image(uiImage: image).resizable().aspectRatio(contentMode: .fit)
             } else {
-                Color.skeleton
+                Color.skeleton.overlay {
+                    if missingFor == .some(url), let missingSymbol {
+                        // Decorative: Dynamic Type grows it only to xxxLarge, so it never fills an 80 pt square.
+                        Image(systemName: missingSymbol).font(.title2).dynamicTypeSize(...DynamicTypeSize.xxxLarge)
+                            .foregroundStyle(Color.textSecondary).accessibilityHidden(true)
+                    }
+                }
             }
         }
         .clipped()
@@ -114,17 +134,20 @@ struct RemoteImage: View {
 
     private func load() async {
         // The synchronous cache hit stays here so a re-appearing cell never flashes the skeleton.
+        if let savedCopy, let cached = Self.cache.object(forKey: savedCopy as NSURL) { image = cached; return }
         if let url, let cached = Self.cache.object(forKey: url as NSURL) {
             image = cached
+            if let savedCopy { Self.backfill(cached, to: savedCopy) }
             return
         }
         image = nil
-        let loaded = await Self.cachedImage(for: url)
+        let loaded = await Self.cachedImage(for: url, savedCopy: savedCopy)
         // Cubic #13: `.task(id: url)` cancels this task on cell reuse, but a cancelled task still
         // resumes past the await -- without this guard its stale result (or nil) overwrote the
         // image the replacement task had already committed for the NEW url.
         guard !Task.isCancelled else { return }
         image = loaded
+        missingFor = loaded == nil ? .some(url) : nil
     }
 
     /// The one image fetch in the app, shared with `BackgroundPlaybackController`'s Now Playing
@@ -136,16 +159,50 @@ struct RemoteImage: View {
     /// an image. Enforced here rather than at the `LiveCatalogClient` mapping boundary because
     /// every image fetch in the app funnels through this one call -- including the favorites
     /// store's own persisted thumbnail strings, which never pass through that mapper.
-    static func cachedImage(for url: URL?) async -> UIImage? {
-        guard let url, url.scheme?.lowercased() == "https" else { return nil }
-        if let cached = cache.object(forKey: url as NSURL) { return cached }
+    ///
+    /// `savedCopy` (1.0.4 I9) is read first: a file the app itself wrote under its own container,
+    /// at a path derived from a local id -- never a backend-supplied URL, so it is not what the rule
+    /// above guards against.
+    static func cachedImage(for url: URL?, savedCopy: URL? = nil) async -> UIImage? {
+        if let savedCopy {
+            // Round 3 (review m5): decoded once into the same cache, and read off the main actor -- a
+            // long Saved list read and decoded every row from disk on it as it scrolled.
+            if let cached = cache.object(forKey: savedCopy as NSURL) { return cached }
+            let path = savedCopy.path(percentEncoded: false)
+            if let copy = await Task.detached(priority: .userInitiated, operation: { UIImage(contentsOfFile: path) }).value {
+                cache.setObject(copy, forKey: savedCopy as NSURL, cost: copy.cgImage.map { $0.bytesPerRow * $0.height } ?? 0)
+                return copy
+            }
+        }
+        // Owner issue 3: YouTube's grey "no thumbnail" image is no picture (backend `ThumbnailUrls.isBrokenPlaylistThumbnail`).
+        // Refused before this URL's cache lookup and the network, so it is never fetched or cached here; a saved
+        // item's own copy, read above, still wins.
+        guard let url, url.scheme?.lowercased() == "https", !url.path.contains("/img/no_thumbnail") else { return nil }
+        if let cached = cache.object(forKey: url as NSURL) {
+            if let savedCopy { backfill(cached, to: savedCopy) }
+            return cached
+        }
         // ponytail: decode happens on the calling (main) actor -- fine at card/thumbnail sizes
         // (max ~320 pt here); move to a background decode if profiling shows main-thread jank.
         guard let data = try? await boundedImageData(from: url),
               let decoded = UIImage(data: data) else { return nil }
         let cost = decoded.cgImage.map { $0.bytesPerRow * $0.height } ?? data.count
         cache.setObject(decoded, forKey: url as NSURL, cost: cost)
+        if let savedCopy { backfill(decoded, to: savedCopy) }
         return decoded
+    }
+
+    /// Round 3 (review m4) and round 5 (N3): a save made before 1.0.4 has no copy; it gets one from
+    /// the image in hand, a network load or a cache hit (a card on Home usually loaded the same URL
+    /// first), as the save writes it: JPEG 0.8, atomic, off the main actor, never over a copy.
+    /// Only the Saved row passes `savedCopy`; a row deleted while its picture loads can leave this one
+    /// small file, which the next launch's `OfflineManager.reattach()` sweeps (stage 6 I-S3).
+    private static func backfill(_ image: UIImage, to copy: URL) {
+        Task.detached(priority: .utility) {
+            guard !FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)),
+                  let data = image.jpegData(compressionQuality: 0.8) else { return }
+            try? data.write(to: copy, options: .atomic)
+        }
     }
 
     private static let maxImageBytes = 10 << 20 // 10 MB
@@ -158,10 +215,10 @@ struct RemoteImage: View {
     /// are read, so a declared-oversize length aborts here with nothing downloaded. A chunked or
     /// absent length (`expectedContentLength == -1`) falls through to the loop, which enforces the
     /// same cap against the bytes actually received -- also catching a length header that
-    /// understated the real body. The MIME check refuses non-images before either.
+    /// understated the real body. `isImage` refuses a non-2xx or a non-image before either.
     private static func boundedImageData(from url: URL) async throws -> Data? {
         let (bytes, response) = try await session.bytes(for: URLRequest(url: url))
-        guard (response as? HTTPURLResponse)?.mimeType?.hasPrefix("image/") == true else { return nil }
+        guard isImage(response) else { return nil }
         guard response.expectedContentLength == -1 || response.expectedContentLength <= Int64(maxImageBytes) else { return nil }
         var data = Data()
         for try await byte in bytes {
@@ -169,6 +226,13 @@ struct RemoteImage: View {
             if data.count > maxImageBytes { return nil }
         }
         return data
+    }
+
+    /// Owner issue 3 (b): a 404 or 403 is no picture even when it carries one: i.ytimg answers a missing `/vi/`
+    /// thumbnail with a grey JPEG and a 404, which used to be decoded, cached and shown. Refused before any body byte is read.
+    static func isImage(_ response: URLResponse) -> Bool {
+        guard let http = response as? HTTPURLResponse else { return false }
+        return (200..<300).contains(http.statusCode) && http.mimeType?.hasPrefix("image/") == true
     }
 }
 
@@ -267,7 +331,7 @@ struct MediaCard: View {
         Button(action: onTap) {
             VStack(alignment: .leading, spacing: 0) {
                 ZStack(alignment: item.type == .playlist ? .bottomLeading : .bottomTrailing) {
-                    RemoteImage(url: item.thumbnailURL)
+                    RemoteImage(url: item.thumbnailURL, missingSymbol: item.type == .playlist ? Tab.playlists.symbolName : nil)
                     overlayChip.padding(Spacing.sm)
                 }
                 .frame(width: width, height: width * 9 / 16)
@@ -563,7 +627,7 @@ struct PlaylistRow: View {
     var body: some View {
         Button(action: onTap) {
             HStack(alignment: .top, spacing: 0) {
-                RemoteImage(url: item.thumbnailURL)
+                RemoteImage(url: item.thumbnailURL, missingSymbol: Tab.playlists.symbolName)
                     .frame(width: thumbSize, height: thumbSize)
                     .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
                 VStack(alignment: .leading, spacing: Spacing.xs) {

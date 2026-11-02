@@ -12,15 +12,16 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.http.CacheControl;
-import org.springframework.http.HttpHeaders;
-import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
 import java.io.IOException;
+import java.util.LinkedHashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Public API controller for Android app content browsing.
@@ -189,9 +190,25 @@ public class PublicContentController {
         return ResponseEntity.ok().header(SearchIndex.MATCH_HEADER, hits.match()).body(hits.items());
     }
 
-    /** Spec §7: the first index build has not finished; installed clients show their usual error state. */
-    @ExceptionHandler(SearchIndex.NotReadyException.class)
-    public ResponseEntity<Void> searchNotReady() {
-        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5").build();
+    /** Task 24b: at most this many distinct ids per /titles request. */
+    static final int MAX_TITLE_IDS = 50;
+    private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+
+    /**
+     * Original titles for the apps' channel and playlist rows (inner-search Task 24b, owner issue 1). The apps list
+     * those pages on the device with hl=en, so YouTube machine-translates Arabic and Dutch titles; one call per page
+     * swaps in the titles the server holds. No YouTube request; ids the server does not know are left out.
+     */
+    @GetMapping("/titles")
+    public ResponseEntity<?> titles(@RequestParam List<String> ids) throws IOException {
+        List<String> unique = List.copyOf(new LinkedHashSet<>(ids));
+        if (unique.isEmpty() || unique.size() > MAX_TITLE_IDS || !unique.stream().allMatch(id -> VIDEO_ID.matcher(id).matches())) {
+            return ResponseEntity.badRequest().body(Map.of("error", "ids: 1 to " + MAX_TITLE_IDS + " YouTube video ids"));
+        }
+        SearchIndex.Titles titles = contentService.titles(unique);
+        // Public and identical for every caller, as the home feed: shared caches may keep it for an hour, or a minute when
+        // partial (a later ask may find more originals; Cloudflare must not pin translated titles for an hour).
+        return ResponseEntity.ok().cacheControl(titles.complete() ? CacheControl.maxAge(1, TimeUnit.HOURS).cachePublic()
+                : CacheControl.maxAge(1, TimeUnit.MINUTES).cachePublic()).body(titles.map());
     }
 }

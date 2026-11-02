@@ -10,6 +10,9 @@ import org.junit.jupiter.api.Order;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.TestMethodOrder;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.api.function.Executable;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.Page;
@@ -17,12 +20,20 @@ import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.ServiceList;
 import org.schabi.newpipe.extractor.NewPipe;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
+import org.schabi.newpipe.extractor.exceptions.ParsingException;
+import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Duration;
+import java.time.Instant;
+import java.time.ZoneOffset;
 import java.util.concurrent.ExecutorService;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -198,6 +209,15 @@ class YouTubeGatewayTest {
     class UrlUtilityTests {
 
         @Test
+        @DisplayName("extractChannelId with NewPipe's real factory: /channel/UC… gives the bare UC id, a handle stays")
+        void extractChannelId_realFactory_returnsBareUcIdOrHandle() {
+            assertEquals("UCROKYPep-UuODNwyipe6JMw",
+                    gateway.extractChannelId("https://www.youtube.com/channel/UCROKYPep-UuODNwyipe6JMw"));
+            assertEquals("@ZadTVchannel", gateway.extractChannelId("https://www.youtube.com/@ZadTVchannel"));
+            assertNull(gateway.extractChannelId("https://example.com/channel/UCROKYPep-UuODNwyipe6JMw"));
+        }
+
+        @Test
         @DisplayName("Should build channel URL with /channel/ format for UC IDs")
         void getChannelUrl_channelId_usesChannelFormat() throws ExtractionException {
             // UC prefix identifies official YouTube channel IDs
@@ -336,30 +356,11 @@ class YouTubeGatewayTest {
             // Transition to HALF_OPEN (simulating cooldown expiry)
             circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
 
-            // First request: should proceed (acquires probe permit)
-            // We need to call a public method that triggers checkCircuitBreaker()
-            // fetchChannelInfo will fail due to stub downloader returning null (causes NPE)
-
-            // Acquire the probe permit by making a request that will fail on extraction but pass circuit check
-            try {
-                testGateway.fetchChannelInfo("UCTest");
-                fail("Expected exception from extraction");
-            } catch (IOException e) {
-                // If it's a circuit breaker message, fail the test
-                if (e.getMessage() != null && e.getMessage().contains("circuit breaker")) {
-                    fail("First request should not be blocked by circuit breaker: " + e.getMessage());
-                }
-                // Otherwise, it's an extraction error which is expected (stub downloader)
-            } catch (ExtractionException e) {
-                // Expected - extraction fails because of stub downloader
-            } catch (NullPointerException e) {
-                // Expected - stub downloader returns null, causing NPE in NewPipe
-                // This is fine - the circuit breaker check passed and the probe permit was acquired
-            }
-
-            // Verify probe permit was acquired (circuit breaker check passed for first request)
-            assertTrue(circuitBreaker.isProbeRequest(),
-                    "First request should have acquired probe permit");
+            // A probe in flight: another request holds the permit. (This test used to get there by letting the stub
+            // downloader's NullPointerException escape fetchChannelInfo, which leaked the permit; a failed probe
+            // now releases it and reopens the circuit, see otherGatewayCalls_neverLeaveTheHalfOpenProbeHeld.)
+            assertTrue(circuitBreaker.allowProbe(), "the in-flight probe takes the permit");
+            assertTrue(circuitBreaker.isProbeRequest(), "probe permit is held");
 
             // Now probe is in progress - second request should get specific message
             IOException thrown = assertThrows(IOException.class, () -> {
@@ -393,6 +394,7 @@ class YouTubeGatewayTest {
             IOException thrown = assertThrows(IOException.class, () -> {
                 testGateway.fetchChannelInfo("UCTest");
             });
+            assertInstanceOf(YouTubeGateway.CircuitOpenException.class, thrown);
 
             assertTrue(thrown.getMessage().contains("circuit breaker is open"),
                     "Error message should say circuit is open. Got: " + thrown.getMessage());
@@ -403,6 +405,293 @@ class YouTubeGatewayTest {
 
             // Clean up
             testGateway.shutdown();
+        }
+
+        /** Slice C M2: a caller that records "if (isRateLimitError(e))" on a refusal would restart the cooldown forever. */
+        @Test
+        @DisplayName("The OPEN refusal is not a rate-limit signal")
+        void openRefusal_isNotARateLimitError() {
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway testGateway = new YouTubeGateway(ServiceList.YouTube, 3, null, circuitBreaker);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            try {
+                IOException refusal = assertThrows(IOException.class, () -> testGateway.fetchChannelInfo("UCTest"));
+                assertInstanceOf(YouTubeGateway.CircuitOpenException.class, refusal);
+                assertFalse(circuitBreaker.isRateLimitError(refusal), "refusal read as a rate limit: " + refusal.getMessage());
+            } finally {
+                testGateway.shutdown();
+            }
+        }
+
+        @Test
+        @DisplayName("A RuntimeException from a tab call during the HALF_OPEN probe releases the probe")
+        void tabCallRuntimeException_releasesHalfOpenProbe() throws Exception {
+            ChannelTabExtractor tab = mock(ChannelTabExtractor.class);
+            doThrow(new IllegalStateException("parse bug")).when(tab).fetchPage();
+            when(tab.getPage(any())).thenThrow(new IllegalStateException("parse bug"));
+
+            for (boolean initialPage : new boolean[] {true, false}) {
+                YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+                circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+                circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+                YouTubeGateway testGateway = new YouTubeGateway(ServiceList.YouTube, 1, null, circuitBreaker);
+                try {
+                    assertThrows(IllegalStateException.class, () -> {
+                        if (initialPage) {
+                            testGateway.fetchTabPage(tab);
+                        } else {
+                            testGateway.getTabPage(tab, null);
+                        }
+                    });
+                    assertFalse(circuitBreaker.isProbeRequest(), "the probe permit must be released");
+                    assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+                } finally {
+                    testGateway.shutdown();
+                }
+            }
+        }
+
+        /**
+         * The other gateway calls during a HALF_OPEN probe. NewPipe's static calls hit this class's stub downloader,
+         * whose null Response makes NewPipe throw a NullPointerException; search takes a throwing mock extractor.
+         * Search never takes the probe (no breaker check) and fetchStreamInfo wraps any failure in an IOException
+         * (executeWithProbeTimeout), so only the three static channel/playlist calls could leak it.
+         */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"fetchSearchPage", "getSearchPage", "fetchChannelInfo", "fetchPlaylistInfo",
+                "getPlaylistMoreItems", "fetchStreamInfo"})
+        void otherGatewayCalls_neverLeaveTheHalfOpenProbeHeld(String method) {
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeGateway g = new YouTubeGateway(ServiceList.YouTube, 1, null, circuitBreaker);
+            String playlistId = "PLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            Page page = new Page("https://www.youtube.com/youtubei/v1/browse?prettyPrint=false", "token");
+            Executable call;
+            Class<? extends Exception> expected = RuntimeException.class;
+            try {
+                switch (method) {
+                    case "fetchSearchPage" -> {
+                        SearchExtractor search = mock(SearchExtractor.class);
+                        doThrow(new IllegalStateException("parse bug")).when(search).fetchPage();
+                        call = () -> g.fetchSearchPage(search);
+                    }
+                    case "getSearchPage" -> {
+                        SearchExtractor search = mock(SearchExtractor.class);
+                        when(search.getPage(any())).thenThrow(new IllegalStateException("parse bug"));
+                        call = () -> g.getSearchPage(search, page);
+                    }
+                    case "fetchChannelInfo" -> call = () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g");
+                    case "fetchPlaylistInfo" -> call = () -> g.fetchPlaylistInfo(playlistId);
+                    case "getPlaylistMoreItems" -> call = () -> g.getPlaylistMoreItems(playlistId, page);
+                    case "fetchStreamInfo" -> {
+                        call = () -> g.fetchStreamInfo("eaOtcUNHDB8");
+                        expected = IOException.class;   // "Probe request failed: …" wraps the NullPointerException
+                    }
+                    default -> throw new IllegalArgumentException(method);
+                }
+
+                assertThrows(expected, call);
+                assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
+                if (!method.endsWith("SearchPage")) {   // the probe-taking calls: a failed probe reopens the circuit
+                    assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(), method);
+                }
+            } catch (Exception e) {
+                throw new AssertionError(e);
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /**
+         * An Error (a NoSuchMethodError after a NewPipe bump, say) skips recordError's catch. The probe must still be
+         * released, or HALF_OPEN blocks every breaker-checked call until a restart. fetchStreamInfo runs the NewPipe
+         * call on the probe executor, which already turns the Error into an IOException.
+         */
+        @ParameterizedTest(name = "{0}")
+        @ValueSource(strings = {"fetchChannelInfo", "fetchTabPage", "getTabPage", "fetchPlaylistInfo",
+                "getPlaylistMoreItems", "fetchStreamInfo"})
+        void aProbeThatThrowsAnError_releasesTheProbe(String method) throws Exception {
+            NoSuchMethodError linkage = new NoSuchMethodError("NewPipe linkage");
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            ChannelTabExtractor tab = mock(ChannelTabExtractor.class);
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            String playlistId = "PLAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAAA";
+            Page page = new Page("https://www.youtube.com/youtubei/v1/browse?prettyPrint=false", "token");
+            Executable call;
+            Class<? extends Throwable> expected = NoSuchMethodError.class;
+            try {
+                switch (method) {
+                    case "fetchChannelInfo" -> {
+                        when(youtube.getChannelExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g");
+                    }
+                    case "fetchTabPage" -> {
+                        doThrow(linkage).when(tab).fetchPage();
+                        call = () -> g.fetchTabPage(tab);
+                    }
+                    case "getTabPage" -> {
+                        when(tab.getPage(any())).thenThrow(linkage);
+                        call = () -> g.getTabPage(tab, page);
+                    }
+                    case "fetchPlaylistInfo" -> {
+                        when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchPlaylistInfo(playlistId);
+                    }
+                    case "getPlaylistMoreItems" -> {
+                        when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.getPlaylistMoreItems(playlistId, page);
+                    }
+                    case "fetchStreamInfo" -> {
+                        when(youtube.getStreamExtractor(anyString())).thenThrow(linkage);
+                        call = () -> g.fetchStreamInfo("eaOtcUNHDB8");
+                        expected = IOException.class;   // "Probe request failed: …" wraps the Error
+                    }
+                    default -> throw new IllegalArgumentException(method);
+                }
+
+                assertThrows(expected, call);
+                assertFalse(circuitBreaker.isProbeRequest(), method + " left the HALF_OPEN probe held");
+                assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState(), method);
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /**
+         * B17 (breaker-investigation option a1): YouTube refuses this IP's /player requests while its browse reads
+         * keep working, so the bot check must not pause browse. Every other rate limit still counts.
+         */
+        @Test
+        @DisplayName("B17: a /player bot check never reaches the shared breaker; a ReCaptcha (HTTP 429) still opens it")
+        void playerBotCheck_isNotRecorded_reCaptchaStillIs() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString()))
+                    .thenThrow(new SignInConfirmNotBotException("YouTube probably temporarily blocked anonymous watch "
+                            + "access with this IP , got error LOGIN_REQUIRED: \"Sign in to confirm you're not a bot\""))
+                    .thenThrow(new ReCaptchaException("reCaptcha Challenge requested",
+                            "https://youtubei.googleapis.com/youtubei/v1/reel/reel_item_watch"));
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null); // threshold 1
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            Instant t0 = Instant.parse("2026-10-27T06:00:00Z");
+            g.clock = Clock.fixed(t0, ZoneOffset.UTC);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                assertEquals(0, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState());
+
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)), ZoneOffset.UTC);   // B19: past the /player window
+                assertThrows(ReCaptchaException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                assertEquals(1, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        private static SignInConfirmNotBotException botCheck() {
+            return new SignInConfirmNotBotException("YouTube probably temporarily blocked anonymous watch access with "
+                    + "this IP , got error LOGIN_REQUIRED: \"Sign in to confirm you're not a bot\"");
+        }
+
+        /**
+         * Stage 9 B19 (r6 P2-1): callers without a stop of their own (bulk preview/submit, the Reports page's lookups)
+         * sent one refused /player request per row. After a bot check every /player call for 60 min fails at once,
+         * as the same exception, so each caller's bot-check stop still fires, and sends nothing. Browse still goes out.
+         */
+        @Test
+        @DisplayName("B19: a /player bot check refuses /player locally for 60 min without a request; browse still goes out")
+        void playerBotCheck_refusesPlayerLocallyFor60Minutes() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            when(youtube.getChannelExtractor(anyString())).thenThrow(new ParsingException("browse sent"));
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            Instant t0 = Instant.parse("2026-10-27T06:00:00Z");
+            g.clock = Clock.fixed(t0, ZoneOffset.UTC);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                for (int i = 0; i < 20; i++) {   // a Reports page's 20 lookups
+                    SignInConfirmNotBotException local =
+                            assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                    assertEquals(SignInConfirmNotBotException.class, local.getClass(), "the breaker's class-name check");
+                    assertTrue(circuitBreaker.isRateLimitError(local), "the callers' bot-check stops read it as one");
+                }
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)).minusMillis(1), ZoneOffset.UTC);
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+
+                ParsingException browse =
+                        assertThrows(ParsingException.class, () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g"));
+                assertEquals("browse sent", browse.getMessage(), "browse is never refused by the /player window");
+
+                g.clock = Clock.fixed(t0.plus(Duration.ofMinutes(60)), ZoneOffset.UTC);
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+                verify(youtube, times(2)).getStreamExtractor(anyString());
+                assertEquals(0, circuitBreaker.getStatusSnapshot().getTotalRateLimitErrors());
+                assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /** B19: the local refusal comes before the shared breaker's permit, so it never takes a HALF_OPEN probe. */
+        @Test
+        @DisplayName("B19: a /player call refused by the window leaves the HALF_OPEN probe permit free")
+        void playerRefusalWindow_neverTakesTheHalfOpenProbe() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            g.clock = Clock.fixed(Instant.parse("2026-10-27T06:00:00Z"), ZoneOffset.UTC);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));   // CLOSED
+                circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // a browse 429 opens it
+                circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);   // its cooldown ended
+                int level = circuitBreaker.getStatusSnapshot().getBackoffLevel();
+
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));
+
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+                assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+                assertFalse(circuitBreaker.isOpen(), "the probe permit is still free for a browse read");
+                assertEquals(level, circuitBreaker.getStatusSnapshot().getBackoffLevel());
+            } finally {
+                g.shutdown();
+            }
+        }
+
+        /**
+         * Stage 9 B19 (r6 P3-1): a bot check on the HALF_OPEN probe says nothing about browse. It gives the permit back
+         * and leaves the breaker HALF_OPEN at its level, so the next request (a browse read, as /player is refused
+         * locally now) probes again, instead of browse being paused for another cooldown.
+         */
+        @Test
+        @DisplayName("B19: a bot check on the HALF_OPEN probe releases it; the breaker stays HALF_OPEN at its level")
+        void playerBotCheckOnTheHalfOpenProbe_releasesItAndKeepsHalfOpen() throws Exception {
+            StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
+            when(youtube.getStreamExtractor(anyString())).thenThrow(botCheck());
+            YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
+            circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+            circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+            YouTubeCircuitBreaker.CircuitBreakerStatus before = circuitBreaker.getStatusSnapshot();
+            YouTubeGateway g = new YouTubeGateway(youtube, 1, null, circuitBreaker);
+            try {
+                assertThrows(SignInConfirmNotBotException.class, () -> g.fetchStreamInfo("eaOtcUNHDB8"));   // the probe
+
+                verify(youtube, times(1)).getStreamExtractor(anyString());
+                assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+                assertFalse(circuitBreaker.isOpen(), "the permit is released: the next request probes");
+                YouTubeCircuitBreaker.CircuitBreakerStatus after = circuitBreaker.getStatusSnapshot();
+                assertEquals(before.getBackoffLevel(), after.getBackoffLevel());
+                assertEquals(before.getCooldownUntil(), after.getCooldownUntil());
+                assertEquals(before.getTotalRateLimitErrors(), after.getTotalRateLimitErrors());
+            } finally {
+                g.shutdown();
+            }
         }
 
         @Test

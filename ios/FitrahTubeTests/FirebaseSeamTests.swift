@@ -68,7 +68,9 @@ import Testing
     /// obvious place to fail. Disk space, E174.1 (Apple: "check whether there is sufficient disk
     /// space to write files… The app must behave differently based on disk space in a way that is
     /// observable to users"): `OfflineStorage` reads `volumeAvailableCapacityForImportantUsage`
-    /// to refuse a save that cannot fit. Read from the BUILT bundle, like the test above.
+    /// to refuse a save that cannot fit. 85F4.1 (1.0.4 round 5: "display disk space information to
+    /// the person using the device"): the Saved footer and Settings' Storage row show it. Read from
+    /// the BUILT bundle, like the test above.
     @Test func thePrivacyManifestRequiredReasonTableIsPinned() throws {
         let url = try #require(Bundle.main.url(forResource: "PrivacyInfo", withExtension: "xcprivacy"))
         let manifest = try PropertyListSerialization.propertyList(
@@ -86,7 +88,7 @@ import Testing
         #expect(reasons == [
             "NSPrivacyAccessedAPICategoryUserDefaults": ["CA92.1"],
             "NSPrivacyAccessedAPICategorySystemBootTime": ["35F9.1"],
-            "NSPrivacyAccessedAPICategoryDiskSpace": ["E174.1"],
+            "NSPrivacyAccessedAPICategoryDiskSpace": ["E174.1", "85F4.1"],
         ])
     }
 

@@ -420,17 +420,9 @@ class PlaylistDetailViewModel @AssistedInject constructor(
      * Handle download playlist button click.
      */
     fun onDownloadPlaylistClicked() {
-        val header = (_headerState.value as? HeaderState.Success)?.header ?: return
+        if (_headerState.value !is HeaderState.Success) return
         viewModelScope.launch {
-            _uiEvents.emit(
-                PlaylistUiEvent.ShowDownloadQualitySheet(
-                    playlistId = playlistId,
-                    playlistTitle = header.title,
-                    // Guard against integer overflow for very large playlists
-                    itemCount = header.itemCount?.coerceAtMost(Int.MAX_VALUE.toLong())?.toInt() ?: 0,
-                    suggestedQuality = PlaylistQualityOption.QUALITY_360P // Default
-                )
-            )
+            _uiEvents.emit(PlaylistUiEvent.ShowDownloadQualitySheet)
         }
     }
 
@@ -628,12 +620,7 @@ class PlaylistDetailViewModel @AssistedInject constructor(
      */
     sealed class PlaylistUiEvent {
         data class NavigateToPlayer(val startIndex: Int, val shuffled: Boolean) : PlaylistUiEvent()
-        data class ShowDownloadQualitySheet(
-            val playlistId: String,
-            val playlistTitle: String,
-            val itemCount: Int,
-            val suggestedQuality: PlaylistQualityOption
-        ) : PlaylistUiEvent()
+        object ShowDownloadQualitySheet : PlaylistUiEvent()
         data class StartPlaylistDownload(
             val playlistId: String,
             val playlistTitle: String,

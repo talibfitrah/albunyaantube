@@ -22,7 +22,9 @@ import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.anyString;
 import static org.mockito.ArgumentMatchers.isNull;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.header;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
@@ -132,5 +134,18 @@ class ContentReportControllerTest {
                         .content(VALID_BODY))
                 .andExpect(status().isTooManyRequests())
                 .andExpect(jsonPath("$.error").exists());
+    }
+
+    /** Inner-search R34 fix round 1: a resolve the warming search index refuses is a retryable 503; the report stays PENDING. */
+    @Test
+    void resolveReport_searchIndexWarming_returns503WithRetryAfter() throws Exception {
+        when(reportService.resolveReport(anyString(), any(), anyString(), any()))
+                .thenThrow(new com.albunyaan.tube.search.SearchIndex.NotReadyException());
+
+        mockMvc.perform(patch("/api/admin/reports/report-cold")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"status\": \"RESOLVED\"}"))
+                .andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"));
     }
 }

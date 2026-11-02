@@ -10398,50 +10398,6 @@
         }
       }
     },
-    "player_analytics_header": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "آخر حدث تحليلي"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Latest analytics event"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Laatste analytisch evenement"
-          }
-        }
-      }
-    },
-    "player_analytics_none": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لم يتم تسجيل أحداث بعد."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No events recorded yet."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nog geen evenementen geregistreerd."
-          }
-        }
-      }
-    },
     "player_announce_standard_quality": {
       "localizations": {
         "ar": {
@@ -10702,28 +10658,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Probeer het over %1$@ opnieuw"
-          }
-        }
-      }
-    },
-    "player_current_item": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "قيد التشغيل: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Now playing: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Nu afspelen: %1$@"
           }
         }
       }
@@ -11036,226 +10970,6 @@
         }
       }
     },
-    "player_event_audio_only_off": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم إيقاف الصوت فقط"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Audio-only disabled"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alleen audio uitgeschakeld"
-          }
-        }
-      }
-    },
-    "player_event_audio_only_on": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم تفعيل الصوت فقط"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Audio-only enabled"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Alleen audio ingeschakeld"
-          }
-        }
-      }
-    },
-    "player_event_play_completed": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "اكتمل التشغيل: %1$@"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback completed: %1$@"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afspelen voltooid: %1$@"
-          }
-        }
-      }
-    },
-    "player_event_play_started": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "بدء التشغيل: %1$@ (%2$@)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback started: %1$@ (%2$@)"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afspelen gestart: %1$@ (%2$@)"
-          }
-        }
-      }
-    },
-    "player_event_queue_hydrated": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تحميل القائمة (%1$lld إجمالي، %2$lld مفلتر)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Queue hydrated (%1$lld total, %2$lld filtered)"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Wachtrij geladen (%1$lld totaal, %2$lld gefilterd)"
-          }
-        }
-      }
-    },
-    "player_event_stream_failed": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فشل حل البث"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream resolution failed"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream oplossen mislukt"
-          }
-        }
-      }
-    },
-    "player_event_stream_resolved": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم حل البث (%1$@)"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream resolved (%1$@)"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream opgelost (%1$@)"
-          }
-        }
-      }
-    },
-    "player_event_stream_resolved_unknown": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "جودة غير معروفة"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "unknown quality"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "onbekende kwaliteit"
-          }
-        }
-      }
-    },
-    "player_excluded_message": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تم تخطي %1$lld عنصر بسبب قيود السياسة."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld item(s) skipped due to policy restrictions."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "%1$lld item(s) overgeslagen vanwege beleidsregels."
-          }
-        }
-      }
-    },
-    "player_excluded_placeholder": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "لا يوجد استثناءات."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "No exclusions applied."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Geen uitsluitingen toegepast."
-          }
-        }
-      }
-    },
     "player_favorite_toggle_error": {
       "localizations": {
         "ar": {
@@ -11362,28 +11076,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Like-functie komt binnenkort"
-          }
-        }
-      }
-    },
-    "player_mark_current_complete": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "وضع علامة اكتمال"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Mark current complete"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Markeer als voltooid"
           }
         }
       }
@@ -11740,28 +11432,6 @@
         }
       }
     },
-    "player_recovery_exhausted": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "فشلت استعادة التشغيل"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playback recovery failed"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Afspelen herstellen mislukt"
-          }
-        }
-      }
-    },
     "player_recovery_exhausted_message": {
       "localizations": {
         "ar": {
@@ -11982,50 +11652,6 @@
         }
       }
     },
-    "player_start_reason_auto": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تقدم تلقائي"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Auto-advance"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Automatisch volgende"
-          }
-        }
-      }
-    },
-    "player_start_reason_user_selected": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "اختيار يدوي"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Manual selection"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Handmatige selectie"
-          }
-        }
-      }
-    },
     "player_status_audio_only": {
       "localizations": {
         "ar": {
@@ -12044,72 +11670,6 @@
           "stringUnit": {
             "state": "translated",
             "value": "Alleen audio afspelen."
-          }
-        }
-      }
-    },
-    "player_status_initializing": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تهيئة المشغل…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Initializing player…"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Speler initialiseren…"
-          }
-        }
-      }
-    },
-    "player_status_resolving": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "حل البث…"
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Resolving stream…"
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Stream oplossen…"
-          }
-        }
-      }
-    },
-    "player_status_video_playing": {
-      "localizations": {
-        "ar": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "تشغيل الفيديو."
-          }
-        },
-        "en": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Playing video stream."
-          }
-        },
-        "nl": {
-          "stringUnit": {
-            "state": "translated",
-            "value": "Video afspelen."
           }
         }
       }

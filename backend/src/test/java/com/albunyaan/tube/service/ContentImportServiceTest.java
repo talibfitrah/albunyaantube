@@ -4,6 +4,7 @@ import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.StreamDetailsDto;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.ValidationRun;
@@ -18,6 +19,7 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.springframework.http.HttpStatus;
 
 import java.util.*;
 import java.util.concurrent.ExecutionException;
@@ -58,6 +60,9 @@ class ContentImportServiceTest {
     @Mock
     private ValidationRunRepository validationRunRepository;
 
+    @Mock
+    private LiveCategoryGuard liveCategoryGuard;
+
     private ContentImportService service;
 
     @BeforeEach
@@ -68,7 +73,8 @@ class ContentImportServiceTest {
                 channelRepository,
                 playlistRepository,
                 videoRepository,
-                validationRunRepository
+                validationRunRepository,
+                liveCategoryGuard
         );
     }
 
@@ -552,6 +558,67 @@ class ContentImportServiceTest {
         verify(channelRepository, times(2)).save(any(Channel.class));
     }
 
+    /**
+     * B17: a video batch that stopped at a /player bot check (the rest SKIPPED; the shared breaker no longer records
+     * it) is not retried: the retry would only send the same refused request again. B18 (Cubic r7 #3): the skipped
+     * rows were never checked, so they fail like the refused one (counted, listed for /failed-items), never vanish.
+     */
+    @Test
+    void importSimpleFormatAsync_aBatchStoppedByABotCheckIsNotRetried() throws Exception {
+        Map<String, String> videosMap = new LinkedHashMap<>();
+        videosMap.put("validatorT1", "Lesson 1|Global");
+        videosMap.put("validatorT2", "Lesson 2|Global");
+        videosMap.put("validatorT3", "Lesson 3|Global");
+        List<Map<String, String>> simpleData = List.of(Collections.emptyMap(), Collections.emptyMap(), videosMap);
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<StreamDetailsDto> stopped = new BatchValidationResult<>();
+        stopped.addError("validatorT1", "Rate limit: Sign in to confirm you're not a bot");
+        stopped.addSkipped("validatorT2");
+        stopped.addSkipped("validatorT3");
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(stopped);
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        verify(channelOrchestrator, times(1)).batchValidateVideosDtoWithDetails(anyList());
+        assertEquals(3, run.getVideosChecked());
+        assertEquals(3, run.getVideosFailed());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(Set.of("video:validatorT1", "video:validatorT2", "video:validatorT3"), Set.copyOf(failedItemIds));
+        @SuppressWarnings("unchecked")
+        Map<String, Integer> reasonCounts = (Map<String, Integer>) run.getDetails().get("reasonCounts");
+        assertEquals(2, reasonCounts.entrySet().stream()
+                .filter(e -> e.getKey().startsWith("VIDEO_YOUTUBE_ERROR: Not checked")).mapToInt(Map.Entry::getValue).sum());
+        verify(videoRepository, never()).save(any(Video.class));
+    }
+
+    /** B18: an open breaker skips a whole channel or playlist batch; each row fails and is listed, none is dropped. */
+    @Test
+    void importSimpleFormatAsync_rowsSkippedByAnOpenBreakerAreFailedAndListed() throws Exception {
+        List<Map<String, String>> simpleData = List.of(Map.of("UCskipped", "C|Global"), Map.of("PLskipped", "P|Global"),
+                Collections.emptyMap());
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(playlistRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<ChannelDetailsDto> channels = new BatchValidationResult<>();
+        channels.addSkipped("UCskipped");
+        BatchValidationResult<PlaylistDetailsDto> playlists = new BatchValidationResult<>();
+        playlists.addSkipped("PLskipped");
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channels);
+        when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlists);
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(1, run.getChannelsFailed());
+        assertEquals(1, run.getPlaylistsFailed());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(List.of("channel:UCskipped", "playlist:PLskipped"), failedItemIds);
+        verify(channelOrchestrator, times(1)).batchValidateChannelsDtoWithDetails(anyList());
+        verify(channelOrchestrator, times(1)).batchValidatePlaylistsDtoWithDetails(anyList());
+    }
+
     // Helper methods to create DTOs
 
     private ChannelDetailsDto createChannelDto(String id, String name) {
@@ -587,5 +654,123 @@ class ContentImportServiceTest {
         dto.setUploaderName("Test Channel");
         dto.setUploaderUrl("https://youtube.com/channel/UC123");
         return dto;
+    }
+
+    /** §7 row 16 (K11): a live check that cannot run (503) fails the run with its code, before any validation or write. */
+    @Test
+    void importSimpleFormatAsync_anUnavailableLiveCheckFailsTheRunWithItsCode() throws Exception {
+        List<Map<String, String>> simpleData = List.of(
+                Collections.emptyMap(),
+                Collections.emptyMap(),
+                Map.of("it1r16uvid1", "V|Live")
+        );
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(liveCategoryGuard.checkAll(eq(true), anyList())).thenThrow(new LiveCategoryException(
+                HttpStatus.SERVICE_UNAVAILABLE, LiveCategoryException.CHECK_UNAVAILABLE, "try again later",
+                Map.of("offenders", List.of(Map.of("ref", "it1r16uvid1")))));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(ValidationRun.STATUS_FAILED, run.getStatus());
+        assertEquals("LIVE_CHECK_UNAVAILABLE", run.getCurrentPhase());   // a retry, not a refusal
+        assertEquals(LiveCategoryException.CHECK_UNAVAILABLE, run.getDetails().get("code"));
+        assertEquals(List.of(Map.of("ref", "it1r16uvid1")), run.getDetails().get("offenders"));
+        verifyNoInteractions(channelOrchestrator);
+        verify(videoRepository, never()).save(any(Video.class));
+    }
+
+    /**
+     * §7 row 16: "Title|Categories|keywords" is parsed as the sync import and the live guard parse it, so a keyword is
+     * never a category name. (A limit-2 split made "Plain|kw,Live" map "Live" and wrote the row into LIVE unchecked.)
+     */
+    @Test
+    void importSimpleFormatAsync_aKeywordIsNeverACategory() throws Exception {
+        String value = "X|Plain|kw,Live";
+        List<Map<String, String>> simpleData = List.of(Map.of("UCk", value), Map.of("PLk", value), Map.of("VIDk", value));
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(channelRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(playlistRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        BatchValidationResult<ChannelDetailsDto> channels = new BatchValidationResult<>();
+        channels.addValid("UCk", createChannelDto("UCk", "C"));
+        when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(channels);
+        BatchValidationResult<PlaylistDetailsDto> playlists = new BatchValidationResult<>();
+        playlists.addValid("PLk", createPlaylistDto("PLk", "P"));
+        when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(playlists);
+        BatchValidationResult<StreamDetailsDto> videos = new BatchValidationResult<>();
+        videos.addValid("VIDk", createVideoDto("VIDk", "V"));
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(videos);
+        // The real mapper's contract: comma-separated names, unknown names dropped.
+        Map<String, String> names = Map.of("Plain", "plain-cat", "Live", "live-cat");
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenAnswer(inv -> Arrays.stream(
+                inv.<String>getArgument(0).split(",")).map(String::trim).map(names::get).filter(Objects::nonNull).toList());
+        when(channelRepository.save(any(Channel.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(playlistRepository.save(any(Playlist.class))).thenAnswer(inv -> inv.getArgument(0));
+        when(videoRepository.save(any(Video.class))).thenAnswer(inv -> inv.getArgument(0));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        ArgumentCaptor<Channel> channel = ArgumentCaptor.forClass(Channel.class);
+        ArgumentCaptor<Playlist> playlist = ArgumentCaptor.forClass(Playlist.class);
+        ArgumentCaptor<Video> video = ArgumentCaptor.forClass(Video.class);
+        verify(channelRepository).save(channel.capture());
+        verify(playlistRepository).save(playlist.capture());
+        verify(videoRepository).save(video.capture());
+        assertEquals(List.of("plain-cat"), channel.getValue().getCategoryIds());
+        assertEquals(List.of("plain-cat"), playlist.getValue().getCategoryIds());
+        assertEquals(List.of("plain-cat"), video.getValue().getCategoryIds());
+    }
+
+    /** Fail closed: a row whose existence read fails is failed, never treated as new (and written past the live guard). */
+    @Test
+    void importSimpleFormatAsync_aFailedExistenceReadFailsTheRow() throws Exception {
+        List<Map<String, String>> simpleData = List.of(
+                Collections.emptyMap(),
+                Map.of("PLr", "P|Live"),
+                Collections.emptyMap()
+        );
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(playlistRepository.findByYoutubeId("PLr")).thenThrow(new TimeoutException("read timed out"));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        assertEquals(ValidationRun.STATUS_COMPLETED, run.getStatus());
+        assertEquals(1, run.getPlaylistsFailed());
+        assertEquals(0, run.getPlaylistsImported());
+        @SuppressWarnings("unchecked")
+        List<String> failedItemIds = (List<String>) run.getDetails().get("failedItemIds");
+        assertEquals(List.of("playlist:PLr"), failedItemIds);
+        verifyNoInteractions(channelOrchestrator);
+        verify(playlistRepository, never()).save(any(Playlist.class));
+    }
+
+    /**
+     * §7 row 16: a LIVE row the guard saw stored is skipped unread. Re-reading it would write a doc deleted in between
+     * (playlists run only after every channel batch is validated) into LIVE with no check.
+     */
+    @Test
+    void importSimpleFormatAsync_aRowTheGuardSawStoredIsSkippedEvenIfDeletedSince() throws Exception {
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        LiveCategoryGuard guard = new LiveCategoryGuard(liveCategories, mock(LiveChannelService.class), videoRepository,
+                channelRepository, playlistRepository, categoryMappingService);
+        ContentImportService guarded = new ContentImportService(channelOrchestrator, categoryMappingService,
+                channelRepository, playlistRepository, videoRepository, validationRunRepository, guard);
+        when(categoryMappingService.mapCategoryNamesToIds("Live")).thenReturn(List.of("live-cat"));
+        when(playlistRepository.findByYoutubeId("PLgone"))
+                .thenReturn(Optional.of(new Playlist("PLgone")))   // the guard's read: stored, so no check
+                .thenReturn(Optional.empty());                     // deleted before the writer gets there
+        BatchValidationResult<PlaylistDetailsDto> valid = new BatchValidationResult<>();
+        valid.addValid("PLgone", createPlaylistDto("PLgone", "P"));
+        lenient().when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(valid);
+        lenient().when(playlistRepository.save(any(Playlist.class))).thenAnswer(inv -> inv.getArgument(0));
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+
+        guarded.importSimpleFormatAsync(run, List.of(Collections.emptyMap(), Map.of("PLgone", "P|Live"),
+                Collections.emptyMap()), "APPROVED", "test-user");
+
+        verify(playlistRepository, never()).save(any(Playlist.class));
+        verify(playlistRepository, times(1)).findByYoutubeId("PLgone");
+        assertEquals(1, run.getPlaylistsSkipped());
     }
 }

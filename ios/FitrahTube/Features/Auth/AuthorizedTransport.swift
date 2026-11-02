@@ -146,9 +146,10 @@ nonisolated struct AuthorizedTransport: HTTPTransport {
     }
 
     /// Cubic R7 P0 + R9 P1 + R-final4 P2 (`AccountStatusInterceptor.kt:74-78`): the envelope check
-    /// runs ONLY on this backend's four namespaces. Matching the envelope on ANY 403 would let a
+    /// runs ONLY on this backend's five namespaces. Matching the envelope on ANY 403 would let a
     /// third party (or a proxy) answering the same JSON shape sign the user out of the whole app.
-    private static let envelopePaths = ["/api/admin/", "/api/v1/", "/api/account/", "/api/share-metadata/"]
+    /// `/api/playback/` is iOS-only (playback Phase 2, spec R24): Android never calls it.
+    private static let envelopePaths = ["/api/admin/", "/api/v1/", "/api/account/", "/api/share-metadata/", "/api/playback/"]
     /// `MAX_PEEK_BYTES` (`AccountStatusInterceptor.kt:137`): a misbehaving server must not be able
     /// to make the client read an unbounded error body. 1 KiB is far larger than the two-field
     /// envelope.

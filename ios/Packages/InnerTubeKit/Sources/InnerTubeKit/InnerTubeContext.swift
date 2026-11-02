@@ -16,6 +16,9 @@ enum InnerTubeContext {
         var hl: String
         var gl: String
         var visitorData: String?
+        /// TVHTML5 only (spec R4): `PlayerRequestBuilder` sets it for that family. nil is omitted from the JSON, so every
+        /// other body stays byte-identical.
+        var userAgent: String? = nil
     }
 
     static func client(context: ClientContext, visitorData: String?, locale: InnerTubeLocale) -> Client {

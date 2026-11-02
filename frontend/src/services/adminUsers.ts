@@ -7,6 +7,7 @@ import type {
   AdminRole
 } from '@/types/admin';
 import type { User } from '@/types/api';
+import { parseBackendTimestamp } from '@/utils/formatters';
 
 // FIREBASE-MIGRATE-04: User management now implemented
 const USERS_BASE_PATH = '/api/admin/users';
@@ -16,11 +17,11 @@ export interface UsersPageParams {
   cursor?: string | null;
   /** Max rows per page. Forward-compat: backend currently returns all rows. */
   limit?: number;
-  /** Free-text search (email / displayName). Forward-compat: backend ignores today. */
+  /** Free-text search (email / displayName / uid). Backend ignores it; applied client-side. */
   search?: string;
-  /** Role filter. Forward-compat: backend ignores; use null/undefined to skip. */
+  /** Role filter. Backend ignores it; applied client-side. null/undefined skips. */
   role?: string | null;
-  /** Status filter. Forward-compat: backend ignores; use null/undefined to skip. */
+  /** Status filter. Backend ignores it; applied client-side. null/undefined skips. */
   status?: string | null;
   /** Include soft-deleted users. Cubic R-final5 P0 — wired through. Required by Bulk-Recover. */
   includeDeleted?: boolean;
@@ -78,6 +79,7 @@ function fromBackendRole(role?: string): AdminRole {
  * Map API User DTO to UI AdminUser model
  */
 function transformUser(apiUser: User): AdminUser {
+  const createdAt = (parseBackendTimestamp(apiUser.createdAt) ?? new Date()).toISOString();
   return {
     id: apiUser.uid || '',
     email: apiUser.email || '',
@@ -85,9 +87,19 @@ function transformUser(apiUser: User): AdminUser {
     status: fromBackendStatus(apiUser.status),
     displayName: apiUser.displayName,
     lastLoginAt: null, // Not in API schema, would need backend enhancement
-    createdAt: apiUser.createdAt || new Date().toISOString(),
-    updatedAt: apiUser.createdAt || new Date().toISOString() // Use createdAt as fallback
+    createdAt,
+    updatedAt: createdAt // Use createdAt as fallback
   };
+}
+
+// The backend returns every user and ignores search/role/status, so they are applied here.
+// ponytail: client-side filter over the full list; move server-side if the user count gets large.
+function matchesFilters(user: AdminUser, params: UsersPageParams): boolean {
+  const q = params.search?.trim().toLowerCase();
+  if (q && ![user.email, user.displayName ?? '', user.id].some(v => v.toLowerCase().includes(q))) return false;
+  if (params.role && user.role !== params.role) return false;
+  if (params.status && user.status !== params.status) return false;
+  return true;
 }
 
 export async function fetchUsersPage(params: UsersPageParams = {}): Promise<CursorPage<AdminUser>> {
@@ -116,7 +128,7 @@ export async function fetchUsersPage(params: UsersPageParams = {}): Promise<Curs
   // single complete page — hasNext=false suppresses the Load-more button
   // and the result is honest about what the server actually returned.
   return {
-    data: users.map(transformUser),
+    data: users.map(transformUser).filter(u => matchesFilters(u, params)),
     pageInfo: {
       cursor: params.cursor ?? null,
       nextCursor: null,

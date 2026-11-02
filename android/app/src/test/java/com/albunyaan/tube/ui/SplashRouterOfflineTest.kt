@@ -286,4 +286,21 @@ class SplashRouterOfflineTest {
 
         assertEquals(AccountState.NotSignedIn, repo.accountState.value)
     }
+
+    // Cubic SplashRouter.kt:70: with no saved record a restore runs fetchMe on appScope, which has no
+    // handler. A malformed 2xx or an empty 200 escaped fetchMe and killed the process.
+    @Test fun `a restore with no saved record survives a malformed or empty me`() = runTest {
+        val bodies = listOf(
+            com.squareup.moshi.JsonDataException("Expected a string but was NUMBER"),
+            KotlinNullPointerException("Response from getMe was null but was declared as non-null"),
+        )
+        for (bad in bodies) {
+            val repo = repoWith(mock()) { throw bad }
+
+            SplashRouter.restoreAccount(restoring = true, repo, backgroundScope, signedIn) { error("no bind") }
+            runCurrent()
+
+            assertFalse("${bad.javaClass.simpleName}", repo.accountState.value is AccountState.Loaded)
+        }
+    }
 }

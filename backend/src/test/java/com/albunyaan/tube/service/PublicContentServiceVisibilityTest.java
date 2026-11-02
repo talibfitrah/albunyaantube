@@ -45,7 +45,8 @@ class PublicContentServiceVisibilityTest {
                 channelRepository, playlistRepository, videoRepository,
                 categoryRepository, orderRepository,
                 Runnable::run,
-                searchIndex
+                searchIndex,
+                org.mockito.Mockito.mock(LiveCategoryService.class)
         );
     }
 

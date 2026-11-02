@@ -141,15 +141,15 @@ class YouTubeImportApiTest {
         assertEquals(2, response.items.size)
 
         val first = response.items[0]
-        assertEquals("dQw4w9WgXcQ", first.id)
-        assertEquals("Never Gonna Give You Up", first.snippet.title)
+        assertEquals("sCQwxFEMlZ4", first.id)
+        assertEquals("Visiting the Ill - Mufti Menk", first.snippet.title)
         assertEquals("UCuAXFkgsw1L7xaCfnd5JJOw", first.snippet.channelId)
-        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg",
+        assertEquals("https://i.ytimg.com/vi/sCQwxFEMlZ4/mqdefault.jpg",
             first.snippet.thumbnails.medium?.url ?: first.snippet.thumbnails.default?.url)
 
         val second = response.items[1]
         assertEquals("oHg5SJYRHA0", second.id)
-        assertEquals("RickRoll'D", second.snippet.title)
+        assertEquals("Reminders - Mufti Menk", second.snippet.title)
         assertEquals("UCWwWOFUFNBXPxNEaVhBTXaA", second.snippet.channelId)
     }
 
@@ -282,20 +282,20 @@ class YouTubeImportApiTest {
         {
           "items": [
             {
-              "id": "dQw4w9WgXcQ",
+              "id": "sCQwxFEMlZ4",
               "snippet": {
-                "title": "Never Gonna Give You Up",
+                "title": "Visiting the Ill - Mufti Menk",
                 "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
                 "thumbnails": {
-                  "default": { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg" },
-                  "medium":  { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg" }
+                  "default": { "url": "https://i.ytimg.com/vi/sCQwxFEMlZ4/default.jpg" },
+                  "medium":  { "url": "https://i.ytimg.com/vi/sCQwxFEMlZ4/mqdefault.jpg" }
                 }
               }
             },
             {
               "id": "oHg5SJYRHA0",
               "snippet": {
-                "title": "RickRoll'D",
+                "title": "Reminders - Mufti Menk",
                 "channelId": "UCWwWOFUFNBXPxNEaVhBTXaA",
                 "thumbnails": {
                   "default": { "url": "https://i.ytimg.com/vi/oHg5SJYRHA0/default.jpg" },

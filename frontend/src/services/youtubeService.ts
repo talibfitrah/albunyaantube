@@ -187,6 +187,9 @@ export async function getChannelDetails(channelId: string) {
   };
 }
 
+// The live-category guard can refuse these adds; Content Search shows the localized reason instead of the global toast.
+const LIVE_GUARDED = { suppressGlobalErrorToast: true };
+
 /**
  * Add a channel, playlist, or video to pending approval queue
  */
@@ -208,7 +211,7 @@ export async function addToPendingApprovals(
       categoryIds,
       status: 'PENDING'
     };
-    await apiClient.post<Channel>('/api/admin/registry/channels', payload);
+    await apiClient.post<Channel>('/api/admin/registry/channels', payload, LIVE_GUARDED);
   } else if (itemType === 'playlist') {
     const playlist = item as AdminSearchPlaylistResult;
     // Note: displayOrder is intentionally omitted - null until explicitly set via reorder
@@ -222,7 +225,7 @@ export async function addToPendingApprovals(
       status: 'PENDING',
       channelId: null
     };
-    await apiClient.post<Playlist>('/api/admin/registry/playlists', payload);
+    await apiClient.post<Playlist>('/api/admin/registry/playlists', payload, LIVE_GUARDED);
   } else if (itemType === 'video') {
     const video = item as AdminSearchVideoResult;
     // Note: displayOrder is intentionally omitted - null until explicitly set via reorder
@@ -235,10 +238,10 @@ export async function addToPendingApprovals(
       viewCount: video.viewCount || null,
       categoryIds,
       status: 'PENDING',
-      channelId: null
+      channelId: video.parentChannelId || video.channel?.ytId || null // D10: the body is the first channel source
       // Note: Video schema has no playlistId field
     };
-    await apiClient.post<Video>('/api/admin/registry/videos', payload);
+    await apiClient.post<Video>('/api/admin/registry/videos', payload, LIVE_GUARDED);
   }
 }
 

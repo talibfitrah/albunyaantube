@@ -22,6 +22,7 @@ import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.player.PlayerFragment
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -276,19 +277,8 @@ class SearchFragment : Fragment(R.layout.fragment_search) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
-                prefetchService.triggerPrefetch(item.id, viewLifecycleOwner.lifecycleScope)
-                findNavController().navigate(
-                    R.id.action_global_playerFragment,
-                    android.os.Bundle().apply {
-                        putString("videoId", item.id)
-                        putString("title", item.title)
-                        putString("channelName", item.category)
-                        putString("thumbnailUrl", item.thumbnailUrl)
-                        putString("description", item.description)
-                        putInt("durationSeconds", item.durationSeconds)
-                        putLong("viewCount", item.viewCount ?: -1L)
-                    }
-                )
+                prefetchService.triggerTapPrefetch(item, viewLifecycleOwner.lifecycleScope)
+                findNavController().navigate(R.id.action_global_playerFragment, PlayerFragment.argsFor(item))
             }
             is ContentItem.Channel -> {
                 findNavController().navigate(

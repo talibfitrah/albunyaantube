@@ -56,6 +56,66 @@ struct OfflinePlaybackTests {
         UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "OfflinePlaybackTests.\(UUID().uuidString)")!)
     }
 
+    // MARK: - Local-first (1.0.4 I10, offline-downloads R3)
+
+    /// Every entry point pushes `.player(args)`, and `PlayerScreen` builds its view model from them:
+    /// a video saved in full plays its file through the offline path, from wherever it was opened.
+    @Test func anOpenOfAFullySavedVideoPlaysTheSavedCopy() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: "mp4")
+        let args = PlayerArgs(videoId: item.videoId, title: "From Home", durationSeconds: 754)
+
+        let routed = args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true)
+
+        #expect(routed.offlineItemId == item.id)
+        #expect(routed.title == "From Home")          // the caller's metadata rides along
+        #expect(routed.durationSeconds == 754)
+    }
+
+    /// Streaming stays for everything else: no row, a save still running, a row whose file is gone
+    /// (the offline path would say "not available"), and a playlist open -- the offline path has no
+    /// queue (`PlayerScreen` gives it no queue source), and Up Next must keep working.
+    @Test func everyOtherOpenStillStreams() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let saved = try completed(rig, ext: "m4a", audioOnly: true)
+        let missing = try completed(rig, ext: "mp4", writeFile: false)
+        let running = OfflineItem(videoId: "running-1", title: "T", channelName: nil, thumbnailUrl: nil,
+                                  qualityLabel: "360p", audioOnly: false, status: OfflineStatus.running.rawValue)
+        try rig.store.insert(running)
+
+        for args in [PlayerArgs(videoId: "not-saved"), PlayerArgs(videoId: running.videoId),
+                     PlayerArgs(videoId: missing.videoId), PlayerArgs(videoId: saved.videoId, playlistId: "PL")] {
+            #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true).offlineItemId == nil,
+                    "\(args.videoId) left streaming")
+        }
+    }
+
+    /// Cubic P2 (Android 4a7fa2df): a saved copy of the id a live-category row opens (an ended broadcast
+    /// saved earlier) never replaces live-channel mode (§9.1) -- the live lookup, the channel switch
+    /// and the end/failure handling must run.
+    @Test func aSavedCopyOfTheLiveIdNeverReplacesTheLive() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: "mp4")
+        var args = PlayerArgs(videoId: item.videoId)
+        args.liveChannelId = "UCOll3M-P7oKs5cSrQ9ytt6g"
+
+        let routed = args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true)
+
+        #expect(routed.offlineItemId == nil)
+        #expect(routed.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
+
+    /// Stage 9 I-C10.2 (Cubic r2, Android A-M6): an audio-only save has no picture, so online it never replaces the video
+    /// stream (and its quality menu and cast). Offline it is what plays.
+    @Test func anAudioOnlySaveIsPlayedOnlyWhileOffline() throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let item = try completed(rig, ext: "m4a", audioOnly: true)
+        let args = PlayerArgs(videoId: item.videoId)
+
+        #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: true).offlineItemId == nil)
+        #expect(args.preferringSavedCopy(store: rig.store, base: rig.base, isOnline: false).offlineItemId == item.id)
+    }
+
     // MARK: - OfflineResolver mapping (reconciliation note 5)
 
     @Test func aMovpkgResolvesToTheHlsShapeOnTheVisionosClient() async throws {
@@ -65,7 +125,7 @@ struct OfflinePlaybackTests {
         let resolved = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         let expected = OfflineStorage.fileURL(relativePath: item.localPath!, base: rig.base)
-        guard case .hls(let url, let isLive, let audioOnlyURL, let captionTracks) = resolved.stream else {
+        guard case .hls(let url, let isLive, let audioOnlyURL, let captionTracks, _) = resolved.stream else {
             Issue.record("expected .hls, got \(resolved.stream)"); return
         }
         #expect(url == expected)

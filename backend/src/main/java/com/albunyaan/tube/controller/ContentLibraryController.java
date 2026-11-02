@@ -10,7 +10,9 @@ import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.search.CatalogChanged;
 import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.service.ContentReportService;
 import com.albunyaan.tube.service.ImportGraduationService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
 import com.albunyaan.tube.service.TagEnrichmentService;
@@ -68,6 +70,7 @@ public class ContentLibraryController {
     private final ImportGraduationService importGraduationService;
     private final UserRepository userRepository;
     private final ApplicationEventPublisher events;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ContentLibraryController(
             ChannelRepository channelRepository,
@@ -80,7 +83,8 @@ public class ContentLibraryController {
             TagEnrichmentService tagEnrichmentService,
             ImportGraduationService importGraduationService,
             UserRepository userRepository,
-            ApplicationEventPublisher events
+            ApplicationEventPublisher events,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -93,6 +97,7 @@ public class ContentLibraryController {
         this.importGraduationService = importGraduationService;
         this.userRepository = userRepository;
         this.events = events;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -1007,10 +1012,17 @@ public class ContentLibraryController {
                     for (BulkActionItem item : batch) {
                         try {
                             getCollectionName(item.type); // Will throw if invalid type
-                            if (snapshotIndex < snapshots.size() && snapshots.get(snapshotIndex).exists()) {
+                            DocumentSnapshot snap = snapshotIndex < snapshots.size() ? snapshots.get(snapshotIndex) : null;
+                            if (snap != null && snap.exists() && "video".equalsIgnoreCase(item.type) && !"REJECTED".equals(newStatus)
+                                    && ContentReportService.isTakeDownRecord(snap.getString("status"), snap.getString("source"))) {
+                                // Stage 9 B21 (Cubic r9 #14): approved, a take-down record is a blank public video; pending,
+                                // the approvals queue approves it. Restore or a re-add lifts a take-down.
+                                failedKeys.add(item.type.toLowerCase() + ":" + item.id);
+                                errors.add("Video " + item.id + " was taken down by a report: Restore it under Archived "
+                                        + "content, or add the video again");
+                            } else if (snap != null && snap.exists()) {
                                 validatedItems.add(item);
-                                youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id,
-                                        snapshots.get(snapshotIndex).getString("youtubeId"));
+                                youtubeIdByKey.put(item.type.toLowerCase() + ":" + item.id, snap.getString("youtubeId"));
                             } else {
                                 failedKeys.add(item.type.toLowerCase() + ":" + item.id);
                                 errors.add(item.type + " not found: " + item.id);
@@ -1206,6 +1218,7 @@ public class ContentLibraryController {
                 .getContext().getAuthentication().getName();
         log.info("Bulk approve started: user={}, itemCount={}", username, request.items.size());
 
+        writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges(request.items, null, "APPROVED")));   // row 13
         BulkActionResponse response = executeBulkStatusUpdate(request.items, "APPROVED", "approving");
 
         // Add newly approved items to category sort order (only for items that succeeded)
@@ -1368,6 +1381,7 @@ public class ContentLibraryController {
     public ResponseEntity<BulkActionResponse> bulkAssignCategories(@NotNull @Valid @RequestBody BulkCategoryAssignmentRequest request)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
 
+        writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges(request.items, request.categoryIds, null))); // row 12
         int successCount = 0;
         List<String> errors = new ArrayList<>();
 
@@ -1451,6 +1465,61 @@ public class ContentLibraryController {
 
         publicContentCacheService.evictPublicContentCaches();
         return ResponseEntity.ok(new BulkActionResponse(successCount, errors));
+    }
+
+    /**
+     * §7 rows 12–13 (D9): one Change per library item, read from its stored doc (one batched read per type); missing
+     * docs are skipped. A non-null {@code newStatus} is row 13's bulk approve, which also forces PUBLIC: a doc that
+     * isn't PUBLIC is new to the public listing, so it goes in with no "before" and counts as a publish.
+     */
+    private List<LiveCategoryGuard.Change> liveChanges(List<BulkActionItem> items, List<String> newIds, String newStatus)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, Channel> channels = channelRepository.findAllByIds(idsOfType(items, "channel"));
+        Map<String, Playlist> playlists = playlistRepository.findAllByIds(idsOfType(items, "playlist"));
+        Map<String, Video> videos = videoRepository.findAllByIds(idsOfType(items, "video"));
+        List<LiveCategoryGuard.Change> changes = new ArrayList<>();
+        for (BulkActionItem item : items) {
+            String type = item.type.toLowerCase(Locale.ROOT);
+            String ref = type + ":" + item.id;
+            switch (type) {
+                case "channel" -> {
+                    Channel c = channels.get(item.id);
+                    if (c != null) changes.add(LiveCategoryGuard.Change.of(ref, c, before(c, c.getVisibility(), newStatus),
+                            newIds != null ? newIds : c.getCategoryIds(), newStatus != null ? newStatus : c.getStatus()));
+                }
+                case "playlist" -> {
+                    Playlist p = playlists.get(item.id);
+                    if (p != null) changes.add(LiveCategoryGuard.Change.of(ref, p, before(p, p.getVisibility(), newStatus),
+                            newIds != null ? newIds : p.getCategoryIds(), newStatus != null ? newStatus : p.getStatus()));
+                }
+                case "video" -> {
+                    Video v = videos.get(item.id);
+                    if (v != null) changes.add(LiveCategoryGuard.Change.of(ref, v, before(v, v.getVisibility(), newStatus),
+                            newIds != null ? newIds : v.getCategoryIds(), newStatus != null ? newStatus : v.getStatus()));
+                }
+                default -> { }
+            }
+        }
+        return changes;
+    }
+
+    private static List<String> idsOfType(List<BulkActionItem> items, String type) {
+        return items.stream().filter(i -> type.equalsIgnoreCase(i.type)).map(i -> i.id).distinct().toList();
+    }
+
+    /** The doc as its own "before", or null on a status change (bulk approve) of a doc that isn't PUBLIC yet. */
+    private static <T> T before(T doc, String visibility, String newStatus) {
+        return newStatus != null && !VisibilityPolicy.isPublic(visibility) ? null : doc;
+    }
+
+    /** Writes the guard's verified channel ids onto video docs (D13); this path keys them "video:<docId>". */
+    private void writeVerifiedChannels(Map<String, String> verified)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, String> byDocId = new LinkedHashMap<>();
+        verified.forEach((ref, channel) -> {
+            if (ref.startsWith("video:")) byDocId.put(ref.substring("video:".length()), channel);
+        });
+        liveCategoryGuard.writeVerifiedChannels(byDocId);
     }
 
     /**

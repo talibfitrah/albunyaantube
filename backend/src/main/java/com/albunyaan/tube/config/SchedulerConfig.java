@@ -15,7 +15,7 @@ import org.springframework.scheduling.concurrent.ThreadPoolTaskScheduler;
  * would queue subsequent triggers behind it — they'd fire late, sequentially,
  * defeating the staggering.
  *
- * Pool size = 3 = one slot per validation scheduler. Concurrency safety still
+ * Pool size = 4: one slot per validation scheduler plus the live-channel poller (spec F21). Concurrency safety still
  * relies on the per-scheduler Firestore distributed lock, so even if all three
  * fire concurrently they can't double-extract.
  */
@@ -25,7 +25,7 @@ public class SchedulerConfig {
     @Bean
     public TaskScheduler validationTaskScheduler() {
         ThreadPoolTaskScheduler scheduler = new ThreadPoolTaskScheduler();
-        scheduler.setPoolSize(3);
+        scheduler.setPoolSize(4);
         scheduler.setThreadNamePrefix("validation-sched-");
         scheduler.setWaitForTasksToCompleteOnShutdown(true);
         scheduler.setAwaitTerminationSeconds(30);

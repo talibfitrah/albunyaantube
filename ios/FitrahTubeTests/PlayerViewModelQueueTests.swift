@@ -32,6 +32,44 @@ struct PlayerViewModelQueueTests {
         return (vm, resolver)
     }
 
+    /// 1.0.4 round 5 (re-review N1, test b): the advance's flag outlived the swap through the
+    /// prefetch, so a SHORT next lecture that ended meanwhile hit the one-advance guard and the
+    /// playlist stopped. The flag clears once the advance lands; the next end advances again.
+    @Test(.timeLimit(.minutes(1))) func aShortNextLectureThatEndsDuringThePrefetchStillAdvances() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"],
+                                       cooldown: ["c"])   // open() leaves c unprefetched
+        await vm.open()
+        resolver.prefetchRefusals = []
+        resolver.hold("c")                                 // the advance to b now waits in c's prefetch
+        let first = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 5)           // a, b, c(refused) at open; b(.player), c(.prefetch, held)
+        #expect(vm.args.videoId == "b")
+
+        let second = Task { await vm.playToEnd() }         // b, a 16 s clip, ends while c's prefetch is out
+        await resolver.waitUntilCalled(count: 6)           // c on .player, held
+        resolver.release(id: "c")
+        resolver.release(id: "c")
+        await first.value
+        await second.value
+        #expect(vm.advanceCalls == 2, "b's end was swallowed")
+        #expect(vm.args.videoId == "c")
+    }
+
+    /// Round 3 m1's other half (re-review: pin it): one end, one advance. A second end for the same
+    /// ended item while its advance is still resolving (a `.resume` that plays it) must not skip.
+    @Test(.timeLimit(.minutes(1))) func aSecondEndWhileTheAdvanceResolvesIsIgnored() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        await vm.open()
+        resolver.hold("b")
+        let first = Task { await vm.playToEnd() }
+        await resolver.waitUntilCalled(count: 4)           // a, b, c at open; b on .player, held
+        await vm.playToEnd()                               // the same end again
+        resolver.release(id: "b")
+        await first.value
+        #expect(vm.advanceCalls == 1, "one end advanced twice")
+        #expect(vm.args.videoId == "b")
+    }
+
     @Test func endOfItemAdvancesToTheNextQueuedVideo() async {
         let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b"])
         await vm.open()
@@ -39,6 +77,17 @@ struct PlayerViewModelQueueTests {
         #expect(vm.args.videoId == "b")
         #expect(vm.state.isPlayable)
         #expect(vm.args.playlistId == "PL")   // the queue context survives the advance
+    }
+
+    /// Owner issue 1: the player shows the next video's own title once its resolve lands; the Up
+    /// Next rows keep their list titles (ruling (b) is separate).
+    @Test func anAdvanceShowsTheNextVideosResolvedTitleAndLeavesUpNextRowsAlone() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL"), queue: ["a", "b", "c"])
+        resolver.titles = ["b": "orig-b"]
+        await vm.open()
+        await vm.playToEnd()
+        #expect(vm.args.title == "orig-b")
+        #expect(vm.queue.upcoming.map(\.title) == ["T-c"])
     }
 
     /// Captions bug: Up Next keeps the chosen caption LANGUAGE, like Android's
@@ -450,6 +499,17 @@ struct PlayerViewModelQueueTests {
         #expect(vm.state.isPlayable)
     }
 
+    /// Stage 6 I-M9: the deep scan's 3 s budget is spent on pages only, never on a `/titles` wait per page; the list it
+    /// found is retitled once, in one ask.
+    @Test func theDeepScanRetitlesItsListOnce() async {
+        let source = FakeQueueSource(pages: [(ids: ["a", "b"], next: "P1"), (ids: ["c", "d"], next: nil)])
+        let (vm, _) = makeModel(args: .init(videoId: "d", playlistId: "PL", targetVideoId: "d"), source: source)
+        await vm.open()
+        #expect(source.pageCalls == 2)
+        #expect(source.retitled == [["a", "b", "c", "d"]])
+        #expect(vm.queue.current?.id == "d")
+    }
+
     @Test func theDeepStartScanIsBoundedAndFallsBackToTheIndexHint() async {
         // `PlayerViewModel.kt:904-1031`, bounds `:1782-1785` (250 items / 3 s).
         let source = FakeQueueSource(pages: (0..<40).map { page in
@@ -530,5 +590,61 @@ struct PlayerViewModelQueueTests {
         await vm.open()
         #expect(vm.state.isPlayable)
         #expect(vm.queue.items.isEmpty)
+    }
+
+    // MARK: - Owner issue 2: the playlist screen's rows seed the queue
+
+    private func seed(_ ids: [String]) -> [ContentItem] {
+        ids.map { ContentItem(video: VideoItem(id: $0, title: "T-\($0)", channelName: "Ch",
+                                               durationSeconds: 120, thumbnailURL: nil)) }
+    }
+
+    @Test(.timeLimit(.minutes(1))) func aSeededQueueIsInPlaceBeforeTheResolveAndFetchesNoPage() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)          // any page call fails
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL", targetVideoId: "a",
+                                                   queueItems: seed(["a", "b", "c"])), source: source)
+        resolver.hold("a")
+        let opening = Task { await vm.open() }
+        await resolver.waitUntilCalled(count: 1)
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c"])           // while the resolve is held
+        resolver.release(id: "a")
+        await opening.value
+        #expect(source.pageCalls == 0)
+        #expect(vm.state.isPlayable)
+    }
+
+    /// §4 path 1: a `.task` cancelled mid-open must not leave Up Next empty.
+    @Test(.timeLimit(.minutes(1))) func aCancelledOpenKeepsTheSeededQueue() async {
+        let (vm, resolver) = makeModel(args: .init(videoId: "a", playlistId: "PL", targetVideoId: "a",
+                                                   queueItems: seed(["a", "b", "c"])),
+                                       source: FakeQueueSource(pages: [], failFrom: 0))
+        resolver.hold("a")
+        let opening = Task { await vm.open() }
+        await resolver.waitUntilCalled(count: 1)
+        opening.cancel()
+        resolver.release(id: "a")
+        await opening.value
+        #expect(vm.queue.upcoming.map(\.id) == ["b", "c"])
+    }
+
+    @Test func aSeededQueuePagesOnFromThePassedToken() async {
+        let source = FakeQueueSource(pages: [(ids: ["g", "h"], next: nil)])
+        let (vm, _) = makeModel(args: .init(videoId: "e", playlistId: "PL", targetVideoId: "e",
+                                            queueItems: seed(["a", "b", "c", "d", "e", "f"]),
+                                            queueContinuation: "P2"), source: source)
+        await vm.open()
+        #expect(source.continuations == ["P2"])
+        #expect(vm.queue.upcoming.map(\.id) == ["f", "g", "h"])
+    }
+
+    @Test func aSeededShufflePinsTheStartAndNeverPages() async {
+        let source = FakeQueueSource(pages: [], failFrom: 0)
+        let (vm, _) = makeModel(args: .init(videoId: "a", playlistId: "PL", shuffled: true,
+                                            queueItems: seed(["a", "b", "c", "d", "e", "f"]),
+                                            queueContinuation: "P2"), source: source)
+        await vm.open()
+        #expect(vm.queue.current?.id == "a")
+        #expect(vm.queue.hasMorePages == false)
+        #expect(source.pageCalls == 0)
     }
 }

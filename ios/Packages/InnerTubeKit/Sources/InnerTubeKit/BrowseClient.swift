@@ -213,14 +213,7 @@ public actor BrowseClient {
     public func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? id : nil
         let params = continuation == nil ? tab.params : nil
-        var page = try Self.parsePage(await send(browseId: browseId, params: params, continuation: continuation))
-        // A tab can open with pages holding only a continuation (Zad's Live tab, 2026-10-13: two of
-        // them before the streams). Follow them, at most 5 more fetches (Android parity,
-        // `MAX_APPEND_EMPTY_PAGE_FETCHES`).
-        for _ in 1...5 {
-            guard page.items.isEmpty, let next = page.nextContinuation else { break }
-            page = try Self.parsePage(await send(browseId: nil, params: nil, continuation: next))
-        }
+        var page = try await videoPage(browseId: browseId, params: params, continuation: continuation)
         // Channel-tab items carry no byline (the channel is implicit); backfill from the known id.
         page.items = page.items.map { item in
             guard item.channelId == nil else { return item }
@@ -233,7 +226,19 @@ public actor BrowseClient {
 
     public func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         let browseId = continuation == nil ? "VL" + playlistId : nil
-        return try Self.parsePage(await send(browseId: browseId, params: nil, continuation: continuation))
+        return try await videoPage(browseId: browseId, params: nil, continuation: continuation)
+    }
+
+    /// A tab or playlist can open with pages holding only a continuation (Zad's Live tab,
+    /// 2026-10-13: two of them before the streams). Follow them, at most 5 more fetches (Android
+    /// parity, `MAX_APPEND_EMPTY_PAGE_FETCHES`).
+    private func videoPage(browseId: String?, params: String?, continuation: String?) async throws -> BrowsePage<VideoItem> {
+        var page = try Self.parsePage(await send(browseId: browseId, params: params, continuation: continuation))
+        for _ in 1...5 {
+            guard page.items.isEmpty, let next = page.nextContinuation else { break }
+            page = try Self.parsePage(await send(browseId: nil, params: nil, continuation: next))
+        }
+        return page
     }
 
     /// The channel's Playlists tab: `gridRenderer`-wrapped playlist lockups with an item-count
@@ -254,8 +259,9 @@ public actor BrowseClient {
         let request = requestBuilder.build(
             browseId: browseId, params: params, continuation: continuation,
             // English, whatever the device language (Android parity, `EnglishCounts`): counts and
-            // ages are pre-rendered prose, and only English is read back into numbers. Titles and
-            // names are the uploader's own either way (probed live 2026-09-24).
+            // ages are pre-rendered prose, and only English is read back into numbers. Titles are NOT
+            // always the uploader's own: browse may machine-translate one into English (`browse-playlist.json`
+            // `cPaCJL5JCUY`; owner issue 1). The player's `videoDetails.title` is the original.
             context: context, visitorData: visitorData, locale: InnerTubeLocale(hl: "en", gl: locale.gl))
         let response = try await transport.send(request)
         // Cubic r3 #5 (defensive): an HTTP-level browse block. Unobserved live -- real
@@ -313,6 +319,8 @@ public actor BrowseClient {
             }
             if let lockup = lockupViewModel(raw), let item = videoItem(lockup) {
                 items.append(item)
+            } else if let row = raw["playlistVideoRenderer"] as? [String: Any], let item = playlistVideoItem(row) {
+                items.append(item)
             }
         }
         return BrowsePage(items: items, nextContinuation: nextContinuation)
@@ -368,7 +376,8 @@ public actor BrowseClient {
     /// is: a continuation append (`onResponseReceivedActions`), a playlist-style initial page
     /// (`sectionListRenderer.itemSectionRenderer`), a channel-tab grid initial page
     /// (`richGridRenderer`), or the Playlists tab (captured 2026-08-29), whose `itemSectionRenderer`
-    /// holds a single `gridRenderer` wrapping the tiles.
+    /// holds a single `gridRenderer` wrapping the tiles, or a playlist in the legacy shape (captured
+    /// 2026-11-01), whose `itemSectionRenderer` holds a single `playlistVideoListRenderer`.
     private static func itemsArray(_ json: [String: Any]) -> [[String: Any]] {
         if let actions = json["onResponseReceivedActions"] as? [[String: Any]] {
             for action in actions {
@@ -387,6 +396,9 @@ public actor BrowseClient {
                     if let items = dig(section, "itemSectionRenderer", "contents") as? [[String: Any]] {
                         if let grid = items.first.flatMap({ dig($0, "gridRenderer", "items") as? [[String: Any]] }) {
                             return grid
+                        }
+                        if let list = items.first.flatMap({ dig($0, "playlistVideoListRenderer", "contents") as? [[String: Any]] }) {
+                            return list
                         }
                         return items
                     }
@@ -408,8 +420,13 @@ public actor BrowseClient {
         return dig(item, "richItemRenderer", "content", "shortsLockupViewModel") as? [String: Any]
     }
 
+    /// The legacy playlist list wraps its `continuationCommand` in a `commandExecutorCommand`, next
+    /// to a "Reload for updates" toast command.
     private static func continuationToken(_ item: [String: Any]) -> String? {
-        dig(item, "continuationItemRenderer", "continuationEndpoint", "continuationCommand", "token") as? String
+        let endpoint = dig(item, "continuationItemRenderer", "continuationEndpoint")
+        if let token = dig(endpoint, "continuationCommand", "token") as? String { return token }
+        let commands = (dig(endpoint, "commandExecutorCommand", "commands") as? [[String: Any]]) ?? []
+        return commands.lazy.compactMap { dig($0, "continuationCommand", "token") as? String }.first
     }
 
     private static func videoItem(_ lockup: [String: Any]) -> VideoItem? {
@@ -448,6 +465,29 @@ public actor BrowseClient {
             id: id, title: title, channelName: channelName, channelId: channelId,
             durationSeconds: durationSeconds(lockup), viewCountText: viewCountText,
             publishedText: publishedText, thumbnailURL: thumbnailURL, badge: badge(lockup))
+    }
+
+    /// The legacy `playlistVideoRenderer` row (captured 2026-11-01): text in `runs`, the duration as
+    /// `lengthSeconds`, `videoInfo` runs "1.3K views", " • ", "2 days ago" (a live row: "3",
+    /// " watching"), and a live row's time-status overlay styled `LIVE` in place of a duration.
+    private static func playlistVideoItem(_ row: [String: Any]) -> VideoItem? {
+        guard let id = row["videoId"] as? String else { return nil }
+        func text(_ node: Any?) -> String? {
+            (dig(node, "runs") as? [[String: Any]])?.compactMap { $0["text"] as? String }.joined()
+        }
+        let byline = (dig(row, "shortBylineText", "runs") as? [[String: Any]])?.first
+        let stats = text(row["videoInfo"])?.components(separatedBy: " • ") ?? []
+        let style = ((row["thumbnailOverlays"] as? [[String: Any]]) ?? []).lazy
+            .compactMap { dig($0, "thumbnailOverlayTimeStatusRenderer", "style") as? String }.first
+        return VideoItem(
+            id: id, title: text(row["title"]) ?? "",
+            channelName: byline?["text"] as? String,
+            channelId: dig(byline, "navigationEndpoint", "browseEndpoint", "browseId") as? String,
+            durationSeconds: (row["lengthSeconds"] as? String).flatMap { Int($0) },
+            viewCountText: stats.first, publishedText: stats.count > 1 ? stats[1] : nil,
+            thumbnailURL: largestImageURL(dig(row, "thumbnail", "thumbnails") as? [[String: Any]]),
+            // NewPipe's marker for a scheduled premiere/stream on this renderer is `upcomingEventData`.
+            badge: style == "LIVE" ? .live : row["upcomingEventData"] != nil || style == "UPCOMING" ? .upcoming : nil)
     }
 
     /// The `shortsLockupViewModel` variant (captured 2026-08-29): id and thumbnail live under the

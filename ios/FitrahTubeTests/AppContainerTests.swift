@@ -100,6 +100,27 @@ struct AppContainerTests {
         #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
     }
 
+    /// 1.0.4 I3 (stage 5 run 2 R2-1): a disk-full open -- the V7 -> V8 migration on a full device,
+    /// say -- fails twice like a corrupt store, and the rebuild used to delete the Saved library,
+    /// favorites and subscriptions to make room. SwiftData does not say why an open failed, so the
+    /// volume does: too little free space for the store keeps it, on the in-memory stand-in.
+    @Test func aStoreThatCannotOpenOnAFullDiskIsKept() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory())
+            .appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        let bytes = Data("a store whose migration ran out of disk".utf8)
+        try bytes.write(to: url)
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+
+        let container = AppContainer.makeModelContainer(inMemory: false, storeURL: url, freeBytes: { _ in 0 })
+
+        #expect((try? Data(contentsOf: url)) == bytes, "the store was deleted on a full disk")
+        #expect(container.configurations.allSatisfy { $0.isStoredInMemoryOnly }, "the fallback reopened the on-disk store")
+        let context = ModelContext(container)
+        context.insert(FavoriteVideo(videoId: "v1", title: "T", channelName: "C", thumbnailUrl: nil, durationSeconds: 1))
+        try context.save()
+        #expect(try context.fetchCount(FetchDescriptor<FavoriteVideo>()) == 1)
+    }
+
     /// The store opens on first USE, never while the container is built: `FitrahTubeApp` builds it
     /// on every launch, one before the first unlock included, where an open can only fail.
     @Test func buildingTheContainerDoesNotOpenTheStore() {
@@ -366,6 +387,15 @@ struct AppContainerTests {
         #expect(Self.unlockedBytes(url) == bytes, "the live container deleted a store it could not read")
     }
 
+    /// Spec R20: a live container's resolver can ask for HD; a fixture's never does. A nil solver would keep the HD rung
+    /// dark in production and nothing else would notice.
+    @Test func theLiveContainerResolvesHDAndAFixtureNeverDoes() throws {
+        let url = URL(fileURLWithPath: NSTemporaryDirectory()).appendingPathComponent("FitrahTubeTests-\(UUID().uuidString).store")
+        defer { for suffix in ["", "-shm", "-wal"] { try? FileManager.default.removeItem(at: URL(fileURLWithPath: url.path + suffix)) } }
+        #expect(AppContainer.live(storeURL: url, protectedDataAvailable: { true }).resolver.hasChallengeSolver)
+        #expect(!AppContainer.fake().resolver.hasChallengeSolver)
+    }
+
     /// Cubic P1: a background-events relaunch calls the AppDelegate hook and renders NO scene, so
     /// RootView's `.task` — the only other builder of `offlineManager` — never runs; without this
     /// wiring the background session/delegate is never recreated, queued delegate events go
@@ -445,6 +475,11 @@ struct AppContainerTests {
     @Test func theFakeContainerPushesNoIndexBatches() {
         #expect(AppContainer.fake().index.transport is FixedStatusTransport,
                 "a fake container's index push reached the network")
+    }
+
+    /// Owner issue 1(b): the same rule for the `/titles` read.
+    @Test func theFakeContainerAsksNoTitles() {
+        #expect(AppContainer.fake().titles.transport is FixedStatusTransport, "a fake container's title lookup reached the network")
     }
 
     @Test func theFakeContainerAnswersTheOfflineGateWithoutTheNetwork() async {

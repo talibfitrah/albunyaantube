@@ -276,6 +276,7 @@ import { useI18n } from 'vue-i18n'
 import importExportService, { type SimpleImportItemResult } from '@/services/importExportService'
 import type { ValidationRun } from '@/types/validation'
 import ProgressPanel from '@/components/common/ProgressPanel.vue'
+import { ApiError, apiErrorCode, apiErrorWithOffenders } from '@/services/http'
 
 const { t } = useI18n()
 
@@ -499,8 +500,10 @@ async function handleImport() {
   } catch (error: any) {
     console.error('Import failed:', error)
 
-    // Handle specific error responses
-    if (error.response?.status === 409) {
+    // Handle specific error responses. A live-category refusal first: LIVE_CHECK_UNAVAILABLE is a 503, not "server busy".
+    if (apiErrorCode(error)?.startsWith('LIVE_')) {
+      importError.value = apiErrorWithOffenders(error, t, 'bulkImportExport.import.error')
+    } else if (error.response?.status === 409) {
       importError.value = t('bulkImportExport.import.importAlreadyRunning')
     } else if (error.response?.status === 503) {
       const retryAfter = error.response.headers['retry-after'] || '60'
@@ -546,7 +549,13 @@ async function pollImportProgress() {
           failed: totalFailedCount.value
         })
       } else {
-        importError.value = t('bulkImportExport.import.importFailed')
+        // Pre-flight M8: a refused async import is a FAILED run whose details carry the code and offenders (D9).
+        const d = response.run.details
+        importSuccess.value = ''
+        importError.value = typeof d?.code === 'string' && d.code.startsWith('LIVE_')
+          ? apiErrorWithOffenders(new ApiError(d.errorMessage ?? d.code, 0, d.code, { offenders: d.offenders }),
+              t, 'bulkImportExport.import.importFailed')
+          : t('bulkImportExport.import.importFailed')
       }
     }
   } catch (error: any) {
@@ -805,6 +814,7 @@ onUnmounted(() => {
 }
 
 .error-message {
+  white-space: pre-line;
   background: var(--color-danger-soft);
   color: var(--color-danger);
   border: 1px solid var(--color-danger);

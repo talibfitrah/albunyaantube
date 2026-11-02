@@ -11,15 +11,18 @@
       </button>
       <div v-else class="expand-placeholder"></div>
 
-      <label class="node-label" @click="emit('toggle-select', category.id)">
+      <!-- No handler here: the browser forwards a click on the label to the checkbox, which toggles once. -->
+      <label class="node-label">
         <input
           type="checkbox"
           :checked="isSelected"
           :indeterminate.prop="isPartial"
-          @click.stop="emit('toggle-select', category.id)"
+          :disabled="isDisabled"
+          @click.stop="!isDisabled && emit('toggle-select', category.id)"
           class="node-checkbox"
         />
         <span class="node-text">{{ category.name }}</span>
+        <span v-if="category.type === 'LIVE' && liveHint" class="live-hint">{{ liveHint }}</span>
       </label>
     </div>
 
@@ -32,6 +35,8 @@
         :selected-ids="selectedIds"
         :partial-ids="partialIds"
         :multi-select="multiSelect"
+        :disabled-ids="disabledIds"
+        :live-hint="liveHint"
         @toggle-expand="emit('toggle-expand', $event)"
         @toggle-select="emit('toggle-select', $event)"
       />
@@ -46,6 +51,7 @@ interface Category {
   id: string;
   name?: string;
   label?: string;
+  type?: string | null;
   children?: Category[];
 }
 
@@ -56,6 +62,10 @@ interface Props {
   /** Categories only some of the items being assigned have — shown indeterminate. */
   partialIds: Set<string>;
   multiSelect: boolean;
+  /** Spec §8: categories shown but not selectable for the item being assigned. */
+  disabledIds?: Set<string>;
+  /** Shown beside a LIVE category: what it accepts. */
+  liveHint?: string;
 }
 
 interface Emits {
@@ -69,6 +79,7 @@ const emit = defineEmits<Emits>();
 const isExpanded = computed(() => props.expandedNodes.has(props.category.id));
 const isSelected = computed(() => props.selectedIds.has(props.category.id));
 const isPartial = computed(() => props.partialIds.has(props.category.id));
+const isDisabled = computed(() => props.disabledIds?.has(props.category.id) ?? false);
 const hasChildren = computed(() => props.category.children && props.category.children.length > 0);
 </script>
 
@@ -141,6 +152,12 @@ const hasChildren = computed(() => props.category.children && props.category.chi
 .node-text {
   font-size: 0.9375rem;
   color: var(--color-text);
+}
+
+.live-hint {
+  margin-inline-start: 0.5rem;
+  font-size: 0.75rem;
+  color: var(--color-text-secondary);
 }
 
 .node-children {

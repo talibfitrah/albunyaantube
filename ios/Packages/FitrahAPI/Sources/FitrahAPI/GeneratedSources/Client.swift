@@ -389,7 +389,7 @@ public struct Client: APIProtocol {
                     switch chosenContentType {
                     case "application/json":
                         body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.Channel.self,
+                            Components.Schemas.PublicChannelDetail.self,
                             from: responseBody,
                             transforming: { value in
                                 .json(value)
@@ -473,7 +473,7 @@ public struct Client: APIProtocol {
                     switch chosenContentType {
                     case "application/json":
                         body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.Playlist.self,
+                            Components.Schemas.PublicPlaylistDetail.self,
                             from: responseBody,
                             transforming: { value in
                                 .json(value)
@@ -517,19 +517,24 @@ public struct Client: APIProtocol {
             }
         )
     }
-    /// Get video details by YouTube ID
+    /// Current live streams of a live-category channel
     ///
-    /// - Remark: HTTP `GET /v1/videos/{videoId}`.
-    /// - Remark: Generated from `#/paths//v1/videos/{videoId}/get(getPublicVideo)`.
-    public func getPublicVideo(_ input: Operations.GetPublicVideo.Input) async throws -> Operations.GetPublicVideo.Output {
+    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+    /// deleted)
+    ///
+    ///
+    /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
+    /// - Remark: Generated from `#/paths//v1/live/channels/{channelId}/get(getLiveChannel)`.
+    public func getLiveChannel(_ input: Operations.GetLiveChannel.Input) async throws -> Operations.GetLiveChannel.Output {
         try await client.send(
             input: input,
-            forOperation: Operations.GetPublicVideo.id,
+            forOperation: Operations.GetLiveChannel.id,
             serializer: { input in
                 let path = try converter.renderedPath(
-                    template: "/v1/videos/{}",
+                    template: "/v1/live/channels/{}",
                     parameters: [
-                        input.path.videoId
+                        input.path.channelId
                     ]
                 )
                 var request: HTTPTypes.HTTPRequest = .init(
@@ -546,8 +551,13 @@ public struct Client: APIProtocol {
             deserializer: { response, responseBody in
                 switch response.status.code {
                 case 200:
+                    let headers: Operations.GetLiveChannel.Output.Ok.Headers = .init(cacheControl: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Cache-Control",
+                        as: Swift.String.self
+                    ))
                     let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.GetPublicVideo.Output.Ok.Body
+                    let body: Operations.GetLiveChannel.Output.Ok.Body
                     let chosenContentType = try converter.bestContentType(
                         received: contentType,
                         options: [
@@ -557,7 +567,7 @@ public struct Client: APIProtocol {
                     switch chosenContentType {
                     case "application/json":
                         body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.Video.self,
+                            Components.Schemas.LiveChannelLives.self,
                             from: responseBody,
                             transforming: { value in
                                 .json(value)
@@ -566,10 +576,13 @@ public struct Client: APIProtocol {
                     default:
                         preconditionFailure("bestContentType chose an invalid content type.")
                     }
-                    return .ok(.init(body: body))
+                    return .ok(.init(
+                        headers: headers,
+                        body: body
+                    ))
                 case 404:
                     let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.GetPublicVideo.Output.NotFound.Body
+                    let body: Operations.GetLiveChannel.Output.NotFound.Body
                     let chosenContentType = try converter.bestContentType(
                         received: contentType,
                         options: [
@@ -589,6 +602,13 @@ public struct Client: APIProtocol {
                         preconditionFailure("bestContentType chose an invalid content type.")
                     }
                     return .notFound(.init(body: body))
+                case 503:
+                    let headers: Operations.GetLiveChannel.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Retry-After",
+                        as: Swift.Int.self
+                    ))
+                    return .serviceUnavailable(.init(headers: headers))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,
@@ -685,141 +705,6 @@ public struct Client: APIProtocol {
                         as: Swift.Int.self
                     ))
                     return .serviceUnavailable(.init(headers: headers))
-                default:
-                    return .undocumented(
-                        statusCode: response.status.code,
-                        .init(
-                            headerFields: response.headerFields,
-                            body: responseBody
-                        )
-                    )
-                }
-            }
-        )
-    }
-    /// Submit a content report
-    ///
-    /// - Remark: HTTP `POST /v1/reports`.
-    /// - Remark: Generated from `#/paths//v1/reports/post(submitContentReport)`.
-    public func submitContentReport(_ input: Operations.SubmitContentReport.Input) async throws -> Operations.SubmitContentReport.Output {
-        try await client.send(
-            input: input,
-            forOperation: Operations.SubmitContentReport.id,
-            serializer: { input in
-                let path = try converter.renderedPath(
-                    template: "/v1/reports",
-                    parameters: []
-                )
-                var request: HTTPTypes.HTTPRequest = .init(
-                    soar_path: path,
-                    method: .post
-                )
-                suppressMutabilityWarning(&request)
-                converter.setAcceptHeader(
-                    in: &request.headerFields,
-                    contentTypes: input.headers.accept
-                )
-                let body: OpenAPIRuntime.HTTPBody?
-                switch input.body {
-                case let .json(value):
-                    body = try converter.setRequiredRequestBodyAsJSON(
-                        value,
-                        headerFields: &request.headerFields,
-                        contentType: "application/json; charset=utf-8"
-                    )
-                }
-                return (request, body)
-            },
-            deserializer: { response, responseBody in
-                switch response.status.code {
-                case 201:
-                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.SubmitContentReport.Output.Created.Body
-                    let chosenContentType = try converter.bestContentType(
-                        received: contentType,
-                        options: [
-                            "application/json"
-                        ]
-                    )
-                    switch chosenContentType {
-                    case "application/json":
-                        body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.ContentReport.self,
-                            from: responseBody,
-                            transforming: { value in
-                                .json(value)
-                            }
-                        )
-                    default:
-                        preconditionFailure("bestContentType chose an invalid content type.")
-                    }
-                    return .created(.init(body: body))
-                case 400:
-                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.SubmitContentReport.Output.BadRequest.Body
-                    let chosenContentType = try converter.bestContentType(
-                        received: contentType,
-                        options: [
-                            "application/json"
-                        ]
-                    )
-                    switch chosenContentType {
-                    case "application/json":
-                        body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.ErrorResponse.self,
-                            from: responseBody,
-                            transforming: { value in
-                                .json(value)
-                            }
-                        )
-                    default:
-                        preconditionFailure("bestContentType chose an invalid content type.")
-                    }
-                    return .badRequest(.init(body: body))
-                case 429:
-                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.SubmitContentReport.Output.TooManyRequests.Body
-                    let chosenContentType = try converter.bestContentType(
-                        received: contentType,
-                        options: [
-                            "application/json"
-                        ]
-                    )
-                    switch chosenContentType {
-                    case "application/json":
-                        body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.ErrorResponse.self,
-                            from: responseBody,
-                            transforming: { value in
-                                .json(value)
-                            }
-                        )
-                    default:
-                        preconditionFailure("bestContentType chose an invalid content type.")
-                    }
-                    return .tooManyRequests(.init(body: body))
-                case 500:
-                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
-                    let body: Operations.SubmitContentReport.Output.InternalServerError.Body
-                    let chosenContentType = try converter.bestContentType(
-                        received: contentType,
-                        options: [
-                            "application/json"
-                        ]
-                    )
-                    switch chosenContentType {
-                    case "application/json":
-                        body = try await converter.getResponseBodyAsJSON(
-                            Components.Schemas.ErrorResponse.self,
-                            from: responseBody,
-                            transforming: { value in
-                                .json(value)
-                            }
-                        )
-                    default:
-                        preconditionFailure("bestContentType chose an invalid content type.")
-                    }
-                    return .internalServerError(.init(body: body))
                 default:
                     return .undocumented(
                         statusCode: response.status.code,

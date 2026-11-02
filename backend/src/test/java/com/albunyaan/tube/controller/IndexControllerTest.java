@@ -1,6 +1,5 @@
 package com.albunyaan.tube.controller;
 
-import com.albunyaan.tube.service.StreamIndexService;
 import com.google.firebase.auth.FirebaseAuth;
 import org.junit.jupiter.api.Test;
 import org.springframework.beans.factory.annotation.Autowired;
@@ -10,23 +9,23 @@ import org.springframework.boot.test.mock.mockito.MockBean;
 import org.springframework.http.MediaType;
 import org.springframework.test.web.servlet.MockMvc;
 
-import static org.mockito.Mockito.verifyNoInteractions;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
-/** Ruling R18: the client stream push is retired; installed apps still get their 202 and nothing is indexed. */
+/**
+ * Ruling R18: the client stream push is retired. Installed apps still get their 202 whatever they send, and the
+ * slice has no service bean: a dependency added back to IndexController fails this context at once.
+ */
 @WebMvcTest(IndexController.class)
 @AutoConfigureMockMvc(addFilters = false)
 class IndexControllerTest {
 
     @Autowired MockMvc mockMvc;
-    @MockBean StreamIndexService streamIndexService;
     @MockBean FirebaseAuth firebaseAuth;
-    @MockBean com.albunyaan.tube.service.ChannelOrchestrator channelOrchestrator;
     @MockBean com.albunyaan.tube.repository.UserRepository userRepository;
 
     @Test
-    void aValidPushAnswers202AndIndexesNothing() throws Exception {
+    void aValidPushAnswers202() throws Exception {
         String item = "{\"id\":\"lesson00001\",\"name\":\"Seerah Lesson 1\",\"thumbnailUrl\":\"https://i.ytimg.com/vi/lesson00001/hqdefault.jpg\",\"streamType\":\"VIDEO\"}";
         for (String source : new String[]{
                 "\"sourceType\":\"CHANNEL\",\"sourceId\":\"UCaaaaaaaaaaaaaaaaaaaaaa\"",
@@ -37,7 +36,12 @@ class IndexControllerTest {
                             .content("{" + source + ",\"items\":[" + item + "]}"))
                     .andExpect(status().isAccepted());
         }
-        Thread.sleep(500); // the old controller indexed on a background thread; give a regression time to show
-        verifyNoInteractions(streamIndexService);
+    }
+
+    @Test
+    void aMalformedOrEmptyPushAlsoAnswers202() throws Exception {
+        mockMvc.perform(post("/api/v1/index/streams").contentType(MediaType.APPLICATION_JSON).content("not json"))
+                .andExpect(status().isAccepted());
+        mockMvc.perform(post("/api/v1/index/streams")).andExpect(status().isAccepted());
     }
 }

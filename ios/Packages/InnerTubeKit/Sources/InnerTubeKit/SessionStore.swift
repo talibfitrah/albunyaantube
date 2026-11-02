@@ -110,6 +110,7 @@ public actor SessionStore {
         case .visionos: return "visionos"
         case .android: return "android"
         case .web: return "web"
+        case .tvSamsung: return "tvSamsung"
         }
     }
 

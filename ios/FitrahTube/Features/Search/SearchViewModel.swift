@@ -173,6 +173,9 @@ import Foundation
         } catch {
             guard !Task.isCancelled else { return }
             state = .error
+            // 1.0.4 I8 (search-relevance ruling 21:03 (c)): the error state posts nothing itself,
+            // like the empty state above, so VoiceOver heard nothing when a search failed.
+            announce(String(localized: "search_error_generic"))
         }
     }
 }

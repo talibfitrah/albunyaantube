@@ -277,6 +277,41 @@ class PlayerDownloadScreenTest {
         assertTrue(nav.navOptions?.isPopUpToInclusive() == true)
     }
 
+    /** 1.0.4 R3 local-first: opened by its video id (Home, Favorites, a deep link), a saved video plays its file. */
+    @Test
+    fun aSavedVideoOpenedByItsIdPlaysTheFile() {
+        val file = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "saved9.mp4")
+            .apply { writeText("not a video") } // exists; this test is about the mode, not the media
+        TestDownloadModule.fakeRepository.emit(
+            listOf(
+                DownloadEntry(
+                    request = DownloadRequest(
+                        "download-9", "Saved lecture", "lecture_9", audioOnly = false,
+                        channelName = "Lecturer", durationSeconds = 1800,
+                    ),
+                    status = DownloadStatus.COMPLETED,
+                    progress = 100,
+                    filePath = file.absolutePath,
+                )
+            )
+        )
+        scenario = launchFragmentInHiltContainer<PlayerFragment>(
+            fragmentArgs = Bundle().apply { putString("videoId", "lecture_9"); putString("title", "From Home") },
+            themeResId = R.style.Theme_Albunyaan,
+        )
+
+        eventually {
+            scenario!!.onActivity { activity ->
+                fun visible(id: Int) = activity.findViewById<View>(id).isVisible
+                assertEquals("Saved lecture", activity.findViewById<TextView>(R.id.videoTitle).text.toString())
+                assertFalse(visible(R.id.qualityButton))
+                assertFalse(visible(R.id.castButton))
+                assertFalse(visible(R.id.downloadButton))
+            }
+        }
+        file.delete()
+    }
+
     private fun openAbsentDownload() {
         val missing = File(InstrumentationRegistry.getInstrumentation().targetContext.cacheDir, "absent.mp4")
         TestDownloadModule.fakeRepository.emit(

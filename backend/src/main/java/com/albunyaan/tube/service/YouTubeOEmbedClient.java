@@ -17,6 +17,7 @@ import java.net.URLEncoder;
 import java.nio.charset.StandardCharsets;
 import java.util.Optional;
 import java.util.concurrent.TimeUnit;
+import java.util.regex.Pattern;
 
 /**
  * Resolves a stable playlist thumbnail via YouTube's public oEmbed endpoint.
@@ -77,6 +78,47 @@ public class YouTubeOEmbedClient {
             return parseUsableThumbnail(response.body().string());
         } catch (IOException e) {
             logger.warn("oEmbed lookup for playlist {} failed: {}", playlistId, e.getMessage());
+            return Optional.empty();
+        }
+    }
+
+    private static final Pattern VIDEO_ID = Pattern.compile("[A-Za-z0-9_-]{11}");
+
+    /**
+     * Spec D10: the channel URL oEmbed names as a video's author ({@code https://www.youtube.com/@handle} or
+     * {@code /channel/UC…}), or empty when oEmbed answers it can't (401 embedding disabled, 404 private or deleted,
+     * any other non-2xx) or the answer is not a YouTube https URL. R7: HTTP 429, a 5xx or a network failure is no
+     * signal, so it throws {@link IOException} instead of answering "no author".
+     */
+    public Optional<String> authorUrl(String videoId) throws IOException {
+        if (videoId == null || !VIDEO_ID.matcher(videoId).matches()) {
+            return Optional.empty();
+        }
+        String requestUrl = OEMBED_BASE + "?url="
+                + URLEncoder.encode("https://www.youtube.com/watch?v=" + videoId, StandardCharsets.UTF_8) + "&format=json";
+        Request request = new Request.Builder().url(requestUrl).header("User-Agent", userAgent).get().build();
+        try (Response response = httpClient.newCall(request).execute()) {
+            if (response.code() == 429 || response.code() >= 500) {
+                throw new IOException("oEmbed author lookup for " + videoId + " returned HTTP " + response.code());
+            }
+            if (!response.isSuccessful() || response.body() == null) {
+                logger.warn("oEmbed author lookup for {} returned HTTP {}", videoId, response.code());
+                return Optional.empty();
+            }
+            return parseAuthorUrl(response.body().string());
+        }
+    }
+
+    Optional<String> parseAuthorUrl(String jsonBody) {
+        try {
+            String url = objectMapper.readTree(jsonBody).path("author_url").asText(null);
+            HttpUrl parsed = url == null ? null : HttpUrl.parse(url);
+            if (parsed == null || !parsed.isHttps()
+                    || !(parsed.host().equals("youtube.com") || parsed.host().endsWith(".youtube.com"))) {
+                return Optional.empty();
+            }
+            return Optional.of(url);
+        } catch (IOException e) {
             return Optional.empty();
         }
     }

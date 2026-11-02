@@ -34,6 +34,14 @@ public class ContentItemDto {
     // Playlist-specific
     private Integer itemCount;
 
+    /** Spec §4.1: the channel whose current live this item is (expanded LIVE-category items only). */
+    private String liveChannelId;
+
+    // Search-only provenance (inner-search R28): the admitted channel or playlist that lists a stream or inner video.
+    // Absent on catalog items (NON_NULL); installed apps ignore unknown fields (F31).
+    private String sourceType; // CHANNEL or PLAYLIST
+    private String sourceId;   // that source's YouTube id (UC... or PL...)
+
     // Search-only: not serialized to API response
     @JsonIgnore
     private List<String> keywords;
@@ -196,6 +204,30 @@ public class ContentItemDto {
 
     public void setItemCount(Integer itemCount) {
         this.itemCount = itemCount;
+    }
+
+    public String getLiveChannelId() {
+        return liveChannelId;
+    }
+
+    public void setLiveChannelId(String liveChannelId) {
+        this.liveChannelId = liveChannelId;
+    }
+
+    public String getSourceType() {
+        return sourceType;
+    }
+
+    public void setSourceType(String sourceType) {
+        this.sourceType = sourceType;
+    }
+
+    public String getSourceId() {
+        return sourceId;
+    }
+
+    public void setSourceId(String sourceId) {
+        this.sourceId = sourceId;
     }
 
     public String getChannelTitle() {

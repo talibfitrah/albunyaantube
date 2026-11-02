@@ -159,4 +159,6 @@ class RetrofitContentService(
             false
         }
     }
+
+    override suspend fun fetchChannelLives(channelId: String) = api.fetchLiveChannel(channelId)
 }

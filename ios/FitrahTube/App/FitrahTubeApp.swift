@@ -450,10 +450,27 @@ struct FitrahTubeApp: App {
                 totalBytes: status == .queued ? nil : 18_000_000,
                 errorCode: status == .failed ? "NETWORK" : nil,
                 completedAt: status == .completed ? Date() : nil)
+            // 1.0.4 I9: the completed row has a saved thumbnail copy behind a URL nothing answers, so
+            // the capture shows the copy standing in for the network.
+            if status == .completed { seedDebugThumbnailCopy(for: item) }
             try? container.offlineStore.insert(item)
         }
         #endif
     }
+
+    #if DEBUG
+    private func seedDebugThumbnailCopy(for item: OfflineItem) {
+        item.thumbnailUrl = "https://127.0.0.1:9/seed-thumbnail.jpg"
+        let size = CGSize(width: 320, height: 180)
+        let card = UIGraphicsImageRenderer(size: size).jpegData(withCompressionQuality: 0.8) { context in
+            UIColor(Color.brand).setFill()
+            context.fill(CGRect(origin: .zero, size: size))
+            UIImage(named: "logo")?.draw(in: CGRect(x: 120, y: 50, width: 80, height: 80))
+        }
+        try? OfflineManager.prepareDirectory(OfflineStorage.directoryURL(base: container.offlineBase))
+        try? card.write(to: OfflineStorage.thumbnailURL(itemId: item.id, base: container.offlineBase))
+    }
+    #endif
 
     /// Phase 4 Task 30 screenshot rig: `-fitrah-seed-submissions` writes AWAITING rows — one
     /// channel, one playlist, one video — through the three stores, which is what makes the Me

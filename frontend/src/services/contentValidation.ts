@@ -8,7 +8,6 @@
 import apiClient from './api/client';
 import type {
   ValidationRun,
-  ValidationRunResponse,
   AsyncValidationResponse,
   ArchivedContent,
   ArchivedCounts,
@@ -47,57 +46,6 @@ export async function validateAllContent(
 export async function getValidationStatus(runId: string): Promise<ValidationRun> {
   const response = await apiClient.get<ValidationRun>(
     `${BASE_PATH}/status/${runId}`
-  );
-
-  return response.data;
-}
-
-/**
- * Validate channels only
- */
-export async function validateChannels(
-  options?: TriggerValidationOptions
-): Promise<ValidationRunResponse> {
-  const params = options?.maxItems ? { maxItems: options.maxItems } : {};
-
-  const response = await apiClient.post<ValidationRunResponse>(
-    `${BASE_PATH}/validate/channels`,
-    null,
-    { params }
-  );
-
-  return response.data;
-}
-
-/**
- * Validate playlists only
- */
-export async function validatePlaylists(
-  options?: TriggerValidationOptions
-): Promise<ValidationRunResponse> {
-  const params = options?.maxItems ? { maxItems: options.maxItems } : {};
-
-  const response = await apiClient.post<ValidationRunResponse>(
-    `${BASE_PATH}/validate/playlists`,
-    null,
-    { params }
-  );
-
-  return response.data;
-}
-
-/**
- * Validate videos only
- */
-export async function validateVideos(
-  options?: TriggerValidationOptions
-): Promise<ValidationRunResponse> {
-  const params = options?.maxItems ? { maxItems: options.maxItems } : {};
-
-  const response = await apiClient.post<ValidationRunResponse>(
-    `${BASE_PATH}/validate/videos`,
-    null,
-    { params }
   );
 
   return response.data;
@@ -157,7 +105,7 @@ export async function getArchivedVideos(): Promise<ArchivedContent[]> {
 /**
  * Perform bulk action on archived content (delete or restore)
  */
-export async function performBulkAction(
+async function performBulkAction(
   request: ContentActionRequest
 ): Promise<ContentActionResult> {
   const response = await apiClient.post<ContentActionResult>(
@@ -199,60 +147,3 @@ export async function restoreArchivedContent(
     reason
   });
 }
-
-// ==================== Validation History ====================
-
-/**
- * Get validation run history
- */
-export async function getValidationHistory(
-  limit: number = 20
-): Promise<ValidationRun[]> {
-  const response = await apiClient.get<{ data: ValidationRun[]; count: number }>(
-    `${BASE_PATH}/history`,
-    { params: { limit } }
-  );
-
-  return response.data.data;
-}
-
-/**
- * Get the latest validation run
- */
-export async function getLatestValidationRun(): Promise<ValidationRun | null> {
-  const response = await apiClient.get<ValidationRun | { message: string }>(
-    `${BASE_PATH}/latest`
-  );
-
-  // Handle case where no validation runs exist
-  if ('message' in response.data) {
-    return null;
-  }
-
-  return response.data;
-}
-
-// ==================== Export Default Object ====================
-
-export default {
-  // Validation triggers
-  validateAllContent,
-  validateChannels,
-  validatePlaylists,
-  validateVideos,
-  // Validation status
-  getValidationStatus,
-  // Archived content
-  getArchivedCounts,
-  getArchivedContent,
-  getArchivedChannels,
-  getArchivedPlaylists,
-  getArchivedVideos,
-  // Actions
-  performBulkAction,
-  deleteArchivedContent,
-  restoreArchivedContent,
-  // History
-  getValidationHistory,
-  getLatestValidationRun
-};

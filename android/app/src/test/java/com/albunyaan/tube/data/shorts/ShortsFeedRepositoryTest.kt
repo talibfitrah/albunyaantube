@@ -175,7 +175,7 @@ class ShortsFeedRepositoryTest {
         assertEquals("https://www.youtube.com", tooShort.canonicalShareUrl)
 
         // Valid 11-char YouTube id passes through.
-        val valid = malformed.copy(id = "dQw4w9WgXcQ")
-        assertEquals("https://www.youtube.com/shorts/dQw4w9WgXcQ", valid.canonicalShareUrl)
+        val valid = malformed.copy(id = "sCQwxFEMlZ4")
+        assertEquals("https://www.youtube.com/shorts/sCQwxFEMlZ4", valid.canonicalShareUrl)
     }
 }

@@ -1,7 +1,6 @@
 package com.albunyaan.tube.util;
 
 import com.google.cloud.firestore.Firestore;
-import com.google.cloud.firestore.QueryDocumentSnapshot;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -17,17 +16,15 @@ public class FirestoreTestHelper {
     private static final Logger log = LoggerFactory.getLogger(FirestoreTestHelper.class);
 
     /**
-     * Clear all documents from a collection.
-     * Useful for cleaning up test data between tests.
+     * Clear all documents from a collection, subcollections included.
+     * Firestore (and its emulator) never cascades a document delete into its subcollections, so a
+     * per-document delete left users/{uid}/subscriptions etc. behind for later classes and later
+     * runs on the same emulator. recursiveDelete also reaches subcollections of missing parents.
      */
     public static void clearCollection(Firestore firestore, String collectionName)
             throws ExecutionException, InterruptedException {
-        var docs = firestore.collection(collectionName).get().get().getDocuments();
-        log.debug("Clearing {} documents from collection: {}", docs.size(), collectionName);
-
-        for (QueryDocumentSnapshot doc : docs) {
-            doc.getReference().delete().get();
-        }
+        log.debug("Recursively clearing collection: {}", collectionName);
+        firestore.recursiveDelete(firestore.collection(collectionName)).get();
     }
 
     /**

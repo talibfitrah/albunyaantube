@@ -53,7 +53,7 @@ private extension Resolved {
     var comparisonKey: String {
         let streamKey: String
         switch stream {
-        case .hls(let url, let isLive, _, _): streamKey = "hls:\(url.absoluteString):\(isLive)"
+        case .hls(let url, let isLive, _, _, _): streamKey = "hls:\(url.absoluteString):\(isLive)"
         case .progressive(let url, let label): streamKey = "progressive:\(url.absoluteString):\(label)"
         }
         return "\(client):\(userAgent):\(resolvedAt.timeIntervalSince1970):\(streamKey)"

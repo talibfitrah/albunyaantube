@@ -75,6 +75,8 @@ tags:
     description: Unified content library management
   - name: Exclusions
     description: Workspace-level exclusion management
+  - name: Playback
+    description: Signed-in stream playback helpers (the iOS HD upgrade's challenge solver)
 
 paths:
   # ============================================================================
@@ -319,6 +321,56 @@ paths:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
 
+  /v1/live/channels/{channelId}:
+    get:
+      summary: Current live streams of a live-category channel
+      description: |
+        Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
+        change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
+        deleted)
+      operationId: getLiveChannel
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: channelId
+          in: path
+          required: true
+          schema:
+            type: string
+          description: YouTube channel ID (UC…)
+      responses:
+        '200':
+          description: The channel's current lives, filtered so every id plays; OFFLINE with no lives when none
+          headers:
+            Cache-Control:
+              schema:
+                type: string
+              description: max-age=15, public
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveChannelLives'
+        '404':
+          description: |
+            Not a channel entry of a live category. Definitive; never sent while the live states load, nor for a
+            channel added to a live category (or served there again after an archive) in the last 20 minutes that no
+            poll has listed yet
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: |
+            The live states are still loading after a server start (no view built from them has been published yet),
+            or the channel was added to a live category (or served there again after an archive) in the last 20
+            minutes and the poller (every 10 minutes) has not listed it yet. Empty body; retry after `Retry-After`
+            seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (60)
+              schema:
+                type: integer
+
   /v1/search:
     get:
       summary: Search across all content types
@@ -367,6 +419,54 @@ paths:
           headers:
             Retry-After:
               description: Seconds to wait before retrying (5)
+              schema:
+                type: integer
+
+  /v1/titles:
+    get:
+      summary: Original titles for video ids (the apps' channel and playlist rows)
+      description: |
+        The titles the server knows for up to 50 video ids: the catalog's, else the one stored for an approved
+        channel or playlist that lists the video. Ids it does not know are left out; clients keep their own
+        title for those. No YouTube request is made.
+      operationId: getVideoTitles
+      tags: [Public Content]
+      security: []
+      parameters:
+        - name: ids
+          in: query
+          required: true
+          style: form
+          explode: false
+          schema:
+            type: array
+            minItems: 1
+            maxItems: 50
+            items:
+              type: string
+              pattern: '^[A-Za-z0-9_-]{11}$'
+      responses:
+        '200':
+          description: id -> title, for the ids the server knows
+          headers:
+            Cache-Control:
+              description: |
+                public, max-age=3600; public, max-age=60 for a partial answer (the server may find more
+                titles on a later ask)
+              schema:
+                type: string
+          content:
+            application/json:
+              schema:
+                type: object
+                additionalProperties:
+                  type: string
+        '400':
+          description: No ids, more than 50, or an id that is not 11 characters of [A-Za-z0-9_-]
+        '503':
+          description: The search index is still building after a server start; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
               schema:
                 type: integer
 
@@ -488,11 +588,24 @@ paths:
                   nullable: true
       responses:
         '200':
-          description: Updated report
+          description: |
+            Updated report. RESOLVED with no parent that applies takes the target down (ARCHIVED). The doc keeps its
+            status, so Restore gives a submission back to the review it was in. While ARCHIVED, its submitter cannot
+            withdraw it, whatever its status (409).
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ContentReport'
+        '503':
+          description: |
+            RESOLVED on a video report with no parent, for a video with no registry doc, while the search index is
+            still building after a server start: the sources listing the video are not known yet. The report stays
+            PENDING. Empty body; retry after `Retry-After` seconds.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (5)
+              schema:
+                type: integer
 
   /admin/reports/stats:
     get:
@@ -584,6 +697,60 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentSortDto'
 
+  /admin/sort/categories/{categoryId}/content/add:
+    post:
+      summary: Add content items to a category, at the end of its sort order
+      description: Also adds the category to each item's categoryIds. Admin only.
+      operationId: addContentToCategory
+      tags: [Sort Order]
+      parameters:
+        - name: categoryId
+          in: path
+          required: true
+          schema:
+            type: string
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [items]
+              properties:
+                items:
+                  type: array
+                  minItems: 1
+                  items:
+                    type: object
+                    required: [contentId, contentType]
+                    properties:
+                      contentId:
+                        type: string
+                      contentType:
+                        type: string
+                        enum: [channel, playlist, video]
+      responses:
+        '200':
+          description: The category's content in sort order
+          content:
+            application/json:
+              schema:
+                type: array
+                items:
+                  $ref: '#/components/schemas/ContentSortDto'
+        '400':
+          description: |
+            An unknown category or item (an empty body); a request that fails validation or is malformed JSON
+            (ErrorResponse); or a live-category refusal (LiveCategoryError, see LiveCategoryRefused)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
+
   /admin/sort/categories/{categoryId}/content/reorder:
     put:
       summary: Reorder content within a category (insert-and-shift)
@@ -621,6 +788,26 @@ paths:
                 items:
                   $ref: '#/components/schemas/ContentSortDto'
 
+  /admin/live-channels/status:
+    get:
+      summary: Live state of every live category's entries (Content Sorting chips, suspect banner)
+      description: |
+        Read-only, from the live poller's in-memory snapshot plus the categories' members (spec 2026-10-17 §4.2).
+        No YouTube request is made. ADMIN only.
+      operationId: getLiveChannelsStatus
+      tags: [Sort Order]
+      responses:
+        '200':
+          description: Each live category's entries in display order
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveChannelsStatus'
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          $ref: '#/components/responses/ForbiddenError'
+
   # ============================================================================
   # CATEGORIES (Admin/Moderator)
   # ============================================================================
@@ -641,6 +828,9 @@ paths:
                   $ref: '#/components/schemas/Category'
     post:
       summary: Create new category
+      description: |
+        Always creates a new category with a server-assigned id; an `id` in the body is ignored, so a create never
+        overwrites an existing category. Only the update (PUT) can turn an existing category LIVE.
       operationId: createCategory
       tags: [Categories]
       requestBody:
@@ -656,6 +846,14 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '400':
+          description: |
+            An unknown `type` or a missing parent (empty body), or `LIVE_CATEGORY_SHAPE`: a LIVE category with a
+            parent, or any category under a LIVE parent
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
 
   /admin/categories/top-level:
     get:
@@ -734,6 +932,27 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/Category'
+        '400':
+          description: |
+            An unknown `type`, a missing, self or descendant parent (empty body), or a live-category refusal:
+            `LIVE_CATEGORY_SHAPE` (a LIVE category with a parent or subcategories, or a category under a LIVE parent),
+            `LIVE_CATEGORY_FULL` (setting LIVE on a category holding more than 30 items) or
+            `LIVE_CATEGORY_MEMBERS_INVALID` (setting LIVE on a category holding items that are not channels or live
+            streams; `details.offenders` lists them)
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
+        '404':
+          description: Category not found
+        '503':
+          description: |
+            `LIVE_CHECK_UNAVAILABLE`: setting LIVE needs a YouTube check of the category's live streams, and it could
+            not run. Nothing was saved; retry
+          content:
+            application/json:
+              schema:
+                $ref: '#/components/schemas/LiveCategoryError'
     delete:
       summary: Delete category (fails if has subcategories)
       operationId: deleteCategory
@@ -1007,6 +1226,10 @@ paths:
           description: Channel added
         '409':
           description: Channel already exists
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
 
   /admin/registry/channels/status/{status}:
     get:
@@ -1067,6 +1290,8 @@ paths:
       responses:
         '200':
           description: Channel updated
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
     delete:
       summary: Delete channel from registry
       operationId: registryDeleteChannel
@@ -1095,6 +1320,8 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists:
     get:
@@ -1125,6 +1352,10 @@ paths:
           description: Playlist added
         '409':
           description: Playlist already exists
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
 
   /admin/registry/playlists/status/{status}:
     get:
@@ -1185,6 +1416,8 @@ paths:
       responses:
         '200':
           description: Playlist updated
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
     delete:
       summary: Delete playlist from registry
       operationId: registryDeletePlaylist
@@ -1213,6 +1446,8 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists/{id}/exclusions:
     get:
@@ -1301,7 +1536,15 @@ paths:
         '201':
           description: Video added
         '409':
-          description: Video already exists
+          description: |
+            Video already exists, or its re-add lost a race (another re-add landed, or Restore deleted the
+            record). A REJECTED video, a report's take-down record too, is re-added into its own doc instead.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '403':
+          $ref: '#/components/responses/LiveCategoryAdminOnly'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/registry/videos/status/{status}:
     get:
@@ -1362,6 +1605,14 @@ paths:
       responses:
         '200':
           description: Video updated
+        '409':
+          description: |
+            The video is a report's take-down record and the body moves its status out of REJECTED. Restore it under
+            Archived content, or add the video again.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
     delete:
       summary: Delete video from registry
       operationId: registryDeleteVideo
@@ -1390,6 +1641,13 @@ paths:
       responses:
         '200':
           description: Status toggled
+        '409':
+          description: |
+            The video is a report's take-down record. Restore it under Archived content, or add the video again.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   # ============================================================================
   # BULK SUBMISSION (Admin/Moderator)
@@ -1450,11 +1708,29 @@ paths:
               schema:
                 $ref: '#/components/schemas/BulkSubmitResponse'
         '400':
-          description: Validation error (e.g. empty row list, too many rows)
+          description: |
+            A validation error (e.g. empty row list, too many rows), or a live-category refusal of the whole request
+            (see LiveCategoryRefused; `details.offenders` lists the rows)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
         '401':
           $ref: '#/components/responses/UnauthorizedError'
         '403':
-          $ref: '#/components/responses/ForbiddenError'
+          description: |
+            Insufficient permissions, or `LIVE_CATEGORY_ADMIN_ONLY` (LiveCategoryError): a moderator's row names a
+            LIVE category
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   # ============================================================================
   # YOUTUBE INTEGRATION (Admin/Moderator)
@@ -1880,6 +2156,179 @@ paths:
                     type: string
 
   # ============================================================================
+  # PLAYBACK (signed-in apps; iOS HD playback)
+  # ============================================================================
+
+  /playback/player:
+    get:
+      summary: The player the challenge solver holds now
+      description: |
+        The player id and signature timestamp (`sts`) the server's challenge solver holds, kept for 60 s. The app
+        signs its stream request with `sts`, then sends that player's challenges to `POST /playback/solve`.
+      operationId: getPlaybackPlayer
+      tags: [Playback]
+      responses:
+        '200':
+          description: |
+            The solver's current player. While the solver gives no answer (it cannot be reached, or answers late or
+            unreadably: building a new player blocks it for seconds), the last copy, which it still holds.
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [playerId, sts]
+                properties:
+                  playerId:
+                    type: string
+                    pattern: '^[0-9a-f]{8}$'
+                  sts:
+                    type: integer
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The account is deleted or blocked (`code` ACCOUNT_DELETED or ACCOUNT_BLOCKED)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [ACCOUNT_DELETED, ACCOUNT_BLOCKED]
+                  message:
+                    type: string
+        '503':
+          description: |
+            No player now. `Retry-After: 120`: the solver is switched off, holds no player (none fetched yet, or its
+            last one was dropped), or cannot be reached, answers late (1 s) or unreadably while no earlier copy is held
+            (with one, that copy is the 200); a failed lookup is remembered for 10 s and answered the same way.
+            `Retry-After: 10`: another call is fetching the player right now and no earlier copy is held. Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (10 or 120)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+
+  /playback/solve:
+    post:
+      summary: Solve a player's stream challenges
+      description: |
+        Answers the `n` and `s` challenges of one player. Each answer is cached for 6 hours. Limits: 20 calls a
+        minute and 300 an hour per user (429); at most 8 solves in flight and 20 a second across all users (503).
+        A body over 16 KB gets 413 before any JSON is bound: unread when its `Content-Length` declares it, else (a
+        chunked body declares none) after reading at most 16 KB and one byte. Nothing about a request is logged.
+      operationId: solvePlaybackChallenges
+      tags: [Playback]
+      requestBody:
+        required: true
+        content:
+          application/json:
+            schema:
+              type: object
+              required: [playerId, n, s]
+              properties:
+                playerId:
+                  type: string
+                  pattern: '^[0-9a-f]{8}$'
+                n:
+                  type: array
+                  maxItems: 4
+                  description: An s-only solve sends `[]`
+                  items:
+                    type: string
+                    minLength: 8
+                    maxLength: 32
+                    pattern: '^[A-Za-z0-9_=-]+$'
+                s:
+                  type: array
+                  maxItems: 64
+                  items:
+                    type: string
+                    minLength: 64
+                    maxLength: 160
+                    pattern: '^[A-Za-z0-9_=-]+$'
+      responses:
+        '200':
+          description: Challenge -> answer, for each challenge the solver answered
+          content:
+            application/json:
+              schema:
+                type: object
+                required: [n, s]
+                properties:
+                  n:
+                    type: object
+                    additionalProperties:
+                      type: string
+                  s:
+                    type: object
+                    additionalProperties:
+                      type: string
+        '400':
+          description: |
+            A body outside the shapes above (`{}`), or a body that is not JSON (the generic error body).
+          content:
+            application/json:
+              schema:
+                type: object
+        '401':
+          $ref: '#/components/responses/UnauthorizedError'
+        '403':
+          description: The account is deleted or blocked (`code` ACCOUNT_DELETED or ACCOUNT_BLOCKED)
+          content:
+            application/json:
+              schema:
+                type: object
+                properties:
+                  code:
+                    type: string
+                    enum: [ACCOUNT_DELETED, ACCOUNT_BLOCKED]
+                  message:
+                    type: string
+        '409':
+          description: |
+            The solver no longer holds this player: it was replaced, or a solve with it failed and the solver
+            dropped it. Body `{}`; fetch `GET /playback/player` again.
+          content:
+            application/json:
+              schema:
+                type: object
+        '413':
+          description: The body is over 16 KB (the generic error body).
+          content:
+            application/json:
+              schema:
+                type: object
+        '429':
+          description: This user's limit (20 a minute, 300 an hour) is used up. Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds until a call is allowed again (at least 1)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+        '503':
+          description: |
+            The solver is busy (`Retry-After: 10`: 8 solves in flight or 20 this second), or switched off, unreachable,
+            slower than 1 s, or failed in any other way (`Retry-After: 120`). Body `{}`.
+          headers:
+            Retry-After:
+              description: Seconds to wait before retrying (10 or 120)
+              schema:
+                type: integer
+          content:
+            application/json:
+              schema:
+                type: object
+
+  # ============================================================================
   # AUDIT LOGS (Admin Only)
   # ============================================================================
 
@@ -2114,7 +2563,17 @@ paths:
         '200':
           description: Item approved
         '400':
-          description: categoryOverride does not name an existing category
+          description: |
+            categoryOverride does not name an existing category, or the body is malformed (ErrorResponse); or a
+            live-category refusal (LiveCategoryError, see LiveCategoryRefused)
+          content:
+            application/json:
+              schema:
+                oneOf:
+                  - $ref: '#/components/schemas/ErrorResponse'
+                  - $ref: '#/components/schemas/LiveCategoryError'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/approvals/{id}/reject:
     post:
@@ -2448,7 +2907,16 @@ paths:
                   default: SKIP
       responses:
         '200':
-          description: Import results
+          description: |
+            Import results. A video whose youtubeId has a report's take-down record is skipped (counted in
+            videosSkipped) and named in errors, unless the file's doc is that take-down record itself. An import never
+            un-archives: on every mergeStrategy, a stored ARCHIVED (or a video's UNAVAILABLE) validationStatus is kept
+            over the file's (Restore it under Archived content). A row whose id Firestore refuses (empty, or holding a
+            '/') is named in errors, and the rest import.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/import-export/import/validate:
     post:
@@ -2518,6 +2986,10 @@ paths:
       responses:
         '200':
           description: Import results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/import-export/import/simple/validate:
     post:
@@ -2780,7 +3252,13 @@ paths:
                         type: string
       responses:
         '200':
-          description: Bulk action results
+          description: |
+            Bulk action results. A video that is a report's take-down record is not approved: it is named in errors.
+            Restore it under Archived content, or add the video again.
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/content/bulk/reject:
     post:
@@ -2869,6 +3347,10 @@ paths:
       responses:
         '200':
           description: Bulk action results
+        '400':
+          $ref: '#/components/responses/LiveCategoryRefused'
+        '503':
+          $ref: '#/components/responses/LiveCheckUnavailable'
 
   /admin/content/bulk/reorder:
     post:
@@ -3247,6 +3729,7 @@ components:
       properties:
         id:
           type: string
+          description: Server-assigned; ignored in a create (POST) body
         name:
           type: string
         slug:
@@ -3271,6 +3754,13 @@ components:
           type: integer
           nullable: true
           description: Sort order within parent category. Null until explicitly set.
+        type:
+          type: string
+          nullable: true
+          enum: [LIVE]
+          description: |
+            Null for an ordinary category; LIVE for a live-channels category (spec 2026-10-17 §3). An update that
+            omits the field keeps the stored type; an explicit null clears it.
         localizedNames:
           type: object
           nullable: true
@@ -4807,6 +5297,135 @@ components:
           type: integer
           nullable: true
           description: Number of items (playlists only)
+        # Live categories (spec 2026-10-17 §4.1)
+        liveChannelId:
+          type: string
+          nullable: true
+          description: Set on items of a live category that stand for a channel's current live stream; the app uses it to recover when the stream ends or its URL expires
+        # Search provenance (inner search, 2026-10-17): set only on videos found inside an approved source
+        sourceType:
+          type: string
+          nullable: true
+          description: CHANNEL or PLAYLIST - the approved source that lists this video (search results only)
+        sourceId:
+          type: string
+          nullable: true
+          description: The YouTube id of that source (UC... or PL...); search results only
+
+    LiveChannelLives:
+      type: object
+      description: A live-category channel's current lives (spec 2026-10-17 §4.1)
+      required: [channelId, status, lives]
+      properties:
+        channelId:
+          type: string
+        status:
+          type: string
+          enum: [LIVE, OFFLINE]
+        lives:
+          type: array
+          items:
+            type: object
+            required: [id, title]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+
+    LiveChannelsStatus:
+      type: object
+      description: GET /admin/live-channels/status (spec 2026-10-17 §4.2)
+      required: [suspectSince, categories]
+      properties:
+        suspectSince:
+          type: string
+          format: date-time
+          nullable: true
+          description: |
+            When the current run of unproven cycles began: the first cycle in which no polled channel read LIVE
+            (live spec R10); null after any cycle with a LIVE read. Meanwhile a channel that reads empty keeps its
+            last lives for up to 1 h and is then hidden, and nothing is removed. Also set while every channel is
+            really offline.
+        categories:
+          type: array
+          items:
+            type: object
+            required: [id, entries]
+            properties:
+              id:
+                type: string
+              entries:
+                type: array
+                items:
+                  $ref: '#/components/schemas/LiveChannelsStatusEntry'
+
+    LiveChannelsStatusEntry:
+      type: object
+      description: |
+        One member of a live category, in display order. A channel entry (contentType channel) carries name,
+        servable, reason, lives, checkedAt, offlineSince, errorSince and lastError; a link entry (contentType video)
+        carries youtubeId, misses and missingSince.
+      required: [contentType, contentId, channelId, status]
+      properties:
+        contentType:
+          type: string
+          enum: [channel, video]
+        contentId:
+          type: string
+        channelId:
+          type: string
+          nullable: true
+        status:
+          type: string
+          description: Channel UNKNOWN, LIVE or OFFLINE; link LIVE, MISSING, BLOCKED or NO_CHANNEL
+        name:
+          type: string
+          nullable: true
+        servable:
+          type: boolean
+          description: False when the channel is not served at all; its lives then show BLOCKED
+        reason:
+          type: string
+          nullable: true
+          description: TERMINATED when the channel's last read found it terminated; null otherwise
+        lives:
+          type: array
+          items:
+            type: object
+            required: [id, served]
+            properties:
+              id:
+                type: string
+              title:
+                type: string
+                nullable: true
+              served:
+                type: string
+                enum: [SERVED, EXCLUDED, BLOCKED]
+        checkedAt:
+          type: string
+          format: date-time
+          nullable: true
+        offlineSince:
+          type: string
+          format: date-time
+          nullable: true
+        errorSince:
+          type: string
+          format: date-time
+          nullable: true
+        lastError:
+          type: string
+          nullable: true
+        youtubeId:
+          type: string
+        misses:
+          type: integer
+        missingSince:
+          type: string
+          format: date-time
+          nullable: true
 
     ContentDto:
       type: object
@@ -4870,6 +5489,29 @@ components:
           type: object
           nullable: true
           description: Additional error context (optional)
+
+    LiveCategoryError:
+      type: object
+      description: A live-category refusal (spec 2026-10-17 §4.2); the admin UI maps `code` to its own message
+      required: [status, code, message]
+      properties:
+        timestamp:
+          type: string
+        status:
+          type: integer
+        error:
+          type: string
+        code:
+          type: string
+          enum: [LIVE_CATEGORY_ADMIN_ONLY, LIVE_CATEGORY_TYPE_NOT_ALLOWED, LIVE_LINK_NOT_LIVE, LIVE_LINK_CHANNEL_UNKNOWN,
+                 LIVE_CHECK_UNAVAILABLE, LIVE_CATEGORY_FULL, LIVE_CATEGORY_SHAPE, LIVE_CATEGORY_MEMBERS_INVALID]
+        message:
+          type: string
+        path:
+          type: string
+        details:
+          type: object
+          description: The refusal's context; a whole-request refusal lists `offenders` (ref, code, message)
 
 
     # ===========================================================================
@@ -5148,3 +5790,31 @@ components:
                 type: string
               message:
                 type: string
+
+    LiveCategoryRefused:
+      description: |
+        A live-category refusal (spec 2026-10-17 §4.2): the write would put content into a LIVE category against its
+        rules. `LIVE_CATEGORY_TYPE_NOT_ALLOWED` (only channels and live streams), `LIVE_CATEGORY_FULL` (30 entries),
+        `LIVE_LINK_NOT_LIVE` or `LIVE_LINK_CHANNEL_UNKNOWN` (a video must be live on its channel now). Nothing was
+        saved; a request of several items is refused whole and `details.offenders` lists each
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'
+
+    LiveCategoryAdminOnly:
+      description: |
+        `LIVE_CATEGORY_ADMIN_ONLY`: only an admin adds to, or publishes into, a LIVE category. Nothing was saved
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'
+
+    LiveCheckUnavailable:
+      description: |
+        `LIVE_CHECK_UNAVAILABLE`: a video going into a LIVE category needs a YouTube check that it is live now, and
+        the check could not run. Nothing was saved; retry
+      content:
+        application/json:
+          schema:
+            $ref: '#/components/schemas/LiveCategoryError'

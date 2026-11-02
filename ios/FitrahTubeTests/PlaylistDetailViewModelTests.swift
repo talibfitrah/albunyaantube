@@ -274,6 +274,51 @@ struct PlaylistDetailViewModelTests {
         #expect(args?.videoId == "0-0")
     }
 
+    // MARK: - Owner issue 2: the player's queue seed
+
+    @Test func aRowTapSeedsTheLoadedRowsAndTheNextPageToken() async {
+        let vm = makeVM()
+        await vm.load()
+        let args = vm.playerArgs(for: vm.rows[3])
+        #expect(args.queueItems?.map(\.id) == ["0-0", "0-1", "0-2", "0-3", "0-4"])
+        #expect(args.queueContinuation == "1")
+    }
+
+    /// `items`, never `visible`: filtering nils `visible`'s continuation and hides rows.
+    @Test func aFilteredRowTapStillSeedsTheWholeListAndItsToken() async {
+        let vm = makeVM()
+        await vm.load()
+        vm.query = "Item 3"
+        #expect(vm.rows.count == 1)
+        let args = vm.playerArgs(for: vm.rows[0])
+        #expect(args.queueItems?.map(\.id) == ["0-0", "0-1", "0-2", "0-3", "0-4"])
+        #expect(args.queueContinuation == "1")
+        #expect(args.startIndex == 3)
+    }
+
+    @Test func playAllSeedsTheLoadedRows() async {
+        let vm = makeVM()
+        await vm.load()
+        #expect(vm.playAllArgs(shuffled: false)?.queueItems?.count == 5)
+    }
+
+    /// Mid-reload there are no rows to seed, so the player takes its one-shot fetch.
+    @Test func playAllDuringAReloadSeedsNothing() async {
+        let source = FakeSource()
+        let vm = makeVM(source: source)
+        await vm.load()
+        let gate = FakeSource.Gate()
+        source.gate = gate
+        let reload = Task { await vm.load() }
+        while vm.items != .loadingInitial { await Task.yield() }
+        let args = vm.playAllArgs(shuffled: false)
+        #expect(args?.videoId == "0-0")
+        #expect(args?.queueItems == nil)
+        #expect(args?.queueContinuation == nil)
+        gate.release()
+        await reload.value
+    }
+
     // MARK: - Search
 
     @Test func searchFiltersLoadedItemsAndSuppressesPagination() async {
@@ -440,12 +485,42 @@ struct PlaylistDetailViewModelTests {
         #expect((body?["items"] as? [Any])?.count == min(vm.items.items.count, IndexClient.batchSize))
     }
 
+    @Test func aPlaylistPageShowsTheOriginalTitlesTheServerKnows() async {
+        // Owner issue 1(b): browse runs at hl=en, so YouTube machine-translates; `/api/v1/titles` swaps the original back
+        // in before the page reaches the screen and the index push. The route answers the first id it is asked for.
+        let transport = RoutingTransport(head: .status(200))
+        let vm = PlaylistDetailViewModel(playlistId: "PL1", title: nil, category: nil, count: nil,
+                                         browse: Self.liveSource(transport), saved: FakeSaved(), fetchHeader: nil)
+        await vm.load()
+        #expect(vm.items.items.count > 1)
+        #expect(vm.items.items.first?.title == RoutingTransport.original)
+        #expect(vm.items.items.dropFirst().allSatisfy { $0.title != RoutingTransport.original })
+        for _ in 0..<50 where transport.indexPushes.isEmpty { await Task.yield() }
+        let body = transport.indexPushes.first?.body.flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }
+        #expect((body?["items"] as? [[String: Any]])?.first?["name"] as? String == RoutingTransport.original)
+    }
+
+    /// Fix round 1, A1: a deep link's header has no picture until `load()` ends (gate, browse, up to 1.5 s of
+    /// `/titles`), so the hero's glyph waits for a finished load: no glyph, skeleton, picture flash.
+    @Test func theHeroGlyphWaitsForAFinishedLoad() {
+        let symbol = Tab.playlists.symbolName
+        #expect(PlaylistDetailScreen.heroMissingSymbol(nil) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.idle) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.loadingInitial) == nil)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.loaded(items: [VideoItem(id: "lesson00001", title: "L")], continuation: nil,
+                                                               isAppending: false, showsLoadMore: false)) == symbol)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.empty(messageKey: "playlist_empty_state")) == symbol)
+        #expect(PlaylistDetailScreen.heroMissingSymbol(.errorInitial(messageKey: "x")) == symbol)
+    }
+
     // MARK: - Live-source harness
 
     /// Routes by request: the gate's HEAD, the browse POST (InnerTubeKit's own `browse-playlist.json`,
-    /// read off disk), the index push (recorded), and everything else (remote config) throws.
+    /// read off disk), the index push (recorded), `/titles` (the first asked id gets `original`), and everything else
+    /// (remote config) throws.
     private nonisolated final class RoutingTransport: HTTPTransport, @unchecked Sendable {
         enum Head { case throwing, status(Int) }
+        static let original = "العنوان الأصلي"
         private let head: Head
         private let lock = NSLock()
         private var pushes: [HTTPRequest] = []
@@ -473,6 +548,11 @@ struct PlaylistDetailViewModelTests {
                 lock.withLock { pushes.append(request) }
                 return HTTPResponse(status: 200, headers: [:], body: Data())
             }
+            if request.url.path.hasSuffix("api/v1/titles") {
+                let first = URLComponents(url: request.url, resolvingAgainstBaseURL: false)?.queryItems?
+                    .first { $0.name == "ids" }?.value?.split(separator: ",").first.map(String.init)
+                return HTTPResponse(status: 200, headers: [:], body: try JSONEncoder().encode(first.map { [$0: Self.original] } ?? [:]))
+            }
             if request.url.host() == "youtubei.googleapis.com" {
                 lock.withLock { browse += 1 }
                 return HTTPResponse(status: 200, headers: [:], body: Self.fixture)
@@ -498,6 +578,7 @@ struct PlaylistDetailViewModelTests {
             atom: AtomFeedFetcher(transport: transport, keyValueStore: store),
             latch: DegradedLatch(store: store),
             index: IndexClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "test-device")),
+            titles: TitlesClient(transport: transport, baseURL: base, deviceId: DeviceId(value: "test-device")),
             gate: BackendAvailabilityGate(transport: transport, baseURL: base),
             degradedHeader: nil)
     }

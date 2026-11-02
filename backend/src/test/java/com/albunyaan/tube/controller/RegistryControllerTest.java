@@ -54,6 +54,12 @@ class RegistryControllerTest {
     @Mock
     private com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
 
+    @Mock
+    private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
+
+    @Mock
+    private com.albunyaan.tube.service.ContentReportService contentReportService;
+
     @InjectMocks
     private RegistryController registryController;
 
@@ -436,10 +442,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldAutoApprove_whenSubmittedByAdmin() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus(null);
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -456,9 +462,9 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldPendApproval_whenSubmittedByModerator() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -474,11 +480,11 @@ class RegistryControllerTest {
     @Test
     void addVideo_moderatorCannotSelfApprove_statusForcedToPending() throws Exception {
         // Arrange - moderator sends status: APPROVED in request body
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("APPROVED");
         newVideo.setApprovedBy("fake-admin-uid");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -494,10 +500,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_adminCanExplicitlySetStatus() throws Exception {
         // Arrange - admin sends status: PENDING explicitly
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("PENDING");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -513,10 +519,10 @@ class RegistryControllerTest {
     @Test
     void addVideo_adminExplicitApproved_setsApprovedBy() throws Exception {
         // Arrange - admin explicitly sends APPROVED
-        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video newVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         newVideo.setTitle("Test Video");
         newVideo.setStatus("APPROVED");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.empty());
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.empty());
         when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(newVideo);
 
         // Act
@@ -531,8 +537,8 @@ class RegistryControllerTest {
     @Test
     void addVideo_shouldReturnConflict_whenVideoAlreadyExists() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video existingVideo = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
-        when(videoRepository.findByYoutubeId("dQw4w9WgXcQ")).thenReturn(Optional.of(existingVideo));
+        com.albunyaan.tube.model.Video existingVideo = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
+        when(videoRepository.findByYoutubeId("sCQwxFEMlZ4")).thenReturn(Optional.of(existingVideo));
 
         // Act
         ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(existingVideo, adminUser);
@@ -542,10 +548,143 @@ class RegistryControllerTest {
         verify(videoRepository, never()).save(any());
     }
 
+    /** Stage 9 B11: a re-add of a rejected video (a report's take-down record too) reuses its doc: no 409, no second doc. */
+    @Test
+    void addVideo_reAddOfARejectedVideoReusesItsDoc() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(contentReportService.reAdd(any())).thenAnswer(inv -> inv.getArgument(0));   // the CAS on REJECTED (B14)
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("TakeDown001");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+        body.setSource("REPORT");   // server-controlled: the re-added doc is no take-down record
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        var saved = org.mockito.ArgumentCaptor.forClass(com.albunyaan.tube.model.Video.class);
+        verify(contentReportService).reAdd(saved.capture());
+        assertEquals("doc-takedown", saved.getValue().getId());
+        assertEquals("APPROVED", saved.getValue().getStatus());
+        assertNull(saved.getValue().getValidationStatus(), "the take-down's ARCHIVED is lifted");
+        assertNull(saved.getValue().getSource());
+        verify(videoRepository, never()).save(any());
+    }
+
+    /** Cubic b26-r1: a re-add into a REJECTED video doc beside its archived sibling (a take-down) is 409: never served. */
+    @Test
+    void addVideo_aReAddBesideAnArchivedSiblingIs409() throws Exception {
+        com.albunyaan.tube.model.Video plain = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        plain.setId("a");
+        plain.setStatus("REJECTED");
+        com.albunyaan.tube.model.Video takenDown = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        takenDown.setId("b");
+        takenDown.setStatus("REJECTED");
+        takenDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("ilgiwqpcOC8")).thenReturn(Optional.of(plain));
+        when(videoRepository.findAllByYoutubeId("ilgiwqpcOC8")).thenReturn(List.of(plain, takenDown));
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(contentReportService, never()).reAdd(any());
+    }
+
+    /** Cubic b26-r2: an admin's add of a REJECTED video archived in place (not a take-down record) is 409, not a hidden success. */
+    @Test
+    void addVideo_aReAddOfAnInPlaceArchiveIs409() throws Exception {
+        com.albunyaan.tube.model.Video inPlace = new com.albunyaan.tube.model.Video("InPlace0001");
+        inPlace.setId("a");
+        inPlace.setStatus("REJECTED");
+        inPlace.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(videoRepository.findByYoutubeId("InPlace0001")).thenReturn(Optional.of(inPlace));
+        when(videoRepository.findAllByYoutubeId("InPlace0001")).thenReturn(List.of(inPlace));
+        com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("InPlace0001");
+        body.setTitle("Lesson");
+        body.setStatus("APPROVED");
+
+        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, adminUser);
+
+        assertEquals(HttpStatus.CONFLICT, response.getStatusCode());
+        verify(contentReportService, never()).reAdd(any());
+    }
+
+    /** Stage 9 B13: a re-add that loses its race (another re-add, or a Restore deleted the record) is 409, not 500. */
+    @Test
+    void addVideo_aReAddThatLosesItsRaceIs409() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(contentReportService.reAdd(any()))                       // the CAS on REJECTED (B14)
+                .thenThrow(new IllegalStateException("expected status REJECTED but found PENDING"))
+                .thenThrow(new IllegalArgumentException("Video not found: doc-takedown"));
+
+        for (String race : List.of("re-added", "restored")) {
+            com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video("TakeDown001");
+            body.setStatus("APPROVED");
+            ResponseEntity<com.albunyaan.tube.model.Video> response =
+                    org.junit.jupiter.api.Assertions.assertDoesNotThrow(() -> registryController.addVideo(body, adminUser), race);
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode(), race);
+        }
+    }
+
+    /**
+     * Stage 9 B16 (Cubic r6 P1): only an admin re-adds over a REJECTED doc. A moderator's add would turn a report's
+     * take-down record, or an admin's rejection, into the moderator's own PENDING doc, which they could then delete.
+     */
+    @Test
+    void addVideo_aModeratorsAddOverARejectedDocIs409AndLeavesItUntouched() throws Exception {
+        com.albunyaan.tube.model.Video takeDown = new com.albunyaan.tube.model.Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setSource("REPORT");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        com.albunyaan.tube.model.Video rejected = new com.albunyaan.tube.model.Video("Rejected001");
+        rejected.setId("doc-rejected");
+        rejected.setStatus("REJECTED");
+        rejected.setSubmittedBy(moderatorUser.getUid());
+        when(videoRepository.findByYoutubeId("TakeDown001")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.findByYoutubeId("Rejected001")).thenReturn(Optional.of(rejected));
+        lenient().when(contentReportService.reAdd(any())).thenAnswer(inv -> inv.getArgument(0));   // were it reached
+
+        for (String id : List.of("TakeDown001", "Rejected001")) {
+            com.albunyaan.tube.model.Video body = new com.albunyaan.tube.model.Video(id);
+            body.setTitle("Lesson");
+            ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.addVideo(body, moderatorUser);
+            assertEquals(HttpStatus.CONFLICT, response.getStatusCode(), id);
+        }
+        verify(contentReportService, never()).reAdd(any());
+        verify(videoRepository, never()).save(any());
+        verify(videoRepository, never()).saveIfStatus(any(), any());
+    }
+
+    /** Stage 9 B16: a REJECTED doc is never the submitter's to delete, whoever submitted it. */
+    @Test
+    void deleteOwnVideoSubmission_aModeratorCannotDeleteARejectedDoc() throws Exception {
+        com.albunyaan.tube.model.Video rejected = new com.albunyaan.tube.model.Video("Rejected001");
+        rejected.setId("doc-rejected");
+        rejected.setStatus("REJECTED");
+        rejected.setSubmittedBy(moderatorUser.getUid());
+        when(videoRepository.findById("doc-rejected")).thenReturn(Optional.of(rejected));
+
+        ResponseEntity<Void> resp = registryController.deleteOwnVideoSubmission("doc-rejected", moderatorUser);
+
+        assertEquals(HttpStatus.CONFLICT, resp.getStatusCode());
+        verify(videoRepository, never()).deleteByIdIfStatusIn(any(), any());
+        verify(videoRepository, never()).deleteById(any());
+    }
+
     @Test
     void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         video.setStatus("APPROVED");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
@@ -562,7 +701,7 @@ class RegistryControllerTest {
     @Test
     void toggleVideoStatus_shouldToggleFromPendingToApproved() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         video.setStatus("PENDING");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
@@ -575,6 +714,32 @@ class RegistryControllerTest {
         assertEquals(HttpStatus.OK, response.getStatusCode());
         assertEquals("APPROVED", video.getStatus());
         assertEquals("admin-uid", video.getApprovedBy());
+    }
+
+    /**
+     * Stage 9 B21 (Cubic r9 #14): a report's take-down record never leaves REJECTED by a status change. Approved it is a
+     * blank public video; pending, the approvals queue approves it. Restore, or adding the video again, lifts it.
+     */
+    @Test
+    void aTakeDownRecordIsNeitherToggledNorUpdatedOutOfRejected() throws Exception {
+        com.albunyaan.tube.model.Video record = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
+        record.setId("doc-takedown");
+        record.setStatus("REJECTED");
+        record.setSource("REPORT");
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(record));
+        org.mockito.Mockito.lenient().when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
+                .thenAnswer(inv -> inv.getArgument(0));
+
+        assertEquals(HttpStatus.CONFLICT, registryController.toggleVideoStatus("doc-takedown", adminUser).getStatusCode());
+        for (String status : List.of("APPROVED", "PENDING", "REQUEST_CHANGES")) {
+            com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
+            body.setStatus(status);
+            assertEquals(HttpStatus.CONFLICT, registryController.updateVideo("doc-takedown", body, adminUser).getStatusCode(),
+                    status);
+        }
+
+        assertEquals("REJECTED", record.getStatus());
+        verify(videoRepository, never()).save(any());
     }
 
     // ===== updateVideo MERGE SEMANTICS (iOS Phase 3, offlineAllowed gate) =====
@@ -687,7 +852,7 @@ class RegistryControllerTest {
     @Test
     void deleteVideo_shouldDeleteVideo_whenExists() throws Exception {
         // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("dQw4w9WgXcQ");
+        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
         video.setId("video-123");
         when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
 

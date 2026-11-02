@@ -12,11 +12,13 @@ import androidx.work.workDataOf
 import com.albunyaan.tube.data.extractor.AudioTrack
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.extractor.VideoTrack
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_AUDIO_ONLY
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_DOWNLOAD_ID
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_ERROR_REASON
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_FILE_PATH
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_PROGRESS
+import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TARGET_HEIGHT
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_TITLE
 import com.albunyaan.tube.download.DownloadScheduler.Companion.KEY_VIDEO_ID
 import com.albunyaan.tube.player.PlayerRepository
@@ -27,6 +29,7 @@ import okhttp3.mockwebserver.MockWebServer
 import okhttp3.mockwebserver.RecordedRequest
 import okio.Buffer
 import org.junit.After
+import org.mockito.kotlin.doAnswer
 import org.junit.Assert.assertArrayEquals
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -99,18 +102,31 @@ class DownloadWorkerRangeTest {
             .setBody(Buffer().write(body, start, end - start + 1))
     }
 
-    /** googlevideo with no total in Content-Range (an asterisk) and a 416 past the end. */
-    private fun unknownTotal(request: RecordedRequest): MockResponse {
+    /** googlevideo with no total in Content-Range (an asterisk) and a 416 past the end; [cap] bytes per answer at most. */
+    private fun unknownTotal(request: RecordedRequest, cap: Int = Int.MAX_VALUE): MockResponse {
         val (a, b) = Regex("""bytes=(\d+)-(\d+)""").matchEntire(request.getHeader("Range")!!)!!.destructured
         val start = a.toInt()
         if (start > body.lastIndex) return MockResponse().setResponseCode(416)
-        val end = minOf(b.toInt(), body.lastIndex)
+        val end = minOf(b.toLong(), start.toLong() + cap - 1, body.lastIndex.toLong()).toInt()
         return MockResponse().setResponseCode(206)
             .setHeader("Content-Range", "bytes $start-$end/*")
             .setBody(Buffer().write(body, start, end - start + 1))
     }
 
-    private suspend fun runAudioOnlyDownload(onProgress: (DownloadWorker, Data) -> Unit = { _, _ -> }): ListenableWorker.Result {
+    private suspend fun runAudioOnlyDownload(onProgress: (DownloadWorker, Data) -> Unit = { _, _ -> }) =
+        runDownload(onProgress = onProgress)
+
+    /**
+     * [kids]: the streams a made-for-kids video resolves to (live, 2026-10-17, 7GsLw3TUMDc): adaptive
+     * audio and video only from the IOS client, which googlevideo 403s, plus ANDROID's muxed itag 18.
+     */
+    private suspend fun runDownload(
+        audioOnly: Boolean = true,
+        targetHeight: Int = 0,
+        kids: Boolean = false,
+        merger: FFmpegMerger = FFmpegMerger(),
+        onProgress: (DownloadWorker, Data) -> Unit = { _, _ -> },
+    ): ListenableWorker.Result {
         var resolves = 0
         val repository = object : PlayerRepository {
             override suspend fun resolveStreams(
@@ -120,10 +136,17 @@ class DownloadWorkerRangeTest {
                 sourceChannelId: String?,
             ): ResolvedStreams {
                 // Each resolve mints a fresh URL, as googlevideo's signed URLs are.
-                val url = server.url("/videoplayback?itag=140&c=VISIONOS&n=${++resolves}").toString()
+                val n = ++resolves
+                val url = server.url("/videoplayback?itag=140&c=${if (kids) "IOS" else "VISIONOS"}&n=$n").toString()
+                val videoTracks = if (!kids) emptyList() else listOf(
+                    VideoTrack(server.url("/videoplayback?itag=136&c=IOS&n=$n").toString(), "video/mp4",
+                        1280, 720, 1_500_000, "720p", 30, isVideoOnly = true),
+                    VideoTrack(server.url("/videoplayback?itag=18&c=ANDROID&n=$n").toString(), "video/mp4",
+                        640, 360, 500_000, "360p", 30, isVideoOnly = false),
+                )
                 return ResolvedStreams(
                     streamId = videoId,
-                    videoTracks = emptyList(),
+                    videoTracks = videoTracks,
                     audioTracks = listOf(AudioTrack(url = url, mimeType = "audio/mp4", bitrate = 128_000, codec = null)),
                     durationSeconds = 262,
                 )
@@ -136,7 +159,8 @@ class DownloadWorkerRangeTest {
                     KEY_DOWNLOAD_ID to "lecture_1",
                     KEY_VIDEO_ID to "lecture",
                     KEY_TITLE to "Lecture",
-                    KEY_AUDIO_ONLY to true,
+                    KEY_AUDIO_ONLY to audioOnly,
+                    KEY_TARGET_HEIGHT to targetHeight,
                 )
             )
             .setWorkerFactory(object : WorkerFactory() {
@@ -144,7 +168,7 @@ class DownloadWorkerRangeTest {
                     appContext: Context,
                     workerClassName: String,
                     workerParameters: WorkerParameters,
-                ) = DownloadWorker(appContext, workerParameters, DownloadStorage(appContext), repository, FFmpegMerger())
+                ) = DownloadWorker(appContext, workerParameters, DownloadStorage(appContext), repository, merger)
             })
             .setProgressUpdater(ProgressUpdater { _, _, data ->
                 onProgress(worker, data)
@@ -219,7 +243,7 @@ class DownloadWorkerRangeTest {
     fun `an unknown total that is an exact multiple of the chunk ends on the 416`() = runTest {
         body = Random(7).nextBytes(20 * 1024 * 1024)
         headLength = null
-        answer = ::unknownTotal
+        answer = { unknownTotal(it) }
 
         val result = runAudioOnlyDownload()
 
@@ -230,16 +254,104 @@ class DownloadWorkerRangeTest {
     }
 
     @Test
-    fun `an unknown total ends on the short chunk`() = runTest {
+    fun `an unknown total ends on the 416 after the short chunk`() = runTest {
         headLength = null
-        answer = ::unknownTotal
+        answer = { unknownTotal(it) }
 
         val result = runAudioOnlyDownload()
 
         assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
-        assertEquals(2, gets.size)
+        assertEquals("a full chunk, the short one, then the 416", 3, gets.size)
         val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
         assertArrayEquals(body, file.readBytes())
+    }
+
+    // 1.0.4 A5 (Cubic run 2, fix 3): with no total, a short chunk is not the end. A proxy that
+    // strips the total and caps each answer used to end the walk early and save a truncated file.
+    @Test
+    fun `an unknown total with a short chunk mid-file walks on to the 416`() = runTest {
+        headLength = null
+        answer = { unknownTotal(it, cap = 4 * 1024 * 1024) }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertEquals("the whole file, not the first capped answer", body.size.toLong(), file.length())
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    // 1.0.4 A4 (r2 O2): one failed chunk used to fail the whole download, and the next attempt
+    // started again from byte 0. An hour of 1080p is about 50 chunk requests.
+    @Test
+    fun `a 5xx on a later chunk is retried at the same offset with the same URL`() = runTest {
+        var failed = false
+        answer = { request ->
+            if (!failed && request.getHeader("Range")!!.startsWith("bytes=$chunk-")) {
+                failed = true
+                MockResponse().setResponseCode(503)
+            } else googlevideo(request)
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertEquals(3, gets.size)
+        assertEquals("the same chunk again", gets[1].getHeader("Range"), gets[2].getHeader("Range"))
+        assertTrue("no re-resolve", gets[2].path!!.endsWith("n=1"))
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    @Test
+    fun `a connection dropped mid-chunk resumes from the last byte written`() = runTest {
+        var dropped = false
+        answer = { request ->
+            val response = googlevideo(request)
+            if (!dropped) {
+                dropped = true
+                response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            } else response
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        val resumedAt = Regex("""bytes=(\d+)-""").find(gets[1].getHeader("Range")!!)!!.groupValues[1].toLong()
+        assertTrue("resumed inside chunk 1, not from 0: $resumedAt", resumedAt in 1 until chunk)
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    // Round 4 (review m5): a connection that keeps dropping but moves forward each time must not
+    // run out of retries; only attempts that make no progress count against the cap.
+    @Test
+    fun `a connection that drops five times but always progresses still finishes`() = runTest {
+        var drops = 0
+        answer = { request ->
+            val response = googlevideo(request)
+            if (drops < 5) {
+                drops++
+                response.setSocketPolicy(okhttp3.mockwebserver.SocketPolicy.DISCONNECT_DURING_RESPONSE_BODY)
+            } else response
+        }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed after $drops drops: $result", result is ListenableWorker.Result.Success)
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    @Test
+    fun `a chunk that keeps failing gives up after three retries`() = runTest {
+        answer = { MockResponse().setResponseCode(503) }
+
+        val result = runAudioOnlyDownload()
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.NETWORK, result.outputData.getString(KEY_ERROR_REASON))
+        assertEquals("the first try and three retries", 4, gets.size)
     }
 
     @Test
@@ -326,6 +438,75 @@ class DownloadWorkerRangeTest {
         assertEquals(DownloadErrorCode.NETWORK, result.outputData.getString(KEY_ERROR_REASON))
         assertEquals(1, gets.size)
         assertTrue("no byte of it was written: $progress", progress.isEmpty())
+    }
+
+    // 1.0.4 A8 (round 2): made-for-kids videos. Live on 7GsLw3TUMDc, audio-only and 720p both got
+    // HTTP 403, re-resolved, 403 again, and failed. Only ANDROID's muxed itag 18 serves them.
+
+    /** googlevideo for itag 18 (ANDROID); 403 for every IOS-minted URL. */
+    private fun kidsCdn(request: RecordedRequest): MockResponse =
+        if (request.path!!.contains("c=IOS")) MockResponse().setResponseCode(403) else googlevideo(request)
+
+    @Test
+    fun `a 720p download that still 403s after its re-resolve saves the 360p itag 18 file`() = runTest {
+        answer = ::kidsCdn
+
+        val result = runDownload(audioOnly = false, targetHeight = 720, kids = true)
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertTrue("the fallback fetched itag 18", gets.last().path!!.contains("itag=18"))
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertTrue(file.name.endsWith(".mp4"))
+        assertArrayEquals(body, file.readBytes())
+    }
+
+    @Test
+    fun `an audio-only download that still 403s takes the audio out of itag 18`() = runTest {
+        answer = ::kidsCdn
+        val audio = byteArrayOf(4, 2)
+        val muxedInputs = CopyOnWriteArrayList<ByteArray>()
+        val merger = org.mockito.kotlin.mock<FFmpegMerger> {
+            onBlocking { extractAudio(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer { call ->
+                muxedInputs += call.getArgument<File>(0).readBytes()
+                call.getArgument<File>(1).writeBytes(audio)
+            }
+        }
+
+        val result = runDownload(audioOnly = true, kids = true, merger = merger)
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertArrayEquals("FFmpeg got the whole itag 18 file", body, muxedInputs.single())
+        val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
+        assertTrue(file.name.endsWith(".m4a"))
+        assertArrayEquals(audio, file.readBytes())
+    }
+
+    // Round 4 (review m6): FFmpeg failing on the fallback ends in MERGE and leaves no temp behind.
+    @Test
+    fun `an FFmpeg failure on the audio fallback ends in MERGE with no temp left`() = runTest {
+        answer = ::kidsCdn
+        val merger = org.mockito.kotlin.mock<FFmpegMerger> {
+            onBlocking { extractAudio(org.mockito.kotlin.any(), org.mockito.kotlin.any()) } doAnswer {
+                throw FFmpegMergeException("FFmpeg merge failed with return code 1", returnCode = 1)
+            }
+        }
+
+        val result = runDownload(audioOnly = true, kids = true, merger = merger)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.MERGE, result.outputData.getString(KEY_ERROR_REASON))
+        val dir = DownloadStorage(context).targetFile("lecture_1", audioOnly = true).parentFile!!
+        assertTrue("no temp left: ${dir.list()?.toList()}", dir.listFiles().orEmpty().none { it.name.startsWith("lecture_1.") })
+    }
+
+    @Test
+    fun `a fallback that 403s too still fails as a 403`() = runTest {
+        answer = { MockResponse().setResponseCode(403) }
+
+        val result = runDownload(audioOnly = false, targetHeight = 720, kids = true)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.HTTP_403, result.outputData.getString(KEY_ERROR_REASON))
     }
 
     // r2 M1 / stage 5 F3: a quick Pause then Resume.

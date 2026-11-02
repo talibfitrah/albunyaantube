@@ -26,8 +26,10 @@ import java.util.Map;
 import java.util.concurrent.TimeUnit;
 
 /**
- * One-shot, re-runnable migration that repairs broken channel-avatar and
- * playlist-thumbnail URLs by re-extracting fresh metadata via NewPipe.
+ * Repairs broken channel-avatar and playlist-thumbnail URLs. Channel avatars are a
+ * one-shot, re-runnable migration that re-extracts fresh metadata via NewPipe; the
+ * playlist half is a recurring heal (before every playlist validation, and on boot)
+ * that uses oEmbed.
  *
  * <p>Why it exists: thumbnail URLs are captured once at import time and served
  * forever. Two classes of stored URL are unrenderable —

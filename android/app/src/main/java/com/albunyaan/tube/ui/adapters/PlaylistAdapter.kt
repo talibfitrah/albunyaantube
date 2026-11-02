@@ -49,9 +49,11 @@ class PlaylistAdapter(
             // Load thumbnail with YouTube fallback chain
             val videoId = ThumbnailUrlHelper.extractVideoId(playlist.thumbnailUrl)
             if (videoId != null) {
-                binding.playlistThumbnail.loadYouTubeThumbnail(playlist.thumbnailUrl, videoId)
+                binding.playlistThumbnail.loadYouTubeThumbnail(
+                    playlist.thumbnailUrl, videoId, error = R.drawable.playlist_thumbnail_placeholder
+                )
             } else {
-                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl, error = R.drawable.playlist_thumbnail_placeholder)
             }
 
             // Add category chip

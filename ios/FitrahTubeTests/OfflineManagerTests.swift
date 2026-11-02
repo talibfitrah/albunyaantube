@@ -163,16 +163,22 @@ struct OfflineManagerTests {
     /// `relaunching:` reuses a previous rig's STORE, model container and files behind a fresh
     /// manager, engine and resolver — the app dying and coming back up, which is the only way to
     /// observe what a walk left persisted (R5-8).
-    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls, relaunching previous: Rig? = nil) -> Rig {
-        let container = previous?.container ?? AppContainer.makeModelContainer(inMemory: true)
-        let store = previous?.store ?? OfflineStore(modelContainer: container)
-        let engine = FakeOfflineEngine()
-        let resolver = RecordingResolver(outcome)
-        let flags = Flags()
+    /// `persistent`: an on-disk store under the base, as the live container opens (stage 9 I-C10.1: the in-memory store
+    /// is what `makeModelContainer` falls back to, and the thumbnail sweep must tell the two apart).
+    private func makeRig(_ outcome: RecordingResolver.Outcome = .hls, relaunching previous: Rig? = nil, persistent: Bool = false,
+                         thumbnail: @escaping @Sendable (URL) async -> Data? = { _ in nil }) -> Rig {
         // Round 1 / M1: a SPACE in the base, as production's `Library/Application Support` has —
         // every path lookup a fix-up missed shows here, not only on a device.
         let base = previous?.base ?? FileManager.default.temporaryDirectory
             .appending(path: "OfflineManagerTests-\(UUID().uuidString) Application Support", directoryHint: .isDirectory)
+        if persistent { try? FileManager.default.createDirectory(at: base, withIntermediateDirectories: true) }
+        let container = previous?.container ?? (persistent
+            ? AppContainer.makeModelContainer(inMemory: false, storeURL: base.appending(path: "offline.store"))
+            : AppContainer.makeModelContainer(inMemory: true))
+        let store = previous?.store ?? OfflineStore(modelContainer: container)
+        let engine = FakeOfflineEngine()
+        let resolver = RecordingResolver(outcome)
+        let flags = Flags()
         let manager = OfflineManager(
             store: store, engine: engine, resolver: resolver,
             limiterCheck: { id in
@@ -208,7 +214,8 @@ struct OfflineManagerTests {
                 return flags.now
             },
             downloadsEnabled: { await flags.downloadsEnabled() },
-            refusesOwner: { flags.refusedOwners.contains($0) })
+            refusesOwner: { flags.refusedOwners.contains($0) },
+            thumbnail: thumbnail)
         return Rig(manager: manager, store: store, container: container, engine: engine,
                    resolver: resolver, flags: flags, base: base)
     }
@@ -1270,6 +1277,63 @@ struct OfflineManagerTests {
                 "a moved file whose row is gone is unreachable — nothing enumerates the directory")
     }
 
+    /// 1.0.4 I9 (offline F4 / R6): the Saved row's thumbnail came off the network only, so offline it
+    /// was a grey box (Android shows it from Coil's disk cache). The save keeps a copy next to the
+    /// file -- `<id>.jpg`, derived like the file's own name -- and every teardown removes it with them.
+    @Test func aSaveKeepsItsThumbnailNextToTheFileUntilTheRowGoes() async throws {
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xD9])
+        let asked = URL(string: "https://i.ytimg.com/vi/\(Self.lectureVideoId)/hqdefault.jpg")!
+        let rig = makeRig(.hls, thumbnail: { $0 == asked ? jpeg : nil }); defer { rig.cleanUp() }
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true,
+                               metadata: OfflineMetadata(title: "Lecture", channelName: "Channel",
+                                                         thumbnailUrl: asked.absoluteString))
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+        let copy = rig.directory.appending(path: OfflineStorage.thumbnailName(itemId: id))
+        #expect((try? Data(contentsOf: copy)) == jpeg, "the save kept no thumbnail")
+
+        await rig.manager.delete(id)
+        #expect(!FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)), "the thumbnail outlived its row")
+    }
+
+    /// 1.0.4 round 3 (review m4): a cancel keeps the row (Retry is on it), so it keeps the picture.
+    /// The copy goes only with the row (delete, re-save, sweep, wipe).
+    @Test func aCancelKeepsTheThumbnailCopyForTheRetry() async throws {
+        let jpeg = Data([0xFF, 0xD8, 0xFF, 0xD9])
+        let rig = makeRig(.hls, thumbnail: { _ in jpeg }); defer { rig.cleanUp() }
+        await rig.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true,
+                               metadata: OfflineMetadata(title: "Lecture", channelName: "Channel",
+                                                         thumbnailUrl: "https://i.ytimg.com/vi/\(Self.lectureVideoId)/hqdefault.jpg"))
+        let id = try #require(rig.persisted(videoId: Self.lectureVideoId)?.id)
+        let copy = rig.directory.appending(path: OfflineStorage.thumbnailName(itemId: id))
+        try #require(FileManager.default.fileExists(atPath: copy.path(percentEncoded: false)))
+
+        await rig.manager.cancel(id)
+
+        #expect(rig.persisted(id: id)?.status == OfflineStatus.cancelled.rawValue)
+        #expect((try? Data(contentsOf: copy)) == jpeg, "the cancel took the picture the Retry row still shows")
+    }
+
+    /// 1.0.4 I4 (stage 5 run 2 R2-3): the completion's row write failing (a full disk, most likely
+    /// right after a big save) rolled the row back to `running` with nothing behind it -- "Saving…"
+    /// for the rest of the session. The failure now reaches the row: failed and retryable, and the
+    /// finished file goes, giving back the space the write needed (a Retry downloads it again anyway).
+    @Test func aCompletionWhoseRowWriteFailsFailsTheRowRetryably() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        let id = await save(rig)
+        try Data(repeating: 7, count: 2_048).write(to: rig.directory.appending(path: "\(id).tmp"))
+        rig.store.failNextSave = true
+
+        await rig.manager.handle(.finished(id: id))
+
+        let row = try #require(rig.persisted(id: id))
+        #expect(row.status == OfflineStatus.failed.rawValue, "the row was left \(row.status)")
+        #expect(row.errorCode == OfflineManager.ErrorCode.unknown.rawValue)
+        #expect(OfflineStateMachine.actions(for: .failed).contains(.retry))
+        #expect(!FileManager.default.fileExists(
+            atPath: OfflineStorage.fileURL(relativePath: "\(id).m4a", base: rig.base).path(percentEncoded: false)),
+                "the finished file stayed behind a failed row")
+    }
+
     /// The same orphan from the other side: `removeFiles` worked off a row SNAPSHOT, so a delete
     /// whose read predates the completion's `localPath` write removed only `<id>.tmp` and left the
     /// finished file. Every name the id can own goes, snapshot or not.
@@ -1328,6 +1392,37 @@ struct OfflineManagerTests {
         #expect(rig.persisted(id: orphanNoData)?.status == OfflineStatus.queued.rawValue)
         #expect(rig.resolver.calls.isEmpty)
         #expect(rig.engine.starts.isEmpty)
+    }
+
+    /// Stage 6 I-S3: a Saved row's picture that finished loading after its row went (a delete, the account wipe) leaves
+    /// `<id>.jpg` with no row. The launch's `reattach()` sweeps it; a row's own copy stays.
+    @Test func reattachSweepsThumbnailCopiesThatHaveNoRow() async throws {
+        let rig = makeRig(.hls, persistent: true); defer { rig.cleanUp() }
+        let item = makeOfflineItem("vidKept000A", title: "t", status: .completed, completedAt: Date())
+        try rig.store.insert(item)
+        try OfflineManager.prepareDirectory(rig.directory)
+        let kept = OfflineStorage.thumbnailURL(itemId: item.id, base: rig.base)
+        let stray = OfflineStorage.thumbnailURL(itemId: UUID().uuidString, base: rig.base)
+        try Data("jpeg".utf8).write(to: kept)
+        try Data("jpeg".utf8).write(to: stray)
+
+        await rig.manager.reattach()
+
+        #expect(FileManager.default.fileExists(atPath: kept.path(percentEncoded: false)))
+        #expect(!FileManager.default.fileExists(atPath: stray.path(percentEncoded: false)))
+    }
+
+    /// Stage 9 I-C10.1 (Cubic r2, URGENT): on a full or locked disk `makeModelContainer` falls back to an empty in-memory
+    /// store, whose (no) rows are not the library. The sweep never runs against it: every saved thumbnail stays.
+    @Test func theThumbnailSweepNeverRunsAgainstTheInMemoryStandIn() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }      // in memory: the fallback's shape, with no rows
+        try OfflineManager.prepareDirectory(rig.directory)
+        let saved = OfflineStorage.thumbnailURL(itemId: UUID().uuidString, base: rig.base)
+        try Data("jpeg".utf8).write(to: saved)
+
+        await rig.manager.reattach()
+
+        #expect(FileManager.default.fileExists(atPath: saved.path(percentEncoded: false)))
     }
 
     /// Cubic R2-2, second leg: a relaunched row carrying stale resume data was parked as
@@ -3344,7 +3439,7 @@ struct OfflineManagerTests {
         let probe = try await innerTube.resolver.resolve(Self.lectureVideoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         let audioOnly: Bool
         switch probe.stream {
-        case .hls(_, _, let audioOnlyURL, _): audioOnly = audioOnlyURL != nil
+        case .hls(_, _, let audioOnlyURL, _, _): audioOnly = audioOnlyURL != nil
         case .progressive: audioOnly = false
         }
         print("[offline-live] probe client=\(probe.client) stream=\(probe.stream) → audioOnly=\(audioOnly)")

@@ -99,6 +99,8 @@ const { toasts, remove } = useToast();
   font-size: 0.9375rem;
   font-weight: 500;
   line-height: 1.4;
+  /* Keep "\n" breaks: a refusal lists one offender per line. */
+  white-space: pre-line;
 }
 
 .toast-close {

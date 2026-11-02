@@ -18,16 +18,16 @@ class YouTubeVideoIdRegexTest {
     @Test
     fun `matches standard watch URL`() {
         assertEquals(
-            "dQw4w9WgXcQ",
-            regex.find("https://www.youtube.com/watch?v=dQw4w9WgXcQ")?.groupValues?.get(1),
+            "sCQwxFEMlZ4",
+            regex.find("https://www.youtube.com/watch?v=sCQwxFEMlZ4")?.groupValues?.get(1),
         )
     }
 
     @Test
     fun `matches watch URL with other params before v`() {
         assertEquals(
-            "dQw4w9WgXcQ",
-            regex.find("https://www.youtube.com/watch?list=PL123&v=dQw4w9WgXcQ&t=10s")?.groupValues?.get(1),
+            "sCQwxFEMlZ4",
+            regex.find("https://www.youtube.com/watch?list=PL123&v=sCQwxFEMlZ4&t=10s")?.groupValues?.get(1),
         )
     }
 
@@ -66,8 +66,8 @@ class YouTubeVideoIdRegexTest {
     @Test
     fun `matches music youtube URL`() {
         assertEquals(
-            "dQw4w9WgXcQ",
-            regex.find("https://music.youtube.com/watch?v=dQw4w9WgXcQ")?.groupValues?.get(1),
+            "sCQwxFEMlZ4",
+            regex.find("https://music.youtube.com/watch?v=sCQwxFEMlZ4")?.groupValues?.get(1),
         )
     }
 

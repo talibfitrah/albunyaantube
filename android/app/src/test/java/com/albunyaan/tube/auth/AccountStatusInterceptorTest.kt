@@ -163,6 +163,22 @@ class AccountStatusInterceptorTest {
         verify(emitter).emit(AccountStatusEvent.Blocked)
     }
 
+    // Stage 5 F4: A's request stalls; A signs out and B signs in; A's 403 envelope then lands.
+    // It must not sign B out, nor (ACCOUNT_DELETED) wipe B's library and downloads.
+    @Test fun `a late envelope for the account signed out since never touches the account signed in now`() {
+        val a = mock<com.google.firebase.auth.FirebaseUser>().also { whenever(it.uid).thenReturn("uid-a") }
+        val b = mock<com.google.firebase.auth.FirebaseUser>().also { whenever(it.uid).thenReturn("uid-b") }
+        whenever(firebaseAuth.currentUser).thenReturn(a, b) // A when the request leaves, B when it lands
+        server.enqueue(MockResponse().setResponseCode(403).setBody(
+            """{"code":"ACCOUNT_DELETED","message":"Account gone"}"""
+        ))
+
+        call().close()
+
+        verify(firebaseAuth, never()).signOut()
+        verify(emitter, never()).emit(org.mockito.kotlin.any())
+    }
+
     @Test fun `signOut is called before emit`() {
         server.enqueue(MockResponse().setResponseCode(403).setBody(
             """{"code":"ACCOUNT_BLOCKED","message":"x"}"""

@@ -228,6 +228,7 @@ import Testing
         // `embed` third rung to owner directive 2026-10-14 (no YouTube player), and `sanitized`
         // would drop the entry even if it came back.
         #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
+        #expect(config.resolverOrder == raw.resolverOrder)   // no fallback may mask a bad published order
         #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }
@@ -267,6 +268,44 @@ import Testing
         let relaunched = RemoteConfigStore(
             transport: FixtureTransport(routes: []), keyValueStore: keyValueStore, url: URL(string: "https://example.invalid/none")!)
         #expect(await relaunched.current().isDownloadsEnabled == false)
+    }
+
+    // MARK: - Playback Phase 2 (spec R2, R3)
+
+    @Test func theTVRungIsKnownAndTheBundledDefaultCarriesItsContextButNotTheRung() throws {
+        #expect(RemoteConfig.knownResolverStrategies.contains("tvSamsungAdaptive"))
+        let tv = try #require(RemoteConfig.bundledDefault.clients["tvSamsung"])
+        #expect(tv.clientName == "TVHTML5")
+        #expect(tv.clientNameId == 7)
+        #expect(tv.userAgent == "Mozilla/5.0 (SMART-TV; Linux; Tizen 2.4.0) AppleWebKit/538.1 (KHTML, like Gecko) Version/2.4.0 TV Safari/538.1")
+        #expect(RemoteConfig.bundledDefault.resolverOrder == ["visionosHLS", "androidItag18"])
+    }
+
+    @Test func aPublishedTVRungIsKeptAndAMisnamedTVContextIsDropped() async {
+        var config = RemoteConfig.bundledDefault
+        config.resolverOrder = ["visionosHLS", "androidItag18", "tvSamsungAdaptive"]
+        config.clients["tvSamsung"]?.clientName = "WEB"
+        let transport = FixtureTransport(routes: [
+            .init(match: { _ in true }, response: .init(status: 200, headers: [:], body: try! JSONEncoder().encode(config)))
+        ])
+        let store = RemoteConfigStore(
+            transport: transport, keyValueStore: InMemoryKeyValueStore(), url: URL(string: "https://example.com/remote-config.json")!)
+        await store.refresh()
+        let sanitized = await store.current()
+        #expect(sanitized.resolverOrder == ["visionosHLS", "androidItag18", "tvSamsungAdaptive"])
+        #expect(sanitized.clients["tvSamsung"] == nil)
+    }
+
+    /// Stage 6 I-M10: HD needs two edits, the rung in `resolverOrder` AND the `tvSamsung` context (the fetched `clients`
+    /// replace the bundled table wholesale). Publishing the rung alone keeps HD silently off, so `sanitized` logs it once
+    /// (per fetch or launch), off this flag.
+    @Test func aListedTVRungWithoutItsContextIsFlagged() {
+        var config = RemoteConfig.bundledDefault
+        #expect(!config.hdContextMissing)                    // no rung: HD is off on purpose
+        config.resolverOrder.append("tvSamsungAdaptive")
+        #expect(!config.hdContextMissing)                    // both edits
+        config.clients["tvSamsung"] = nil
+        #expect(config.hdContextMissing)                     // the rung alone
     }
 
     @Test func semVerComparesNumericSegmentsNotLexicographically() {

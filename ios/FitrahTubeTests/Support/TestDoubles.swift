@@ -87,14 +87,21 @@ final class SleepRecorder: Sendable {
 /// Lived as a `private func` on `MainShellRoutingTests` until Task 25 needed the same walk for
 /// `MySubmissionsScreen.stateView(_:)`'s four arms — the M6 move, not a second copy.
 @MainActor func leafTypeName(of view: some SwiftUI.View) -> String {
+    String(describing: Mirror(reflecting: leafValue(of: view)).subjectType)
+}
+
+/// The leaf view itself, for a test that reads what the arm handed it (round 3, m3: the I10 route).
+@MainActor func leafValue(of view: some SwiftUI.View) -> Any {
+    var value: Any = view
     var mirror = Mirror(reflecting: view)
     while String(describing: mirror.subjectType).hasPrefix("_ConditionalContent"),
           let storage = mirror.children.first(where: { $0.label == "storage" }) {
         let payload = Mirror(reflecting: storage.value)
         guard let inner = payload.children.first else { break }
+        value = inner.value
         mirror = Mirror(reflecting: inner.value)
     }
-    return String(describing: mirror.subjectType)
+    return value
 }
 
 /// Task 5: the `OAuthSignInProvider` double. Canned credential, no SDK, no UI, no network.

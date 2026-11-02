@@ -51,6 +51,14 @@ interface ContentApi {
 
     @HEAD("api/v1/videos/{id}")
     suspend fun checkVideoAvailable(@Path("id") id: String): Response<Unit>
+
+    /** Spec §4.1: a live-category channel's current lives (1.0.4 live-channel mode). */
+    @GET("api/v1/live/channels/{id}")
+    suspend fun fetchLiveChannel(@Path("id") id: String): ChannelLives
+
+    /** Owner issue 1(b): the original titles the server knows for up to 50 video ids (comma-joined); unknown ids are left out. */
+    @GET("api/v1/titles")
+    suspend fun fetchTitles(@Query("ids") ids: String): Response<Map<String, String>>
 }
 
 /**
@@ -62,3 +70,9 @@ data class CursorPage(
     val data: List<ContentItemDto>,
     val pageInfo: PageInfo
 )
+
+@JsonClass(generateAdapter = true)
+data class ChannelLives(val lives: List<LiveItem>)
+
+@JsonClass(generateAdapter = true)
+data class LiveItem(val id: String, val title: String)

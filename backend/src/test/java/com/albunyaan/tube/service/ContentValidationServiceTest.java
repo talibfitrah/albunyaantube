@@ -68,6 +68,9 @@ class ContentValidationServiceTest {
     @Mock
     private ThumbnailRepairMigration thumbnailRepair;
 
+    @Mock
+    private ContentReportService contentReportService;
+
     private ValidationProperties validationProperties;
 
     private ContentValidationService service;
@@ -87,7 +90,9 @@ class ContentValidationServiceTest {
                 validationProperties,
                 publicContentCacheService,
                 streamIndexService,
-                thumbnailRepair
+                thumbnailRepair,
+                contentReportService,
+                mock(LiveCategoryGuard.class)
         );
     }
 
@@ -124,7 +129,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.VALID, savedChannel.getValidationStatus());
@@ -132,6 +137,38 @@ class ContentValidationServiceTest {
             assertEquals(5000L, savedChannel.getSubscribers());
             assertEquals(50, savedChannel.getVideoCount());
             assertEquals("https://example.com/thumb.jpg", savedChannel.getThumbnailUrl());
+        }
+
+        /**
+         * Cubic users3: the run read the channel before its YouTube calls; a report excluded a video on it meanwhile.
+         * The run writes only what it owns onto the doc as stored then: the exclusion stays.
+         */
+        @Test
+        void validateChannel_keepsAnExclusionWrittenSinceTheRunReadIt() throws Exception {
+            Channel read = createChannel("UC123", "Old Name", ValidationStatus.VALID);
+            Channel stored = createChannel("UC123", "Old Name", ValidationStatus.VALID);
+            Channel.ExcludedItems excluded = new Channel.ExcludedItems();
+            excluded.setVideos(new java.util.ArrayList<>(List.of("sCQwxFEMlZ4")));
+            stored.setExcludedItems(excluded);
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(read));
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+            ChannelDetailsDto dto = new ChannelDetailsDto();
+            dto.setName("Updated Name");
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("UC123", dto);
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(channelRepository.update(any(), any())).thenAnswer(inv -> {
+                inv.<java.util.function.Consumer<Channel>>getArgument(1).accept(stored);
+                return stored;
+            });
+
+            service.validateChannels("MANUAL", "test-user", "Test User", 100);
+
+            verify(channelRepository, never()).save(any(Channel.class));
+            assertEquals(ValidationStatus.VALID, stored.getValidationStatus());
+            assertEquals("Updated Name", stored.getName());
+            assertEquals(List.of("sCQwxFEMlZ4"), stored.getExcludedItems().getVideos());
         }
 
         @Test
@@ -153,7 +190,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.ARCHIVED, savedChannel.getValidationStatus());
@@ -179,7 +216,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
 
             Channel savedChannel = channelCaptor.getValue();
             assertEquals(ValidationStatus.ERROR, savedChannel.getValidationStatus());
@@ -269,6 +306,30 @@ class ContentValidationServiceTest {
             verify(playlistRepository).findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt());
         }
 
+        /** Cubic users3: the same for a playlist's excludedVideoIds. */
+        @Test
+        void validatePlaylist_keepsAnExclusionWrittenSinceTheRunReadIt() throws Exception {
+            Playlist read = createPlaylist("PL123", "Old Title", null);
+            Playlist stored = createPlaylist("PL123", "Old Title", null);
+            stored.setExcludedVideoIds(new java.util.ArrayList<>(List.of("sCQwxFEMlZ4")));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(List.of(read));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(Collections.emptyList());
+            BatchValidationResult<PlaylistDetailsDto> result = new BatchValidationResult<>();
+            result.addError("PL123", "Network timeout");
+            when(channelOrchestrator.batchValidatePlaylistsDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+            lenient().when(playlistRepository.update(any(), any())).thenAnswer(inv -> {
+                inv.<java.util.function.Consumer<Playlist>>getArgument(1).accept(stored);
+                return stored;
+            });
+
+            service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
+
+            verify(playlistRepository, never()).save(any(Playlist.class));
+            assertEquals(ValidationStatus.ERROR, stored.getValidationStatus());
+            assertEquals(List.of("sCQwxFEMlZ4"), stored.getExcludedVideoIds());
+        }
+
         @Test
         @DisplayName("Should refresh playlist metadata when found")
         void validatePlaylist_whenFound_shouldRefreshMetadata() throws Exception {
@@ -295,7 +356,7 @@ class ContentValidationServiceTest {
 
             // Assert
             ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
-            verify(playlistRepository).save(playlistCaptor.capture());
+            verify(playlistRepository).update(playlistCaptor.capture(), any());
 
             Playlist savedPlaylist = playlistCaptor.getValue();
             assertEquals(ValidationStatus.VALID, savedPlaylist.getValidationStatus());
@@ -691,12 +752,12 @@ class ContentValidationServiceTest {
         @Test
         @DisplayName("Should evict public-content caches when at least one video is archived")
         void validateVideos_anyArchives_evictsPublicContentCaches() throws Exception {
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -708,13 +769,13 @@ class ContentValidationServiceTest {
         @Test
         @DisplayName("Should NOT evict public-content caches when no videos are archived")
         void validateVideos_noArchives_doesNotEvictCaches() throws Exception {
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             // Video is valid on YouTube — no archive happens
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addValid("dQw4w9WgXcQ", new StreamDetailsDto());
+            result.addValid("sCQwxFEMlZ4", new StreamDetailsDto());
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -749,7 +810,7 @@ class ContentValidationServiceTest {
 
             // Channel was still persisted as ARCHIVED before the failed eviction
             ArgumentCaptor<Channel> channelCaptor = ArgumentCaptor.forClass(Channel.class);
-            verify(channelRepository).save(channelCaptor.capture());
+            verify(channelRepository).update(channelCaptor.capture(), any());
             assertEquals(ValidationStatus.ARCHIVED, channelCaptor.getValue().getValidationStatus());
         }
 
@@ -775,7 +836,7 @@ class ContentValidationServiceTest {
             assertEquals("COMPLETED", run.getStatus());
 
             ArgumentCaptor<Playlist> playlistCaptor = ArgumentCaptor.forClass(Playlist.class);
-            verify(playlistRepository).save(playlistCaptor.capture());
+            verify(playlistRepository).update(playlistCaptor.capture(), any());
             assertEquals(ValidationStatus.ARCHIVED, playlistCaptor.getValue().getValidationStatus());
         }
 
@@ -783,12 +844,12 @@ class ContentValidationServiceTest {
         @DisplayName("Run must complete and video must be archived even when cache eviction throws")
         void validateVideos_evictionThrows_runStillCompletes() throws Exception {
             // Arrange: a video that YouTube doesn't know about → will be archived.
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -854,12 +915,12 @@ class ContentValidationServiceTest {
         @DisplayName("Should call markStreamArchived() when video is archived")
         void validateVideos_archivedVideo_callsMarkStreamArchived() throws Exception {
             // Arrange: video that YouTube reports as not found
-            Video video = createVideo("dQw4w9WgXcQ", "Test Video", null);
+            Video video = createVideo("sCQwxFEMlZ4", "Test Video", null);
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
             when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
 
             BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
-            result.addNotFound("dQw4w9WgXcQ");
+            result.addNotFound("sCQwxFEMlZ4");
             when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
             when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
 
@@ -867,7 +928,7 @@ class ContentValidationServiceTest {
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
 
             // Assert: stream index entry must be marked archived for this video
-            verify(streamIndexService).markStreamArchived("dQw4w9WgXcQ");
+            verify(streamIndexService).markStreamArchived("sCQwxFEMlZ4");
         }
     }
 
@@ -975,5 +1036,101 @@ class ContentValidationServiceTest {
                     twoDaysAgo.getEpochSecond(), twoDaysAgo.getNano()));
         }
         return video;
+    }
+
+    /**
+     * Stage 9 B11: Restore lifts a report's take-down. Its record (REJECTED, source REPORT) is the take-down, so Restore
+     * deletes it, back to the no-doc state before the report; any other archived video is set VALID as before.
+     * Stage 9 B13: the lift also undoes the take-down's exclusions and stream archive (ContentReportService.liftTakeDown).
+     */
+    @Test
+    void restoreLiftsATakeDownRecordAndSetsAnyOtherArchivedVideoValid() throws Exception {
+        Video takeDown = new Video("TakeDown001");
+        takeDown.setId("doc-takedown");
+        takeDown.setStatus("REJECTED");
+        takeDown.setSource("REPORT");
+        takeDown.setValidationStatus(ValidationStatus.ARCHIVED);
+        Video archived = new Video("Archived001");
+        archived.setId("doc-archived");
+        archived.setStatus("APPROVED");
+        archived.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(videoRepository.findById("doc-takedown")).thenReturn(Optional.of(takeDown));
+        when(videoRepository.findById("doc-archived")).thenReturn(Optional.of(archived));
+
+        var result = service.restoreContent("video", List.of("doc-takedown", "doc-archived"), "admin-uid", "Admin");
+
+        assertEquals(2, result.getSuccessCount());
+        verify(contentReportService).liftTakeDown(takeDown);
+        verify(videoRepository, never()).save(takeDown);
+        verify(videoRepository, never()).saveLiftingArchive(takeDown);
+        verify(videoRepository).saveLiftingArchive(archived);           // B25: Restore un-archives on purpose
+        verify(videoRepository, never()).save(archived);
+        assertEquals(ValidationStatus.VALID, archived.getValidationStatus());
+    }
+
+    /** Stage 9 B25 (Cubic r13 #2-#4): save() keeps a stored ARCHIVED, so Restore's channel and playlist writes lift it. */
+    @Test
+    void restoreLiftsAChannelsAndAPlaylistsArchive() throws Exception {
+        Channel channel = new Channel("UCOll3M-P7oKs5cSrQ9ytt6g");
+        channel.setId("doc-ch");
+        channel.setStatus("APPROVED");
+        channel.setValidationStatus(ValidationStatus.ARCHIVED);
+        Playlist playlist = new Playlist("PLtakedown000000000000000000000000b");
+        playlist.setId("doc-pl");
+        playlist.setStatus("APPROVED");
+        playlist.setValidationStatus(ValidationStatus.ARCHIVED);
+        when(channelRepository.findById("doc-ch")).thenReturn(Optional.of(channel));
+        when(playlistRepository.findById("doc-pl")).thenReturn(Optional.of(playlist));
+
+        assertEquals(1, service.restoreContent("channel", List.of("doc-ch"), "admin-uid", "Admin").getSuccessCount());
+        assertEquals(1, service.restoreContent("playlist", List.of("doc-pl"), "admin-uid", "Admin").getSuccessCount());
+
+        verify(channelRepository).saveLiftingArchive(channel);
+        verify(playlistRepository).saveLiftingArchive(playlist);
+        verify(channelRepository, never()).save(any(Channel.class));
+        verify(playlistRepository, never()).save(any(Playlist.class));
+        assertEquals(ValidationStatus.VALID, channel.getValidationStatus());
+        assertEquals(ValidationStatus.VALID, playlist.getValidationStatus());
+    }
+
+    /**
+     * Stage 9 B22 (Cubic r10 #4): an archived channel left the poller's targets, so its stored state keeps the lives it
+     * had then. Restored into a LIVE category, it re-enters as an add does (D15, B14): seeded. A seed YouTube does not
+     * answer serves none of those lives; one that reads the channel serves what is live now.
+     */
+    @Test
+    void aChannelRestoredIntoALiveCategoryServesNoneOfItsFrozenLives() throws Exception {
+        String uc = "UCROKYPep-UuODNwyipe6JMw";
+        LiveTabReader reader = mock(LiveTabReader.class);
+        LiveChannelService live = new LiveChannelService(reader, mock(LiveChannelStateRepository.class), java.time.Clock.systemUTC());
+        LiveCategoryService liveCategories = mock(LiveCategoryService.class);
+        ContentValidationService restorer = new ContentValidationService(channelRepository, playlistRepository,
+                videoRepository, channelOrchestrator, auditLogService, validationRunRepository, validationProperties,
+                publicContentCacheService, streamIndexService, thumbnailRepair, contentReportService,
+                new LiveCategoryGuard(liveCategories, live, videoRepository, channelRepository, playlistRepository,
+                        new CategoryMappingService(mock(CategoryRepository.class))));
+        when(liveCategories.liveCategoryIds()).thenReturn(Set.of("live-cat"));
+        Map<LiveTabResult, List<String>> served = new LinkedHashMap<>();
+        served.put(LiveTabResult.error(1, "boom"), List.of());
+        served.put(LiveTabResult.ok(List.of(new LiveTabResult.LiveItem("FreshLive01", "now")), 1), List.of("FreshLive01"));
+        for (Map.Entry<LiveTabResult, List<String>> e : served.entrySet()) {
+            LiveChannelState frozen = LiveChannelState.unknown(uc);          // as the poller left it when archived
+            frozen.setStatus(LiveChannelState.LIVE);
+            frozen.getLives().add(new LiveChannelState.Live("Rs7St51oDDc", "Sunnah"));
+            live.loadStates(List.of(frozen));
+            Channel channel = new Channel(uc);
+            channel.setId("ch-live");
+            channel.setStatus("APPROVED");
+            channel.setCategoryIds(List.of("live-cat"));
+            channel.setValidationStatus(ValidationStatus.ARCHIVED);
+            when(channelRepository.findById("ch-live")).thenReturn(Optional.of(channel));
+            when(liveCategories.members("live-cat")).thenReturn(new LiveCategoryService.Members(List.of(channel)));
+            when(reader.read(uc)).thenReturn(e.getKey());
+
+            assertEquals(1, restorer.restoreContent("channel", List.of("ch-live"), "admin-uid", "Admin").getSuccessCount());
+
+            assertEquals(e.getValue(), LiveCategoryService.servedLives(channel, live.state(uc), Map.of()).stream()
+                    .map(LiveChannelState.Live::getVideoId).toList(), e.getKey().outcome().name());
+        }
     }
 }

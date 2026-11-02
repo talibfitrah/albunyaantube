@@ -1,10 +1,15 @@
 package com.albunyaan.tube.security;
 
 import org.junit.jupiter.api.Test;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.springframework.core.io.ClassPathResource;
 
 import java.io.InputStream;
 import java.nio.charset.StandardCharsets;
+import java.util.ArrayList;
+import java.util.Arrays;
+import java.util.List;
 import java.util.regex.Matcher;
 import java.util.regex.Pattern;
 
@@ -51,17 +56,49 @@ class FirestoreRulesActiveStatusTest {
                 "Without this, a blocked moderator's ID token still passes isModerator() until token expiry.");
     }
 
-    /** Hotfix guard: catalog collections must not be publicly readable straight from Firestore. */
+    /** Hotfix guard: catalog collections must not be readable straight from Firestore except by moderators. */
     @Test
     void firestoreRules_catalogCollectionsReadableOnlyByModerators() throws Exception {
         String rules = loadRules();
         for (String c : new String[] {"categories", "channels", "playlists", "videos"}) {
-            assertTrue(Pattern.compile("match\\s+/" + c + "/\\{\\w+\\}\\s*\\{[^}]*?allow\\s+read:\\s*if\\s+isModerator\\(\\)\\s*;")
-                            .matcher(rules).find(),
-                    "/" + c + "/ MUST be 'allow read: if isModerator();'");
+            assertEquals(List.of("isModerator()"), readConditions(rules, c),
+                    "/" + c + "/: every allow covering read, get or list MUST be 'if isModerator()'");
         }
-        assertFalse(Pattern.compile("allow\\s+read:\\s*if\\s+true").matcher(rules).find(),
-                "No 'allow read: if true' (public Firestore read) may appear in firestore.rules");
+        assertEquals(List.of(), publicReads(rules), "no read, get or list rule may be 'if true' anywhere");
+    }
+
+    /** The guard trips on the slips the gstack review named (HG appendix): later get/list rules and combined verbs. */
+    @ParameterizedTest
+    @ValueSource(strings = {
+            "allow get: if true;",
+            "allow list: if isAuthenticated();",
+            "allow read, write: if true;",
+            "allow read: if isAuthenticated();"})
+    void theGuardCatchesASecondReadRuleInACatalogBlock(String slip) throws Exception {
+        String rules = loadRules().replaceFirst("(match\\s+/channels/\\{\\w+\\}\\s*\\{)", "$1\n      " + slip);
+        assertNotEquals(List.of("isModerator()"), readConditions(rules, "channels"), slip);
+    }
+
+    static List<String> readConditions(String rules, String collection) {
+        Matcher block = Pattern.compile("match\\s+/" + collection + "/\\{\\w+\\}\\s*\\{([^}]*)\\}").matcher(rules);
+        assertTrue(block.find(), "no /" + collection + "/ block");
+        return reads(block.group(1), false);
+    }
+
+    static List<String> publicReads(String rules) {
+        return reads(rules, true);
+    }
+
+    private static List<String> reads(String text, boolean onlyTrue) {
+        List<String> out = new ArrayList<>();
+        Matcher allow = Pattern.compile("allow\\s+([a-z,\\s]+?)\\s*:\\s*if\\s+([^;]+);").matcher(text);
+        while (allow.find()) {
+            boolean read = Arrays.stream(allow.group(1).split(",")).map(String::trim)
+                    .anyMatch(v -> v.equals("read") || v.equals("get") || v.equals("list"));
+            String condition = allow.group(2).trim();
+            if (read && (!onlyTrue || condition.equals("true"))) out.add(condition);
+        }
+        return out;
     }
 
     /**

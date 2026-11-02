@@ -5,6 +5,8 @@
       <p class="subtitle">{{ t('contentSorting.subtitle') }}</p>
     </div>
 
+    <p v-if="liveStatusFailed" class="live-suspect" role="status">{{ t('contentSorting.live.statusUnavailable') }}</p>
+
     <!-- Loading state -->
     <div v-if="isLoading" class="loading-state">
       <p>{{ t('contentSorting.loading') }}</p>
@@ -74,6 +76,12 @@
             <!-- Expanded content items -->
             <tr v-if="expandedCategoryId === cat.id" class="content-row">
               <td colspan="5" class="content-cell">
+                <template v-if="liveCategory(cat.id)">
+                  <p class="live-note">{{ t('contentSorting.live.note') }}</p>
+                  <p v-if="liveStatus?.suspectSince" class="live-suspect" role="status">
+                    {{ t('contentSorting.live.suspectSince', { time: formatTime(liveStatus.suspectSince) }) }}
+                  </p>
+                </template>
                 <!-- Content toolbar: type filter + add button -->
                 <div class="content-toolbar">
                   <div class="type-filters">
@@ -168,7 +176,11 @@
                         />
                         <div class="thumbnail-placeholder" :style="getThumbnailUrl(item, item.contentType?.toLowerCase() as 'channel' | 'playlist' | 'video') ? 'display:none' : ''"></div>
                       </td>
-                      <td class="col-content-name">{{ item.title }}</td>
+                      <td class="col-content-name">
+                        {{ item.title }}
+                        <span v-for="chip in rowChips(cat.id, item.contentId)" :key="chip.key"
+                              class="live-chip" :class="`live-chip--${chip.tone}`">{{ t(chip.key, chip.params ?? {}) }}</span>
+                      </td>
                       <td class="col-content-type">
                         <span class="type-badge" :class="'type-' + item.contentType">{{ item.contentType }}</span>
                       </td>
@@ -238,6 +250,8 @@
                 </button>
               </div>
             </div>
+
+            <div v-if="addModalError" class="add-error" role="alert">{{ addModalError }}</div>
 
             <div class="modal-body">
               <div v-if="addModalTruncated" class="truncation-warning">
@@ -324,10 +338,24 @@ import {
   type DisplayCategory
 } from '@/services/sortOrder';
 import { toast } from '@/utils/toast';
+import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
+import { liveCategoryIds } from '@/components/contentSearch/bulk/useCategoryPicker';
+import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
 
-const { t } = useI18n();
+const { t, locale } = useI18n();
+
+// Spec §8: the live state loads once when the view opens (no auto-refresh).
+const liveStatus = ref<LiveStatus | null>(null);
+const liveStatusFailed = ref(false);
+const formatTime = (iso: string) => new Date(iso).toLocaleString(locale.value);
+function liveCategory(categoryId: string) {
+  return liveStatus.value?.categories.find(c => c.id === categoryId) ?? null;
+}
+function rowChips(categoryId: string, contentId: string) {
+  return liveChips(liveCategory(categoryId)?.entries.find(e => e.contentId === contentId), formatTime);
+}
 
 function contentKey(item: { contentType?: string; type?: string; contentId?: string; id?: string }): string {
   return `${item.contentType ?? item.type}:${item.contentId ?? item.id}`;
@@ -422,6 +450,7 @@ function handleThumbnailError(event: Event, item: any) {
 const addModalOpen = ref(false);
 const addModalLoading = ref(false);
 const addModalSubmitting = ref(false);
+const addModalError = ref('');
 const addModalSearch = ref('');
 const addModalTypeFilter = ref('all');
 const addModalAvailable = ref<ApprovedContentItem[]>([]);
@@ -759,6 +788,7 @@ async function handleRemoveContent(item: ContentSortItem) {
 async function openAddContentModal(categoryId: string) {
   addModalCategoryId = categoryId;
   addModalOpen.value = true;
+  addModalError.value = '';
   addModalSearch.value = '';
   addModalTypeFilter.value = 'all';
   addModalSelected.value = new Set();
@@ -770,11 +800,16 @@ async function openAddContentModal(categoryId: string) {
 
   const token = ++addModalLoadToken;
   try {
-    const result = await getApprovedContent();
+    // The category's own type decides, not the live-status call (still loading, or failed, or a moderator's 403).
+    // Types unknown (the fetch failed): playlists stay offered. Hiding them would hide them from every ordinary
+    // category, and the server refuses one in a live category anyway, naming it in this modal.
+    const [result, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds().catch(() => new Set<string>())]);
     if (token !== addModalLoadToken) return;
     addModalTruncated.value = result.truncated;
     const existingKeys = new Set(contentItems.value.map(contentKey));
-    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)));
+    // The server refuses a playlist in the live category: do not offer one.
+    const live = liveIds.has(categoryId);
+    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)) && !(live && i.type === 'playlist'));
   } catch (e: any) {
     if (token !== addModalLoadToken) return;
     addModalAvailable.value = [];
@@ -789,6 +824,7 @@ async function openAddContentModal(categoryId: string) {
 function closeAddContentModal() {
   deactivateFocusTrap();
   addModalOpen.value = false;
+  addModalError.value = '';
   addModalAvailable.value = [];
   addModalSelected.value = new Set();
   addModalTruncated.value = false;
@@ -801,18 +837,35 @@ function toggleAddSelection(item: ApprovedContentItem) {
 async function confirmAddContent() {
   if (addModalSelected.value.size === 0) return;
   addModalSubmitting.value = true;
+  addModalError.value = '';
 
   const categoryId = addModalCategoryId;
+  const session = addModalLoadToken;
+  const titles = offenderTitles(addModalAvailable.value);
+  // The reply may land after Cancel or after another category's modal opened.
+  const sameModal = () => addModalOpen.value && session === addModalLoadToken;
   const items = Array.from(addModalSelected.value).map(parseContentKey);
 
   try {
-    contentItems.value = await addContentToCategorySort(categoryId, items);
+    const updated = await addContentToCategorySort(categoryId, items);
+    // The list is on screen only if that category is still the expanded one. This reply is its newest load:
+    // a reload started before it (collapse and expand) is older and must not overwrite it.
+    if (expandedCategoryId.value === categoryId) {
+      ++contentLoadToken;
+      contentLoading.value = false;
+      contentError.value = null;
+      contentItems.value = updated;
+    }
     const cat = categories.value.find(c => c.id === categoryId);
-    if (cat) cat.contentCount = contentItems.value.length;
+    if (cat) cat.contentCount = updated.length;
     toast.success(t('contentSorting.addContentSuccess', { count: items.length }));
-    closeAddContentModal();
+    if (sameModal()) closeAddContentModal();
   } catch (e: any) {
-    toast.error(t('contentSorting.addContentError'));
+    const message = apiErrorWithOffenders(e, t, 'contentSorting.addContentError', titles);
+    // Persistent, with each offending row: a toast would vanish before the admin could find the bad item.
+    // Only in the modal the add started from; otherwise nobody would see it there.
+    if (sameModal()) addModalError.value = message;
+    else toast.error(message);
   } finally {
     addModalSubmitting.value = false;
   }
@@ -820,6 +873,12 @@ async function confirmAddContent() {
 
 onMounted(() => {
   loadCategories();
+  // Admin-only endpoint: a moderator's 403 (or any failure) just means no live chips; it never blocks the list.
+  getLiveStatus().then(s => { liveStatus.value = s; }).catch(e => {
+    liveStatus.value = null;
+    // 403 is the moderator case (no live UI by design); anything else is an outage the admin should hear about.
+    liveStatusFailed.value = e?.response?.status !== 403;
+  });
 });
 </script>
 
@@ -1403,4 +1462,12 @@ tr.drag-over {
 [dir="rtl"] .content-cell {
   padding: 0 2.5rem 0.5rem 0;
 }
+
+.add-error { margin: 0 1.5rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--color-danger-soft); color: var(--color-danger); text-align: start; white-space: pre-line; }
+.live-note { margin-block: 0 0.5rem; color: var(--color-text-secondary); text-align: start; }
+.live-suspect { margin-block: 0 0.75rem; padding: 0.5rem 0.75rem; border-radius: 6px; background: var(--color-warning-soft); color: var(--color-warning); text-align: start; }
+.live-chip { margin-inline-start: 0.5rem; padding-inline: 0.5rem; border-radius: 999px; font-size: 0.75rem; white-space: nowrap; }
+.live-chip--ok { background: var(--color-success-soft); color: var(--color-success); }
+.live-chip--warn { background: var(--color-warning-soft); color: var(--color-warning); }
+.live-chip--bad { background: var(--color-danger-soft); color: var(--color-danger); }
 </style>

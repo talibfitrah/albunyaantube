@@ -11,6 +11,7 @@ import com.albunyaan.tube.data.local.SubscribedChannelDao
 import com.albunyaan.tube.data.sync.dto.*
 import com.squareup.moshi.JsonDataException
 import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.runTest
 import okhttp3.MediaType.Companion.toMediaType
 import okhttp3.ResponseBody.Companion.toResponseBody
@@ -94,6 +95,138 @@ class PushDirtyTest {
 
         assertTrue("a transport failure must leave the row dirty for retry",
             db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    // Cubic SyncManager.kt:607: offline, every row waits out the 15 s connect / 20 s read timeouts
+    // in turn, all inside syncMutex, so pullAll, bind and unbind wait minutes. No connection ends
+    // the drain; the backoff retries it.
+    @Test fun aNetworkFailureEndsTheDrainAndRetriesOnTheBackoff() = runTest {
+        db.subscribedChannelDao().upsert(SubscribedChannel("UC5", "u", "n", null, user_id = "uid", dirty = true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        val subPuts = java.util.concurrent.atomic.AtomicInteger()
+        val favouritePuts = java.util.concurrent.atomic.AtomicInteger()
+        api.putSubResponse = { _, _ -> subPuts.incrementAndGet(); throw java.net.SocketTimeoutException("connect timed out") }
+        api.putFavoriteResponse = { _, _ -> favouritePuts.incrementAndGet(); throw java.net.SocketTimeoutException("connect timed out") }
+
+        sm.pushDirty("uid")
+        val firstPass = favouritePuts.get()
+        // The backoff's first wait is 0.5-1 s (SyncBackoff), on SyncManager's own IO scope.
+        kotlinx.coroutines.withContext(kotlinx.coroutines.Dispatchers.IO) {
+            val end = System.currentTimeMillis() + 5_000
+            while (subPuts.get() < 2 && System.currentTimeMillis() < end) Thread.sleep(20)
+        }
+        sm.unbind()
+
+        assertEquals("the drain stops at the first network failure", 0, firstPass)
+        assertTrue("the backoff retries the drain", subPuts.get() >= 2)
+        assertTrue(db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec1" })
+    }
+
+    // Stage 5 F5: a bind for account A stuck in a slow pull held the lock while A signed out and B
+    // signed in; A's dirty rows then went out under B's Bearer (FirebaseAuthInterceptor signs with
+    // whoever is signed in when the request leaves), so A's favourites landed in B's account.
+    @Test fun aSignOutDuringASlowBindStopsTheOldAccountsRequests() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("A", 0L, true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "A", dirty = true))
+        val pullStarted = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val pullGate = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val pushes = java.util.concurrent.atomic.AtomicInteger()
+        api.putFavoriteResponse = { id, req ->
+            pushes.incrementAndGet()
+            Response.success(FavoriteSyncDto(id, false, 1L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+        val slowPull = object : SyncApi by api {
+            override suspend fun pull(
+                subs: Long, playlists: Long, favorites: Long,
+                subsId: String?, playlistsId: String?, favoritesId: String?,
+            ): Response<SyncResponseDto> {
+                pullStarted.complete(Unit)
+                pullGate.await()
+                return api.pull(subs, playlists, favorites, subsId, playlistsId, favoritesId)
+            }
+        }
+        sm = SyncManager(slowPull, db, db.subscribedChannelDao(), db.savedPlaylistDao(),
+                         db.favoriteVideoDao(), db.syncStateDao(), db.accountBindingDao(),
+                         db.playlistVideoLinkDao())
+
+        val bind = launch(kotlinx.coroutines.Dispatchers.IO) { sm.bind("A") }
+        pullStarted.await()
+        // A signs out (SyncModule calls unbind on SignedOut); B signs in. unbind waits for the lock.
+        val unbind = launch(kotlinx.coroutines.Dispatchers.IO, start = kotlinx.coroutines.CoroutineStart.UNDISPATCHED) { sm.unbind() }
+        pullGate.complete(Unit)
+        bind.join()
+        unbind.join()
+
+        assertEquals("A's rows must not go out once A has signed out", 0, pushes.get())
+    }
+
+    // Cubic r4 (SyncManager.kt:93): guarded() read the session when a call started, so a pushDirty(A) that started after
+    // A signed out (AlBunyaanApplication.onResume: the aborted pullAll(A), then pushDirty(A)) passed every check, and
+    // FirebaseAuthInterceptor signed A's rows with B's token, before B's bind wiped them.
+    @Test fun aPushForASignedOutAccountThatStartsLaterPushesNothing() = runTest {
+        db.accountBindingDao().upsert(AccountBindingEntity("A", 0L, true))
+        sm.bind("A")
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec1", "Lecture", "Channel", null, 600, user_id = "A", dirty = true))
+        val pushes = java.util.concurrent.atomic.AtomicInteger()
+        api.putFavoriteResponse = { id, req ->
+            pushes.incrementAndGet()
+            Response.success(FavoriteSyncDto(id, false, 1L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+
+        sm.unbind()                 // A signs out; B signs in, its bind still to come
+        sm.pushDirty("A")           // the push queued for A starts now
+
+        assertEquals("nothing goes out for A once A has signed out", 0, pushes.get())
+    }
+
+    /** ...and work for an account other than the bound one never runs (a worker holding A's uid after B bound). */
+    @Test fun workForAnAccountThatIsNotBoundNeverRuns() = runTest {
+        sm.bind("B")
+        val pulls = java.util.concurrent.atomic.AtomicInteger()
+        val empty = api.pullResponse
+        api.pullResponse = { pulls.incrementAndGet(); empty() }
+
+        sm.pullAll("A")
+
+        assertEquals("B is bound: nothing is asked for A under B's token", 0, pulls.get())
+    }
+
+    /** Row one fails with [failure]; the drain must go on and push row two (review m4, m6). */
+    private suspend fun assertDrainGoesOnAfter(failure: () -> Response<SubscriptionSyncDto>) {
+        db.subscribedChannelDao().upsert(SubscribedChannel("UC6", "u", "n", null, user_id = "uid", dirty = true))
+        db.favoriteVideoDao().upsertFavorite(
+            FavoriteVideo("lec2", "Lecture", "Channel", null, 600, user_id = "uid", dirty = true))
+        api.putSubResponse = { _, _ -> failure() }
+        api.putFavoriteResponse = { id, req ->
+            Response.success(FavoriteSyncDto(id, false, 999L, req.title, req.channelName, req.thumbnailUrl, req.durationSeconds, req.addedAt))
+        }
+
+        sm.pushDirty("uid")
+        sm.unbind()
+
+        assertTrue("the failed row stays dirty", db.subscribedChannelDao().selectDirty("uid").any { it.channelId == "UC6" })
+        assertFalse("the rows after it still push", db.favoriteVideoDao().selectDirty("uid").any { it.videoId == "lec2" })
+    }
+
+    // Round 4 (review m4): Moshi reads an empty or truncated 2xx body as EOFException, an
+    // IOException. It is one bad row, not "offline": the drain must not stop at it every cycle.
+    @Test fun anEmptyOrTruncatedBodyFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { throw java.io.EOFException("End of input") }
+    }
+
+    @Test fun aJsonEncodingExceptionFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { throw com.squareup.moshi.JsonEncodingException("Use JsonReader.setLenient(true)") }
+    }
+
+    @Test fun aFiveXxFailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { Response.error(503, "".toResponseBody("application/json".toMediaType())) }
+    }
+
+    @Test fun a429FailsOnlyThatRow() = runTest {
+        assertDrainGoesOnAfter { Response.error(429, "".toResponseBody("application/json".toMediaType())) }
     }
 
     @Test fun offlineBindWithDirtyRowDoesNotThrow() = runTest {

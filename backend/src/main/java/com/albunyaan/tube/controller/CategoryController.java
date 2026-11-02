@@ -1,10 +1,12 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.config.CacheConfig;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.AuditLogService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.SortOrderService;
 import org.slf4j.Logger;
@@ -38,14 +40,16 @@ public class CategoryController {
     private final AuditLogService auditLogService;
     private final PublicContentCacheService publicContentCacheService;
     private final SortOrderService sortOrderService;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public CategoryController(CategoryRepository categoryRepository, AuditLogService auditLogService,
                               PublicContentCacheService publicContentCacheService,
-                              SortOrderService sortOrderService) {
+                              SortOrderService sortOrderService, LiveCategoryGuard liveCategoryGuard) {
         this.categoryRepository = categoryRepository;
         this.auditLogService = auditLogService;
         this.publicContentCacheService = publicContentCacheService;
         this.sortOrderService = sortOrderService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -106,6 +110,9 @@ public class CategoryController {
             @RequestBody Category category,
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, TimeoutException {
+        // A create always makes a new doc: save() would set() over a client-named existing one, skipping PUT's LIVE
+        // checks (stage 9 Cubic r2). No caller sends an id (frontend categoryService.createCategory).
+        category.setId(null);
         category.setCreatedBy(user.getUid());
         category.setUpdatedBy(user.getUid());
 
@@ -115,11 +122,21 @@ public class CategoryController {
             category.setDisplayOrder(maxOrder + 1);
         }
 
+        if (!Category.isValidType(category.getType())) {
+            return ResponseEntity.badRequest().build();
+        }
+
         // Validate parent exists if specified
         if (category.getParentCategoryId() != null) {
             boolean parentExists = categoryRepository.existsById(category.getParentCategoryId());
             if (!parentExists) {
                 return ResponseEntity.badRequest().build();
+            }
+            // Spec D8: a LIVE category is top-level, and nothing nests under one.
+            boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
+                    .map(Category::isLive).orElse(false);
+            if (category.isLive() || parentLive) {
+                throw LiveCategoryException.shape(category.getName());
             }
         }
 
@@ -149,6 +166,12 @@ public class CategoryController {
         if (existing == null) {
             return ResponseEntity.notFound().build();
         }
+        if (category.isTypeProvided() && !Category.isValidType(category.getType())) {
+            return ResponseEntity.badRequest().build();
+        }
+        // R18: a body that never names "type" keeps the stored one; an explicit null clears it (always allowed).
+        String type = category.isTypeProvided() ? category.getType() : existing.getType();
+        boolean live = Category.TYPE_LIVE.equals(type);
 
         // Validate parent category if specified
         if (category.getParentCategoryId() != null) {
@@ -164,6 +187,17 @@ public class CategoryController {
             if (isDescendant(id, category.getParentCategoryId())) {
                 return ResponseEntity.badRequest().build();
             }
+            boolean parentLive = categoryRepository.findById(category.getParentCategoryId())
+                    .map(Category::isLive).orElse(false);
+            if (parentLive) {
+                throw LiveCategoryException.shape(existing.getName());
+            }
+        }
+        if (live && !LiveCategoryGuard.liveShape(categoryRepository, id, category.getParentCategoryId())) {
+            throw LiveCategoryException.shape(existing.getName());
+        }
+        if (live && !existing.isLive()) {
+            liveCategoryGuard.checkMembersForLive(id);                         // row 17 (§4.2)
         }
 
         existing.setName(category.getName());
@@ -171,6 +205,7 @@ public class CategoryController {
         existing.setIcon(category.getIcon());
         existing.setDisplayOrder(category.getDisplayOrder());
         existing.setLocalizedNames(category.getLocalizedNames());
+        existing.setType(type);
         existing.setUpdatedBy(user.getUid());
 
         Category updated = categoryRepository.save(existing);
@@ -248,4 +283,3 @@ public class CategoryController {
         return false;
     }
 }
-

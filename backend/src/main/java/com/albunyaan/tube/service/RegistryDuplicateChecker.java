@@ -1,6 +1,10 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.YouTubeContentType;
+import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
@@ -39,8 +43,23 @@ public class RegistryDuplicateChecker {
         return new Batch();
     }
 
+    /**
+     * Cubic b26-r1/r2: a video's docs hold an admin's re-add into doc `docId` when one of them holds (ARCHIVED or
+     * UNAVAILABLE): another doc (a pre-B11 duplicate) would be served beside, and the doc itself would stay hidden, as
+     * save() keeps its hold. Only a take-down record's own hold is no bar: its re-add lifts it (B14). Bulk and single add.
+     */
+    public static boolean heldBeside(java.util.List<Video> docs, String docId) {
+        return docs.stream().anyMatch(d -> ValidationStatus.holds(d.getValidationStatus())
+                && !(docId.equals(d.getId()) && Video.isTakeDownRecord(d.getStatus(), d.getSource())));
+    }
+
     /** Snapshot of an existing registry entry sufficient for duplicate reporting. */
-    public record ExistingMatch(String registryId, String status) {}
+    /** `held`: B26, a REJECTED channel's or playlist's youtubeId has an ARCHIVED doc, a take-down a re-add must not undo. */
+    public record ExistingMatch(String registryId, String status, boolean held) {
+        public ExistingMatch(String registryId, String status) {
+            this(registryId, status, false);
+        }
+    }
 
     /**
      * Per-batch memoizing view. Thread-safe via ConcurrentHashMap so multiple worker threads can share one batch.
@@ -87,12 +106,27 @@ public class RegistryDuplicateChecker {
         private Optional<ExistingMatch> queryOnce(YouTubeContentType type, String youtubeId) {
             try {
                 return switch (type) {
-                    case CHANNEL  -> channels.findByYoutubeId(youtubeId)
-                            .map(c -> new ExistingMatch(c.getId(), c.getStatus()));
-                    case PLAYLIST -> playlists.findByYoutubeId(youtubeId)
-                            .map(p -> new ExistingMatch(p.getId(), p.getStatus()));
-                    case VIDEO    -> videos.findByYoutubeId(youtubeId)
-                            .map(v -> new ExistingMatch(v.getId(), v.getStatus()));
+                    // Cubic users4: a REJECTED match is held when a report archived any doc of the id (in place, then
+                    // rejected): an admin's re-add writes a second doc, which would serve the take-down again
+                    case CHANNEL  -> {
+                        Optional<Channel> c = channels.findByYoutubeId(youtubeId);
+                        boolean held = c.isPresent() && "REJECTED".equals(c.get().getStatus()) && channels.findAllByYoutubeId(youtubeId)
+                                .stream().anyMatch(d -> ValidationStatus.holds(d.getValidationStatus()));
+                        yield c.map(x -> new ExistingMatch(x.getId(), x.getStatus(), held));
+                    }
+                    case PLAYLIST -> {
+                        Optional<Playlist> p = playlists.findByYoutubeId(youtubeId);
+                        boolean held = p.isPresent() && "REJECTED".equals(p.get().getStatus()) && playlists.findAllByYoutubeId(youtubeId)
+                                .stream().anyMatch(d -> ValidationStatus.holds(d.getValidationStatus()));
+                        yield p.map(x -> new ExistingMatch(x.getId(), x.getStatus(), held));
+                    }
+                    // Cubic b26-r1/r2: the REJECTED match is re-added into, so its own hold counts unless it is a record
+                    case VIDEO    -> {
+                        Optional<Video> v = videos.findByYoutubeId(youtubeId);
+                        boolean held = v.isPresent() && "REJECTED".equals(v.get().getStatus())
+                                && heldBeside(videos.findAllByYoutubeId(youtubeId), v.get().getId());
+                        yield v.map(x -> new ExistingMatch(x.getId(), x.getStatus(), held));
+                    }
                     case ALL      -> throw new IllegalStateException("ALL is not a content type for duplicate checks: " + type);
                 };
             } catch (ExecutionException | InterruptedException | TimeoutException e) {

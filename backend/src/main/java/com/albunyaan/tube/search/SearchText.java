@@ -10,8 +10,10 @@ import org.apache.lucene.analysis.ar.ArabicNormalizationFilter;
 import org.apache.lucene.analysis.ar.ArabicStemFilter;
 import org.apache.lucene.analysis.charfilter.MappingCharFilter;
 import org.apache.lucene.analysis.charfilter.NormalizeCharMap;
+import org.apache.lucene.analysis.core.DecimalDigitFilter;
 import org.apache.lucene.analysis.en.EnglishAnalyzer;
 import org.apache.lucene.analysis.en.EnglishMinimalStemFilter;
+import org.apache.lucene.analysis.fa.PersianNormalizationFilter;
 import org.apache.lucene.analysis.miscellaneous.ASCIIFoldingFilter;
 import org.apache.lucene.analysis.miscellaneous.PerFieldAnalyzerWrapper;
 import org.apache.lucene.analysis.nl.DutchAnalyzer;
@@ -82,11 +84,30 @@ final class SearchText {
     /** Characters Lucene's Arabic normaliser misses (Uthmani marks), plus apostrophes and `_`. */
     private static NormalizeCharMap charMap() {
         NormalizeCharMap.Builder b = new NormalizeCharMap.Builder();
-        for (String apostrophe : new String[]{"'", "’", "ʼ", "ʻ", "`"}) b.add(apostrophe, "");
+        // ʾ ʿ (U+02BE/02BF) are the hamza/ʿayn of scholarly transliteration ("ʿOmar", "Qurʾaan"), siblings of ʼ ʻ.
+        for (String apostrophe : new String[]{"'", "’", "ʼ", "ʻ", "`", "ʾ", "ʿ"}) b.add(apostrophe, "");
         b.add("_", " ");
         b.add("ٱ", "ا"); // alef wasla -> alef
         b.add("ٰ", "");       // superscript alef
         for (char c = 'ٓ'; c <= 'ٟ'; c++) b.add(String.valueOf(c), "");
+        // Arabic signs U+0610-061A, Quranic signs U+06D6-06ED and Arabic Extended-A U+08D3-08FF: the marks (Mn) and the
+        // small waw/yeh (U+06E5/06E6, Lm: a long vowel the plain spelling omits, لَهُۥ = له) go. The two end-of-ayah
+        // signs (U+06DD, U+08E2) are format characters the tokenizer glues to both neighbours: they end the word.
+        // The two symbols (U+06DE, U+06E9) already split words.
+        for (char[] range : new char[][]{{'\u0610', '\u061A'}, {'\u06D6', '\u06ED'}, {'\u08D3', '\u08FF'}}) {
+            for (char c = range[0]; c <= range[1]; c++) {
+                int type = Character.getType(c);
+                if (type == Character.NON_SPACING_MARK || type == Character.MODIFIER_LETTER) b.add(String.valueOf(c), "");
+            }
+        }
+        b.add("\u06DD", " ");
+        b.add("\u08E2", " ");
+        // Directional controls (LRM, RLM, ALM, the embeddings/overrides U+202A-202E, the isolates U+2066-2069) and the
+        // BOM: invisible format characters the tokenizer keeps inside the word. They never separate words, so they go
+        // without a space. ZWNJ/ZWJ stay: they carry meaning inside Persian words.
+        for (char c : "\u200E\u200F\u061C\u202A\u202B\u202C\u202D\u202E\u2066\u2067\u2068\u2069\uFEFF".toCharArray()) {
+            b.add(String.valueOf(c), "");
+        }
         return b.build();
     }
 
@@ -100,7 +121,11 @@ final class SearchText {
             @Override
             protected TokenStreamComponents createComponents(String fieldName) {
                 Tokenizer source = new StandardTokenizer();
-                TokenStream ts = new ASCIIFoldingFilter(new ArabicNormalizationFilter(new LowerCaseFilter(source)));
+                // Digits fold to 0-9 (Arabic keyboards type ٠-٩); Persian/Urdu ی ک fold to ي ك.
+                TokenStream ts = new ASCIIFoldingFilter(new PersianNormalizationFilter(new ArabicNormalizationFilter(
+                        new DecimalDigitFilter(new LowerCaseFilter(source)))));
+                // ponytail: no Dutch stemmer; on one mixed-language field its false merges (god/good, rap/rape) outweigh
+                // the Dutch gain (2 of 110 audit queries, 2026-10-17). Add one only together with per-language analysis.
                 if (stem) ts = new EnglishMinimalStemFilter(new ArabicStemFilter(ts));
                 return new TokenStreamComponents(source, ts);
             }
@@ -124,6 +149,11 @@ final class SearchText {
     static String stem(String token) {
         List<String> stemmed = tokens(STEM, token);
         return stemmed.isEmpty() ? token : stemmed.get(0);
+    }
+
+    /** A BASE token in the stop sets: tier 1 makes it optional unless the query is all stopwords (B5). */
+    static boolean isStopword(String token) {
+        return STOPWORDS.contains(token);
     }
 
     /** English + Dutch + Arabic stop sets, each run once through BASE (spec §4.4). */

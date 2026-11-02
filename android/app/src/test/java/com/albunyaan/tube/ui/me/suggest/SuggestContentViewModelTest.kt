@@ -86,17 +86,17 @@ class SuggestContentViewModelTest {
 
     @Test fun `youtu-be short URL extracts video ID`() = runTest(dispatcher) {
         val repo: YouTubeSearchRepository = mock()
-        whenever(repo.search("dQw4w9WgXcQ", YouTubeContentTypeDto.VIDEO, null))
-            .thenReturn(successPage(listOf(hit("dQw4w9WgXcQ", contentType = "VIDEO"))))
+        whenever(repo.search("sCQwxFEMlZ4", YouTubeContentTypeDto.VIDEO, null))
+            .thenReturn(successPage(listOf(hit("sCQwxFEMlZ4", contentType = "VIDEO"))))
 
         val vm = SuggestContentViewModel(repo)
-        vm.onQueryChange("https://youtu.be/dQw4w9WgXcQ")
+        vm.onQueryChange("https://youtu.be/sCQwxFEMlZ4")
         advanceTimeBy(310L)
         advanceUntilIdle()
 
         val state = vm.uiState.value as SuggestUiState.Results
         assertEquals(YouTubeContentTypeDto.VIDEO, state.searchType)
-        verify(repo).search("dQw4w9WgXcQ", YouTubeContentTypeDto.VIDEO, null)
+        verify(repo).search("sCQwxFEMlZ4", YouTubeContentTypeDto.VIDEO, null)
     }
 
     @Test fun `youtube watch URL extracts video ID`() = runTest(dispatcher) {

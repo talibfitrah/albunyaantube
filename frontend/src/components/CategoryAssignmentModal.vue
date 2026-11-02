@@ -4,9 +4,11 @@ import { useI18n } from 'vue-i18n';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import { getAllCategories } from '@/services/categoryService';
 import type { Category as CategoryType } from '@/services/categoryService';
+import { useAuthStore } from '@/stores/auth';
 import CategoryTreeNode from './CategoryTreeNode.vue';
 
 const { t } = useI18n();
+const authStore = useAuthStore();
 
 // Use the Category type from categoryService but ensure it has children array
 interface Category extends CategoryType {
@@ -28,6 +30,8 @@ interface Props {
    */
   allowEmpty?: boolean;
   multiSelect?: boolean;
+  /** Spec §8: the type of the item(s) being assigned. LIVE accepts channels and live videos only (R1). */
+  contentType?: 'channel' | 'playlist' | 'video' | null;
 }
 
 interface Emits {
@@ -42,7 +46,8 @@ interface Emits {
 const props = withDefaults(defineProps<Props>(), {
   currentCategoryIds: () => [],
   allowEmpty: false,
-  multiSelect: false
+  multiSelect: false,
+  contentType: null
 });
 
 /** Categories held by every item — the initial ticked set. */
@@ -82,6 +87,23 @@ const filteredCategories = computed(() => {
 
 const hasSelection = computed(() => selectedIds.value.size > 0);
 
+const disabledIds = computed(() => new Set(
+  props.contentType === 'playlist' ? categories.value.filter(c => c.type === 'LIVE').map(c => c.id) : []
+));
+
+// Content Search keeps the last add's ticks; a disabled category must not stay ticked, unclickable, and be sent.
+// partialIds stays: an indeterminate category is untouched, so a LIVE channel in a mixed selection keeps it.
+watch(disabledIds, ids => ids.forEach(id => selectedIds.value.delete(id)));
+
+// A tick carried over from a channel add must not pre-tick LIVE on a video: the server then needs the video to be live.
+watch(() => props.contentType, type => {
+  if (type !== 'video') return;
+  categories.value.filter(c => c.type === 'LIVE').forEach(c => {
+    selectedIds.value.delete(c.id);
+    partialIds.value.delete(c.id);
+  });
+});
+
 // Methods
 onMounted(async () => {
   // Await the load: expandToCategory walks categories.value, so expanding
@@ -101,11 +123,13 @@ async function loadCategories() {
 
     // The API already returns hierarchical structure with subcategories
     // Map subcategories to children for consistency with component
-    categories.value = fetchedCategories.map(cat => ({
+    const mapped = fetchedCategories.map(cat => ({
       ...cat,
       name: cat.name || cat.label || 'Unnamed Category',
       children: cat.subcategories || []
     })) as Category[];
+    // Spec §8, R1: only admins write the live category. LIVE categories are top-level only (D8).
+    categories.value = authStore.isAdmin ? mapped : mapped.filter(c => c.type !== 'LIVE');
   } catch (err) {
     console.error('Failed to load categories', err);
     categories.value = [];
@@ -167,6 +191,7 @@ function toggleExpand(categoryId: string) {
 }
 
 function toggleSelect(categoryId: string) {
+  if (disabledIds.value.has(categoryId)) return;
   if (props.multiSelect) {
     // An indeterminate category resolves to "apply to every item" on first
     // click; from there it is an ordinary two-state tick.
@@ -262,6 +287,8 @@ watch(() => props.isOpen, (isOpen) => {
                 :selected-ids="selectedIds"
                 :partial-ids="partialIds"
                 :multi-select="multiSelect"
+                :disabled-ids="disabledIds"
+                :live-hint="t('categoryModal.liveOnlyChannelsAndLive')"
                 @toggle-expand="toggleExpand"
                 @toggle-select="toggleSelect"
               />

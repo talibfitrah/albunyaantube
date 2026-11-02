@@ -10,8 +10,8 @@ service cloud.firestore {
     // Pre-fix a blocked admin's ID token still passed isAdmin() until the token
     // expired (up to 1h), letting them keep writing via the direct Firestore SDK
     // even though the backend AccountStatusFilter would already reject HTTP calls.
-    // The inline status check is faster than composing with isActiveAccount() —
-    // we avoid a second get() on the same user doc.
+    // The status check stays inline in each helper: a separate status helper would cost a second
+    // get() on the same user doc.
     function isAdmin() {
       return isAuthenticated() &&
              get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role == 'admin' &&

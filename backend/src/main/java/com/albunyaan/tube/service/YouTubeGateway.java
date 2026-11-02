@@ -12,6 +12,7 @@ import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.StreamingService;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
 import org.schabi.newpipe.extractor.channel.tabs.ChannelTabExtractor;
+import org.schabi.newpipe.extractor.channel.tabs.ChannelTabs;
 import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
 import org.schabi.newpipe.extractor.exceptions.AgeRestrictedContentException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
@@ -19,6 +20,7 @@ import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
@@ -38,6 +40,8 @@ import org.springframework.stereotype.Component;
 
 import jakarta.annotation.PreDestroy;
 import java.io.IOException;
+import java.time.Clock;
+import java.time.Instant;
 import java.util.List;
 import java.util.concurrent.Callable;
 import java.util.concurrent.CompletableFuture;
@@ -47,6 +51,7 @@ import java.util.concurrent.Executors;
 import java.util.concurrent.Future;
 import java.util.concurrent.TimeUnit;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.regex.Pattern;
 
 /**
@@ -84,6 +89,12 @@ public class YouTubeGateway {
 
     @Nullable
     private final YouTubeCircuitBreaker circuitBreaker;
+
+    Clock clock = Clock.systemUTC();   // tests swap it
+
+    // ponytail: fixed 60 min window, in memory; a persisted /player breaker (option a2) if it ever matters
+    private static final long PLAYER_REFUSAL_MS = 60 * 60_000L;
+    private final AtomicLong playerRefusedUntil = new AtomicLong();   // epoch ms; /player is asked again from then
 
     @Autowired
     public YouTubeGateway(
@@ -168,13 +179,13 @@ public class YouTubeGateway {
             // isOpen() returned true - either OPEN with cooldown or HALF_OPEN with probe in progress
             YouTubeCircuitBreaker.State currentState = circuitBreaker.getCurrentState();
             if (currentState == YouTubeCircuitBreaker.State.HALF_OPEN) {
-                // HALF_OPEN and isOpen() returned true means probeInProgress is true
-                throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+                // HALF_OPEN and isOpen() returned true means a probe is in flight
+                throw new CircuitOpenException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
                         "Waiting for probe result before allowing more requests.");
             } else {
                 // OPEN state with cooldown remaining
                 long remainingMs = circuitBreaker.getRemainingCooldownMs();
-                throw new IOException("YouTube circuit breaker is open. Remaining cooldown: " +
+                throw new CircuitOpenException("YouTube circuit breaker is open. Remaining cooldown: " +
                         (remainingMs / 1000) + " seconds. Rate limiting detected - waiting for cooldown.");
             }
         }
@@ -184,7 +195,7 @@ public class YouTubeGateway {
         if (!circuitBreaker.allowProbe()) {
             // This can only happen in a race condition: another thread acquired the permit
             // between our isOpen() check and this allowProbe() call
-            throw new IOException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
+            throw new CircuitOpenException("YouTube circuit breaker is in HALF_OPEN state and probe already in progress. " +
                     "Waiting for probe result before allowing more requests.");
         }
 
@@ -210,6 +221,15 @@ public class YouTubeGateway {
             return;
         }
 
+        // ponytail (B17): /player's bot check is this IP's player-only refusal; browse keeps answering (prod
+        // 2026-08-19 07:10, breaker-investigation §2), so it never reaches the shared breaker that gates browse;
+        // fetchStreamInfo's own window refuses /player instead. Upgrade path: a /player-only breaker (option a2).
+        // B19 (r6 P3-1): on the HALF_OPEN probe it proves nothing about browse either: the permit goes back, the
+        // breaker stays HALF_OPEN at its level, and the next request (a browse read: /player is refused) probes.
+        if (e instanceof SignInConfirmNotBotException) {
+            circuitBreaker.releaseProbe();
+            return;
+        }
         if (circuitBreaker.isRateLimitError(e)) {
             // Rate limit error - record it (will increase backoff if in HALF_OPEN)
             circuitBreaker.recordRateLimitError(e);
@@ -220,6 +240,18 @@ public class YouTubeGateway {
             logger.warn("Probe failed with non-rate-limit error: {}", e.getMessage());
         }
         // For non-rate-limit errors outside of probe: no action needed
+    }
+
+    /**
+     * Every probe-taking call's finally. A success or a recorded failure has already resolved the probe, so this is
+     * a no-op then; only an Error (it skips recordError's catch) still holds it, which would block HALF_OPEN until a
+     * reset or restart.
+     */
+    private void releaseUnresolvedProbe() {
+        if (circuitBreaker != null && circuitBreaker.isProbeRequest()) {
+            circuitBreaker.recordProbeFailure(
+                    new IllegalStateException("probe ended without an outcome (an Error escaped)"));
+        }
     }
 
     /**
@@ -343,9 +375,11 @@ public class YouTubeGateway {
             ChannelInfo result = ChannelInfo.getInfo(youtube, url);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -381,12 +415,13 @@ public class YouTubeGateway {
     }
 
     /**
-     * Extract the YouTube channel ID from a channel URL (e.g. "/channel/UCxxxx" → "UCxxxx").
-     * Returns null if parsing fails.
+     * Extract the channel id from a channel URL: "/channel/UCxxxx" → "UCxxxx". A handle or legacy URL keeps NewPipe's
+     * form ("@handle", "c/name", "user/name"). Returns null if the URL is not a YouTube channel URL.
      */
     public String extractChannelId(String url) {
         try {
-            return channelLinkHandlerFactory.getId(url);
+            String id = channelLinkHandlerFactory.getId(url);   // NewPipe 0.26.5 answers "channel/UCxxxx" for UC ids
+            return id.startsWith("channel/") ? id.substring("channel/".length()) : id;
         } catch (Exception e) {
             logger.debug("Could not extract channel ID from '{}': {}", url, e.getMessage());
             return null;
@@ -427,6 +462,21 @@ public class YouTubeGateway {
     }
 
     /**
+     * A channel's Live tab built straight from its UC id (spec D2): no ChannelInfo fetch first. NewPipe 0.26.5 reads
+     * a "channel/UC…" id without a resolve request (pinned by LiveTabReaderTest).
+     */
+    public ChannelTabExtractor createLiveTabExtractor(String ucId) throws ExtractionException {
+        return youtube.getChannelTabExtractorFromId("channel/" + ucId, ChannelTabs.LIVESTREAMS);
+    }
+
+    /** A breaker refusal (OPEN, or HALF_OPEN with the probe taken): callers tell it apart from a YouTube error (D3). */
+    public static final class CircuitOpenException extends IOException {
+        public CircuitOpenException(String message) {
+            super(message);
+        }
+    }
+
+    /**
      * Fetch the initial page for a channel tab extractor with throttling and circuit breaker protection.
      * This should be used instead of calling extractor.fetchPage() directly.
      */
@@ -437,9 +487,11 @@ public class YouTubeGateway {
         try {
             extractor.fetchPage();
             recordSuccess();
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -456,9 +508,11 @@ public class YouTubeGateway {
             ListExtractor.InfoItemsPage<InfoItem> result = extractor.getPage(page);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -477,9 +531,11 @@ public class YouTubeGateway {
             PlaylistInfo result = PlaylistInfo.getInfo(youtube, url);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
@@ -504,19 +560,29 @@ public class YouTubeGateway {
             ListExtractor.InfoItemsPage<StreamInfoItem> result = PlaylistInfo.getMoreItems(youtube, url, page);
             recordSuccess();
             return result;
-        } catch (IOException | ExtractionException e) {
+        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();
         }
     }
 
     // ==================== Video Operations ====================
 
     /**
-     * Fetch stream info by video ID.
+     * Fetch stream info by video ID: the one /player path (the inner crawler refuses /player outright).
      * Applies throttling, circuit breaker protection, and probe timeout (for HALF_OPEN probes).
+     * Stage 9 B19 (r6 P2-1): for 60 min after a bot check, every call throws a SignInConfirmNotBotException at once,
+     * without a request, so each caller's bot-check stop still fires. It runs before the breaker, so it never takes a
+     * HALF_OPEN probe. Callers with no stop of their own (bulk rows, report lookups) no longer send one per row.
      */
     public StreamInfo fetchStreamInfo(String videoId) throws IOException, ExtractionException {
+        long refusedUntil = playerRefusedUntil.get();
+        if (clock.millis() < refusedUntil) {
+            throw new SignInConfirmNotBotException("YouTube bot-checked /player in the last 60 min; not sent (refused "
+                    + "here until " + Instant.ofEpochMilli(refusedUntil) + ")");
+        }
         checkCircuitBreaker();
         applyThrottling();
 
@@ -527,8 +593,18 @@ public class YouTubeGateway {
             recordSuccess();
             return result;
         } catch (IOException | ExtractionException e) {
+            if (e instanceof SignInConfirmNotBotException) {
+                long now = clock.millis();
+                if (playerRefusedUntil.getAndSet(now + PLAYER_REFUSAL_MS) <= now) {   // once per window
+                    logger.warn("YouTube bot-checked /player: {}. Every /player request is refused here, without a "
+                            + "request, until {}; browse is not affected", e.getMessage(),
+                            Instant.ofEpochMilli(now + PLAYER_REFUSAL_MS));
+                }
+            }
             recordError(e);
             throw e;
+        } finally {
+            releaseUnresolvedProbe();   // getUrl runs on this thread, outside the probe executor's wrap
         }
     }
 
@@ -676,6 +752,10 @@ public class YouTubeGateway {
             return PreviewFetchResult.error(PreviewErrorCode.GEO_RESTRICTED);
         } catch (ContentNotAvailableException e) {
             return PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE);
+        } catch (SignInConfirmNotBotException e) {
+            // A ParsingException, but YouTube refusing /player from this server for now (and, for 60 min after one,
+            // fetchStreamInfo's local refusal): transient, as the breaker's CircuitOpenException is (stage 9 re-review P3-2)
+            return PreviewFetchResult.error(PreviewErrorCode.NETWORK_ERROR);
         } catch (ExtractionException e) {
             return PreviewFetchResult.error(PreviewErrorCode.NEWPIPE_PARSING_ERROR);
         } catch (IOException e) {

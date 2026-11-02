@@ -94,7 +94,7 @@ children's ability to learn Islam independently.
   - Chromecast support: Cast button, device detection, metadata passthrough
   - UpNext queue with backend recommendations API integration
   - Share functionality (external apps via intent chooser)
-- Live stream playback: "LIVE" badge on active streams, disabled seek bar, auto-transition to VOD when ended
+- Live stream playback: "LIVE" badge on active streams, disabled seek bar; in a live category a channel entry always plays the channel's current live and refreshes before the stream URL expires so playback continues, and a specific live link leaves the category when its stream ends (no VOD fallback)
 - Offline downloads with quality selector (144p-1080p), separate audio/video stream merging for HD (>480p), 30-day expiry, audio-only download option, device storage management
 - Search across approved content with persistent search history (max 10 items, delete individual entries)
 - Safe mode toggle for family-friendly content filtering

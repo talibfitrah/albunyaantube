@@ -22,6 +22,7 @@ import com.albunyaan.tube.player.StreamPrefetchService
 import com.albunyaan.tube.ui.adapters.FeaturedListAdapter
 import com.albunyaan.tube.ui.adapters.HomeSectionAdapter
 import com.albunyaan.tube.ui.detail.ChannelDetailFragment
+import com.albunyaan.tube.ui.player.PlayerFragment
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.launch
 import javax.inject.Inject
@@ -65,19 +66,8 @@ class FeaturedListFragment : Fragment(R.layout.fragment_featured_list) {
     private fun handleItemClick(item: ContentItem) {
         when (item) {
             is ContentItem.Video -> {
-                prefetchService.triggerPrefetch(item.id, lifecycleScope)
-                findNavController().navigate(
-                    R.id.action_global_playerFragment,
-                    bundleOf(
-                        "videoId" to item.id,
-                        "title" to item.title,
-                        "channelName" to item.category,
-                        "thumbnailUrl" to item.thumbnailUrl,
-                        "description" to item.description,
-                        "durationSeconds" to item.durationSeconds,
-                        "viewCount" to (item.viewCount ?: -1L)
-                    )
-                )
+                prefetchService.triggerTapPrefetch(item, lifecycleScope)
+                findNavController().navigate(R.id.action_global_playerFragment, PlayerFragment.argsFor(item))
             }
             is ContentItem.Playlist -> {
                 findNavController().navigate(

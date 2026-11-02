@@ -38,6 +38,13 @@ public record CatalogChanged(String type, String docId, boolean writeFailed, Str
             T result = write.get(timeoutSeconds, TimeUnit.SECONDS);
             failed = false;
             return result;
+        } catch (ExecutionException e) {
+            // Stage 9 B13: a transaction's own refusal (IllegalStateException: the status changed; IllegalArgumentException:
+            // the doc is gone) reaches the caller as itself, for its 409 / 404. Wrapped, every caller answered 500.
+            if (e.getCause() instanceof IllegalStateException || e.getCause() instanceof IllegalArgumentException) {
+                throw (RuntimeException) e.getCause();
+            }
+            throw e;
         } finally {
             events.publishEvent(new CatalogChanged(type, docId, failed, youtubeId));
         }

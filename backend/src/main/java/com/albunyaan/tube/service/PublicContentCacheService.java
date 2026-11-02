@@ -17,6 +17,15 @@ public class PublicContentCacheService {
 
     private static final Logger log = LoggerFactory.getLogger(PublicContentCacheService.class);
 
+    /** Stage 9 B13: published on every eviction; the live endpoint's view refreshes at the poller's next tick. */
+    public record Evicted() {}
+
+    private final org.springframework.context.ApplicationEventPublisher events;
+
+    public PublicContentCacheService(org.springframework.context.ApplicationEventPublisher events) {
+        this.events = events;
+    }
+
     /**
      * Evict all public-facing content caches.
      *
@@ -33,6 +42,7 @@ public class PublicContentCacheService {
             CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS
     }, allEntries = true)
     public void evictPublicContentCaches() {
+        events.publishEvent(new Evicted());
         log.debug("Evicted public content caches: {}, {}, {}",
                 CacheConfig.CACHE_PUBLIC_CONTENT,
                 CacheConfig.CACHE_CATEGORY_TREE,

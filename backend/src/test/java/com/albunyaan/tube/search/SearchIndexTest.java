@@ -4,18 +4,32 @@ import ch.qos.logback.classic.Level;
 import ch.qos.logback.classic.spi.ILoggingEvent;
 import ch.qos.logback.core.read.ListAppender;
 import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.SearchableStream;
 import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
+import com.albunyaan.tube.repository.CategoryContentOrderRepository;
+import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.SearchableStreamRepository;
 import com.albunyaan.tube.repository.VideoRepository;
+import com.albunyaan.tube.service.LiveCategoryService;
+import com.albunyaan.tube.service.PublicContentCacheService;
+import com.albunyaan.tube.service.PublicContentService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
+import org.apache.lucene.document.Document;
+import org.apache.lucene.document.StoredField;
+import org.apache.lucene.index.DirectoryReader;
+import org.apache.lucene.index.IndexWriter;
+import org.apache.lucene.index.IndexWriterConfig;
+import org.apache.lucene.index.QueryTimeout;
 import org.apache.lucene.search.IndexSearcher;
+import org.apache.lucene.search.SearcherLifetimeManager;
+import org.apache.lucene.store.AlreadyClosedException;
 import org.apache.lucene.store.ByteBuffersDirectory;
 import org.apache.lucene.store.Directory;
 import org.apache.lucene.store.FilterDirectory;
@@ -39,6 +53,7 @@ import java.time.Instant;
 import java.util.ArrayList;
 import java.util.HashSet;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CountDownLatch;
@@ -65,6 +80,9 @@ class SearchIndexTest {
     private PlaylistRepository playlistRepo;
     private VideoRepository videoRepo;
     private SearchableStreamRepository streamRepo;
+    private CategoryRepository categoryRepo;
+    /** What categoryRepo.findAll() answers, read at each call: a test changes it to turn a category LIVE or back. */
+    private List<Category> categories = List.of();
     private SearchIndex index;
 
     // ---- fixture -------------------------------------------------------------------------------
@@ -101,6 +119,20 @@ class SearchIndexTest {
         s.setSourceKeys(new ArrayList<>(List.of(sourceKeys)));
         s.setVisible(true);
         return s;
+    }
+
+    /** `c`, filed under exactly these categories. */
+    private static Channel in(Channel c, String... categoryIds) {
+        c.setCategoryIds(List.of(categoryIds));
+        return c;
+    }
+
+    /** A category; `type` null is an ordinary one, Category.TYPE_LIVE a live-channels one. */
+    private static Category category(String id, String type) {
+        Category c = new Category();
+        c.setId(id);
+        c.setType(type);
+        return c;
     }
 
     private static <T> T with(T item, Consumer<T> change) {
@@ -172,16 +204,23 @@ class SearchIndexTest {
 
     private SearchIndex newIndex(List<Channel> cs, List<Playlist> ps, List<Video> vs, List<SearchableStream> ss,
                                  long readyWaitMs) throws Exception {
+        return newIndex(cs, ps, vs, ss, readyWaitMs, null);
+    }
+
+    private SearchIndex newIndex(List<Channel> cs, List<Playlist> ps, List<Video> vs, List<SearchableStream> ss,
+                                 long readyWaitMs, InnerIndex inner) throws Exception {
         channelRepo = mock(ChannelRepository.class);
         playlistRepo = mock(PlaylistRepository.class);
         videoRepo = mock(VideoRepository.class);
         streamRepo = mock(SearchableStreamRepository.class);
+        categoryRepo = mock(CategoryRepository.class);
+        when(categoryRepo.findAll()).thenAnswer(inv -> categories);
         List<QueryDocumentSnapshot> channelDocs = docs(cs), playlistDocs = docs(ps), videoDocs = docs(vs), streamDocs = docs(ss);
         when(channelRepo.findByStatusUnordered("APPROVED")).thenReturn(channelDocs);
         when(playlistRepo.findByStatusUnordered("APPROVED")).thenReturn(playlistDocs);
         when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
         when(streamRepo.findVisiblePage(isNull(), eq(SearchIndex.STREAM_PAGE))).thenReturn(streamDocs);
-        SearchIndex created = new SearchIndex(new ByteBuffersDirectory(), channelRepo, playlistRepo, videoRepo, streamRepo, readyWaitMs);
+        SearchIndex created = new SearchIndex(new ByteBuffersDirectory(), channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, readyWaitMs, inner);
         opened.add(created);
         return created;
     }
@@ -201,6 +240,9 @@ class SearchIndexTest {
 
     /** Every in-memory index this test built; closed after it (closing twice is harmless for these). */
     private final List<SearchIndex> opened = new ArrayList<>();
+    @org.junit.jupiter.api.io.TempDir Path innerTmp;
+    private final List<InnerIndex> openedInner = new ArrayList<>();
+    private InnerStore innerStore; // the last inner() built's store
 
     /** Firestore now holds `c`: its event makes the writer re-read it by id (F3). */
     private void saved(Channel c) throws Exception {
@@ -229,7 +271,7 @@ class SearchIndexTest {
     }
 
     private List<String> ids(String query) throws Exception {
-        return ids(index.search(query, null, false, 50, null));
+        return ids(index.search(query, null, 50));
     }
 
     private final ListAppender<ILoggingEvent> logs = new ListAppender<>();
@@ -247,6 +289,7 @@ class SearchIndexTest {
     void tearDown() {
         indexLog.detachAppender(logs);
         opened.forEach(SearchIndex::close);
+        openedInner.forEach(InnerIndex::close);
     }
 
     private static Set<Thread> writersBefore;
@@ -274,6 +317,86 @@ class SearchIndexTest {
         return new ArrayList<>(logs.list).stream().filter(e -> e.getLevel() == level).toList();
     }
 
+    /** An inner index built from `corpus` (source key -> items), serving (spec §7.1). */
+    private InnerIndex inner(Map<String, List<InnerCorpus.Item>> corpus, Map<String, String> names) throws Exception {
+        innerStore = new InnerStore(innerTmp.resolve("inner-" + openedInner.size()).toString());
+        for (Map.Entry<String, List<InnerCorpus.Item>> e : corpus.entrySet()) {
+            InnerCorpus.write(innerStore.corpusFile(e.getKey()), e.getValue());
+        }
+        InnerIndex built = new InnerIndex(innerTmp.resolve("base").toString(), innerStore, java.time.Clock.systemUTC());
+        built.sleeper = ms -> { };
+        built.refreshEveryMs = 0;
+        built.rebuild(names, 10_000);
+        innerStore.state().serveInner = true;
+        openedInner.add(built);
+        return built;
+    }
+
+    private static InnerCorpus.Item item(String id, String title, int seconds) {
+        return new InnerCorpus.Item(id, title, seconds, null, null, null);
+    }
+
+    private static final String ALAFASY = "channel:UCalafasy";
+
+    /** One catalog video, "Surah Al-Kahf", under the Alafasy channel; the inner index (or null) on top. */
+    private SearchIndex alafasy(InnerIndex inner) throws Exception {
+        return started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, inner));
+    }
+
+    private InnerIndex zubdahnoor() throws Exception {
+        return inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+    }
+
+    /** The inner reader's reference count, net of this call's own acquire. */
+    private static int refCount(InnerIndex inner) throws IOException {
+        IndexSearcher s = inner.acquire();
+        try {
+            return s.getIndexReader().getRefCount() - 1;
+        } finally {
+            inner.release(s);
+        }
+    }
+
+    private static Map<String, String> titles(SearchIndex.Hits hits) {
+        return hits.items().stream().collect(Collectors.toMap(ContentItemDto::getId, ContentItemDto::getTitle));
+    }
+
+    /**
+     * A scripted inner budget. SearchIndex's own checks find it spent from the `ownExpiry`-th on (0 = never). Lucene's
+     * TimeLimitingBulkScorer, which polls only between scoring ranges, finds it spent only on its first poll if `scorerBlip`.
+     */
+    private static QueryTimeout scripted(int ownExpiry, boolean scorerBlip) {
+        int[] own = {0}, scorer = {0};
+        return () -> {
+            boolean byScorer = StackWalker.getInstance().walk(frames ->
+                    frames.anyMatch(f -> f.getClassName().endsWith(".TimeLimitingBulkScorer")));
+            if (byScorer) return scorerBlip && scorer[0]++ == 0;
+            return ownExpiry > 0 && ++own[0] >= ownExpiry;
+        };
+    }
+
+    private static final Map<String, String> RECITED = Map.of("live-kahf", "Recitation Kahf", "live-yasin", "Recitation Yasin");
+    private static final Map<String, String> ORIGINAL = Map.of("live-kahf", "تلاوة الكهف", "live-yasin", "تلاوة يس");
+
+    /** Two stored streams under Alafasy, `hl=en` titles; their inner copies carry the original ones. */
+    private SearchIndex recitations(InnerIndex inner) throws Exception {
+        return started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(), List.of(
+                stream("live-kahf", RECITED.get("live-kahf"), ALAFASY), stream("live-yasin", RECITED.get("live-yasin"), ALAFASY)),
+                5_000, inner));
+    }
+
+    private InnerIndex originals() throws Exception {
+        return inner(Map.of(ALAFASY, List.of(item("live-kahf", ORIGINAL.get("live-kahf"), 600),
+                item("live-yasin", ORIGINAL.get("live-yasin"), 600))), Map.of(ALAFASY, "Alafasy"));
+    }
+
+    private String lastSlowLine() {
+        List<String> lines = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).toList();
+        return lines.get(lines.size() - 1);
+    }
+
     // ---- §9.1 ladder ---------------------------------------------------------------------------
 
     @ParameterizedTest(name = "{0}")
@@ -292,14 +415,14 @@ class SearchIndexTest {
             "story of yusuf, vYusuf, exact"
     })
     void firstHitAndMatchTier(String query, String firstId, String match) throws Exception {
-        SearchIndex.Hits hits = index.search(query, null, false, 50, null);
+        SearchIndex.Hits hits = index.search(query, null, 50);
         assertEquals(firstId, ids(hits).get(0));
         assertEquals(match, hits.match());
     }
 
     @Test
     void anExactWordPutsBothZakirChannelsFirstAndNeverShowsUnadmittedOnes() throws Exception {
-        SearchIndex.Hits hits = index.search("zakir", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("zakir", null, 50);
         List<String> ids = ids(hits);
         assertEquals("exact", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids.subList(0, 2)));
@@ -308,14 +431,14 @@ class SearchIndexTest {
 
     @Test
     void aPrefixWhileTypingFindsTheChannelAndItsVideos() throws Exception {
-        SearchIndex.Hits hits = index.search("alafa", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("alafa", null, 50);
         assertEquals("exact", hits.match());
         assertTrue(ids(hits).containsAll(List.of("UCalafasy", "vKahf")));
     }
 
     @Test
     void apostrophesFoldAndShortTitlesOutrankKeywordOnlyMatches() throws Exception {
-        SearchIndex.Hits hits = index.search("quran", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("quran", null, 50);
         List<String> ids = ids(hits);
         assertEquals("exact", hits.match());
         assertTrue(ids.contains("UCksaQuran"), "KSA Qur’an TV must match quran");
@@ -324,14 +447,14 @@ class SearchIndexTest {
 
     @Test
     void aTransliterationReachesItsConceptAsRelated() throws Exception {
-        SearchIndex.Hits hits = index.search("koran", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("koran", null, 50);
         assertEquals("related", hits.match());
         assertTrue(ids(hits).contains("UCquranTv"));
     }
 
     @Test
     void aDutchWordFindsItsConceptAcrossScripts() throws Exception {
-        SearchIndex.Hits hits = index.search("gebed", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("gebed", null, 50);
         assertEquals("related", hits.match());
         assertTrue(Set.of("vSalahClip", "vPrayerKey").contains(ids(hits).get(0)));
     }
@@ -343,7 +466,7 @@ class SearchIndexTest {
                 List.of(with(video("vSalahTagged", "كيفية الصلاة", null), v -> v.setKeywords(List.of("صلاة", "prayer", "gebed"))),
                         video("vStoryTime", "Story Time", null)),
                 List.of(), 5_000));
-        SearchIndex.Hits hits = corpus.search("prayr", null, false, 50, null);
+        SearchIndex.Hits hits = corpus.search("prayr", null, 50);
         assertEquals(List.of("vSalahTagged"), ids(hits));
         assertEquals("approximate", hits.match());
     }
@@ -354,18 +477,122 @@ class SearchIndexTest {
         SearchIndex corpus = started(newIndex(List.of(), List.of(),
                 List.of(video("vStoryTime", "Story Time", null), video("vBookOf", "Book of Knowledge", null)),
                 List.of(), 5_000));
-        SearchIndex.Hits hits = corpus.search("story of xqzv", null, false, 50, null);
+        SearchIndex.Hits hits = corpus.search("story of xqzv", null, 50);
         assertEquals(List.of("vStoryTime"), ids(hits));
         assertEquals("related", hits.match());
         // A query made only of stopwords still matches on them.
-        assertEquals(List.of("vBookOf"), ids(corpus.search("of", null, false, 50, null)));
+        assertEquals(List.of("vBookOf"), ids(corpus.search("of", null, 50)));
+    }
+
+    @Test
+    void anUthmaniSpellingAndThePlainSpellingFindEachOtherInTheExactTier() throws Exception {
+        // Cubic P3 (1.0.4): Quranic marks U+06D6-06ED stayed in the words; fuzzy allows only one edit at this length.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(),
+                List.of(video("vUthmani", "ٱلۡحَمۡدُ لِلَّهِ", null), video("vPlain", "سورة الكهف", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits plainQuery = corpus.search("الحمد", null, 50);
+        assertEquals(List.of("vUthmani"), ids(plainQuery));
+        assertEquals("exact", plainQuery.match());
+        SearchIndex.Hits uthmaniQuery = corpus.search("ٱلۡكَهۡفِ", null, 50);
+        assertEquals(List.of("vPlain"), ids(uthmaniQuery));
+        assertEquals("exact", uthmaniQuery.match());
+    }
+
+    @Test
+    void openTanweenAndHonorificSignsDoNotHideATitleFromItsPlainSpelling() throws Exception {
+        // Round 2 ruling (1.0.4): marks in U+0610-061A and U+08D3-08FF stayed in the words like U+06D6-06ED did.
+        // The marked words are never the last query token: its prefix clause would match them anyway.
+        SearchIndex corpus = started(newIndex(List.of(), List.of(), List.of(
+                        video("vOpenTanween", "إِنَّ ٱللَّهَ كَانَ غَفُور\u08F0ا رَّحِيم\u08F0ا", null),
+                        video("vHonorific", "سيرة محمد\u0610", null)),
+                List.of(), 5_000));
+        SearchIndex.Hits tanween = corpus.search("غفورا رحيما", null, 50);
+        assertEquals(List.of("vOpenTanween"), ids(tanween));
+        assertEquals("exact", tanween.match());
+        SearchIndex.Hits honorific = corpus.search("محمد سيرة", null, 50);
+        assertEquals(List.of("vHonorific"), ids(honorific));
+        assertEquals("exact", honorific.match());
+    }
+
+    @Test
+    void theApproximateTierFillsAShortExactListBehindItButTheRelatedTierStaysGated() throws Exception {
+        // Audit round 2 (2026-10-17): three literal "Ikhlaas" titles stopped the ladder, so "Surah Al-Ikhlas" never showed.
+        String naik = "channel:UCzakir";
+        SearchIndex corpus = started(newIndex(List.of(channel("UCzakir", "Dr Zakir Naik")), List.of(), List.of(
+                        video("BcCLLPZNPHk", "Surah Al-Ikhlas Repeats with ZAKY - Let's Memorise Quran!", "One4kids"),
+                        video("vSincerity", "Sincerity in Worship", null)), // the ikhlaas concept: related tier only
+                List.of(stream("uq7ccPxFN_8", "Test the God You Worship against Surah Ikhlaas - Dr Zakir Naik", naik),
+                        stream("PK3HwwqGMko", "Bhagwan Rajneesh Fails the First Test of Surah Ikhlaas - Dr Zakir Naik", naik),
+                        stream("Iu0eXp1v7J8", "Concept of God in Sikhism Similar to that Given in Surah Ikhlaas - Dr Zakir Naik", naik)),
+                5_000));
+        SearchIndex.Hits hits = corpus.search("surah al ikhlaas", null, 50);
+        List<String> ids = ids(hits);
+        assertEquals("exact", hits.match());
+        assertEquals(4, ids.size(), ids.toString());
+        assertEquals(Set.of("uq7ccPxFN_8", "PK3HwwqGMko", "Iu0eXp1v7J8"), Set.copyOf(ids.subList(0, 3)));
+        assertEquals("BcCLLPZNPHk", ids.get(3));
     }
 
     @Test
     void nonsenseFindsNothing() throws Exception {
-        SearchIndex.Hits hits = index.search("xqzvbnm", null, false, 50, null);
+        SearchIndex.Hits hits = index.search("xqzvbnm", null, 50);
         assertTrue(hits.items().isEmpty());
         assertEquals("none", hits.match());
+    }
+
+    // ---- slow-search line (inner-search spec §7.3 step 2a) ----------------------------------------
+
+    @Test
+    void aSlowSearchLogsOneLineWithItsTiersAndNeverTheQueryText() throws Exception {
+        index.slowSearchMs = -1; // every search counts as slow
+        index.search("halal kitchen", null, 50);
+        List<String> lines = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).toList();
+        assertEquals(1, lines.size(), lines.toString());
+        String line = lines.get(0);
+        assertTrue(line.matches("slow search: ms=\\d+ tokens=2 want=50 type=null tiers=1:\\d+ms:\\d+(,[23]:\\d+ms:\\d+)*"
+                + " loaded=\\d+ hidden=\\d+"), line);
+        String lower = line.toLowerCase(java.util.Locale.ROOT);
+        assertFalse(lower.contains("halal") || lower.contains("kitchen"), "no query text: " + line);
+    }
+
+    @Test
+    void noLogOutputCarriesTheQueryText() throws Exception {
+        index.slowSearchMs = -1;
+        index.search("zxmarkerqq vvmarkerzz", null, 50);
+        String all = new ArrayList<>(logs.list).stream().map(ILoggingEvent::getFormattedMessage)
+                .collect(Collectors.joining("\n")).toLowerCase(java.util.Locale.ROOT);
+        assertTrue(all.contains("slow search:"), "the line was logged: " + all);
+        assertFalse(all.contains("zxmarkerqq") || all.contains("vvmarkerzz"), "query text leaked: " + all);
+    }
+
+    @Test
+    void theSlowLineCountsTierHitsLoadedAndHiddenDocuments() throws Exception {
+        index.slowSearchMs = -1;
+        // Tier 1 loads six "halal cooking" streams and shows one ("halal-ok"); the five others are hidden (four
+        // blocked by Video documents or the exclusion list, one from a rejected channel). Want 50 is not met, so
+        // tiers 2 and 3 run: tier 2 re-loads and re-hides the same five and adds nothing; tier 3 adds one more hit.
+        // Totals: loaded 6+6+7 = 19, hidden 5+5+5 = 15.
+        index.search("halal cooking", null, 50);
+        String line = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).findFirst().orElseThrow();
+        assertTrue(line.matches("slow search: ms=\\d+ tokens=2 want=50 type=null tiers=1:\\d+ms:1,2:\\d+ms:0,3:\\d+ms:1"
+                + " loaded=19 hidden=15"), line);
+    }
+
+    @Test
+    void anEmptyTokenQueryLogsAnEmptyTiersValue() throws Exception {
+        index.slowSearchMs = -1;
+        index.search("!!!", null, 50);
+        String line = logged(Level.INFO).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter(m -> m.startsWith("slow search:")).findFirst().orElseThrow();
+        assertTrue(line.contains(" tokens=0 ") && line.contains(" tiers= loaded=0 hidden=0"), line);
+    }
+
+    @Test
+    void aFastSearchLogsNoSlowLine() throws Exception {
+        index.search("halal kitchen", null, 50); // the fixture answers in a few ms, under the 150 ms default
+        assertTrue(logged(Level.INFO).stream().noneMatch(e -> e.getFormattedMessage().startsWith("slow search:")));
     }
 
     // ---- P1: live-shaped ranking (probe 2026-10-14 06:26Z) ------------------------------------
@@ -468,7 +695,7 @@ class SearchIndexTest {
 
     @Test
     void bothZakirChannelsOutrankTheMainChannelsOwnUploads() throws Exception {
-        SearchIndex.Hits hits = liveShaped().search("zakir", null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search("zakir", null, 50);
         assertEquals("exact", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
     }
@@ -477,32 +704,1089 @@ class SearchIndexTest {
     @CsvSource({"zakit", "zaikr"})
     void aTypoOfTheNamePutsBothZakirChannelsFirst(String query) throws Exception {
         // Ruling: which Zakir channel leads is not a defect; both must beat the main channel's own uploads.
-        SearchIndex.Hits hits = liveShaped().search(query, null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search(query, null, 50);
         assertEquals("approximate", hits.match());
         assertEquals(Set.of("UCzakir", "UCzakirAr"), Set.copyOf(ids(hits).subList(0, 2)), ids(hits).toString());
     }
 
     @Test
     void wordsOutOfOrderPutTheKidsPlaylistInTheTopTen() throws Exception {
-        SearchIndex.Hits hits = liveShaped().search("arabic learn", null, false, 50, null);
+        SearchIndex.Hits hits = liveShaped().search("arabic learn", null, 50);
         assertEquals("exact", hits.match());
         int rank = ids(hits).indexOf("PLarabicKids");
         assertTrue(rank >= 0 && rank < 10, ids(hits).toString());
+    }
+
+    // ---- tri-lingual golden queries (search-languages audit 2026-10-17) ------------------------
+
+    /** Real catalog titles and ids (prod listing and search, 2026-10-17): only what the golden rows below need. */
+    private SearchIndex languages(InnerIndex inner) throws Exception {
+        String source = "channel:UCfassTU6mGWIj-yb26_ADjQ";
+        return started(newIndex(List.of(
+                        channel("UC3YmP7nqf514I1zh1eVbzrA", "Dr Zakir Naik"),
+                        channel("UCWZEG9O221KaXiWThBtMHQQ", "Dr. Zakir Naik in arabic"),
+                        channel("UCNB_OaI4524fASt8h0IL8dw", "Mufti Menk"),
+                        channel("UCFAR9NrKzW8OWzgRscdGXxA", "Islamophobia TV"),
+                        channel("UCHDFNoOk8WOXtHo8DIc8efQ", "Mohammed Hijab"),
+                        channel("UCvWyP-vFhlS1-XENpD6w68A", "Stories of the Prophets - Quran Stories"),
+                        channel("UCzPBBUB3SQlDx7EO00YawkQ", "Tafsir Center for Qur’anic Studies"),
+                        channel("UCQHRLH8RQIrdGWMhf5heWiA", "OnePath Network"),
+                        channel("UCfassTU6mGWIj-yb26_ADjQ", "Dawah Nederland"),
+                        channel("UCYW44APHfIo0GyAO9iosHjQ", "الشيخ مصطفى العدوي"),
+                        channel("UCkL2vNPCvXU1niLe7KhKFXg", "الشيخ مصطفى العدوي"),
+                        channel("UCrZNAOv_KBLfb-3TFgxIZqg", "إذاعة القرآن الكريم"),
+                        channel("UC2FUUw_1T6fLMHOpcc7uuuw", "DoctorJamil AlQudsi (‫الدكتور جميل القدسي دويك‬‎)"),
+                        channel("UC8IZ6wMBddjkisG0oVy0_pQ", "Ahmed Ali (‫احمد علي‬‎)"),
+                        channel("UC7AbKZa30XPMInZIsViiBOQ", "أحمد السيد")),
+                List.of(
+                        playlist("PLEaGEZnOHpUMC6v_ER7j43IdfMlzM4jC-", "Islam for Kids - الإسلام للأطفال"),
+                        playlist("PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe", "Verhalen van de Profeten"),
+                        playlist("PL327D4FD70AAB6848", "Nederlandse lezingen"),
+                        playlist("PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA", "شرح العقيدة السفارينية"),
+                        playlist("PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu", "كتاب الأربعين النووية"),
+                        playlist("PLCiQWS1wXKNTkKBPqs_Ca1jIkqGTt2o2G", "مقاطع سلسلة تعليم النشء الصغير العقيدة الصحيحة"),
+                        playlist("PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_", "شــرح الأربــعــون الــنــوويــة - ابن عثيمين"),
+                        playlist("PLwpWNTLjV20_XZx7tY_Gxs4oHUa9Rz5s0", "بالقرآن اهتديت ٢ Guided Through the Quran 2"),
+                        playlist("PLwpWNTLjV2091zs4FkItmzL1cGZst3WdD", "بالقرآن اهتديت ١ الجزء الأول Guided Through the Quran 1"),
+                        playlist("PLwpWNTLjV20_KHh9d7PTks2SdphsBY0YZ", "برنامج فسيروا 2 | رمضان 2018"),
+                        playlist("PLwpWNTLjV208i3Mg2Vdm5sjwVQ6aZ07jz", "برنامج فسيروا 3 | رمضان 2019"),
+                        playlist("PLwpWNTLjV208wwpCNyrj2GUEJMYroD0-2", "برنامج فسيروا 1 - 2017 | Faseero 1 - 1438"),
+                        playlist("PL4rbTm5NDNGVXf3whVMtCFvQdO9J8m5H8", "تيجان النور - رمضان 1439 - 2018"),
+                        playlist("PLiTKQO5a7ZXmaBJcNxgCr-BhedLw_UriP", "شرح نخبة الفكر ( الشرح الأول )"),
+                        playlist("PLiTKQO5a7ZXluOys9QONER4krLwPkgGf-", "شرح الأصول من علم الأصول")),
+                List.of(
+                        video("Ye6CrIcubZg", "شاشات رمضان ١٤٣٩", "جمعية الدعوة بالروضة"),
+                        video("cBjnzYHSV4M", "Hoe voed ik mijn kind op in Nederland? - Shaykh Suhayb Salam", null),
+                        video("BcCLLPZNPHk", "Surah Al-Ikhlas Repeats with ZAKY - Let's Memorise Quran!", "One4kids")),
+                List.of(
+                        stream("WZuaPqbZdTE", "🌙🔴 LAATSTE RAMADAANNACHT LIVE BIJ AFAAQ — QUR’AAN, LEZING, INZAMELING & QIYĀAM 🔴🌙", source),
+                        stream("ilgiwqpcOC8", "Lezing: 'De rechtvaardige kalief ʿOmar ibn ʿAbdoel-ʿAziez'", source),
+                        stream("1CWKkfPncEY", "Learn This Beautiful Du’a with Subi 🤲 #muslimkids #Zaky #MuslimKids #IslamicReminder #Dua", source),
+                        stream("uq7ccPxFN_8", "Test the God You Worship against Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("PK3HwwqGMko", "Bhagwan Rajneesh Fails the First Test of Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("Iu0eXp1v7J8", "Concept of God in Sikhism Similar to that Given in Surah Ikhlaas - Dr Zakir Naik", source),
+                        stream("ADQYni3iUGA", "Mohammad Hijab vs EVERY Atheist Argument", source),
+                        stream("ZfHKKlMUelo", "Mohammad Hijab Destroys the Substitution Theory", source),
+                        stream("sqyOExnp5nc", "The conversation nobody expected Mohammad Hijab to have", source)),
+                5_000, inner));
+    }
+
+    /** The tri-lingual golden rows (search-languages audit 2026-10-17): language | query | expected ids | worst rank | first tier. */
+    private static final String GOLDEN = """
+            en | dr zakir naik | UC3YmP7nqf514I1zh1eVbzrA UCWZEG9O221KaXiWThBtMHQQ | 1 | exact
+            en | DR. ZAKIR NAIK!! | UC3YmP7nqf514I1zh1eVbzrA UCWZEG9O221KaXiWThBtMHQQ | 1 | exact
+            en | mufti mank | UCNB_OaI4524fASt8h0IL8dw | 1 | approximate
+            en | islamofobia | UCFAR9NrKzW8OWzgRscdGXxA | 1 | approximate
+            en | mohammed hij | UCHDFNoOk8WOXtHo8DIc8efQ | 1 | exact
+            en | the stories of the prophets | UCvWyP-vFhlS1-XENpD6w68A | 1 | exact
+            en | kid islam | PLEaGEZnOHpUMC6v_ER7j43IdfMlzM4jC- | 1 | exact
+            en | quranic studies tafsir | UCzPBBUB3SQlDx7EO00YawkQ | 1 | exact
+            en | one path network | UCQHRLH8RQIrdGWMhf5heWiA | 1 | related
+            en | surah al ikhlaas | BcCLLPZNPHk | 4 | exact
+            en | mohammad hijab | UCHDFNoOk8WOXtHo8DIc8efQ | 4 | exact
+            nl | verhalen van de profeten | PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe | 1 | exact
+            nl | verhallen van de profetten | PLlRyFIGAU1YSG18OdUeUQFW730gXRXKBe | 1 | approximate
+            nl | dawah neder | UCfassTU6mGWIj-yb26_ADjQ | 1 | exact
+            nl | nederlandse lezing | PL327D4FD70AAB6848 | 1 | exact
+            nl | qiyāam lezing | WZuaPqbZdTE | 1 | exact
+            nl | MĲN KIND NEDERLAND | cBjnzYHSV4M | 1 | exact
+            nl | kalief omar abdoel | ilgiwqpcOC8 | 1 | exact
+            nl | smeekbede | 1CWKkfPncEY | 1 | related
+            ar | شَرْحُ العَقِيدَةِ السَّفَّارِينِيَّةِ | PLiTKQO5a7ZXn3ePWq7YzVAXeXUmdFu6PA | 1 | exact
+            ar | كِتَابُ ٱلۡأَرۡبَعِينَ ٱلنَّوَوِيَّةِ | PLiTKQO5a7ZXk7462OvRA1qTlJdX8y5ipu | 1 | exact
+            ar | اذاعة القران الكريم | UCrZNAOv_KBLfb-3TFgxIZqg | 1 | exact
+            ar | العقيده الصحيحه | PLCiQWS1wXKNTkKBPqs_Ca1jIkqGTt2o2G | 1 | exact
+            ar | مصطفي العدوي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact
+            ar | شـرح الاربعـون النوويـة ابن عثيمين | PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_ | 1 | exact
+            ar | مصطفی العدوی | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact
+            ar | احمد علی | UC8IZ6wMBddjkisG0oVy0_pQ | 1 | exact
+            ar | القرآن اهتديت | PLwpWNTLjV20_XZx7tY_Gxs4oHUa9Rz5s0 PLwpWNTLjV2091zs4FkItmzL1cGZst3WdD | 1 | exact
+            ar | برنامج فسيروا ٣ | PLwpWNTLjV208i3Mg2Vdm5sjwVQ6aZ07jz | 1 | exact
+            ar | شاشات رمضان 1439 | Ye6CrIcubZg | 1 | exact
+            ar | الشيخ‏ مصطفى‏ العدوي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | exact
+            ar | دويك جميل القدسي | UC2FUUw_1T6fLMHOpcc7uuuw | 1 | exact
+            ar | شرح نخبة الف | PLiTKQO5a7ZXmaBJcNxgCr-BhedLw_UriP | 1 | exact
+            ar | الاصول من علم الاصول | PLiTKQO5a7ZXluOys9QONER4krLwPkgGf- | 1 | exact
+            ar | مصطفى العودي | UCYW44APHfIo0GyAO9iosHjQ UCkL2vNPCvXU1niLe7KhKFXg | 1 | approximate
+            """;
+
+    static java.util.stream.Stream<org.junit.jupiter.params.provider.Arguments> golden() {
+        return GOLDEN.lines().filter(l -> !l.isBlank()).map(l -> l.split("\\|")).map(p ->
+                org.junit.jupiter.params.provider.Arguments.of(p[0].trim(), p[1].trim(), p[2].trim(),
+                        Integer.parseInt(p[3].trim()), p[4].trim()));
+    }
+
+    /**
+     * Each app language keeps its exact, typo, prefix, stopword, concept and script-variant answers (search-languages audit,
+     * 2026-10-17). A row: language | query | expected ids (any one) | worst acceptable rank | tier of the first result.
+     */
+    @ParameterizedTest(name = "{0}: {1}")
+    @org.junit.jupiter.params.provider.MethodSource("golden")
+    void goldenQueriesKeepTheirAnswerInEveryAppLanguage(String language, String query, String expected, int worstRank,
+                                                         String tier) throws Exception {
+        SearchIndex.Hits hits = languages(null).search(query, null, 50);
+        List<String> ids = ids(hits);
+        int rank = -1;
+        for (String id : expected.split(" ")) {
+            int at = ids.indexOf(id);
+            if (at >= 0 && (rank < 0 || at < rank)) rank = at;
+        }
+        assertTrue(rank >= 0 && rank < worstRank, language + " '" + query + "' -> " + ids);
+        assertEquals(tier, hits.match(), language + " '" + query + "'");
+    }
+
+    // ---- inner search (inner-search spec §7.1, R28, R30, R35) --------------------------------------
+
+    @Test
+    void innerHitsFollowTodaysListAndCarryTheirTierInTheSlowLine() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Al-Mulk", 600),
+                item("lesson00002", "Surah Ar-Rahman", 900))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = alafasy(inner);
+        idx.slowSearchMs = -1;
+        SearchIndex.Hits hits = idx.search("surah", null, 50);
+        assertEquals("vKahf", ids(hits).get(0));
+        assertEquals(Set.of("lesson00001", "lesson00002"), Set.copyOf(ids(hits).subList(1, 3)));
+        assertEquals("exact", hits.match());
+        assertTrue(lastSlowLine().matches(".* inner=\\d+ms:2"), lastSlowLine());
+    }
+
+    @Test
+    void innerHitsNeverPrecedeTodaysExactAndApproximateHits() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Al-Mulk", 600),
+                item("lesson00002", "Surah Ar-Rahman", 900))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex four = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(
+                video("vKahf", "Surah Al-Kahf", "Alafasy"), video("vYasin", "Surah Yasin", "Alafasy"),
+                video("vMaryam", "Surah Maryam", "Alafasy"), video("vTaha", "Surah Taha", "Alafasy")), List.of(), 5_000, inner));
+        List<String> ids = ids(four.search("surah", null, 50));
+        assertEquals(Set.of("vKahf", "vYasin", "vMaryam", "vTaha"), Set.copyOf(ids.subList(0, 4)));
+        assertEquals(Set.of("lesson00001", "lesson00002"), Set.copyOf(ids.subList(4, 6)));
+
+        four.slowSearchMs = -1;
+        SearchIndex.Hits two = four.search("surah", null, 2); // need = 2 - min(3, 2) = 0: the inner index is not asked
+        assertTrue(ids(two).stream().noneMatch(id -> id.startsWith("lesson")));
+        assertFalse(lastSlowLine().contains(" inner="), lastSlowLine());
+    }
+
+    @Test
+    void theHeaderIsTodaysUnlessOnlyInnerVideosMatch() throws Exception {
+        SearchIndex idx = alafasy(zubdahnoor());
+        SearchIndex.Hits exact = idx.search("zubdahnoor", null, 50);
+        assertEquals(List.of("lesson00001"), ids(exact));
+        assertEquals("exact", exact.match());
+        SearchIndex.Hits typo = idx.search("zubdahmoor", null, 50); // one edit, not a prefix
+        assertEquals(List.of("lesson00001"), ids(typo));
+        assertEquals("approximate", typo.match());
+        assertEquals("exact", idx.search("kahf", null, 50).match());
+    }
+
+    @Test
+    void aCatalogVideoOrAStoredStreamWithTheSameIdWins() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("vKahf", "Surah Al-Kahf inner copy", 600),
+                item("alafasy-live", "Alafasy Live Recitation inner copy", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")),
+                List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000, inner));
+        List<ContentItemDto> kahf = idx.search("kahf", null, 50).items();
+        assertEquals(List.of("vKahf"), kahf.stream().map(ContentItemDto::getId).toList());
+        assertEquals("Surah Al-Kahf", kahf.get(0).getTitle());
+        List<ContentItemDto> live = idx.search("recitation", null, 50).items();
+        assertEquals(1, live.stream().filter(i -> i.getId().equals("alafasy-live")).count());
+        assertEquals("alafasy-live", live.get(0).getId(), "the stored stream (C) keeps its place");
+        assertEquals("Alafasy Live Recitation inner copy", live.get(0).getTitle(), "Q17: the inner copy's title shows");
+    }
+
+    /**
+     * Q17: the stored streams came from `hl=en` lists (translated titles); the inner index keeps each source's own `hl`.
+     * A stored stream the inner index also lists keeps its place and its source, and shows the inner title, even when
+     * only the stored (translated) title matched the query. Catalog titles are never replaced.
+     */
+    @Test
+    void aStoredStreamTheInnerIndexAlsoListsKeepsItsPlaceAndShowsTheInnerTitle() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("alafasy-live", "تلاوة خاشعة مباشرة", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex none = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(),
+                List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(),
+                List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000, inner));
+        SearchIndex.Hits today = none.search("recitation", null, 50), hits = idx.search("recitation", null, 50);
+        assertEquals(ids(today), ids(hits));
+        assertEquals(today.match(), hits.match());
+        ContentItemDto live = hits.items().get(ids(hits).indexOf("alafasy-live"));
+        assertEquals("تلاوة خاشعة مباشرة", live.getTitle());
+        assertEquals("CHANNEL", live.getSourceType());
+        assertEquals("UCalafasy", live.getSourceId());
+
+        innerStore.state().serveInner = false;
+        assertEquals("Alafasy Live Recitation", idx.search("recitation", null, 50).items().get(ids(hits).indexOf("alafasy-live")).getTitle());
+    }
+
+    @Test
+    void channelAndPlaylistSearchesNeverShowInnerVideos() throws Exception {
+        SearchIndex idx = alafasy(zubdahnoor());
+        assertTrue(ids(idx.search("zubdahnoor", "CHANNEL", 50)).isEmpty());
+        assertTrue(ids(idx.search("zubdahnoor", "PLAYLIST", 50)).isEmpty());
+        assertEquals(List.of("lesson00001"), ids(idx.search("zubdahnoor", "VIDEO", 50)));
+    }
+
+    @Test
+    void shortsComeAfterLongerVideosInTheSameTier() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("short000001", "Zubdahnoor #shorts #islam", 45),
+                item("long0000001", "Zubdahnoor full lecture explained in detail", 3600))), Map.of(ALAFASY, "Alafasy"));
+        assertEquals(List.of("long0000001", "short000001"), ids(alafasy(inner).search("zubdahnoor", null, 50)));
+    }
+
+    @Test
+    void anInnerSearchThatTimesOutAnswersWhatItHasAndCountsIt() throws Exception {
+        InnerIndex inner = zubdahnoor();
+        SearchIndex idx = alafasy(inner);
+        idx.innerTimeoutMs = 0;
+        idx.slowSearchMs = -1;
+        int refs = refCount(inner);
+        SearchIndex.Hits hits = assertDoesNotThrow(() -> idx.search("zubdahnoor", null, 50));
+        assertTrue(hits.items().size() <= 1);
+        assertTrue(inner.timeouts() >= 1);
+        assertTrue(lastSlowLine().endsWith(":timeout"), lastSlowLine());
+        assertEquals(refs, refCount(inner), "the inner reader is released");
+    }
+
+    /** I1: a tier-1 search that ran out of budget mid-scoring starts no tier 2 (its fuzzy rewrites would overrun). */
+    @Test
+    void aTier1TimeoutStartsNoTier2() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600),
+                item("lesson00002", "Zubdahmoor talk", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = alafasy(inner);
+        idx.slowSearchMs = -1;
+        idx.newTimeout = ms -> scripted(0, true);
+        assertEquals(List.of(), ids(idx.search("zubdahnoor", null, 50)));
+        assertEquals(1, inner.timeouts());
+        assertTrue(lastSlowLine().endsWith(":timeout"), lastSlowLine());
+    }
+
+    /** I1: the budget is checked before each stored document of a page, not only before each page. */
+    @Test
+    void aBudgetThatEndsMidPageStopsAtTheNextDocument() throws Exception {
+        List<InnerCorpus.Item> five = new ArrayList<>();
+        for (int i = 1; i <= 5; i++) five.add(item("lesson0000" + i, "Zubdahnoor lesson " + i, 600));
+        InnerIndex inner = inner(Map.of(ALAFASY, five), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = alafasy(inner);
+        idx.newTimeout = ms -> scripted(3, false);
+        assertTrue(ids(idx.search("zubdahnoor", null, 50)).size() < 5);
+        assertEquals(1, inner.timeouts());
+    }
+
+    /** I1: the Q17 lookups have their own budget, checked before each one: past it the rest keep their stored titles. */
+    @Test
+    void theTitleLookupsStopWhenTheirBudgetEnds() throws Exception {
+        SearchIndex idx = recitations(originals());
+        idx.newTimeout = ms -> scripted(2, false); // the second lookup finds the budget spent
+        List<ContentItemDto> items = idx.search("recitation", null, 2).items();
+        assertEquals(ORIGINAL.get(items.get(0).getId()), items.get(0).getTitle());
+        assertEquals(RECITED.get(items.get(1).getId()), items.get(1).getTitle());
+    }
+
+    /** I3: a broad query (≥ want tier-1–2 hits: no inner pass) still shows a stored stream's inner title; the lookup's searcher is released. */
+    @Test
+    void aBroadQueryStillShowsTheInnerTitleOfAStoredStream() throws Exception {
+        InnerIndex inner = originals();
+        SearchIndex idx = recitations(inner);
+        idx.slowSearchMs = -1;
+        int refs = refCount(inner);
+        SearchIndex.Hits hits = idx.search("recitation", null, 2); // need = 2 - min(3, 2) = 0
+        assertFalse(lastSlowLine().contains(" inner="), lastSlowLine());
+        assertEquals(ORIGINAL, titles(hits));
+        assertEquals(refs, refCount(inner));
+    }
+
+    /** I2: of several inner copies, the stored stream's own source's copy names it, whatever the docID order. */
+    @Test
+    void aStoredStreamTakesTheTitleOfItsOwnSourcesInnerCopy() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                ALAFASY, List.of(item("tafsir-clip", "Channel hl title", 600)), // channel_… sorts first: the lower docID
+                "playlist:PLtafsir", List.of(item("tafsir-clip", "Playlist hl title", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(),
+                List.of(stream("tafsir-clip", "Zubdahnoor tafsir clip", "playlist:PLtafsir")), 5_000, inner));
+        ContentItemDto hit = idx.search("zubdahnoor", null, 50).items().get(0);
+        assertEquals("tafsir-clip", hit.getId());
+        assertEquals("PLtafsir", hit.getSourceId());
+        assertEquals("Playlist hl title", hit.getTitle());
+    }
+
+    /** I2: a copy listed only by a source that is not admitted never names a stored stream; else the first admitted copy does. */
+    @Test
+    void aCopyFromASourceThatIsNotAdmittedNeverNamesAStoredStream() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UCaaunknown", List.of(item("live-one", "Unadmitted title one", 600), item("live-two", "Unadmitted title two", 600)),
+                "playlist:PLtafsir", List.of(item("live-two", "Admitted playlist title", 600))), Map.of());
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(), List.of(
+                        stream("live-one", "Zubdahnoor recitation one", ALAFASY),
+                        stream("live-two", "Zubdahnoor recitation two", ALAFASY)), 5_000, inner));
+        Map<String, String> titles = titles(idx.search("zubdahnoor", null, 50));
+        assertEquals("Zubdahnoor recitation one", titles.get("live-one"), "no admitted copy: the stored title stays");
+        assertEquals("Admitted playlist title", titles.get("live-two"), "its own source has no copy: the first admitted one");
+    }
+
+    /** M6: inner hits go in at h, ahead of C's tier-3 tail (an append-at-the-end merge fails here). */
+    @Test
+    void innerHitsGoAheadOfTodaysRelatedTail() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(), List.of(
+                video("vZub", "Surah Zubdahnoor", "Alafasy"), video("vKahf", "Surah Al-Kahf", "Alafasy"),
+                video("vYasin", "Surah Yasin", "Alafasy"), video("vMaryam", "Surah Maryam", "Alafasy"),
+                video("vTaha", "Surah Taha", "Alafasy")), List.of(), 5_000, inner));
+        List<String> ids = ids(idx.search("surah zubdahnoor", null, 50));
+        assertEquals("vZub", ids.get(0), ids.toString());
+        assertEquals(3, ids.indexOf("lesson00001"), ids.toString());
+        assertEquals(6, ids.size(), ids.toString());
+    }
+
+    /** Hand-off (Task 20/21 reviews): an inner index closing under a search (rebuild swap, shutdown) never fails it. */
+    @Test
+    void anInnerIndexThatClosesUnderASearchAnswersTodaysList() throws Exception {
+        Directory empty = new ByteBuffersDirectory();
+        new IndexWriter(empty, new IndexWriterConfig()).close();
+        DirectoryReader reader = DirectoryReader.open(empty);
+        IndexSearcher stale = new IndexSearcher(reader);
+        reader.close(); // after acquire: the next read, and the release, throw AlreadyClosedException
+        InnerStore store = new InnerStore(innerTmp.resolve("closing").toString());
+        List<String> today = ids(alafasy(null).search("surah", null, 50));
+        for (boolean atAcquire : new boolean[] {true, false}) {
+            InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+                @Override
+                boolean serving() {
+                    return true;
+                }
+
+                @Override
+                IndexSearcher acquire() {
+                    if (atAcquire) throw new AlreadyClosedException("this ReferenceManager is closed");
+                    return stale;
+                }
+            };
+            SearchIndex idx = alafasy(closing);
+            SearchIndex.Hits hits = assertDoesNotThrow(() -> idx.search("surah", null, 50), "closed at acquire: " + atAcquire);
+            assertEquals(today, ids(hits), "closed at acquire: " + atAcquire);
+            assertEquals("exact", hits.match());
+        }
+        assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getFormattedMessage().startsWith("inner search failed")));
+    }
+
+    @Test
+    void serveInnerOffIsExactlyToday() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Surah Al-Mulk", 600),
+                item("lesson00002", "Zubdahnoor lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+        innerStore.state().serveInner = false;
+        SearchIndex off = alafasy(inner), none = alafasy(null);
+        for (String q : List.of("surah", "zubdahnoor", "kahf", "alafasy")) {
+            SearchIndex.Hits a = none.search(q, null, 50), b = off.search(q, null, 50);
+            assertEquals(ids(a), ids(b), q);
+            assertEquals(a.match(), b.match(), q);
+        }
+    }
+
+    @Test
+    void serveInnerBeforeTheInnerIndexIsBuiltAnswersTodaysList() throws Exception {
+        InnerStore store = new InnerStore(innerTmp.resolve("cold").toString());
+        store.state().serveInner = true;
+        InnerIndex cold = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC());
+        openedInner.add(cold);
+        SearchIndex idx = alafasy(cold);
+        assertEquals(ids(alafasy(null).search("surah", null, 50)), ids(idx.search("surah", null, 50)));
+        assertTrue(idx.search("zubdahnoor", null, 50).items().isEmpty());
+    }
+
+    @Test
+    void innerHitsCarryTheirSourceDurationAgeAndThumbnail() throws Exception {
+        int day = (int) java.time.LocalDate.now(java.time.ZoneOffset.UTC).minusDays(12).toEpochDay();
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(new InnerCorpus.Item("lesson00001", "Zubdahnoor lesson", 2712, day, null, null))),
+                Map.of(ALAFASY, "Alafasy"));
+        ContentItemDto hit = alafasy(inner).search("zubdahnoor", null, 50).items().get(0);
+        assertEquals("VIDEO", hit.getType());
+        assertEquals(2712, hit.getDurationSeconds());
+        assertEquals(12, hit.getUploadedDaysAgo());
+        assertEquals("https://i.ytimg.com/vi/lesson00001/hqdefault.jpg", hit.getThumbnailUrl());
+        assertEquals("Alafasy", hit.getChannelTitle());
+        assertEquals("CHANNEL", hit.getSourceType());
+        assertEquals("UCalafasy", hit.getSourceId());
+    }
+
+    @Test
+    void aVideoListedByTwoSourcesShowsThroughTheOneThatKeepsIt() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600)),
+                "playlist:PLtafsir", List.of(item("lesson00001", "Zubdahnoor lesson", 600))), Map.of());
+        SearchIndex idx = started(newIndex(
+                List.of(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("lesson00001")))),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(), List.of(), 5_000, inner));
+        List<ContentItemDto> hits = idx.search("zubdahnoor", null, 50).items();
+        assertEquals(1, hits.size());
+        assertEquals("PLAYLIST", hits.get(0).getSourceType());
+        assertEquals("PLtafsir", hits.get(0).getSourceId());
+    }
+
+    @Test
+    void curationAppliesToInnerVideosAtQueryTime() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("innerhalal1", "Zubdahnoor halal", 600), item("halal-excluded", "Zubdahnoor excluded", 600),
+                        item("halal-rejected", "Zubdahnoor blocked by its Video document", 600)),
+                "channel:UCrejected", List.of(item("innerrejct1", "Zubdahnoor rejected source", 600))), Map.of());
+        index = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        assertEquals(List.of("innerhalal1"), ids("zubdahnoor"), "excluded, Video-blocked and non-admitted all hidden");
+
+        saved(channel("UChalal", "Halal Kitchen"));                                  // un-excluded: at once (R19)
+        index.awaitWrites();
+        assertEquals(Set.of("innerhalal1", "halal-excluded"), Set.copyOf(ids("zubdahnoor")));
+
+        saved(with(channel("UChalal", "Halal Kitchen"), c -> c.setStatus("REJECTED"))); // source rejected: all hidden
+        index.awaitWrites();
+        assertTrue(ids("zubdahnoor").isEmpty());
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2 (R34): a resolved report's take-down record, a REJECTED and ARCHIVED Video document, hides the
+     * id on every source, including one admitted after the resolve. A per-source exclusion alone would not.
+     */
+    @Test
+    void aReportTakeDownHidesTheVideoOnASourceAdmittedAfterIt() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("reported001", "Zubdahnoor reported", 600)),
+                "channel:UCrejected", List.of(item("reported001", "Zubdahnoor reported", 600))), Map.of());
+        index = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        Video takeDown = new Video("reported001");
+        takeDown.setId("doc-reported001");
+        takeDown.setStatus("REJECTED");
+        takeDown.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        saved(takeDown);
+        saved(channel("UCrejected", "Later Source"));                               // admitted after the resolve
+        index.awaitWrites();
+        assertTrue(index.sources().containsKey("channel:UCrejected"), "precondition: the later source is admitted");
+        assertFalse(ids("zubdahnoor").contains("reported001"));
+    }
+
+    // ---- Q18: a channel only in LIVE categories is no inner source (stage 9 Cubic r10 #1) ------------
+
+    /** Its corpus was stored while it was an ordinary channel; from the save that leaves it LIVE-only, no inner copy is served. */
+    @Test
+    void aChannelThatBecomesLiveOnlyLosesItsInnerCopiesOnSearchTitlesAndPastedIds() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE), category("lectures", null));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live", "lectures")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, zubdahnoor()));
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"), "precondition: served while also in an ordinary category");
+
+        saved(in(channel("UCalafasy", "Alafasy"), "live")); // its last ordinary category removed
+        index.awaitWrites();
+
+        assertTrue(ids("zubdahnoor").isEmpty(), "/search");
+        assertTrue(index.titles(List.of("lesson00001")).map().isEmpty(), "/titles");
+        assertSame(SearchIndex.Hits.NONE, index.byId("lesson00001", null), "a pasted id");
+        assertTrue(index.sources().containsKey(ALAFASY), "still admitted: its catalog entry and lives are today's");
+    }
+
+    /** A boot rebuilds the inner index from every corpus file: a LIVE-only channel's stored corpus never comes back. */
+    @Test
+    void aLiveOnlyChannelsStoredCorpusIsNeverServedAfterABoot() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE));
+        SearchIndex idx = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")), List.of(), 5_000, zubdahnoor()));
+        assertTrue(ids(idx.search("zubdahnoor", null, 50)).isEmpty());
+        assertTrue(idx.titles(List.of("lesson00001")).map().isEmpty());
+        assertSame(SearchIndex.Hits.NONE, idx.byId("lesson00001", null));
+        assertEquals(List.of("UCalafasy"), ids(idx.search("alafasy", "CHANNEL", 10)), "the channel itself is still found");
+    }
+
+    /** Approved into a LIVE category only: the crawler's own test answers "LIVE-only" from the approval's save on. */
+    @Test
+    void aChannelApprovedIntoOnlyALiveCategoryIsNoInnerSourceFromItsApproval() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE));
+        index = started(newIndex(List.of(), List.of(), List.of(), List.of(), 5_000, zubdahnoor()));
+        saved(in(channel("UCalafasy", "Alafasy"), "live"));
+        index.awaitWrites();
+        assertTrue(index.sources().containsKey(ALAFASY), "admitted");
+        assertTrue(index.liveOnly(ALAFASY), "InnerCrawler never crawls it");
+        assertTrue(ids("zubdahnoor").isEmpty());
+        assertSame(SearchIndex.Hits.NONE, index.byId("lesson00001", null));
+    }
+
+    /** Ruling 3: a channel also in an ordinary category stays a source; a LIVE-only one's stored streams are today's. */
+    @Test
+    void aMixedChannelStaysAnInnerSourceAndALiveOnlyChannelKeepsItsStoredStreams() throws Exception {
+        categories = List.of(category("live", Category.TYPE_LIVE), category("lectures", null));
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600)),
+                "channel:UChalal", List.of(item("lesson00002", "Zubdahnoor halal lesson", 600))), Map.of(ALAFASY, "Alafasy"));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live", "lectures"),
+                        in(channel("UChalal", "Halal Kitchen"), "live"), channel("UCzakir", "Dr Zakir Naik")), List.of(), List.of(),
+                List.of(stream("halal-ok", "Zubdahnoor halal stream", "channel:UChalal")), 5_000, inner));
+        assertEquals(Set.of("lesson00001", "halal-ok"), Set.copyOf(ids("zubdahnoor")));
+        assertFalse(index.liveOnly(ALAFASY), "LIVE and ordinary");
+        assertTrue(index.liveOnly("channel:UChalal"));
+        assertFalse(index.liveOnly("channel:UCzakir"), "no category at all is no LIVE-only channel");
+        assertFalse(index.liveOnly("playlist:PLnotadmitted"));
+    }
+
+    /** A category turned LIVE (or back, the kill switch) evicts the public caches: that eviction re-reads the LIVE set. */
+    @Test
+    void aCategoryTurnedLiveHidesItsOnlyChannelsInnerCopiesAtItsEviction() throws Exception {
+        categories = List.of(category("lectures", null));
+        index = started(newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "lectures")), List.of(), List.of(), List.of(),
+                5_000, zubdahnoor()));
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"));
+
+        categories = List.of(category("lectures", Category.TYPE_LIVE));
+        index.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+        index.awaitWrites();
+        assertTrue(ids("zubdahnoor").isEmpty(), "LIVE now");
+        assertTrue(index.liveOnly(ALAFASY));
+
+        categories = List.of(category("lectures", null));
+        index.onPublicContentEvicted(new PublicContentCacheService.Evicted());
+        index.awaitWrites();
+        assertEquals(List.of("lesson00001"), ids("zubdahnoor"), "ordinary again");
+    }
+
+    /** Fail closed: with LIVE categories unreadable, the build fails and retries; it never serves with an empty LIVE set. */
+    @Test
+    void unreadableCategoriesFailTheBuildInsteadOfServingLiveOnlyChannels() throws Exception {
+        SearchIndex idx = newIndex(List.of(in(channel("UCalafasy", "Alafasy"), "live")), List.of(), List.of(), List.of(), 50,
+                zubdahnoor());
+        when(categoryRepo.findAll()).thenThrow(new java.util.concurrent.TimeoutException("firestore"));
+        started(idx);
+        assertThrows(SearchIndex.NotReadyException.class, () -> idx.search("zubdahnoor", null, 50));
+    }
+
+    /** Inner titles built to collide with every golden row (spec §14.1): the rows' own words, Zakir uploads, a stream id. */
+    private InnerIndex adversarialInner() throws Exception {
+        String dawah = "channel:UCfassTU6mGWIj-yb26_ADjQ", zakir = "channel:UC3YmP7nqf514I1zh1eVbzrA";
+        List<InnerCorpus.Item> dawahItems = List.of(
+                item("advers00001", "islamofobia", 600), item("advers00002", "surah al ikhlaas", 600),
+                item("advers00003", "mohammad hijab", 600), item("advers00004", "verhaal profeten", 600),
+                item("advers00005", "les sierah veldslagen", 600), item("advers00006", "مصطفى العدوي", 600),
+                item("advers00007", "dr zakir naik", 600), item("advers00008", "Islam for Kids", 600),
+                item("advers00009", "nederlandse lezing", 600),
+                item("uq7ccPxFN_8", "Test the God You Worship against Surah Ikhlaas - Dr Zakir Naik", 600));
+        List<InnerCorpus.Item> zakirItems = new ArrayList<>();
+        for (int i = 0; i < ZAKIR_UPLOADS.size(); i++) zakirItems.add(item(String.format("zakirup%04d", i), ZAKIR_UPLOADS.get(i), 900));
+        return inner(Map.of(dawah, dawahItems, zakir, zakirItems), Map.of(dawah, "Dawah Nederland", zakir, "Dr Zakir Naik"));
+    }
+
+    /**
+     * Acceptance #1 (spec §7.1 proof, RV I7a): with an adversarial inner corpus, every golden row keeps its header,
+     * today's items keep their order, no inner hit rises above #4, and each expected item keeps its exact rank
+     * (E25 surah al ikhlaas and E27 mohammad hijab included, the owner's pins).
+     */
+    @ParameterizedTest(name = "{0}: {1}")
+    @org.junit.jupiter.params.provider.MethodSource("golden")
+    void goldenRowsKeepTodaysHeadAndRanksWithAnAdversarialInnerCorpus(String language, String query, String expected,
+                                                                       int worstRank, String tier) throws Exception {
+        SearchIndex.Hits off = languages(null).search(query, null, 50);
+        SearchIndex.Hits on = languages(adversarialInner()).search(query, null, 50);
+        String row = language + " '" + query + "'";
+        assertEquals(off.match(), on.match(), row + ": header");
+        List<String> offIds = ids(off), onIds = ids(on);
+        Set<String> innerOnly = new HashSet<>(onIds);
+        innerOnly.removeAll(offIds);
+        List<String> today = onIds.stream().filter(id -> !innerOnly.contains(id)).toList();
+        assertEquals(offIds.subList(0, today.size()), today, row + ": today's items keep their order");
+        int firstInner = java.util.stream.IntStream.range(0, onIds.size()).filter(i -> innerOnly.contains(onIds.get(i)))
+                .findFirst().orElse(onIds.size());
+        assertTrue(firstInner >= Math.min(3, offIds.size()), row + ": an inner hit above #4 -> " + onIds);
+        if (Set.of("surah al ikhlaas", "mohammad hijab").contains(query)) { // E25, E27: the pins must face inner hits
+            assertFalse(innerOnly.isEmpty(), row + ": no inner hit, so the pin proves nothing");
+        }
+        for (String id : expected.split(" ")) assertEquals(offIds.indexOf(id), onIds.indexOf(id), row + ": " + id + " moved");
+    }
+
+    /** Task 24 hand-off: the title pass reports ms, titles swapped and a timeout in the slow line; integers only, never the query. */
+    @Test
+    void theTitlePassShowsInTheSlowLine() throws Exception {
+        SearchIndex idx = recitations(originals());
+        idx.slowSearchMs = -1;
+        idx.search("recitation", null, 2); // need = 0: no inner pass, the title pass alone
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:2"), lastSlowLine());
+        idx.newTimeout = ms -> scripted(2, false); // the second lookup finds the budget spent
+        idx.search("recitation", null, 2);
+        assertTrue(lastSlowLine().matches(".* titles=\\d+ms:1:timeout"), lastSlowLine());
+        assertFalse(lastSlowLine().contains("recitation"), lastSlowLine());
+    }
+
+    /** Task 24 hand-off: a failing title pass keeps the merged inner hits and only skips the swap; its WARN names the class only. */
+    @Test
+    void aTitlePassThatFailsKeepsTheMergedInnerHits() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("live-kahf", ORIGINAL.get("live-kahf"), 600),
+                item("live-yasin", ORIGINAL.get("live-yasin"), 600), item("lesson00001", "Recitation lesson", 600))),
+                Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = recitations(inner);
+        int[] budgets = {0};
+        idx.newTimeout = ms -> {
+            if (budgets[0]++ == 0) return new org.apache.lucene.index.QueryTimeoutImpl(ms); // the inner ladder's
+            throw new IllegalStateException("title pass broke on recitation"); // the title pass's
+        };
+        int refs = refCount(inner);
+        SearchIndex.Hits hits = idx.search("recitation", null, 50);
+        assertEquals(2, budgets[0], "both passes ran");
+        assertEquals("lesson00001", ids(hits).get(2), ids(hits).toString());
+        assertEquals(RECITED, titles(hits).entrySet().stream().filter(e -> e.getKey().startsWith("live-"))
+                .collect(Collectors.toMap(Map.Entry::getKey, Map.Entry::getValue)), "the stored titles stay");
+        List<String> warns = logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage).toList();
+        assertTrue(warns.contains("inner titles failed (java.lang.IllegalStateException); keeping the stored titles"), warns.toString());
+        assertTrue(warns.stream().noneMatch(w -> w.startsWith("inner search failed") || w.contains("recitation")), warns.toString());
+        assertEquals(refs, refCount(inner), "the inner reader is released");
+    }
+
+    // ---- Task 24b: original titles for the apps' channel and playlist rows (owner issue 1) ----------------
+
+    @Test
+    void titlesComeFromTheCatalogThenTheInnerIndexAndNeverFromAStoredStream() throws Exception {
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("lesson00001", "زبدة النور: الدرس الأول", 600),
+                item("vKahf", "Surah Al-Kahf (inner copy)", 600))), Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")),
+                List.of(stream("alafasy-live", "Alafasy Live Recitation", ALAFASY)), 5_000, inner));
+        SearchIndex.Titles all = idx.titles(List.of("vKahf", "lesson00001", "alafasy-live", "lesson99999"));
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf", "lesson00001", "زبدة النور: الدرس الأول"), all.map(),
+                "catalog first, inner next, a stored stream's title never");
+        assertTrue(all.complete(), "every id looked up: an unknown id is a final answer");
+        innerStore.state().serveInner = false;
+        SearchIndex.Titles off = idx.titles(List.of("vKahf", "lesson00001"));
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), off.map(),
+                "inner titles follow serveInner, which Task 35 opens after its title-language check");
+        assertFalse(off.complete(), "fix round 1: not serving yet, so the originals come later");
+        assertTrue(idx.titles(List.of("vKahf")).complete(), "the catalog answered every id");
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(null).titles(List.of("vKahf", "lesson00001")).map());
+    }
+
+    @Test
+    void anInnerTitleFollowsTheSameCurationAsAnInnerHit() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("innerhalal1", "Kept lesson", 600), item("halal-excluded", "Excluded", 600),
+                        item("halal-rejected", "Blocked by its Video document", 600)),
+                "channel:UCrejected", List.of(item("innerrejct1", "From a rejected source", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        assertEquals(Map.of("innerhalal1", "Kept lesson"),
+                idx.titles(List.of("innerhalal1", "halal-excluded", "halal-rejected", "innerrejct1")).map());
+    }
+
+    /** Hand-off: /titles has the title pass's 40 ms budget, checked per id; past it the rest are unknown ids, not a slow answer. */
+    @Test
+    void titlesStopLookingUpInnerCopiesWhenTheirBudgetEnds() throws Exception {
+        InnerIndex inner = originals();
+        SearchIndex idx = recitations(inner);
+        idx.newTimeout = ms -> scripted(2, false); // the second inner lookup finds the budget spent
+        int refs = refCount(inner);
+        SearchIndex.Titles cut = idx.titles(List.of("live-kahf", "live-yasin"));
+        assertEquals(Map.of("live-kahf", ORIGINAL.get("live-kahf")), cut.map());
+        assertFalse(cut.complete(), "fix round 1: a budget cut is a partial answer");
+        assertEquals(refs, refCount(inner), "the inner searcher is released");
+    }
+
+    /** As /search: an inner index closing under /titles (rebuild swap, shutdown) answers the catalog's titles, never a 500. */
+    @Test
+    void titlesAnswerTheCatalogsWhenTheInnerIndexClosesUnderThem() throws Exception {
+        Directory empty = new ByteBuffersDirectory();
+        new IndexWriter(empty, new IndexWriterConfig()).close();
+        DirectoryReader reader = DirectoryReader.open(empty);
+        IndexSearcher stale = new IndexSearcher(reader);
+        reader.close(); // after acquire: the next read, and the release, throw AlreadyClosedException
+        InnerStore store = new InnerStore(innerTmp.resolve("closing").toString());
+        for (boolean atAcquire : new boolean[] {true, false}) {
+            InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+                @Override
+                boolean serving() {
+                    return true;
+                }
+
+                @Override
+                IndexSearcher acquire() {
+                    if (atAcquire) throw new AlreadyClosedException("this ReferenceManager is closed");
+                    return stale;
+                }
+            };
+            SearchIndex idx = alafasy(closing);
+            SearchIndex.Titles failed = assertDoesNotThrow(() -> idx.titles(List.of("vKahf", "lesson00001")));
+            assertEquals(Map.of("vKahf", "Surah Al-Kahf"), failed.map(), "closed at acquire: " + atAcquire);
+            assertFalse(failed.complete(), "fix round 1: closed at acquire: " + atAcquire);
+        }
+        assertEquals(2, logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter("titles: inner lookup failed (org.apache.lucene.store.AlreadyClosedException); answering the catalog's"::equals)
+                .count());
+    }
+
+    /** Fix round 1: a blank inner title never names a video, as a blank catalog title never does (rebuilds drop them; this guards the read). */
+    @Test
+    void aBlankInnerTitleIsNeverAnAnswer() throws Exception {
+        Directory blankDir = new ByteBuffersDirectory();
+        try (IndexWriter w = new IndexWriter(blankDir, new IndexWriterConfig())) {
+            w.addDocument(InnerIndex.doc(ALAFASY, "Alafasy", new InnerCorpus.Item("lesson00001", " ", 600, null, null, null)));
+        }
+        InnerStore store = new InnerStore(innerTmp.resolve("blank").toString());
+        InnerIndex blank = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            boolean serving() {
+                return true;
+            }
+
+            @Override
+            IndexSearcher acquire() throws IOException {
+                return new IndexSearcher(DirectoryReader.open(blankDir)); // release() closes it
+            }
+        };
+        assertEquals(Map.of("vKahf", "Surah Al-Kahf"), alafasy(blank).titles(List.of("vKahf", "lesson00001")).map());
+    }
+
+    // ---- pasted ids, sourcesListing, the stream gate (inner-search R27, R34, R18, §8.1) ----------
+
+    @Test
+    void aPastedIdOfAnInnerOnlyVideoIsFoundWhileServedAndOnlyThen() throws Exception {
+        InnerIndex inner = zubdahnoor();
+        SearchIndex idx = alafasy(inner);
+        SearchIndex.Hits hit = idx.byId("lesson00001", null);
+        assertEquals(List.of("lesson00001"), ids(hit));
+        assertEquals("exact", hit.match());
+        assertEquals("UCalafasy", hit.items().get(0).getSourceId());
+        assertEquals(List.of("lesson00001"), ids(idx.byId("lesson00001", "VIDEO")));
+        assertTrue(ids(idx.byId("lesson00001", "CHANNEL")).isEmpty());
+        innerStore.state().serveInner = false;
+        assertTrue(ids(idx.byId("lesson00001", null)).isEmpty());
+    }
+
+    /** Hand-off 2: a pasted id names the same copy, title and source as /titles (one shared rule, never a non-admitted copy). */
+    @Test
+    void aPastedInnerIdNamesTheSameCopyAsTitles() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UCrejected", List.of(item("orphan-x0001", "Rejected Copy", 600)),
+                "channel:UChalal", List.of(item("orphan-x0001", "Halal Copy", 600)),
+                "playlist:PLtafsir", List.of(item("orphan-x0001", "Tafsir Copy", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        ContentItemDto hit = idx.byId("orphan-x0001", null).items().get(0);
+        assertEquals(idx.titles(List.of("orphan-x0001")).map().get("orphan-x0001"), hit.getTitle());
+        assertNotEquals("Rejected Copy", hit.getTitle());
+        String key = hit.getSourceType().toLowerCase(java.util.Locale.ROOT) + ":" + hit.getSourceId();
+        assertEquals(Map.of("channel:UChalal", "Halal Copy", "playlist:PLtafsir", "Tafsir Copy").get(key), hit.getTitle());
+    }
+
+    /** Hand-off 1: as /search and /titles, an inner index closing under a pasted id answers the main index's miss. */
+    @Test
+    void aPastedIdAnswersAMissWhenTheInnerIndexClosesUnderIt() throws Exception {
+        InnerIndex served = zubdahnoor();
+        int refs = refCount(served);
+        alafasy(served).byId("lesson00001", null);
+        assertEquals(refs, refCount(served), "the inner searcher is released");
+
+        Directory empty = new ByteBuffersDirectory();
+        new IndexWriter(empty, new IndexWriterConfig()).close();
+        DirectoryReader reader = DirectoryReader.open(empty);
+        IndexSearcher stale = new IndexSearcher(reader);
+        reader.close(); // after acquire: the next read, and the release, throw AlreadyClosedException
+        InnerStore store = new InnerStore(innerTmp.resolve("closing").toString());
+        for (boolean atAcquire : new boolean[] {true, false}) {
+            InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+                @Override
+                boolean serving() {
+                    return true;
+                }
+
+                @Override
+                IndexSearcher acquire() {
+                    if (atAcquire) throw new AlreadyClosedException("this ReferenceManager is closed");
+                    return stale;
+                }
+            };
+            SearchIndex idx = alafasy(closing);
+            SearchIndex.Hits miss = assertDoesNotThrow(() -> idx.byId("lesson00001", null), "closed at acquire: " + atAcquire);
+            assertSame(SearchIndex.Hits.NONE, miss, "closed at acquire: " + atAcquire);
+            assertEquals(List.of("vKahf"), ids(idx.byId("vKahf", null)), "a main-index hit never reads the inner index");
+        }
+        assertEquals(2, logged(Level.WARN).stream().map(ILoggingEvent::getFormattedMessage)
+                .filter("pasted id: inner lookup failed (org.apache.lucene.store.AlreadyClosedException); answering a miss"::equals)
+                .count());
+    }
+
+    @Test
+    void sourcesListingNamesEveryAdmittedSourceThatListsTheVideo() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("orphan-lecture", "Orphan Lecture", 600)),
+                "playlist:PLtafsir", List.of(item("orphan-lecture", "Orphan Lecture", 600)),
+                "channel:UCrejected", List.of(item("orphan-lecture", "Orphan Lecture", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        assertEquals(Set.of("channel:UChalal", "playlist:PLtafsir"), Set.copyOf(idx.sourcesListing("orphan-lecture")));
+        assertEquals(2, idx.sourcesListing("orphan-lecture").size(), "fix round 1: UChalal, from the inner index and the stream, once");
+        assertEquals(List.of("channel:UChalal"), idx.sourcesListing("halal-ok"), "a stored stream's own key");
+        assertEquals(List.of(), idx.sourcesListing("lesson99999"));
+    }
+
+    /**
+     * Codex P2-4, slice B I1: R34's cold check waited for the main index only. With inner search on and its index not
+     * built (2-7 min after every restart, and for good after a failed boot rebuild), a parentless report on an inner-only
+     * video was saved RESOLVED with nothing excluded and no note. Off, nothing changes.
+     */
+    @Test
+    void listingsLoadedWaitsForTheInnerIndexOnlyWhileInnerSearchIsOn() throws Exception {
+        InnerIndex unbuilt = new InnerIndex(innerTmp.resolve("base").toString(),
+                new InnerStore(innerTmp.resolve("on").toString()), java.time.Clock.systemUTC());
+        unbuilt.sleeper = ms -> { };
+        openedInner.add(unbuilt);
+        SearchIndex on = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, unbuilt));
+        assertFalse(on.listingsLoaded());
+
+        unbuilt.rebuild(Map.of(), 10_000);
+        assertTrue(on.listingsLoaded());
+
+        InnerIndex off = new InnerIndex(innerTmp.resolve("base").toString(), new InnerStore(""), java.time.Clock.systemUTC());
+        assertTrue(started(newIndex(channels(), playlists(), videos(), streams(), 5_000, off)).listingsLoaded(),
+                "inner search off: as today");
+    }
+
+    /** Fix round 1: a source whose latest crawl was complete and fresh, with every counted item stored. */
+    private static InnerState.Source trusted(int items) {
+        InnerState.Source src = new InnerState.Source();
+        src.completeAt = System.currentTimeMillis();
+        src.count = items;
+        src.items = items;
+        return src;
+    }
+
+    @Test
+    void theStreamGateHidesAStoredStreamOnlyForATrustedCompleteCrawlThatDoesNotListIt() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = trusted(1);
+        innerStore.state().sources.put("channel:UChalal", halal);
+
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "gate off: today");
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "complete, fresh, not listed: hidden");
+
+        halal.shortCrawl = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "a short crawl is never trusted");
+        halal.shortCrawl = false;
+        halal.capped = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "a capped crawl did not list everything");
+        halal.capped = false;
+        halal.completeAt = System.currentTimeMillis() - 31L * 86_400_000;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "older than 30 days");
+        halal.completeAt = System.currentTimeMillis();
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty());
+    }
+
+    @Test
+    void theStreamGateKeepsAStoredStreamThatAnotherSourceStillKeepsOrTheCrawlLists() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("lesson00001", "Something else", 600)),
+                ALAFASY, List.of(item("both-kept", "Both Kept Lesson", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), List.of(
+                stream("two-sources", "Two Sources Lesson", "channel:UChalal", ALAFASY),
+                stream("both-kept", "Both Kept Lesson", ALAFASY)), 5_000, inner));
+        for (String key : List.of("channel:UChalal", ALAFASY)) {
+            innerStore.state().sources.put(key, trusted(1));
+        }
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("two sources", "VIDEO", 50)).isEmpty(), "both complete crawls miss it");
+        assertEquals(List.of("both-kept"), ids(idx.search("both kept", "VIDEO", 50)), "listed by Alafasy's complete crawl: kept");
+        innerStore.state().sources.get(ALAFASY).completeAt = 0;  // Alafasy not trusted: it keeps the stream
+        assertEquals(List.of("two-sources"), ids(idx.search("two sources", "VIDEO", 50)));
+    }
+
+    /**
+     * The gate fails open (fix round 1, Minor 6): with no searcher (closing, or a boot rebuild racing the check) or an
+     * inner index closing under a search (shutdown), today's stream is kept, never a 500.
+     */
+    @Test
+    void theStreamGateKeepsAStoredStreamWhenTheInnerIndexClosesUnderIt() throws Exception {
+        InnerStore store = new InnerStore(innerTmp.resolve("gate").toString());
+        AtomicBoolean closed = new AtomicBoolean(), none = new AtomicBoolean();
+        InnerIndex closing = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            IndexSearcher acquire() throws IOException {
+                if (closed.get()) throw new AlreadyClosedException("this ReferenceManager is closed");
+                return none.get() ? null : super.acquire();
+            }
+        };
+        closing.sleeper = ms -> { };
+        closing.rebuild(Map.of(), 10_000);
+        openedInner.add(closing);
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, closing));
+        store.state().sources.put("channel:UChalal", trusted(1));
+        store.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "readable: not listed, hidden");
+        none.set(true);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "no searcher: kept");
+        none.set(false);
+        closed.set(true);
+        assertEquals(List.of("orphan-lecture"), ids(assertDoesNotThrow(() -> idx.search("orphan", "VIDEO", 50))));
+    }
+
+    /** Fix round 1, Minor 6: an inner index not built yet, or a source with no crawl state, keeps every stored stream. */
+    @Test
+    void theStreamGateKeepsAStoredStreamBeforeTheBuildAndForASourceWithNoState() throws Exception {
+        InnerStore store = new InnerStore(innerTmp.resolve("cold").toString());
+        InnerIndex cold = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC());
+        openedInner.add(cold);
+        store.state().sources.put("channel:UChalal", trusted(1));
+        store.state().streamGate = true;
+        SearchIndex unbuilt = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, cold));
+        assertEquals(List.of("orphan-lecture"), ids(unbuilt.search("orphan", "VIDEO", 50)), "not built");
+
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        innerStore.state().streamGate = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "no state for UChalal");
+    }
+
+    /** Fix round 1, Important 1(b): NewPipe dropped items the crawl counted, so its listing says nothing about them. */
+    @Test
+    void theStreamGateKeepsAStoredStreamWhenTheCrawlStoredFewerItemsThanItsCount() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = trusted(1);
+        innerStore.state().sources.put("channel:UChalal", halal);
+        innerStore.state().streamGate = true;
+        assertTrue(ids(idx.search("orphan", "VIDEO", 50)).isEmpty(), "every counted item stored: hidden");
+        halal.count = 10; // 1 stored < 10 − tolerance(10) = 8
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "fewer stored than counted: kept");
+        halal.count = -1;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "an unknown count: kept");
+    }
+
+    /** Fix round 1, Important 1(a): an index cut to a cap below the crawl (R31 lowers it unattended) cannot say "not listed". */
+    @Test
+    void theStreamGateKeepsAStoredStreamPastTheCapTheIndexHolds() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600),
+                item("lesson00002", "Another lesson", 600), item("orphan-lecture", "Orphan Lecture", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        innerStore.state().sources.put("channel:UChalal", trusted(3));
+        innerStore.state().streamGate = true;
+        innerStore.state().serveInner = false; // the stored stream alone answers
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "listed: kept");
+        innerStore.state().capPerSource = 2; // R31's trigger; the rebuild cuts the source to its newest 2
+        inner.rebuild(Map.of(), 2);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "past the lowered cap: kept");
+        innerStore.state().capPerSource = 10_000; // raised: until the rebuild the index still holds the newest 2
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "raised, not rebuilt yet: kept");
+        inner.rebuild(Map.of(), 10_000);
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)), "rebuilt: listed again");
+        assertTrue(ids(idx.search("halal cooking", "VIDEO", 50)).isEmpty(), "the gate is on: an unlisted stream hides");
+    }
+
+    /** Fix round 1, Minor 4: a complete crawl's sweep is searchable at once, so the gate never reads the stale listing. */
+    @Test
+    void theStreamGateSeesACompleteCrawlsSweepAtOnce() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        inner.refreshEveryMs = Long.MAX_VALUE; // a merge waits for the next refresh; a sweep must not
+        inner.replaceSource("channel:UChalal", null,
+                List.of(item("lesson00001", "Something else", 600), item("orphan-lecture", "Orphan Lecture", 600)));
+        innerStore.state().sources.put("channel:UChalal", trusted(2));
+        innerStore.state().streamGate = true;
+        innerStore.state().serveInner = false;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)));
+    }
+
+    /** Fix round 1, Minor 5: a source the rebuild could not index (corpus missing or unreadable) is no longer trusted. */
+    @Test
+    void aSourceTheRebuildCouldNotIndexIsNoLongerTrusted() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600)),
+                ALAFASY, List.of(item("lesson00002", "Another lesson", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        InnerState.Source halal = trusted(1), alafasy = trusted(1), tafsir = trusted(1);
+        innerStore.state().sources.putAll(Map.of("channel:UChalal", halal, ALAFASY, alafasy, "playlist:PLtafsir", tafsir));
+        Files.write(innerStore.corpusFile("channel:UChalal"), "not gzip".getBytes(java.nio.charset.StandardCharsets.UTF_8));
+        inner.rebuild(Map.of(), 10_000); // PLtafsir never had a corpus file
+        assertEquals(0, halal.completeAt, "unreadable");
+        assertEquals(0, tafsir.completeAt, "missing");
+        assertNotEquals(0, alafasy.completeAt, "indexed: still trusted");
+        innerStore.state().streamGate = true;
+        assertEquals(List.of("orphan-lecture"), ids(idx.search("orphan", "VIDEO", 50)));
+    }
+
+    /** Fix round 1, Important 3: the gate's lookups show in the slow line, integers only, and only when it ran one. */
+    @Test
+    void theSlowLineShowsTheGatesChecksAndMs() throws Exception {
+        InnerIndex inner = inner(Map.of("channel:UChalal", List.of(item("lesson00001", "Something else", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        idx.slowSearchMs = -1;
+        innerStore.state().serveInner = false; // the gate runs inside today's ladder, inner hits or not
+        innerStore.state().sources.put("channel:UChalal", trusted(1));
+        idx.search("orphan", "VIDEO", 50);
+        assertFalse(lastSlowLine().contains(" gate="), "gate off: " + lastSlowLine());
+        innerStore.state().streamGate = true;
+        idx.search("orphan", "VIDEO", 50);
+        assertTrue(lastSlowLine().matches("slow search: .* loaded=\\d+ hidden=\\d+ gate=[1-9]\\d*:\\d+"), lastSlowLine());
+    }
+
+    /** Fix round 1, Minor 7: a pasted id's keeper is read once, so a catalog swap between two reads never loses the hit. */
+    @Test
+    void aPastedIdKeepsTheKeeperItChose() throws Exception {
+        Directory dir = new ByteBuffersDirectory();
+        try (IndexWriter w = new IndexWriter(dir, new IndexWriterConfig())) {
+            Document doc = InnerIndex.doc(ALAFASY, "Alafasy", item("lesson00001", "Zubdahnoor lesson", 600));
+            doc.removeFields("source");
+            doc.add(new StoredField("source", "STREAM")); // the one kind whose keeper asks the gate: a seam between two reads
+            w.addDocument(doc);
+        }
+        InnerStore store = new InnerStore(innerTmp.resolve("swap").toString());
+        int[] reads = {0};
+        InnerIndex swapping = new InnerIndex(innerTmp.resolve("base").toString(), store, java.time.Clock.systemUTC()) {
+            @Override
+            boolean serving() {
+                return true;
+            }
+
+            @Override
+            IndexSearcher acquire() throws IOException {
+                return new IndexSearcher(DirectoryReader.open(dir)); // release() closes it
+            }
+
+            @Override
+            boolean gateDrops(String sourceKey, String id, SearchIndex.Trace trace) {
+                return reads[0]++ > 0; // keeps it at the first read, drops it at any later one
+            }
+        };
+        ContentItemDto hit = alafasy(swapping).byId("lesson00001", null).items().get(0);
+        assertEquals("UCalafasy", hit.getSourceId());
+        assertEquals(1, reads[0]);
+    }
+
+    /** Fix round 1, Minor 8: search threads read these lock-free (InnerState's own rule). */
+    @Test
+    void everySourceFieldTheGateReadsIsVolatile() throws Exception {
+        for (String field : List.of("completeAt", "shortCrawl", "capped", "count", "items")) {
+            assertTrue(java.lang.reflect.Modifier.isVolatile(InnerState.Source.class.getField(field).getModifiers()), field);
+        }
+    }
+
+    /** Fix round 1, Minor 9: a pasted id that only an excluding, a rejected or a blocked source lists is a miss. */
+    @Test
+    void aPastedExcludedRejectedOnlyOrBlockedIdIsAMiss() throws Exception {
+        InnerIndex inner = inner(Map.of(
+                "channel:UChalal", List.of(item("halal-excluded", "Excluded Copy", 600), item("halal-rejected", "Blocked Copy", 600)),
+                "channel:UCrejected", List.of(item("rejected-only", "Rejected Only", 600))), Map.of());
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), streams(), 5_000, inner));
+        for (String id : List.of("halal-excluded", "rejected-only", "halal-rejected")) {
+            assertSame(SearchIndex.Hits.NONE, idx.byId(id, null), id);
+        }
     }
 
     // ---- in-tab (spec §4.7) --------------------------------------------------------------------
 
     @Test
     void inTabSearchCoversTitleDescriptionAndNameCaseInsensitivelyAndSkipsStreams() throws Exception {
-        assertEquals(List.of("PLtafsir"), ids(index.search("TAFSIR", "PLAYLIST", true, 20, null)));
-        assertEquals(List.of("PLideeen"), ids(index.search("activiteiten", "PLAYLIST", true, 20, null)));
-        assertEquals(List.of("UChalal"), ids(index.search("kitchen", "CHANNEL", true, 20, null)));
-        assertTrue(ids(index.search("halal", "VIDEO", true, 20, null)).isEmpty());
+        assertEquals(List.of("PLtafsir"), ids(index.searchPage("TAFSIR", "PLAYLIST", 20, null, -1)));
+        assertEquals(List.of("PLideeen"), ids(index.searchPage("activiteiten", "PLAYLIST", 20, null, -1)));
+        assertEquals(List.of("UChalal"), ids(index.searchPage("kitchen", "CHANNEL", 20, null, -1)));
+        assertTrue(ids(index.searchPage("halal", "VIDEO", 20, null, -1)).isEmpty());
+    }
+
+    @Test
+    void inTabSearchNeverListsAStreamThatGlobalSearchShows() throws Exception {
+        // Review M2 (1.0.4): tab lists hold catalog documents only (spec §4.7), while global search shows the stream.
+        SearchIndex withStream = started(newIndex(channels(), playlists(), videos(),
+                List.of(stream("posted-zanzibar", "Zanzibar Street Food", "channel:UChalal")), 5_000));
+        assertEquals(List.of("posted-zanzibar"), ids(withStream.search("zanzibar", "VIDEO", 20)));
+        assertTrue(ids(withStream.searchPage("zanzibar", "VIDEO", 20, null, -1)).isEmpty());
     }
 
     @Test
     void filteredInTabSearchKeepsOnlyTheAllowedMembers() throws Exception {
-        assertEquals(List.of("vYasin"), ids(index.search("surah", "VIDEO", true, 20, Set.of("vYasin"))));
+        assertEquals(List.of("vYasin"), ids(index.searchPage("surah", "VIDEO", 20, Set.of("vYasin"), -1)));
     }
 
     @Test
@@ -511,28 +1795,178 @@ class SearchIndexTest {
         List<Channel> tied = List.of(channel("UCtieA", "Tied Name"), channel("UCtieB", "Tied Name"),
                 channel("UCtieC", "Tied Name"), channel("UCtieD", "Tied Name"));
         SearchIndex paged = started(newIndex(tied, List.of(), List.of(), List.of(), 5_000));
-        List<String> firstPage = ids(paged.search("tied", "CHANNEL", true, 3, null)).subList(0, 2);
+        List<String> firstPage = ids(paged.searchPage("tied", "CHANNEL", 3, null, -1)).subList(0, 2);
 
         when(channelRepo.findById("doc-UCtieA")).thenReturn(Optional.of(tied.get(0))); // saved, unchanged
         paged.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCtieA", false));
         paged.awaitWrites();
-        List<String> secondPage = ids(paged.search("tied", "CHANNEL", true, 5, null)).subList(2, 4);
+        List<String> secondPage = ids(paged.searchPage("tied", "CHANNEL", 5, null, -1)).subList(2, 4);
 
         assertEquals(List.of("UCtieA", "UCtieB"), firstPage);
         assertEquals(List.of("UCtieC", "UCtieD"), secondPage);
     }
 
+    @Test
+    void inTabSearchPagesCutOneRankingWhileTheIndexChangesBetweenFetches() throws Exception {
+        // Cubic P3 (1.0.4): each page re-ran the ranking on the newest index and cut it at an offset. Any index change
+        // moves BM25 statistics; here a non-admitted source's 200 streams leave, and two close items swap places.
+        List<SearchableStream> posted = new ArrayList<>();
+        for (int i = 0; i < 200; i++) posted.add(stream("posted-" + i, "Ramadan Reminder " + i, "channel:UCposted"));
+        SearchIndex paged = started(newIndex(List.of(), List.of(), List.of(
+                        video("vInTitle", "Ramadan Night", "Masjid Alpha"), video("vInChannel", "Night Talk", "Ramadan Studio")),
+                posted, 5_000));
+        PublicContentService service = new PublicContentService(channelRepo, playlistRepo, videoRepo,
+                mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run, paged,
+                mock(LiveCategoryService.class));
+        PublicContentService.SearchPage first = service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night");
+        assertEquals(List.of("vInChannel"), pageIds(first)); // the 200 streams are in the statistics
+
+        paged.removeSource("channel:UCposted"); // their segment is fully deleted, so it drops out of the statistics
+        paged.awaitWrites();
+        assertEquals(List.of("vInTitle"), pageIds(service.searchContent("VIDEOS", null, 1, null, null, null, "ramadan night")),
+                "the removal flipped the ranking for a new search");
+
+        PublicContentService.SearchPage second = service.searchContent("VIDEOS",
+                first.page().getPageInfo().getNextCursor(), 1, null, null, null, "ramadan night");
+        assertEquals(List.of("vInChannel", "vInTitle"),
+                java.util.stream.Stream.concat(pageIds(first).stream(), pageIds(second).stream()).toList());
+    }
+
+    private static List<String> pageIds(PublicContentService.SearchPage page) {
+        return page.page().getData().stream().map(ContentItemDto::getId).toList();
+    }
+
+    @Test
+    void atMostTheNewest64InTabSnapshotsAreKept() throws Exception {
+        // Review I1 (1.0.4): a snapshot aged out only 600 s after a newer one was recorded, so frequent index writes, each followed by a first page, kept thousands of readers alive. Ruling: keep the newest 64.
+        Channel kitchen = channels().get(7); // "Halal Kitchen": every re-save is a new index version
+        List<Long> recorded = new ArrayList<>();
+        for (int i = 0; i < 70; i++) {
+            saved(kitchen);
+            index.awaitWrites();
+            recorded.add(index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot());
+        }
+        assertEquals(70, new HashSet<>(recorded).size(), "every first page ran on a new index version");
+        saved(kitchen);
+        index.awaitWrites(); // a page whose snapshot is gone now records a version none of them had
+
+        for (long kept : List.of(recorded.get(69), recorded.get(6))) { // the newest and the oldest of the 64
+            SearchIndex.Hits page = index.searchPage("tafsir", "PLAYLIST", 20, null, kept);
+            assertEquals(kept, page.snapshot());
+            assertEquals(List.of("PLtafsir"), ids(page));
+        }
+        for (long gone : recorded.subList(0, 6)) {
+            assertNotEquals(gone, index.searchPage("tafsir", "PLAYLIST", 20, null, gone).snapshot());
+        }
+    }
+
+    /**
+     * Codex P1-1 (pipeline stage 5): later pages ran on the first page's snapshot, and its catalog hits skipped today's
+     * admission, so a video made PERSONAL or ARCHIVED after page 1 stayed retrievable while the snapshot lived.
+     */
+    @Test
+    void aPinnedInTabPageNeverServesAVideoWithdrawnSinceItsFirstPage() throws Exception {
+        long pinned = index.searchPage("surah", "VIDEO", 1, null, -1).snapshot();
+        assertTrue(ids(index.searchPage("surah", "VIDEO", 20, null, pinned)).containsAll(List.of("vKahf", "vYasin")));
+
+        saved(with(video("vYasin", "Surah Yasin", "Alafasy"), v -> v.setVisibility("PERSONAL")));
+        index.awaitWrites();
+        SearchIndex.Hits page = index.searchPage("surah", "VIDEO", 20, null, pinned);
+        assertEquals(pinned, page.snapshot(), "still the first page's ranking");
+        assertFalse(ids(page).contains("vYasin"), "made PERSONAL after the first page");
+        assertTrue(ids(page).contains("vKahf"));
+
+        saved(with(video("vKahf", "Surah Al-Kahf", "Alafasy"), v -> v.setValidationStatus(ValidationStatus.ARCHIVED)));
+        index.awaitWrites();
+        page = index.searchPage("surah", "VIDEO", 20, null, pinned);
+        assertEquals(pinned, page.snapshot());
+        assertFalse(ids(page).contains("vKahf"), "archived after the first page");
+        assertFalse(ids(page).contains("vYasin"));
+    }
+
+    /** Codex P1-1: snapshots aged out only when a first page recorded one, so a quiet server read a superseded one past its TTL. */
+    @Test
+    void aSupersededSnapshotPastItsTtlIsRefusedOnReadWithNoNewFirstPage() throws Exception {
+        long old = index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot();
+        saved(channels().get(7)); // "Halal Kitchen" re-saved: a new index version
+        index.awaitWrites();
+        long newer = index.searchPage("tafsir", "PLAYLIST", 20, null, -1).snapshot();
+        assertNotEquals(old, newer, "the second first page supersedes the first");
+        assertEquals(old, index.searchPage("tafsir", "PLAYLIST", 20, null, old).snapshot(), "inside its TTL: still read");
+
+        index.snapshotTtlSec = 0.5; // shortened only now, so a stall before this line can't age the inside-TTL read out
+        Thread.sleep(1_000); // no first page meanwhile: nothing records, so before the fix nothing pruned
+        SearchIndex.Hits page = index.searchPage("tafsir", "PLAYLIST", 20, null, old);
+        assertNotEquals(old, page.snapshot(), "past its TTL: refused on read, the page runs on the current index");
+        assertEquals(List.of("PLtafsir"), ids(page));
+    }
+
+    @Test
+    void closeStillReleasesTheWriterAndDirectoryWhenClosingTheSnapshotsThrows() throws Exception {
+        // Review M1 (1.0.4): a first page that records while close() runs makes SearcherLifetimeManager.close() throw
+        // IllegalStateException, and close() then skipped searchers.close(), writer.rollback() and dir.close().
+        Directory dir = new ByteBuffersDirectory();
+        SearchIndex closing = started(new SearchIndex(dir, channelRepo, playlistRepo, videoRepo, streamRepo, 5_000));
+        closing.snapshots = new SearcherLifetimeManager() {
+            @Override
+            public synchronized void close() {
+                throw new IllegalStateException("another thread called record while this SearcherLifetimeManager"
+                        + " instance was being closed; not all searchers were closed");
+            }
+        };
+        assertDoesNotThrow(closing::close);
+        assertThrows(AlreadyClosedException.class, dir::listAll); // its last step ran, so the writer rollback before it did
+    }
+
     // ---- stream visibility (spec §4.2) ---------------------------------------------------------
+
+    @Test
+    void aStreamHitNamesTheAdmittedSourceThatKeepsItAndACatalogHitNamesNone() throws Exception {
+        ContentItemDto stream = index.search("halal", "VIDEO", 50).items().get(0);
+        assertEquals("halal-ok", stream.getId());
+        assertEquals("CHANNEL", stream.getSourceType());
+        assertEquals("UChalal", stream.getSourceId());
+        ContentItemDto catalog = index.search("yasin", null, 50).items().get(0);
+        assertEquals("vYasin", catalog.getId());
+        assertNull(catalog.getSourceType());
+        assertNull(catalog.getSourceId());
+    }
+
+    /** Task 23 gap: a stream kept by a playlist source names that playlist. */
+    @Test
+    void aStreamKeptByAPlaylistNamesThatPlaylist() throws Exception {
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(),
+                List.of(stream("tafsir-clip", "Zubdahnoor tafsir clip", "playlist:PLtafsir")), 5_000));
+        ContentItemDto hit = idx.search("zubdahnoor", null, 50).items().get(0);
+        assertEquals("tafsir-clip", hit.getId());
+        assertEquals("PLAYLIST", hit.getSourceType());
+        assertEquals("PLtafsir", hit.getSourceId());
+    }
+
+    /** Task 23 gap: of several admitted sources, the first in stored order names the stream (a non-admitted one is skipped). */
+    @Test
+    void aStreamKeptByTwoAdmittedSourcesNamesTheFirstInStoredOrder() throws Exception {
+        SearchIndex idx = started(newIndex(channels(), playlists(), videos(), List.of(
+                stream("playlist-first", "Zubdahnoor one", "channel:UCrejected", "playlist:PLtafsir", "channel:UChalal"),
+                stream("channel-first", "Zubdahnoor two", "channel:UChalal", "playlist:PLtafsir")), 5_000));
+        Map<String, ContentItemDto> hits = idx.search("zubdahnoor", null, 50).items().stream()
+                .collect(Collectors.toMap(ContentItemDto::getId, i -> i));
+        assertEquals(Set.of("playlist-first", "channel-first"), hits.keySet());
+        assertEquals("PLAYLIST", hits.get("playlist-first").getSourceType());
+        assertEquals("PLtafsir", hits.get("playlist-first").getSourceId());
+        assertEquals("CHANNEL", hits.get("channel-first").getSourceType());
+        assertEquals("UChalal", hits.get("channel-first").getSourceId());
+    }
 
     @Test
     void aStreamShowsOnlyWhileAnAdmittedSourceKeepsItAndNoVideoDocumentClaimsIt() throws Exception {
         // archived / rejected / unavailable Video documents, a channel exclusion and a rejected-only source all hide
-        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", false, 50, null)));
+        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", 50)));
     }
 
     @Test
     void aStreamWithAVideoDocumentIsAnsweredByTheCatalogDocument() throws Exception {
-        List<ContentItemDto> items = index.search("yusuf", null, false, 50, null).items();
+        List<ContentItemDto> items = index.search("yusuf", null, 50).items();
         assertEquals(1, items.size());
         assertEquals("vYusuf", items.get(0).getId());
         assertEquals(10, items.get(0).getUploadedDaysAgo());
@@ -540,9 +1974,38 @@ class SearchIndexTest {
 
     @Test
     void aStreamWithoutAVideoDocumentHasNoUploadAge() throws Exception {
-        List<ContentItemDto> items = index.search("orphan", "VIDEO", false, 50, null).items();
+        List<ContentItemDto> items = index.search("orphan", "VIDEO", 50).items();
         assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
         assertNull(items.get(0).getUploadedDaysAgo(), "unknown upload date must stay null, never 'Today'");
+    }
+
+    @Test
+    void sourcesNameEveryAdmittedChannelAndPlaylistAndNothingElse() {
+        Map<String, String> sources = index.sources();
+        assertEquals("Dr Zakir Naik", sources.get("channel:UCzakir"));
+        assertEquals("Tafsir Ibn Kathir – Surah Al-Fatiha", sources.get("playlist:PLtafsir"));
+        assertFalse(sources.containsKey("channel:UCrejected"));
+        assertFalse(sources.containsKey("channel:UCzakirPersonal"));
+        assertEquals(8 + 5, sources.size(), sources.toString()); // the fixture's 8 admitted channels and 5 playlists
+    }
+
+    @Test
+    void aRenamedOrRejectedSourceIsSeenAtOnce() throws Exception {
+        saved(channel("UCzakir", "Dr Zakir Naik Official"));
+        index.awaitWrites();
+        assertEquals("Dr Zakir Naik Official", index.sources().get("channel:UCzakir"));
+        saved(with(channel("UCzakir", "Dr Zakir Naik"), c -> c.setStatus("REJECTED")));
+        index.awaitWrites();
+        assertFalse(index.sources().containsKey("channel:UCzakir"));
+    }
+
+    @Test
+    void awaitBuiltIsTrueOnlyOnceTheStreamsHaveLoaded() throws Exception {
+        SearchIndex cold = newIndex(channels(), playlists(), videos(), streams(), 5_000);
+        assertFalse(cold.awaitBuilt(10));
+        cold.onReady();
+        cold.awaitWrites();
+        assertTrue(cold.awaitBuilt(10));
     }
 
     // ---- startup (spec §5.1, §7) ---------------------------------------------------------------
@@ -557,12 +2020,12 @@ class SearchIndexTest {
         });
         slow.onReady();
 
-        assertEquals("UCzakir", ids(slow.search("zakit", null, false, 10, null)).get(0));
-        assertTrue(ids(slow.search("late", "VIDEO", false, 10, null)).isEmpty());
+        assertEquals("UCzakir", ids(slow.search("zakit", null, 10)).get(0));
+        assertTrue(ids(slow.search("late", "VIDEO", 10)).isEmpty());
 
         release.countDown();
         slow.awaitWrites();
-        assertEquals(List.of("late"), ids(slow.search("late", "VIDEO", false, 10, null)));
+        assertEquals(List.of("late"), ids(slow.search("late", "VIDEO", 10)));
     }
 
     @Test
@@ -577,13 +2040,13 @@ class SearchIndexTest {
                 .thenReturn(docs(List.of(stream("s0500", "Synthetic stream 500", "channel:UChalal"))));
         started(paged);
 
-        assertEquals(501, paged.search("synthetic", "VIDEO", false, 1000, null).items().size());
+        assertEquals(501, paged.search("synthetic", "VIDEO", 1000).items().size());
     }
 
     @Test
     void aSearchBeforeTheFirstCatalogBuildIsNotReady() throws Exception {
         SearchIndex cold = newIndex(channels(), playlists(), videos(), streams(), 50);
-        assertThrows(SearchIndex.NotReadyException.class, () -> cold.search("zakir", null, false, 10, null));
+        assertThrows(SearchIndex.NotReadyException.class, () -> cold.search("zakir", null, 10));
     }
 
     @Test
@@ -596,8 +2059,8 @@ class SearchIndexTest {
     @Test
     void eachContextGetsItsOwnIndexDirectoryAndClosingDeletesOnlyThatOne() throws Exception {
         // Ruling F15: two Spring contexts in one JVM must not delete each other's index.
-        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
-        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
+        SearchIndex first = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
+        SearchIndex second = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
         Path firstDir = first.path(), secondDir = second.path();
         assertNotEquals(firstDir, secondDir, "one directory per context");
         assertTrue(Files.isDirectory(firstDir) && Files.isDirectory(secondDir));
@@ -605,7 +2068,7 @@ class SearchIndexTest {
         first.close();
         assertFalse(Files.exists(firstDir), "closing a context deletes its own directory");
         assertTrue(Files.isDirectory(secondDir), "and only its own");
-        assertEquals("UCzakir", ids(second.search("zakit", null, false, 10, null)).get(0));
+        assertEquals("UCzakir", ids(second.search("zakit", null, 10)).get(0));
 
         second.close();
         assertFalse(Files.exists(secondDir));
@@ -616,7 +2079,7 @@ class SearchIndexTest {
         // B4: prod ages /tmp (tmpfiles "D /tmp ... 30d"); search.index.base-dir moves the index out of it.
         Path parent = Files.createTempDirectory("fitrahtube-base-");
         Path base = parent.resolve("search-index"); // not there yet: created on start
-        SearchIndex configured = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, base.toString());
+        SearchIndex configured = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, base.toString(), null);
         try {
             assertEquals(base.toRealPath(), configured.path().getParent()); // FSDirectory keeps the real path (macOS /var)
         } finally { // an FSDirectory index closes once: not via opened
@@ -624,7 +2087,7 @@ class SearchIndexTest {
             Files.delete(base);
             Files.delete(parent);
         }
-        SearchIndex byDefault = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, "");
+        SearchIndex byDefault = new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null);
         opened.add(byDefault);
         assertEquals(Path.of(System.getProperty("java.io.tmpdir")).toRealPath(), byDefault.path().getParent());
     }
@@ -633,7 +2096,7 @@ class SearchIndexTest {
     void closingAnIndexWhoseCatalogAndEventsAdmitNothingStillDeletesTheDirectory() throws Exception {
         // Empty block + delete term (Lucene asserts under -ea when such an index is rolled back).
         newIndex(List.of(), List.of(), List.of(), List.of(), 5_000); // only for its empty-catalog mocks
-        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, ""));
+        SearchIndex fresh = started(new SearchIndex(channelRepo, playlistRepo, videoRepo, streamRepo, categoryRepo, "", null));
         for (int i = 0; i < 5; i++) {
             Channel pending = with(channel("UCpending" + i, "Pending " + i), c -> c.setStatus("PENDING"));
             when(channelRepo.findById(pending.getId())).thenReturn(Optional.of(pending));
@@ -677,7 +2140,7 @@ class SearchIndexTest {
         IndexSearcher.setMaxClauseCount(1024);
         SearchIndex.Hits hits;
         try {
-            hits = big.search(query, null, false, 20, null);
+            hits = big.search(query, null, 20);
         } finally {
             IndexSearcher.setMaxClauseCount(raised);
         }
@@ -706,12 +2169,12 @@ class SearchIndexTest {
 
     @Test
     void aDeleteRemovesTheDocumentAndHidesItsStreams() throws Exception {
-        assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", false, 10, null)));
+        assertEquals(List.of("alafasy-live"), ids(index.search("recitation", "VIDEO", 10)));
         when(channelRepo.findById("doc-UCalafasy")).thenReturn(Optional.empty());
         index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false));
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty());
     }
 
     @Test
@@ -719,7 +2182,7 @@ class SearchIndexTest {
         Channel rejected = with(channel("UChalal", "Halal Kitchen"), c -> c.setStatus("REJECTED"));
         saved(rejected);
         index.awaitWrites();
-        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("halal", "VIDEO", 10)).isEmpty());
         assertFalse(ids("kitchen").contains("UChalal"), "the rejected channel's own document is gone too");
     }
 
@@ -730,7 +2193,7 @@ class SearchIndexTest {
                 c -> c.getExcludedItems().setVideos(List.of("halal-excluded", "halal-ok")));
         saved(kitchen);
         index.awaitWrites();
-        assertTrue(ids(index.search("halal", "VIDEO", false, 10, null)).isEmpty());
+        assertTrue(ids(index.search("halal", "VIDEO", 10)).isEmpty());
     }
 
     @Test
@@ -740,7 +2203,7 @@ class SearchIndexTest {
         renamed.getExcludedItems().setVideos(List.of("halal-excluded"));
         saved(renamed);
         index.awaitWrites();
-        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", false, 10, null)));
+        assertEquals(List.of("halal-ok"), ids(index.search("halal", "VIDEO", 10)));
         assertEquals("UChalal", ids("renamed").get(0));
     }
 
@@ -748,7 +2211,7 @@ class SearchIndexTest {
     void aPlaylistEventIsIndexedByItsOwnType() throws Exception {
         saved(playlist("PLseerah", "Seerah of the Prophet"));
         index.awaitWrites();
-        assertEquals(List.of("PLseerah"), ids(index.search("seerah", "PLAYLIST", true, 10, null)));
+        assertEquals(List.of("PLseerah"), ids(index.searchPage("seerah", "PLAYLIST", 10, null, -1)));
     }
 
     @Test
@@ -769,7 +2232,7 @@ class SearchIndexTest {
         index.onCatalogChanged(new CatalogChanged("CHANNEL", "doc-UCalafasy", false)); // the save's event, late
         index.awaitWrites();
         assertFalse(ids("alafa").contains("UCalafasy"));
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty(), "its streams stay hidden");
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty(), "its streams stay hidden");
     }
 
     @Test
@@ -780,7 +2243,7 @@ class SearchIndexTest {
         index.awaitWrites();
         verify(channelRepo, times(4)).findById("doc-UCalafasy"); // the read, then 3 retries
         assertFalse(ids("alafa").contains("UCalafasy"), "fails closed");
-        assertTrue(ids(index.search("recitation", "VIDEO", false, 10, null)).isEmpty(), "its streams hide too");
+        assertTrue(ids(index.search("recitation", "VIDEO", 10)).isEmpty(), "its streams hide too");
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getThrowableProxy() != null
                 && ExecutionException.class.getName().equals(e.getThrowableProxy().getClassName())));
     }
@@ -822,7 +2285,7 @@ class SearchIndexTest {
     @Test
     void aVideoDocumentThatCannotBeMappedStillHidesItsStream() throws Exception {
         // B3: toObject threw before admit(), so the id never reached videoIds and the stream showed (fail open).
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         QueryDocumentSnapshot unmappable = mock(QueryDocumentSnapshot.class, inv -> switch (inv.getMethod().getName()) {
             case "getId" -> "doc-orphan-lecture";
             case "toObject" -> throw new RuntimeException("Could not deserialize object");
@@ -834,30 +2297,30 @@ class SearchIndexTest {
         videoDocs.add(unmappable);
         when(videoRepo.findAllUnordered()).thenReturn(videoDocs);
         started(fresh);
-        assertFalse(ids(fresh.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(fresh.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
     void aNewVideoThatCannotBeMappedOnTheEventPathStillHidesItsStream() throws Exception {
         // R1: findById threw in toObject on every re-read, so the event path never learned the id (fail open for 6 h).
         index.rereadRetryMs = new long[]{0, 0, 0};
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new RuntimeException("Could not deserialize object"));
         index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
         index.awaitWrites();
-        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
     void aNewVideoWhoseRereadsAllFailStillHidesItsStream() throws Exception {
         // R1: all 4 re-reads failed, so applyCatalogChange(event, null) ran with no id to block.
         index.rereadRetryMs = new long[]{0, 0, 0};
-        assertTrue(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"), "precondition");
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
         when(videoRepo.findById("doc-orphan-lecture")).thenThrow(new ExecutionException("firestore down", new RuntimeException()));
         index.onCatalogChanged(new CatalogChanged("VIDEO", "doc-orphan-lecture", false, "orphan-lecture"));
         index.awaitWrites();
         verify(videoRepo, times(4)).findById("doc-orphan-lecture"); // the read, then 3 retries
-        assertFalse(ids(index.search("orphan", "VIDEO", false, 10, null)).contains("orphan-lecture"));
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     @Test
@@ -865,31 +2328,85 @@ class SearchIndexTest {
         // R1 positive control: the event's id changes nothing for a Video that maps.
         saved(with(video("orphan-lecture", "Orphan Lecture", null), v -> v.setUploadedAt(daysAgo(3))));
         index.awaitWrites();
-        List<ContentItemDto> items = index.search("orphan", "VIDEO", false, 10, null).items();
+        List<ContentItemDto> items = index.search("orphan", "VIDEO", 10).items();
         assertEquals(List.of("orphan-lecture"), items.stream().map(ContentItemDto::getId).toList());
         assertEquals(3, items.get(0).getUploadedDaysAgo(), "answered by the catalog document, not the stream");
     }
 
     @Test
-    void streamHooksAddMergeAndRemove() throws Exception {
-        SearchableStream fresh = stream("fresh-1", "Fresh Seerah Lesson");
-        index.upsertStreams(List.of(fresh), "channel:UChalal");
-        index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+    void streamHooksRemoveASourceThenAStream() throws Exception {
+        SearchIndex hooks = started(newIndex(channels(), playlists(), videos(), List.of(
+                stream("fresh-1", "Fresh Zubdah Lesson", "channel:UChalal", "channel:UCalafasy"),
+                stream("fresh-2", "Fresh Quxtar Lesson", "channel:UCquranTv")), 5_000));
+        assertEquals(List.of("fresh-1"), ids(hooks.search("zubdah", "VIDEO", 10)));
 
-        index.upsertStreams(List.of(fresh), "channel:UCalafasy");  // a second source merges in
-        index.removeSource("channel:UChalal");                    // one source left: still shown
-        index.awaitWrites();
-        assertEquals(List.of("fresh-1"), ids(index.search("fresh", "VIDEO", false, 10, null)));
+        hooks.removeSource("channel:UChalal");   // one source left: still shown
+        hooks.awaitWrites();
+        assertEquals(List.of("fresh-1"), ids(hooks.search("zubdah", "VIDEO", 10)));
 
-        index.removeSource("channel:UCalafasy");                  // none left: deleted
-        index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+        hooks.removeSource("channel:UCalafasy"); // none left: deleted
+        hooks.awaitWrites();
+        assertTrue(ids(hooks.search("zubdah", "VIDEO", 10)).isEmpty());
 
-        index.upsertStreams(List.of(fresh), "channel:UCquranTv");
-        index.removeStream("fresh-1");                            // archived video
+        assertEquals(List.of("fresh-2"), ids(hooks.search("quxtar", "VIDEO", 10)));
+        hooks.removeStream("fresh-2");           // archived video
+        hooks.awaitWrites();
+        assertTrue(ids(hooks.search("quxtar", "VIDEO", 10)).isEmpty());
+    }
+
+    /** Stage 9 B13: Restore of a report's take-down undoes markStreamArchived; the stored stream is found again. */
+    @Test
+    void aRestoredStreamIsFoundAgain() throws Exception {
+        SearchableStream fresh = stream("fresh-2", "Fresh Quxtar Lesson", "channel:UCquranTv");
+        SearchIndex hooks = started(newIndex(channels(), playlists(), videos(), List.of(fresh), 5_000));
+        hooks.removeStream("fresh-2");
+        hooks.awaitWrites();
+
+        hooks.restoreStream(fresh);
+        hooks.awaitWrites();
+
+        assertEquals(List.of("fresh-2"), ids(hooks.search("quxtar", "VIDEO", 10)));
+    }
+
+    /**
+     * Stage 9 B25 (Cubic r13 #5): a take-down of a video with no doc saves a REJECTED record, whose id blocks the stream
+     * (videoIds). Restore lifts the stream, then deletes the record; the delete's event carries no youtubeId, so only the
+     * release after it un-blocks the id. Before, the stream stayed hidden until the 6-hourly reconcile.
+     */
+    @Test
+    void aRestoredTakeDownRecordsStreamIsFoundAtOnce() throws Exception {
+        SearchableStream orphan = streams().stream().filter(s -> "orphan-lecture".equals(s.getStreamId())).findFirst().orElseThrow();
+        Video record = with(video("orphan-lecture", "Orphan Lecture", null), v -> {
+            v.setStatus("REJECTED");
+            v.setValidationStatus(ValidationStatus.ARCHIVED);
+        });
+        saved(record);                                                    // the take-down's record
+        index.removeStream("orphan-lecture");                             // markStreamArchived
         index.awaitWrites();
-        assertTrue(ids(index.search("fresh", "VIDEO", false, 10, null)).isEmpty());
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
+
+        index.restoreStream(orphan);                                      // Restore: lift() first
+        when(videoRepo.findById(record.getId())).thenReturn(Optional.empty());
+        index.onCatalogChanged(new CatalogChanged("VIDEO", record.getId(), false)); // then the record's delete
+        index.releaseVideoId("orphan-lecture");
+        index.awaitWrites();
+
+        assertTrue(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
+    }
+
+    /** The release re-reads: a Video doc that holds the id again (a re-add landed meanwhile) keeps its stream blocked. */
+    @Test
+    void aReleaseWhileAVideoDocHoldsTheIdKeepsItsStreamHidden() throws Exception {
+        Video readded = with(video("orphan-lecture", "Orphan Lecture", null), v -> v.setStatus("PENDING"));
+        saved(readded);
+        index.awaitWrites();
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"), "precondition");
+        when(videoRepo.findByYoutubeId("orphan-lecture")).thenReturn(Optional.of(readded));
+
+        index.releaseVideoId("orphan-lecture");
+        index.awaitWrites();
+
+        assertFalse(ids(index.search("orphan", "VIDEO", 10)).contains("orphan-lecture"));
     }
 
     // ---- build and swap hardening (B3 review) --------------------------------------------------
@@ -901,7 +2418,7 @@ class SearchIndexTest {
         assertThrows(IllegalArgumentException.class, () -> index.replaceCatalog());
 
         // Any later refresh would expose whatever the failed swap left pending.
-        index.upsertStreams(List.of(stream("after", "After The Swap", "channel:UChalal")), "channel:UChalal");
+        index.removeStream("halal-ok"); // a real index change, so the refresh after it is a new reader
         index.awaitWrites();
         assertEquals("UCzakir", ids("zakit").stream().findFirst().orElse("<empty>"), "the last good catalog is still served");
     }
@@ -961,7 +2478,7 @@ class SearchIndexTest {
 
         SearchIndex tolerant = started(newIndex(cs, playlists(), videos(), streams(), 5_000));
 
-        assertEquals("UCzakir", ids(tolerant.search("zakit", null, false, 10, null)).get(0));
+        assertEquals("UCzakir", ids(tolerant.search("zakit", null, 10)).get(0));
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getFormattedMessage().contains("doc-UCcorrupt")
                 && e.getThrowableProxy() != null));
         assertTrue(logged(Level.INFO).stream().anyMatch(e -> e.getFormattedMessage().startsWith("search index catalog:")
@@ -978,7 +2495,7 @@ class SearchIndexTest {
 
         SearchIndex tolerant = started(newIndex(channels(), playlists(), videos(), page, 5_000));
 
-        assertEquals(List.of("halal-ok"), ids(tolerant.search("halal", "VIDEO", false, 50, null)));
+        assertEquals(List.of("halal-ok"), ids(tolerant.search("halal", "VIDEO", 50)));
         assertTrue(logged(Level.WARN).stream().anyMatch(e -> e.getFormattedMessage().contains("corrupt-stream")
                 && e.getThrowableProxy() != null));
         assertTrue(logged(Level.INFO).stream().anyMatch(e -> e.getFormattedMessage().startsWith("search index built:")
@@ -1034,7 +2551,7 @@ class SearchIndexTest {
         diskFails.set(true);
 
         for (int i = 0; i < 3; i++) {
-            broken.upsertStreams(List.of(stream("tragic-" + i, "Tragic " + i, "channel:UChalal")), "channel:UChalal");
+            broken.reconcile(); // re-adds the catalog; the flush needs a new file, which the disk refuses
         }
         broken.awaitWrites();
 

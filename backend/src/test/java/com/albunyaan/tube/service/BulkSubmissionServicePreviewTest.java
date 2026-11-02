@@ -36,18 +36,19 @@ class BulkSubmissionServicePreviewTest {
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
                 mock(com.albunyaan.tube.repository.CategoryRepository.class),
-                mock(SubmissionRateLimiter.class));
+                mock(SubmissionRateLimiter.class),
+                mock(LiveCategoryGuard.class));
     }
 
     @Test
     void okRow_videoStandard() {
         when(batch.findExisting(any(), any())).thenReturn(Optional.empty());
-        when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq("dQw4w9WgXcQ"), any()))
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.VIDEO), eq("sCQwxFEMlZ4"), any()))
                 .thenReturn(PreviewFetchResult.ok(
-                        new PreviewMetadata("dQw4w9WgXcQ", "Rick Astley", "thumb.jpg", "Rick", "UC1", null, null, 213L, 1000L),
+                        new PreviewMetadata("sCQwxFEMlZ4", "Visiting the Ill - Mufti Menk", "thumb.jpg", "Mufti Menk", "UC1", null, null, 213L, 1000L),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=sCQwxFEMlZ4"));
         var resp = svc.preview(req);
 
         assertEquals(1, resp.rows().size());
@@ -55,7 +56,7 @@ class BulkSubmissionServicePreviewTest {
         assertEquals(RowStatus.OK, row.status());
         assertEquals(YouTubeContentType.VIDEO, row.detectedType());
         assertEquals(VideoType.STANDARD, row.videoType());
-        assertEquals("Rick Astley", row.metadata().title());
+        assertEquals("Visiting the Ill - Mufti Menk", row.metadata().title());
         assertNull(row.error());
     }
 
@@ -71,10 +72,10 @@ class BulkSubmissionServicePreviewTest {
 
     @Test
     void duplicatePending_marksDuplicate() {
-        when(batch.findExisting(eq(YouTubeContentType.VIDEO), eq("dQw4w9WgXcQ")))
+        when(batch.findExisting(eq(YouTubeContentType.VIDEO), eq("sCQwxFEMlZ4")))
                 .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("existing-doc", "PENDING")));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=sCQwxFEMlZ4"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE, resp.rows().get(0).status());
@@ -88,15 +89,27 @@ class BulkSubmissionServicePreviewTest {
                 .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("rejected-doc", "REJECTED")));
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenReturn(PreviewFetchResult.ok(
-                        new PreviewMetadata("dQw4w9WgXcQ", "Some Vid", "thumb.jpg", null, null, null, null, null, null),
+                        new PreviewMetadata("sCQwxFEMlZ4", "Some Vid", "thumb.jpg", null, null, null, null, null, null),
                         VideoType.STANDARD));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=sCQwxFEMlZ4"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.DUPLICATE_REJECTED, resp.rows().get(0).status());
         assertEquals("rejected-doc", resp.rows().get(0).duplicateOf());
         assertNotNull(resp.rows().get(0).metadata(), "metadata must be present so admin sees what they'd re-submit");
+    }
+
+    /** Cubic users4: a REJECTED channel a take-down holds is no re-add offer: a DUPLICATE, as submit answers. */
+    @Test
+    void aRejectedTakeDownIsADuplicateNotAReAddOffer() {
+        when(batch.findExisting(any(), any()))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("held-doc", "REJECTED", true)));
+
+        var resp = svc.preview(new BulkPreviewRequest(List.of("https://www.youtube.com/channel/UCOll3M-P7oKs5cSrQ9ytt6g")));
+
+        assertEquals(RowStatus.DUPLICATE, resp.rows().get(0).status());
+        assertEquals("held-doc", resp.rows().get(0).duplicateOf());
     }
 
     @Test
@@ -105,7 +118,7 @@ class BulkSubmissionServicePreviewTest {
         when(gateway.fetchByDetectedType(any(), any(), any()))
                 .thenReturn(PreviewFetchResult.error(PreviewErrorCode.CONTENT_NOT_AVAILABLE));
 
-        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=dQw4w9WgXcQ"));
+        var req = new BulkPreviewRequest(List.of("https://www.youtube.com/watch?v=sCQwxFEMlZ4"));
         var resp = svc.preview(req);
 
         assertEquals(RowStatus.ERROR, resp.rows().get(0).status());

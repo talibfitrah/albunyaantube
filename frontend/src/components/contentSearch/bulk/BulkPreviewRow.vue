@@ -1,7 +1,8 @@
 <script setup lang="ts">
-import { computed, ref } from 'vue'
+import { computed, onMounted, ref } from 'vue'
 import { useI18n } from 'vue-i18n'
 import type { components } from '@/generated/api/schema'
+import { liveCategoryIds, refusesLive } from './useCategoryPicker'
 import BulkRowCategoryEditor from './BulkRowCategoryEditor.vue'
 
 type PreviewRow = components['schemas']['PreviewRow']
@@ -13,6 +14,7 @@ interface PreviewRowDraft extends PreviewRow {
 const props = defineProps<{
   row: PreviewRowDraft
   defaultCategoryIds: string[]
+  needsCategory?: boolean
 }>()
 
 const emit = defineEmits<{
@@ -24,10 +26,20 @@ const { t } = useI18n()
 
 const editing = ref(false)
 
-const resolvedCategoryIds = computed(() => props.row.categoryIds ?? props.defaultCategoryIds)
+// The server refuses LIVE on a playlist or a non-live video and submit strips it: the count and the editor must match.
+const noLive = computed(() => refusesLive(props.row))
+const live = ref(new Set<string>())
+onMounted(async () => {
+  if (noLive.value) live.value = await liveCategoryIds().catch(() => live.value)
+})
+
+const resolvedCategoryIds = computed(() => {
+  const ids = props.row.categoryIds ?? props.defaultCategoryIds
+  return noLive.value ? ids.filter((id) => !live.value.has(id)) : ids
+})
 
 const typeChipLabel = computed(() => {
-  if (props.row.detectedType === 'VIDEO' && props.row.videoType === 'LIVE') return 'LIVE'
+  if (props.row.detectedType === 'VIDEO' && !noLive.value) return 'LIVE'
   return props.row.detectedType ?? '—'
 })
 
@@ -78,9 +90,13 @@ const isActionable = computed(
       <BulkRowCategoryEditor
         v-if="editing"
         :model-value="resolvedCategoryIds"
+        :playlist="noLive"
         @save="(ids) => { emit('updateCategories', row.rowIndex ?? 0, ids); editing = false }"
         @cancel="editing = false"
       />
+      <small v-if="needsCategory" class="bulk-row-error" role="alert">
+        {{ t('contentSearch.bulk.preview.playlistNeedsCategoryRow') }}
+      </small>
     </td>
     <td>
       <button

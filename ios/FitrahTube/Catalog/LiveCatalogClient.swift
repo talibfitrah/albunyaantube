@@ -63,6 +63,23 @@ nonisolated struct LiveCatalogClient: CatalogClient {
                             match: SearchMatch(header: ok.headers.xSearchMatch))
     }
 
+    /// 404 is the backend's "not a servable live channel" (stop); any other status, and a transport or decode
+    /// failure (`ClientError`), is retryable. Stage 9 I13: the documented 503 (the live states still load, or no poll has
+    /// listed the channel yet) carries its Retry-After, live-channel mode's next wait.
+    func liveChannel(id: String) async throws -> LiveChannelLives {
+        switch try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id))) {
+        case .ok(let ok):
+            let dto = try ok.body.json
+            return LiveChannelLives(lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
+        case .notFound:
+            throw LiveChannelNotFound()
+        case .serviceUnavailable(let busy):
+            throw LiveChannelUnexpectedStatus(statusCode: 503, retryAfter: busy.headers.retryAfter)
+        case .undocumented(let statusCode, _):
+            throw LiveChannelUnexpectedStatus(statusCode: statusCode)
+        }
+    }
+
     /// A restarted server answers 503 + Retry-After while its search index builds (5 s). Wait that
     /// long -- cancelled with the caller, e.g. by the next keystroke -- and try once more; a longer
     /// wait, any other answer or a second 503 goes to the caller. Android's `retryOnceWhileIndexBuilds`.
@@ -84,7 +101,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
         case .channel: type = .channel
         case .playlist: type = .playlist
         }
-        return ContentItem(
+        var item = ContentItem(
             id: dto.id,
             type: type,
             title: dto.title ?? dto.name ?? "",
@@ -99,5 +116,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             videoCount: dto.videoCount,
             itemCount: dto.itemCount
         )
+        item.liveChannelId = dto.liveChannelId
+        return item
     }
 }

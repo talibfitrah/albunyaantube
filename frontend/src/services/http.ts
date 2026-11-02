@@ -28,6 +28,15 @@ interface ErrorResponseBody {
   message?: string;
   error?: string;
   code?: string;
+  details?: Record<string, unknown>;
+}
+
+/** Offender refs are "type:docId": label each with the item's title when it is in `items`, else the raw ref. */
+export function offenderTitles(items: { id: string; title: string }[]): (ref: string) => string {
+  return ref => {
+    const id = ref.slice(ref.indexOf(':') + 1);
+    return items.find(i => i.id === id)?.title ?? ref;
+  };
 }
 
 /**
@@ -39,20 +48,61 @@ interface ErrorResponseBody {
  * Usage:
  *   actionError.value = apiErrorToMessage(err, t, 'users.errors.deactivate');
  *
- * If err is an ApiError with a code, the helper looks up i18n key
- * {@code apiErrors.<CODE>} (falling back to {@code err.message}).
- * Anything else falls back to {@code t(fallbackKey)}.
+ * If err carries a code (an ApiError, or an axios error whose body has one: F20),
+ * the helper looks up i18n key {@code apiErrors.<CODE>} (falling back to the server message).
+ * Anything uncoded gets {@code t(fallbackKey)}: its message is English transport text
+ * (axios's "Request failed with status code 500", fetch's "Failed to fetch"),
+ * except an uncoded ApiError, which keeps the server's own reason.
  */
 export function apiErrorToMessage(
   err: unknown,
   t: (key: string, fallback?: string) => string,
   fallbackKey: string
 ): string {
-  if (err instanceof ApiError && err.code) {
-    return t('apiErrors.' + err.code, err.message);
+  const code = apiErrorCode(err);
+  if (code) {
+    return t('apiErrors.' + code, apiErrorServerMessage(err) ?? (err instanceof Error ? err.message : code));
   }
-  if (err instanceof Error) return err.message;
+  // An uncoded ApiError keeps its server reason (e.g. a 400/409 text), unless it is only the transport default.
+  if (err instanceof ApiError && !/^Request failed with status \d+$/.test(err.message)) return err.message;
   return t(fallbackKey);
+}
+
+/** The backend's typed error code, from either transport: fetch (ApiError) or axios (`response.data.code`). */
+export function apiErrorCode(err: unknown): string | undefined {
+  if (err instanceof ApiError) return err.code;
+  const code = (err as { response?: { data?: { code?: unknown } } } | null)?.response?.data?.code;
+  return typeof code === 'string' ? code : undefined;
+}
+
+function apiErrorServerMessage(err: unknown): string | undefined {
+  if (err instanceof ApiError) return err.message;
+  const message = (err as { response?: { data?: { message?: unknown } } } | null)?.response?.data?.message;
+  return typeof message === 'string' ? message : undefined;
+}
+
+/** Spec D9 / RV M7: a whole-request refusal lists each offending row as {ref, code}. */
+export function apiErrorOffenders(err: unknown): { ref: string; code: string }[] {
+  const details = err instanceof ApiError
+    ? err.details
+    : (err as { response?: { data?: { details?: Record<string, unknown> } } } | null)?.response?.data?.details;
+  const list = (details as { offenders?: unknown } | undefined)?.offenders;
+  if (!Array.isArray(list)) return [];
+  return list
+    .filter((o): o is { ref: string; code: string } => typeof o?.ref === 'string' && typeof o?.code === 'string')
+    .map(o => ({ ref: o.ref, code: o.code }));
+}
+
+/** The localized message, then one "ref: reason" line per offender. */
+export function apiErrorWithOffenders(
+  err: unknown,
+  t: (key: string, fallback?: string) => string,
+  fallbackKey: string,
+  refLabel: (ref: string) => string = ref => ref
+): string {
+  const lines = [apiErrorToMessage(err, t, fallbackKey)];
+  for (const o of apiErrorOffenders(err)) lines.push(`${refLabel(o.ref)}: ${t('apiErrors.' + o.code, o.code)}`);
+  return lines.join('\n');
 }
 
 /**
@@ -74,11 +124,13 @@ export function apiErrorToMessage(
 export class ApiError extends Error {
   readonly code: string | undefined;
   readonly status: number;
-  constructor(message: string, status: number, code?: string) {
+  readonly details: Record<string, unknown> | undefined;
+  constructor(message: string, status: number, code?: string, details?: Record<string, unknown>) {
     super(message);
     this.name = 'ApiError';
     this.code = code;
     this.status = status;
+    this.details = details;
   }
 }
 
@@ -108,6 +160,7 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
   if (!response.ok) {
     let message = `Request failed with status ${response.status}`;
     let code: string | undefined;
+    let details: Record<string, unknown> | undefined;
     try {
       const body = (await response.json()) as ErrorResponseBody;
       if (body.message) {
@@ -116,6 +169,7 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
         message = body.error;
       }
       code = body.code;
+      details = body.details;
     } catch (err) {
       console.warn('Failed to parse error response', err);
     }
@@ -123,7 +177,7 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
     // can extract a typed code for i18n. ApiError extends Error so
     // existing `err instanceof Error` / `err.message` consumers keep
     // working unchanged.
-    throw new ApiError(message, response.status, code);
+    throw new ApiError(message, response.status, code, details);
   }
 
   if (response.status === 204) {

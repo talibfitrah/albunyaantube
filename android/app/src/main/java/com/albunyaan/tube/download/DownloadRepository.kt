@@ -29,6 +29,18 @@ import kotlinx.coroutines.withContext
 interface DownloadRepository {
     val downloads: StateFlow<List<DownloadEntry>>
 
+    /** The startup load that first lists the saved files; null when there is none to wait for. */
+    val startupLoad: kotlinx.coroutines.Job? get() = null
+
+    /** A completed download of [videoId] whose file is on disk; a video copy before an audio-only one. */
+    fun savedCopyOf(videoId: String): DownloadEntry? =
+        downloads.value
+            .filter {
+                it.request.videoId == videoId && it.status == DownloadStatus.COMPLETED &&
+                    it.filePath?.let(::File)?.isFile == true
+            }
+            .minByOrNull { it.request.audioOnly }
+
     /**
      * Reconcile the in-memory download list with files already committed to storage.
      *
@@ -115,14 +127,12 @@ class DefaultDownloadRepository(
 
     override val downloads: StateFlow<List<DownloadEntry>> = entries.asStateFlow()
 
-    init {
-        scope.launch {
-            reconcileMutex.withLock {
-                cleanupExpiredDownloadsLocked()
-                restoreRunningDownloads()
-                refreshPersistedDownloadsLocked()
-                android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
-            }
+    override val startupLoad: kotlinx.coroutines.Job = scope.launch {
+        reconcileMutex.withLock {
+            cleanupExpiredDownloadsLocked()
+            restoreRunningDownloads()
+            refreshPersistedDownloadsLocked()
+            android.util.Log.d("DownloadRepository", "Restored ${entries.value.size} total downloads")
         }
     }
 
@@ -397,12 +407,6 @@ class DefaultDownloadRepository(
         }
     }
 
-    private suspend fun fetchVideoTitle(videoId: String): String? {
-        // For now, just use the videoId as title
-        // TODO: Fetch actual title from extractor or backend
-        return videoId
-    }
-
     override fun enqueue(request: DownloadRequest) {
         // Save extended metadata (title, thumbnailUrl) before scheduling
         // This ensures the metadata is available for display after app restart
@@ -664,14 +668,6 @@ class DefaultDownloadRepository(
             }
             entries.value = current
         }
-    }
-
-    private operator fun MutableCollection<String>.plusAssign(value: String) {
-        add(value)
-    }
-
-    private operator fun MutableCollection<String>.minusAssign(value: String) {
-        remove(value)
     }
 }
 

@@ -2,8 +2,14 @@ package com.albunyaan.tube.exception;
 
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
+import org.springframework.beans.TypeMismatchException;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.HttpStatus;
+import org.springframework.http.HttpStatusCode;
 import org.springframework.http.ResponseEntity;
+import org.springframework.http.converter.HttpMessageNotReadableException;
+import org.springframework.web.ErrorResponse;
+import org.springframework.web.server.ResponseStatusException;
 import org.springframework.web.bind.MethodArgumentNotValidException;
 import org.springframework.web.bind.annotation.ControllerAdvice;
 import org.springframework.web.bind.annotation.ExceptionHandler;
@@ -60,6 +66,23 @@ public class GlobalExceptionHandler {
         body.put("path", request.getDescription(false).replace("uri=", ""));
 
         return new ResponseEntity<>(body, HttpStatus.GONE);
+    }
+
+    /** Live-category guard refusals (spec §4.2): the typed code and details the admin UI renders. */
+    @ExceptionHandler(LiveCategoryException.class)
+    public ResponseEntity<Object> handleLiveCategoryException(LiveCategoryException ex, WebRequest request) {
+        logger.info("Live category refusal {}: {}", ex.getCode(), ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", ex.getStatus().value());
+        body.put("error", ex.getStatus().getReasonPhrase());
+        body.put("code", ex.getCode());
+        body.put("message", ex.getMessage());
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+        body.put("details", ex.getDetails());
+
+        return new ResponseEntity<>(body, ex.getStatus());
     }
 
     /**
@@ -336,22 +359,64 @@ public class GlobalExceptionHandler {
                 .body(body);
     }
 
+    /** @PreAuthorize denials surface here (the filter chain answers 401/403 itself for URL rules): 403, not the 500 catch-all. */
+    @ExceptionHandler(org.springframework.security.access.AccessDeniedException.class)
+    public ResponseEntity<Object> handleAccessDenied(
+            org.springframework.security.access.AccessDeniedException ex, WebRequest request) {
+        logger.warn("Access denied: {}", ex.getMessage());
+
+        Map<String, Object> body = new LinkedHashMap<>();
+        body.put("timestamp", LocalDateTime.now());
+        body.put("status", HttpStatus.FORBIDDEN.value());
+        body.put("error", "Forbidden");
+        body.put("message", "Access denied");
+        body.put("path", request.getDescription(false).replace("uri=", ""));
+
+        return new ResponseEntity<>(body, HttpStatus.FORBIDDEN);
+    }
+
     /**
-     * Handle all other exceptions (500)
+     * Client errors Spring raises itself (ResponseStatusException, MVC 405/404/400...) keep their own
+     * status; malformed JSON is a 400. Everything else is a real 500.
      */
     @ExceptionHandler(Exception.class)
     public ResponseEntity<Object> handleGenericException(
             Exception ex, WebRequest request) {
-        logger.error("Unexpected error: {}", ex.getMessage(), ex);
+        HttpStatusCode status = HttpStatus.INTERNAL_SERVER_ERROR;
+        HttpHeaders headers = new HttpHeaders();
+        String message = "An unexpected error occurred";
+        if (ex instanceof ErrorResponse er && er.getStatusCode().is4xxClientError()) {
+            status = er.getStatusCode();
+            headers.putAll(er.getHeaders()); // e.g. Allow on 405
+            message = ex instanceof ResponseStatusException rse && rse.getReason() != null
+                    ? rse.getReason() : reasonOf(status);
+            logger.warn("Client error {}: {}", status.value(), message);
+        } else if (ex instanceof HttpMessageNotReadableException) {
+            status = HttpStatus.BAD_REQUEST;
+            message = "Malformed request body";
+            logger.warn("Client error 400: {}", message);
+        } else if (ex instanceof TypeMismatchException) {
+            status = HttpStatus.BAD_REQUEST;
+            message = reasonOf(status);
+            logger.warn("Client error 400: type mismatch");
+        } else {
+            logger.error("Unexpected error: {}", ex.getMessage(), ex);
+        }
 
         Map<String, Object> body = new LinkedHashMap<>();
         body.put("timestamp", LocalDateTime.now());
-        body.put("status", HttpStatus.INTERNAL_SERVER_ERROR.value());
-        body.put("error", "Internal Server Error");
-        body.put("message", "An unexpected error occurred");
+        body.put("status", status.value());
+        body.put("error", reasonOf(status));
+        body.put("message", message);
         body.put("path", request.getDescription(false).replace("uri=", ""));
 
-        return new ResponseEntity<>(body, HttpStatus.INTERNAL_SERVER_ERROR);
+        return ResponseEntity.status(status).headers(headers).body(body);
+    }
+
+    /** Reason phrase when the code is a standard one, else the numeric code. */
+    private static String reasonOf(HttpStatusCode code) {
+        HttpStatus known = HttpStatus.resolve(code.value());
+        return known != null ? known.getReasonPhrase() : String.valueOf(code.value());
     }
 
     // F16: handlers for AccountBlockedException and AccountDeletedException
@@ -360,6 +425,15 @@ public class GlobalExceptionHandler {
     // the servlet stack, so throwing here would not yield the intended body).
     // No live code paths threw these exceptions — they were aspirational
     // scaffolding from an earlier design.
+
+    /**
+     * Search spec §7: the search index's first build has not finished. Installed clients show their usual error state on
+     * search; an admin's report resolve (inner-search R34) stays PENDING and is retried.
+     */
+    @ExceptionHandler(com.albunyaan.tube.search.SearchIndex.NotReadyException.class)
+    public ResponseEntity<Void> handleSearchIndexNotReady() {
+        return ResponseEntity.status(HttpStatus.SERVICE_UNAVAILABLE).header(HttpHeaders.RETRY_AFTER, "5").build();
+    }
 
     @ExceptionHandler(LastAdminException.class)
     public ResponseEntity<Object> handleLastAdmin(

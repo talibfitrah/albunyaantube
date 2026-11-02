@@ -37,6 +37,7 @@ public class SortOrderService {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
     private final PublicContentCacheService cacheService;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public SortOrderService(
             CategoryRepository categoryRepository,
@@ -44,7 +45,8 @@ public class SortOrderService {
             ChannelRepository channelRepository,
             PlaylistRepository playlistRepository,
             VideoRepository videoRepository,
-            PublicContentCacheService cacheService
+            PublicContentCacheService cacheService,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.categoryRepository = categoryRepository;
         this.orderRepository = orderRepository;
@@ -52,6 +54,7 @@ public class SortOrderService {
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
         this.cacheService = cacheService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     // ======================== CATEGORY SORT ORDER ========================
@@ -268,18 +271,23 @@ public class SortOrderService {
         categoryRepository.findById(categoryId)
                 .orElseThrow(() -> new IllegalArgumentException("Category not found: " + categoryId));
 
-        // Phase 1: Validate all content items exist before writing anything.
-        // Note: contentExists does a findById read that is repeated in addCategoryIdToContent.
+        // Phase 1: Validate all content items exist before writing anything (and run the live guard, §7 row 14).
+        // Note: liveChange does a findById read that is repeated in addCategoryIdToContent.
         // For small batch sizes (admin UI) this 2N read is acceptable vs. the complexity
         // of pre-fetching heterogeneous entity types.
+        List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
         for (String[] item : items) {
             if (item == null || item.length < 2) {
                 throw new IllegalArgumentException("Malformed content item, expected [contentId, contentType]");
             }
-            if (!contentExists(item[0], item[1])) {
+            LiveCategoryGuard.Change change = liveChange(item[0], item[1], categoryId);
+            if (change == null) {
                 throw new IllegalArgumentException(item[1] + " not found: " + item[0]);
             }
+            liveChanges.add(change);
         }
+        // The route is ADMIN-only (SortOrderController's class-level @PreAuthorize).
+        liveCategoryGuard.writeVerifiedChannels(liveCategoryGuard.checkAll(true, liveChanges));   // D13
 
         // Phase 2: Write sort-order entries and update categoryIds with rollback on failure
         List<String[]> writtenSortOrders = new ArrayList<>();
@@ -320,17 +328,31 @@ public class SortOrderService {
         return getContentSortOrder(categoryId);
     }
 
-    /**
-     * Check whether a content document exists in Firestore.
-     */
-    private boolean contentExists(String contentId, String contentType)
+    /** The doc's change for an add to {@code categoryId}, or null when the doc does not exist. ref = the doc id. */
+    private LiveCategoryGuard.Change liveChange(String contentId, String contentType, String categoryId)
             throws ExecutionException, InterruptedException, TimeoutException {
         switch (contentType) {
-            case "channel":  return channelRepository.findById(contentId).isPresent();
-            case "playlist": return playlistRepository.findById(contentId).isPresent();
-            case "video":    return videoRepository.findById(contentId).isPresent();
-            default:         throw new IllegalArgumentException("Unknown content type: " + contentType);
+            case "channel": {
+                Channel c = channelRepository.findById(contentId).orElse(null);
+                return c == null ? null : LiveCategoryGuard.Change.of(contentId, c, c, plus(c.getCategoryIds(), categoryId), c.getStatus());
+            }
+            case "playlist": {
+                Playlist p = playlistRepository.findById(contentId).orElse(null);
+                return p == null ? null : LiveCategoryGuard.Change.of(contentId, p, p, plus(p.getCategoryIds(), categoryId), p.getStatus());
+            }
+            case "video": {
+                Video v = videoRepository.findById(contentId).orElse(null);
+                return v == null ? null : LiveCategoryGuard.Change.of(contentId, v, v, plus(v.getCategoryIds(), categoryId), v.getStatus());
+            }
+            default:
+                throw new IllegalArgumentException("Unknown content type: " + contentType);
         }
+    }
+
+    private static List<String> plus(List<String> ids, String categoryId) {
+        List<String> next = ids == null ? new ArrayList<>() : new ArrayList<>(ids);
+        if (!next.contains(categoryId)) next.add(categoryId);
+        return next;
     }
 
     /**

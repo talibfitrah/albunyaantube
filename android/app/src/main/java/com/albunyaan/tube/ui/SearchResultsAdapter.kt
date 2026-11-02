@@ -137,7 +137,7 @@ class SearchResultsAdapter(
             )
 
             if (enableImages) {
-                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl)
+                binding.playlistThumbnail.loadThumbnailUrl(playlist.thumbnailUrl, error = R.drawable.playlist_thumbnail_placeholder)
             } else {
                 binding.playlistThumbnail.setImageResource(R.drawable.thumbnail_placeholder)
             }

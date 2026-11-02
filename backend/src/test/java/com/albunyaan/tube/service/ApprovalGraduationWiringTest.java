@@ -59,7 +59,8 @@ class ApprovalGraduationWiringTest {
                 sortOrderService,
                 streamIndexService,
                 userRepository,
-                graduationService
+                graduationService,
+                org.mockito.Mockito.mock(LiveCategoryGuard.class)
         );
     }
 
@@ -133,7 +134,7 @@ class ApprovalGraduationWiringTest {
 
     @Test
     void approveVideo_triggersGraduationOnApproved() throws Exception {
-        Video video = pendingVideo("vid-1", "dQw4w9WgXcQ");
+        Video video = pendingVideo("vid-1", "sCQwxFEMlZ4");
         when(videoRepository.findById("vid-1")).thenReturn(Optional.of(video));
         when(videoRepository.saveIfStatus(any(Video.class), eq("PENDING")))
                 .thenAnswer(inv -> inv.getArgument(0));
@@ -143,7 +144,7 @@ class ApprovalGraduationWiringTest {
         approvalService.approve("vid-1", approveRequest(), "admin-uid", "Admin");
 
         verify(graduationService, times(1))
-                .onApproved(YouTubeContentType.VIDEO, "dQw4w9WgXcQ");
+                .onApproved(YouTubeContentType.VIDEO, "sCQwxFEMlZ4");
         verify(graduationService, never()).onRejected(any(), any());
     }
 

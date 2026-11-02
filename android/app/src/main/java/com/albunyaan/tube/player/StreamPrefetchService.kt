@@ -4,6 +4,7 @@ import android.util.Log
 import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
+import com.albunyaan.tube.data.model.ContentItem
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.SupervisorJob
@@ -19,20 +20,18 @@ import javax.inject.Singleton
  */
 interface StreamPrefetchService {
     fun triggerPrefetch(videoId: String, scope: CoroutineScope)
+
+    /**
+     * A tap on a list row that opens the player (Home, Videos, Featured, Search). A live-channel item never reads a
+     * prefetch (it always resolves through the live check, RV I11), and the player's resolve would cancel it half done.
+     */
+    fun triggerTapPrefetch(video: ContentItem.Video, scope: CoroutineScope) {
+        if (video.liveChannelId == null) triggerPrefetch(video.id, scope)
+    }
     suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams?
     fun consumePrefetch(videoId: String): ResolvedStreams?
     fun isPrefetchInFlight(videoId: String): Boolean
     fun cancelPrefetch(videoId: String)
-    /**
-     * Clear prefetch-specific state only (does NOT cancel global resolver jobs).
-     * Safe to call while playback is active.
-     */
-    fun clearPrefetchState()
-    /**
-     * Clear all state AND cancel global resolver jobs.
-     * Only call when playback is stopped to avoid interrupting active resolutions.
-     */
-    fun clearAll()
 }
 
 /**
@@ -73,6 +72,7 @@ class DefaultStreamPrefetchService @Inject constructor(
     private val mpdRegistry: SyntheticDashMpdRegistry,
     private val featureFlags: PlaybackFeatureFlags,
     private val segmentPreBuffer: SegmentPreBuffer,
+    private val downloadRepository: com.albunyaan.tube.download.DownloadRepository,
 ) : StreamPrefetchService {
 
     /**
@@ -151,6 +151,12 @@ class DefaultStreamPrefetchService @Inject constructor(
 
     // Tracks insertion order for FIFO eviction (ConcurrentHashMap doesn't maintain order)
     private val insertionOrder = ConcurrentLinkedQueue<String>()
+
+    // A saved video copy plays from its file (local-first), so extracting its streams would be wasted.
+    override fun triggerTapPrefetch(video: ContentItem.Video, scope: CoroutineScope) {
+        if (downloadRepository.savedCopyOf(video.id)?.request?.audioOnly == false) return
+        super.triggerTapPrefetch(video, scope)
+    }
 
     /**
      * Trigger prefetch for a video ID. Call this when the user taps a video item,
@@ -354,36 +360,6 @@ class DefaultStreamPrefetchService @Inject constructor(
         prefetchResults.remove(videoId)
         insertionOrder.remove(videoId) // Clean up order tracking
         // Note: We don't cancel via globalResolver as other callers may be waiting
-    }
-
-    /**
-     * Clear prefetch-specific state only.
-     *
-     * Safe to call at any time, including while playback is active. Does NOT cancel
-     * in-flight global resolutions, so player streams continue uninterrupted.
-     */
-    override fun clearPrefetchState() {
-        prefetchingVideoIds.clear()
-        prefetchResults.clear()
-        insertionOrder.clear()
-        Log.d(TAG, "Cleared prefetch state (global resolver jobs not affected)")
-    }
-
-    /**
-     * Clear all prefetches AND cancel global resolver jobs.
-     *
-     * **Important:** This method calls [GlobalStreamResolver.cancelAll] which cancels ALL
-     * in-flight stream resolutions globally, not just those initiated by prefetch.
-     * If the player is actively resolving streams when this is called, playback may be
-     * interrupted. Only call this when the app is truly backgrounded and playback is stopped.
-     *
-     * To clear only prefetch-specific work without affecting player resolutions,
-     * call [clearPrefetchState] instead.
-     */
-    override fun clearAll() {
-        clearPrefetchState()
-        globalResolver.cancelAll()
-        Log.d(TAG, "Cleared all prefetch state and cancelled global resolver jobs")
     }
 
     /**

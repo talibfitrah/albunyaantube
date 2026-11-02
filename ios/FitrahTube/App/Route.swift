@@ -116,11 +116,22 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// Opened from a channel's Live tab (`ChannelLiveTabFragment.kt:62-69`): the report carries
     /// `contentSubType = LIVESTREAM`. Nothing else reads it.
     var isLive: Bool = false
+    /// Spec §9.1: set, the player is in live-channel mode for this channel (from a live-category list item).
+    var liveChannelId: String? = nil
+    /// Stage 7 I-P1 (Android e632edbb `UpNextItem.liveTitle`): the backend's own title for a live-channel item, the one
+    /// D12's title match compares with the backend's list. Set where a live item is made (a list item, a switch); never
+    /// the displayed `title`, which takes the stream's original title like every other video.
+    var liveTitle: String? = nil
     /// Phase 3 Task 7: set, the player plays this `OfflineItem`'s saved file through
     /// `OfflineResolver` (no network, reduced chrome — `PlayerViewModel.isOfflinePlayback`).
     /// Additive with a nil default so every existing construction — deep links included
     /// (CF-C-9's all-optionals-nil equality) — is untouched.
     var offlineItemId: String? = nil
+    /// Owner issue 2 (1.0.4): the playlist screen's already-loaded rows and its next-page token. Set, the player
+    /// seeds its queue from them before the resolve, with no network call; nil (a deep link, Play All during a
+    /// reload) keeps the one-shot fetch. Consumed at open like `targetVideoId`: `swapArgs` builds fresh args.
+    var queueItems: [ContentItem]? = nil
+    var queueContinuation: String? = nil
 }
 
 extension PlayerArgs {
@@ -132,6 +143,8 @@ extension PlayerArgs {
     init(item: ContentItem) {
         self.init(videoId: item.id, title: item.title, channelName: item.channelTitle ?? item.category,
                   thumbnailURL: item.thumbnailURL, description: item.description,
-                  durationSeconds: item.durationSeconds, viewCount: item.viewCount)
+                  durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: item.liveChannelId)
+        liveChannelId = item.liveChannelId          // §9.3(b): the availability gate checks the channel (F15)
+        if item.liveChannelId != nil { liveTitle = item.title }   // I-P1: D12's backend title, before any retitle
     }
 }

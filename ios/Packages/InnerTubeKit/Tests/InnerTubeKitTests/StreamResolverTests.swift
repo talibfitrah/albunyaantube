@@ -196,6 +196,33 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
+    // MARK: - owner issue 1: the source's own title rides on the Resolved
+
+    @Test func theVisionosRungCarriesTheTitleAndTheCacheKeepsIt() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let first = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let second = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        #expect(first.title == "جزء عم المعلم مشاري راشد العفاسي")
+        #expect(second.title == "جزء عم المعلم مشاري راشد العفاسي")
+        #expect(transport.callCount == 1)
+    }
+
+    @Test func theAndroidRungCarriesTheTitle() async throws {
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"title":"T-android"}}
+        """.utf8))
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), android])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        guard case .progressive = resolved.stream else { Issue.record("expected .progressive, got \(resolved.stream)"); return }
+        #expect(resolved.title == "T-android")
+    }
+
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
 
     /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,
@@ -611,6 +638,15 @@ import Testing
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
     }
 
+    @Test func aLiveResolveCarriesIsLiveNow() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-live")])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+
+        #expect(resolved.isLiveNow)
+    }
+
     /// Review Focus 2. A live stream has no itag 18: after its rung-1 stream fails, the walk must wrap
     /// back to VISIONOS as the last resort, not end in an error with nothing left to try.
     @Test func aDemotedLiveStreamWrapsBackToTheFailedRung() async throws {
@@ -620,7 +656,7 @@ import Testing
 
         let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
 
-        guard case .hls(_, let isLive, _, _) = resolved.stream, isLive else {
+        guard case .hls(_, let isLive, _, _, _) = resolved.stream, isLive else {
             Issue.record("expected live .hls, got \(resolved.stream)"); return
         }
         #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["3", "101"])
@@ -632,6 +668,39 @@ import Testing
         for strategy in RemoteConfig.knownResolverStrategies {
             #expect(StreamResolver.family(of: strategy) != nil, "\(strategy) has no client family: demote would do nothing for it")
         }
+    }
+
+    /// Spec R8/R43: wherever a published order lists the TV rung, a walk never POSTs for it.
+    @Test func aWalkNeverPostsForThePublishedTVRung() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["visionosHLS", "tvSamsungAdaptive", "androidItag18"]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected the 360p"); return }
+        #expect(transport.callCount == 2)
+        #expect(transport.recorded.allSatisfy { $0.url.host() == "youtubei.googleapis.com" })
+    }
+
+    /// Fix (pre-review): an order with no rung a walk POSTs for would advance past every rung, so every resolve would fail.
+    /// It falls back to the bundled order, like an empty one.
+    @Test func anOrderOfOnlyTheTVRungWalksTheDefaultRungs() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let store = configStore(resolverOrder: ["tvSamsungAdaptive"])
+        // Spec §4.1: the TV rung anywhere in the order is the HD switch, so the fallback keeps it after the bundled rungs.
+        #expect(await store.current().resolverOrder == ["visionosHLS", "androidItag18", "tvSamsungAdaptive"])
+        let (resolver, _) = makeResolver(transport: transport, configStore: store)
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        guard case .progressive = resolved.stream else { Issue.record("expected the 360p"); return }
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3"])
+    }
+
+    /// The fallback fires only when NO walk rung is left: one walk rung is a valid order, and the walk keeps it.
+    @Test func anOrderWithOneWalkRungBesideTheTVRungWalksThatRungOnly() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidItag18Response])
+        let (resolver, _) = makeResolver(
+            transport: transport, configStore: configStore(resolverOrder: ["tvSamsungAdaptive", "visionosHLS"]))
+        _ = try? await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101"])
     }
 
     /// Review F3. A demotion is per VIDEO, not per lane: a prefetch, a cast's muxed walk and a save's
@@ -677,7 +746,7 @@ import Testing
         let resolved = try await resolver.resolve(
             Self.videoId, purpose: .prefetch, sourceChannelId: nil, forceRefresh: false, requiresHLS: true)
 
-        guard case .hls(_, _, let audioOnlyURL, _) = resolved.stream else {
+        guard case .hls(_, _, let audioOnlyURL, _, _) = resolved.stream else {
             Issue.record("expected .hls, got \(resolved.stream)"); return
         }
         #expect(audioOnlyURL != nil, "the HLS answer lost its itag 140")

@@ -1,0 +1,8 @@
+player-tv-Ix7uzPm3cU8.json: .superpowers/sdd/2026-10-14-playback-phase2/spike/out/player-Ix7uzPm3cU8.json, captured 2026-10-14, sanitized (R33)
+player-tv-uxeSkxtZU5I.json: .superpowers/sdd/2026-10-14-playback-phase2/spike/out/player-uxeSkxtZU5I.json, captured 2026-10-14, sanitized (R33)
+player-tv-HCWGshgFlqE.json: .superpowers/sdd/2026-10-14-playback-phase2/spike/out/player-HCWGshgFlqE.json, captured 2026-10-14, sanitized (R33)
+player-tv-5RHQrhSFTVE.json: .superpowers/sdd/2026-10-14-playback-phase2/spike/out/player-5RHQrhSFTVE.json, captured 2026-10-14, sanitized (R33)
+player-tv-uZT3McCJHzQ.json: .superpowers/sdd/2026-10-14-playback-phase2/spike/out/player-uZT3McCJHzQ.json, captured 2026-10-14, sanitized (R33)
+player-tv-botcheck-tokenless.json: local-docs/plans/2026-10-14-ios-playback-phase2-fixtures/gate0/run-Ix7uzPm3cU8-mint1/raw-1792016589882-Ix7uzPm3cU8-LOGIN_REQUIRED.json, captured 2026-10-14, sanitized (R33)
+player-tv-botcheck-tokened.json: local-docs/plans/2026-10-14-ios-playback-phase2-fixtures/gate0/run-Ix7uzPm3cU8-mint3/raw-1792017310480-Ix7uzPm3cU8-LOGIN_REQUIRED.json, captured 2026-10-14, sanitized (R33)
+player-tv-short-vertical.json: local-docs/plans/2026-10-14-ios-playback-phase2-fixtures/gate0/run-Fc8laiyTzrg-pc4/player-Fc8laiyTzrg.json, real capture (PC4), captured 2026-10-17, sanitized (R33)

@@ -71,7 +71,22 @@ class SyncManager @Inject constructor(
     // unbind() makes the retry chain strictly bound to the active session.
     @Volatile private var pendingRetry: kotlinx.coroutines.Job? = null
 
-    suspend fun bind(uid: String) = guarded { bindLocked(uid) }
+    // Stage 5 F5: unbind() moves this on at once, without waiting for syncMutex, and the block that
+    // holds the lock checks it before every request. FirebaseAuthInterceptor signs a request with
+    // whoever is signed in when it leaves, so a bind still pulling for account A when A signed out
+    // and B signed in pushed A's rows under B's Bearer, into B's account.
+    private val session = java.util.concurrent.atomic.AtomicInteger()
+
+    /** The [session] the block holding [syncMutex] belongs to: a bind's when it was asked, other work's binding's. */
+    private var running = 0
+
+    // Cubic r4: the account sync works for, set by a bind (under syncMutex, like [running]). unbind() moves [session] past
+    // [boundIn] at once, so no work runs, however late it starts, until the next bind. A process with no bind yet runs on
+    // the stored binding: any uid, as before.
+    private var boundIn = 0
+    private var boundUid: String? = null
+
+    suspend fun bind(uid: String) = guarded(uid, bindAsked = session.get()) { bindLocked(uid) }
 
     /**
      * S7-N4: bind, pullAll and pushDirty, and so this class's own launches (`pushDirtyAsync`, the
@@ -80,17 +95,30 @@ class SyncManager @Inject constructor(
      * with no handler and kill the process. Now it is logged; the rows stay dirty for the next
      * trigger. Cancellation still propagates.
      */
-    private suspend fun guarded(block: suspend () -> Unit) {
+    private suspend fun guarded(uid: String, bindAsked: Int? = null, block: suspend () -> Unit) {
         syncMutex.withLock {
+            running = bindAsked ?: boundIn
             try {
+                ensureSameSession()
+                if (bindAsked != null) { boundIn = bindAsked; boundUid = uid }
+                else if (boundUid != null && boundUid != uid) throw SignedOutSinceAsked()   // not the bound account
                 block()
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
+            } catch (_: SignedOutSinceAsked) {
+                // The account this was asked for has signed out (F5); nothing more goes out for it.
             } catch (e: Exception) {
                 android.util.Log.w("SyncManager", "Sync failed (${e.javaClass.simpleName}) — rows stay dirty", e)
             }
         }
     }
+
+    /** F5: before every request, so no request leaves for an account that has signed out since. */
+    private fun ensureSameSession() {
+        if (session.get() != running) throw SignedOutSinceAsked()
+    }
+
+    private class SignedOutSinceAsked : Exception()
 
     private suspend fun bindLocked(uid: String) {
         val b = binding.get()
@@ -163,7 +191,7 @@ class SyncManager @Inject constructor(
         binding.markMergeDone(uid)
     }
 
-    suspend fun pullAll(uid: String) = guarded { pullAllLocked(uid) }
+    suspend fun pullAll(uid: String) = guarded(uid) { pullAllLocked(uid) }
 
     private suspend fun pullAllLocked(uid: String) {
         val cursors = mutableMapOf(
@@ -196,6 +224,7 @@ class SyncManager @Inject constructor(
             // 5xx and IOExceptions retry.
             var resp: retrofit2.Response<com.albunyaan.tube.data.sync.dto.SyncResponseDto>? = null
             for (attempt in 1..3) {
+                ensureSameSession()
                 val attemptResp = try {
                     api.pull(
                         cursors["subscriptions"]!!,
@@ -434,7 +463,7 @@ class SyncManager @Inject constructor(
             importedAt      = r.importedAt,
         )
 
-    suspend fun pushDirty(uid: String) = guarded { pushDirtyLocked(uid) }
+    suspend fun pushDirty(uid: String) = guarded(uid) { pushDirtyLocked(uid) }
 
     private suspend fun pushDirtyLocked(uid: String) {
         // Cubic R5 P1 #19 — drain across types is *resilient*, not all-or-nothing.
@@ -446,9 +475,11 @@ class SyncManager @Inject constructor(
         // and the rest of the queue makes forward progress.
         //
         // Auth failures (401/403) DO short-circuit — they are not transient
-        // and the AccountStatusInterceptor will sign the user out anyway.
+        // and the AccountStatusInterceptor will sign the user out anyway. So
+        // does no network (OFFLINE), which the backoff then retries.
         var hadTransientFailure = false
         var authFailed = false
+        var offline = false
 
         // Subscriptions
         for (row in subs.selectDirty(uid)) {
@@ -480,6 +511,7 @@ class SyncManager @Inject constructor(
             }
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.OFFLINE -> { offline = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
                 PushOutcome.PERMANENT_FAILURE -> {
                     // Cubic R-final5 P2 — drop dirty so we don't loop forever
@@ -490,7 +522,7 @@ class SyncManager @Inject constructor(
             }
         }
         // Playlists
-        if (!authFailed) for (row in playlists.selectDirty(uid)) {
+        if (!authFailed && !offline) for (row in playlists.selectDirty(uid)) {
             val outcome = if (row.deleted) {
                 push({ api.deletePlaylist(row.playlistId) },
                     onSuccess = { resp -> playlists.clearDirty(uid, row.playlistId, resp.updatedAt) },
@@ -514,6 +546,7 @@ class SyncManager @Inject constructor(
             }
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.OFFLINE -> { offline = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
                 PushOutcome.PERMANENT_FAILURE -> {
                     playlists.clearDirty(uid, row.playlistId, System.currentTimeMillis())
@@ -522,7 +555,7 @@ class SyncManager @Inject constructor(
             }
         }
         // Favorites
-        if (!authFailed) for (row in favorites.selectDirty(uid)) {
+        if (!authFailed && !offline) for (row in favorites.selectDirty(uid)) {
             val outcome = if (row.deleted) {
                 push({ api.deleteFavorite(row.videoId) },
                     onSuccess = { resp -> favorites.clearDirty(uid, row.videoId, resp.updatedAt) },
@@ -546,6 +579,7 @@ class SyncManager @Inject constructor(
             }
             when (outcome) {
                 PushOutcome.AUTH_FAILED -> { authFailed = true; break }
+                PushOutcome.OFFLINE -> { offline = true; break }
                 PushOutcome.TRANSIENT_FAILURE -> hadTransientFailure = true
                 PushOutcome.PERMANENT_FAILURE -> {
                     favorites.clearDirty(uid, row.videoId, System.currentTimeMillis())
@@ -563,7 +597,7 @@ class SyncManager @Inject constructor(
         // Auth failure does not retry — AccountStatusInterceptor signs out.
         if (authFailed) {
             pushBackoff.reset()
-        } else if (hadTransientFailure) {
+        } else if (hadTransientFailure || offline) {
             val wait = pushBackoff.next()
             // Cubic R7 P2 — replace any previously-queued retry with this
             // one. The handle is stored so unbind() can cancel it on
@@ -579,7 +613,7 @@ class SyncManager @Inject constructor(
         }
     }
 
-    private enum class PushOutcome { OK, AUTH_FAILED, PERMANENT_FAILURE, TRANSIENT_FAILURE }
+    private enum class PushOutcome { OK, AUTH_FAILED, PERMANENT_FAILURE, TRANSIENT_FAILURE, OFFLINE }
 
     /**
      * Classify an HTTP response so the drain loop can decide whether to keep
@@ -591,24 +625,35 @@ class SyncManager @Inject constructor(
      *   retrying with the same payload will keep failing. Cubic R-final5 P2:
      *   drop the dirty flag with a local-WARN so subsequent pulls don't
      *   block on a forever-failing push.
-     * - 5xx/429/network/unknown → TRANSIENT_FAILURE (row stays dirty, retry)
+     * - 5xx/429/malformed body/unknown → TRANSIENT_FAILURE (row stays dirty, retry)
+     * - network (IOException) → OFFLINE: the drain ends and the backoff retries it. Every row
+     *   would fail alike, each after the 15 s connect / 20 s read timeouts, all inside syncMutex.
      */
     private suspend inline fun <T> push(
         crossinline op: suspend () -> retrofit2.Response<T>,
         crossinline onSuccess: suspend (T) -> Unit,
         crossinline on404: suspend () -> Unit,
     ): PushOutcome {
-        // Network = TRANSIENT_FAILURE, as pullAllLocked already treats it.
         // Letting the IOException escape killed the process from the app
         // scope (no handler) and the dirty row then crash-looped every
-        // offline launch. S7-N4: a malformed 2xx body (Moshi's
-        // JsonDataException) takes the same path, so the row stays dirty, the
-        // backoff retries it, and the rest of the drain still pushes.
+        // offline launch; it is OFFLINE now, the drain ends and the row stays
+        // dirty for the backoff. S7-N4: a malformed 2xx body (Moshi's
+        // JsonDataException) is TRANSIENT_FAILURE: the row stays dirty and the
+        // rest of the drain still pushes.
+        ensureSameSession()
         val resp = try { op() } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
             android.util.Log.w("SyncManager", "Push failure — retry on backoff", e)
-            return PushOutcome.TRANSIENT_FAILURE
+            // JsonEncodingException is the IOException Moshi throws for a body it cannot parse.
+            // EOFException: Moshi on an empty or truncated body, one bad row; a dropped connection
+            // surfaces as ProtocolException or SocketException instead.
+            return if (e is java.io.IOException && e !is com.squareup.moshi.JsonEncodingException &&
+                e !is java.io.EOFException) {
+                PushOutcome.OFFLINE
+            } else {
+                PushOutcome.TRANSIENT_FAILURE
+            }
         }
         return when {
             resp.isSuccessful -> {
@@ -648,20 +693,23 @@ class SyncManager @Inject constructor(
         }
     }
 
-    suspend fun unbind() = syncMutex.withLock {
-        // Cubic R7 P2 — cancel any queued push retry. See `pendingRetry` doc.
-        // Cubic R8 P2 — must acquire `syncMutex` first. Pre-R8 unbind ran
-        // without the lock, racing with `pushDirtyLocked`'s
-        // `pendingRetry?.cancel(); pendingRetry = scope.launch{...}`
-        // assignment. If unbind interleaved between cancel and assign — or
-        // simply observed the field before pushDirtyLocked published its new
-        // Job — the newly scheduled retry survived sign-out and fired
-        // `pushDirty(uid)` with a stale uid (the exact bug R7 P2 closed).
-        // `@Volatile` provides visibility but not check-then-set atomicity;
-        // the mutex closes that gap by serialising unbind with pushDirty.
-        pendingRetry?.cancel()
-        pendingRetry = null
-        pushBackoff.reset()
+    suspend fun unbind() {
+        session.incrementAndGet() // F5: at once, not behind the lock a running sync holds
+        syncMutex.withLock {
+            // Cubic R7 P2 — cancel any queued push retry. See `pendingRetry` doc.
+            // Cubic R8 P2 — must acquire `syncMutex` first. Pre-R8 unbind ran
+            // without the lock, racing with `pushDirtyLocked`'s
+            // `pendingRetry?.cancel(); pendingRetry = scope.launch{...}`
+            // assignment. If unbind interleaved between cancel and assign — or
+            // simply observed the field before pushDirtyLocked published its new
+            // Job — the newly scheduled retry survived sign-out and fired
+            // `pushDirty(uid)` with a stale uid (the exact bug R7 P2 closed).
+            // `@Volatile` provides visibility but not check-then-set atomicity;
+            // the mutex closes that gap by serialising unbind with pushDirty.
+            pendingRetry?.cancel()
+            pendingRetry = null
+            pushBackoff.reset()
+        }
     }
 
     fun pushDirtyAsync(uid: String) { scope.launch { pushDirty(uid) } }

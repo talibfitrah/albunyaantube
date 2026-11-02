@@ -50,6 +50,7 @@ public class ApprovalService {
     private final StreamIndexService streamIndexService;
     private final UserRepository userRepository;
     private final ImportGraduationService importGraduationService;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public ApprovalService(ChannelRepository channelRepository,
                           PlaylistRepository playlistRepository,
@@ -60,7 +61,8 @@ public class ApprovalService {
                           SortOrderService sortOrderService,
                           StreamIndexService streamIndexService,
                           UserRepository userRepository,
-                          ImportGraduationService importGraduationService) {
+                          ImportGraduationService importGraduationService,
+                          LiveCategoryGuard liveCategoryGuard) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
         this.videoRepository = videoRepository;
@@ -71,6 +73,7 @@ public class ApprovalService {
         this.streamIndexService = streamIndexService;
         this.userRepository = userRepository;
         this.importGraduationService = importGraduationService;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -1226,6 +1229,10 @@ public class ApprovalService {
 
         if (!personal) {
             validateCategoryOverride(request);
+            // §7 row 11: approval publishes into the effective categories; the guard sees them before anything changes.
+            // A PERSONAL approval publishes nothing (the item stays out of listings), so it is not checked (pre-flight M13).
+            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(channel.getId(), channel, channel,
+                    effectiveCategoryIds(request, channel.getCategoryIds()), "APPROVED"));
         }
 
         // Update status
@@ -1317,6 +1324,10 @@ public class ApprovalService {
 
         if (!personal) {
             validateCategoryOverride(request);
+            // §7 row 11: approval publishes into the effective categories; the guard sees them before anything changes.
+            // A PERSONAL approval publishes nothing (the item stays out of listings), so it is not checked (pre-flight M13).
+            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(playlist.getId(), playlist, playlist,
+                    effectiveCategoryIds(request, playlist.getCategoryIds()), "APPROVED"));
         }
 
         // Update status
@@ -1514,6 +1525,12 @@ public class ApprovalService {
 
         if (!personal) {
             validateCategoryOverride(request);
+            // §7 row 11 (see approveChannel); D13: a video that publishes into LIVE keeps the verified channel.
+            String verifiedChannel = liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(video.getId(), video, video,
+                    effectiveCategoryIds(request, video.getCategoryIds()), "APPROVED"));
+            if (verifiedChannel != null) {
+                video.setChannelId(verifiedChannel);
+            }
         }
 
         video.setStatus("APPROVED");
@@ -1718,6 +1735,12 @@ public class ApprovalService {
                     org.springframework.http.HttpStatus.BAD_REQUEST,
                     "Category override does not reference an existing category");
         }
+    }
+
+    /** The ids an approval publishes into: the override when given, else the stored ones. */
+    private static List<String> effectiveCategoryIds(ApprovalRequestDto request, List<String> stored) {
+        String override = request.getCategoryOverride();
+        return override != null && !override.isBlank() ? List.of(override.strip()) : stored;
     }
 
     private String formatNumber(long number) {

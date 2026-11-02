@@ -10,7 +10,8 @@ nonisolated enum ContentType: String, Sendable {
 nonisolated struct ContentItem: Identifiable, Hashable, Sendable {
     let id: String
     let type: ContentType
-    let title: String
+    /// `var` for the queue's one retitle of a whole list (stage 6 I-M9, `PlaylistQueueSource.retitle`).
+    var title: String
     let category: String?
     let description: String?
     let thumbnailURL: URL?
@@ -29,6 +30,17 @@ nonisolated struct ContentItem: Identifiable, Hashable, Sendable {
     var viewsText: String? = nil
     var ageText: String? = nil
     var itemCountText: String? = nil
+    /// Spec §4.1: set on a live-category item that stands for this channel's current live.
+    var liveChannelId: String? = nil
+}
+
+/// Spec §4.1: `GET /api/v1/live/channels/{id}`, a live-category channel's current lives (1.0.4 live-channel mode).
+nonisolated struct LiveChannelLives: Hashable, Sendable {
+    nonisolated struct Live: Hashable, Sendable {
+        let id: String
+        let title: String
+    }
+    let lives: [Live]
 }
 
 nonisolated struct CursorPage<Item: Sendable & Hashable>: Sendable, Hashable {

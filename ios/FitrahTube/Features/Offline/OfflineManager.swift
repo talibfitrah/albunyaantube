@@ -110,6 +110,7 @@ actor OfflineManager: OfflineSaving {
     /// it was, exactly like the kill-switch's hidden-affordance rule.
     private let downloadsEnabled: @Sendable () async -> Bool
     private let directory: URL
+    private let baseDirectory: URL
 
     /// Ids with an engine task in flight (or a resolve on the way to one).
     private var active: Set<String> = []
@@ -159,6 +160,10 @@ actor OfflineManager: OfflineSaving {
     /// CF-A-59: whether a save for this owner must be refused — an account being deleted
     /// (`AccountSession.isDeparted`). Asked on the main actor, in the same job as the insert.
     private let refusesOwner: @MainActor @Sendable (String) -> Bool
+    /// 1.0.4 I9: the thumbnail's bytes for the Saved row's offline copy (`RemoteImage` in the app,
+    /// whose cache usually already holds the player's). Nil = keep none; the default, so a test
+    /// rig never reaches the network.
+    private let thumbnail: @Sendable (URL) async -> Data?
 
     /// Test hook: which ids currently wait on a retry timer.
     var pendingRetryIds: Set<String> { Set(retries.keys) }
@@ -174,7 +179,8 @@ actor OfflineManager: OfflineSaving {
          gate: @escaping @Sendable (_ videoId: String, _ channelId: String?) async -> GateAnswer,
          now: @escaping @Sendable () -> Date,
          downloadsEnabled: @escaping @Sendable () async -> Bool = { true },
-         refusesOwner: @escaping @MainActor @Sendable (String) -> Bool = { _ in false }) {
+         refusesOwner: @escaping @MainActor @Sendable (String) -> Bool = { _ in false },
+         thumbnail: @escaping @Sendable (URL) async -> Data? = { _ in nil }) {
         self.store = store
         self.engine = engine
         self.resolver = resolver
@@ -185,6 +191,8 @@ actor OfflineManager: OfflineSaving {
         self.now = now
         self.downloadsEnabled = downloadsEnabled
         self.refusesOwner = refusesOwner
+        self.thumbnail = thumbnail
+        self.baseDirectory = baseDirectory
         directory = OfflineStorage.directoryURL(base: baseDirectory)
         Task { [engine] in
             for await event in engine.events { await self.handle(event) }
@@ -199,6 +207,7 @@ actor OfflineManager: OfflineSaving {
                                thumbnailUrl: metadata.thumbnailUrl, qualityLabel: quality, audioOnly: audioOnly,
                                createdAt: now(), userId: metadata.userId, channelId: metadata.channelId,
                                durationSeconds: metadata.durationSeconds)
+        let id = item.id
         // CF-A-59 + Cubic P3: the refusal, the old-copy read and the upsert are ONE main-actor job.
         // The wipe's id snapshot runs on this executor after the departure marker, so a save either
         // is refused here or landed before the snapshot. And a refused save never touches the old
@@ -217,6 +226,19 @@ actor OfflineManager: OfflineSaving {
         // before `schedule()` can start the new row; `tearDown`'s row delete finds nothing.
         if let replaced { await tearDown(replaced) }
         await schedule()
+        // 1.0.4 I9 (offline F4 / R6): a copy of the thumbnail next to the file, for the Saved row
+        // offline (Android shows it from Coil's disk cache). After `schedule()`, so a slow image host
+        // never holds the download back; written only while the row still exists.
+        // A delete landing between its file sweep and its row delete can still leave this one small file
+        // behind; the next launch's `reattach()` sweeps it (stage 6 I-S3).
+        if let url = metadata.thumbnailUrl.flatMap(URL.init), let data = await thumbnail(url) {
+            let file = thumbnailCopy(id)
+            await MainActor.run { [store, directory] in
+                guard store.item(id: id) != nil else { return }
+                try? Self.prepareDirectory(directory)
+                try? data.write(to: file, options: .atomic)   // never a half picture (round 3, m5)
+            }
+        }
     }
 
     func pause(_ id: String) async {
@@ -296,6 +318,7 @@ actor OfflineManager: OfflineSaving {
         await engine.cancel(id: id)
         forget(id)
         removeFiles(row)
+        let copy = thumbnailCopy(id)
         await write { store in
             guard let item = store.item(id: id), let status = OfflineStatus(rawValue: item.status) else { return }
             // A `.finished` racing the engine hop above can have moved the bytes to `<id>.<ext>`
@@ -307,7 +330,10 @@ actor OfflineManager: OfflineSaving {
             // main-actor hop (which would land after `removeFiles` no matter where it went, and
             // stall a cancel that races a blocked main actor).
             guard let next = OfflineStateMachine.transition(from: status, on: .cancel) else {
-                if status == .completed { try store.delete(item) }
+                if status == .completed {
+                    try store.delete(item)
+                    try? FileManager.default.removeItem(at: copy)   // the row went: so does its picture
+                }
                 return
             }
             item.status = next.rawValue
@@ -408,6 +434,18 @@ actor OfflineManager: OfflineSaving {
                     item.status = OfflineStatus.queued.rawValue
                     try store.save()
                 }
+            }
+        }
+        // Stage 6 I-S3: a Saved row's picture that finished loading after its row went (a delete, the account wipe;
+        // `RemoteImage.backfill`) left a copy no teardown will ever name. Swept against a fresh read of the rows: this
+        // also runs mid-session (the root `.task` re-runs when iPad AVKit fullscreen ends, stage 7 D1).
+        // Never against the in-memory stand-in or a failed read (I-C10.1, `persistedIds`): that would sweep the library.
+        // ponytail: a save landing between that read and this sweep loses its fresh copy; the Saved row's backfill writes
+        // it again from the network or the image cache.
+        if let rowIds = await MainActor.run(body: { store.persistedIds() }) {
+            let files = (try? FileManager.default.contentsOfDirectory(at: directory, includingPropertiesForKeys: nil)) ?? []
+            for file in files where file.pathExtension == "jpg" && !rowIds.contains(file.deletingPathExtension().lastPathComponent) {
+                try? FileManager.default.removeItem(at: file)
             }
         }
         await schedule()
@@ -558,7 +596,7 @@ actor OfflineManager: OfflineSaving {
             let size = (try? FileManager.default.attributesOfItem(atPath: destination.path(percentEncoded: false))[.size] as? Int64) ?? 0
             let completedAt = now()
             forget(id)
-            await write { store in
+            let completion = await write { store in
                 // `localPath` is written on the NEXT line and nowhere else, so a Delete/Cancel that
                 // landed while this completion was suspended leaves `<id>.<ext>` named by nothing:
                 // `removeFiles` never sees a path the row does not carry yet, and nothing in the
@@ -581,6 +619,17 @@ actor OfflineManager: OfflineSaving {
                 item.errorCode = nil
                 item.completedAt = completedAt
                 try store.save()
+            }
+            // 1.0.4 I4 (stage 5 run 2 R2-3): the save rolled the row back to `running` with nothing
+            // behind it -- "Saving…" for the session. A full disk is the likely cause right after a
+            // big save, so the file goes first (a Retry downloads it again anyway) and the failure
+            // then has room to land: failed, retryable.
+            // ponytail: if even that write fails the row stays `running` until the next launch's
+            // `reattach()` re-queues it; nothing can be persisted then.
+            if completion != nil {
+                try? FileManager.default.removeItem(at: destination)
+                await fail(id, .unknown)
+                return
             }
             await schedule()
 
@@ -981,7 +1030,7 @@ actor OfflineManager: OfflineSaving {
     /// always 360p/mp4, Task 5's picker must reflect this).
     nonisolated static func sourceURL(_ stream: ResolvedStream, audioOnly: Bool) -> URL? {
         switch (stream, audioOnly) {
-        case (.hls(_, _, let audioOnlyURL, _), true): return audioOnlyURL
+        case (.hls(_, _, let audioOnlyURL, _, _), true): return audioOnlyURL
         case (.progressive(let url, _), false): return url
         case (.hls, false), (.progressive, true): return nil
         }
@@ -1125,10 +1174,18 @@ actor OfflineManager: OfflineSaving {
         await engine.cancel(id: row.id)   // no-op when nothing is live; cheaper than tracking it
         forget(row.id)
         removeFiles(row)
+        // The thumbnail copy goes with the ROW (round 3, m4): a cancel keeps the row, and its Retry
+        // shows the picture.
+        try? FileManager.default.removeItem(at: thumbnailCopy(row.id))
         return await write { store in
             guard let item = store.item(id: row.id) else { return }
             try store.delete(item)
         }
+    }
+
+    /// The row's thumbnail copy (1.0.4 I9).
+    private func thumbnailCopy(_ id: String) -> URL {
+        OfflineStorage.thumbnailURL(itemId: id, base: baseDirectory)
     }
 
     private func forget(_ id: String) {

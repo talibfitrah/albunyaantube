@@ -43,8 +43,16 @@ struct RecoveryBudget: Equatable, Sendable {
     /// Incident classes that already spent their one same-rung re-resolve.
     private(set) var sameRungUsed: Set<RecoveryEvent> = []
     private var hasPlayed = false
+    /// Live-channel mode (spec §9.1, Task 32 fix round 1): a 24/7 id plays for days and each network change is a 403
+    /// incident, so the lifetime `retries` would run out on a healthy stream. `retries` refunds after this much playback
+    /// with no attempt between (Android counts per episode). Never on mere progress: a flapping stream still terminates.
+    static let sustainedPlayback: TimeInterval = 300
+    /// Seconds played since the last attempt, and the last progress tick (live-channel mode only).
+    private var played: TimeInterval = 0
+    private var lastProgressAt: Date?
 
     mutating func apply(_ action: RecoveryAction, for event: RecoveryEvent) {
+        if action != .exhausted { played = 0 }
         switch action {
         case .exhausted:
             break // nothing was attempted
@@ -63,14 +71,22 @@ struct RecoveryBudget: Equatable, Sendable {
     /// unrecoverable. `retryCount` resets only on the FIRST successful playback (`hasAutoHidden`
     /// guards it), which keeps `retries` a genuine per-stream lifetime cap: a stream that flaps
     /// (plays a second, fails, plays a second, fails) still terminates at `maxRetries`.
-    /// Called by `PlayerHostView`'s wall-clock sampler when the playback position actually advances.
-    mutating func recordPlaybackProgress() {
+    /// Called by `PlayerHostView`'s wall-clock sampler when the playback position actually advances. `now` is given in
+    /// live-channel mode only, for the `sustainedPlayback` refund.
+    mutating func recordPlaybackProgress(now: Date? = nil) {
         reResolves = 0
         sameRungUsed = []
         if !hasPlayed {
             hasPlayed = true
             retries = 0
         }
+        guard let now else { return }
+        // Only back-to-back ticks count, so a pause or a rebuffer adds nothing.
+        if let lastProgressAt, now.timeIntervalSince(lastProgressAt) <= 2 * PlaybackRecovery.sampleInterval {
+            played += now.timeIntervalSince(lastProgressAt)
+        }
+        lastProgressAt = now
+        if played >= Self.sustainedPlayback { retries = 0 }
     }
 }
 
@@ -93,8 +109,12 @@ enum PlaybackRecovery {
         // through: an expired or revoked URL is exactly what one same-rung re-resolve fixes.
         if httpStatus == 401 { return .stepDownRung }
         // spec §10: a `.failed` status before the first frame goes straight to the next rung -- this
-        // rung has proven it can't produce one, so re-resolving it is a wasted attempt.
-        guard event != .failedBeforeFirstFrame else { return .stepDownRung }
+        // rung has proven it can't produce one, so re-resolving it is a wasted attempt. Not for a
+        // refused URL (1.0.4 I7; Task 6 Minor 4, spec R4): a cached or prefetched manifest after a
+        // network change answers 403 for the new IP and proves nothing about the rung, so it gets
+        // the class's one fresh same-rung URL before the step-down that is sticky for the session.
+        let refusedURL = httpStatus.map { [403, 404, 410].contains($0) } ?? false
+        guard event != .failedBeforeFirstFrame || refusedURL else { return .stepDownRung }
         guard !state.sameRungUsed.contains(event), state.reResolves < RecoveryBudget.maxReResolves else {
             return .stepDownRung
         }

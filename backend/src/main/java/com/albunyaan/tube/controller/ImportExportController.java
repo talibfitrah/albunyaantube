@@ -11,6 +11,7 @@ import com.albunyaan.tube.repository.ValidationRunRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
 import com.albunyaan.tube.service.ContentImportService;
 import com.albunyaan.tube.service.ImportExportService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import com.albunyaan.tube.service.SimpleExportService;
 import com.albunyaan.tube.service.SimpleImportService;
 import com.fasterxml.jackson.core.type.TypeReference;
@@ -28,10 +29,12 @@ import org.springframework.web.bind.annotation.*;
 import org.springframework.web.multipart.MultipartFile;
 
 import java.io.IOException;
+import java.util.HashSet;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Set;
 import java.util.concurrent.CompletableFuture;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.Executor;
@@ -59,6 +62,7 @@ public class ImportExportController {
     private final ContentImportService contentImportService;
     private final ValidationRunRepository validationRunRepository;
     private final Executor validationExecutor;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     /**
      * Flag to prevent concurrent import runs.
@@ -73,7 +77,8 @@ public class ImportExportController {
             SimpleExportService simpleExportService,
             ContentImportService contentImportService,
             ValidationRunRepository validationRunRepository,
-            @Qualifier("validationExecutor") Executor validationExecutor
+            @Qualifier("validationExecutor") Executor validationExecutor,
+            LiveCategoryGuard liveCategoryGuard
     ) {
         this.importExportService = importExportService;
         this.simpleImportService = simpleImportService;
@@ -81,6 +86,7 @@ public class ImportExportController {
         this.contentImportService = contentImportService;
         this.validationRunRepository = validationRunRepository;
         this.validationExecutor = validationExecutor;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     /**
@@ -250,7 +256,7 @@ public class ImportExportController {
             @RequestParam("file") MultipartFile file,
             @RequestParam(defaultValue = "APPROVED") String defaultStatus,
             @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws IOException {
+    ) throws IOException, ExecutionException, InterruptedException, TimeoutException {
 
         if (file.isEmpty()) {
             return ResponseEntity.badRequest().body(
@@ -279,12 +285,16 @@ public class ImportExportController {
                 SimpleImportResponse.error("Invalid format: expected array of 3 objects [channels, playlists, videos]")
             );
         }
+        // Row 16 (D9). The LIVE rows the guard saw stored are skipped unread: a doc deleted since must not return unchecked.
+        Set<String> storedLiveRows = new HashSet<>();
+        liveCategoryGuard.checkAll(true, liveCategoryGuard.simpleImportChanges(simpleData, defaultStatus, storedLiveRows));
 
         SimpleImportResponse response = simpleImportService.importSimpleFormat(
             simpleData,
             defaultStatus,
             user.getUid(),
-            false // not validateOnly
+            false, // not validateOnly
+            storedLiveRows
         );
 
         return ResponseEntity.ok(response);
@@ -336,7 +346,8 @@ public class ImportExportController {
             simpleData,
             "APPROVED", // default status doesn't matter for validation
             user.getUid(),
-            true // validateOnly = true (dry-run)
+            true, // validateOnly = true (dry-run)
+            Set.of()
         );
 
         return ResponseEntity.ok(validation);

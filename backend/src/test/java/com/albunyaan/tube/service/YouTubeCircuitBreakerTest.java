@@ -1,14 +1,23 @@
 package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.config.ValidationProperties;
+import com.albunyaan.tube.repository.SystemSettingsRepository;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
 import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.exceptions.ExtractionException;
 
 import java.io.IOException;
+import java.util.Map;
+import java.util.Optional;
+import java.util.concurrent.ExecutorService;
+import java.util.concurrent.Executors;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyLong;
+import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.when;
 
 /**
  * Unit tests for YouTubeCircuitBreaker
@@ -222,8 +231,8 @@ class YouTubeCircuitBreakerTest {
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
         assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getStatus().getState());
 
-        // Record another error while in HALF_OPEN - this simulates a failed probe
-        // and should increase the backoff level
+        // The probe takes the permit and is rate-limited: a failed probe, which increases the backoff level
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
 
         // Backoff level should have increased to 1
@@ -244,28 +253,170 @@ class YouTubeCircuitBreakerTest {
 
         // Cycle 1: OPEN → HALF_OPEN → OPEN (level 1)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(1, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 2: OPEN → HALF_OPEN → OPEN (level 2)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(2, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 3: OPEN → HALF_OPEN → OPEN (level 3)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(3, circuitBreaker.getStatus().getBackoffLevel());
 
         // Cycle 4: OPEN → HALF_OPEN → OPEN (level 4 - cap)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(4, circuitBreaker.getStatus().getBackoffLevel(), "Should cap at level 4");
 
         // Cycle 5: Should stay at cap (level 4)
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(4, circuitBreaker.getStatus().getBackoffLevel(), "Should stay at cap");
+    }
+
+    /**
+     * Admin and app searches skip the breaker but record their rate limits. In HALF_OPEN only the probe's own failure
+     * may escalate the backoff (1 h → 6 h → … 48 h); another caller's rate limit must not.
+     */
+    @Test
+    @DisplayName("HALF_OPEN: another caller's rate limit does not escalate the backoff; the probe's own failure does")
+    void halfOpen_onlyTheProbesOwnRateLimitEscalates() throws Exception {
+        Exception error = new RuntimeException("rate limit");
+        circuitBreaker.recordRateLimitError(error);   // CLOSED → OPEN at level 0
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.recordRateLimitError(error);   // e.g. an admin search's 429, on another thread
+
+            assertEquals(0, circuitBreaker.getStatus().getBackoffLevel(), "a non-probe rate limit must not escalate");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+            assertFalse(circuitBreaker.isProbeRequest(), "this thread is not the probe");
+
+            probeThread.submit(() -> circuitBreaker.recordRateLimitError(error)).get();   // the probe itself fails
+
+            assertEquals(1, circuitBreaker.getStatus().getBackoffLevel(), "the failed probe escalates");
+            assertEquals(YouTubeCircuitBreaker.State.OPEN, circuitBreaker.getCurrentState());
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    /**
+     * Slice C M1: an admin search skips the breaker but records its success. Closing HALF_OPEN on it would clear the
+     * backoff while browse is still blocked, so only the probe's own success may close.
+     */
+    @Test
+    @DisplayName("HALF_OPEN: another caller's success does not close the breaker; the probe's own success does")
+    void halfOpen_onlyTheProbesOwnSuccessCloses() throws Exception {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // CLOSED → OPEN
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        circuitBreaker.recordSuccess();   // a search success before any probe is taken
+        assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState(), "no probe, no close");
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.recordSuccess();   // an admin search's success, on another thread
+
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState(), "a non-probe success must not close");
+            assertTrue(circuitBreaker.isOpen(), "the probe still holds the permit");
+
+            probeThread.submit(circuitBreaker::recordSuccess).get();   // the probe itself succeeds
+
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getCurrentState(), "the probe's success closes");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    /** Stage 9 B19 (r6 P3-1): a probe with no outcome for browse (a /player bot check) gives its permit back, nothing else. */
+    @Test
+    @DisplayName("releaseProbe: only the probe's own release frees the permit; state, level and cooldown stay")
+    void releaseProbe_freesOnlyTheOwnersPermit() throws Exception {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));   // CLOSED → OPEN at level 0
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        YouTubeCircuitBreaker.CircuitBreakerStatus before = circuitBreaker.getStatusSnapshot();
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(circuitBreaker::allowProbe).get(), "the probe takes the permit on its thread");
+
+            circuitBreaker.releaseProbe();   // another thread: not its permit
+            assertTrue(circuitBreaker.isOpen(), "the probe still holds the permit");
+
+            probeThread.submit(circuitBreaker::releaseProbe).get();
+
+            assertFalse(circuitBreaker.isOpen(), "the permit is free");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, circuitBreaker.getCurrentState());
+            YouTubeCircuitBreaker.CircuitBreakerStatus after = circuitBreaker.getStatusSnapshot();
+            assertEquals(before.getBackoffLevel(), after.getBackoffLevel());
+            assertEquals(before.getCooldownUntil(), after.getCooldownUntil());
+            assertTrue(circuitBreaker.allowProbe(), "the next request takes the probe");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    /** A breaker whose Firestore state is {@code stored}: every save succeeds, and the first isOpen() loads it. */
+    private YouTubeCircuitBreaker persistedAs(String stored) throws Exception {
+        SystemSettingsRepository repo = mock(SystemSettingsRepository.class);
+        when(repo.saveWithVersionCheck(any(), any(), anyLong())).thenReturn(true);
+        when(repo.loadOrThrow(any())).thenReturn(Optional.of(Map.of("state", stored)));
+        return new YouTubeCircuitBreaker(validationProperties, repo);
+    }
+
+    /**
+     * Stage 9 Cubic P2: a refresh that moves the state while the probe is in flight leaves its permit behind (the probe
+     * then resolves outside HALF_OPEN). The next HALF_OPEN must start with no probe held, or every caller stays blocked.
+     */
+    @Test
+    @DisplayName("A probe a refresh stranded does not block the next OPEN -> HALF_OPEN")
+    void aProbeStrandedByARefreshDoesNotBlockTheNextHalfOpen() throws Exception {
+        YouTubeCircuitBreaker breaker = persistedAs("CLOSED");   // another instance closed it
+        breaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(breaker::allowProbe).get(), "the probe takes the permit");
+            assertFalse(breaker.isOpen(), "the first check refreshes from Firestore: CLOSED");
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, breaker.getCurrentState());
+            probeThread.submit(breaker::recordSuccess).get();   // the probe resolves in CLOSED
+
+            breaker.setStateForTesting(YouTubeCircuitBreaker.State.OPEN);   // opens again; no cooldown set, so it is over
+            assertFalse(breaker.isOpen(), "OPEN -> HALF_OPEN lets the probe through");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, breaker.getCurrentState());
+            assertFalse(breaker.isOpen(), "no probe is in flight in the new HALF_OPEN");
+            assertTrue(breaker.allowProbe(), "the next probe takes the permit");
+        } finally {
+            probeThread.shutdownNow();
+        }
+    }
+
+    @Test
+    @DisplayName("A refresh that loads HALF_OPEN starts it with no probe held")
+    void aRefreshIntoHalfOpenStartsWithNoProbeHeld() throws Exception {
+        YouTubeCircuitBreaker breaker = persistedAs("HALF_OPEN");   // another instance's cooldown ended
+        breaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        ExecutorService probeThread = Executors.newSingleThreadExecutor();
+        try {
+            assertTrue(probeThread.submit(breaker::allowProbe).get(), "the probe takes the permit");
+            breaker.setStateForTesting(YouTubeCircuitBreaker.State.CLOSED);   // a move the probe did not make, as a refresh does
+            probeThread.submit(breaker::recordSuccess).get();   // resolves in CLOSED: its permit stays behind
+
+            assertFalse(breaker.isOpen(), "the refresh loads HALF_OPEN with no probe in flight");
+            assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, breaker.getCurrentState());
+            assertTrue(breaker.allowProbe(), "the next probe takes the permit");
+        } finally {
+            probeThread.shutdownNow();
+        }
     }
 
     @Test
@@ -276,8 +427,10 @@ class YouTubeCircuitBreakerTest {
         // Build up backoff level to 2
         circuitBreaker.recordRateLimitError(error);
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe());
         circuitBreaker.recordRateLimitError(error);
         assertEquals(2, circuitBreaker.getStatus().getBackoffLevel());
 
@@ -285,6 +438,20 @@ class YouTubeCircuitBreakerTest {
         circuitBreaker.reset();
         assertEquals(0, circuitBreaker.getStatus().getBackoffLevel(), "Reset clears backoff level");
         assertEquals(YouTubeCircuitBreaker.State.CLOSED, circuitBreaker.getStatus().getState());
+    }
+
+    @Test
+    @DisplayName("Reset clears a held probe permit, so the next HALF_OPEN can probe")
+    void resetShouldClearTheProbeHolder() {
+        circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);
+        assertTrue(circuitBreaker.allowProbe(), "a probe takes the permit and never resolves (e.g. an Error escaped)");
+
+        circuitBreaker.reset();   // the admin's way out of a wedged breaker
+
+        circuitBreaker.setStateForTesting(YouTubeCircuitBreaker.State.HALF_OPEN);   // the next cooldown expires
+        assertFalse(circuitBreaker.isOpen(), "no probe may be in flight after a reset");
+        assertTrue(circuitBreaker.allowProbe(), "the next probe must be able to take the permit");
     }
 
     @Test

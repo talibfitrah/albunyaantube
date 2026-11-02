@@ -100,6 +100,24 @@ struct PlaybackRecoveryTests {
         #expect(budget.retries == 1) // second progress: no further refund
     }
 
+    /// Task 32 fix round 1: in live-channel mode (`now` given) `retries` refunds after five minutes of playback with no
+    /// attempt between, never on mere progress: a pause adds nothing, and every attempt starts the count again.
+    @Test func liveChannelRetriesRefundOnlyAfterFiveMinutesOfPlayback() {
+        let t0 = Date(timeIntervalSince1970: 0)
+        var budget = RecoveryBudget()
+        budget.recordPlaybackProgress(now: t0)                                 // the first play's own refund
+        budget.apply(.stepDownRung, for: .playbackError)
+        for s in 1...299 { budget.recordPlaybackProgress(now: t0 + TimeInterval(s)) }
+        budget.recordPlaybackProgress(now: t0 + 1000)                          // after a pause: adds nothing
+        #expect(budget.retries == 1)
+
+        budget.apply(.stepDownRung, for: .playbackError)                       // an attempt starts the count again
+        for s in 1001...1299 { budget.recordPlaybackProgress(now: t0 + TimeInterval(s)) }
+        #expect(budget.retries == 2)
+        budget.recordPlaybackProgress(now: t0 + 1300)
+        #expect(budget.retries == 0)
+    }
+
     // MARK: - the CDN's HTTP status (owner directive 2026-10-14, spec R3/R4)
 
     /// The exact comment AVPlayer logged for catalog video V2Brp_esIVI (spike 2026-10-14, macOS 15.7):
@@ -178,6 +196,18 @@ struct PlaybackRecoveryTests {
         budget.apply(first, for: .playbackError)
         #expect(first == .reResolveSameRung)
         #expect(PlaybackRecovery.decide(event: .playbackError, httpStatus: status, state: budget) == .stepDownRung)
+    }
+
+    /// 1.0.4 I7 (Task 6 Minor 4, stage 5 F8; spec R4): an expired, revoked or IP-bound URL before the
+    /// first frame -- a cached or prefetched manifest after Wi-Fi -> cellular -- is no proof against
+    /// the rung, so it gets the class's one fresh same-rung URL before the sticky step-down to 360p.
+    @Test(arguments: [403, 404, 410])
+    func aRefusedURLBeforeTheFirstFrameGetsOneSameRungReResolveFirst(_ status: Int) {
+        var budget = RecoveryBudget()
+        let first = PlaybackRecovery.decide(event: .failedBeforeFirstFrame, httpStatus: status, state: budget)
+        budget.apply(first, for: .failedBeforeFirstFrame)
+        #expect(first == .reResolveSameRung)
+        #expect(PlaybackRecovery.decide(event: .failedBeforeFirstFrame, httpStatus: status, state: budget) == .stepDownRung)
     }
 
     @Test func a401StillRespectsTheRetryBudget() {

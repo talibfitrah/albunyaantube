@@ -7,6 +7,7 @@ import com.albunyaan.tube.data.extractor.NewPipePriorityContext
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
+import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -44,7 +45,8 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     // downloader, localization (US), and metrics. The client initializes NewPipe
     // in its constructor via initializeNewPipe().
     @Suppress("unused") private val extractorClient: NewPipeExtractorClient,
-    private val indexRepository: IndexRepository
+    private val indexRepository: IndexRepository,
+    private val originalTitles: OriginalTitles,
 ) : PlaylistDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -199,17 +201,20 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.d(TAG, "Fetched more: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 }
 
+                // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.
+                val titled = originalTitles.retitle(items, { it.videoId }) { item, t -> item.copy(title = t) }
+
                 // Piggyback index loaded items (fire-and-forget, never blocks UI)
                 // Graceful indexing: don't block playlist loading on index errors (429, etc)
                 try {
-                    indexRepository.indexPlaylistStreams(playlistId, items.map { it.toIndexItem() })
+                    indexRepository.indexPlaylistStreams(playlistId, titled.map { it.toIndexItem() })
                 } catch (e: Exception) {
                     Log.w(TAG, "Indexing failed for playlist $playlistId (continuing anyway): ${e.message}")
                 }
 
                 // Return the next item offset for the caller to use on subsequent calls
-                val nextItemOffset = itemOffset + items.size
-                PlaylistPage(items = items, nextPage = nextPage, nextItemOffset = nextItemOffset)
+                val nextItemOffset = itemOffset + titled.size
+                PlaylistPage(items = titled, nextPage = nextPage, nextItemOffset = nextItemOffset)
             } catch (e: CancellationException) {
                 throw e
             } catch (e: Exception) {

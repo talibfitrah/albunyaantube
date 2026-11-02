@@ -263,6 +263,134 @@ struct PlayerHostTests {
         #expect(player.timeControlStatus != .paused, "a waiting player's stall replacement was built paused")
     }
 
+    /// 1.0.4 I7 (Cubic B5, stage 5 F8): a failure while the network is down says nothing about the
+    /// rung, yet a first-frame failure stepped down at once -- a demotion sticky for the session, so a
+    /// brief drop between resolve and load kept the video at 360p. Offline, recovery waits instead;
+    /// back online it fetches a fresh URL from the same rung and demotes nothing.
+    @Test(.timeLimit(.minutes(1))) func aFailureWhileOfflineWaitsForTheNetworkThenRetriesTheSameRung() async throws {
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(), args: PlayerArgs(videoId: "fixture-1"))
+        await model.open()
+        try #require(resolver.calls.count == 1)
+        let player = try #require(PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.isOnline = { false }
+        coordinator.lastVideoId = "fixture-1"
+        let item = try #require(player.currentItem)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+
+        let deadline = ContinuousClock.now + .seconds(10)   // the discard port refuses: no first frame
+        while coordinator.failedItem !== item, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.failedItem === item, "the item never failed")
+        try await Task.sleep(for: .milliseconds(300))        // room for a recovery that would start
+        #expect(resolver.calls.count == 1, "recovery re-resolved while offline")
+        #expect(resolver.demotions.isEmpty, "an outage demoted the rung")
+
+        coordinator.isOnline = { true }
+        // The path monitor's REAL handler (round 3, m3), so the hook itself is pinned, not just
+        // `networkChanged`: without it a parked failure waits forever on a dead item.
+        coordinator.monitor.pathUpdateHandler?(coordinator.monitor.currentPath)
+        await resolver.waitUntilCalled(count: 2)
+        #expect(resolver.calls.last?.forceRefresh == true)
+        #expect(resolver.calls.last?.kind == .autoRecovery)
+        #expect(resolver.demotions.isEmpty, "the outage's failure stepped down once the network was back")
+        coordinator.monitor.pathUpdateHandler?(coordinator.monitor.currentPath)   // spent: runs nothing
+        try await Task.sleep(for: .milliseconds(300))
+        #expect(resolver.calls.count == 2)
+    }
+
+    /// Stage 6 I-M1 (re-review N2): a failure parks only while the shell shows its offline banner, i.e. exactly when
+    /// `NetworkMonitor.isOnline(for:)` says offline. Runs the coordinator's REAL default `isOnline`, so reverting its
+    /// predicate (`== .satisfied`) parks `.requiresConnection` with no banner on screen and this fails.
+    @Test(.timeLimit(.minutes(1)), arguments: [NWPath.Status.satisfied, .requiresConnection, .unsatisfied])
+    func aFailureParksExactlyWhenTheShellShowsTheOfflineBanner(_ status: NWPath.Status) async throws {
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(), args: PlayerArgs(videoId: "fixture-1"))
+        await model.open()
+        try #require(resolver.calls.count == 1)
+        let player = try #require(PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.pathStatus = { status }
+        coordinator.lastVideoId = "fixture-1"
+        let item = try #require(player.currentItem)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .none)
+        defer { coordinator.stopObserving(); player.pause() }
+        let deadline = ContinuousClock.now + .seconds(10)
+        while coordinator.failedItem !== item, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(coordinator.failedItem === item, "the item never failed")
+        if NetworkMonitor.isOnline(for: status) {
+            await resolver.waitUntilCalled(count: 2)    // the banner is down, so recovery runs
+        } else {
+            try await Task.sleep(for: .milliseconds(300))
+            #expect(resolver.calls.count == 1, "recovery ran with the offline banner showing")
+        }
+    }
+
+    /// Stage 9 Cubic r3 P2 (I-C9b): `makeUIViewController` attaches the background controller BEFORE the recovery
+    /// observers hand the coordinator its model, so the seed's "an advance is in flight counts as playing" read nil.
+    @Test(.timeLimit(.minutes(1))) func aFreshCoordinatorSeesAnAdvanceInFlightBeforeItObservesAnything() async throws {
+        let resolver = RecordingResolver(.hls)
+        let settings = Self.settings()
+        settings.safeMode = false                       // Safe Mode disables auto-advance
+        let model = PlayerViewModel(resolver: resolver, settings: settings,
+                                    args: PlayerArgs(videoId: "a", playlistId: "PL"),
+                                    queueSource: FakeQueueSource(pages: [(ids: ["a", "b"], next: nil)]))
+        await model.open()
+        resolver.hold("b")
+        let advancing = Task { await model.playToEnd() }
+        for _ in 0..<500 where !model.isAdvancing { try await Task.sleep(for: .milliseconds(5)) }
+        try #require(model.isAdvancing)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.adopt(model)
+        #expect(coordinator.background.resumeIntentPending?() == true)
+        resolver.release(id: "b")
+        await advancing.value
+    }
+
+    /// 1.0.4 round 5 (re-review N1, test c): the auto-advance end had no "still the current item"
+    /// guard (its failed-to-end sibling has one). An end AVFoundation delivers for the OLD item after
+    /// the swap (queued on main before the observer went) must not advance a second time; the current
+    /// item's end still does.
+    @Test(.timeLimit(.minutes(1))) func aLateEndFromTheOldItemDoesNotAdvance() async throws {
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                    args: PlayerArgs(videoId: "fixture-1"))
+        let player = try #require(PlayerHostView.player(for: Self.progressive(try Self.fixtureURL()), replacing: nil))
+        defer { player.pause() }
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        let old = try #require(player.currentItem)
+        coordinator.observe(item: old, player: player, model: model, isLive: false, playToEnd: .advance)
+        defer { coordinator.stopObserving() }
+        _ = PlayerHostView.player(for: Self.progressive(Self.unanswered), replacing: player, continuesCurrentVideo: false)
+        let current = try #require(player.currentItem)
+        coordinator.observe(item: current, player: player, model: model, isLive: false, playToEnd: .advance)
+
+        coordinator.itemEnded(old)                       // the late end the observer's block delivers
+        try await Task.sleep(for: .milliseconds(200))
+        #expect(model.playToEndCalls == 0, "a late end from the old item advanced")
+        coordinator.itemEnded(current)                   // the current item's own end still advances
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.playToEndCalls == 0, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(model.playToEndCalls == 1)
+    }
+
+    /// 1.0.4 round 3 (review m6): the live rig's probe says whether the open is the saved file, so
+    /// "no Save button" can no longer pass for a streaming open whose Save is hidden.
+    @Test func theRouteProbeSaysWhetherTheOpenIsTheSavedFile() {
+        var args = PlayerArgs(videoId: "fixture-1")
+        args.offlineItemId = "row-1"
+        let saved = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(), args: args)
+        let streaming = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                        args: PlayerArgs(videoId: "fixture-1"))
+        let cast = AppContainer.sharedFake.castController
+        #expect(AirPlayRouteProbe.ProbeView(model: saved, cast: cast).accessibilityValue?.contains("offline=true") == true)
+        #expect(AirPlayRouteProbe.ProbeView(model: streaming, cast: cast).accessibilityValue?.contains("offline=false") == true)
+    }
+
     /// Fix round 2 (pre-existing P1, same cause as I1): the stall watchdog was fed by the same
     /// item-timeline observer, so a REAL stall never fired `.stall` and recovery waited for
     /// AVFoundation's own timeout. The server hands AVPlayer the clip's metadata (`.readyToPlay`,
@@ -691,6 +819,14 @@ struct PlayerHostTests {
         #expect(result == nil)
         #expect(player?.rate == 0) // paused, not left running detached from any view
     }
+
+    /// Review Focus 3 (spec §9.3(a)): a live replacement starts at the live edge, never at the old item's clock.
+    @Test func aLiveStreamResumesAtTheLiveEdgeNotTheOldClock() {
+        #expect(PlayerHostView.resumePosition(isLive: true, continuesCurrentVideo: true, live: 1234, fallback: 99) == 0)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: true, live: 1234, fallback: 99) == 1234)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: true, live: nil, fallback: 99) == 99)
+        #expect(PlayerHostView.resumePosition(isLive: false, continuesCurrentVideo: false, live: 1234, fallback: 99) == 0)
+    }
 }
 
 // MARK: - B4 Task 2: `PlayerPresentation` -- the pure knob table behind `PlayerHostView.presentation`
@@ -789,6 +925,33 @@ struct PlayerHostTests {
         #expect(abs(rebuilt.currentTime().seconds - 1) < 0.1)
     }
 
+    /// Live Task 31 fix round 1 (Minor 2): the call site, not only `resumePosition`. A live-now replacement of the SAME
+    /// video (the refresh, a recovery) starts at the live edge, never at the old item's clock or the fallback.
+    @Test(.timeLimit(.minutes(1))) func aLiveReplacementOfTheSameVideoStartsAtTheLiveEdge() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        func live(_ url: URL) -> StreamState {
+            .ready(Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []), client: .visionos,
+                            userAgent: "TestUA", resolvedAt: Date(), expiresAt: nil, isLiveNow: true))
+        }
+        let player = try #require(PlayerHostView.player(for: live(url), replacing: nil))
+        player.pause()
+        await player.seek(to: CMTime(seconds: 1, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(player.currentTime().seconds > 0.5)
+
+        let copy = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        try FileManager.default.copyItem(at: url, to: copy)
+        defer { try? FileManager.default.removeItem(at: copy) }
+        let refreshed = try #require(PlayerHostView.player(for: live(copy), replacing: player,
+                                                           continuesCurrentVideo: true, resumeFallback: 1))
+        #expect(refreshed === player)
+        let deadline = ContinuousClock.now + .seconds(10)
+        while refreshed.currentItem?.status != .readyToPlay, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(5))
+        }
+        try await Task.sleep(for: .milliseconds(200))                          // room for a carried seek to land
+        #expect(refreshed.currentTime().seconds < 0.1)
+    }
+
     /// B5 final review, IMPORTANT-1 (host half): the two passes an advance produces, in order. The
     /// intermediate pass (old url, still the same video per `hostVideoId`) must REUSE -- same
     /// player, same item, no restart; the resolved pass (new url, different video) builds at 0
@@ -865,8 +1028,9 @@ struct PlayerHostTests {
 /// Fix round 2: a localhost HTTP server for REAL AVPlayer waits. It serves `body` by byte range but
 /// never sends a byte at or past `withheldFrom`: a request reaching that far gets what comes before
 /// it and is then held open, unanswered (`withheldFrom: 0` accepts and never answers at all). Main
-/// queue throughout -- this target is MainActor by default.
-private final class StallingServer {
+/// queue throughout -- this target is MainActor by default. Not private: the interruption tests
+/// (`BackgroundPlaybackControllerTests`) need a real wait too.
+final class StallingServer {
     private let listener: NWListener
     private var connections: [NWConnection] = []
 

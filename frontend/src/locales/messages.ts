@@ -2,7 +2,16 @@ export const messages = {
   en: {
     // Backend typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>.
     apiErrors: {
-      MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.'
+      MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'Only admins can add to the live category.',
+      LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'The live category accepts only channels and streams that are live right now.',
+      LIVE_LINK_NOT_LIVE: "This video isn't live on its channel's Live tab right now (unlisted streams never appear there), so it can't be added to the live category.",
+      LIVE_LINK_CHANNEL_UNKNOWN: "This stream's channel couldn't be found. Try again later.",
+      LIVE_CHECK_UNAVAILABLE: "Couldn't confirm the stream is live. Try again in a minute.",
+      LIVE_CATEGORY_FULL: 'The live category is full. Remove an entry first.',
+      LIVE_CATEGORY_SHAPE: "A live category can't have a parent category or subcategories.",
+      LIVE_CATEGORY_MEMBERS_INVALID: "This category holds items that aren't channels or live streams. Remove them first.",
+      RATE_LIMIT: 'Daily submission limit reached. Try again later.'
     },
     auth: {
       title: 'FitrahTube Admin',
@@ -167,6 +176,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'No valid rows to submit',
+          playlistNeedsCategory: 'A row has no category left, because the live category accepts only channels and streams that are live right now. Choose a category for it, then submit again.',
+          playlistNeedsCategoryRow: 'Choose a category: the live category accepts only channels and streams that are live right now.',
           validCount: 'valid',
           duplicateCount: 'duplicate',
           errorCount: 'error',
@@ -253,7 +264,11 @@ export const messages = {
         translations: 'Translations',
         nameEn: 'English',
         nameAr: 'العربية (Arabic)',
-        nameNl: 'Nederlands (Dutch)'
+        nameNl: 'Nederlands (Dutch)',
+        type: 'Type',
+        typeStandard: 'Standard',
+        typeLive: 'Live channels',
+        typeLiveHelp: 'Channels and live streams only. Channels show their current live streams; links to a stream that ended are removed automatically. Clearing the type turns this back into an ordinary category.'
       }
     },
     approvals: {
@@ -356,6 +371,21 @@ export const messages = {
       }
     },
     contentSorting: {
+      live: {
+        note: 'Users see each channel\'s current live streams. Offline channels are hidden until they are live again. A link to a specific stream is removed when that stream ends.',
+        live: 'Live · {count}',
+        offlineSince: 'Offline since {time}',
+        offline: 'Offline',
+        statusUnavailable: 'Live status unavailable right now.',
+        terminated: 'Channel unavailable on YouTube',
+        errorSince: 'Check failing since {time}',
+        suspectSince: 'Live check suspect since {time}: showing the last known streams',
+        notSeen: 'Not live ({misses} of 2)',
+        noChannel: 'Not shown: channel unknown',
+        excluded: 'Excluded stream (not shown)',
+        blocked: 'Blocked in the library (not shown)',
+        pending: 'Not checked yet'
+      },
       title: 'Content Sorting',
       subtitle: 'Manage the display order of categories and content within each category',
       loading: 'Loading categories...',
@@ -1381,6 +1411,7 @@ export const messages = {
       }
     },
     categoryModal: {
+      liveOnlyChannelsAndLive: 'Live category: channels and live streams only',
       headingSingle: 'Assign Category',
       headingMulti: 'Assign Categories',
       searchPlaceholder: 'Search categories...',
@@ -1602,7 +1633,9 @@ export const messages = {
         CHANNELS: 'Processing channels...',
         PLAYLISTS: 'Processing playlists...',
         VIDEOS: 'Processing videos...',
-        COMPLETE: 'Complete'
+        COMPLETE: 'Complete',
+        LIVE_CATEGORY_REFUSED: 'Refused by the live category. Nothing was imported.',
+        LIVE_CHECK_UNAVAILABLE: 'Live check unavailable. Nothing was imported.'
       },
       results: {
         title: 'Import Results',
@@ -1619,7 +1652,16 @@ export const messages = {
   },
   ar: {
     apiErrors: {
-      MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الإلكتروني — البريد غير مُعدّ على الخادم.'
+      MAIL_UNAVAILABLE: 'تعذّر إرسال البريد الإلكتروني — البريد غير مُعدّ على الخادم.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'يمكن للمشرفين فقط الإضافة إلى فئة البث المباشر.',
+      LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'تقبل فئة البث المباشر القنوات والبث الجاري الآن فقط.',
+      LIVE_LINK_NOT_LIVE: 'هذا الفيديو ليس مباشرًا الآن في تبويب البث المباشر لقناته (البث غير المدرج لا يظهر هناك أبدًا)، لذا لا يمكن إضافته إلى فئة البث المباشر.',
+      LIVE_LINK_CHANNEL_UNKNOWN: 'تعذّر العثور على قناة هذا البث. حاول مرة أخرى لاحقًا.',
+      LIVE_CHECK_UNAVAILABLE: 'تعذّر التأكد من أن البث مباشر. حاول مرة أخرى بعد دقيقة.',
+      LIVE_CATEGORY_FULL: 'فئة البث المباشر ممتلئة. احذف عنصرًا أولًا.',
+      LIVE_CATEGORY_SHAPE: 'لا يمكن أن تكون لفئة البث المباشر فئة رئيسية أو فئات فرعية.',
+      LIVE_CATEGORY_MEMBERS_INVALID: 'تحتوي هذه الفئة على عناصر ليست قنوات أو بثًا مباشرًا. احذفها أولًا.',
+      RATE_LIMIT: 'تم بلوغ الحد اليومي للإرسال. حاول مرة أخرى لاحقًا.'
     },
     auth: {
       title: 'إدارة فطرة تيوب',
@@ -1780,6 +1822,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'لا توجد صفوف صالحة للإرسال',
+          playlistNeedsCategory: 'لم تبقَ لأحد الصفوف أي فئة، لأن فئة البث المباشر تقبل القنوات والبث الجاري الآن فقط. اختر له فئة ثم أعد الإرسال.',
+          playlistNeedsCategoryRow: 'اختر فئة: تقبل فئة البث المباشر القنوات والبث الجاري الآن فقط.',
           validCount: 'صالح',
           duplicateCount: 'مكرر',
           errorCount: 'خطأ',
@@ -1866,7 +1910,11 @@ export const messages = {
         translations: 'الترجمات',
         nameEn: 'English',
         nameAr: 'العربية (Arabic)',
-        nameNl: 'Nederlands (Dutch)'
+        nameNl: 'Nederlands (Dutch)',
+        type: 'النوع',
+        typeStandard: 'عادية',
+        typeLive: 'قنوات البث المباشر',
+        typeLiveHelp: 'القنوات والبث المباشر فقط. تعرض القنوات بثها المباشر الحالي، وتُحذف روابط البث المنتهي تلقائيًا. إزالة النوع تعيدها فئة عادية.'
       }
     },
     approvals: {
@@ -1968,7 +2016,35 @@ export const messages = {
         error: 'فشل رفض الطلب.'
       }
     },
+    categoryModal: {
+      liveOnlyChannelsAndLive: 'فئة البث المباشر: القنوات والبث المباشر فقط',
+      headingSingle: 'تعيين فئة',
+      headingMulti: 'تعيين الفئات',
+      searchPlaceholder: 'ابحث في الفئات...',
+      loading: 'جارٍ تحميل الفئات...',
+      noResults: 'لم يتم العثور على فئات.',
+      selectedCount: 'تم تحديد {count}',
+      clearSelection: 'مسح التحديد',
+      close: 'إغلاق',
+      cancel: 'إلغاء',
+      assign: 'تعيين'
+    },
     contentSorting: {
+      live: {
+        note: 'يرى المستخدمون البث المباشر الحالي لكل قناة. تُخفى القنوات غير المتصلة حتى تعود إلى البث. ويُحذف رابط البث المحدد عند انتهائه.',
+        live: 'مباشر · {count}',
+        offlineSince: 'غير متصل منذ {time}',
+        offline: 'غير متصل',
+        statusUnavailable: 'حالة البث المباشر غير متاحة حاليًا.',
+        terminated: 'القناة غير متاحة على يوتيوب',
+        errorSince: 'يتعذّر الفحص منذ {time}',
+        suspectSince: 'فحص البث مشكوك فيه منذ {time}: يُعرض آخر بث معروف',
+        notSeen: 'ليس مباشرًا ({misses} من 2)',
+        noChannel: 'غير معروض: القناة غير معروفة',
+        excluded: 'بث مستبعد (غير معروض)',
+        blocked: 'محظور في المكتبة (غير معروض)',
+        pending: 'لم يُفحص بعد'
+      },
       title: 'ترتيب المحتوى',
       subtitle: 'إدارة ترتيب عرض الفئات والمحتوى داخل كل فئة',
       loading: 'جارٍ تحميل الفئات...',
@@ -2942,7 +3018,9 @@ export const messages = {
         CHANNELS: 'جارٍ معالجة القنوات...',
         PLAYLISTS: 'جارٍ معالجة قوائم التشغيل...',
         VIDEOS: 'جارٍ معالجة الفيديوهات...',
-        COMPLETE: 'مكتمل'
+        COMPLETE: 'مكتمل',
+        LIVE_CATEGORY_REFUSED: 'رفضته فئة البث المباشر. لم يُستورد أي شيء.',
+        LIVE_CHECK_UNAVAILABLE: 'تعذّر فحص البث المباشر. لم يُستورد أي شيء.'
       },
       results: {
         title: 'نتائج الاستيراد',
@@ -3015,7 +3093,16 @@ export const messages = {
   },
   nl: {
     apiErrors: {
-      MAIL_UNAVAILABLE: 'De e-mail kon niet worden verzonden — e-mail is niet ingesteld op de server.'
+      MAIL_UNAVAILABLE: 'De e-mail kon niet worden verzonden — e-mail is niet ingesteld op de server.',
+      LIVE_CATEGORY_ADMIN_ONLY: 'Alleen beheerders kunnen items toevoegen aan de livecategorie.',
+      LIVE_CATEGORY_TYPE_NOT_ALLOWED: 'De livecategorie accepteert alleen kanalen en streams die nu live zijn.',
+      LIVE_LINK_NOT_LIVE: 'Deze video staat nu niet live op het Live-tabblad van zijn kanaal (niet-vermelde streams staan daar nooit), dus hij kan niet aan de livecategorie worden toegevoegd.',
+      LIVE_LINK_CHANNEL_UNKNOWN: 'Het kanaal van deze stream kon niet worden gevonden. Probeer het later opnieuw.',
+      LIVE_CHECK_UNAVAILABLE: 'Kon niet bevestigen dat de stream live is. Probeer het over een minuut opnieuw.',
+      LIVE_CATEGORY_FULL: 'De livecategorie is vol. Verwijder eerst een item.',
+      LIVE_CATEGORY_SHAPE: 'Een livecategorie kan geen bovenliggende categorie of subcategorieën hebben.',
+      LIVE_CATEGORY_MEMBERS_INVALID: 'Deze categorie bevat items die geen kanalen of livestreams zijn. Verwijder ze eerst.',
+      RATE_LIMIT: 'Daglimiet voor inzendingen bereikt. Probeer het later opnieuw.'
     },
     auth: {
       title: 'FitrahTube Beheer',
@@ -3174,6 +3261,8 @@ export const messages = {
         },
         preview: {
           noValidRowsToSubmit: 'Geen geldige rijen om in te dienen',
+          playlistNeedsCategory: 'Een rij heeft geen categorie meer, omdat de livecategorie alleen kanalen en streams accepteert die nu live zijn. Kies een categorie voor deze rij en dien opnieuw in.',
+          playlistNeedsCategoryRow: 'Kies een categorie: de livecategorie accepteert alleen kanalen en streams die nu live zijn.',
           validCount: 'geldig',
           duplicateCount: 'duplicaat',
           errorCount: 'fout',
@@ -3260,7 +3349,11 @@ export const messages = {
         translations: 'Vertalingen',
         nameEn: 'English',
         nameAr: 'العربية (Arabic)',
-        nameNl: 'Nederlands (Dutch)'
+        nameNl: 'Nederlands (Dutch)',
+        type: 'Type',
+        typeStandard: 'Standaard',
+        typeLive: 'Live kanalen',
+        typeLiveHelp: 'Alleen kanalen en livestreams. Kanalen tonen hun huidige livestreams; links naar een beëindigde stream worden automatisch verwijderd. Het type wissen maakt er weer een gewone categorie van.'
       }
     },
     approvals: {
@@ -3362,7 +3455,35 @@ export const messages = {
         error: 'Indiening afwijzen is mislukt.'
       }
     },
+    categoryModal: {
+      liveOnlyChannelsAndLive: 'Livecategorie: alleen kanalen en livestreams',
+      headingSingle: 'Categorie toewijzen',
+      headingMulti: 'Categorieën toewijzen',
+      searchPlaceholder: 'Categorieën zoeken...',
+      loading: 'Categorieën laden...',
+      noResults: 'Geen categorieën gevonden.',
+      selectedCount: '{count} geselecteerd',
+      clearSelection: 'Selectie wissen',
+      close: 'Sluiten',
+      cancel: 'Annuleren',
+      assign: 'Toewijzen'
+    },
     contentSorting: {
+      live: {
+        note: 'Gebruikers zien de huidige livestreams van elk kanaal. Offline kanalen zijn verborgen tot ze weer live zijn. Een link naar een specifieke stream wordt verwijderd zodra die stream eindigt.',
+        live: 'Live · {count}',
+        offlineSince: 'Offline sinds {time}',
+        offline: 'Offline',
+        statusUnavailable: 'Live-status momenteel niet beschikbaar.',
+        terminated: 'Kanaal niet beschikbaar op YouTube',
+        errorSince: 'Controle mislukt sinds {time}',
+        suspectSince: 'Livecontrole twijfelachtig sinds {time}: de laatst bekende streams worden getoond',
+        notSeen: 'Niet live ({misses} van 2)',
+        noChannel: 'Niet getoond: kanaal onbekend',
+        excluded: 'Uitgesloten stream (niet getoond)',
+        blocked: 'Geblokkeerd in de bibliotheek (niet getoond)',
+        pending: 'Nog niet gecontroleerd'
+      },
       title: 'Inhoud sorteren',
       subtitle: 'Beheer de weergavevolgorde van categorieën en inhoud binnen elke categorie',
       loading: 'Categorieën laden...',
@@ -4336,7 +4457,9 @@ export const messages = {
         CHANNELS: 'Kanalen verwerken...',
         PLAYLISTS: 'Afspeellijsten verwerken...',
         VIDEOS: "Video's verwerken...",
-        COMPLETE: 'Voltooid'
+        COMPLETE: 'Voltooid',
+        LIVE_CATEGORY_REFUSED: 'Geweigerd door de livecategorie. Er is niets geïmporteerd.',
+        LIVE_CHECK_UNAVAILABLE: 'Livecontrole niet beschikbaar. Er is niets geïmporteerd.'
       },
       results: {
         title: 'Importresultaten',

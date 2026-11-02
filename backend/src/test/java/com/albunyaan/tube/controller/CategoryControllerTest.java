@@ -1,5 +1,6 @@
 package com.albunyaan.tube.controller;
 
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.security.FirebaseUserDetails;
@@ -16,6 +17,7 @@ import org.springframework.http.ResponseEntity;
 import java.util.Arrays;
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.ExecutionException;
 
@@ -41,6 +43,9 @@ class CategoryControllerTest {
 
     @Mock
     private com.albunyaan.tube.service.SortOrderService sortOrderService;
+
+    @Mock
+    private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks
     private CategoryController categoryController;
@@ -257,5 +262,150 @@ class CategoryControllerTest {
         assertEquals(HttpStatus.NOT_FOUND, response.getStatusCode());
         verify(categoryRepository, never()).deleteById(any());
     }
-}
 
+    // ---- Live channels (spec §3, §4.2, D8, R18) ----
+
+    private static Category live(String name, String parentId) {
+        Category c = new Category(name, parentId);
+        c.setType(Category.TYPE_LIVE);
+        return c;
+    }
+
+    @Test
+    void createLiveTopLevelIsSavedWithItsType() throws Exception {
+        when(categoryRepository.findMaxDisplayOrder()).thenReturn(16);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        ResponseEntity<Category> response = categoryController.createCategory(live("Channels Live", null), adminUser);
+
+        assertEquals(HttpStatus.CREATED, response.getStatusCode());
+        assertEquals(Category.TYPE_LIVE, response.getBody().getType());
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2: a create never takes the client's id, so it can never overwrite (and flip LIVE on, or clear
+     * LIVE from) an existing category past PUT's checks. No admin caller sends one (frontend categoryService.createCategory).
+     */
+    @Test
+    void aCreateWithAnExistingIdMakesANewCategoryAndNeverOverwritesThatOne() throws Exception {
+        when(categoryRepository.findMaxDisplayOrder()).thenReturn(16);
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+        Category body = live("Quran", null);
+        body.setId("quran");                                                    // an existing category's id
+
+        categoryController.createCategory(body, adminUser);
+
+        var saved = org.mockito.ArgumentCaptor.forClass(Category.class);
+        verify(categoryRepository).save(saved.capture());
+        assertNull(saved.getValue().getId(), "the repository assigns a new id; set() would replace the 'quran' doc");
+        verify(liveCategoryGuard, never()).checkMembersForLive(any());
+    }
+
+    @Test
+    void createLiveWithAParentIsRefusedWithShape() throws Exception {
+        when(categoryRepository.existsById("parent-1")).thenReturn(true);
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.createCategory(live("Live kids", "parent-1"), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        assertEquals(HttpStatus.BAD_REQUEST, e.getStatus());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    @Test
+    void createSubcategoryUnderALiveParentIsRefusedWithShape() throws Exception {
+        when(categoryRepository.existsById("live-1")).thenReturn(true);
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(live("Channels Live", null)));
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.createCategory(new Category("Kids", "live-1"), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    @Test
+    void createWithAnUnknownTypeIs400() throws Exception {
+        Category odd = new Category("Odd", null);
+        odd.setType("PODCAST");
+
+        ResponseEntity<Category> response = categoryController.createCategory(odd, adminUser);
+
+        assertEquals(HttpStatus.BAD_REQUEST, response.getStatusCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    /** Review Focus 2: the old dashboard (and any PUT without "type") keeps the live type. */
+    @Test
+    void anUpdateWithoutTypeKeepsTheLiveType() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("live-1")).thenReturn(List.of());
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        Category body = new Category("Live Channels", null);   // never calls setType
+        ResponseEntity<Category> response = categoryController.updateCategory("live-1", body, adminUser);
+
+        assertEquals(Category.TYPE_LIVE, response.getBody().getType());
+        assertEquals("Live Channels", response.getBody().getName());
+    }
+
+    /** R18: the kill switch is an explicit "type": null, always allowed. */
+    @Test
+    void anUpdateWithANullTypeClearsIt() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        Category body = new Category("Channels Live", null);
+        body.setType(null);
+        ResponseEntity<Category> response = categoryController.updateCategory("live-1", body, adminUser);
+
+        assertNull(response.getBody().getType());
+    }
+
+    @Test
+    void makingACategoryWithChildrenLiveIsRefusedWithShape() throws Exception {
+        Category existing = new Category("Kids", null);
+        existing.setId("kids");
+        when(categoryRepository.findById("kids")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("kids")).thenReturn(List.of(new Category("Cartoons", "kids")));
+
+        LiveCategoryException e = assertThrows(LiveCategoryException.class,
+                () -> categoryController.updateCategory("kids", live("Kids", null), adminUser));
+
+        assertEquals(LiveCategoryException.SHAPE, e.getCode());
+        verify(categoryRepository, never()).save(any());
+    }
+
+    /** Row 17: setting LIVE on an ordinary category runs the members rule before anything is saved. */
+    @Test
+    void settingLiveOnAnOrdinaryCategoryChecksItsMembers() throws Exception {
+        Category existing = new Category("Live Kids", null);
+        existing.setId("kids");
+        when(categoryRepository.findById("kids")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("kids")).thenReturn(List.of());
+        doThrow(new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.MEMBERS_INVALID, "x", Map.of()))
+                .when(liveCategoryGuard).checkMembersForLive("kids");
+
+        assertThrows(LiveCategoryException.class, () -> categoryController.updateCategory("kids", live("Live Kids", null), adminUser));
+        verify(categoryRepository, never()).save(any());
+    }
+
+    /** Row 17 runs only when LIVE is newly set: editing a category that is already LIVE never re-checks its members. */
+    @Test
+    void editingALiveCategoryNeverRechecksItsMembers() throws Exception {
+        Category existing = live("Channels Live", null);
+        existing.setId("live-1");
+        when(categoryRepository.findById("live-1")).thenReturn(Optional.of(existing));
+        when(categoryRepository.findByParentId("live-1")).thenReturn(List.of());
+        when(categoryRepository.save(any(Category.class))).thenAnswer(i -> i.getArgument(0));
+
+        categoryController.updateCategory("live-1", live("Live Channels", null), adminUser);
+
+        verifyNoInteractions(liveCategoryGuard);
+    }
+}

@@ -1,37 +1,13 @@
 package com.albunyaan.tube.ui.player
 
 import com.albunyaan.tube.R
-import com.albunyaan.tube.analytics.ExtractorMetricsReporter
-import com.albunyaan.tube.analytics.PlaybackMetricsCollector
-import com.albunyaan.tube.data.extractor.ChannelMetadata
-import com.albunyaan.tube.data.extractor.ExtractorClient
-import com.albunyaan.tube.data.extractor.PlaylistMetadata
-import com.albunyaan.tube.data.extractor.Priority
-import com.albunyaan.tube.data.extractor.ResolvedStreams
-import com.albunyaan.tube.data.extractor.VideoMetadata
-import com.albunyaan.tube.data.local.FavoriteVideo
-import com.albunyaan.tube.data.local.FavoritesRepository
-import com.albunyaan.tube.data.model.ContentType
-import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
-import com.albunyaan.tube.data.playlist.PlaylistPage
 import com.albunyaan.tube.download.DownloadEntry
 import com.albunyaan.tube.download.DownloadFileMetadata
-import com.albunyaan.tube.download.DownloadPolicy
-import com.albunyaan.tube.download.DownloadRepository
 import com.albunyaan.tube.download.DownloadRequest
 import com.albunyaan.tube.download.DownloadStatus
-import com.albunyaan.tube.download.PlaylistDownloadItem
-import com.albunyaan.tube.player.ExtractionRateLimiter
-import com.albunyaan.tube.player.PlayerRepository
-import com.albunyaan.tube.player.StreamPrefetchService
-import com.albunyaan.tube.player.SyntheticDashMpdRegistry
+import com.albunyaan.tube.util.NetworkMonitor
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.Flow
-import kotlinx.coroutines.flow.MutableStateFlow
-import kotlinx.coroutines.flow.StateFlow
-import kotlinx.coroutines.flow.emptyFlow
-import kotlinx.coroutines.flow.flowOf
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.advanceUntilIdle
 import kotlinx.coroutines.test.resetMain
@@ -47,6 +23,8 @@ import org.junit.Rule
 import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
+import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -65,8 +43,8 @@ class PlayerViewModelDownloadPlaybackTest {
     @get:Rule val tmp = TemporaryFolder()
 
     private val testDispatcher = StandardTestDispatcher()
-    private val streams = CountingPlayerRepository()
-    private val metadata = CountingExtractorClient()
+    private val streams = FakePlayerRepository()
+    private val metadata = FakeExtractorClient()
     private val downloads = FakeDownloadRepository()
     private val favorites = FakeFavoritesRepository()
 
@@ -274,139 +252,223 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals(Triple("v10", "Lecturer", 1800), favorites.toggled.single())
     }
 
-    private fun createViewModel() = PlayerViewModel(
-        repository = streams,
-        downloadRepository = downloads,
-        playlistDetailRepository = FakePlaylistDetailRepository(),
-        rateLimiter = ExtractionRateLimiter(),
-        prefetchService = FakePrefetchService(),
-        favoritesRepository = favorites,
-        metricsReporter = FakeExtractorMetricsReporter(),
-        playbackMetrics = PlaybackMetricsCollector(),
-        mpdRegistry = SyntheticDashMpdRegistry(),
-        extractorClient = metadata,
-        dubAudioEnumerator = com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
-        dubAudioResolver = com.albunyaan.tube.data.extractor.DubAudioResolver(
-            com.albunyaan.tube.data.extractor.DubAudioEnumerator(),
-            com.albunyaan.tube.data.extractor.NoOpPoTokenProvider,
-            com.albunyaan.tube.data.extractor.nsig.NsigSolver(
-                androidx.test.core.app.ApplicationProvider.getApplicationContext()
-            ),
-        ),
-        contentService = com.albunyaan.tube.data.source.FakeContentService(),
+    // 1.0.4 A9 (R3 local-first): Home, Search, Favorites, History, Me, a channel tab and a deep link
+    // all open a single video through loadVideo. A saved copy plays from its file, as from Downloads.
+    @Test fun `opening a saved video from any entry point plays the local file`() = runTest {
+        val file = tmp.newFile("v11.mp4")
+        downloads.entries.value = listOf(completed("d11", "v11", file))
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v11", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+
+        val ready = vm.state.value.streamState as StreamState.Ready
+        assertTrue(vm.state.value.playingDownload)
+        assertEquals(file.toURI().toString(), ready.selection.video?.url)
+        noNetwork()
+    }
+
+    // The first open of a process (Home after launch, a cold deep link, a restored player) comes
+    // before DefaultDownloadRepository's startup load has listed the saved files.
+    @Test fun `the first open of a process waits for the saved files to be listed`() = runTest {
+        val file = tmp.newFile("v14.mp4")
+        val load = kotlinx.coroutines.CompletableDeferred<Unit>()
+        downloads.startupLoad = load
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v14")
+        downloads.entries.value = listOf(completed("d14", "v14", file)) // what the startup load finds
+        load.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.playingDownload)
+        noNetwork()
+    }
+
+    // Stage 9 r2: while the first open waits, the player shows its Loading surface for this video, never
+    // "No video is currently playing." (which is what an unset currentItem renders).
+    @Test fun `the first open shows a loading state for the video while it waits`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>()
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v23", title = "Lecture 23", channelName = "Lecturer")
+        testScheduler.runCurrent()
+
+        assertEquals(StreamState.Loading, vm.state.value.streamState)
+        assertEquals("v23", vm.state.value.currentItem?.streamId)
+        assertEquals("Lecture 23", vm.state.value.currentItem?.title)
+    }
+
+    // 1.0.4 round 2: a copy saved before the channel name was kept (or saved blank from a
+    // standalone playlist) lost the heart once Home opened it locally. The entry point knows the name.
+    @Test fun `a local-first open keeps the entry point's channel and duration for the favourite`() = runTest {
+        downloads.entries.value = listOf(completed("d15", "v15", tmp.newFile("v15.mp4")))
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v15", title = "From Home", channelName = "Lecturer", durationSeconds = 1800)
+        advanceUntilIdle()
+        assertTrue(vm.state.value.playingDownload)
+        assertEquals("the heart shows for a known channel", "Lecturer", vm.state.value.currentItem?.channelName)
+
+        vm.toggleFavorite()
+        advanceUntilIdle()
+
+        assertEquals(Triple("v15", "Lecturer", 1800), favorites.toggled.single())
+    }
+
+    // Round 4 (review m3): with no channel name anywhere (Home's live cards carry none), a favourite
+    // would be sent blank, rejected with a 400 and dropped by sync. The 1.0.3 rule hides the heart.
+    @Test fun `a streamed item with no channel name anywhere offers no favourite`() = runTest {
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "live1", title = "Live")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertFalse("no channel name is known", vm.state.value.canFavorite)
+
+        val named = createViewModel()
+        named.loadVideo(videoId = "lec21", title = "Lecture", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertTrue(named.state.value.canFavorite)
+    }
+
+    // Round 4 (review m6): the first open waits for the startup load at most 2 s, then streams.
+    @Test fun `a startup load that never ends holds the first open for 2 s at most`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() // never completes
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v22")
+        testScheduler.advanceTimeBy(1_999)
+        testScheduler.runCurrent()
+        assertEquals("still waiting", 0, streams.resolveCallCount)
+        testScheduler.advanceTimeBy(2)
+        testScheduler.runCurrent()
+
+        assertTrue("streams after the 2 s cap", streams.resolveCallCount > 0)
+        assertFalse(vm.state.value.playingDownload)
+    }
+
+    // Cubic r5 #9: the first open's wait was never cancelled, so its late call replaced a newer open.
+    @Test fun `a newer open during the first open's wait is never replaced by it`() = runTest {
+        downloads.startupLoad = kotlinx.coroutines.CompletableDeferred<Unit>() // never completes: the 2 s cap
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v24")
+        testScheduler.advanceTimeBy(1_000)
+        testScheduler.runCurrent()
+
+        vm.loadVideo(videoId = "v25")                                    // a second into v24's wait
+        advanceUntilIdle()
+
+        assertEquals("the newer open stays", "v25", vm.state.value.currentItem?.streamId)
+        assertFalse("the replaced open never resolves", "v24" in streams.resolvedVideoIds)
+    }
+
+    // ...and the view recreated in that wait (onViewCreated loads again) waits for the files itself: its open is local-first
+    // too, and the first open's late call never re-loads on top of it.
+    @Test fun `a view recreated during the first open's wait still plays the saved copy`() = runTest {
+        val load = kotlinx.coroutines.CompletableDeferred<Unit>()
+        downloads.startupLoad = load
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v26")
+        testScheduler.runCurrent()
+
+        vm.onPlayerViewDestroyed()
+        vm.loadVideo(videoId = "v26")                                    // onViewCreated again, the files still being listed
+        downloads.entries.value = listOf(completed("d26", "v26", tmp.newFile("v26.mp4")))
+        load.complete(Unit)
+        advanceUntilIdle()
+
+        assertTrue(vm.state.value.playingDownload)
+        noNetwork()
+    }
+
+    @Test fun `a saved video copy wins over an audio-only one, and a missing file streams`() = runTest {
+        val video = tmp.newFile("v12.mp4")
+        downloads.entries.value = listOf(
+            completed("audio", "v12", tmp.newFile("v12.m4a"), audioOnly = true),
+            completed("video", "v12", video),
+            completed("gone", "v13", File(tmp.root, "v13.mp4")),
+        )
+        val vm = createViewModel()
+
+        vm.loadVideo(videoId = "v12")
+        advanceUntilIdle()
+        assertEquals(video.toURI().toString(), (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
+
+        val streaming = createViewModel()
+        streaming.loadVideo(videoId = "v13")
+        advanceUntilIdle()
+        assertFalse("a deleted file never blocks the stream", streaming.state.value.playingDownload)
+        assertTrue(streams.resolveCallCount > 0)
+    }
+
+    // Stage 3 M6: R3 is about saving, not about forcing audio. Online an audio-only copy would hide the video, its
+    // quality, cast and Up Next; it stands in for the video only when nothing can stream.
+    @Test fun `an audio-only copy plays only offline, and online the video streams`() = runTest {
+        downloads.entries.value = listOf(completed("d16", "v16", tmp.newFile("v16.m4a"), audioOnly = true))
+
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v16", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertFalse("online, the video streams", vm.state.value.playingDownload)
+        assertTrue(streams.resolveCallCount > 0)
+
+        online = false
+        val offline = createViewModel()
+        offline.loadVideo(videoId = "v16", title = "From Home", channelName = "Lecturer")
+        advanceUntilIdle()
+        assertTrue("offline, the saved audio plays", offline.state.value.playingDownload)
+        assertTrue(offline.state.value.audioOnly)
+    }
+
+    // Cubic r4: startDownload set audio-only from the saved copy and leaveDownload kept it, so after an audio-only copy
+    // played offline the next online stream opened audio-only too (stage 3 M6: online, the video streams).
+    @Test fun `an audio-only copy played offline leaves the next online stream as video`() = runTest {
+        downloads.entries.value = listOf(completed("d18", "v18", tmp.newFile("v18.m4a"), audioOnly = true))
+        online = false
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v18")
+        advanceUntilIdle()
+        assertTrue("offline, the saved audio plays", vm.state.value.audioOnly)
+
+        online = true
+        vm.loadVideo(videoId = "v19")
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertFalse("online, the next video streams with its picture", vm.state.value.audioOnly)
+    }
+
+    // Stage 9 r3 (Cubic): loadDownload's local-file flag outlived it, so a later stream (the view recreated after the
+    // saved copy was deleted) re-read the gone file: "not available", with Retry, Cast, Quality and Up Next hidden.
+    @Test fun `a stream after a local file plays the stream`() = runTest {
+        val file = tmp.newFile("v17.mp4")
+        downloads.entries.value = listOf(completed("d17", "v17", file))
+        streams.resolvedStreams = com.albunyaan.tube.data.extractor.ResolvedStreams(
+            streamId = "v17",
+            videoTracks = listOf(com.albunyaan.tube.data.extractor.VideoTrack("https://v.test/v17", "video/mp4", 640, 360, 1, "360p", 30, isVideoOnly = false)),
+            audioTracks = listOf(com.albunyaan.tube.data.extractor.AudioTrack("https://a.test/v17", "audio/mp4", 128_000, "mp4a.40.2")),
+            durationSeconds = 60,
+        )
+        val vm = createViewModel()
+        vm.loadVideo(videoId = "v17")
+        advanceUntilIdle()
+        assertTrue(vm.state.value.playingDownload)
+
+        file.delete()
+        vm.loadVideo(videoId = "v17")                                    // the view recreated: no copy, so it streams
+        advanceUntilIdle()
+
+        assertFalse(vm.state.value.playingDownload)
+        assertEquals("https://v.test/v17", (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
+    }
+
+    private var online = true
+    private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
+
+    private fun createViewModel() = playerViewModel(
+        repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
+        networkMonitor = network,
     )
-
-    // ── Fakes ────────────────────────────────────────────────────────────
-
-    private class CountingPlayerRepository : PlayerRepository {
-        var resolveCallCount = 0
-        override suspend fun resolveStreams(
-            videoId: String,
-            forceRefresh: Boolean,
-            priority: Priority,
-            sourceChannelId: String?,
-        ): ResolvedStreams? {
-            resolveCallCount++
-            return null
-        }
-    }
-
-    private class CountingExtractorClient : ExtractorClient {
-        var calls = 0
-        override suspend fun fetchVideoMetadata(ids: List<String>): Map<String, VideoMetadata> {
-            calls++
-            return emptyMap()
-        }
-        override suspend fun fetchChannelMetadata(ids: List<String>): Map<String, ChannelMetadata> = emptyMap()
-        override suspend fun fetchPlaylistMetadata(ids: List<String>): Map<String, PlaylistMetadata> = emptyMap()
-    }
-
-    private class FakeDownloadRepository : DownloadRepository {
-        val entries = MutableStateFlow<List<DownloadEntry>>(emptyList())
-        /** What the repository's startup load finds on disk, published only once it completes. */
-        var listedOnRefresh: List<DownloadEntry>? = null
-        override val downloads: StateFlow<List<DownloadEntry>> = entries
-        override suspend fun refreshPersistedDownloads() {
-            listedOnRefresh?.let { entries.value = it }
-        }
-        val enqueued = mutableListOf<DownloadRequest>()
-        override fun enqueue(request: DownloadRequest) { enqueued += request }
-        override fun pause(requestId: String) {}
-        override fun resume(requestId: String) {}
-        override fun cancel(requestId: String) {}
-        override fun remove(requestId: String) {}
-        override fun retry(requestId: String) {}
-        override fun delete(requestId: String): Boolean = true
-        override fun enqueuePlaylist(
-            playlistId: String,
-            playlistTitle: String,
-            qualityLabel: String,
-            items: List<PlaylistDownloadItem>,
-            audioOnly: Boolean,
-            targetHeight: Int?,
-        ): Int = 0
-        override fun isPlaylistDownloading(playlistId: String, qualityLabel: String) = false
-    }
-
-    private class FakePlaylistDetailRepository : PlaylistDetailRepository {
-        override suspend fun getHeader(
-            playlistId: String,
-            forceRefresh: Boolean,
-            category: String?,
-            excluded: Boolean,
-            downloadPolicy: DownloadPolicy,
-        ): com.albunyaan.tube.data.playlist.PlaylistHeader = error("not used")
-
-        override suspend fun getItems(
-            playlistId: String,
-            page: com.albunyaan.tube.data.channel.Page?,
-            itemOffset: Int,
-        ): PlaylistPage<com.albunyaan.tube.data.playlist.PlaylistItem> = PlaylistPage(emptyList(), null)
-
-        override suspend fun resolveCanonicalChannelId(uploaderUrl: String?): String? = null
-    }
-
-    private class FakePrefetchService : StreamPrefetchService {
-        override fun triggerPrefetch(videoId: String, scope: kotlinx.coroutines.CoroutineScope) {}
-        override suspend fun awaitOrConsumePrefetch(videoId: String): ResolvedStreams? = null
-        override fun consumePrefetch(videoId: String): ResolvedStreams? = null
-        override fun isPrefetchInFlight(videoId: String): Boolean = false
-        override fun cancelPrefetch(videoId: String) {}
-        override fun clearPrefetchState() {}
-        override fun clearAll() {}
-    }
-
-    private class FakeFavoritesRepository : FavoritesRepository {
-        override fun getAllFavorites(): Flow<List<FavoriteVideo>> = flowOf(emptyList())
-        override fun observeApprovedFavorites(): Flow<List<FavoriteVideo>> = emptyFlow()
-        override fun observeAwaitingFavorites(): Flow<List<FavoriteVideo>> = emptyFlow()
-        override fun isFavorite(videoId: String): Flow<Boolean> = flowOf(false)
-        override suspend fun isFavoriteOnce(videoId: String): Boolean = false
-        override suspend fun addFavorite(
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-        ) {}
-        override suspend fun removeFavorite(videoId: String) {}
-        val toggled = mutableListOf<Triple<String, String, Int>>()
-        override suspend fun toggleFavorite(
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-        ): Boolean { toggled += Triple(videoId, channelName, durationSeconds); return true }
-        override fun getFavoriteCount(): Flow<Int> = flowOf(0)
-        override suspend fun favoriteExistsAny(uid: String, videoId: String): Boolean = false
-        override suspend fun addImportedFavorite(
-            uid: String,
-            videoId: String, title: String, channelName: String,
-            thumbnailUrl: String?, durationSeconds: Int,
-            approvalStatus: String, source: String?, importedAt: Long?,
-        ) {}
-        override suspend fun clearAll() {}
-    }
-
-    private class FakeExtractorMetricsReporter : ExtractorMetricsReporter {
-        override fun onCacheHit(type: ContentType, hitCount: Int) {}
-        override fun onCacheMiss(type: ContentType, missCount: Int) {}
-        override fun onFetchSuccess(type: ContentType, fetchedCount: Int, durationMillis: Long) {}
-        override fun onFetchFailure(type: ContentType, ids: List<String>, throwable: Throwable) {}
-    }
 }

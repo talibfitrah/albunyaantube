@@ -19,6 +19,7 @@ public struct InnerTubeLocale: Sendable, Equatable {
 public struct PlayerRequestBuilder: Sendable {
     private static let requestURL = URL(
         string: "https://youtubei.googleapis.com/youtubei/v1/player?prettyPrint=false")!
+    private static let tvRequestURL = URL(string: "https://www.youtube.com/youtubei/v1/player?prettyPrint=false")!
     private static let encoder: JSONEncoder = {
         let encoder = JSONEncoder()
         encoder.outputFormatting = [.sortedKeys]
@@ -27,8 +28,11 @@ public struct PlayerRequestBuilder: Sendable {
 
     public init() {}
 
+    /// - Parameter signatureTimestamp: TVHTML5 only (spec R4): the solver's sts, sent in `playbackContext` so the
+    ///   minted URLs match the player version the backend solves with. Ignored for every other family.
     public func build(
-        videoId: String, family: ClientFamily, context: ClientContext, visitorData: String?, locale: InnerTubeLocale
+        videoId: String, family: ClientFamily, context: ClientContext, visitorData: String?, locale: InnerTubeLocale,
+        signatureTimestamp: Int? = nil
     ) -> HTTPRequest {
         // Never mix a family with the wrong client context under one visitor (§6.3) — a caller
         // passing e.g. `family: .android` with the `web` ClientContext would silently mint a
@@ -39,25 +43,42 @@ public struct PlayerRequestBuilder: Sendable {
         assert(
             context.clientName == family.expectedClientName,
             "PlayerRequestBuilder: family \(family) expects clientName \(family.expectedClientName), got \(context.clientName)")
-        let body = Body(
-            context: Body.Context(client: InnerTubeContext.client(context: context, visitorData: visitorData, locale: locale)),
-            videoId: videoId,
-            contentCheckOk: true,
-            racyCheckOk: true
-        )
+        // R4: a TV request without the solver's sts mints URLs the backend cannot solve; dev-time wiring check.
+        assert(family != .tvSamsung || signatureTimestamp != nil, "PlayerRequestBuilder: a tvSamsung request needs a signatureTimestamp")
+        var client = InnerTubeContext.client(context: context, visitorData: visitorData, locale: locale)
+        var headers = InnerTubeContext.headers(context: context, visitorData: visitorData, locale: locale)
+        var url = Self.requestURL
+        var playbackContext: Body.PlaybackContext?
+        // R4: gated by FAMILY -- every context carries a userAgent, so a nil test would not gate it. The only shape measured
+        // (5/5 OK, 5/5 206 after solving): www.youtube.com, Origin, the body userAgent and the playbackContext.
+        if family == .tvSamsung {
+            client.userAgent = context.userAgent
+            headers["Origin"] = "https://www.youtube.com"
+            url = Self.tvRequestURL
+            playbackContext = Body.PlaybackContext(contentPlaybackContext: .init(
+                html5Preference: "HTML5_PREF_WANTS", signatureTimestamp: signatureTimestamp))
+        }
+        let body = Body(context: Body.Context(client: client), videoId: videoId, playbackContext: playbackContext,
+                        contentCheckOk: true, racyCheckOk: true)
         // Encoding a fixed Codable shape with .sortedKeys and no randomness never fails.
         let data = (try? Self.encoder.encode(body)) ?? Data()
-        let headers = InnerTubeContext.headers(context: context, visitorData: visitorData, locale: locale)
-
-        return HTTPRequest(method: "POST", url: Self.requestURL, headers: headers, body: data)
+        return HTTPRequest(method: "POST", url: url, headers: headers, body: data)
     }
 
     private struct Body: Encodable {
         struct Context: Encodable {
             var client: InnerTubeContext.Client
         }
+        struct PlaybackContext: Encodable {
+            struct Content: Encodable {
+                var html5Preference: String
+                var signatureTimestamp: Int?
+            }
+            var contentPlaybackContext: Content
+        }
         var context: Context
         var videoId: String
+        var playbackContext: PlaybackContext?
         var contentCheckOk: Bool
         var racyCheckOk: Bool
     }

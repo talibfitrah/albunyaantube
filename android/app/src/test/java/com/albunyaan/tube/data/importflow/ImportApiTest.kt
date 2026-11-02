@@ -63,8 +63,8 @@ class ImportApiTest {
                 ),
                 ImportItemDto(
                     type = "VIDEO",
-                    youtubeId = "dQw4w9WgXcQ",
-                    title = "Never Gonna Give You Up",
+                    youtubeId = "sCQwxFEMlZ4",
+                    title = "Visiting the Ill - Mufti Menk",
                     thumbnailUrl = null,
                     channelId = "UCuAXFkgsw1L7xaCfnd5JJOw",
                 ),
@@ -81,7 +81,7 @@ class ImportApiTest {
         // items array present with both entries
         assert(body.contains("\"items\"")) { "body missing 'items': $body" }
         assert(body.contains("\"UCq-Fj5jknLsUf-MWSy4_brA\"")) { "body missing channel youtubeId: $body" }
-        assert(body.contains("\"dQw4w9WgXcQ\"")) { "body missing video youtubeId: $body" }
+        assert(body.contains("\"sCQwxFEMlZ4\"")) { "body missing video youtubeId: $body" }
         assert(body.contains("\"CHANNEL\"")) { "body missing type CHANNEL: $body" }
         assert(body.contains("\"VIDEO\"")) { "body missing type VIDEO: $body" }
         assert(body.contains("\"Tech With Tim\"")) { "body missing title: $body" }
@@ -160,7 +160,7 @@ class ImportApiTest {
         )
 
         val rejected = response.results.first { it.disposition == "REJECTED" }
-        assertEquals("dQw4w9WgXcQ", rejected.youtubeId)
+        assertEquals("sCQwxFEMlZ4", rejected.youtubeId)
         assertEquals("VIDEO", rejected.type)
         assertNull("REJECTED result must have null content", rejected.content)
     }
@@ -211,7 +211,7 @@ class ImportApiTest {
               "content": null
             },
             {
-              "youtubeId": "dQw4w9WgXcQ",
+              "youtubeId": "sCQwxFEMlZ4",
               "type": "VIDEO",
               "disposition": "REJECTED",
               "content": null

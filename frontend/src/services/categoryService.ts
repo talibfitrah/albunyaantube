@@ -19,6 +19,7 @@ export interface Category {
   updatedBy?: string;
   createdAt?: string;
   updatedAt?: string;
+  type?: 'LIVE' | null; // spec §3: null = ordinary
 }
 
 /**
@@ -73,6 +74,7 @@ export async function createCategory(data: {
   icon?: string;
   displayOrder?: number | null;
   localizedNames?: Record<string, string>;
+  type?: 'LIVE' | null;
 }): Promise<Category> {
   const payload: Record<string, any> = {
     name: data.name,
@@ -87,13 +89,18 @@ export async function createCategory(data: {
   if (data.localizedNames && Object.keys(data.localizedNames).length > 0) {
     payload.localizedNames = data.localizedNames;
   }
+  // Spec §3: omitted = null = ordinary on create, so only send it when the caller chose one.
+  if (data.type !== undefined) {
+    payload.type = data.type;
+  }
 
-  const response = await apiClient.post<Category>('/api/admin/categories', payload);
+  // The dialog shows the localized refusal (e.g. LIVE_CATEGORY_SHAPE); the global English toast would repeat it.
+  const response = await apiClient.post<Category>('/api/admin/categories', payload, { suppressGlobalErrorToast: true });
   return response.data;
 }
 
 /**
- * Update an existing category
+ * Update an existing category. `type`: undefined keeps the stored type, an explicit null clears it (R18).
  */
 export async function updateCategory(
   id: string,
@@ -103,9 +110,10 @@ export async function updateCategory(
     displayOrder?: number;
     localizedNames?: Record<string, string>;
     parentCategoryId?: string | null;
+    type?: 'LIVE' | null;
   }
 ): Promise<Category> {
-  const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data);
+  const response = await apiClient.put<Category>(`/api/admin/categories/${id}`, data, { suppressGlobalErrorToast: true });
   return response.data;
 }
 

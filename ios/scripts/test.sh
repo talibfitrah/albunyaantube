@@ -1,8 +1,12 @@
 #!/usr/bin/env bash
-# Runs the iOS per-task gate under a 300s wall-clock watchdog (AGENTS.md mandate):
-#   convert-strings.py --check (catalog must already be up to date) -> xcodegen generate ->
-#   xcodebuild test (Debug, iPhone 17 + iPad Pro 13-inch (M5), one invocation) -> swift test
-#   (FitrahAPI + InnerTubeKit packages) -> Package.resolved drift check. Ordinary tasks stop here.
+# Runs the iOS per-task gate as separate 300s wall-clock watchdog windows (AGENTS.md mandate):
+#   window 1 "build":    copy-firebase-plist -> convert-strings.py --check (catalog must already be up to
+#                        date) -> xcodegen generate -> xcodebuild build-for-testing (Debug, both destinations)
+#   window 2 "iphone":   xcodebuild test-without-building on $IPHONE_SIM
+#   window 3 "ipad":     xcodebuild test-without-building on $IPAD_SIM (skipped when IPAD_SIM="")
+#   window 4 "packages": swift test (FitrahAPI + InnerTubeKit) -> Package.resolved drift check.
+# Ordinary tasks stop here. One window no longer fits: a cold build is ~100s and each destination's run
+# ~140s, so build + 2 destinations overran 300s (1.0.4). Each window is watchdog-killed on its own.
 # RELEASE=1 bash ios/scripts/test.sh additionally builds Release (simulator SDK -- compiles the
 # non-DEBUG paths) and launches it on $IPHONE_SIM (must outlive the splash) after the gate passes,
 # in its own separate 300s watchdog window: the Debug->Release flip invalidates the ~320 SPM
@@ -15,7 +19,7 @@
 # Testing's own floor is also one minute, so 60s is the real effective limit regardless of the
 # number configured (FitrahTube.xctestplan sets 60 to match); CLAUDE.md's 30s note is a
 # cross-platform default this iOS suite can't hit and is amended separately. Wall-clock: 300s per
-# watchdog window (gate; Release gets its own when requested).
+# watchdog window (see above; Release gets its own when requested).
 # FAILURE MODE of -onlyUsePackageVersionsFromResolvedFile (used on both xcodebuild invocations
 # below): on a -derivedDataPath whose SourcePackages cache is EMPTY -- a fresh checkout, or after
 # deleting ios/DerivedData or ios/DerivedData-Release -- the pin blocks the package checkout instead
@@ -25,6 +29,10 @@
 # $RESULTS (xcresult bundle + watchdog marker) is removed on exit unless KEEP_RESULTS=1 is set.
 # Override simulators with IPHONE_SIM / IPAD_SIM env vars, e.g. IPHONE_SIM="iPhone 16" ./test.sh.
 # IPAD_SIM="" (explicitly empty, not just unset) drops the iPad destination and runs iPhone only.
+# FitrahTube.xctestplan sets "parallelizable": false (JSON has no comments, so the why is here): the
+# test target is MainActor by default, and Swift Testing's in-process parallelism (on by default for
+# ONE destination; two destinations already ran serially) queued all ~1,860 tests on the main thread,
+# so the wall-clock-bounded ones failed (1.0.4: 54-77 failures iPhone-only, 0 serial).
 # Invoke from the repo root (`ios/scripts/test.sh`) -- the first stage's path is repo-root-relative.
 set -uo pipefail
 set -m
@@ -79,7 +87,8 @@ walk(data.get("testNodes", []))
 '
 }
 
-run_gate() {
+# Window 1: everything up to and including the one shared build. Both destinations reuse it.
+run_build() {
     # Phase 4 Task 1: must precede `xcodegen generate` below -- that is what makes the app target's
     # `sources` glob pick the plist up. Exits 0 with a notice when the (USER-BLOCKED, git-ignored)
     # source file is absent, so a checkout without it gates green.
@@ -104,23 +113,54 @@ run_gate() {
         destinations+=(-destination "platform=iOS Simulator,name=$IPAD_SIM")
     fi
 
-    echo "== $IPHONE_SIM${IPAD_SIM:+ + $IPAD_SIM} =="
-    xcodebuild test \
+    echo "== build-for-testing: $IPHONE_SIM${IPAD_SIM:+ + $IPAD_SIM} =="
+    xcodebuild build-for-testing \
         -project FitrahTube.xcodeproj \
         -scheme FitrahTube \
         "${destinations[@]}" \
-        -resultBundlePath "$RESULTS/FitrahTube.xcresult" \
+        -derivedDataPath DerivedData \
+        -onlyUsePackageVersionsFromResolvedFile \
+        2>&1 | grep -E "$SUMMARY"
+    local build_status=${PIPESTATUS[0]}
+    [ "$build_status" -eq 0 ] || return "$build_status"
+
+    # Boot the simulators here, where the window has headroom, so the destination windows below spend
+    # their 300s on tests rather than on a cold sim boot ("already booted" is fine).
+    local sim
+    for sim in "$IPHONE_SIM" ${IPAD_SIM:+"$IPAD_SIM"}; do
+        xcrun simctl boot "$sim" 2>/dev/null
+        xcrun simctl bootstatus "$sim" -b >/dev/null
+    done
+    return 0
+}
+
+# Windows 2 and 3: one destination each, on the products window 1 built. $1 = simulator name,
+# $2 = result bundle name.
+run_destination() {
+    cd "$(dirname "$0")/.." || { echo "test.sh: cannot cd to ios/" >&2; return 1; }
+
+    echo "== $1 =="
+    xcodebuild test-without-building \
+        -project FitrahTube.xcodeproj \
+        -scheme FitrahTube \
+        -destination "platform=iOS Simulator,name=$1" \
+        -resultBundlePath "$RESULTS/$2.xcresult" \
         -derivedDataPath DerivedData \
         -onlyUsePackageVersionsFromResolvedFile \
         2>&1 | grep -E "$SUMMARY"
     local xcodebuild_status=${PIPESTATUS[0]}
     if [ "$xcodebuild_status" -ne 0 ]; then
-        report_failures "$RESULTS/FitrahTube.xcresult"
-        return "$xcodebuild_status"
+        report_failures "$RESULTS/$2.xcresult"
     fi
+    return "$xcodebuild_status"
+}
+
+# Window 4: the two Swift packages' own tests, then the Package.resolved drift check.
+run_packages() {
+    cd "$(dirname "$0")/.." || { echo "test.sh: cannot cd to ios/" >&2; return 1; }
 
     # --disable-automatic-resolution (Stage 3 / I6): ios/Packages/FitrahAPI/Package.resolved is the
-    # TRACKED resolved graph, and `xcodebuild test` above writes the APP's whole 26-pin resolution
+    # TRACKED resolved graph, and `xcodebuild` above writes the APP's whole 26-pin resolution
     # into it (with -derivedDataPath, Xcode uses the root local package's file as the workspace's).
     # Without this flag a plain `swift test` here re-resolves against FitrahAPI's OWN four-dependency
     # manifest and rewrites that same file down to 10 pins, stripping every Firebase/GoogleSignIn
@@ -133,7 +173,7 @@ run_gate() {
         return "$package_status"
     fi
 
-    # InnerTubeKit's own 90 package tests were never run by this gate -- `xcodebuild test` builds the
+    # InnerTubeKit's own package tests were never run by this gate -- `xcodebuild test` builds the
     # package as a dependency but runs only the app's test targets, so a parser/resolver regression
     # got through green. `LiveResolveTests` stays off (it is `.enabled(if: INNERTUBE_LIVE == 1)`), so
     # this adds no network calls.
@@ -147,7 +187,7 @@ run_gate() {
     # Stage 8 / S12: ios/Packages/FitrahAPI/Package.resolved is TRACKED and holds the app's whole
     # 26-pin graph; a cold package build can still knock it down to FitrahAPI's own 10 pins despite
     # --disable-automatic-resolution above, and every gate so far discovered that by hand afterwards.
-    # Relative path: run_gate has already cd'd to ios/.
+    # Relative path: we have already cd'd to ios/.
     echo "== Package.resolved =="
     # Against HEAD, not the index (Stage 9 re-review / Minor 4): `git diff` alone compares the
     # worktree to the INDEX, so a drift somebody had already `git add`ed passed this stage.
@@ -161,9 +201,9 @@ run_gate() {
     return 0
 }
 
-# Split out of run_gate (2026-09-02 gate-restructure): the Debug->Release configuration flip
+# Split out of the gate (2026-09-02 gate-restructure): the Debug->Release configuration flip
 # invalidates the SPM package targets run_gate just built, so running this in the same watchdog
-# window as the gate recompiles ~320 compile units on top of an already-full window. Only invoked
+# window as the gate windows recompile ~320 compile units on top of an already-full window. Only invoked
 # when RELEASE=1 -- see the header comment. Runs in its own background job, so it re-does the same
 # repo-root -> ios/ cd run_gate did (that cd does not survive across separate background jobs).
 run_release() {
@@ -208,31 +248,42 @@ if [ "${KEEP_RESULTS:-0}" != "1" ]; then
     trap 'rm -rf "$RESULTS"' EXIT
 fi
 
-run_gate &
-pid=$!
-# A-M13: re-check the job group is still alive before claiming a timeout. If `sleep 300` expires in
-# the window between `wait "$pid"` returning and the `kill` on the watchdog below, the marker was
-# still written and a passing run exited 124 -- a sub-millisecond race, but a non-deterministic CI
-# failure is expensive to chase.
-( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed-gate"; kill -TERM -- -"$pid" 2>/dev/null ) &
-wd=$!
+# One 300s watchdog window per call: `run_window <name> <function> [args...]`. Returns the job's
+# status, or 124 after printing the kill notice when the watchdog fired.
+run_window() {
+    local name="$1"; shift
+    local started=$SECONDS
+    "$@" &
+    pid=$!
+    # A-M13: re-check the job group is still alive before claiming a timeout. If `sleep 300` expires in
+    # the window between `wait "$pid"` returning and the `kill` on the watchdog below, the marker was
+    # still written and a passing run exited 124 -- a sub-millisecond race, but a non-deterministic CI
+    # failure is expensive to chase.
+    ( sleep 300; kill -0 -"$pid" 2>/dev/null || exit 0; touch "$RESULTS/killed-$name"; kill -TERM -- -"$pid" 2>/dev/null ) &
+    wd=$!
 
-trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
+    trap 'kill -- -"$pid" -"$wd" 2>/dev/null; exit 130' INT TERM
 
-wait "$pid"
-rc=$?
-kill -- -"$wd" 2>/dev/null || true
+    wait "$pid"
+    local rc=$?
+    kill -- -"$wd" 2>/dev/null || true
+    echo "== window $name: $((SECONDS - started))s (rc $rc) =="
 
-if [ -e "$RESULTS/killed-gate" ]; then
-    echo "test.sh: 300s wall-clock watchdog killed the run" >&2
-    trap - EXIT
-    echo "results kept at $RESULTS"
-    exit 124
+    if [ -e "$RESULTS/killed-$name" ]; then
+        echo "test.sh: 300s wall-clock watchdog killed the $name window" >&2
+        trap - EXIT
+        echo "results kept at $RESULTS"
+        return 124
+    fi
+    return "$rc"
+}
+
+run_window build run_build || exit $?
+run_window iphone run_destination "$IPHONE_SIM" iphone || exit $?
+if [ -n "$IPAD_SIM" ]; then
+    run_window ipad run_destination "$IPAD_SIM" ipad || exit $?
 fi
-
-if [ "$rc" -ne 0 ]; then
-    exit "$rc"
-fi
+run_window packages run_packages || exit $?
 
 if [ "${RELEASE:-0}" != "1" ]; then
     echo "RELEASE: skipped (set RELEASE=1)"

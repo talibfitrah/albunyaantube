@@ -152,6 +152,7 @@
     <CategoryAssignmentModal
       :is-open="isCategoryModalOpen"
       :multi-select="true"
+      :content-type="pendingContent?.type ?? null"
       @close="handleCategoryModalClose"
       @assign="handleCategoryAssignment"
     />
@@ -186,6 +187,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
+import { apiErrorToMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
@@ -380,7 +382,7 @@ async function handleSearch() {
 
     // Don't check existing items upfront - check on-demand when user clicks "Add"
     // This speeds up search significantly!
-  } catch (err) {
+  } catch (err: any) {
     error.value = err instanceof Error ? err.message : t('contentSearch.error');
   } finally {
     isLoading.value = false;
@@ -398,7 +400,7 @@ async function checkExistingItems() {
     existingChannelIds.value = new Set(response.data.existingChannels);
     existingPlaylistIds.value = new Set(response.data.existingPlaylists);
     existingVideoIds.value = new Set(response.data.existingVideos);
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to check existing items', err);
   }
 }
@@ -494,7 +496,7 @@ async function handleCategoryAssignment(categoryIds: string[]) {
     if (err.response?.status === 409) {
       toast.error(t('contentSearch.alreadyExists'));
     } else {
-      toast.error(t('contentSearch.addError'));
+      toast.error(apiErrorToMessage(err, t, 'contentSearch.addError'));
     }
   }
 }
@@ -530,7 +532,7 @@ async function loadMoreResults() {
     hasMoreResults.value = !!response.nextPageToken;
 
     currentPage.value++;
-  } catch (err) {
+  } catch (err: any) {
     console.error('Failed to load more results', err);
     hasMoreResults.value = false;
   } finally {

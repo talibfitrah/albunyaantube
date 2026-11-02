@@ -48,7 +48,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         continuesCurrentVideo: continuesCurrentVideo(context),
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
-                                        airPlayFellBack: model.airPlayFellBack)
+                                        airPlayFellBack: model.airPlayFellBack,
+                                        interrupted: BackgroundPlaybackController.sessionInterrupted,
+                                        onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
         applyBackgroundController(to: controller, context: context)
@@ -90,7 +92,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
-                                        failedItem: context.coordinator.failedItem)
+                                        failedItem: context.coordinator.failedItem,
+                                        interrupted: context.coordinator.background.interrupted,
+                                        onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
         // M6 (B4 final review): write only on change -- an unconditional write would churn AVKit's
@@ -222,6 +226,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         background.onWillEnterForeground = { [weak model] in
             await model?.reResolveIfExpiring()
         }
+        context.coordinator.adopt(model)
         background.attach(player: player)
     }
 
@@ -275,7 +280,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // restore is `.restoreVideo` below, which stays deferred.)
             let audioOnly = action == .swapToAudioOnly
             if let player {
-                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly)
+                _ = Self.player(for: state, replacing: player, audioOnly: audioOnly, onRefused: model?.hdRefusalHook(for: state.resolved))
                 // MIN-4 (final review): that replace built a NEW `AVPlayerItem`, and every recovery
                 // observer (status KVO, failed-to-play-to-end, the wall-clock stall sampler) is
                 // per-item -- left on the outgoing one, an audio-only stream that dies in the
@@ -335,6 +340,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         guard let item = controller.player?.currentItem else { return }
         let scale = controller.view.window?.screen.scale ?? controller.traitCollection.displayScale
         let layerSize = QualityOption.pixelSize(points: controller.view.bounds.size, scale: scale > 0 ? scale : 2)
+        context.coordinator.layerSize = layerSize
         quality.apply(to: item, layerSize: layerSize, network: context.coordinator.path)
     }
 
@@ -368,7 +374,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private(set) var path: NWPath
         /// The sampler's "is there a network" input: the path monitor's answer. Settable so a host
         /// test against a localhost server does not depend on the test machine's own network (N2).
-        lazy var isOnline: () -> Bool = { [unowned self] in self.path.status == .satisfied }
+        /// The path monitor's status; settable so a test can park a failure under each status (stage 7 N2).
+        lazy var pathStatus: () -> NWPath.Status = { [unowned self] in self.path.status }
+        lazy var isOnline: () -> Bool = { [unowned self] in
+            #if DEBUG
+            // `NetworkMonitor`'s acceptance hook, here too: the parked-offline screenshot (stage 6 I-M1).
+            if LaunchArguments.debug.contains("-fitrah-offline") { return false }
+            #endif
+            // Stage 6 I-M1: the shell's offline banner's own predicate, so a failure parked for the network (`fire`)
+            // always has that banner on screen. `.requiresConnection` used to park with no banner, waiting for a
+            // `.satisfied` that only a new connection -- the parked recovery's own -- could bring.
+            return NetworkMonitor.isOnline(for: self.pathStatus())
+        }
+
         /// B5 Task 3: the double-tap overlay recognizer (`makeUIViewController`) and the screen's
         /// fullscreen flag, written on every update pass.
         var doubleTap: UITapGestureRecognizer?
@@ -376,7 +394,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         var seekFeedbackTask: Task<Void, Never>?
         /// The auto-generated captions' host in `contentOverlayView` (`installCaptionOverlay`).
         var captionHost: UIViewController?
-        private let monitor = NWPathMonitor()
+        /// Internal, not private: the host test drives its real `pathUpdateHandler` (round 3, m3).
+        let monitor = NWPathMonitor()
 
         /// The audio session / background-playback owner (CF-B1-1). Lives here rather than in the
         /// representable struct because it must survive every `updateUIViewController` pass.
@@ -405,7 +424,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
         private var timeObserverToken: Any?
         private var isLive = false
         /// All the watchdog's state and every decision it makes (fix round 1, C1).
-        private var watchdog = StallWatchdog()
+        private(set) var watchdog = StallWatchdog()
+        /// Spec R43: the HD item buffering on its hidden player, if any.
+        private(set) var stager: HDStager?
+        /// The layer's pixel size from the last `applyQuality`, so a staged item gets the same quality ceiling.
+        var layerSize: CGSize = .zero
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
         /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
         /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
@@ -432,6 +455,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// stall: that replacement inherits the live player's state). `private(set)`: the controller
         /// tests read it across a route change and an interruption (fix r4 N-2).
         private(set) var resumeOnNextItem = false
+        /// 1.0.4 I7: a failure that landed with no network, held for `networkChanged`. A new item or
+        /// a teardown drops it (`stopObserving`): whatever replaced the dead item owns the screen.
+        private var parkedFailure: (event: RecoveryEvent, status: Int?)?
         /// Headphones out, a remote pause, or an interruption's end without `.shouldResume` while
         /// recovery's re-resolve is out (`applyPolicyAction(.pause)`, Cubic A6; fix r5 N4-1). Not an
         /// interruption's begin (fix r4 N-2).
@@ -445,10 +471,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
             background = BackgroundPlaybackController(backgroundPlay: backgroundPlay)
             path = monitor.currentPath
             super.init()
-            background.resumeIntentPending = { [weak self] in self?.resumeOnNextItem == true }
+            // An auto-advance in flight counts too (round 3, m1): its ended item reads paused.
+            background.resumeIntentPending = { [weak self] in self?.resumeOnNextItem == true || self?.model?.isAdvancing == true }
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
                     self?.path = newPath
+                    self?.networkChanged()
                 }
             }
             monitor.start(queue: .main)
@@ -553,6 +581,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
         }
 
+        /// Hands the coordinator its model before `observe` does: `makeUIViewController` attaches the background
+        /// controller first, and its I-C9b seed (`resumeIntentPending`) reads `model.isAdvancing` at attach.
+        func adopt(_ model: PlayerViewModel) { self.model = model }
+
         func observe(item: AVPlayerItem, player: AVPlayer, model: PlayerViewModel?, isLive: Bool,
                      playToEnd: PlayToEndAction) {
             // Optional so the background swap's re-arm (MIN-4) can go through this one path without
@@ -571,6 +603,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // I4: seeded from the live position, not 0 -- a replacement item is seeked back to the
             // outgoing item's time, which a 0 seed would misread as a full item's worth of progress.
             watchdog = StallWatchdog(playbackTime: player.currentTime().seconds)
+            // Plan review C1 (spec R43): an item that is already ready never publishes `.readyToPlay` to the `[.new]`
+            // status sink below, so it is armed here, or its stalls would never fire and the drop-back could not happen.
+            // (`.initial` on the sink would also re-run the DEBUG seek-near-end branch.) Since the Gate 1 ruling the HD
+            // hand-over builds a fresh item, which publishes `.readyToPlay` normally; this stays as the backstop.
+            if item.status == .readyToPlay { watchdog.armed = true }
 
             // I2: `AVPlayerItem.status` KVO carries NO queue guarantee, so the old
             // `observe { MainActor.assumeIsolated { … } }` was a hard trap waiting for an off-main
@@ -636,11 +673,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 // B5: `PlayerFragment.kt:1247-1249` -> `PlayerViewModel.playToEnd` decides (Safe Mode,
                 // empty queue, queue end, auto-skip); this is only the notification.
                 endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self] _ in
-                    MainActor.assumeIsolated {
-                        guard let model = self?.model else { return }
-                        Task { await model.playToEnd() }
-                    }
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self, weak item] _ in
+                    MainActor.assumeIsolated { if let item { self?.itemEnded(item) } }
                 }
             case .none:
                 break
@@ -687,8 +721,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
             if player.rate != 0 { lastPlayingAt = Date() }
         }
 
-        /// M6: `monitor` is private, so teardown goes through here (see
-        /// `dismantleUIViewController`). Separate from `stopObserving` on purpose -- the per-item
+        /// The auto-advance end (B5), with the failed-to-end observer's guard (review M2; round 5,
+        /// N1): an end queued for the OLD item before the swap must never advance a second time.
+        func itemEnded(_ item: AVPlayerItem) {
+            guard item === observedItem, let model else { return }
+            Task { await model.playToEnd() }
+        }
+
+        /// M6: the one teardown call for the path monitor (`dismantleUIViewController`); `monitor` is
+        /// internal only so the host test can drive its handler. Separate from `stopObserving` on purpose -- the per-item
         /// observers are torn down and re-attached on every item swap; the path monitor is not.
         func stopMonitoring() { monitor.cancel() }
 
@@ -704,6 +745,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
             sampleTimer = nil
             observedItem = nil
             observedPlayer = nil
+            parkedFailure = nil
+            stager = nil              // its hidden player goes now, not whenever SwiftUI lets this coordinator go
         }
 
         /// Pure measurement, no decisions: read the player, hand the sample to `StallWatchdog`, act on
@@ -712,11 +755,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
         /// healthy cases the pre-fix version false-fired on.
         private func sample() {
             guard let item = observedItem, let player = observedPlayer else { return }
-            if player.timeControlStatus != .paused { lastPlayingAt = Date() }
-            if player.timeControlStatus == .playing {
-                errorLogFloor = Date()
-                background.interrupted = false   // playing again: whatever interruption it had is over (N4-1)
+            if player.timeControlStatus != .paused {
+                lastPlayingAt = Date()
+                // Wanting to play again ends whatever interruption it had (N4-1): the begin left the
+                // player paused and only a play moves it. Not only `.playing` (1.0.4 I1, N5-1): a
+                // Play that waits and then fails before its first `.playing` tick is a Play too.
+                background.interrupted = false
             }
+            if player.timeControlStatus == .playing { errorLogFloor = Date() }
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
             // Final review I2: the path monitor this host already runs for the quality clamp. With no
             // usable network a recovery's re-resolve fails at once; AVPlayer resumes by itself.
@@ -724,7 +770,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
                                      isLive: isLive, isOnline: isOnline(), now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
-            if tick.fire { fire(.stall) }
+            // A stall's recovery replaces the item; a swap in the same tick would be a second rebuffer.
+            if tick.fire { fire(.stall); return }
+            stepUpgrade(player: player)
         }
 
         private func fire(_ event: RecoveryEvent) {
@@ -736,7 +784,45 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 PlaybackRecovery.httpStatus(date: $0.date, comment: $0.errorComment,
                                             statusCode: $0.errorStatusCode, after: errorLogFloor)
             }
+            // 1.0.4 I7 (Cubic B5, stage 5 F8): with no network the re-resolve fails at once into the
+            // error card, and a first-frame failure demoted the rung for the session first -- 360p
+            // after a brief drop. Like the stall watchdog's offline seconds, it waits for the network.
+            // A saved file needs none.
+            if !isOnline(), !model.isOfflinePlayback {
+                parkedFailure = (event, status)
+                return
+            }
             Task { await model.handleRecoveryEvent(event, httpStatus: status) }
+        }
+
+        /// Spec R43, once a second: the whole decision is `HDStager.step`; this supplies the live inputs and the
+        /// loader-backed stager. R18: an external route is not eligible, so nothing is staged or swapped on AirPlay.
+        private func stepUpgrade(player: AVPlayer) {
+            guard let model else { return }
+            let eligible = HDStager.mayStage(appState: UIApplication.shared.applicationState,
+                                             pictureInPicture: background.pictureInPictureActive,
+                                             external: player.isExternalPlaybackActive, online: isOnline())
+            stager = HDStager.step(stager, model: model, player: player, eligible: eligible, loops: playToEnd == .restart) {
+                upgrade, masterURL, position in
+                HDStager(upgrade: upgrade, masterURL: masterURL, audioOnly: model.audioOnly, position: position,
+                         onRefused: model.hdRefusalHook(for: upgrade),
+                         configure: { [weak self] item in
+                             // `applyQuality`'s ceiling, with its last layer size and the live path.
+                             guard let self else { return }
+                             model.selectedQuality.apply(to: item, layerSize: self.layerSize, network: self.path)
+                         })
+            }
+        }
+
+        /// The path monitor's hook: the network is back, so a failure parked while it was down runs
+        /// its recovery now. As a playback failure: the outage proved nothing about the rung, so the
+        /// class's one fresh same-rung URL comes first, never the first-frame shortcut to the step-down. Nor does it
+        /// cost the video its HD (stage 9 I15, `afterOutage`).
+        func networkChanged() {
+            guard let parked = parkedFailure, isOnline(), let model else { return }
+            parkedFailure = nil
+            let event: RecoveryEvent = parked.event == .failedBeforeFirstFrame ? .playbackError : parked.event
+            Task { await model.handleRecoveryEvent(event, httpStatus: parked.status, afterOutage: true) }
         }
 
         /// The path monitor, plus the backstop for the one teardown path that has no other exit
@@ -807,10 +893,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// 403 found `alreadyFellBack` true and burned the real recovery budget on the dead route.
     /// Final review M4: `failedItem` is the item recovery last fired for (`Coordinator.failedItem`).
     /// It is never handed back, whatever its status says.
+    /// 1.0.4 I2: `interrupted` is the audio session's interruption (`BackgroundPlaybackController`):
+    /// an auto-advance landing mid-interruption does not start; the end's `.resume` plays it when iOS
+    /// says `.shouldResume`, because an advance in flight at the begin counts as playing (round 3, m1:
+    /// `resumeIntentPending`), as recovery's replacement does (`Coordinator.observe`). The update pass passes its controller's flag; the
+    /// make pass passes the session's (round 2): a host rebuilt mid-interruption (an auto-skip past
+    /// an error state) has a controller that never saw the begin.
+    /// Phase 2 (R42): `onRefused` goes on a rebuilt `fitrah-hls` asset (`PlayerViewModel.hdRefusalHook`).
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
                        pausedForCast: Bool = false, airPlayFellBack: Bool = false,
-                       failedItem: AVPlayerItem? = nil) -> AVPlayer? {
+                       failedItem: AVPlayerItem? = nil, interrupted: Bool = false,
+                       onRefused: (@Sendable () -> Void)? = nil) -> AVPlayer? {
         guard let resolved = state.resolved else {
             existing?.pause()
             return nil
@@ -828,13 +922,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
            existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
-        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent))
+        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
+                                             onRefused: onRefused))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
         // auto-advance or an Up Next tap) means neither applies -- the next video starts at 0.
-        let live = existing?.currentTime().seconds
-        let resume = continuesCurrentVideo ? ((live?.isFinite == true ? live : nil) ?? resumeFallback) : 0
+        let resume = Self.resumePosition(isLive: state.isLiveNow, continuesCurrentVideo: continuesCurrentVideo,
+                                         live: existing?.currentTime().seconds, fallback: resumeFallback)
         let resumeTime = CMTime(seconds: resume, preferredTimescale: 600)
         guard let existing else {
             let player = AVPlayer(playerItem: item)
@@ -859,7 +954,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             // selects it explicitly on every item.
             player.appliesMediaSelectionCriteriaAutomatically = false
             if resume > 0 { player.seek(to: resumeTime) }
-            if !pausedForCast { player.play() }
+            if !pausedForCast, !interrupted { player.play() }
             return player
         }
         // I5 (player.md §3.2: a re-resolve saves position AND playWhenReady): resuming a stream the
@@ -870,7 +965,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // R7-2's other half: a DIFFERENT video always starts -- unless the receiver owns playback,
         // where the advance's own `.videoStarted` reconcile (`swapArgs`, or the mount's
         // `didMount()`) has already claimed the cast.
-        let wasPlaying = (existing.timeControlStatus != .paused || !continuesCurrentVideo) && !pausedForCast
+        // 1.0.4 I2: not during an interruption -- the live player already reads paused for it, and
+        // the end's `.resume` plays the next video on `.shouldResume` (the advance counted as playing
+        // at the begin, round 3 m1).
+        let wasPlaying = (existing.timeControlStatus != .paused || (!continuesCurrentVideo && !interrupted)) && !pausedForCast
         // AC-P3-3: the flag above is written only on a FRESH player, so a `file://` item swapped
         // into a player a remote item had been granted an external route on kept that route -- the
         // saved file going out over AirPlay, which is the export Task 7 blocks three ways over.
@@ -894,8 +992,15 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// nested in a header dictionary. `AVURLAsset` doesn't expose its `options` dictionary back out
     /// once built, so `assetOptions(userAgent:)` below -- not this asset -- is what `PlayerHostTests`
     /// actually asserts the value against.
-    static func asset(url: URL, userAgent: String) -> AVURLAsset {
-        AVURLAsset(url: url, options: assetOptions(userAgent: userAgent, url: url))
+    /// Playback Phase 2 (spec R12, R17): a `fitrah-hls` master gets its `SyntheticHLSLoader`; the user agent still rides
+    /// `AVURLAssetHTTPUserAgentKey`, so the segment fetches carry the TV UA. `onRefused` is the stager's (R42).
+    static func asset(url: URL, userAgent: String, synthetic: SyntheticHLS? = nil,
+                      onRefused: (@Sendable () -> Void)? = nil) -> AVURLAsset {
+        let options = assetOptions(userAgent: userAgent, url: url)
+        if let synthetic, url.scheme == SyntheticHLSLoader.scheme {
+            return SyntheticHLSLoader.asset(url: url, model: synthetic, userAgent: userAgent, options: options, onRefused: onRefused)
+        }
+        return AVURLAsset(url: url, options: options)
     }
 
     /// Task 7 (the Task 4 trap): a LOCAL file gets `AVURLAssetPreferPreciseDurationAndTimingKey` —
@@ -913,10 +1018,19 @@ struct PlayerHostView: UIViewControllerRepresentable {
         [AVURLAssetHTTPUserAgentKey: userAgent]
     }
 
+    /// Where a replacement item starts. A live stream starts at its live edge: a refreshed or recovered live item
+    /// has a new timeline, and the old item's clock would land at a stale DVR offset (spec §9.3(a)). Anything else
+    /// resumes at the live player's clock, else the hoisted fallback; a different video starts at 0. The caller
+    /// passes `StreamState.isLiveNow`: an ended broadcast (F28) is a recording and keeps its clock.
+    static func resumePosition(isLive: Bool, continuesCurrentVideo: Bool, live: TimeInterval?, fallback: TimeInterval) -> TimeInterval {
+        guard continuesCurrentVideo, !isLive else { return 0 }
+        return (live?.isFinite == true ? live : nil) ?? fallback
+    }
+
     /// Not private: `PlayerHostTests` pins the audio-only selection directly.
     static func streamURL(_ stream: ResolvedStream, audioOnly: Bool = false) -> URL {
         switch stream {
-        case .hls(let url, _, let audioOnlyURL, _):
+        case .hls(let url, _, let audioOnlyURL, _, _):
             // The `?? url` fallback is belt-and-braces: `PlayerViewModel.audioOnlyAvailable` hides
             // the toggle (and gates the automatic swap) when there is no itag 140 URL, so a true
             // `audioOnly` with a nil rendition should be unreachable -- and if it ever is reached,
@@ -1008,10 +1122,11 @@ struct AirPlayRouteProbe: UIViewRepresentable {
                 let outputs = AVAudioSession.sharedInstance().currentRoute.outputs.map { "\($0.portType.rawValue):\($0.portName)" }
                 let states = ["unknown", "idle", "playing", "paused", "buffering", "loading"]
                 let receiver = cast.map { states[min($0.receiverState.rawValue, states.count - 1)] } ?? "none"
+                let status = model?.debugLastRecoveryStatus.map { String($0) } ?? "-"
+                let offline = model?.isOfflinePlayback == true   // the saved file? (round 3, m6)
                 return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs="
                     + outputs.joined(separator: ",") + ";cast=\(receiver)"
-                    + ";time=\(Int(model?.currentTime ?? 0))"
-                    + ";status=\(model?.debugLastRecoveryStatus.map { String($0) } ?? "-")"
+                    + ";time=\(Int(model?.currentTime ?? 0));status=\(status);offline=\(offline)"
             }
             set {}
         }

@@ -9,7 +9,6 @@ filter:
     - /v1/categories
     - /v1/home
     - /v1/channels/{channelId}
+    - /v1/live/channels/{channelId}
     - /v1/playlists/{playlistId}
-    - /v1/videos/{videoId}
     - /v1/search
-    - /v1/reports

@@ -1,7 +1,15 @@
 package com.albunyaan.tube.service;
 
+import okhttp3.Interceptor;
+import okhttp3.MediaType;
+import okhttp3.OkHttpClient;
+import okhttp3.Protocol;
+import okhttp3.ResponseBody;
 import org.junit.jupiter.api.Test;
+import org.springframework.test.util.ReflectionTestUtils;
 
+import java.io.IOException;
+import java.net.SocketTimeoutException;
 import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.*;
@@ -72,5 +80,48 @@ class YouTubeOEmbedClientTest {
     void playlistThumbnailUrl_blankId_returnsEmptyWithoutNetwork() {
         assertTrue(client.playlistThumbnailUrl(null).isEmpty());
         assertTrue(client.playlistThumbnailUrl("  ").isEmpty());
+    }
+
+    @Test
+    void parseAuthorUrlAcceptsAYouTubeHandleUrl() {
+        assertEquals(Optional.of("https://www.youtube.com/@ZadTVchannel"),
+                client.parseAuthorUrl("{\"author_name\":\"Zad\",\"author_url\":\"https://www.youtube.com/@ZadTVchannel\"}"));
+    }
+
+    @Test
+    void parseAuthorUrlRejectsAForeignHostOrPlainHttp() {
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{\"author_url\":\"https://evil.example/@ZadTVchannel\"}"));
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{\"author_url\":\"http://www.youtube.com/@ZadTVchannel\"}"));
+        assertEquals(Optional.empty(), client.parseAuthorUrl("{}"));
+    }
+
+    /** A client whose every oEmbed call goes through {@code interceptor} (no network). */
+    static YouTubeOEmbedClient through(Interceptor interceptor) {
+        YouTubeOEmbedClient c = new YouTubeOEmbedClient("test-agent");
+        ReflectionTestUtils.setField(c, "httpClient", new OkHttpClient.Builder().addInterceptor(interceptor).build());
+        return c;
+    }
+
+    /** A client whose every oEmbed call answers HTTP {@code code} with an empty JSON body. */
+    static YouTubeOEmbedClient answering(int code) {
+        return through(chain -> new okhttp3.Response.Builder().request(chain.request()).protocol(Protocol.HTTP_1_1)
+                .code(code).message("").body(ResponseBody.create("{}", MediaType.get("application/json"))).build());
+    }
+
+    /** R7: a rate limit, a server error or a network failure is no signal; it reaches the caller, not "no author". */
+    @Test
+    void authorUrlThrowsWhenOEmbedCannotBeAsked() {
+        assertThrows(IOException.class, () -> answering(429).authorUrl("J3bDNstCnzE"));
+        assertThrows(IOException.class, () -> answering(503).authorUrl("J3bDNstCnzE"));
+        assertThrows(IOException.class, () -> through(chain -> {
+            throw new SocketTimeoutException("timeout");
+        }).authorUrl("J3bDNstCnzE"));
+    }
+
+    /** 401 (embedding disabled) and 404 (private or deleted) are real answers: oEmbed can't name the author. */
+    @Test
+    void authorUrlIsEmptyWhenOEmbedAnswersItCannotNameTheAuthor() throws IOException {
+        assertEquals(Optional.empty(), answering(401).authorUrl("J3bDNstCnzE"));
+        assertEquals(Optional.empty(), answering(404).authorUrl("J3bDNstCnzE"));
     }
 }

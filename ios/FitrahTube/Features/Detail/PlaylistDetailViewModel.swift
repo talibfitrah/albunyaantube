@@ -162,6 +162,10 @@ nonisolated struct PlaylistHeader: Equatable, Sendable {
         args.startIndex = startIndex
         args.shuffled = shuffled
         args.targetVideoId = target
+        if !items.items.isEmpty {
+            args.queueItems = items.items.map { ContentItem(video: $0) }   // the queue source's own mapping (PlayerQueue.swift:130)
+            args.queueContinuation = items.continuation                    // `items`, never `visible`: filtering nils it
+        }
         return args
     }
 

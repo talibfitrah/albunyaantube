@@ -207,7 +207,8 @@ public class CircuitBreakerIntegrationTest extends BaseIntegrationTest {
 
         assertEquals(YouTubeCircuitBreaker.State.HALF_OPEN, breaker.getCurrentState());
 
-        // Act - record rate limit error (probe failed)
+        // Act - acquire probe permit, then the probe is rate-limited (only the probe's own failure escalates)
+        assertTrue(breaker.allowProbe(), "Should acquire probe permit");
         Exception rateLimitError = new RuntimeException("Sign in to confirm you're not a bot");
         breaker.recordRateLimitError(rateLimitError);
 

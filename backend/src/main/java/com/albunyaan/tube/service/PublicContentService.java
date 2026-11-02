@@ -36,6 +36,7 @@ import java.util.HashSet;
 import java.util.List;
 import java.util.Locale;
 import java.util.Map;
+import java.util.Objects;
 import java.util.Optional;
 import java.util.Set;
 import java.util.concurrent.CompletableFuture;
@@ -61,6 +62,7 @@ public class PublicContentService {
     private final CategoryContentOrderRepository orderRepository;
     private final Executor contentExecutor;
     private final SearchIndex searchIndex;
+    private final LiveCategoryService liveCategoryService;
 
     public PublicContentService(
             ChannelRepository channelRepository,
@@ -69,7 +71,8 @@ public class PublicContentService {
             CategoryRepository categoryRepository,
             CategoryContentOrderRepository orderRepository,
             @org.springframework.beans.factory.annotation.Qualifier("publicContentExecutor") Executor contentExecutor,
-            SearchIndex searchIndex
+            SearchIndex searchIndex,
+            LiveCategoryService liveCategoryService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -78,6 +81,7 @@ public class PublicContentService {
         this.orderRepository = orderRepository;
         this.contentExecutor = contentExecutor;
         this.searchIndex = searchIndex;
+        this.liveCategoryService = liveCategoryService;
     }
 
     /**
@@ -114,8 +118,15 @@ public class PublicContentService {
             allCategoryIds = resolveAllCategoryIds(category);
         }
 
+        // Spec §4.1: a LIVE category's HOME and VIDEOS lists are its expansion; CHANNELS stays the channel cards.
+        String upperType = type.toUpperCase(Locale.ROOT);
+        if (allCategoryIds != null && !"CHANNELS".equals(upperType) && !"PLAYLISTS".equals(upperType)
+                && liveCategoryService.isLive(category)) {
+            return livePage(liveCategoryService.items(category), cursor, limit);
+        }
+
         // For content types that support real cursor pagination
-        switch (type.toUpperCase(Locale.ROOT)) {
+        switch (upperType) {
             case "CHANNELS":
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
@@ -556,10 +567,17 @@ public class PublicContentService {
                     allIds.addAll(children);
                 }
 
-                CompletableFuture<List<ContentItemDto>> itemsFuture =
-                        asyncSupply(() -> getCategoryContentItems(allIds, contentLimit, 0));
-                CompletableFuture<Long> countFuture =
-                        asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
+                CompletableFuture<List<ContentItemDto>> itemsFuture;
+                CompletableFuture<Long> countFuture;
+                if (cat.isLive()) {
+                    // Spec §4.1: the section's totalCount is the expanded count, not the order-row count.
+                    CompletableFuture<List<ContentItemDto>> all = asyncSupply(() -> liveCategoryService.items(cat.getId()));
+                    itemsFuture = all.thenApply(l -> new ArrayList<>(l.subList(0, Math.min(contentLimit, l.size()))));
+                    countFuture = all.thenApply(l -> (long) l.size());
+                } else {
+                    itemsFuture = asyncSupply(() -> getCategoryContentItems(allIds, contentLimit, 0));
+                    countFuture = asyncSupply(() -> orderRepository.countByCategoryIds(allIds));
+                }
                 futures.add(new CategoryFuture(cat, allIds, itemsFuture, countFuture));
             }
 
@@ -1018,7 +1036,12 @@ public class PublicContentService {
             boolean bareToken = identifier.type == YouTubeIdentifier.Type.VIDEO && identifier.id.equals(q);
             if (!byId.items().isEmpty() || !bareToken) return byId;
         }
-        return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, false, limit, null);
+        return q.length() < 2 ? SearchIndex.Hits.NONE : searchIndex.search(q, docType, limit);
+    }
+
+    /** Task 24b: original titles for the apps' channel and playlist rows (SearchIndex.titles); no Firestore read. */
+    public SearchIndex.Titles titles(List<String> ids) throws IOException {
+        return searchIndex.titles(ids);
     }
 
     /** What `/content?type=X&q=` returns: the page plus the `X-Search-Match` tier. */
@@ -1026,8 +1049,10 @@ public class PublicContentService {
 
     /**
      * In-tab search (spec §4.7): the ladder over catalog documents of one type, relevance-ordered (the
-     * tab's `sort` is ignored, owner ruling Q4), paged with the existing Base64 offset cursor. Returns
-     * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list.
+     * tab's `sort` is ignored, owner ruling Q4), paged with a Base64 `offset:snapshot` cursor: every page runs on
+     * the index snapshot of the first (SearchIndex.searchPage); a bare offset cursor starts a new snapshot. Returns
+     * null for HOME, unknown types and queries under 2 characters: the caller serves the plain list. A LIVE category's
+     * VIDEOS search filters its expansion instead (L3).
      */
     public SearchPage searchContent(String type, String cursor, int limit, String category,
                                     String length, String date, String q)
@@ -1037,6 +1062,14 @@ public class PublicContentService {
         long offset = decodeCursorOffset(cursor);
         if (offset > MAX_SEARCH_FETCH) { // no tab pages past its catalog; a crafted offset must cost nothing (F2)
             return new SearchPage(new CursorPageDto<>(List.of(), null), "none");
+        }
+        if ("VIDEO".equals(docType) && category != null && !category.isBlank() && liveCategoryService.isLive(category)) {
+            // L3: the VIDEOS list of a LIVE category is its expansion (getContent), whose lives the index may not hold
+            List<ContentItemDto> hits = liveCategoryService.items(category).stream()
+                    .filter(i -> SearchIndex.matches(q,
+                            Objects.toString(i.getTitle(), "") + " " + Objects.toString(i.getChannelTitle(), "")))
+                    .toList();
+            return new SearchPage(livePage(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
         }
         searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
@@ -1054,10 +1087,11 @@ public class PublicContentService {
             allowedIds = members.stream().map(ContentItemDto::getId).collect(Collectors.toSet());
         }
         long end = offset + limit; // long: never overflows (F2)
-        SearchIndex.Hits hits = searchIndex.search(q, docType, true, Math.toIntExact(end + 1), allowedIds);
+        SearchIndex.Hits hits = searchIndex.searchPage(q, docType, Math.toIntExact(end + 1), allowedIds, cursorSnapshot(cursor));
         List<ContentItemDto> all = hits.items();
         List<ContentItemDto> page = all.subList((int) Math.min(offset, all.size()), (int) Math.min(end, all.size()));
-        String next = all.size() > end ? encodeCursor((int) end) : null;
+        // The next page runs on this page's index snapshot, so it cuts the same ranking (Cubic P3, 1.0.4).
+        String next = all.size() > end ? encodeCursor(end + ":" + hits.snapshot()) : null;
         return new SearchPage(new CursorPageDto<>(page, next), hits.match());
     }
 
@@ -1372,16 +1406,42 @@ public class PublicContentService {
     // Membership read for filtered in-tab search (searchContent, spec §4.7).
     private static final int MAX_SEARCH_FETCH = 1000;
 
-    private String encodeCursor(int offset) {
+    /** `offset`, or `offset:snapshot` for in-tab search (SearchIndex.searchPage). */
+    private String encodeCursor(Object offset) {
         return Base64.getEncoder().encodeToString(String.valueOf(offset).getBytes());
+    }
+
+    /**
+     * Offset paging over the whole expanded LIVE list.
+     * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
+     * few lives each), still small; page inside items() if the cap or the lives per channel grow.
+     */
+    private CursorPageDto<ContentItemDto> livePage(List<ContentItemDto> all, String cursor, int limit) {
+        int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
+        if (offset >= all.size()) {
+            return new CursorPageDto<>(new ArrayList<>(), null);
+        }
+        int end = Math.min(offset + limit, all.size());
+        return new CursorPageDto<>(new ArrayList<>(all.subList(offset, end)), end < all.size() ? encodeCursor(end) : null);
     }
 
     /** The offset an encodeCursor cursor holds; -1 when malformed or negative. Pages and cache keys both read it. */
     private static long parseCursorOffset(String cursor) {
         if (cursor == null || cursor.isEmpty()) return 0;
         try {
-            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)));
+            long offset = Long.parseLong(new String(Base64.getDecoder().decode(cursor)).split(":")[0]);
             return offset >= 0 ? offset : -1;
+        } catch (Exception e) {
+            return -1;
+        }
+    }
+
+    /** The index snapshot an in-tab search cursor names; -1 (a new snapshot) for none, a bare offset or garbage. */
+    private static long cursorSnapshot(String cursor) {
+        if (cursor == null || cursor.isEmpty()) return -1;
+        try {
+            String[] parts = new String(Base64.getDecoder().decode(cursor)).split(":");
+            return parts.length == 2 ? Long.parseLong(parts[1]) : -1;
         } catch (Exception e) {
             return -1;
         }

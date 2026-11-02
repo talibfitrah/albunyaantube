@@ -56,7 +56,41 @@ public class VideoRepository {
         return firestore.collection(COLLECTION_NAME);
     }
 
+    /**
+     * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
+     * a take-down record, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
+     */
     public Video save(Video video) throws ExecutionException, InterruptedException, TimeoutException {
+        if (video.getId() == null) return saveLiftingArchive(video);   // a new doc: nothing stored to keep
+        video.touch();
+        ValidationStatus incoming = video.getValidationStatus();   // each run of a retried transaction decides afresh
+        DocumentReference docRef = getCollection().document(video.getId());
+        ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            video.setValidationStatus(snapshot.exists() && !takeDownRecord(snapshot)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
+            transaction.set(docRef, video);
+            return video;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
+        return video;
+    }
+
+    /**
+     * Cubic r14: a take-down record (REJECTED from REPORT) is the one doc whose ARCHIVED a write replaces (a re-add lifts
+     * it). Not any REJECTED doc: rejecting an in-place take-down (B23) keeps its ARCHIVED, and a re-add must keep it too.
+     */
+    private static boolean takeDownRecord(com.google.cloud.firestore.DocumentSnapshot snapshot) {
+        return Video.isTakeDownRecord(snapshot.getString("status"), snapshot.getString("source"));
+    }
+
+    /**
+     * The plain whole-doc write: a stored ARCHIVED is replaced too. Only for a deliberate un-archive (Restore, the live
+     * poller's restore of its own archive) and for a new doc; everything else uses {@link #save}.
+     */
+    public Video saveLiftingArchive(Video video) throws ExecutionException, InterruptedException, TimeoutException {
         video.touch();
 
         if (video.getId() == null) {
@@ -75,6 +109,9 @@ public class VideoRepository {
     /**
      * Atomically save a video only if its current status matches the expected value.
      * Uses a Firestore transaction to prevent concurrent approve/reject race conditions.
+     * Stage 9 B24 (Cubic r12 #1): a stored ARCHIVED is kept unless the doc is a take-down record (Cubic r14): that is a
+     * report's take-down (B23), which may land after the caller read the doc it writes back, and stays when an admin
+     * rejects the doc. A take-down record is what a re-add replaces (ContentReportService.reAdd). Restore lifts the hold.
      */
     public Video saveIfStatus(Video video, String expectedStatus)
             throws ExecutionException, InterruptedException, TimeoutException {
@@ -82,6 +119,7 @@ public class VideoRepository {
             throw new IllegalArgumentException("Video, video ID, and expectedStatus must not be null for conditional save");
         }
         video.touch();
+        ValidationStatus incoming = video.getValidationStatus();   // each run of a retried transaction decides afresh
 
         DocumentReference docRef = getCollection().document(video.getId());
         ApiFuture<Video> committed = firestore.runTransaction(transaction -> {
@@ -95,10 +133,35 @@ public class VideoRepository {
                         "Cannot update video " + video.getId() +
                         ": expected status " + expectedStatus + " but found " + currentStatus);
             }
+            video.setValidationStatus(!takeDownRecord(snapshot)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))
+                    ? ValidationStatus.ARCHIVED : incoming);
             transaction.set(docRef, video);
             return video;
         });
         return CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", video.getId(), video.getYoutubeId());
+    }
+
+    /**
+     * Stage 9 B14: sets one field, only while the doc still has this status and source (a take-down record's
+     * takeDownExclusions), so a re-add that rewrote the doc meanwhile wins. IllegalStateException when it no longer
+     * matches, IllegalArgumentException when it is gone (as saveIfStatus).
+     */
+    public void updateIfStatusAndSource(String id, String expectedStatus, String expectedSource, String field, Object value)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        DocumentReference docRef = getCollection().document(id);
+        ApiFuture<Object> committed = firestore.runTransaction(transaction -> {
+            com.google.cloud.firestore.DocumentSnapshot snapshot = transaction.get(docRef).get(timeoutProperties.getRead(), TimeUnit.SECONDS);
+            if (!snapshot.exists()) {
+                throw new IllegalArgumentException("Video not found: " + id);
+            }
+            if (!expectedStatus.equals(snapshot.getString("status")) || !expectedSource.equals(snapshot.getString("source"))) {
+                throw new IllegalStateException("Cannot update video " + id + ": no longer " + expectedStatus + " from " + expectedSource);
+            }
+            transaction.update(docRef, field, value);
+            return null;
+        });
+        CatalogChanged.await(committed, timeoutProperties.getWrite(), events, "VIDEO", id);
     }
 
     public Optional<Video> findById(String id) throws ExecutionException, InterruptedException, TimeoutException {
@@ -108,13 +171,28 @@ public class VideoRepository {
     }
 
     public Optional<Video> findByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("youtubeId", youtubeId)
-                .limit(1)
-                .get();
+        return preferred(findAllByYoutubeId(youtubeId));
+    }
 
-        List<Video> videos = query.get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class);
-        return videos.isEmpty() ? Optional.empty() : Optional.of(videos.get(0));
+    /** Every doc of the youtubeId (B26: an import checks each for a take-down). */
+    public List<Video> findAllByYoutubeId(String youtubeId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getCollection().whereEqualTo("youtubeId", youtubeId).get()
+                .get(timeoutProperties.getRead(), TimeUnit.SECONDS).toObjects(Video.class);
+    }
+
+    /**
+     * Stage 9 B11: the doc that counts when a youtubeId has more than one (a bulk re-add of a REJECTED video before B11
+     * wrote a second doc; re-adds now reuse it): APPROVED, then any not REJECTED, then the first in document-id order
+     * (a query's default order). Without it, limit(1) answered whichever doc id sorted first.
+     */
+    static Optional<Video> preferred(List<Video> docs) {
+        return preferred(docs, Video::getStatus);
+    }
+
+    /** The same rule for a channel's or playlist's docs (Cubic r14: a take-down archives the one served). */
+    static <T> Optional<T> preferred(List<T> docs, java.util.function.Function<T, String> status) {
+        return docs.stream().min(java.util.Comparator.comparingInt(
+                d -> "APPROVED".equals(status.apply(d)) ? 0 : "REJECTED".equals(status.apply(d)) ? 2 : 1));
     }
 
     /**
@@ -155,14 +233,15 @@ public class VideoRepository {
                 ApiFuture<QuerySnapshot> q = getCollection()
                         .whereIn("youtubeId", new java.util.ArrayList<>(chunk))
                         .get();
+                Map<String, List<Video>> byId = new HashMap<>();
                 for (QueryDocumentSnapshot d : q.get(timeoutProperties.getRead(), java.util.concurrent.TimeUnit.SECONDS).getDocuments()) {
                     Video v = d.toObject(Video.class);
-                    var s = v.getValidationStatus();
-                    if (s == com.albunyaan.tube.model.ValidationStatus.ARCHIVED
-                            || s == com.albunyaan.tube.model.ValidationStatus.UNAVAILABLE) {
-                        out.add(v.getYoutubeId());
-                    }
+                    byId.computeIfAbsent(v.getYoutubeId(), k -> new ArrayList<>()).add(v);
                 }
+                // Stage 9 B11: the doc isArchivedById reads (preferred), not any doc of the id.
+                byId.forEach((id, docs) -> preferred(docs).map(Video::getValidationStatus)
+                        .filter(s -> s == ValidationStatus.ARCHIVED || s == ValidationStatus.UNAVAILABLE)
+                        .ifPresent(s -> out.add(id)));
             } catch (Exception e) {
                 // fail open — never break sync reads on archive-lookup error
             }
@@ -441,6 +520,10 @@ public class VideoRepository {
                 throw new IllegalStateException(
                         "Cannot delete video " + id +
                         ": status " + currentStatus + " not in " + expectedStatuses);
+            }
+            if (!"REJECTED".equals(currentStatus)
+                    && ValidationStatus.ARCHIVED.name().equals(snapshot.getString("validationStatus"))) {
+                throw new IllegalStateException("Cannot delete video " + id + ": archived (Restore lifts it)");
             }
             transaction.delete(docRef);
             return null;
@@ -837,7 +920,7 @@ public class VideoRepository {
                 Video v = doc.toObject(Video.class);
                 if (v != null) {
                     v.setId(doc.getId());
-                    result.put(v.getYoutubeId(), v);
+                    result.merge(v.getYoutubeId(), v, (a, b) -> preferred(List.of(a, b)).orElseThrow());
                 }
             }
         }

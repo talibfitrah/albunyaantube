@@ -22,6 +22,11 @@ import javax.inject.Singleton
 @Singleton
 class FFmpegMerger @Inject constructor() {
 
+    /** Runs FFmpeg with one array element per argument. A test seam over FFmpegKit. */
+    @androidx.annotation.VisibleForTesting
+    internal var runFfmpeg: (Array<String>) -> com.arthenica.ffmpegkit.FFmpegSession =
+        { FFmpegKit.executeWithArguments(it) }
+
     /**
      * Merge video and audio files into a single MP4.
      *
@@ -74,17 +79,46 @@ class FFmpegMerger @Inject constructor() {
             "-movflags", "+faststart",
             "-y",
             outputFile.absolutePath
-        ).joinToString(" ")
+        )
 
-        Log.d(TAG, "Starting FFmpeg merge: $command")
+        Log.d(TAG, "Starting FFmpeg merge: ${command.joinToString(" ")}")
+        execute(command, outputFile)
+        onProgress?.invoke(100)
+    }
 
-        val session = FFmpegKit.execute(command)
+    /**
+     * The audio track of [inputFile] alone, stream-copied (no re-encode) into an MP4 [outputFile]:
+     * an audio-only download taken out of a muxed file (DownloadWorker's 360p fallback).
+     *
+     * @throws FFmpegMergeException if the input is missing or FFmpeg fails
+     */
+    suspend fun extractAudio(inputFile: File, outputFile: File): Unit = withContext(Dispatchers.IO) {
+        if (!inputFile.exists()) throw FFmpegMergeException("Input file does not exist: ${inputFile.absolutePath}")
+        val command = arrayOf(
+            "-i", inputFile.absolutePath,
+            "-vn",
+            "-c:a", "copy",
+            "-f", "mp4",
+            "-movflags", "+faststart",
+            "-y",
+            outputFile.absolutePath
+        )
+        Log.d(TAG, "Starting FFmpeg audio extraction: ${command.joinToString(" ")}")
+        execute(command, outputFile)
+    }
+
+    /**
+     * Runs [args], one element per FFmpeg argument; on failure deletes [outputFile] and throws
+     * [FFmpegMergeException]. Never a joined string: FFmpegKit.execute(String) splits at every
+     * space, and a playlist "Audio Only" download's paths hold one (1.0.4 review I1).
+     */
+    private fun execute(args: Array<String>, outputFile: File) {
+        val session = runFfmpeg(args)
         val returnCode = session.returnCode
 
         when {
             ReturnCode.isSuccess(returnCode) -> {
-                Log.i(TAG, "Merge completed successfully: ${outputFile.absolutePath}")
-                onProgress?.invoke(100)
+                Log.i(TAG, "FFmpeg completed successfully: ${outputFile.absolutePath}")
             }
             ReturnCode.isCancel(returnCode) -> {
                 Log.w(TAG, "Merge cancelled")
@@ -105,19 +139,6 @@ class FFmpegMerger @Inject constructor() {
                     ffmpegOutput = session.output
                 )
             }
-        }
-    }
-
-    /**
-     * Check if FFmpeg-kit is available and functional.
-     */
-    fun isAvailable(): Boolean {
-        return try {
-            val session = FFmpegKit.execute("-version")
-            ReturnCode.isSuccess(session.returnCode)
-        } catch (e: Exception) {
-            Log.e(TAG, "FFmpeg-kit not available", e)
-            false
         }
     }
 

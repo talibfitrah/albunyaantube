@@ -79,7 +79,7 @@ describe('CategoryService', () => {
         parentCategoryId: null,
         icon: '📚',
         displayOrder: 1
-      });
+      }, { suppressGlobalErrorToast: true });
       expect(result.id).toBe('cat-new');
     });
 
@@ -100,7 +100,7 @@ describe('CategoryService', () => {
         parentCategoryId: 'parent-1',
         icon: '',
         displayOrder: 0
-      });
+      }, { suppressGlobalErrorToast: true });
     });
 
     it('should omit displayOrder from payload when null (auto-assign)', async () => {
@@ -159,7 +159,7 @@ describe('CategoryService', () => {
 
       await updateCategory('cat-1', updates);
 
-      expect(apiClient.put).toHaveBeenCalledWith('/api/admin/categories/cat-1', updates);
+      expect(apiClient.put).toHaveBeenCalledWith('/api/admin/categories/cat-1', updates, { suppressGlobalErrorToast: true });
     });
   });
 

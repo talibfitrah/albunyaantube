@@ -6,6 +6,7 @@ import org.junit.jupiter.api.Test;
 import org.schabi.newpipe.extractor.exceptions.AccountTerminatedException;
 import org.schabi.newpipe.extractor.exceptions.ContentNotAvailableException;
 import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.Image;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
@@ -75,6 +76,23 @@ class YouTubeGatewayBulkTest {
                 "https://www.youtube.com/channel/UC1");
 
         assertEquals(PreviewErrorCode.CHANNEL_TERMINATED, r.errorCode());
+    }
+
+    /**
+     * Stage 9 re-review of the r7 fixes, P3-2: a bot check (and, for 60 min after one, B19's local /player refusal, the
+     * same type) is YouTube refusing this server for now, not a page NewPipe failed to parse. SignInConfirmNotBotException
+     * is a ParsingException, so it fell into the parsing catch for every video row of a bulk preview or submit.
+     */
+    @Test
+    void botCheck_mapsToNetworkErrorNotParsingError() throws Exception {
+        YouTubeGateway gw = mock(YouTubeGateway.class, CALLS_REAL_METHODS);
+        doThrow(new SignInConfirmNotBotException("YouTube bot-checked /player in the last 60 min; not sent"))
+                .when(gw).fetchStreamInfo(anyString());
+
+        var r = gw.fetchByDetectedType(YouTubeContentType.VIDEO, "eaOtcUNHDB8",
+                "https://www.youtube.com/watch?v=eaOtcUNHDB8");
+
+        assertEquals(PreviewErrorCode.NETWORK_ERROR, r.errorCode());
     }
 
     @Test

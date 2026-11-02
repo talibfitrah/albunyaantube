@@ -109,8 +109,9 @@ public class YouTubeCircuitBreaker {
     private final AtomicInteger backoffLevel = new AtomicInteger(0);
     private final AtomicLong version = new AtomicLong(0);
 
-    // HALF_OPEN probe tracking: ensures only one request proceeds as probe
-    private final AtomicReference<Boolean> probeInProgress = new AtomicReference<>(false);
+    // HALF_OPEN probe tracking: the thread holding the single probe permit (null = no probe in flight). Only its
+    // outcome may close the probe or escalate the backoff; other callers (searches skip the breaker) cannot.
+    private final AtomicReference<Thread> probeOwner = new AtomicReference<>(null);
 
     // Rolling window error tracking (timestamps stored in Firestore for multi-instance)
     private final List<Instant> recentErrors = new ArrayList<>();
@@ -186,7 +187,9 @@ public class YouTubeCircuitBreaker {
         String stateStr = (String) stateData.get("state");
         if (stateStr != null) {
             try {
-                state.set(State.valueOf(stateStr));
+                State loaded = State.valueOf(stateStr);
+                if (loaded == State.HALF_OPEN) enterHalfOpen();
+                else state.set(loaded);
             } catch (IllegalArgumentException e) {
                 logger.warn("Invalid state value '{}' - defaulting to CLOSED", stateStr);
                 state.set(State.CLOSED);
@@ -420,7 +423,7 @@ public class YouTubeCircuitBreaker {
                 if (until == null || Instant.now().isAfter(until)) {
                     // Transition to HALF_OPEN
                     logger.info("Circuit breaker cooldown expired - transitioning to HALF_OPEN");
-                    state.set(State.HALF_OPEN);
+                    enterHalfOpen();
                     persistState();
                     return false; // Allow the probe request
                 }
@@ -430,7 +433,7 @@ public class YouTubeCircuitBreaker {
                 // In HALF_OPEN, requests are allowed but ONLY one may proceed as the probe.
                 // IMPORTANT: Do NOT acquire the probe permit here; callers must call allowProbe()
                 // immediately before the outbound YouTube request.
-                return probeInProgress.get();
+                return probeOwner.get() != null;
 
             default:
                 return true;
@@ -465,17 +468,28 @@ public class YouTubeCircuitBreaker {
         if (currentState != State.HALF_OPEN) {
             return true; // CLOSED state - allow
         }
-        return probeInProgress.compareAndSet(false, true);
+        return probeOwner.compareAndSet(null, Thread.currentThread());
     }
 
     /**
-     * Check if the current request is a probe (circuit is in HALF_OPEN and probe is in progress).
-     * Used by gateway to apply probe timeout.
+     * Moves to HALF_OPEN. Entering it from another state starts a new probe round: a permit still held then was taken in
+     * an earlier HALF_OPEN that a Firestore refresh ended while its probe was in flight, and that probe resolved outside
+     * HALF_OPEN, so nothing would ever release it and every caller would stay blocked (stage 9 Cubic P2). Only that
+     * holder is cleared: a probe taken after the move is never touched.
+     */
+    private void enterHalfOpen() {
+        Thread held = probeOwner.get();
+        if (state.getAndSet(State.HALF_OPEN) != State.HALF_OPEN) probeOwner.compareAndSet(held, null);
+    }
+
+    /**
+     * Check if the calling thread holds the HALF_OPEN probe permit (it called {@link #allowProbe()} and the probe
+     * has not resolved yet). Used by the gateway to apply the probe timeout and to report the probe's outcome.
      *
      * @return true if this is a probe request
      */
     public boolean isProbeRequest() {
-        return state.get() == State.HALF_OPEN && probeInProgress.get();
+        return state.get() == State.HALF_OPEN && probeOwner.get() == Thread.currentThread();
     }
 
     /**
@@ -525,8 +539,13 @@ public class YouTubeCircuitBreaker {
         State currentState = state.get();
 
         if (currentState == State.HALF_OPEN) {
-            // Probe failed - reopen with increased backoff
-            reopenWithIncreasedBackoff();
+            if (isProbeRequest()) {
+                reopenWithIncreasedBackoff();   // the probe itself was rate-limited: back off further
+            } else {
+                // Another caller (an admin or app search, a scheduler re-recording) while the probe decides:
+                // counted above, but only the probe's own failure escalates the backoff.
+                persistState();
+            }
             return;
         }
 
@@ -578,9 +597,10 @@ public class YouTubeCircuitBreaker {
         State currentState = state.get();
 
         if (currentState == State.HALF_OPEN) {
-            // Probe succeeded - close the circuit and reset probe flag
+            // Only the probe's own success closes (slice C M1): a search skips the breaker, so its success says
+            // nothing about the endpoints the probe is testing.
+            if (!probeOwner.compareAndSet(Thread.currentThread(), null)) return;
             logger.info("Circuit breaker probe succeeded - transitioning to CLOSED");
-            probeInProgress.set(false);
             closeCircuit();
             return;
         }
@@ -611,13 +631,13 @@ public class YouTubeCircuitBreaker {
     public void recordProbeFailure(Exception exception) {
         // Validate probe ownership: only the thread that acquired the probe permit should call this.
         // Use compareAndSet to atomically clear the probe flag and verify ownership.
-        if (!probeInProgress.compareAndSet(true, false)) {
-            logger.debug("recordProbeFailure called but probe not in progress - ignoring");
+        if (!probeOwner.compareAndSet(Thread.currentThread(), null)) {
+            logger.debug("recordProbeFailure called by a thread that does not hold the probe - ignoring");
             return;
         }
 
-        // Use compareAndSet for atomic state transition to prevent overwriting a concurrent
-        // CLOSED transition (e.g., if recordSuccess() was called by another path).
+        // Use compareAndSet for atomic state transition so a state that has changed since the
+        // probe started is not overwritten.
         if (!state.compareAndSet(State.HALF_OPEN, State.OPEN)) {
             logger.debug("recordProbeFailure: state changed from HALF_OPEN - skipping probe failure handling");
             return;
@@ -644,6 +664,15 @@ public class YouTubeCircuitBreaker {
                 level, cooldownMinutes, until);
 
         persistState();
+    }
+
+    /**
+     * Stage 9 B19 (r6 P3-1): give the probe permit back with no outcome, for a probe whose answer says nothing about
+     * what the breaker gates (a /player bot check: browse keeps answering). State, backoff level and cooldown stay, so
+     * the next request probes. Only the probe's own thread releases it, as {@link #recordProbeFailure}.
+     */
+    public void releaseProbe() {
+        probeOwner.compareAndSet(Thread.currentThread(), null);
     }
 
     /**
@@ -713,14 +742,14 @@ public class YouTubeCircuitBreaker {
 
         // Set state to OPEN first to prevent new probe acquisition before clearing probe flag
         // This ordering prevents a race where another thread could acquire probe between
-        // clearing probeInProgress and setting state to OPEN
+        // clearing probeOwner and setting state to OPEN
         state.set(State.OPEN);
         openedAt.set(now);
         cooldownUntil.set(until);
         totalCircuitOpens.incrementAndGet();
 
         // Now clear probe flag - state is already OPEN so no new probes can be acquired
-        probeInProgress.compareAndSet(true, false);
+        probeOwner.set(null);
 
         logger.error("CIRCUIT BREAKER REOPENED - HALF_OPEN probe failed! " +
                      "State: OPEN, Backoff level increased to: {}, Cooldown: {} minutes (until {}). " +
@@ -797,6 +826,11 @@ public class YouTubeCircuitBreaker {
         if (exception == null) {
             return false;
         }
+        // The breaker's own refusal, not YouTube's answer (slice C M2): its text says "rate limiting" and its cooldown
+        // seconds can read "429", and recording it would restart the cooldown on every refused call.
+        if (exception instanceof YouTubeGateway.CircuitOpenException) {
+            return false;
+        }
 
         String className = exception.getClass().getSimpleName();
         String message = exception.getMessage();
@@ -870,6 +904,7 @@ public class YouTubeCircuitBreaker {
     public boolean reset() {
         logger.info("Circuit breaker manually reset");
         state.set(State.CLOSED);
+        probeOwner.set(null);   // a wedged probe must not block the next HALF_OPEN
         openedAt.set(null);
         cooldownUntil.set(null);
         backoffLevel.set(0);
@@ -932,7 +967,7 @@ public class YouTubeCircuitBreaker {
             Instant until = cooldownUntil.get();
             effectivelyOpen = until != null && Instant.now().isBefore(until);
         } else {
-            effectivelyOpen = currentState == State.HALF_OPEN && probeInProgress.get();
+            effectivelyOpen = currentState == State.HALF_OPEN && probeOwner.get() != null;
         }
         return new CircuitBreakerStatus(
                 effectivelyOpen,

@@ -2,6 +2,7 @@ package com.albunyaan.tube.service;
 
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.dto.registry.*;
+import com.albunyaan.tube.exception.LiveCategoryException;
 import com.albunyaan.tube.model.VideoType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -11,6 +12,7 @@ import org.springframework.beans.factory.annotation.Qualifier;
 
 import java.util.ArrayList;
 import java.util.List;
+import java.util.Map;
 import java.util.Optional;
 import java.util.concurrent.*;
 
@@ -36,6 +38,7 @@ public class BulkSubmissionService {
     private final SortOrderService sortOrderService;
     private final com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private final SubmissionRateLimiter submissionRateLimiter;
+    private final LiveCategoryGuard liveCategoryGuard;
 
     public BulkSubmissionService(YouTubeUrlParser parser, YouTubeGateway gateway,
                                   RegistryDuplicateChecker dedupe, RegistrySubmissionWriter writer,
@@ -43,7 +46,8 @@ public class BulkSubmissionService {
                                   PublicContentCacheService publicContentCacheService,
                                   SortOrderService sortOrderService,
                                   com.albunyaan.tube.repository.CategoryRepository categoryRepository,
-                                  SubmissionRateLimiter submissionRateLimiter) {
+                                  SubmissionRateLimiter submissionRateLimiter,
+                                  LiveCategoryGuard liveCategoryGuard) {
         this.parser = parser;
         this.gateway = gateway;
         this.dedupe = dedupe;
@@ -53,6 +57,7 @@ public class BulkSubmissionService {
         this.sortOrderService = sortOrderService;
         this.categoryRepository = categoryRepository;
         this.submissionRateLimiter = submissionRateLimiter;
+        this.liveCategoryGuard = liveCategoryGuard;
     }
 
     public BulkPreviewResponse preview(BulkPreviewRequest req) {
@@ -104,6 +109,25 @@ public class BulkSubmissionService {
         return new BulkPreviewResponse(rows);
     }
 
+    /** Already in the registry (see duplicate): the row loop reports it DUPLICATE. A failed lookup is not: the loop retries it. */
+    private static boolean registered(RegistryDuplicateChecker.Batch batch, SubmitRow row, boolean isAdmin) {
+        try {
+            return batch.findExisting(row.detectedType(), row.metadata().youtubeId())
+                    .filter(existing -> duplicate(existing, isAdmin)).isPresent();
+        } catch (RuntimeException e) {
+            return false;
+        }
+    }
+
+    /**
+     * Any registered doc but a REJECTED one, which an admin may re-add (B11). Stage 9 B16 (Cubic r6 P1): only an admin.
+     * A moderator's row would become their own PENDING doc (a video's take-down record or rejection, written into) or a
+     * PENDING second doc that can shadow a rejected channel's or playlist's 410; either undoes the rejection.
+     */
+    private static boolean duplicate(RegistryDuplicateChecker.ExistingMatch existing, boolean isAdmin) {
+        return !isAdmin || !"REJECTED".equals(existing.status()) || existing.held();   // users4: a take-down holds it
+    }
+
     public BulkSubmitResponse submit(BulkSubmitRequest req, String actorUid, boolean isAdmin) {
         long start = System.currentTimeMillis();
         // Role-based status normalization: moderators always PENDING; admin defaults PENDING but can pass APPROVED.
@@ -122,13 +146,55 @@ public class BulkSubmissionService {
         }
 
         // Reject ALL before the row loop so we return 400,
-        // not 500 from the switch default arm.
+        // not 500 from the switch default arm. Reject a duplicate rowIndex too: it keys the live guard's
+        // offenders and verified channels.
+        java.util.Set<Integer> rowIndexes = new java.util.HashSet<>();
         for (SubmitRow row : req.rows()) {
             if (row.detectedType() == YouTubeContentType.ALL) {
                 throw new org.springframework.web.server.ResponseStatusException(
                         org.springframework.http.HttpStatus.BAD_REQUEST,
                         "detectedType ALL is not supported in bulk submit");
             }
+            if (!rowIndexes.add(row.rowIndex())) {
+                // GlobalExceptionHandler renders an IllegalArgumentException as 400.
+                throw new IllegalArgumentException("duplicate rowIndex " + row.rowIndex() + " in bulk submit");
+            }
+        }
+
+        // Two per-submit dedupe batches. `known`: what the registry held when the request came in, read before the live
+        // guard. `lateBatch`: read again right before each write (stage 9 Cubic r2: a single add landing during this
+        // submit's 30-60 s of fetches must not get a second doc), and markAsExisting records each row this submit
+        // writes, so a second row with the same id is a DUPLICATE too.
+        //
+        // Cross-admin / cross-pod race remains between that read and the
+        // write: two parallel /bulk/submit calls for the same youtubeId can
+        // both pass findExisting and both write a doc. Documented as deferral in
+        // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
+        // — closing it requires Firestore native transactions in the writer.
+        RegistryDuplicateChecker.Batch known = dedupe.newBatch();
+        RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
+
+        // D9: the whole request is refused on any live-category violation, before any slot or write is spent.
+        // A row that fails the URL round-trip, or is already registered, is never written, so the guard neither seeds
+        // nor counts it: an ended live already in the registry is that row's DUPLICATE, never the whole request's
+        // LIVE_LINK_NOT_LIVE (stage 9 Cubic P3). The memoized answer keeps it a DUPLICATE in the row loop below.
+        List<LiveCategoryGuard.Change> liveChanges = new ArrayList<>();
+        for (SubmitRow row : req.rows()) {
+            if (roundTripError(row, parser.parse(row.originalUrl())) != null || registered(known, row, isAdmin)) {
+                continue;
+            }
+            liveChanges.add(new LiveCategoryGuard.Change(String.valueOf(row.rowIndex()),
+                    row.detectedType().name().toLowerCase(java.util.Locale.ROOT), row.metadata().youtubeId(),
+                    row.metadata().channelId(), List.of(), null, row.categoryIds(), resolvedStatus));
+        }
+        Map<String, String> verifiedChannels;
+        try {
+            verifiedChannels = liveCategoryGuard.checkAll(isAdmin, liveChanges);
+        } catch (ExecutionException | TimeoutException | InterruptedException e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("bulk-submit live-category check failed: {}", e.toString());
+            throw new LiveCategoryException(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE,
+                    LiveCategoryException.CHECK_UNAVAILABLE, "Couldn't run the live-category check; try again", Map.of());
         }
 
         // Row-count-aware rate-limit consumption. The
@@ -156,18 +222,6 @@ public class BulkSubmissionService {
 
         List<SubmitResult> results = new ArrayList<>(req.rows().size());
         int added = 0, failed = 0;
-        // Per-submit dedupe batch closes the
-        // preview→submit window where a second moderator could land the same
-        // youtubeId after the first moderator previewed but before they
-        // submitted. Not a full Firestore transaction, but closes the
-        // sequential-submit race.
-        //
-        // Cross-admin / cross-pod race remains: two parallel /bulk/submit
-        // calls for the same youtubeId can both pass findExisting and both
-        // write a doc. Documented as deferral in
-        // docs/superpowers/plans/2026-05-23-bulk-cross-admin-firestore-tx.md
-        // — closing it requires Firestore native transactions in the writer.
-        RegistryDuplicateChecker.Batch lateBatch = dedupe.newBatch();
         // Per-submit cache of category-id existence so a 25-row batch
         // sharing the same categoryIds doesn't re-query the same IDs
         // 25 times. Bounded by the SubmitRow max=10 cap × 25 rows = 250
@@ -176,47 +230,19 @@ public class BulkSubmissionService {
         java.util.Set<String> invalidCategoryIds = new java.util.HashSet<>();
 
         for (SubmitRow row : req.rows()) {
-            // Verify client-supplied metadata.youtubeId + detectedType
-            // round-trip from row.originalUrl. Prevents tampered submit bodies pointing at a
-            // different entity than the moderator previewed (mass assignment via metadata).
             YouTubeUrlParseResult parsed = parser.parse(row.originalUrl());
-            if (parsed.errorCode() != null) {
+            String roundTripError = roundTripError(row, parsed);
+            if (roundTripError != null) {
                 results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "INVALID_URL"));
-                failed++;
-                continue;
-            }
-            if (parsed.type() != row.detectedType()) {
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "TYPE_MISMATCH"));
-                failed++;
-                continue;
-            }
-            if (row.metadata() == null
-                    || !java.util.Objects.equals(parsed.youtubeId(), row.metadata().youtubeId())) {
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "YOUTUBE_ID_MISMATCH"));
+                        SubmitStatus.FAILED, roundTripError));
                 failed++;
                 continue;
             }
 
-            // Late dedupe check immediately before write.
-            // Closes the preview→submit window where a parallel submit landed the
-            // same youtubeId. Costs one Firestore read per row but is small relative
-            // to the write that follows.
-            try {
-                var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
-                if (lateDupe.isPresent() && !"REJECTED".equals(lateDupe.get().status())) {
-                    results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                            SubmitStatus.FAILED, "DUPLICATE"));
-                    failed++;
-                    continue;
-                }
-            } catch (RuntimeException dedupeErr) {
-                log.warn("bulk-submit late-dedupe failed rowIndex={} url={} reason={}",
-                        row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
-                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
-                        SubmitStatus.FAILED, "INTERNAL_ERROR"));
+            // Registered when the request came in (the memoized lookup made before the live guard): DUPLICATE with no
+            // category read or fetch spent on it.
+            if (registered(known, row, isAdmin)) {
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null, SubmitStatus.FAILED, "DUPLICATE"));
                 failed++;
                 continue;
             }
@@ -303,8 +329,36 @@ public class BulkSubmissionService {
                 failed++;
                 continue;
             }
-            PreviewMetadata trustedMetadata = authoritative.metadata();
+            // D13: a live-category video row is stored with the guard's verified channel, not the fetched one.
+            String verifiedChannel = verifiedChannels.get(String.valueOf(row.rowIndex()));
+            PreviewMetadata fetched = authoritative.metadata();
+            PreviewMetadata trustedMetadata = verifiedChannel == null ? fetched : new PreviewMetadata(fetched.youtubeId(),
+                    fetched.title(), fetched.thumbnailUrl(), fetched.channelName(), verifiedChannel, fetched.subscribers(),
+                    fetched.itemCount(), fetched.durationSeconds(), fetched.viewCount());
             VideoType trustedVideoType = authoritative.videoType();
+
+            // Dedupe right before the write: a fresh registry read (lateBatch is first asked here), or markAsExisting
+            // for a row this submit already wrote. Closes the window where a single add or a parallel submit landed
+            // the same youtubeId during this submit's guard and fetches; what is left is this read to the write.
+            String rejectedDocId;
+            try {
+                var lateDupe = lateBatch.findExisting(row.detectedType(), row.metadata().youtubeId());
+                if (lateDupe.isPresent() && duplicate(lateDupe.get(), isAdmin)) {
+                    results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                            SubmitStatus.FAILED, "DUPLICATE"));
+                    failed++;
+                    continue;
+                }
+                // Stage 9 B11: a REJECTED video (a report's take-down record too) is written into its doc, not a second.
+                rejectedDocId = lateDupe.map(RegistryDuplicateChecker.ExistingMatch::registryId).orElse(null);
+            } catch (RuntimeException dedupeErr) {
+                log.warn("bulk-submit late-dedupe failed rowIndex={} url={} reason={}",
+                        row.rowIndex(), row.originalUrl(), dedupeErr.getMessage());
+                results.add(new SubmitResult(row.rowIndex(), row.originalUrl(), null,
+                        SubmitStatus.FAILED, "INTERNAL_ERROR"));
+                failed++;
+                continue;
+            }
 
             try {
                 String registryId = switch (row.detectedType()) {
@@ -312,7 +366,7 @@ public class BulkSubmissionService {
                     case PLAYLIST -> writer.writePlaylist(trustedMetadata, row.categoryIds(), resolvedStatus, actorUid, isAdmin);
                     case VIDEO    -> writer.writeVideo(trustedMetadata,
                             trustedVideoType != null ? trustedVideoType : VideoType.STANDARD,
-                            row.categoryIds(), resolvedStatus, actorUid, isAdmin);
+                            row.categoryIds(), resolvedStatus, actorUid, isAdmin, rejectedDocId);
                     default       -> throw new org.springframework.web.server.ResponseStatusException(
                             org.springframework.http.HttpStatus.BAD_REQUEST,
                             "Unsupported detectedType in bulk submit: " + row.detectedType());
@@ -386,6 +440,20 @@ public class BulkSubmissionService {
         return new BulkSubmitResponse(req.rows().size(), added, failed, results);
     }
 
+    /**
+     * Verify client-supplied metadata.youtubeId + detectedType round-trip from row.originalUrl. Prevents tampered
+     * submit bodies pointing at a different entity than the moderator previewed (mass assignment via metadata).
+     * Returns the row's failure code, or null when it round-trips.
+     */
+    private static String roundTripError(SubmitRow row, YouTubeUrlParseResult parsed) {
+        if (parsed.errorCode() != null) return "INVALID_URL";
+        if (parsed.type() != row.detectedType()) return "TYPE_MISMATCH";
+        if (row.metadata() == null || !java.util.Objects.equals(parsed.youtubeId(), row.metadata().youtubeId())) {
+            return "YOUTUBE_ID_MISMATCH";
+        }
+        return null;
+    }
+
     /** Synth-row for previews that didn't complete inside the 180s batch budget. */
     private static PreviewRow timeoutRow(int rowIndex, String originalUrl) {
         return new PreviewRow(rowIndex, originalUrl, null, null, null, RowStatus.ERROR, null, null,
@@ -407,7 +475,7 @@ public class BulkSubmissionService {
             // Previously only PENDING/APPROVED were caught — REQUEST_CHANGES (a real status
             // per RegistryController.VALID_STATUSES) and any future status string would
             // fall through and silently create a duplicate Firestore doc.
-            if (existing.isPresent() && !"REJECTED".equals(existing.get().status())) {
+            if (existing.isPresent() && (!"REJECTED".equals(existing.get().status()) || existing.get().held())) {
                 return new PreviewRow(rowIndex, originalUrl, parsed.type(), null, null,
                         RowStatus.DUPLICATE, existing.get().registryId(), existing.get().status(),
                         PreviewError.of(PreviewErrorCode.DUPLICATE));

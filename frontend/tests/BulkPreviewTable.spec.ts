@@ -8,7 +8,10 @@ import { messages } from '../src/locales/messages'
 
 vi.mock('../src/services/categoryService', () => ({
   getAllCategories: () =>
-    Promise.resolve([{ id: 'cat-1', name: 'Cat 1', subcategories: [] }]),
+    Promise.resolve([
+      { id: 'cat-1', name: 'Cat 1', subcategories: [] },
+      { id: 'cat-live', name: 'Live', type: 'LIVE', subcategories: [] },
+    ]),
 }))
 
 vi.mock('../src/services/bulkSubmissionService', () => ({
@@ -65,6 +68,15 @@ describe('BulkPreviewTable', () => {
     expect(counts).toContain('1')
   })
 
+  it('flags the playlist row that has no category left', () => {
+    const store = useBulkSubmissionStore()
+    store.previewRows = [okRow(0), { ...okRow(1), detectedType: 'PLAYLIST' }]
+    store.rowsNeedingCategory = [1]
+    const rows = mountTable().findAll('tbody tr')
+    expect(rows[0].find('[role=alert]').exists()).toBe(false)
+    expect(rows[1].find('[role=alert]').text()).toBe(messages.en.contentSearch.bulk.preview.playlistNeedsCategoryRow)
+  })
+
   it('removeRow drops row from rendered table', async () => {
     const store = useBulkSubmissionStore()
     store.previewRows = [okRow(0), okRow(1)]
@@ -112,5 +124,19 @@ describe('BulkPreviewTable', () => {
     const backBtn = wrapper.findAll('button').find((b) => b.text().includes('Back'))
     await backBtn!.trigger('click')
     expect(store.phase).toBe('INPUT')
+  })
+  it('a playlist row and a non-live video row do not count the LIVE default category (Cubic r9 #25)', async () => {
+    const store = useBulkSubmissionStore()
+    store.defaultCategoryIds = ['cat-1', 'cat-live']
+    store.previewRows = [{ ...okRow(0), detectedType: 'PLAYLIST' }, okRow(1), { ...okRow(2), videoType: 'LIVE' }]
+    const wrapper = mountTable()
+    const toggles = () => wrapper.findAll('.bulk-categories-toggle')
+    await vi.waitFor(() => expect(toggles()[0].text()).toMatch(/^1\s/))
+    await vi.waitFor(() => expect(toggles()[1].text()).toMatch(/^1\s/))
+    expect(toggles()[2].text()).toMatch(/^2\s/)
+
+    // Nor does the non-live video row's editor offer it: submit would drop it.
+    await toggles()[1].trigger('click')
+    await vi.waitFor(() => expect(wrapper.findAll('.editor-chip').map((c) => c.text())).toEqual(['Cat 1']))
   })
 })

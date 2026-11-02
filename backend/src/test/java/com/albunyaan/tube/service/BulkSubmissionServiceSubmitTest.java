@@ -19,7 +19,7 @@ class BulkSubmissionServiceSubmitTest {
     // Real UC-shaped channel id (22 chars after UC) so the parser accepts /channel/UC...
     private static final String CHANNEL_ID = "UCuAXFkgsw1L7xaCfnd5JJOw";
     private static final String CHANNEL_URL = "https://www.youtube.com/channel/" + CHANNEL_ID;
-    private static final String VIDEO_ID = "dQw4w9WgXcQ";
+    private static final String VIDEO_ID = "sCQwxFEMlZ4";
     private static final String VIDEO_URL = "https://www.youtube.com/live/" + VIDEO_ID;
     private static final String PLAYLIST_ID = "PLxxxxxxxxxxxxxxxxxxxxxx";
     private static final String PLAYLIST_URL = "https://www.youtube.com/playlist?list=" + PLAYLIST_ID;
@@ -30,6 +30,7 @@ class BulkSubmissionServiceSubmitTest {
     private com.albunyaan.tube.repository.CategoryRepository categoryRepository;
     private YouTubeGateway gateway;
     private SubmissionRateLimiter submissionRateLimiter;
+    private LiveCategoryGuard liveCategoryGuard;
     private BulkSubmissionService svc;
 
     @BeforeEach
@@ -71,6 +72,7 @@ class BulkSubmissionServiceSubmitTest {
         submissionRateLimiter = mock(SubmissionRateLimiter.class);
         when(submissionRateLimiter.tryAcquire(any(), anyInt())).thenReturn(null);
 
+        liveCategoryGuard = mock(LiveCategoryGuard.class);   // checkAll answers an empty map: no LIVE row
         svc = new BulkSubmissionService(
                 new YouTubeUrlParser(),                          // real parser for round-trip metadata validation
                 gateway,
@@ -80,7 +82,8 @@ class BulkSubmissionServiceSubmitTest {
                 mock(PublicContentCacheService.class),
                 mock(SortOrderService.class),
                 categoryRepository,
-                submissionRateLimiter);
+                submissionRateLimiter,
+                liveCategoryGuard);
     }
 
     @Test
@@ -110,7 +113,7 @@ class BulkSubmissionServiceSubmitTest {
                         new PreviewMetadata(VIDEO_ID, "Live Vid", "https://i.ytimg.com/t.jpg",
                                 "Ch", CHANNEL_ID, null, null, null, 50L),
                         VideoType.LIVE));
-        when(writer.writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true))).thenReturn("doc-v-1");
+        when(writer.writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true), any())).thenReturn("doc-v-1");
 
         var row = new SubmitRow(0, VIDEO_URL,
                 YouTubeContentType.VIDEO, VideoType.LIVE,
@@ -121,14 +124,52 @@ class BulkSubmissionServiceSubmitTest {
         var resp = svc.submit(req, "admin-uid", true);
 
         assertEquals(1, resp.added());
-        verify(writer).writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true));
+        verify(writer).writeVideo(any(), eq(VideoType.LIVE), any(), eq("APPROVED"), eq("admin-uid"), eq(true), any());
+    }
+
+    /** Stage 9 B11: a REJECTED video (a report's take-down record too) is re-added into its doc, never a second one. */
+    @Test
+    void aRejectedVideoIsReAddedIntoItsDoc() throws Exception {
+        when(lateBatch.findExisting(eq(YouTubeContentType.VIDEO), eq("TakeDown001")))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-takedown", "REJECTED")));
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), eq("doc-takedown"))).thenReturn("doc-takedown");
+        var row = new SubmitRow(0, "https://www.youtube.com/watch?v=TakeDown001", YouTubeContentType.VIDEO,
+                VideoType.STANDARD, new PreviewMetadata("TakeDown001", "v", null, null, null, null, null, null, null),
+                List.of("cat-1"));
+
+        var resp = svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true);
+
+        assertEquals(1, resp.added());
+        assertEquals("doc-takedown", resp.results().get(0).registryId());
+    }
+
+    /**
+     * Stage 9 B16 (Cubic r6 P1): only an admin re-adds over a REJECTED doc. A moderator's row is the DUPLICATE any other
+     * registered row is: never written into a take-down record or an admin's rejection, nor beside one as a second doc.
+     */
+    @Test
+    void aModeratorsRowOverARejectedDocIsADuplicate() throws Exception {
+        when(lateBatch.findExisting(any(), any()))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-rejected", "REJECTED")));
+        var rows = List.of(
+                new SubmitRow(0, "https://www.youtube.com/watch?v=TakeDown001", YouTubeContentType.VIDEO, VideoType.STANDARD,
+                        new PreviewMetadata("TakeDown001", "v", null, null, null, null, null, null, null), List.of("cat-1")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = svc.submit(new BulkSubmitRequest(rows, "PENDING"), "mod-uid", false);
+
+        assertEquals(0, resp.added());
+        assertEquals(List.of("DUPLICATE", "DUPLICATE"), resp.results().stream().map(SubmitResult::errorCode).toList());
+        verify(writer, never()).writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
     }
 
     @Test
     void perRowFailure_aggregatedNotAborting() throws Exception {
         when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
         when(writer.writePlaylist(any(), any(), any(), any(), anyBoolean())).thenThrow(new RuntimeException("firestore down"));
-        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean())).thenReturn("doc-v-1");
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn("doc-v-1");
 
         var rows = List.of(
                 new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
@@ -206,12 +247,15 @@ class BulkSubmissionServiceSubmitTest {
     void intraBatchDuplicate_secondRowFailsAsDuplicate_afterWriterPopulatesCache() throws Exception {
         // Row 1: writer succeeds, production code calls lateBatch.markAsExisting.
         when(writer.writeChannel(any(), any(), eq("PENDING"), eq("admin-uid"), eq(true))).thenReturn("doc-c-1");
-        // First findExisting → empty; second findExisting (after markAsExisting) → present.
-        // Mockito returns the configured values in order; the second call to the same mock
-        // method gets the second thenReturn value, simulating the cache shadow effect.
+        // As the real Batch: findExisting answers empty until markAsExisting records the written doc, however
+        // often it is asked (the duplicate check before the live guard asks too).
+        java.util.concurrent.atomic.AtomicBoolean marked = new java.util.concurrent.atomic.AtomicBoolean();
+        doAnswer(inv -> { marked.set(true); return null; })
+                .when(lateBatch).markAsExisting(any(), any(), any(), any());
         when(lateBatch.findExisting(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID)))
-                .thenReturn(Optional.empty(),
-                            Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-c-1", "PENDING")));
+                .thenAnswer(inv -> marked.get()
+                        ? Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-c-1", "PENDING"))
+                        : Optional.empty());
 
         var rows = List.of(
                 new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
@@ -293,7 +337,8 @@ class BulkSubmissionServiceSubmitTest {
                 mock(PublicContentCacheService.class),
                 sortOrderMock,
                 categoryRepository,
-                submissionRateLimiter);
+                submissionRateLimiter,
+                liveCategoryGuard);
 
         var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
                 new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null),
@@ -492,5 +537,138 @@ class BulkSubmissionServiceSubmitTest {
         // per-submit dedupe cache works and a 25-row × 10-categoryId batch doesn't
         // hammer Firestore with 250 redundant lookups.
         verify(categoryRepository, times(1)).existsById("cat-shared");
+    }
+
+    /** D13 / pre-flight M5: a live-category video row is written with the guard's verified channel, not the fetched one. */
+    @Test
+    void aLiveCategoryVideoRowIsWrittenWithTheVerifiedChannel() throws Exception {
+        when(liveCategoryGuard.checkAll(eq(true), any())).thenReturn(java.util.Map.of("0", "UCROKYPep-UuODNwyipe6JMw"));
+        when(writer.writeVideo(any(), any(), any(), any(), any(), anyBoolean(), any())).thenReturn("doc-v-live");
+        var row = new SubmitRow(0, "https://www.youtube.com/watch?v=Rs7St51oDDc", YouTubeContentType.VIDEO, null,
+                new PreviewMetadata("Rs7St51oDDc", "Sunnah", null, null, null, null, null, null, null), List.of("cat-live"));
+
+        svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true);
+
+        var written = org.mockito.ArgumentCaptor.forClass(PreviewMetadata.class);
+        verify(writer).writeVideo(written.capture(), any(), any(), any(), any(), anyBoolean(), any());
+        assertEquals("UCROKYPep-UuODNwyipe6JMw", written.getValue().channelId());   // the gateway stub says "UCauth"
+    }
+
+    /** Stage 9 Cubic P3: an already-registered row is DUPLICATE before the live guard runs, never a refusal of the whole request. */
+    @Test
+    void aDuplicateRowIsReportedDuplicateAndNeverReachesTheLiveGuard() throws Exception {
+        when(lateBatch.findExisting(eq(YouTubeContentType.VIDEO), eq(VIDEO_ID)))
+                .thenReturn(Optional.of(new RegistryDuplicateChecker.ExistingMatch("doc-ended-live", "APPROVED")));
+        when(liveCategoryGuard.checkAll(eq(true), argThat(changes -> changes.stream().anyMatch(c -> VIDEO_ID.equals(c.youtubeId())))))
+                .thenThrow(new com.albunyaan.tube.exception.LiveCategoryException(org.springframework.http.HttpStatus.CONFLICT,
+                        com.albunyaan.tube.exception.LiveCategoryException.NOT_LIVE, "the stream has ended", java.util.Map.of()));
+        when(writer.writeChannel(any(), any(), any(), any(), anyBoolean())).thenReturn("doc-c-1");
+        var rows = List.of(
+                new SubmitRow(0, VIDEO_URL, YouTubeContentType.VIDEO, null,
+                        new PreviewMetadata(VIDEO_ID, "Ended live", null, null, null, null, null, null, null), List.of("cat-live")),
+                new SubmitRow(1, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = svc.submit(new BulkSubmitRequest(rows, "APPROVED"), "admin-uid", true);
+
+        assertEquals("DUPLICATE", resp.results().get(0).errorCode());
+        assertEquals(SubmitStatus.ADDED, resp.results().get(1).status());
+    }
+
+    /**
+     * Stage 9 Cubic r2 P2: a single add of the same id that lands while this submit fetches its rows is caught by a
+     * registry read right before the write, never by the answer cached before the live guard. Real checker, so the test
+     * holds whichever batches the service keeps.
+     */
+    @Test
+    void aSingleAddThatLandsDuringTheRowFetchIsADuplicateNotASecondDoc() throws Exception {
+        var channels = mock(com.albunyaan.tube.repository.ChannelRepository.class);
+        var concurrent = new com.albunyaan.tube.model.Channel(CHANNEL_ID);
+        concurrent.setId("doc-single-add");
+        concurrent.setStatus("PENDING");
+        java.util.concurrent.atomic.AtomicBoolean landed = new java.util.concurrent.atomic.AtomicBoolean();
+        when(channels.findByYoutubeId(CHANNEL_ID)).thenAnswer(i -> landed.get() ? Optional.of(concurrent) : Optional.empty());
+        when(gateway.fetchByDetectedType(eq(YouTubeContentType.CHANNEL), eq(CHANNEL_ID), any())).thenAnswer(i -> {
+            landed.set(true);                                                  // the single add commits meanwhile
+            return PreviewFetchResult.ok(new PreviewMetadata(CHANNEL_ID, "Ch", null, "Ch", CHANNEL_ID, 1L, null, null, null), null);
+        });
+        var real = new BulkSubmissionService(new YouTubeUrlParser(), gateway,
+                new RegistryDuplicateChecker(channels, mock(com.albunyaan.tube.repository.PlaylistRepository.class),
+                        mock(com.albunyaan.tube.repository.VideoRepository.class)),
+                writer, Executors.newFixedThreadPool(1), mock(PublicContentCacheService.class), mock(SortOrderService.class),
+                categoryRepository, submissionRateLimiter, liveCategoryGuard);
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var resp = real.submit(new BulkSubmitRequest(List.of(row), "PENDING"), "admin-uid", true);
+
+        assertEquals("DUPLICATE", resp.results().get(0).errorCode());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+    }
+
+    /**
+     * Cubic users4: a report took a channel and a playlist down in place, then an admin rejected them. An admin's bulk
+     * re-add would write a second, unarchived doc that the listings serve: it is a DUPLICATE, nothing written.
+     */
+    @Test
+    void anAdminsBulkReAddOfARejectedTakeDownIsADuplicate() throws Exception {
+        var channels = mock(com.albunyaan.tube.repository.ChannelRepository.class);
+        var playlists = mock(com.albunyaan.tube.repository.PlaylistRepository.class);
+        var channel = new com.albunyaan.tube.model.Channel(CHANNEL_ID);
+        channel.setId("doc-ch-held");
+        channel.setStatus("REJECTED");
+        channel.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        var playlist = new com.albunyaan.tube.model.Playlist(PLAYLIST_ID);
+        playlist.setId("doc-pl-held");
+        playlist.setStatus("REJECTED");
+        playlist.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+        when(channels.findByYoutubeId(CHANNEL_ID)).thenReturn(Optional.of(channel));
+        when(channels.findAllByYoutubeId(CHANNEL_ID)).thenReturn(List.of(channel));
+        when(playlists.findByYoutubeId(PLAYLIST_ID)).thenReturn(Optional.of(playlist));
+        when(playlists.findAllByYoutubeId(PLAYLIST_ID)).thenReturn(List.of(playlist));
+        var real = new BulkSubmissionService(new YouTubeUrlParser(), gateway,
+                new RegistryDuplicateChecker(channels, playlists, mock(com.albunyaan.tube.repository.VideoRepository.class)),
+                writer, Executors.newFixedThreadPool(1), mock(PublicContentCacheService.class), mock(SortOrderService.class),
+                categoryRepository, submissionRateLimiter, liveCategoryGuard);
+        var rows = List.of(
+                new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                        new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1")),
+                new SubmitRow(1, PLAYLIST_URL, YouTubeContentType.PLAYLIST, null,
+                        new PreviewMetadata(PLAYLIST_ID, "Pl", null, null, null, null, null, null, null), List.of("cat-1")));
+
+        var resp = real.submit(new BulkSubmitRequest(rows, "APPROVED"), "admin-uid", true);
+
+        assertEquals(List.of("DUPLICATE", "DUPLICATE"), resp.results().stream().map(SubmitResult::errorCode).toList());
+        verify(writer, never()).writeChannel(any(), any(), any(), any(), anyBoolean());
+        verify(writer, never()).writePlaylist(any(), any(), any(), any(), anyBoolean());
+    }
+
+    /** Fix round 1: a failed categories read inside the guard is a retryable 503, not a 409, and nothing is written. */
+    @Test
+    void aFailedLiveCategoryCheckIs503CheckUnavailable() throws Exception {
+        when(liveCategoryGuard.checkAll(anyBoolean(), any()))
+                .thenThrow(new java.util.concurrent.ExecutionException("categories read failed", null));
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var e = assertThrows(com.albunyaan.tube.exception.LiveCategoryException.class,
+                () -> svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true));
+
+        assertEquals(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE, e.getStatus());
+        assertEquals(com.albunyaan.tube.exception.LiveCategoryException.CHECK_UNAVAILABLE, e.getCode());
+        verifyNoInteractions(writer);
+    }
+
+    @Test
+    void anInterruptedLiveCategoryCheckIs503AndKeepsTheFlag() throws Exception {
+        when(liveCategoryGuard.checkAll(anyBoolean(), any())).thenThrow(new InterruptedException());
+        var row = new SubmitRow(0, CHANNEL_URL, YouTubeContentType.CHANNEL, null,
+                new PreviewMetadata(CHANNEL_ID, "Ch", null, null, null, null, null, null, null), List.of("cat-1"));
+
+        var e = assertThrows(com.albunyaan.tube.exception.LiveCategoryException.class,
+                () -> svc.submit(new BulkSubmitRequest(List.of(row), "APPROVED"), "admin-uid", true));
+
+        assertTrue(Thread.interrupted());                                     // also clears it for the next test
+        assertEquals(com.albunyaan.tube.exception.LiveCategoryException.CHECK_UNAVAILABLE, e.getCode());
     }
 }

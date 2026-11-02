@@ -181,18 +181,35 @@ class CatalogChangedEventsTest {
         Video video = new Video("vMissTest");
         video.setId("v1");
 
-        assertThrows(ExecutionException.class, () -> channels().saveIfStatus(channel, "PENDING"));
-        assertThrows(ExecutionException.class, () -> channels().deleteByIdIfStatusIn("c1", Set.of("PENDING")));
-        assertThrows(ExecutionException.class, () -> playlists().saveIfStatus(playlist, "PENDING"));
-        assertThrows(ExecutionException.class, () -> playlists().deleteByIdIfStatusIn("p1", Set.of("PENDING")));
-        assertThrows(ExecutionException.class, () -> videos().saveIfStatus(video, "PENDING"));
-        assertThrows(ExecutionException.class, () -> videos().deleteByIdIfStatusIn("v1", Set.of("PENDING")));
+        // Stage 9 B13: the transaction's own refusal, not an ExecutionException (see the test below)
+        assertThrows(IllegalStateException.class, () -> channels().saveIfStatus(channel, "PENDING"));
+        assertThrows(IllegalStateException.class, () -> channels().deleteByIdIfStatusIn("c1", Set.of("PENDING")));
+        assertThrows(IllegalStateException.class, () -> playlists().saveIfStatus(playlist, "PENDING"));
+        assertThrows(IllegalStateException.class, () -> playlists().deleteByIdIfStatusIn("p1", Set.of("PENDING")));
+        assertThrows(IllegalStateException.class, () -> videos().saveIfStatus(video, "PENDING"));
+        assertThrows(IllegalStateException.class, () -> videos().deleteByIdIfStatusIn("v1", Set.of("PENDING")));
 
         verify(events, times(2)).publishEvent(new CatalogChanged("CHANNEL", "c1", true)); // one per miss: save, delete
         verify(events, times(2)).publishEvent(new CatalogChanged("PLAYLIST", "p1", true));
         verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", true, "vMissTest"));
         verify(events).publishEvent(new CatalogChanged("VIDEO", "v1", true));
         verifyNoMoreInteractions(events);
+    }
+
+    /**
+     * Stage 9 B13: a conditional write's own refusal reaches its caller as itself, so the callers' 409 (status changed)
+     * and 404 (doc gone) catches see it. Wrapped in the ExecutionException it was a 500 "A database operation failed".
+     */
+    @Test
+    void aConditionalWritesOwnRefusalIsThrownAsItselfNotWrapped() {
+        Video video = new Video("vMissTest");
+        video.setId("v1");
+        doReturn(ApiFutures.immediateFailedFuture(new IllegalStateException("expected status REJECTED but found PENDING")))
+                .when(firestore).runTransaction(any(Transaction.Function.class));
+        assertThrows(IllegalStateException.class, () -> videos().saveIfStatus(video, "REJECTED"));
+        doReturn(ApiFutures.immediateFailedFuture(new IllegalArgumentException("Video not found: v1")))
+                .when(firestore).runTransaction(any(Transaction.Function.class));
+        assertThrows(IllegalArgumentException.class, () -> videos().saveIfStatus(video, "REJECTED"));
     }
 
     // ---- playlists ----

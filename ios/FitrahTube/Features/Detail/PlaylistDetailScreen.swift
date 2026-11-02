@@ -74,13 +74,20 @@ struct PlaylistDetailScreen: View {
         return ZStack {
             RemoteImage(url: url).blur(radius: 20).opacity(0.6)
             Color.heroOverlay
-            RemoteImage(url: url, contentMode: .fit)
+            RemoteImage(url: url, contentMode: .fit, missingSymbol: Self.heroMissingSymbol(viewModel?.items))
                 .aspectRatio(16 / 9, contentMode: .fit)
                 .frame(maxWidth: Size.playerMaxWidth(widthClass) ?? .infinity)
                 .padding(.top, topInset)
                 .padding(Spacing.md(widthClass))
         }
         .accessibilityHidden(true)
+    }
+
+    /// Fix round 1, A1: the hero's glyph waits for a finished load. A deep link's header has no picture until `load()`
+    /// ends (gate, browse, up to 1.5 s of `/titles`), so before that a missing URL means "not yet", not "none".
+    static func heroMissingSymbol(_ items: TabState<VideoItem>?) -> String? {
+        guard let items, items != .idle, items != .loadingInitial else { return nil }
+        return Tab.playlists.symbolName
     }
 
     private var titleBlock: some View {

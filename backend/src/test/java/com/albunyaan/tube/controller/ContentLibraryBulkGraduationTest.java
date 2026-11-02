@@ -69,6 +69,7 @@ class ContentLibraryBulkGraduationTest {
     @Mock private ImportGraduationService graduationService;
     @Mock private com.albunyaan.tube.repository.UserRepository userRepository;
     @Mock private ApplicationEventPublisher events;
+    @Mock private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks private ContentLibraryController controller;
 
@@ -178,11 +179,11 @@ class ContentLibraryBulkGraduationTest {
 
     @Test
     void bulkApprove_graduatesTheImportersAwaitingRows() throws Exception {
-        stubFirestore("videos", "vid-1", "dQw4w9WgXcQ", true);
+        stubFirestore("videos", "vid-1", "sCQwxFEMlZ4", true);
 
         controller.bulkApprove(request("video", "vid-1"));
 
-        verify(graduationService).onApprovedAll(YouTubeContentType.VIDEO, Set.of("dQw4w9WgXcQ"));
+        verify(graduationService).onApprovedAll(YouTubeContentType.VIDEO, Set.of("sCQwxFEMlZ4"));
     }
 
     @Test

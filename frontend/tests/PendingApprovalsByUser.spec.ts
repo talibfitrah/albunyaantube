@@ -183,3 +183,84 @@ describe('the by-user tab', () => {
     );
   });
 });
+
+describe('waiting imports are never hidden behind an empty queue', () => {
+  it('opens on the by-user tab when the queue is empty and imports wait', async () => {
+    getPendingCountMock.mockResolvedValue(5);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+
+    await renderView();
+
+    await waitFor(() => expect(screen.getByText('Ahmed')).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Queue (0)' })).toBeTruthy();
+    expect(screen.getByRole('button', { name: 'By user (5)' }).classList.contains('active')).toBe(true);
+  });
+
+  it('neither switches nor claims an empty queue when the total is unavailable', async () => {
+    getPendingCountMock.mockResolvedValue(-1);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+
+    await renderView();
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (5)' })).toBeTruthy());
+    const queueTab = screen.getByRole('button', { name: 'Queue' });
+    expect(queueTab.classList.contains('active')).toBe(true);
+  });
+
+  it('does not switch when the admin changed a filter while the counts loaded', async () => {
+    getPendingCountMock.mockResolvedValue(5);
+    let releaseSubmitters!: (v: unknown) => void;
+    getPendingSubmittersMock.mockReturnValue(new Promise(r => { releaseSubmitters = r; }));
+
+    await renderView();
+    await fireEvent.click(screen.getByRole('button', { name: 'Playlists' }));
+    releaseSubmitters([{ uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }]);
+
+    await waitFor(() => expect(screen.getByRole('button', { name: 'By user (5)' })).toBeTruthy());
+    await new Promise(r => setTimeout(r, 50)); // let the on-load switch run if it is going to
+    expect(screen.getByRole('button', { name: 'Queue (0)' }).classList.contains('active')).toBe(true);
+    expect(screen.getByRole('button', { name: 'Playlists' }).classList.contains('active')).toBe(true);
+  });
+
+  it('a late queue reply never replaces the submitter list opened after the switch', async () => {
+    getPendingCountMock.mockResolvedValue(5);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+    let releaseQueue!: (v: unknown) => void;
+    getPendingApprovalsMock
+      .mockReturnValueOnce(new Promise(r => { releaseQueue = r; }))
+      .mockResolvedValue({ items: [makeItem('x', 'Ahmeds Import', 'USER_IMPORT')], nextCursor: null });
+
+    await renderView();
+    await waitFor(() => expect(screen.getByText('Ahmed')).toBeTruthy());
+    await fireEvent.click(screen.getByText('Ahmed'));
+    await waitFor(() => expect(screen.getByText('Ahmeds Import')).toBeTruthy());
+
+    releaseQueue({ items: [], nextCursor: null });
+    await new Promise(r => setTimeout(r, 50));
+    expect(screen.getByText('Ahmeds Import')).toBeTruthy();
+  });
+
+  it('stays on the queue when it has items of its own', async () => {
+    getPendingCountMock.mockResolvedValue(7);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+    getPendingApprovalsMock.mockResolvedValue({
+      items: [makeItem('a', 'Moderator Pick', 'MODERATOR')],
+      nextCursor: null
+    });
+
+    await renderView();
+
+    await waitFor(() => expect(screen.getByText('Moderator Pick')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: 'Queue (2)' })).toBeTruthy());
+    expect(screen.getByRole('button', { name: 'Queue (2)' }).classList.contains('active')).toBe(true);
+    expect(screen.getByText('Moderator Pick')).toBeTruthy();
+  });
+});

@@ -26,8 +26,9 @@ export const bulkSubmissionService = {
     return data
   },
   async submitBulk(req: BulkSubmitRequest): Promise<BulkSubmitResponse> {
+    // The live-category guard can refuse a moderator with a 403; the store shows the localized reason instead.
     const { data } = await apiClient.post<BulkSubmitResponse>(
-      '/api/admin/registry/bulk/submit', req, { timeout: BULK_TIMEOUT_MS })
+      '/api/admin/registry/bulk/submit', req, { timeout: BULK_TIMEOUT_MS, suppressGlobalErrorToast: true })
     return data
   },
 }

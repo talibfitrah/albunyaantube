@@ -40,7 +40,6 @@ public class CacheConfig {
     public static final String CACHE_NEWPIPE_VIDEO_INFO = "newpipeVideoInfo";
     public static final String CACHE_NEWPIPE_CHANNEL_VALIDATION = "newpipeChannelValidation";
     public static final String CACHE_NEWPIPE_PLAYLIST_VALIDATION = "newpipePlaylistValidation";
-    public static final String CACHE_NEWPIPE_VIDEO_VALIDATION = "newpipeVideoValidation";
     public static final String CACHE_NEWPIPE_CHANNEL_VIDEOS = "newpipeChannelVideos";
     public static final String CACHE_NEWPIPE_CHANNEL_PLAYLISTS = "newpipeChannelPlaylists";
     public static final String CACHE_NEWPIPE_PLAYLIST_VIDEOS = "newpipePlaylistVideos";
@@ -95,7 +94,6 @@ public class CacheConfig {
                 CACHE_NEWPIPE_VIDEO_INFO,
                 CACHE_NEWPIPE_CHANNEL_VALIDATION,
                 CACHE_NEWPIPE_PLAYLIST_VALIDATION,
-                CACHE_NEWPIPE_VIDEO_VALIDATION,
                 CACHE_NEWPIPE_CHANNEL_VIDEOS,
                 CACHE_NEWPIPE_CHANNEL_PLAYLISTS,
                 CACHE_NEWPIPE_PLAYLIST_VIDEOS,
@@ -150,7 +148,8 @@ public class CacheConfig {
      *
      * Invalidated by: ChannelController (exclusion mutations),
      * RegistryController (playlist exclusion mutations),
-     * ExclusionsWorkspaceController (create/delete).
+     * ExclusionsWorkspaceController (create/delete),
+     * ContentReportService (exclusions a resolved report writes).
      */
     @Bean
     public com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache() {

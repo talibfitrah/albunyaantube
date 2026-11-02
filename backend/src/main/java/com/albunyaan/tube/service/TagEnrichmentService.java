@@ -7,6 +7,7 @@ import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import org.schabi.newpipe.extractor.channel.ChannelInfo;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
 import org.slf4j.Logger;
@@ -126,8 +127,9 @@ public class TagEnrichmentService {
                     );
 
                     channel.setKeywords(tags);
-                    channel.touch();
-                    channelRepository.save(channel);
+                    // Cubic users5: only its keywords, on the doc as stored now: this copy is from before the YouTube
+                    // calls, and a report's exclusion written since would be lost by a whole-doc save
+                    channelRepository.update(channel, c -> c.setKeywords(tags));
                     result.enriched++;
 
                     log.debug("Enriched channel '{}' with {} tags", channel.getName(), tags.size());
@@ -167,8 +169,7 @@ public class TagEnrichmentService {
                     );
 
                     playlist.setKeywords(tags);
-                    playlist.touch();
-                    playlistRepository.save(playlist);
+                    playlistRepository.update(playlist, p -> p.setKeywords(tags));   // Cubic users5: as the channel's
                     result.enriched++;
 
                     log.debug("Enriched playlist '{}' with {} tags", playlist.getTitle(), tags.size());
@@ -201,7 +202,13 @@ public class TagEnrichmentService {
 
                     List<String> youtubeTags = Collections.emptyList();
                     if (fetchYouTube && !isFakeYouTubeId(video.getYoutubeId())) {
-                        youtubeTags = fetchVideoTags(video.getYoutubeId());
+                        try {
+                            youtubeTags = fetchVideoTags(video.getYoutubeId());
+                        } catch (SignInConfirmNotBotException e) {
+                            // B17: the shared breaker no longer stops /player bot checks, so the run stops asking
+                            log.warn("YouTube refused /player (bot check): no more YouTube tag fetches this run");
+                            fetchYouTube = false;
+                        }
                     }
 
                     List<String> tags = generateTags(
@@ -319,13 +326,15 @@ public class TagEnrichmentService {
     // YouTube tag fetching
     // ─────────────────────────────────────────────────────────────────────────
 
-    private List<String> fetchVideoTags(String youtubeId) {
+    private List<String> fetchVideoTags(String youtubeId) throws SignInConfirmNotBotException {
         try {
             StreamInfo info = youTubeGateway.fetchStreamInfo(youtubeId);
             if (info != null && info.getTags() != null) {
                 log.debug("Fetched {} YouTube tags for video {}", info.getTags().size(), youtubeId);
                 return info.getTags();
             }
+        } catch (SignInConfirmNotBotException e) {
+            throw e;
         } catch (Exception e) {
             log.warn("Could not fetch YouTube tags for video {}: {}", youtubeId, e.getMessage());
         }

@@ -43,12 +43,13 @@ struct ShortsScreen: View {
         }
         .statusBarHidden(true)                              // ruling 57
         .toolbar(.hidden, for: .navigationBar)              // fork D; Back is `backButton` below
-        .onAppear { OrientationLock.lockPortrait() }
-        .onDisappear { OrientationLock.release() }
+        .onAppear { OrientationLock.lockPortrait(); model?.resumeUpgrades() }
+        .onDisappear { OrientationLock.release(); model?.stopUpgrade() }
         .task {
             guard model == nil else { return }
             let vm = PlayerViewModel(resolver: PlayerScreen.resolver(container: container),
-                                     settings: container.settings, args: args)
+                                     settings: container.settings, args: args,
+                                     hd: PlayerScreen.hdUpgrade(container: container))
             model = vm
             await vm.open()
         }
@@ -81,14 +82,14 @@ struct ShortsScreen: View {
                         CaptionOverlay(model: model, track: track, userAgent: resolved.userAgent, bottomClearance: 200)
                     }
                 }
-                .overlay { ShortsOverlay(model: model, args: args) }
+                .overlay { ShortsOverlay(model: model, args: model.args) }   // owner issue 1: the adopted title
                 .frame(maxWidth: Size.playerMaxWidth(widthClass))
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
         } else {
             // Task 4: on the black surface, with the dark palette's text -- the card used to paint
             // the app's light `Color.background` over the stage.
             PlayerStateView(state: state, isOnline: container.network.isOnline,
-                            thumbnailURL: args.thumbnailURL, background: .black) { Task { await model.retry() } }
+                            thumbnailURL: args.thumbnailURL, background: .black) { PlayerScreen.retryTapped(model) }
                 .environment(\.colorScheme, .dark)
                 .safeAreaPadding(.top, 44 + Spacing.md(widthClass))
         }

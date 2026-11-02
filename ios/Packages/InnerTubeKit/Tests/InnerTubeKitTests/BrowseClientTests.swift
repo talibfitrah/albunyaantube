@@ -21,6 +21,12 @@ import Testing
 /// `browse-channel-live-shell.json` / `-shell-cont.json` / `-shell-items.json` are LIVE, recorded
 /// 2026-10-13 from Zad's (`UCOll3M-P7oKs5cSrQ9ytt6g`) Live tab as one linked chain: two pages that
 /// hold only a continuation item, then 25 streams (trimmed to 5 + the continuation item).
+/// `browse-playlist-videolist.json` / `-page2.json` are LIVE, recorded 2026-11-01 from playlist
+/// `PL0IYpdlafdv278Cn5HfCs5fmedQrQbhmT` and its first continuation (the real end): the legacy
+/// `playlistVideoListRenderer` shape, trimmed to 5 videos + 1 live stream + the continuation item
+/// (page 2: 3 videos), the header kept down to its title and metadata rows, with
+/// `trackingParams`/`clickTrackingParams`/`menu` and every `watchEndpointSupportedOnesieConfig`
+/// (its URLs carry the capturing machine's IP) stripped.
 ///
 /// Every `responseContext.visitorData` in these fixtures is SYNTHETIC (`CgtGSVhUVVJFXzAwMSiFAA%3D%3D`):
 /// a real one is a session identifier for the machine that captured it and must never be committed.
@@ -174,6 +180,100 @@ import Testing
         _ = try await client.playlistItems(Self.playlistId, continuation: nil)
 
         #expect(transport.capturedBodies[0].contains("\"browseId\":\"VL\(Self.playlistId)\""))
+    }
+
+    // MARK: - c2) the legacy `playlistVideoListRenderer` shape (captured 2026-11-01)
+
+    /// "White Noise for Babies" (`PL0IYpdlafdv278Cn5HfCs5fmedQrQbhmT`, 154 videos) is served as
+    /// `itemSectionRenderer` > `playlistVideoListRenderer` > `playlistVideoRenderer` rows, its
+    /// continuation wrapped in a `commandExecutorCommand`, and an INFO "Unavailable videos are
+    /// hidden" alert. iOS read none of it and showed the empty state.
+    private static let whiteNoisePlaylistId = "PL0IYpdlafdv278Cn5HfCs5fmedQrQbhmT"
+
+    @Test func playlistItemsParsesPlaylistVideoListRenderer() async throws {
+        let response = try fixtureResponse("browse-playlist-videolist")
+        let client = makeClient(RecordingTransport([response]))
+
+        let page = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+
+        #expect(page.items.map(\.id) == ["fLnWRsyYVh0", "srDE6fZjC4I", "9axOi6cr8nU", "2-5RhJEIrXY", "rElwKfPgz74", "I86ApqkepWU"])
+        let first = try #require(page.items.first)
+        #expect(first.title == "Colicky Baby Sleeps to White Noise | Better Than a Lullaby")
+        #expect(first.channelName == "Relaxing White Noise")
+        #expect(first.channelId == "UCbunYN0o9Yaid7zHaor_UHA")
+        #expect(first.durationSeconds == 43200)
+        #expect(first.viewCountText == "1.3K views")
+        #expect(first.publishedText == "2 days ago")
+        #expect(first.thumbnailURL != nil)
+        #expect(first.badge == nil)
+        let live = try #require(page.items.last)
+        #expect(live.title == "Best Lullaby Alternative | Sleep White Noise for Babies")
+        #expect(live.badge == .live)
+        #expect(live.durationSeconds == nil)
+        #expect(live.viewCountText == "3 watching")
+        // The list's own token (inside `commandExecutorCommand`), not the section-level one after it.
+        #expect(page.nextContinuation?.hasPrefix("4qmFsgKBARIkVkxQTDBJWXBk") == true)
+    }
+
+    @Test func playlistVideoListContinuationYieldsPage2() async throws {
+        let transport = RecordingTransport([
+            try fixtureResponse("browse-playlist-videolist"), try fixtureResponse("browse-playlist-videolist-page2"),
+        ])
+        let client = makeClient(transport)
+
+        let page1 = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+        let token = try #require(page1.nextContinuation)
+        let page2 = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: token)
+
+        #expect(transport.capturedBodies[1].contains("\"continuation\":\"\(token)\""))
+        #expect(page2.items.map(\.id) == ["a7PI-flNIyc", "VET5l_tOvKo", "oewj_XEM1js"])
+        #expect(page2.nextContinuation == nil)  // the real end of the playlist
+    }
+
+    /// SYNTHETIC rows (no scheduled premiere was in the capture): the first captured row with NewPipe's
+    /// upcoming marker added -- an `upcomingEventData` object, or the time-status overlay styled
+    /// `UPCOMING`. Either way the row gets the lockup path's `.upcoming` badge, not a playable video's.
+    @Test(arguments: [
+        (#""videoId": "fLnWRsyYVh0", "#, #""videoId": "fLnWRsyYVh0", "upcomingEventData": {"startTime": "1793600000"}, "#),
+        (#""style": "DEFAULT""#, #""style": "UPCOMING""#),
+    ])
+    func anUpcomingLegacyRowIsBadgedUpcoming(marker: (String, String)) async throws {
+        let body = String(decoding: try fixtureResponse("browse-playlist-videolist").body, as: UTF8.self)
+        let synthetic = body.replacing(marker.0, with: marker.1, maxReplacements: 1)
+        try #require(synthetic != body)
+        let client = makeClient(RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(synthetic.utf8))]))
+
+        let page = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+
+        #expect(page.items.first?.id == "fLnWRsyYVh0")
+        #expect(page.items.first?.badge == .upcoming)
+        #expect(page.items.dropFirst().first?.badge == nil)   // the next row is untouched
+    }
+
+    /// A first page holding only a continuation is followed, like a channel tab (cap 5).
+    @Test func playlistItemsFollowsEmptyContinuationShells() async throws {
+        let shell = try fixtureResponse("browse-channel-live-shell")
+        let cont = try fixtureResponse("browse-channel-live-shell-cont")
+        let transport = RecordingTransport([shell, cont, try fixtureResponse("browse-playlist-videolist-page2")])
+
+        let page = try await makeClient(transport).playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+
+        try #require(transport.callCount == 3)
+        #expect(transport.capturedBodies[1].contains("\"continuation\":\"\(try token(shell))\""))
+        #expect(transport.capturedBodies[2].contains("\"continuation\":\"\(try token(cont))\""))
+        #expect(page.items.count == 3)
+        #expect(page.items.first?.channelId == "UCbunYN0o9Yaid7zHaor_UHA")  // no channel-tab backfill
+    }
+
+    @Test func playlistItemsStopsFollowingEmptyShellsAfterFiveExtraFetches() async throws {
+        let cont = try fixtureResponse("browse-channel-live-shell-cont")
+        let transport = RecordingTransport([cont])
+
+        let page = try await makeClient(transport).playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+
+        #expect(transport.callCount == 1 + 5)
+        #expect(page.items.isEmpty)
+        #expect(page.nextContinuation == (try token(cont)))
     }
 
     // MARK: - d) bot-checked browse response surfaces BrowseError.botCheck

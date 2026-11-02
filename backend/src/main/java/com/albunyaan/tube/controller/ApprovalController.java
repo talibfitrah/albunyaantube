@@ -219,6 +219,8 @@ public class ApprovalController {
             }
 
             return ResponseEntity.ok(response);
+        } catch (com.albunyaan.tube.exception.LiveCategoryException e) {
+            throw e;                                   // rendered by GlobalExceptionHandler with its code (§4.2)
         } catch (org.springframework.web.server.ResponseStatusException e) {
             log.warn("Approval failed - {}: {}", e.getStatusCode(), e.getReason());
             throw e;

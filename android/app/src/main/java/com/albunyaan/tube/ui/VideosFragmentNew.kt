@@ -6,7 +6,6 @@ import android.text.TextWatcher
 import android.util.Log
 import android.view.View
 import android.view.inputmethod.EditorInfo
-import androidx.core.os.bundleOf
 import androidx.fragment.app.Fragment
 import androidx.fragment.app.viewModels
 import androidx.lifecycle.lifecycleScope
@@ -26,6 +25,7 @@ import com.albunyaan.tube.ui.utils.updateCategoryFilter
 import com.albunyaan.tube.player.PlaybackFeatureFlags
 import com.albunyaan.tube.player.PredictivePrefetchController
 import com.albunyaan.tube.player.StreamPrefetchService
+import com.albunyaan.tube.ui.player.PlayerFragment
 import com.google.android.material.snackbar.Snackbar
 import dagger.hilt.android.AndroidEntryPoint
 import kotlinx.coroutines.flow.collectLatest
@@ -165,18 +165,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     }
 
     private fun navigateToPlayer(video: ContentItem.Video) {
-        prefetchService.triggerPrefetch(video.id, viewLifecycleOwner.lifecycleScope)
-        val bundle = bundleOf(
-            "videoId" to video.id,
-            "title" to video.title,
-            "channelName" to video.category,
-            "thumbnailUrl" to video.thumbnailUrl,
-            "description" to video.description,
-            "durationSeconds" to video.durationSeconds,
-            "viewCount" to (video.viewCount ?: -1L)
-        )
+        prefetchService.triggerTapPrefetch(video, viewLifecycleOwner.lifecycleScope)
         // Navigate using global action since player is now in main_tabs_nav
-        findNavController().navigate(R.id.action_global_playerFragment, bundle)
+        findNavController().navigate(R.id.action_global_playerFragment, PlayerFragment.argsFor(video))
     }
 
     private fun observeViewModel() {

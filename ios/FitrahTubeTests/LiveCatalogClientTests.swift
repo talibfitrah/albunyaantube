@@ -215,4 +215,70 @@ struct LiveCatalogClientTests {
         transport.extraHeaders = [HTTPField.Name("X-Search-Match")!: "something-new"]
         #expect(try await sut.search(query: "zakir", type: nil, limit: 50).match == .exact)
     }
+
+    @Test func liveChannelDecodesTheLives() async throws {
+        let json = Data(#"{"channelId":"UCOll3M-P7oKs5cSrQ9ytt6g","status":"LIVE","lives":[{"id":"eaOtcUNHDB8","title":"Zad"}]}"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+
+        let lives = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g")
+
+        #expect(lives == LiveChannelLives(
+            lives: [.init(id: "eaOtcUNHDB8", title: "Zad")]))
+        #expect(transport.lastRequest?.path == "/v1/live/channels/UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
+
+    @Test func aLiveCategoryItemKeepsItsChannel() async throws {
+        let json = Data(#"""
+        {"data":[{"id":"eaOtcUNHDB8","type":"VIDEO","title":"Zad","durationSeconds":0,"liveChannelId":"UCOll3M-P7oKs5cSrQ9ytt6g"}],
+         "pageInfo":{"hasNext":false}}
+        """#.utf8)
+        let (sut, _) = makeClient(responseBody: json)
+
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"), query: nil)
+
+        #expect(page.items.first?.liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).liveChannelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).channelId == "UCOll3M-P7oKs5cSrQ9ytt6g")
+        #expect(PlayerArgs(item: page.items[0]).liveTitle == "Zad")                // I-P1: D12's backend title (open, queue)
+    }
+
+    /// The backend's 404 (GlobalExceptionHandler's body): not a servable live channel, stop asking.
+    @Test func aLiveChannel404IsNotFound() async {
+        let json = Data(#"{"timestamp":"2026-10-17T15:00:00","status":404,"error":"Not Found","message":"LiveChannel not found","path":"/api/v1/live/channels/UCx"}"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+        transport.status = .notFound
+
+        await #expect(throws: LiveChannelNotFound.self) { try await sut.liveChannel(id: "UCx") }
+    }
+
+    /// Anything else is "no answer": retryable, never mistaken for a 404. Stage 9 I13: the documented 503 (the live
+    /// states still load) carries its Retry-After, which live-channel mode waits.
+    @Test func aLiveChannel503IsNotNotFound() async {
+        let (sut, transport) = makeClient(responseBody: Data())
+        transport.status = .serviceUnavailable
+        transport.extraHeaders = [.retryAfter: "60"]
+
+        let error = await #expect(throws: (any Error).self) { try await sut.liveChannel(id: "UCx") }
+        #expect(error != nil && !(error is LiveChannelNotFound))
+        #expect((error as? LiveChannelUnexpectedStatus)?.statusCode == 503)
+        #expect((error as? LiveChannelUnexpectedStatus)?.retryAfter == 60)
+    }
+
+    @Test func theFakeAnswersAnUnknownChannelLikeThe404() async throws {
+        let lives = LiveChannelLives(lives: [])
+        let fake = FakeCatalogClient(liveChannels: ["UCa": lives])
+
+        #expect(try await fake.liveChannel(id: "UCa") == lives)
+        await #expect(throws: LiveChannelNotFound.self) { try await fake.liveChannel(id: "UCx") }
+    }
+
+    @Test func aNonLiveItemOpensThePlayerWithNoChannel() {
+        let item = ContentItem(id: "v1", type: .video, title: "Video One", category: "Quran", description: nil,
+                               thumbnailURL: nil, durationSeconds: 120, uploadedDaysAgo: 2, viewCount: 100,
+                               channelTitle: nil, subscribers: nil, videoCount: nil, itemCount: nil)
+
+        #expect(PlayerArgs(item: item).channelId == nil)
+        #expect(PlayerArgs(item: item).liveChannelId == nil)
+        #expect(PlayerArgs(item: item).liveTitle == nil)
+    }
 }

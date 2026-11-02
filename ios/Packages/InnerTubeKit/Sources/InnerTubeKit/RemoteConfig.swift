@@ -1,4 +1,5 @@
 import Foundation
+import os
 
 /// Per-client-family InnerTube request context (spec §6.13). Fields absent for
 /// a given family (e.g. `web` has no `userAgent`/device fields) decode as `nil`.
@@ -88,8 +89,10 @@ extension RemoteConfig {
     /// the ban survives a remote config the app did not author. That protects THIS build and later
     /// ones only: installed 1.0.0 / 1.0.2 builds still list `embed` in their own set, so for them the
     /// published `ios-remote-config.json` is the only guard (`RemoteConfigTests` checks it raw).
+    ///
+    /// `tvSamsungAdaptive` is the HD upgrade's switch (spec R43): walks skip it; listing it turns `StreamResolver.upgrade` on.
     public static let knownResolverStrategies: Set<String> = [
-        "visionosHLS", "androidItag18",
+        "visionosHLS", "androidItag18", "tvSamsungAdaptive",
     ]
 
     /// Loaded once from the bundled `remote-config-default.json` (Task 1's frozen client table).
@@ -183,8 +186,13 @@ public actor RemoteConfigStore {
 
     /// The `clientName` each known `clients[key]` must carry (mirrors `ClientFamily.expectedClientName`).
     private static let expectedClientNames: [String: String] = [
-        "visionos": "VISIONOS", "android": "ANDROID", "web": "WEB",
+        "visionos": "VISIONOS", "android": "ANDROID", "web": "WEB", "tvSamsung": "TVHTML5",
     ]
+
+    /// The strategies a resolve walk POSTs for (`StreamResolver.runRung`); every other known one (`tvSamsungAdaptive`)
+    /// is skipped by walks.
+    private static let walkStrategies: Set<String> = ["visionosHLS", "androidItag18"]
+    private static let log = Logger(subsystem: "com.albunyaan.tube", category: "RemoteConfig")
 
     private static func sanitized(_ config: RemoteConfig) -> RemoteConfig {
         var config = config
@@ -199,9 +207,14 @@ public actor RemoteConfigStore {
         // CF-G-13: an order that sanitizes to EMPTY (all-unknown, or literally []) would persist as
         // fetched AND lastGood, so `current()` never reaches the bundled default and the resolver
         // walks zero rungs -> allRungsFailed for every video, surviving relaunch. One operator typo
-        // must not brick playback: fall back to the bundled default's order.
-        if config.resolverOrder.isEmpty {
-            config.resolverOrder = RemoteConfig.bundledDefault.resolverOrder
+        // must not brick playback: fall back to the bundled default's order. An order left with no rung
+        // a walk POSTs for (e.g. only `tvSamsungAdaptive`) bricks the same way, so it falls back too.
+        // What is left holds only non-walk switches (spec §4.1: the TV rung anywhere turns HD on); they are kept after the
+        // bundled rungs, so nothing duplicates and an empty order still gets exactly the bundled one.
+        // Logged once per sanitize (a fetch or a launch), not per resolve: the persisted copy is the fixed one.
+        if !config.resolverOrder.contains(where: walkStrategies.contains) {
+            log.error("resolverOrder \(config.resolverOrder, privacy: .public) has no walk rung; prepending the bundled order")
+            config.resolverOrder = RemoteConfig.bundledDefault.resolverOrder + config.resolverOrder
         }
         // Floor at 0: "0 = no cache" is a legitimate published choice; a negative value back-dates
         // every entry's expiry in `ManifestCache.put`, silently disabling the cache.
@@ -213,6 +226,18 @@ public actor RemoteConfigStore {
             guard let expected = expectedClientNames[key] else { return true }
             return context.clientName == expected
         }
+        // Stage 6 I-M10: the fetched `clients` replace the bundled table wholesale, so publishing the rung without its
+        // context turns nothing on. Said once per sanitize, like the order above.
+        if config.hdContextMissing {
+            log.error("resolverOrder lists tvSamsungAdaptive but clients has no tvSamsung context; HD stays off")
+        }
         return config
+    }
+}
+
+extension RemoteConfig {
+    /// Stage 6 I-M10: `tvSamsungAdaptive` is listed but there is no `tvSamsung` context to POST with, so HD stays off.
+    var hdContextMissing: Bool {
+        resolverOrder.contains("tvSamsungAdaptive") && clients["tvSamsung"] == nil
     }
 }

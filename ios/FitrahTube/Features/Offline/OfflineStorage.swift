@@ -20,14 +20,37 @@ enum OfflineStorage {
         "\(itemId).\(kind.rawValue)"
     }
 
+    /// 1.0.4 I9: the save's own copy of its thumbnail, next to the file, so the Saved row shows it
+    /// offline. Derived from the id like the file's name, never stored.
+    nonisolated static func thumbnailName(itemId: String) -> String {
+        "\(itemId).jpg"
+    }
+
+    nonisolated static func thumbnailURL(itemId: String, base: URL) -> URL {
+        fileURL(relativePath: thumbnailName(itemId: itemId), base: base)
+    }
+
     nonisolated static func fileURL(relativePath: String, base: URL) -> URL {
         directoryURL(base: base).appending(path: relativePath)
     }
 
     /// Per-item accounting for the footer. No quota — device storage is the natural limit
-    /// (`DownloadStorage.kt:61-67`).
-    static func usedBytes(items: [OfflineItem]) -> Int64 {
-        items.reduce(0) { $0 + $1.bytesWritten }
+    /// (`DownloadStorage.kt:61-67`). Each row's thumbnail copy counts too (1.0.4 round 2: I9's
+    /// copies are ~150 KB each, on disk next to the files).
+    /// Stage 9 I13 (Cubic r4 P3): the copies' total is one stat per row, and the Saved footer and Settings' Storage
+    /// row re-render on every progress tick, so both cache it off a `.task` (`thumbnailBytes`); a render sums the rows'
+    /// in-memory bytes and takes that cache. Nil is the first frame, before the task lands: one read then, the
+    /// `availableBytes(cached:base:)` shape.
+    static func usedBytes(items: [OfflineItem], thumbnailBytes cached: Int64?, base: URL) -> Int64 {
+        items.reduce(0) { $0 + $1.bytesWritten } + (cached ?? thumbnailBytes(items: items, base: base))
+    }
+
+    /// The thumbnail copies' share of `usedBytes`: one file stat per row, so never per render.
+    static func thumbnailBytes(items: [OfflineItem], base: URL) -> Int64 {
+        items.reduce(0) { total, item in
+            let copy = thumbnailURL(itemId: item.id, base: base)
+            return total + Int64((try? copy.resourceValues(forKeys: [.fileSizeKey]).fileSize) ?? 0)
+        }
     }
 
     /// The Saved screen's storage footer — "%lld saved • %@ used • %@ available", digits and

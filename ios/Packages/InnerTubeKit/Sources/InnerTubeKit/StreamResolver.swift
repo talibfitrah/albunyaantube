@@ -42,6 +42,30 @@ public actor StreamResolver {
     /// Bound it if a session ever demotes thousands.
     private var demoted: [String: ClientFamily] = [:]
 
+    // MARK: HD upgrade state (spec §4.2 revision 3)
+
+    /// R20: the backend's sts lookup and sig/n solve; nil keeps HD off.
+    private let challengeSolver: ChallengeSolving?
+    /// R42: the first HD googlevideo request comes no earlier than the `/player` response + this.
+    private let hdFirstFetchDelay: Duration
+    /// R23: the 30-minute player-info cache; a 409 clears it.
+    private var hdPlayer: (player: SolverPlayer, at: Duration)?
+    /// R23 / R42 / R44: while this lies ahead, `upgrade` makes no request at all.
+    private var hdPausedUntil: Duration?
+    /// R5 / R7 / R41: videos with no HD this session.
+    /// ponytail: process-lifetime and unbounded, like `demoted` -- one small entry per video.
+    private var hdDenied: Set<String> = []
+
+    static let tvStrategy = "tvSamsungAdaptive"
+    private static let playerInfoTTL: Duration = .seconds(30 * 60)
+    /// R23: the solver skip window's ceiling (backend failures only).
+    private static let hdWindowSeconds = 120
+    /// ponytail: a fixed 30 min, unmeasured (spec R44, ruling (c)); tune once the bot-check duration per IP is measured.
+    private static let botCheckPauseSeconds = 30 * 60
+
+    /// R20: `AppContainerTests` pins that the live container's resolver can ask for HD and a fixture's cannot.
+    public nonisolated var hasChallengeSolver: Bool { challengeSolver != nil }
+
     public init(
         transport: HTTPTransport,
         remoteConfigStore: RemoteConfigStore,
@@ -53,7 +77,9 @@ public actor StreamResolver {
         locale: InnerTubeLocale,
         requestBuilder: PlayerRequestBuilder = PlayerRequestBuilder(),
         responseParser: PlayerResponseParser = PlayerResponseParser(),
-        minPostSpacing: Duration = .milliseconds(500)
+        minPostSpacing: Duration = .milliseconds(500),
+        challengeSolver: ChallengeSolving? = nil,
+        hdFirstFetchDelay: Duration = .seconds(4)
     ) {
         self.transport = transport
         self.remoteConfigStore = remoteConfigStore
@@ -66,6 +92,8 @@ public actor StreamResolver {
         self.wallClock = wallClock
         self.locale = locale
         self.minPostSpacing = minPostSpacing
+        self.challengeSolver = challengeSolver
+        self.hdFirstFetchDelay = hdFirstFetchDelay
     }
 
     /// - Parameter purpose: the resolve lane (`.player` vs `.prefetch`, ruling 16), for caller-side
@@ -166,6 +194,150 @@ public actor StreamResolver {
     public func demote(_ videoId: String, failed family: ClientFamily) async {
         demoted[videoId] = family
         await cache.remove(videoId)
+    }
+
+    // MARK: - the HD upgrade (spec §4.2 revision 3, R43)
+
+    /// Internal marker: the TV answer offers no HD for this video (R5, R7). Never escapes `upgrade`.
+    private struct HDNotOffered: Error {}
+    /// Internal marker: the TV `/player` was bot-checked or refused over HTTP (R44). Never escapes `upgrade`.
+    private struct HDBotCheck: Error {}
+
+    /// One `tv_samsung` `/player` and one backend solve for the video whose 360p is on screen; returned no earlier than
+    /// the `/player` response + `hdFirstFetchDelay` (R42). nil = stay on 360p. It never throws, because the caller is
+    /// already playing, and it never touches the walk, the manifest cache or the global bot-check cooldown.
+    /// Only our backend's unavailability opens R23's skip window and only a bot check the 30-minute pause (R44). A
+    /// YouTube transport failure (a non-2xx, a `URLError`, the 8 s budget) and a cancellation leave no state, so the
+    /// next play retries, as the walk would. What the answer itself rules out (a non-OK answer, no usable format, a
+    /// defect in YouTube's data) is this video's alone (R5, R7, R41).
+    public func upgrade(_ videoId: String) async -> Resolved? {
+        guard let solver = challengeSolver, Self.isValidVideoId(videoId), !hdDenied.contains(videoId) else { return nil }
+        if let until = hdPausedUntil, monotonicClock.now < until { return nil }
+        // Stage 9 I-C9a: the app-wide bot-check cooldown suppresses all InnerTube traffic from this IP (§6.3). A cached
+        // 360p can still play inside it, since the cache is read before `performResolve`'s own check.
+        if await sessionStore.cooldownRemaining(now: wallClock.wallNow) != nil { return nil }
+        let config = await remoteConfigStore.current()
+        guard config.resolverOrder.contains(Self.tvStrategy), let context = config.clients["tvSamsung"] else { return nil }
+        do {
+            let (resolved, respondedAt) = try await Self.withTimeout(Self.rungBudget) {
+                try await self.mintHD(videoId, solver: solver, context: context)
+            }
+            let wait = respondedAt + hdFirstFetchDelay - monotonicClock.now
+            if wait > .zero { try await Task.sleep(for: wait) }
+            return resolved
+        } catch ChallengeSolverError.unknownPlayer {
+            hdPlayer = nil                                                        // M14: no window
+        } catch ChallengeSolverError.unavailable(let seconds) {
+            pauseHD(seconds: min(max(seconds ?? Self.hdWindowSeconds, 0), Self.hdWindowSeconds))   // R22, R23
+        } catch is HDBotCheck {
+            pauseHD(seconds: Self.botCheckPauseSeconds)                           // R44
+        } catch is CancellationError {
+            // The player moved on; nothing about the source or the backend is known.
+        } catch ExtractionError.transport {
+            // YouTube non-2xx or the 8 s budget: retryable, as in the walk. (A solver timeout is `.unavailable`, above.)
+        } catch is URLError {
+            // `URLSessionTransport` maps nothing but `.cancelled`: a raw network failure to YouTube, retryable.
+        } catch {
+            hdDenied.insert(videoId)                                              // never the backend window
+        }
+        return nil
+    }
+
+    /// R41 (revision 4): the HD item failed before or after the swap, or never buffered. No HD for this video this
+    /// session, and nothing else: the device-wide pause is for a bot check and a refused `sidx`.
+    public func hdFailed(_ videoId: String) {
+        hdDenied.insert(videoId)
+    }
+
+    /// R42 (revision 4): a `sidx` GET was still 403 after its retry -- a wrong solve or a refused IP. The same fixed
+    /// 30-minute `tv_samsung` pause as a bot check (R44). Idempotent: the loader and the app may both report one refusal.
+    public func hdRefused() {
+        pauseHD(seconds: Self.botCheckPauseSeconds)
+    }
+
+    /// Never shortens a pause and never stacks one: `max(existing, now + seconds)`.
+    private func pauseHD(seconds: Int) {
+        let until = monotonicClock.now + .seconds(seconds)
+        hdPausedUntil = max(hdPausedUntil ?? until, until)
+    }
+
+    private func mintHD(_ videoId: String, solver: ChallengeSolving, context: ClientContext) async throws -> (Resolved, Duration) {
+        let started = monotonicClock.now
+        let player: SolverPlayer
+        if let cached = hdPlayer, started - cached.at < Self.playerInfoTTL {
+            player = cached.player
+        } else {
+            player = try await Self.askSolver(.milliseconds(1500)) { try await solver.playerInfo() }
+            hdPlayer = (player, monotonicClock.now)
+        }
+        let infoSpent = monotonicClock.now - started
+        let (streaming, body, respondedAt) = try await postTV(videoId, context: context, sts: player.signatureTimestamp, canAdopt: true)
+        guard let selection = TVAdaptive.select(try responseParser.adaptiveFormats(body)) else { throw HDNotOffered() }
+        let challenges = TVAdaptive.challenges(selection)
+        let solveBudget = max(min(.milliseconds(1500), .seconds(2) - infoSpent), .milliseconds(1))   // R22
+        let answers = try await Self.askSolver(solveBudget) {
+            try await solver.solve(playerId: player.id, n: challenges.n, s: challenges.s)
+        }
+        // R11: a challenge left unanswered is the backend's failure (the window). Past this check every `RewriteError` is
+        // a defect in YouTube's data, which `upgrade` keeps to this video.
+        guard challenges.n.allSatisfy({ answers.n[$0] != nil }), challenges.s.allSatisfy({ answers.s[$0] != nil }) else {
+            throw ChallengeSolverError.unavailable(retryAfterSeconds: nil)
+        }
+        let model = try TVAdaptive.synthetic(selection, answers: answers)
+        let now = wallClock.wallNow
+        // VOD only: a live stream has no byte ranges, so `select` never picks it (R7). `isLive` and `isLiveNow` stay
+        // false; a future live HD path must not wrap this one. No `title`: TVHTML5 answers carry no `videoDetails.title`,
+        // so the app keeps the title it adopted from the 360p walk.
+        let resolved = Resolved(
+            stream: .hls(url: URL(string: "\(SyntheticHLSLoader.scheme)://\(UUID().uuidString)/master.m3u8")!, isLive: false,
+                         audioOnlyURL: model.audio.first?.url, captionTracks: streaming.captionTracks, synthetic: model),
+            client: .tvSamsung, userAgent: context.userAgent ?? "", resolvedAt: now, expiresAt: expiry(streaming, from: now))
+        return (resolved, respondedAt)
+    }
+
+    /// A solver call under its R22 budget. Its timeout, and any error reaching our backend that the conformer did not
+    /// type, is the backend's unavailability (R23); a cancellation stays one.
+    private static func askSolver<T: Sendable>(
+        _ budget: Duration, _ call: @escaping @Sendable () async throws -> T
+    ) async throws -> T {
+        do {
+            return try await withTimeout(budget, call)
+        } catch let error as ChallengeSolverError {
+            throw error
+        } catch {
+            if Task.isCancelled { throw CancellationError() }
+            throw ChallengeSolverError.unavailable(retryAfterSeconds: nil)
+        }
+    }
+
+    /// The TV `/player` (R4). R6/R44: a non-OK answer bringing a DIFFERENT visitorData is adopted and retried once (the
+    /// tokenless bootstrap); a bot check bringing none, or an HTTP 403/429, is `HDBotCheck` -- no rotation, no cooldown,
+    /// the stored visitorData kept. Any other non-OK answer is `HDNotOffered` (R5: TVHTML5 never decides a verdict).
+    private func postTV(_ videoId: String, context: ClientContext, sts: Int, canAdopt: Bool) async throws
+        -> (StreamingData, Data, Duration) {
+        let sent = await sessionStore.visitorData(for: .tvSamsung)
+        let request = requestBuilder.build(videoId: videoId, family: .tvSamsung, context: context, visitorData: sent,
+                                           locale: locale, signatureTimestamp: sts)
+        let body: Data
+        do {
+            body = try await sendPlayerPost(request)
+        } catch is RateLimited {
+            throw HDBotCheck()
+        } catch ExtractionError.botCheck {
+            throw HDBotCheck()
+        }
+        let respondedAt = monotonicClock.now
+        let parsed = try responseParser.parse(body)
+        if case .ok(let streaming) = parsed.playability {
+            if let visitor = parsed.visitorData { await sessionStore.setVisitorData(visitor, for: .tvSamsung) }
+            return (streaming, body, respondedAt)
+        }
+        if canAdopt, let visitor = parsed.visitorData, visitor != sent {
+            await sessionStore.setVisitorData(visitor, for: .tvSamsung)
+            return try await postTV(videoId, context: context, sts: sts, canAdopt: false)
+        }
+        if case .botCheck = parsed.playability { throw HDBotCheck() }
+        throw HDNotOffered()
     }
 
     // MARK: - the ladder
@@ -332,12 +504,14 @@ public actor StreamResolver {
             if expectHLS, let hls = streaming.hlsManifestURL {
                 return .resolved(Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
-                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
+                    isLiveNow: streaming.isLiveNow, title: streaming.title))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
                 return .resolved(Resolved(
                     stream: .progressive(url: itag18, label: "360p"),
-                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now)))
+                    client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
+                    title: streaming.title))
             }
             return .advance
         case .unplayable:
@@ -475,6 +649,7 @@ public actor StreamResolver {
         switch strategy {
         case "visionosHLS": return .visionos
         case "androidItag18": return .android
+        case "tvSamsungAdaptive": return .tvSamsung
         default: return nil
         }
     }
@@ -489,6 +664,7 @@ public actor StreamResolver {
         case .visionos: return "visionos"
         case .android: return "android"
         case .web: return "web"
+        case .tvSamsung: return "tvSamsung"
         }
     }
 

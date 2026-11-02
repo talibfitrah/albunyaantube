@@ -13,10 +13,12 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.util.YouTubeUrlUtils;
 import com.google.cloud.Timestamp;
+import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
+import java.io.IOException;
 import java.time.Duration;
 import java.time.Instant;
 import java.time.format.DateTimeParseException;
@@ -57,6 +59,18 @@ public class SimpleImportService {
     private final PlaylistRepository playlistRepository;
     private final VideoRepository videoRepository;
 
+    /**
+     * One simple-format value, "Title|Cat1,Cat2|keyword1,keyword2" (the keywords part optional). The one parse the
+     * sync import, the async import (ContentImportService) and the live guard share, so a keyword can never be read as a
+     * category by one of them and not the others (§7 row 16). A null value is an empty row.
+     */
+    public record Row(String title, String categories, String keywords) {
+        public static Row parse(String value) {
+            String[] parts = (value == null ? "" : value).split("\\|", 3);
+            return new Row(parts[0].trim(), parts.length > 1 ? parts[1].trim() : "", parts.length > 2 ? parts[2].trim() : "");
+        }
+    }
+
     public SimpleImportService(
             ChannelOrchestrator channelOrchestrator,
             CategoryMappingService categoryMappingService,
@@ -78,13 +92,15 @@ public class SimpleImportService {
      * @param defaultStatus Status to set for imported items (APPROVED or PENDING)
      * @param currentUserId Firebase UID of user performing import
      * @param validateOnly If true, only validate without importing (dry-run)
+     * @param storedLiveRows "type:youtubeId" of the LIVE rows the live guard saw stored: skipped unread (§7 row 16)
      * @return Import response with counts and detailed results
      */
     public SimpleImportResponse importSimpleFormat(
             List<Map<String, String>> simpleData,
             String defaultStatus,
             String currentUserId,
-            boolean validateOnly
+            boolean validateOnly,
+            Set<String> storedLiveRows
     ) {
         SimpleImportResponse response = new SimpleImportResponse();
 
@@ -123,17 +139,17 @@ public class SimpleImportService {
 
         // Import channels
         if (channelsMap != null && !channelsMap.isEmpty()) {
-            importChannels(channelsMap, defaultStatus, currentUserId, validateOnly, response);
+            importChannels(channelsMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         // Import playlists
         if (playlistsMap != null && !playlistsMap.isEmpty()) {
-            importPlaylists(playlistsMap, defaultStatus, currentUserId, validateOnly, response);
+            importPlaylists(playlistsMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         // Import videos
         if (videosMap != null && !videosMap.isEmpty()) {
-            importVideos(videosMap, defaultStatus, currentUserId, validateOnly, response);
+            importVideos(videosMap, defaultStatus, currentUserId, validateOnly, response, storedLiveRows);
         }
 
         response.setSuccess(true);
@@ -152,22 +168,20 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
         for (Map.Entry<String, String> entry : channelsMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords from "Title|Cat1,Cat2|keyword1,keyword2" format
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists in Firestore
-                Optional<Channel> existing = channelRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("channel:" + youtubeId)
+                        || channelRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,
@@ -291,22 +305,20 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
         for (Map.Entry<String, String> entry : playlistsMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists
-                Optional<Playlist> existing = playlistRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("playlist:" + youtubeId)
+                        || playlistRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,
@@ -423,22 +435,21 @@ public class SimpleImportService {
             String defaultStatus,
             String currentUserId,
             boolean validateOnly,
-            SimpleImportResponse response
+            SimpleImportResponse response,
+            Set<String> storedLiveRows
     ) {
+        String playerRefusal = null;   // B17: set at the first /player bot check; the rest are not asked
         for (Map.Entry<String, String> entry : videosMap.entrySet()) {
             String youtubeId = entry.getKey();
-            String value = entry.getValue();
-
-            // Parse title, categories, and keywords
-            String[] parts = value.split("\\|", 3);
-            String titleFromFile = parts[0].trim();
-            String categoriesStr = parts.length > 1 ? parts[1].trim() : "";
-            String keywordsStr = parts.length > 2 ? parts[2].trim() : "";
+            Row row = Row.parse(entry.getValue());
+            String titleFromFile = row.title();
+            String categoriesStr = row.categories();
+            String keywordsStr = row.keywords();
 
             try {
                 // 1. Check if already exists
-                Optional<Video> existing = videoRepository.findByYoutubeId(youtubeId);
-                if (existing.isPresent()) {
+                if (storedLiveRows.contains("video:" + youtubeId)
+                        || videoRepository.findByYoutubeId(youtubeId).isPresent()) {
                     response.addResult(SimpleImportItemResult.skipped(
                             youtubeId,
                             titleFromFile,
@@ -448,15 +459,26 @@ public class SimpleImportService {
                     continue;
                 }
 
-                // 2. Validate YouTube ID and fetch metadata
-                StreamDetailsDto ytVideo = channelOrchestrator.validateAndFetchVideoDto(youtubeId);
+                // 2. Validate YouTube ID and fetch metadata. The shared breaker no longer stops /player bot checks
+                // (B17), so an import stops asking at the first one: one refused request per import.
+                StreamDetailsDto ytVideo = null;
+                if (playerRefusal == null) {
+                    try {
+                        ytVideo = channelOrchestrator.getVideoDetailsDto(youtubeId);
+                    } catch (IOException e) {
+                        logger.warn("Video validation failed for {}: {}", youtubeId, e.getMessage());
+                        if (e.getCause() instanceof SignInConfirmNotBotException) {
+                            playerRefusal = "YouTube refused the lookup (bot check), try again later";
+                        }
+                    }
+                }
 
                 if (ytVideo == null) {
                     response.addResult(SimpleImportItemResult.failed(
                             youtubeId,
                             titleFromFile,
                             "VIDEO",
-                            "YouTube video not found or deleted (404)"
+                            playerRefusal != null ? playerRefusal : "YouTube video not found or deleted (404)"
                     ));
                     continue;
                 }

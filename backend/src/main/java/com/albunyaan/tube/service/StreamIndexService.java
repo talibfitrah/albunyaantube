@@ -8,6 +8,8 @@ import org.slf4j.LoggerFactory;
 import org.springframework.stereotype.Service;
 
 import java.util.List;
+import java.util.concurrent.ExecutionException;
+import java.util.concurrent.TimeoutException;
 
 @Service
 public class StreamIndexService {
@@ -58,5 +60,20 @@ public class StreamIndexService {
         } catch (Exception e) {
             log.warn("markStreamArchived failed for {}: {}", streamId, e.getMessage());
         }
+    }
+
+    /** Stage 9 B25 (Cubic r13 #5): after Restore deleted a take-down record, its id stops hiding its stream (SearchIndex). */
+    public void releaseVideoId(String youtubeId) {
+        searchIndex.releaseVideoId(youtubeId);
+    }
+
+    /**
+     * Stage 9 B13: undoes markStreamArchived when Restore lifts a report's take-down: visible and searchable again.
+     * Stage 9 B14: a failure is thrown, so Restore keeps its record and can run again (nothing else re-shows the stream).
+     */
+    public void markStreamRestored(String streamId) throws ExecutionException, InterruptedException, TimeoutException {
+        SearchableStream stream = streamRepository.markVisible(streamId);
+        if (stream != null) searchIndex.restoreStream(stream);
+        log.info("Stream {} restored (visible: {})", streamId, stream != null);
     }
 }

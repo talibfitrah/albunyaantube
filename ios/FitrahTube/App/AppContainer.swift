@@ -630,7 +630,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             // the manager refuses to START new work while the kill-switch is off).
             downloadsEnabled: { [innerTube] in await innerTube.remoteConfig.current().isDownloadsEnabled },
             // CF-A-59: no save lands for an account whose deletion has started.
-            refusesOwner: { [weak self] in self?.session.isDeparted($0) ?? false })
+            refusesOwner: { [weak self] in self?.session.isDeparted($0) ?? false },
+            // 1.0.4 I9: the one image fetch in the app, whose cache usually holds the player's copy.
+            thumbnail: { @MainActor url in await RemoteImage.cachedImage(for: url)?.jpegData(compressionQuality: 0.8) })
         observeOfflineGate(manager)
         return manager
     }
@@ -651,6 +653,15 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         }
     }
 
+    /// Playback Phase 2 (spec R20): the backend's sts lookup and sig/n solve for the HD upgrade, over the signed
+    /// transport. A fixture container gets none, so its resolver never asks for HD (`AppContainerTests` pins both).
+    private var challengeSolver: (any ChallengeSolving)? {
+        #if DEBUG
+        if isFixture { return nil }   // `isFixture` is DEBUG-only: Release has no fixture container (stage 7 I-X1)
+        #endif
+        return BackendChallengeSolver(transport: authorizedTransport, baseURL: apiBaseURL)
+    }
+
     /// InnerTubeKit composition root (CF-B3/CF-B4, `ios-app-plan.md` §6.1) -- resolves a videoId to
     /// a playable stream via `resolver`. `lazy`, same reasoning as the stores above: building it is
     /// cheap and side-effect-free (no network call happens until something resolves or refreshes).
@@ -658,7 +669,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         keyValueStore: UserDefaultsKeyValueStore(defaults: userDefaults),
         availabilityGate: BackendAvailabilityGate(baseURL: apiBaseURL),
         locale: Self.deviceLocale(),
-        remoteConfigURL: Self.debugRemoteConfigURL ?? AppConfig.innerTubeRemoteConfigURL
+        remoteConfigURL: Self.debugRemoteConfigURL ?? AppConfig.innerTubeRemoteConfigURL,
+        challengeSolver: challengeSolver
     )
     var resolver: StreamResolver { innerTube.resolver }
 
@@ -681,6 +693,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// `gateTransport`: a real session live, a canned 503 in a fixture, which must write nothing
     /// (`AppContainerTests.theFakeContainerPushesNoIndexBatches`).
     private(set) lazy var index = IndexClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
+    /// Owner issue 1(b): the original titles for browse rows. Same `gateTransport` rule as `index`: a fixture asks
+    /// nothing (`AppContainerTests.theFakeContainerAsksNoTitles`).
+    private(set) lazy var titles = TitlesClient(transport: gateTransport, baseURL: apiBaseURL, deviceId: .persisted(in: userDefaults))
     /// Plan C Task 3: the hand-written `POST /api/v1/reports` (same seam, awaited by `ReportSheet`).
     private(set) lazy var report: ReportClient = {
         #if DEBUG
@@ -698,6 +713,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         atom: innerTube.atom,
         latch: DegradedLatch(store: UserDefaultsKeyValueStore(defaults: userDefaults)),
         index: index,
+        titles: titles,
         gate: BackendAvailabilityGate(baseURL: apiBaseURL),
         degradedHeader: degradedHeader
     )
@@ -752,9 +768,9 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         let api = FitrahAPIClient.make(baseURL: baseURL, deviceId: deviceId)
         // Degraded-mode header (plan Task 2 table): the backend's own `Channel` stands in for a
         // bot-checked `channelHeader` -- name and avatar only; banner, subscriber line and verified
-        // badge are lost, which the screen renders as their placeholders. Hand-written (C T6):
-        // the generated `getPublicChannel`/`getPublicPlaylist` cannot decode production's
-        // Timestamp objects, see `PublicHeaders`.
+        // badge are lost, which the screen renders as their placeholders. `PublicHeaders` is
+        // still the hand-written reader: kept for 1.0.4 because it works and is tested, though
+        // the generated `getPublicChannel`/`getPublicPlaylist` now decode (b1e93334).
         let headers = PublicHeaders(baseURL: baseURL, deviceId: deviceId)
         let container = AppContainer(
             catalog: LiveCatalogClient(client: api),
@@ -880,6 +896,14 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         return errno != EPERM && errno != EACCES
     }
 
+    /// The free bytes on the store's volume -- the real free blocks SQLite writes into, not
+    /// `volumeAvailableCapacityForImportantUsage`, whose purgeable share a SQLite write never gets.
+    /// 0 when unreadable.
+    nonisolated static func freeBytes(_ storeURL: URL) -> Int64 {
+        let values = try? storeURL.deletingLastPathComponent().resourceValues(forKeys: [.volumeAvailableCapacityKey])
+        return Int64(values?.volumeAvailableCapacity ?? 0)
+    }
+
     /// What the scene and the background-session hook wait on before the first store use
     /// (`StoreReadiness`). Settable so a test can hold a container's hook on a fake answer.
     var storeReadiness: StoreReadiness = .live
@@ -895,7 +919,8 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     /// corrupt file; production always takes the default location. `protectedDataAvailable`:
     /// 1.0.3 R5 (L1), see the deletion below.
     static func makeModelContainer(inMemory: Bool, storeURL: URL? = nil,
-                                   protectedDataAvailable: () -> Bool = { true }) -> ModelContainer {
+                                   protectedDataAvailable: () -> Bool = { true },
+                                   freeBytes: (URL) -> Int64 = AppContainer.freeBytes) -> ModelContainer {
         let schema = Schema(versionedSchema: FavoritesSchemaV8.self)
         let configuration = storeURL.map { ModelConfiguration(schema: schema, url: $0) }
             ?? ModelConfiguration(schema: schema, isStoredInMemoryOnly: inMemory)
@@ -918,7 +943,21 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
             // delete the Saved library, favorites and subscriptions as if corrupt. Fail soft: the
             // in-memory stand-in below, the store untouched for the next launch. "Unreadable" is
             // the readiness gate's own definition (stage 5 P2), so the two never disagree.
-            if !inMemory, storeIsReadable(configuration.url, protectedDataAvailable: protectedDataAvailable) {
+            // 1.0.4 I3 (stage 5 run 2 R2-1): NEVER on a disk that may be full either. A migration
+            // (V7 -> V8) on a full device fails both opens like a corrupt store, and the delete made
+            // the room the rebuild needed: the library was gone. SwiftData does not say why
+            // (`SwiftDataError.loadIssueModelContainer`, no underlying error, probed on iOS 26.2
+            // 2026-10-16), so the volume answers: less free space than twice the store plus 50 MB
+            // keeps it.
+            // ponytail: a free-space floor for the cause SwiftData hides -- a corrupt store on a full
+            // disk stays on the stand-in until space frees; classify the error if SwiftData ever
+            // surfaces Core Data's (SQLITE_FULL = 13).
+            let store = configuration.url
+            let storeBytes = ["", "-wal"].reduce(Int64(0)) { total, suffix in
+                total + ((try? FileManager.default.attributesOfItem(atPath: store.path + suffix)[.size] as? Int64) ?? 0)
+            }
+            let roomToRebuild = freeBytes(store) >= 2 * storeBytes + (50 << 20)
+            if !inMemory, roomToRebuild, storeIsReadable(store, protectedDataAvailable: protectedDataAvailable) {
                 // `-shm`/`-wal`, appended to the path -- not `appendingPathExtension`, which
                 // produces `default.store.shm` (gate wave-2 W1). SQLite names its sidecars by
                 // suffixing the database *filename*, so the wrongly-named deletes left the real

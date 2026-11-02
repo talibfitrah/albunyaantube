@@ -11,7 +11,9 @@ sealed class ContentItem {
         val description: String,
         val thumbnailUrl: String? = null,
         val viewCount: Long? = null,
-        val channelName: String? = null
+        val channelName: String? = null,
+        /** Spec §4.1: set on a live-category item that stands for this channel's current live. */
+        val liveChannelId: String? = null,
     ) : ContentItem()
 
     data class Channel(

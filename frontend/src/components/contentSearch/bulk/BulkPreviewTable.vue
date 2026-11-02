@@ -64,6 +64,7 @@ const counts = computed(() => ({
             :key="row.rowIndex"
             :row="row"
             :default-category-ids="store.defaultCategoryIds"
+            :needs-category="store.rowsNeedingCategory.includes(row.rowIndex ?? 0)"
             @remove="store.removeRow($event)"
             @update-categories="(idx, ids) => store.setRowCategories(idx, ids)"
           />

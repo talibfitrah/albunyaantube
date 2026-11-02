@@ -154,10 +154,10 @@ public class LegalPagesController {
     //                                    no setIpAddress caller exists anywhere
     //   security/FirebaseAuthFilter.java:112-114,223 .. uid/email/emailVerified
     //   controller/ContentReportController.java:34,48 .. X-Device-Id required
-    //   controller/WatchPageController.java:140 ........ X-Device-Id rate limit
-    //   controller/IndexController.java:57,74 .......... X-Device-Id dedupe
+    //   service/ContentReportService.checkRateLimit .... X-Device-Id, 5 reports/hour
+    //   config/CacheConfig.reportRateLimitCache ......... in-memory, expireAfterWrite 1 h
     //   service/MailService.java:176 ... recipient address leaves to MS Graph
-    //   config/NewPipeConfiguration.java:62-63 ......... hardcoded Locale.US,
+    //   config/NewPipeConfiguration.DEFAULT_LOCALIZATION .. hardcoded Locale.US,
     //                                    so no user locale is sent to YouTube
     //   scheduler/TombstoneGcScheduler.java:29 ......... 90-day tombstone GC
     //
@@ -248,10 +248,9 @@ public class LegalPagesController {
                 <p>The app generates a random identifier for each installation and sends it
                 as an <code>X-Device-Id</code> header. It is not your advertising ID, not
                 your hardware serial number, and it is not linked to your account. We use it
-                only to rate-limit abuse and to de-duplicate repeated requests. It is stored
-                permanently only when you submit a content report (see below); everywhere
-                else it lives in a short-lived in-memory counter (60&nbsp;seconds to
-                24&nbsp;hours) and is never written to disk.</p>
+                only to limit how many content reports one installation can send. It is stored
+                permanently only when you submit a content report (see below); otherwise it
+                lives in an in-memory counter for one hour and is never written to disk.</p>
 
                 <h3>2.5 Content reports</h3>
                 <p>If you report content, we store the reported item, the reasons you
@@ -340,8 +339,8 @@ public class LegalPagesController {
                       playlists and favourites on every device you sign in on.</li>
                   <li><strong>Download records</strong> &mdash; to understand aggregate load
                       and to diagnose failed downloads.</li>
-                  <li><strong>Device identifier</strong> &mdash; to rate-limit abusive
-                      traffic and de-duplicate requests.</li>
+                  <li><strong>Device identifier</strong> &mdash; to limit how many content
+                      reports one installation can send.</li>
                   <li><strong>Content reports</strong> &mdash; to moderate the catalogue.</li>
                   <li><strong>Audit logs</strong> &mdash; to detect and investigate abuse and
                       to keep an accountable record of administrative actions.</li>

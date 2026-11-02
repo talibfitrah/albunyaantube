@@ -3,6 +3,7 @@ import AVKit
 import Foundation
 import InnerTubeKit
 import MediaPlayer
+import SwiftUI
 import Testing
 import UIKit
 @testable import FitrahTube
@@ -498,6 +499,7 @@ import UIKit
         defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
 
         Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
         try await wait { coordinator.background.interrupted }
         try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
         #expect(player.timeControlStatus == .paused, "the replacement played during the interruption")
@@ -515,6 +517,7 @@ import UIKit
         defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
 
         Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
         try await wait { coordinator.background.interrupted }
         Self.postInterruptionEnded(shouldResume: false)
         try await wait { actions.contains(.pause) }
@@ -532,6 +535,7 @@ import UIKit
         defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
 
         Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
         try await wait { coordinator.background.interrupted }
         Self.postUnplug()
         try await wait { actions.contains(.pause) }
@@ -551,6 +555,7 @@ import UIKit
         defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
 
         Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
         try await wait { coordinator.background.interrupted }
         let deadline = ContinuousClock.now + .seconds(10)   // the user plays; no end ever comes
         while coordinator.background.interrupted, ContinuousClock.now < deadline {
@@ -566,5 +571,273 @@ import UIKit
 
         try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
         #expect(player.timeControlStatus != .paused, "recovery's replacement stayed paused for good")
+    }
+
+    /// 1.0.4 I2 (final-check "Outside r5"): an auto-advance whose resolve lands DURING an interruption
+    /// (Siri, an alarm, another app's audio) built the next video playing, and its first `.playing`
+    /// tick then cleared the interruption too. The update pass's swap now waits for the end, whose
+    /// `.resume` plays it when iOS says `.shouldResume`.
+    @Test(.timeLimit(.minutes(1))) func anAdvanceLandingMidInterruptionWaitsForShouldResume() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (_, player, coordinator) = try await attachedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        let next = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        _ = PlayerHostView.player(for: .rung2Progressive(PlayerHostTests.resolved(.progressive(url: next, label: "360p"))),
+                                  replacing: player, continuesCurrentVideo: false,
+                                  interrupted: coordinator.background.interrupted)   // the update pass's read
+        #expect(player.timeControlStatus == .paused, "the next video played during the interruption")
+
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { actions.contains(.resume) }
+        #expect(player.timeControlStatus != .paused, "the end's .resume did not play the next video")
+    }
+
+    /// 1.0.4 round 3 (review m1): an AUTO-ADVANCE in flight at the begin. The clip has ended, so the
+    /// player reads paused and the begin recorded "not playing"; the end's `.shouldResume` then left
+    /// the next lecture paused. An advance in flight is playback the user started, so it counts.
+    @Test(.timeLimit(.minutes(1))) func anAutoAdvanceInFlightAtTheBeginResumesOnShouldResume() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "BPCTests.\(UUID().uuidString)")!)
+        settings.safeMode = false
+        let resolver = RecordingResolver(.progressive)
+        let model = PlayerViewModel(resolver: resolver, settings: settings, args: PlayerArgs(videoId: "a", playlistId: "PL"),
+                                    queueSource: FakeQueueSource(pages: [(ids: ["a", "b"], next: nil)]))
+        await model.open()                                  // a on .player, b on .prefetch
+        let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let player = try #require(PlayerHostView.player(
+            for: .rung2Progressive(PlayerHostTests.resolved(.progressive(url: clip, label: "360p"))), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model, isLive: false, playToEnd: .none)
+        let production = PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)
+        coordinator.background.onPolicyAction = { actions.append($0); production($0) }
+        coordinator.background.attach(player: player)
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        player.pause()                                      // the clip ended: an ended item leaves it paused
+        resolver.hold("b")
+        let advancing = Task { await model.playToEnd() }
+        await resolver.waitUntilCalled(count: 3)            // b on .player, held
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        resolver.release(id: "b")
+        await advancing.value
+        _ = PlayerHostView.player(for: model.state, replacing: player, continuesCurrentVideo: false,
+                                  interrupted: coordinator.background.interrupted)   // the advance's update pass
+        #expect(player.timeControlStatus == .paused, "the next lecture played during the interruption")
+
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { actions.contains(.resume) }
+        #expect(player.timeControlStatus != .paused, "the end's .shouldResume left the auto-advanced lecture paused")
+    }
+
+    /// 1.0.4 round 5 (re-review N1, test a): once the advance has LANDED the next lecture is the
+    /// user's again. If they pause it and an interruption comes and goes with `.shouldResume`, it stays
+    /// paused (spec R12, rule I5). The advance's flag used to stay set through the prefetch, so the
+    /// end resumed a lecture the user had paused.
+    @Test(.timeLimit(.minutes(1))) func aLecturePausedAfterTheAdvanceLandedStaysPausedAfterTheInterruption() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "BPCTests.\(UUID().uuidString)")!)
+        settings.safeMode = false
+        let resolver = RecordingResolver(.progressive)
+        resolver.prefetchRefusals = ["c"]                   // open() leaves c unprefetched
+        let model = PlayerViewModel(resolver: resolver, settings: settings, args: PlayerArgs(videoId: "a", playlistId: "PL"),
+                                    queueSource: FakeQueueSource(pages: [(ids: ["a", "b", "c"], next: nil)]))
+        await model.open()
+        resolver.prefetchRefusals = []
+        resolver.hold("c")                                   // after it lands, the advance waits in c's prefetch
+        let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let player = try #require(PlayerHostView.player(
+            for: .rung2Progressive(PlayerHostTests.resolved(.progressive(url: clip, label: "360p"))), replacing: nil))
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: try #require(player.currentItem), player: player, model: model, isLive: false, playToEnd: .none)
+        let production = PlayerHostView.policyHandler(model: model, player: player, coordinator: coordinator)
+        coordinator.background.onPolicyAction = { actions.append($0); production($0) }
+        coordinator.background.attach(player: player)
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        player.pause()                                       // a ended
+        let advancing = Task { await model.playToEnd() }
+        defer { resolver.release(id: "c") }
+        await resolver.waitUntilCalled(count: 5)             // b landed on .player; c's prefetch held
+        _ = PlayerHostView.player(for: model.state, replacing: player, continuesCurrentVideo: false,
+                                  interrupted: coordinator.background.interrupted)   // the swap: b plays
+        player.pause()                                       // the user pauses b
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { !coordinator.background.interrupted }
+
+        #expect(!actions.contains(.resume), "the end resumed a lecture the user had paused")
+        #expect(player.timeControlStatus == .paused)
+        resolver.release(id: "c")
+        await advancing.value
+    }
+
+    /// 1.0.4 round 5 (re-review N2): the user's Play is the route PUSH (a tap or a deep link), not
+    /// the screen's mount.
+    @Test(.timeLimit(.minutes(1))) func aPlayerRoutePushIsTheUsersPlay() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { BackgroundPlaybackController.sessionInterrupted }
+
+        Router().push(.player(PlayerArgs(videoId: "pushed-1")))
+
+        #expect(!BackgroundPlaybackController.sessionInterrupted, "a player push left the next start gated")
+    }
+
+    /// 1.0.4 round 5 (re-review N2): an iPad Split View or Stage Manager resize across 600 pt
+    /// re-creates a pushed screen's state and re-runs its `.task`. That is a gesture, not a Play: a
+    /// player screen mounting (here, rebuilt in a window) leaves the session's interruption alone.
+    /// An offline open, so the mount resolves with no network.
+    @Test(.timeLimit(.minutes(1))) func aRebuiltPlayerScreenLeavesTheSessionInterruptionAlone() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { BackgroundPlaybackController.sessionInterrupted }
+
+        var args = PlayerArgs(videoId: "rebuilt-1")
+        args.offlineItemId = "no-such-row"
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map(UIWindow.init(windowScene:)) ?? UIWindow()
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = UIHostingController(rootView: PlayerScreen(args: args))
+        window.isHidden = false
+        defer { window.isHidden = true }
+        let deadline = ContinuousClock.now + .seconds(3)    // the mount's `.task` creates the model
+        while BackgroundPlaybackController.sessionInterrupted, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(20))
+        }
+
+        #expect(BackgroundPlaybackController.sessionInterrupted, "mounting the player screen counted as the user's Play")
+    }
+
+    /// 1.0.4 round 3 (review m2, ruling): a user's open is the user's Play. Music or Spotify started
+    /// from Control Center sends a begin and never an end, so without this every later open waited
+    /// for a tap. A player/Shorts route push, an Up Next tap and Retry call it (round 5: the push,
+    /// not the screen's mount); an automatic start (an advance, an auto-skip's rebuild) never does.
+    @Test(.timeLimit(.minutes(1))) func aUsersOpenEndsTheSessionInterruption() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { BackgroundPlaybackController.sessionInterrupted }
+
+        BackgroundPlaybackController.userAskedToPlay()
+
+        #expect(!BackgroundPlaybackController.sessionInterrupted)
+    }
+
+    /// 1.0.4 round 4 (ruling): Retry on the player's error card is a user tap, so it is the user's
+    /// Play, the same as an open: both screens' cards call `PlayerScreen.retryTapped`.
+    @Test(.timeLimit(.minutes(1))) func aRetryTapEndsTheSessionInterruption() async throws {
+        let (model, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { BackgroundPlaybackController.sessionInterrupted }
+
+        PlayerScreen.retryTapped(model)
+
+        #expect(!BackgroundPlaybackController.sessionInterrupted, "a Retry tap left the next start gated")
+    }
+
+    /// 1.0.4 round 2 (the I2 gap): an auto-skip past an error state dismantles the host and builds a
+    /// FRESH one, whose controller never saw the begin, and that player started mid-interruption.
+    /// The session's interruption is one per process: a player built while it lasts does not start,
+    /// a controller attached meanwhile knows it, an end that lands with no player mounted still clears
+    /// it, and a player built after that starts again.
+    @Test(.timeLimit(.minutes(1))) func aPlayerBuiltMidInterruptionWaitsThoughNoLiveHostSawTheBegin() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        coordinator.stopObserving()
+        coordinator.background.detach()                    // the error state dismantles the host
+
+        let next = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: next, label: "360p")))
+        let rebuilt = try #require(PlayerHostView.player(for: state, replacing: nil,
+                                                         interrupted: BackgroundPlaybackController.sessionInterrupted))
+        defer { rebuilt.pause() }
+        #expect(rebuilt.timeControlStatus == .paused, "the rebuilt host's player started mid-interruption")
+        let fresh = BackgroundPlaybackController(backgroundPlay: false)
+        fresh.attach(player: rebuilt)
+        #expect(fresh.interrupted, "a controller attached mid-interruption did not know")
+        fresh.detach()
+
+        Self.postInterruptionEnded(shouldResume: false)    // no player mounted
+        try await wait { !BackgroundPlaybackController.sessionInterrupted }
+        let after = try #require(PlayerHostView.player(for: state, replacing: nil,
+                                                       interrupted: BackgroundPlaybackController.sessionInterrupted))
+        defer { after.pause() }
+        #expect(after.timeControlStatus != .paused, "a player built after the end did not start")
+    }
+
+    /// Stage 9 I-C9b (Cubic P2): a call starts during an auto-advance, and an auto-skip rebuilds the host. Its FRESH
+    /// controller never saw the begin, so it takes the playback intent from `resumeIntentPending` at attach, and the call's
+    /// end with `.shouldResume` resumes the playlist instead of leaving it stopped.
+    @Test(.timeLimit(.minutes(1))) func aControllerAttachedMidInterruptionResumesOnShouldResume() async throws {
+        let (_, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        coordinator.stopObserving()
+        coordinator.background.detach()                    // the auto-skip dismantles the host
+
+        let next = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let rebuilt = AVPlayer(url: next)                  // paused: the advance's next lecture, not yet played
+        defer { rebuilt.pause() }
+        let fresh = BackgroundPlaybackController(backgroundPlay: false)
+        var actions: [PlaybackPolicyAction] = []
+        fresh.onPolicyAction = { actions.append($0) }
+        fresh.resumeIntentPending = { true }               // the advance in flight counts as playing (round 3, m1)
+        fresh.attach(player: rebuilt)
+        defer { fresh.detach() }
+        #expect(fresh.interrupted)
+
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { !fresh.interrupted }
+
+        #expect(actions.contains(.resume), "the call's end left the rebuilt host's playlist stopped")
+    }
+
+    /// 1.0.4 I1 (final-check N5-1): the user's Play after an interruption that never ended can sit
+    /// WAITING and fail (a 403, say) before any tick reads `.playing`. Wanting to play is that Play,
+    /// so it ends the interruption too, and recovery's replacement resumes instead of waiting for a tap.
+    @Test(.timeLimit(.minutes(1))) func aPlayThatFailsBeforeEverPlayingStillLetsRecoveryResume() async throws {
+        let server = try StallingServer(body: Data(), withheldFrom: 0)   // accepts, never answers
+        await server.start()
+        defer { server.stop() }
+        let (model, player, coordinator) = try await attachedWhilePlaying { _ in }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        try PlayerHostTests.swap(player, to: server.url, coordinator, model)   // paused: nothing plays it
+        let tapped = Date()
+        player.play()                                      // the user; no end ever comes
+        let deadline = ContinuousClock.now + .seconds(10)
+        while (coordinator.lastPlayingAt ?? .distantPast) <= tapped, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require((coordinator.lastPlayingAt ?? .distantPast) > tapped, "the sampler never saw the Play")
+        try #require(player.timeControlStatus == .waitingToPlayAtSpecifiedRate, "not a real wait")
+        PlayerHostTests.postFailure(on: player)            // it dies before its first frame
+        player.pause()
+
+        try PlayerHostTests.swap(player, to: PlayerHostTests.unanswered, coordinator, model)
+        #expect(player.timeControlStatus != .paused, "recovery's replacement waited for a tap")
     }
 }

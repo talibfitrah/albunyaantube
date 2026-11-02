@@ -165,8 +165,8 @@ class YouTubeImportRemoteSourceTest {
         assertEquals(1, videos.size)
         val v = videos[0]
         assertEquals(CandidateType.VIDEO, v.type)
-        assertEquals("dQw4w9WgXcQ", v.youtubeId)
-        assertEquals("Never Gonna Give You Up", v.title)
+        assertEquals("sCQwxFEMlZ4", v.youtubeId)
+        assertEquals("Visiting the Ill - Mufti Menk", v.title)
         assertEquals("UCuAXFkgsw1L7xaCfnd5JJOw", v.channelId)
     }
 
@@ -263,13 +263,13 @@ class YouTubeImportRemoteSourceTest {
         {
           "items": [
             {
-              "id": "dQw4w9WgXcQ",
+              "id": "sCQwxFEMlZ4",
               "snippet": {
-                "title": "Never Gonna Give You Up",
+                "title": "Visiting the Ill - Mufti Menk",
                 "channelId": "UCuAXFkgsw1L7xaCfnd5JJOw",
                 "thumbnails": {
-                  "default": { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg" },
-                  "medium":  { "url": "https://i.ytimg.com/vi/dQw4w9WgXcQ/mqdefault.jpg" }
+                  "default": { "url": "https://i.ytimg.com/vi/sCQwxFEMlZ4/default.jpg" },
+                  "medium":  { "url": "https://i.ytimg.com/vi/sCQwxFEMlZ4/mqdefault.jpg" }
                 }
               }
             }

@@ -3,16 +3,22 @@ import { i18n } from '../main'
 import type { components } from '../generated/api/schema'
 import { bulkSubmissionService } from '../services/bulkSubmissionService'
 import type { AxiosError } from 'axios'
+import { liveCategoryIds, refusesLive } from '../components/contentSearch/bulk/useCategoryPicker'
+import { apiErrorCode, apiErrorWithOffenders } from '../services/http'
 
 /**
- * Extract a user-facing message from an axios / generic error. Backend
- * structured error envelopes (e.g. 429 RATE_LIMIT, validation errors)
- * carry the message in `response.data.message`; axios surfaces only its
+ * Extract a user-facing message from an axios / generic error. A coded
+ * envelope (429 RATE_LIMIT, a live-category refusal with its offenders)
+ * reads in the admin's language via `apiErrors.<CODE>` (F20). Uncoded
+ * envelopes carry the message in `response.data.message`; axios surfaces only its
  * connection-level message ("Network Error", "timeout exceeded") on the
  * `Error.message` field. Falling back to the structured body first
  * preserves backend-formatted messaging (cubic R2 finding #4).
  */
 function extractErrorMessage(e: unknown): string {
+  if (apiErrorCode(e)) return apiErrorWithOffenders(e, i18n.global.t, 'contentSearch.addError',
+    // The backend's offender ref is the 0-based rowIndex; the tables show it as #rowIndex+1.
+    ref => (/^\d+$/.test(ref) ? `#${Number(ref) + 1}` : ref))
   if (e && typeof e === 'object') {
     const ax = e as AxiosError<{ message?: string }>
     const fromBody = ax.response?.data?.message
@@ -40,6 +46,8 @@ interface State {
   previewRows: PreviewRowDraft[]
   submitResult: BulkSubmitResponse | null
   error: string | null
+  /** rowIndex of rows (refusesLive) left with no category once LIVE is dropped; the batch is not sent until they are fixed. */
+  rowsNeedingCategory: number[]
 }
 
 /**
@@ -61,6 +69,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
     previewRows: [],
     submitResult: null,
     error: null,
+    rowsNeedingCategory: [],
   }),
 
   actions: {
@@ -71,6 +80,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       }
       this.phase = 'LOADING'
       this.error = null
+      this.rowsNeedingCategory = []
       try {
         const resp = await bulkSubmissionService.previewBulk({
           urls: this.parsedUrls,
@@ -87,6 +97,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       const idx = this.previewRows.findIndex((r) => r.rowIndex === rowIndex)
       if (idx < 0) return
       this.previewRows[idx] = { ...this.previewRows[idx], categoryIds }
+      this.rowsNeedingCategory = this.rowsNeedingCategory.filter((i) => i !== rowIndex)
     },
 
     removeRow(rowIndex: number) {
@@ -118,15 +129,30 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       // doesn't carry forward a misleading message when the next attempt
       // succeeds.
       this.error = null
-      const rows: SubmitRow[] = submittable.map((r) => ({
-        rowIndex: r.rowIndex!,
-        originalUrl: r.originalUrl!,
-        detectedType: r.detectedType!,
-        videoType: r.videoType,
-        metadata: r.metadata!,
-        categoryIds: r.categoryIds ?? this.defaultCategoryIds,
-      }))
       try {
+        // The server refuses LIVE on a playlist or a non-live video and rejects the whole batch: such rows never take it.
+        // Types unknown (the fetch failed): nothing is stripped and the server's refusal names any such row.
+        const live = submittable.some(refusesLive) ? await liveCategoryIds().catch(() => new Set<string>()) : new Set<string>()
+        const rows: SubmitRow[] = submittable.map((r) => {
+          const ids = r.categoryIds ?? this.defaultCategoryIds
+          return {
+            rowIndex: r.rowIndex!,
+            originalUrl: r.originalUrl!,
+            detectedType: r.detectedType!,
+            videoType: r.videoType,
+            metadata: r.metadata!,
+            categoryIds: refusesLive(r) ? ids.filter((id) => !live.has(id)) : ids,
+          }
+        })
+        // The server needs 1-10 categories per row: a row whose only category was LIVE is flagged, not sent.
+        const bare = rows.filter((r) => r.categoryIds.length === 0).map((r) => r.rowIndex)
+        if (bare.length > 0) {
+          this.rowsNeedingCategory = bare
+          this.error = i18n.global.t('contentSearch.bulk.preview.playlistNeedsCategory')
+          this.phase = 'PREVIEW'
+          return
+        }
+        this.rowsNeedingCategory = []
         const resp = await bulkSubmissionService.submitBulk({ rows })
         this.submitResult = resp
         this.phase = 'RESULT'
@@ -144,6 +170,7 @@ export const useBulkSubmissionStore = defineStore('bulkSubmission', {
       this.previewRows = []
       this.submitResult = null
       this.error = null
+      this.rowsNeedingCategory = []
     },
   },
 })

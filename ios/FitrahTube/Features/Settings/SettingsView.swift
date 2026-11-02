@@ -192,6 +192,8 @@ struct SettingsView: View {
     /// Free-space capacity, read once per appearance instead of once per `body` — see
     /// `OfflineStorage.availableBytes(cached:base:)`, which the Storage row reads it through.
     @State private var availableBytes: Int64?
+    /// The thumbnail copies' total, read with it (stage 9 I13) — see `OfflineStorage.usedBytes`.
+    @State private var thumbnailBytes: Int64?
     /// task-14 (`screenshots/task-14/iphone-17/settings-en-light-a11y3-portrait.png`): the row
     /// symbol scales with Dynamic Type but its 28 pt circular plate did not, so at
     /// `.accessibility3` the glyph overflowed the plate on every row.
@@ -285,8 +287,10 @@ struct SettingsView: View {
             Text(String(localized: "settings_offline_clear_confirm"))
         }
         .signOutConfirmation(isPresented: $showSignOutConfirm) { container.session.signOut() }
-        .task(id: container.offlineStore.items.count) {
+        // Keyed on the statuses, as on the Saved screen (stage 9 I13): a save's thumbnail copy lands after its row.
+        .task(id: container.offlineStore.items.map(\.status)) {
             availableBytes = OfflineStorage.availableBytes(base: container.offlineBase)
+            thumbnailBytes = OfflineStorage.thumbnailBytes(items: container.offlineStore.items, base: container.offlineBase)
         }
         .task {
             #if DEBUG
@@ -321,7 +325,8 @@ struct SettingsView: View {
             actionRow(row, value: nil) { router.push(.offline) }
         case .storage:
             valueRow(row, value: OfflineStorage.storageValue(
-                used: OfflineStorage.usedBytes(items: container.offlineStore.items),
+                used: OfflineStorage.usedBytes(items: container.offlineStore.items, thumbnailBytes: thumbnailBytes,
+                                               base: container.offlineBase),
                 available: OfflineStorage.availableBytes(cached: availableBytes, base: container.offlineBase),
                 locale: locale))
         case .clearOffline:

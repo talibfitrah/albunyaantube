@@ -155,6 +155,13 @@ struct AuthorizedTransportTests {
         }
     }
 
+    /// Spec R24: the signed playback routes carry the account envelope like the other backend namespaces.
+    @Test func aPlaybackEnvelopePostsTheEvent() async throws {
+        let (authorized, _, events) = transport([.json(403, #"{"code":"ACCOUNT_BLOCKED"}"#)])
+        _ = try await authorized.send(request("/api/playback/solve"))
+        #expect(events.posted == [.blocked])
+    }
+
     // MARK: - Stage 5 / M1 + M2: this backend answers a terminated account with a BARE 401
 
     /// Stage 8 / S3: the backend DOES send `WWW-Authenticate: Bearer` since `cadd7c9b`

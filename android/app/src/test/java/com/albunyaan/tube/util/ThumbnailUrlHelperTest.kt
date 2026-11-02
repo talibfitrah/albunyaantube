@@ -1,7 +1,6 @@
 package com.albunyaan.tube.util
 
 import org.junit.Assert.assertEquals
-import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
 import org.junit.Assert.assertTrue
 import org.junit.Test
@@ -20,67 +19,20 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `extractVideoId extracts ID from standard thumbnail URL`() {
-        val url = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.extractVideoId(url))
+        val url = "https://i.ytimg.com/vi/sCQwxFEMlZ4/hqdefault.jpg"
+        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.extractVideoId(url))
     }
 
     @Test
     fun `extractVideoId extracts ID from webp thumbnail URL`() {
-        val url = "https://i.ytimg.com/vi_webp/dQw4w9WgXcQ/mqdefault.webp"
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.extractVideoId(url))
+        val url = "https://i.ytimg.com/vi_webp/sCQwxFEMlZ4/mqdefault.webp"
+        assertEquals("sCQwxFEMlZ4", ThumbnailUrlHelper.extractVideoId(url))
     }
 
     @Test
     fun `extractVideoId extracts ID from maxresdefault URL`() {
         val url = "https://i.ytimg.com/vi/ABC123def45/maxresdefault.jpg"
         assertEquals("ABC123def45", ThumbnailUrlHelper.extractVideoId(url))
-    }
-
-    @Test
-    fun `normalizeVideoId returns valid 11-char ID as-is`() {
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.normalizeVideoId("dQw4w9WgXcQ"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from watch URL`() {
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/watch?v=dQw4w9WgXcQ"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from short URL`() {
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.normalizeVideoId("https://youtu.be/dQw4w9WgXcQ"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from shorts URL`() {
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/shorts/dQw4w9WgXcQ"))
-    }
-
-    @Test
-    fun `normalizeVideoId extracts ID from embed URL`() {
-        assertEquals("dQw4w9WgXcQ", ThumbnailUrlHelper.normalizeVideoId("https://www.youtube.com/embed/dQw4w9WgXcQ"))
-    }
-
-    @Test
-    fun `normalizeVideoId returns null for invalid input`() {
-        assertNull(ThumbnailUrlHelper.normalizeVideoId(null))
-        assertNull(ThumbnailUrlHelper.normalizeVideoId(""))
-        assertNull(ThumbnailUrlHelper.normalizeVideoId("   "))
-    }
-
-    @Test
-    fun `isShortsThumbnail detects shorts patterns`() {
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/oar2.jpg"))
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/frame0.jpg"))
-        assertTrue(ThumbnailUrlHelper.isShortsThumbnail("https://youtube.com/shorts/abc123"))
-    }
-
-    @Test
-    fun `isShortsThumbnail returns false for regular thumbnails`() {
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/hqdefault.jpg"))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail("https://i.ytimg.com/vi/abc123/maxresdefault.jpg"))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail(null))
-        assertFalse(ThumbnailUrlHelper.isShortsThumbnail(""))
     }
 
     @Test
@@ -92,13 +44,13 @@ class ThumbnailUrlHelperTest {
     @Test
     fun `getFallbackUrls returns primary URL first`() {
         val primaryUrl = "https://custom.cdn.com/thumb.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
         assertEquals(primaryUrl, urls.first())
     }
 
     @Test
     fun `getFallbackUrls includes standard quality variants`() {
-        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "dQw4w9WgXcQ")
+        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "sCQwxFEMlZ4")
 
         // Should include all standard variants
         assertTrue(urls.any { it.contains("maxresdefault") })
@@ -110,7 +62,7 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls includes shorts-specific patterns for shorts`() {
-        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "dQw4w9WgXcQ", isShort = true)
+        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "sCQwxFEMlZ4", isShort = true)
 
         // Should include Shorts-specific patterns first
         assertTrue(urls.any { it.contains("oar2.jpg") })
@@ -119,8 +71,8 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls does not duplicate primary URL in fallbacks`() {
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/hqdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
         // Primary URL should only appear once
         assertEquals(1, urls.count { it == primaryUrl })
@@ -128,7 +80,7 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls includes both jpg and webp variants`() {
-        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "dQw4w9WgXcQ")
+        val urls = ThumbnailUrlHelper.getFallbackUrls(null, "sCQwxFEMlZ4")
 
         assertTrue(urls.any { it.endsWith(".jpg") })
         assertTrue(urls.any { it.endsWith(".webp") })
@@ -138,7 +90,7 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls extracts video ID from primary URL when ID not provided`() {
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/custom.jpg"
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/custom.jpg"
         val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, null)
 
         // Should have generated fallbacks using extracted ID
@@ -158,28 +110,28 @@ class ThumbnailUrlHelperTest {
 
     @Test
     fun `getFallbackUrls upgrades hqdefault primary to maxres first`() {
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/hqdefault.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/hqdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
         // High-DPI fix: maxresdefault tried before hqdefault primary
-        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", urls.first())
+        assertEquals("https://i.ytimg.com/vi/sCQwxFEMlZ4/maxresdefault.jpg", urls.first())
         assertTrue(urls.contains(primaryUrl))
     }
 
     @Test
     fun `getFallbackUrls upgrades default jpg primary to maxres first`() {
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/default.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/default.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
-        assertEquals("https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg", urls.first())
+        assertEquals("https://i.ytimg.com/vi/sCQwxFEMlZ4/maxresdefault.jpg", urls.first())
         assertTrue(urls.contains(primaryUrl))
     }
 
     @Test
     fun `getFallbackUrls does NOT upgrade sddefault primary`() {
         // sddefault (640x480) is acceptable for mid-DPI — don't waste a request
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/sddefault.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/sddefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
         assertEquals(primaryUrl, urls.first())
     }
@@ -187,8 +139,8 @@ class ThumbnailUrlHelperTest {
     @Test
     fun `getFallbackUrls does NOT upgrade maxresdefault primary`() {
         // Already at the top of the quality ladder — leave it alone
-        val primaryUrl = "https://i.ytimg.com/vi/dQw4w9WgXcQ/maxresdefault.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val primaryUrl = "https://i.ytimg.com/vi/sCQwxFEMlZ4/maxresdefault.jpg"
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
         assertEquals(primaryUrl, urls.first())
     }
@@ -199,7 +151,7 @@ class ThumbnailUrlHelperTest {
         // requires the /vi/<id>/ segment so non-ytimg URLs ending
         // /hqdefault.jpg pass through unchanged — no wasted upgrade request.
         val primaryUrl = "https://custom.cdn.com/foo/hqdefault.jpg"
-        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "dQw4w9WgXcQ")
+        val urls = ThumbnailUrlHelper.getFallbackUrls(primaryUrl, "sCQwxFEMlZ4")
 
         assertEquals(primaryUrl, urls.first())
     }

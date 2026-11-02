@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.CoroutineScope
@@ -65,6 +66,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
     private val indexRepository: IndexRepository,
     private val telemetry: StreamRequestTelemetry,
     private val channelVideoCacheDao: ChannelVideoCacheDao,
+    private val originalTitles: OriginalTitles,
 ) : ChannelDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -258,7 +260,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 Log.w(TAG, "Uploads playlist fetch failed for $channelId: ${e.message}")
                 throw e
             }
-        }
+        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         // Persist kept videos to local cache so the next channel open can paint
         // from disk before NewPipe responds. Use upsertAll — never
         // delete-then-insert — so deep-paged Me-tab history for this channel
@@ -266,8 +268,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
         if (keptForCache.isNotEmpty()) {
             val name = resolvedChannelName ?: channelId
             val now = System.currentTimeMillis()
+            // The cache rows take the same original titles, so the next open's pre-paint shows them too.
+            val titleById = result.items.associate { it.id to it.title }
             try {
-                channelVideoCacheDao.upsertAll(keptForCache.map { it.toCacheRow(channelId, name, now) })
+                channelVideoCacheDao.upsertAll(
+                    keptForCache.map { it.toCacheRow(channelId, name, now).let { r -> r.copy(title = titleById[r.videoId] ?: r.title) } }
+                )
             } catch (e: Exception) {
                 Log.w(TAG, "Cache upsert failed for channel $channelId videos: ${e.message}")
             }
@@ -370,14 +376,14 @@ class NewPipeChannelDetailRepository @Inject constructor(
         return withContext(Dispatchers.IO) {
             fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
                 (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
-            }
+            }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         }
     }
 
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
         val result = fetchTabContent(channelId, ChannelTabs.LIVESTREAMS, page) { item ->
             (item as? StreamInfoItem)?.toChannelLiveStream()
-        }
+        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         // Graceful indexing: don't block live stream loading on index errors (429, etc)
         try {
             indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
@@ -390,7 +396,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
     override suspend fun getShorts(channelId: String, page: Page?): ChannelPage<ChannelShort> {
         val result = fetchTabContent(channelId, ChannelTabs.SHORTS, page) { item ->
             (item as? StreamInfoItem)?.toChannelShort()
-        }
+        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         // Graceful indexing: don't block shorts loading on index errors (429, etc)
         try {
             indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
@@ -709,6 +715,10 @@ class NewPipeChannelDetailRepository @Inject constructor(
         }
         return null
     }
+
+    /** Owner issue 1(b): the page's video titles as their uploaders wrote them, where the server knows them. */
+    private suspend fun <T> ChannelPage<T>.withOriginalTitles(id: (T) -> String, withTitle: (T, String) -> T) =
+        copy(items = originalTitles.retitle(items, id, withTitle))
 
     // Extension functions to map NewPipe types to domain models
 

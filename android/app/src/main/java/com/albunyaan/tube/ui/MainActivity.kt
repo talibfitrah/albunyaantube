@@ -111,9 +111,11 @@ class MainActivity : AppCompatActivity() {
 
         observeAccountStatusEvents()
         observeSignedOut()
+        // A local: the callback outlives this Activity in appScope (sync bind), so it must not hold `this`.
+        val auth = firebaseAuth
         SplashRouter.restoreAccount(
             savedInstanceState != null, accountRepository, appScope,
-            { firebaseAuth.currentUser?.uid }, syncManager::bind,
+            { auth.currentUser?.uid }, syncManager::bind,
         )
 
         // Handle back press for nested navigation

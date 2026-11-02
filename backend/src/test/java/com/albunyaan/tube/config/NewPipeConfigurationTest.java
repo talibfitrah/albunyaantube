@@ -1,5 +1,6 @@
 package com.albunyaan.tube.config;
 
+import com.albunyaan.tube.search.CrawlPacer;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import okhttp3.MediaType;
 import okhttp3.OkHttpClient;
@@ -13,6 +14,7 @@ import org.springframework.test.util.ReflectionTestUtils;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.Mockito.mock;
 
 /** The shared prod downloader, served by an OkHttp interceptor (no network). */
 class NewPipeConfigurationTest {
@@ -27,7 +29,7 @@ class NewPipeConfigurationTest {
                 .build()).build();
         NewPipeConfiguration config = new NewPipeConfiguration();
         ReflectionTestUtils.setField(config, "userAgent", "test-agent");
-        return config.newPipeDownloader(http);
+        return config.newPipeDownloader(http, mock(CrawlPacer.class));
     }
 
     /** R7 root cause: a 429 is a rate limit for every NewPipe caller, and the shared breaker counts it as one. */

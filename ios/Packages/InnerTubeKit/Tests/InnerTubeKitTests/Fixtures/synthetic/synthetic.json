@@ -1,0 +1,62 @@
+{
+ "video": [
+  {
+   "url": "v0.mp4",
+   "codecs": "avc1.4d400c",
+   "bandwidth": 28528,
+   "averageBandwidth": 28528,
+   "initRange": [
+    0,
+    794
+   ],
+   "indexRange": [
+    795,
+    930
+   ],
+   "contentLength": 57055,
+   "isDefault": false,
+   "width": 256,
+   "height": 144,
+   "fps": 25
+  },
+  {
+   "url": "v1.mp4",
+   "codecs": "avc1.4d400a",
+   "bandwidth": 18272,
+   "averageBandwidth": 18272,
+   "initRange": [
+    0,
+    793
+   ],
+   "indexRange": [
+    794,
+    929
+   ],
+   "contentLength": 36544,
+   "isDefault": false,
+   "width": 128,
+   "height": 72,
+   "fps": 25
+  }
+ ],
+ "audio": [
+  {
+   "url": "a0.mp4",
+   "codecs": "mp4a.40.2",
+   "bandwidth": 26546,
+   "averageBandwidth": 26546,
+   "initRange": [
+    0,
+    731
+   ],
+   "indexRange": [
+    732,
+    867
+   ],
+   "contentLength": 53170,
+   "isDefault": true,
+   "language": "en",
+   "name": "English"
+  }
+ ]
+}

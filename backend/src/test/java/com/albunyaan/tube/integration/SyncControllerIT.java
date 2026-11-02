@@ -34,9 +34,8 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Each test seeds a fresh ACTIVE user via userRepository so the FirebaseAuthFilter
  * can resolve a FirebaseUserDetails principal from the stubbed token.
  *
- * Subcollection cleanup (users/{uid}/subscriptions etc.) is handled automatically:
- * BaseIntegrationTest.setUpFirestore() wipes the top-level "users" collection, and
- * the Firestore emulator cascades the delete into all subcollections.
+ * Subcollection cleanup (users/{uid}/subscriptions etc.): Firestore never cascades a delete
+ * into subcollections, so BaseIntegrationTest's clear is recursive (FirestoreTestHelper).
  */
 class SyncControllerIT extends BaseIntegrationTest {
 
@@ -118,21 +117,62 @@ class SyncControllerIT extends BaseIntegrationTest {
                         .content(json.writeValueAsString(put)))
                 .andExpect(status().isOk());
 
-        // First pull — note the updatedAt of the row as our cursor
+        // First pull — keep the compound cursor (nextCursor, nextCursorId) the server mints
         String body = mvc.perform(get("/api/account/sync")
                         .header("Authorization", "Bearer fake"))
                 .andExpect(status().isOk())
                 .andReturn().getResponse().getContentAsString();
 
-        long cursor = json.readTree(body)
-                .path("subscriptions").path("items").get(0).path("updatedAt").asLong();
+        var page = json.readTree(body).path("subscriptions");
+        long cursor = page.path("nextCursor").asLong();
+        String cursorId = page.path("nextCursorId").asText();
 
-        // Second pull with cursor: the row is at exactly `cursor`, so strict > means 0 results
+        // Second pull with both halves: startAfter(ts, id) skips the pulled row, so 0 results.
+        // (A timestamp-only cursor deliberately re-includes same-ms rows; see SyncRepository.pull.)
+        mvc.perform(get("/api/account/sync")
+                        .param("subs", String.valueOf(cursor))
+                        .param("subs_id", cursorId)
+                        .header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions.items").isEmpty());
+    }
+
+    // ── Test 4: timestamp-only cursor (no id half) is ">= since", not a 400 ───
+
+    @Test
+    void timestampOnlyCursorReturnsRowsAtOrAfterSince() throws Exception {
+        String uid = seedActiveUser("dave@test");
+        stubAuthAs(uid, "user");
+
+        PutSubscriptionRequest put = new PutSubscriptionRequest();
+        put.setChannelUrl("u");
+        put.setName("n");
+        put.setSubscribedAt(0L);
+        mvc.perform(put("/api/account/subscriptions/UC1")
+                        .header("Authorization", "Bearer fake")
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content(json.writeValueAsString(put)))
+                .andExpect(status().isOk());
+
+        String body = mvc.perform(get("/api/account/sync").header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andReturn().getResponse().getContentAsString();
+        long cursor = json.readTree(body).path("subscriptions").path("nextCursor").asLong();
+
+        // since == the row's own updatedAt, no subs_id: documented ">= since" re-delivers it.
         mvc.perform(get("/api/account/sync")
                         .param("subs", String.valueOf(cursor))
                         .header("Authorization", "Bearer fake"))
                 .andExpect(status().isOk())
-                .andExpect(jsonPath("$.subscriptions.items").isEmpty());
+                .andExpect(jsonPath("$.subscriptions.items[0].entityId").value("UC1"));
+
+        // blank id half behaves the same.
+        mvc.perform(get("/api/account/sync")
+                        .param("subs", String.valueOf(cursor))
+                        .param("subs_id", "")
+                        .header("Authorization", "Bearer fake"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.subscriptions.items[0].entityId").value("UC1"));
     }
 
     // ── Helpers ───────────────────────────────────────────────────────────────

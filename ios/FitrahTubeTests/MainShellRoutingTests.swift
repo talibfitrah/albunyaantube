@@ -44,6 +44,31 @@ struct MainShellRoutingTests {
     // (`RootViewDestinationTests.everySplashDestinationRendersItsScreen`), the third as the full
     // screen cover R7-P1 #3 presents on `AccountSession.isAgeIneligible`.
 
+    /// 1.0.4 I10 (review m3): every `.player` push reaches the player through this one arm, and a
+    /// video saved in full opens its file. Reverting the arm to `PlayerScreen(args: args)` fails it.
+    /// Round 5 (N6): on its own fake container (its own in-memory store, a temp base), never the
+    /// shared one.
+    @Test func thePlayerRouteOpensAFullySavedVideoLocally() throws {
+        let container = AppContainer.fake(offlineAllowedVideoId: "route-test")   // base: the temp directory
+        let item = OfflineItem(videoId: "route-\(UUID().uuidString.prefix(8))", title: "T", channelName: "C",
+                               thumbnailUrl: nil, qualityLabel: "360p", audioOnly: false,   // a video save: I-C10.2
+                               status: OfflineStatus.completed.rawValue, completedAt: Date())
+        item.localPath = "\(item.id).mp4"
+        let file = OfflineStorage.fileURL(relativePath: "\(item.id).mp4", base: container.offlineBase)
+        try FileManager.default.createDirectory(at: file.deletingLastPathComponent(), withIntermediateDirectories: true)
+        try Data("x".utf8).write(to: file)
+        try container.offlineStore.insert(item)
+        defer {
+            try? FileManager.default.removeItem(at: file)
+            try? container.offlineStore.delete(item)
+        }
+
+        let leaf = leafValue(of: MainShellView().destination(for: .player(PlayerArgs(videoId: item.videoId)),
+                                                             container: container))
+        let args = Mirror(reflecting: leaf).children.first { $0.label == "args" }?.value as? PlayerArgs
+        #expect(args?.offlineItemId == item.id, "the player route opened a saved video streaming")
+    }
+
     /// Phase 4 Task 17: the ONE new `Route` case this task adds — it lands WITH its screen, and
     /// with the Me kebab row that pushes it (`MeKebabItem.landed`).
     @Test func theProfileRouteRendersTheRealScreen() {

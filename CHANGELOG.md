@@ -5,6 +5,23 @@ stable release.
 
 ## [Unreleased]
 
+- iOS (1.0.5): some playlists that opened empty (e.g. "White Noise for Babies") list their videos again.
+
+## [1.0.4] - 2026-11-01
+
+- iOS + backend: the code to switch standard-quality videos to HD shipped switched off (server setting); it stays off until its server helper passes review. Playback is unchanged.
+- Live channels: the "Channels Live" category shows each channel's current live stream (a channel with several shows all of them), hides a channel while it is off air, and drops a link to a specific stream once that stream ends; ended streams also leave search and the video lists. Only admins can add to it: channels, or streams that are live right now. Installed apps get this with no update.
+- Admin: categories have a type (Standard or Live channels); the live category's sorting view shows each channel's live state and a warning when the live check looks wrong; refusals at every add, approve and import say why, in English, Arabic and Dutch.
+- Android: a live channel keeps playing past the stream link's ~6-hour expiry with no visible refresh (before, it rebuffered every 50 minutes); when a live stream ends or restarts under a new link, the player finds the channel's current stream instead of moving to the next video.
+- iOS: a live channel keeps playing past the stream link's ~6-hour expiry, with one brief rebuffer about every 6 hours instead of stopping; when a live stream ends or restarts under a new link, the player finds the channel's current stream, and an ended broadcast is never played as a recording in its place.
+- Search (server; no app update needed): can also find videos inside approved channels and playlists, not only the channels and playlists themselves. Results are ordinary videos, with longer videos before Shorts, and they are switched on step by step after measurement.
+- Share links: a link preview never shows a title, text or image that the sharer supplied. Anything outside the catalog shows a plain FitrahTube card.
+- Video titles (both apps): the player, channel pages and playlists show each video's original title instead of an English machine translation.
+- Playlists (both apps): a playlist always shows a picture; the server also repairs playlist pictures whose source image is gone.
+- iOS: a video opened from a playlist lists the rest of that playlist in Up Next.
+
+## [1.0.3] - 2026-10-16
+
 - Search (both apps): forgives typos, shows the closest or related results when nothing matches, and updates smoothly while you type; on iOS, VoiceOver announces the result count.
 - iOS: captions are off by default and turn on only when you pick a language; Off is always in the captions menu, as on Android; iPad fullscreen keeps auto-generated captions (to turn them off there, leave fullscreen and choose Off).
 - iOS: no embedded YouTube player anywhere, and description links never open YouTube (both apps follow one shared link rule).

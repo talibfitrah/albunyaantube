@@ -45,9 +45,9 @@ public class SyncController {
             @RequestParam(name = "playlists", required = false, defaultValue = "0") long playlists,
             @RequestParam(name = "favorites", required = false, defaultValue = "0") long favorites,
             // Compound-cursor tiebreakers — clients running the post-R4 build
-            // send the previous page's last docId here. Legacy clients (no
-            // _id params) get the old whereGreaterThan(ts) behaviour with the
-            // known same-ms drop risk; new clients get exact pagination.
+            // send the previous page's last docId here. Without an _id the
+            // pull starts AT the timestamp (updatedAt >= since; the boundary
+            // row comes back and clients upsert it); with one, exact pagination.
             @RequestParam(name = "subs_id", required = false) String subsId,
             @RequestParam(name = "playlists_id", required = false) String playlistsId,
             @RequestParam(name = "favorites_id", required = false) String favoritesId)

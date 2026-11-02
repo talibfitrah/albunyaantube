@@ -29,14 +29,17 @@ import org.springframework.test.web.servlet.MockMvc;
 
 import java.util.Collections;
 import java.util.List;
+import java.util.Map;
 import java.util.Set;
 import java.util.regex.Pattern;
 
+import static org.hamcrest.Matchers.containsString;
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertFalse;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.*;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
@@ -411,6 +414,26 @@ public class PublicContentControllerTest {
     }
 
     @Test
+    @DisplayName("GET /api/v1/search - stream and inner hits carry sourceType/sourceId; catalog hits carry neither (R28)")
+    void testSearch_ProvenanceOnlyOnStreamAndInnerHits() throws Exception {
+        ContentItemDto inner = ContentItemDto.video("ilgiwqpcOC8", "Lezing", null, 2712, null, null,
+                "https://i.ytimg.com/vi/ilgiwqpcOC8/hqdefault.jpg", null, "Dawah Nederland", null);
+        inner.setSourceType("CHANNEL");
+        inner.setSourceId("UCfassTU6mGWIj-yb26_ADjQ");
+        ContentItemDto channel = ContentItemDto.channel("UCzakir", "Dr Zakir Naik", null, null, null, null, null, List.of());
+        when(contentService.search(eq("lezing"), any(), anyInt())).thenReturn(new SearchIndex.Hits(List.of(inner, channel), "exact"));
+
+        mockMvc.perform(get("/api/v1/search").param("q", "lezing"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$").isArray())
+                .andExpect(jsonPath("$[0].type").value("VIDEO"))
+                .andExpect(jsonPath("$[0].sourceType").value("CHANNEL"))
+                .andExpect(jsonPath("$[0].sourceId").value("UCfassTU6mGWIj-yb26_ADjQ"))
+                .andExpect(jsonPath("$[1].sourceType").doesNotExist())
+                .andExpect(jsonPath("$[1].sourceId").doesNotExist());
+    }
+
+    @Test
     @DisplayName("GET /api/v1/search - 503 + Retry-After while the index builds")
     void testSearch_NotReadyIs503() throws Exception {
         when(contentService.search(anyString(), any(), anyInt())).thenThrow(new SearchIndex.NotReadyException());
@@ -418,6 +441,44 @@ public class PublicContentControllerTest {
         mockMvc.perform(get("/api/v1/search").param("q", "quran"))
                 .andExpect(status().isServiceUnavailable())
                 .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/titles - known ids only, an hour of public caching; bad input 400; a cold index 503 (Task 24b)")
+    void testTitles() throws Exception {
+        when(contentService.titles(List.of("ilgiwqpcOC8", "cBjnzYHSV4M")))
+                .thenReturn(new SearchIndex.Titles(Map.of("ilgiwqpcOC8", "Lezing: 'De rechtvaardige kalief'"), true));
+        mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8,cBjnzYHSV4M,ilgiwqpcOC8")) // duplicates collapse
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", containsString("max-age=3600")))
+                .andExpect(header().string("Cache-Control", containsString("public")))
+                .andExpect(jsonPath("$.ilgiwqpcOC8").value("Lezing: 'De rechtvaardige kalief'"))
+                .andExpect(jsonPath("$.cBjnzYHSV4M").doesNotExist());
+
+        String fiftyOne = java.util.stream.IntStream.range(0, 51).mapToObj(i -> String.format("lesson%05d", i))
+                .collect(java.util.stream.Collectors.joining(","));
+        mockMvc.perform(get("/api/v1/titles").param("ids", fiftyOne)).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/titles").param("ids", "not-an-id")).andExpect(status().isBadRequest());
+        mockMvc.perform(get("/api/v1/titles")).andExpect(status().isBadRequest());
+        verify(contentService, times(1)).titles(any());
+
+        when(contentService.titles(any())).thenThrow(new SearchIndex.NotReadyException());
+        mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8")).andExpect(status().isServiceUnavailable())
+                .andExpect(header().string("Retry-After", "5"));
+    }
+
+    @Test
+    @DisplayName("GET /api/v1/titles - a partial answer (inner budget, failure, not serving yet) is shared-cached for a minute only")
+    void testTitles_PartialAnswerIsCachedForAMinute() throws Exception {
+        when(contentService.titles(List.of("ilgiwqpcOC8")))
+                .thenReturn(new SearchIndex.Titles(Map.of(), false));
+        mockMvc.perform(get("/api/v1/titles").param("ids", "ilgiwqpcOC8"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "max-age=60, public"));
+        when(contentService.titles(List.of("cBjnzYHSV4M")))
+                .thenReturn(new SearchIndex.Titles(Map.of(), true));
+        mockMvc.perform(get("/api/v1/titles").param("ids", "cBjnzYHSV4M"))
+                .andExpect(header().string("Cache-Control", "max-age=3600, public"));
     }
 
     @Test
@@ -564,7 +625,7 @@ public class PublicContentControllerTest {
         playlist.setApprovedBy(STAFF_UID);
         playlist.setApprovalMetadata(staffReview());
         playlist.setSubmitterNote("context for the admin");
-        playlist.setExcludedVideoIds(List.of("xc7keR2piUM"));
+        playlist.setExcludedVideoIds(List.of("sCQwxFEMlZ4"));
         playlist.setKeywords(List.of("fiqh"));
         playlist.setDisplayOrder(2);
         playlist.setLastValidatedAt(Timestamp.now());

@@ -22,7 +22,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  * Plan D T12 — verifies FirebaseAuthFilter's account-status gating
  * applies to the /api/account/sync route:
  *   - BLOCKED        → 403 ACCOUNT_BLOCKED
- *   - DELETED        → 401 ACCOUNT_NOT_FOUND
+ *   - DELETED        → 403 ACCOUNT_DELETED
  *   - PENDING_PROFILE → allowed (200)
  *   - ACTIVE          → allowed (200)
  */
@@ -44,14 +44,15 @@ class SyncStatusFilterIT extends BaseIntegrationTest {
     }
 
     @Test
-    void deletedUser_gets401_onSync() throws Exception {
+    void deletedUser_getsAccountDeleted403_onSync() throws Exception {
         String uid = "uid-deleted";
         seedUser(uid, uid + "@test.com", "user", UserStatus.ACTIVE);
         markDeleted(uid);
         stubToken(uid, "user");
 
         mvc.perform(get("/api/account/sync").header("Authorization", "Bearer fake-token-" + uid))
-                .andExpect(status().isUnauthorized());
+                .andExpect(status().isForbidden())
+                .andExpect(jsonPath("$.code").value("ACCOUNT_DELETED"));
     }
 
     @Test

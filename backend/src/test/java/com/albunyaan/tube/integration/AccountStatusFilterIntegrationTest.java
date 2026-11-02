@@ -23,7 +23,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
  *
  * Verifies that FirebaseAuthFilter enforces server-authoritative account status:
  * - BLOCKED users get 403 ACCOUNT_BLOCKED
- * - DELETED users get 401 ACCOUNT_NOT_FOUND
+ * - DELETED users get 403 ACCOUNT_DELETED (FirebaseAuthFilter; the client's terminal-dialog signal)
  * - ACTIVE users with role "user" are accepted by the filter
  * - PENDING_PROFILE users are accepted by the filter
  *
@@ -80,7 +80,7 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
     }
 
     @Test
-    void deletedUser_gets401() throws Exception {
+    void deletedUser_getsAccountDeleted403() throws Exception {
         String uid = "test-uid-deleted";
         seedUser(uid, "deleted@test.com", "moderator", UserStatus.ACTIVE);
         markDeleted(uid);
@@ -88,8 +88,8 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
         stubToken(uid, "moderator");
 
         mvc.perform(get("/api/admin/users/me").header("Authorization", "Bearer fake-token-" + uid))
-            .andExpect(status().isUnauthorized())
-            .andExpect(jsonPath("$.code").value("ACCOUNT_NOT_FOUND"));
+            .andExpect(status().isForbidden())
+            .andExpect(jsonPath("$.code").value("ACCOUNT_DELETED"));
     }
 
     @Test
@@ -105,24 +105,16 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
         // ("hasRole('ADMIN')") then denies the request with 403.
         //
         // If the filter had rejected the "user" role (which it does NOT — it silently keeps it),
-        // or if the filter blocked an ACTIVE user, we would see a filter-level 401 with a code
-        // of ACCOUNT_NOT_FOUND or ACCOUNT_BLOCKED. A 403 from @PreAuthorize proves the filter
-        // passed the token through to Spring Security successfully.
+        // or if the filter blocked an ACTIVE user, we would see a filter-level 403 with a code
+        // of ACCOUNT_DELETED or ACCOUNT_BLOCKED. A 403 from @PreAuthorize carries neither code,
+        // which proves the filter passed the token through to Spring Security successfully.
         mvc.perform(get("/api/admin/users").header("Authorization", "Bearer fake-token-" + uid))
             .andExpect(result -> {
-                int status = result.getResponse().getStatus();
-                // 403 = @PreAuthorize blocked (filter passed); anything else is unexpected here.
-                // Crucially, if filter had rejected the user it would return 401 with a code field.
-                if (status == 401) {
-                    String body = result.getResponse().getContentAsString();
-                    assertFalse(
-                        body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_NOT_FOUND"),
-                        "Filter blocked an ACTIVE 'user' role account — should have passed through. Body: " + body
-                    );
-                }
-                // 403 from @PreAuthorize is the expected outcome; 401 without a block code is
-                // also tolerable (e.g. auth framework 401 for insufficient role), but a filter
-                // block code is a failure.
+                String body = result.getResponse().getContentAsString();
+                assertFalse(
+                    body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_DELETED"),
+                    "Filter blocked an ACTIVE 'user' role account — should have passed through. Body: " + body
+                );
             });
     }
 
@@ -139,14 +131,11 @@ class AccountStatusFilterIntegrationTest extends BaseIntegrationTest {
         // passed the user through without a status-gate rejection.
         mvc.perform(get("/api/admin/users").header("Authorization", "Bearer fake-token-" + uid))
             .andExpect(result -> {
-                int status = result.getResponse().getStatus();
-                if (status == 401) {
-                    String body = result.getResponse().getContentAsString();
-                    assertFalse(
-                        body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_NOT_FOUND"),
-                        "Filter blocked a PENDING_PROFILE user — should have passed through. Body: " + body
-                    );
-                }
+                String body = result.getResponse().getContentAsString();
+                assertFalse(
+                    body.contains("ACCOUNT_BLOCKED") || body.contains("ACCOUNT_DELETED"),
+                    "Filter blocked a PENDING_PROFILE user — should have passed through. Body: " + body
+                );
             });
     }
 

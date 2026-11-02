@@ -1,0 +1,127 @@
+package com.albunyaan.tube.player
+
+import android.net.Uri
+import android.util.Log
+import androidx.annotation.OptIn
+import androidx.media3.common.util.UnstableApi
+import androidx.media3.datasource.DataSourceUtil
+import androidx.media3.datasource.DataSpec
+import com.albunyaan.tube.BuildConfig
+import com.albunyaan.tube.data.extractor.ExtractionClient
+import com.albunyaan.tube.data.extractor.ResolvedStreams
+import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.withContext
+import java.util.concurrent.ConcurrentHashMap
+import javax.inject.Inject
+import javax.inject.Singleton
+
+/**
+ * Spec §9.2(a): the seamless live refresh. A live HLS player keeps reloading the media-playlist URLs its master
+ * named, and those carry the master's `/expire/` (~6 h, F11). After a refresh this rewrites each media-playlist
+ * request to the fresh extraction's URL for the same itag; a re-extraction continues the same media sequence (F12),
+ * so the player never rebuilds. Segments are absolute URLs inside the playlists and pass through untouched.
+ *
+ * A rewrite needs, all at once (RV I10a): an `hls_playlist` URL with an `/itag/`, a mapping for that itag, a later
+ * `/expire/`, the same `/ip/` and the same host (stage 4 S1). The map is cleared whenever a new live source is built
+ * (DashSourceBuilder).
+ */
+@OptIn(UnstableApi::class)
+@Singleton
+class LivePlaylistRedirector internal constructor(
+    private val fetchText: suspend (url: String, client: ExtractionClient) -> String?,
+) {
+    @Inject constructor(provider: SegmentDataSourceFactoryProvider) : this({ url, client ->
+        withContext(Dispatchers.IO) {
+            val source = provider.forClient(client, cache = false).createDataSource()
+            try {
+                source.open(DataSpec(Uri.parse(url)))
+                String(DataSourceUtil.readToEnd(source), Charsets.UTF_8)
+            } catch (e: Exception) {                                // any fetch failure takes the rebuild
+                null
+            } finally {
+                DataSourceUtil.closeQuietly(source)                 // close() throws IOException too; never escape refresh
+            }
+        }
+    })
+
+    private val maps = ConcurrentHashMap<String, Map<Int, String>>()
+    /** itag → the URL the player asked for, since the source was built: a fresh master must replace every one. */
+    private val requested = ConcurrentHashMap<String, ConcurrentHashMap<Int, String>>()
+    /** Bumped by every [clear]: a refresh whose fetch spans a new source must not install its map on it; guarded by `this`. */
+    private val generations = HashMap<String, Long>()
+    /** The client whose URLs (and so UA) each stream's current source was built from; guarded by `this`. */
+    private val clients = HashMap<String, ExtractionClient>()
+
+    /** The `ResolvingDataSource` hook. */
+    fun resolve(streamId: String, spec: DataSpec): DataSpec =
+        rewrite(streamId, spec.uri.toString())?.let { spec.withUri(Uri.parse(it)) } ?: spec
+
+    /** RV I10a's rule; null = pass through. */
+    fun rewrite(streamId: String, url: String): String? {
+        if (!url.contains(PLAYLIST_PATH)) return null
+        val itag = itag(url) ?: return null
+        requested.getOrPut(streamId) { ConcurrentHashMap() }[itag] = url
+        return maps[streamId]?.get(itag)?.takeIf { replaces(url, it) }
+    }
+
+    /** A new source for [streamId], built from [client]'s URLs, starts from its own master: never redirected to an older one. */
+    fun clear(streamId: String, client: ExtractionClient) {
+        synchronized(this) {
+            generations[streamId] = (generations[streamId] ?: 0L) + 1
+            clients[streamId] = client
+            maps.remove(streamId)
+            requested.remove(streamId)
+        }
+    }
+
+    /**
+     * Spec §9.2(a), the refresh: fetch the fresh master once through the matching client's data source and map
+     * itag → media-playlist URL. false = the caller takes today's rebuild (another client, an itag the player uses
+     * is missing or would not pass [rewrite], e.g. after an IP change (Codex C3), or the fetch failed).
+     */
+    suspend fun refresh(current: ResolvedStreams, fresh: ResolvedStreams): Boolean {
+        val id = current.streamId
+        // RV I10b against the source playing now: a recovery may have rebuilt it on the other client while the caller
+        // re-extracted, leaving `current` stale. An unchanged generation after the fetch means an unchanged client.
+        val (generation, client) = synchronized(this) { generations[id] to (clients[id] ?: current.extractionClient) }
+        if (fresh.extractionClient != client) return false
+        val master = fresh.hlsUrl ?: return false
+        val map = variantMap(fetchText(master, fresh.extractionClient) ?: return false)
+        // Short and never taken by loader threads (rewrite reads lock-free): only clear() contends.
+        synchronized(this) {
+            if (generations[id] != generation) return false                       // a new source was built meanwhile
+            if (map.isEmpty() || requested[id].orEmpty().any { (itag, url) -> map[itag]?.let { replaces(url, it) } != true }) return false
+            maps[id] = map
+        }
+        if (BuildConfig.DEBUG) Log.d(TAG, "swap $id: ${map.size} renditions -> expire ${ResolvedStreams.expireSeconds(master)}")
+        return true
+    }
+
+    companion object {
+        private const val TAG = "LiveSwap"
+        private const val PLAYLIST_PATH = "/api/manifest/hls_playlist/"
+        private val ITAG = Regex("/itag/(\\d+)/")
+        private val IP = Regex("/ip/([^/]+)/")
+        private val URL = Regex("https://[^\\s\"]+")
+
+        private fun itag(url: String): Int? = ITAG.find(url)?.groupValues?.get(1)?.toIntOrNull()
+        private fun ip(url: String): String? = IP.find(url)?.groupValues?.get(1)
+        private fun host(url: String): String? = runCatching { java.net.URI(url).host }.getOrNull()
+
+        /** RV I10a + S1: [mapped] may stand in for [url] — a later `/expire/`, the same `/ip/`, the same host. */
+        private fun replaces(url: String, mapped: String): Boolean {
+            val have = ResolvedStreams.expireSeconds(url) ?: return false
+            val fresh = ResolvedStreams.expireSeconds(mapped) ?: return false
+            return fresh > have && ip(mapped) == ip(url) && host(url) != null && host(mapped) == host(url)
+        }
+
+        /**
+         * itag → media-playlist URL from a master's variant lines and `EXT-X-MEDIA URI="…"` attributes.
+         * ponytail: a regex over absolute URLs (what YouTube serves) instead of Media3's HlsPlaylistParser, so the
+         * tests stay pure JVM; switch to the parser if YouTube ever emits relative URIs.
+         */
+        fun variantMap(master: String): Map<Int, String> =
+            URL.findAll(master).map { it.value }.filter { it.contains(PLAYLIST_PATH) }
+                .mapNotNull { u -> itag(u)?.let { it to u } }.toMap()
+    }
+}

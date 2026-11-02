@@ -6,6 +6,7 @@ import com.albunyaan.tube.dto.registry.BulkPreviewResponse;
 import com.albunyaan.tube.dto.registry.BulkSubmitRequest;
 import com.albunyaan.tube.dto.registry.BulkSubmitResponse;
 import com.albunyaan.tube.service.BulkSubmissionService;
+import com.albunyaan.tube.service.LiveCategoryGuard;
 import jakarta.validation.Valid;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -66,6 +67,8 @@ public class RegistryController {
     private final SortOrderService sortOrderService;
     private final com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache;
     private final BulkSubmissionService bulkSubmissionService;
+    private final LiveCategoryGuard liveCategoryGuard;
+    private final com.albunyaan.tube.service.ContentReportService contentReportService;
 
     public RegistryController(
             ChannelRepository channelRepository,
@@ -75,7 +78,9 @@ public class RegistryController {
             PublicContentCacheService publicContentCacheService,
             SortOrderService sortOrderService,
             com.github.benmanes.caffeine.cache.Cache<String, Object> workspaceExclusionsCache,
-            BulkSubmissionService bulkSubmissionService
+            BulkSubmissionService bulkSubmissionService,
+            LiveCategoryGuard liveCategoryGuard,
+            com.albunyaan.tube.service.ContentReportService contentReportService
     ) {
         this.channelRepository = channelRepository;
         this.playlistRepository = playlistRepository;
@@ -85,6 +90,8 @@ public class RegistryController {
         this.sortOrderService = sortOrderService;
         this.workspaceExclusionsCache = workspaceExclusionsCache;
         this.bulkSubmissionService = bulkSubmissionService;
+        this.liveCategoryGuard = liveCategoryGuard;
+        this.contentReportService = contentReportService;
     }
 
     /**
@@ -212,11 +219,6 @@ public class RegistryController {
             if (existing.isPresent()) {
                 Channel ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
-                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
-                    ex.setStatus("PENDING");
-                    ex.setApprovalMetadata(null);
-                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
-                    if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
                     // Only overwrite submitterNote if the resubmit body explicitly provided a NON-EMPTY one.
                     // null OR "" on the body means "I'm not touching the note" (gstack R6 P2: many
                     // HTTP clients always send the key with "" rather than omitting it; the prior
@@ -226,12 +228,20 @@ public class RegistryController {
                     // whitespace + zero-width + bidi-override chars to null, so the
                     // null-check below correctly treats all "no real content" payloads
                     // as "don't touch" — no special-case isBlank() / isEmpty() needed.
+                    // It reads only the body, so it runs before the live guard: a 400 spends no YouTube read.
                     String sanitizedChannelNote;
                     try {
                         sanitizedChannelNote = sanitizeSubmitterNote(channel.getSubmitterNote());
                     } catch (IllegalArgumentException tooLong) {
                         return ResponseEntity.badRequest().build();
                     }
+                    liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(), ex, ex,
+                            channel.getCategoryIds() != null ? channel.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (channel.getCategoryIds() != null) ex.setCategoryIds(channel.getCategoryIds());
                     if (sanitizedChannelNote != null) {
                         ex.setSubmitterNote(sanitizedChannelNote);
                     }
@@ -275,6 +285,8 @@ public class RegistryController {
         if (status == null) {
             return ResponseEntity.badRequest().build();
         }
+        liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(channel.getYoutubeId(), channel, null,
+                channel.getCategoryIds(), status));
 
         // Allowlist the body-supplied thumbnail host so single-add matches
         // the bulk path's defense against attacker-hosted thumbnails
@@ -323,6 +335,9 @@ public class RegistryController {
             channel.setStatus(upperStatus);
         }
 
+        liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, existing, existing,
+                channel.getCategoryIds(), channel.getStatus()));
+
         // Update fields
         existing.setName(channel.getName());
         existing.setDescription(channel.getDescription());
@@ -358,6 +373,8 @@ public class RegistryController {
         if ("APPROVED".equals(channel.getStatus())) {
             channel.setStatus("PENDING");
         } else {
+            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, channel, channel,
+                    channel.getCategoryIds(), "APPROVED"));
             channel.setStatus("APPROVED");
             channel.setApprovedBy(user.getUid());
         }
@@ -535,18 +552,20 @@ public class RegistryController {
             if (existing.isPresent()) {
                 Playlist ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
-                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
-                    ex.setStatus("PENDING");
-                    ex.setApprovalMetadata(null);
-                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
-                    if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
-                    // Cubic R4 P2: sanitize first; see channel resubmit above.
+                    // Cubic R4 P2: sanitize first, before the live guard; see channel resubmit above.
                     String sanitizedPlaylistNote;
                     try {
                         sanitizedPlaylistNote = sanitizeSubmitterNote(playlist.getSubmitterNote());
                     } catch (IllegalArgumentException tooLong) {
                         return ResponseEntity.badRequest().build();
                     }
+                    liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(), ex, ex,
+                            playlist.getCategoryIds() != null ? playlist.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (playlist.getCategoryIds() != null) ex.setCategoryIds(playlist.getCategoryIds());
                     if (sanitizedPlaylistNote != null) {
                         ex.setSubmitterNote(sanitizedPlaylistNote);
                     }
@@ -582,6 +601,8 @@ public class RegistryController {
         if (playlistStatus == null) {
             return ResponseEntity.badRequest().build();
         }
+        liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(playlist.getYoutubeId(), playlist, null,
+                playlist.getCategoryIds(), playlistStatus));
 
         // See addChannel — single-add thumbnail allowlist enforcement.
         playlist.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
@@ -623,6 +644,9 @@ public class RegistryController {
             playlist.setStatus(upperStatus);
         }
 
+        liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, existing, existing,
+                playlist.getCategoryIds(), playlist.getStatus()));
+
         // Update fields
         existing.setTitle(playlist.getTitle());
         existing.setDescription(playlist.getDescription());
@@ -657,6 +681,8 @@ public class RegistryController {
         if ("APPROVED".equals(playlist.getStatus())) {
             playlist.setStatus("PENDING");
         } else {
+            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, playlist, playlist,
+                    playlist.getCategoryIds(), "APPROVED"));
             playlist.setStatus("APPROVED");
             playlist.setApprovedBy(user.getUid());
         }
@@ -907,23 +933,30 @@ public class RegistryController {
             @AuthenticationPrincipal FirebaseUserDetails user
     ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Check if video already exists by youtubeId
+        String rejectedDocId = null;
         if (video.getYoutubeId() != null) {
             var existing = videoRepository.findByYoutubeId(video.getYoutubeId());
             if (existing.isPresent()) {
                 Video ex = existing.get();
                 if ("REQUEST_CHANGES".equals(ex.getStatus()) && user.getUid().equals(ex.getSubmittedBy())) {
-                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
-                    ex.setStatus("PENDING");
-                    ex.setApprovalMetadata(null);
-                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
-                    if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
-                    // Cubic R4 P2: sanitize first; see channel resubmit above.
+                    // Cubic R4 P2: sanitize first, before the live guard; see channel resubmit above.
                     String sanitizedVideoNote;
                     try {
                         sanitizedVideoNote = sanitizeSubmitterNote(video.getSubmitterNote());
                     } catch (IllegalArgumentException tooLong) {
                         return ResponseEntity.badRequest().build();
                     }
+                    // D10: Change.of takes the body's channelId when it is a UC id, else the stored doc's.
+                    String verifiedChannel = liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(ex.getId(),
+                            video, ex, video.getCategoryIds() != null ? video.getCategoryIds() : ex.getCategoryIds(), "PENDING"));
+                    if (verifiedChannel != null) {
+                        ex.setChannelId(verifiedChannel);
+                    }
+                    // Plan E: re-submit of an admin-bounced row. Flip back to PENDING.
+                    ex.setStatus("PENDING");
+                    ex.setApprovalMetadata(null);
+                    ex.setUpdatedAt(com.google.cloud.Timestamp.now());
+                    if (video.getCategoryIds() != null) ex.setCategoryIds(video.getCategoryIds());
                     if (sanitizedVideoNote != null) {
                         ex.setSubmitterNote(sanitizedVideoNote);
                     }
@@ -936,12 +969,21 @@ public class RegistryController {
                     auditLogService.log("video_resubmitted_after_changes", "video", ex.getId(), user);
                     return ResponseEntity.ok(ex);
                 }
-                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                // Stage 9 B11: an admin's add of a REJECTED video (a report's take-down record too) is re-added into its
+                // doc, as bulk does: no 409, no second doc. Anything else is a duplicate. B16 (Cubic r6 P1): a moderator's
+                // add would make that doc their own PENDING one, which they could delete: the take-down undone.
+                if (!"REJECTED".equals(ex.getStatus()) || !user.isAdmin()   // Cubic b26-r1: nor beside an archived sibling
+                        || com.albunyaan.tube.service.RegistryDuplicateChecker.heldBeside(
+                                videoRepository.findAllByYoutubeId(ex.getYoutubeId()), ex.getId())) {
+                    return ResponseEntity.status(HttpStatus.CONFLICT).build();
+                }
+                rejectedDocId = ex.getId();
             }
         }
 
         // Clear server-controlled fields to prevent mass assignment
-        video.setId(null);
+        video.setId(rejectedDocId);
+        video.setSource(null); // server-controlled: "REPORT" marks a take-down record, which Restore deletes
         video.setCreatedAt(com.google.cloud.Timestamp.now());
         video.setApprovalMetadata(null);
         video.setValidationStatus(null);
@@ -959,12 +1001,28 @@ public class RegistryController {
         if (videoStatus == null) {
             return ResponseEntity.badRequest().build();
         }
+        // D10: Change.of takes the body's channelId (the first channel source; no stored doc yet).
+        String verifiedChannel = liveCategoryGuard.check(user.isAdmin(), LiveCategoryGuard.Change.of(video.getYoutubeId(),
+                video, null, video.getCategoryIds(), videoStatus));
+        if (verifiedChannel != null) {
+            video.setChannelId(verifiedChannel);
+        }
 
         // See addChannel — single-add thumbnail allowlist enforcement.
         video.setThumbnailUrl(com.albunyaan.tube.service.RegistrySubmissionWriter
                 .sanitizeThumbnailUrl(video.getThumbnailUrl()));
 
-        Video saved = videoRepository.save(video);
+        // A re-add replaces the REJECTED doc whole, on a status CAS (as the resubmit path above).
+        Video saved;
+        if (rejectedDocId == null) {
+            saved = videoRepository.save(video);
+        } else {
+            try {
+                saved = contentReportService.reAdd(video);   // a take-down record's exclusions go too (B14)
+            } catch (IllegalStateException | IllegalArgumentException raced) { // another re-add landed, or Restore deleted it
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+        }
         if ("APPROVED".equals(saved.getStatus()) && saved.getCategoryIds() != null) {
             for (String categoryId : saved.getCategoryIds()) {
                 sortOrderService.addContentToCategory(categoryId, saved.getId(), "video");
@@ -999,6 +1057,17 @@ public class RegistryController {
                 return ResponseEntity.badRequest().build();
             }
             video.setStatus(upperStatus);
+            // Stage 9 B21 (Cubic r9 #14): a take-down record stays REJECTED; Restore or a re-add lifts a take-down
+            if (!"REJECTED".equals(upperStatus) && com.albunyaan.tube.service.ContentReportService.isTakeDownRecord(existing)) {
+                return ResponseEntity.status(HttpStatus.CONFLICT).build();
+            }
+        }
+
+        String verifiedChannel = liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, existing, existing,
+                video.getCategoryIds() != null ? video.getCategoryIds() : existing.getCategoryIds(),
+                video.getStatus() != null ? video.getStatus() : existing.getStatus()));
+        if (verifiedChannel != null) {
+            existing.setChannelId(verifiedChannel);
         }
 
         // Merge, don't replace: every copy is null-guarded so a partial body updates only
@@ -1052,11 +1121,19 @@ public class RegistryController {
         if (video == null) {
             return ResponseEntity.notFound().build();
         }
+        if (com.albunyaan.tube.service.ContentReportService.isTakeDownRecord(video)) {
+            return ResponseEntity.status(HttpStatus.CONFLICT).build();   // B21 (Cubic r9 #14), as in updateVideo
+        }
 
         // Toggle between APPROVED and PENDING
         if ("APPROVED".equals(video.getStatus())) {
             video.setStatus("PENDING");
         } else {
+            String verifiedChannel = liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, video, video,
+                    video.getCategoryIds(), "APPROVED"));
+            if (verifiedChannel != null) {
+                video.setChannelId(verifiedChannel);
+            }
             video.setStatus("APPROVED");
             video.setApprovedBy(user.getUid());
         }

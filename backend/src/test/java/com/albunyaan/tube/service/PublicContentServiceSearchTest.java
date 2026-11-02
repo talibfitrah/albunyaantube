@@ -39,7 +39,8 @@ class PublicContentServiceSearchTest {
     @BeforeEach
     void setUp() {
         service = new PublicContentService(channelRepository, playlistRepository, videoRepository,
-                categoryRepository, orderRepository, Runnable::run, searchIndex);
+                categoryRepository, orderRepository, Runnable::run, searchIndex,
+                mock(LiveCategoryService.class));
     }
 
     private static List<ContentItemDto> items(int n) {
@@ -53,7 +54,7 @@ class PublicContentServiceSearchTest {
         // Review Focus 1: "subhanallah" is 11 [A-Za-z] chars, so parseDirectId reads it as a video id.
         SearchIndex.Hits text = new SearchIndex.Hits(items(1), "exact");
         when(searchIndex.byId("subhanallah", null)).thenReturn(SearchIndex.Hits.NONE);
-        when(searchIndex.search("subhanallah", null, false, 20, null)).thenReturn(text);
+        when(searchIndex.search("subhanallah", null, 20)).thenReturn(text);
 
         assertSame(text, service.search("subhanallah", "ALL", 20));
     }
@@ -64,7 +65,7 @@ class PublicContentServiceSearchTest {
         when(searchIndex.byId("abcdefghijk", null)).thenReturn(byId);
 
         assertSame(byId, service.search("abcdefghijk", null, 20));
-        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).search(anyString(), any(), anyInt());
     }
 
     @Test
@@ -73,7 +74,7 @@ class PublicContentServiceSearchTest {
         when(searchIndex.byId("abcdefghijk", "VIDEO")).thenReturn(byId);
 
         assertSame(byId, service.search("https://www.youtube.com/watch?v=abcdefghijk", "VIDEOS", 20));
-        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).search(anyString(), any(), anyInt());
     }
 
     @Test
@@ -85,7 +86,7 @@ class PublicContentServiceSearchTest {
 
         assertEquals("none", hits.match());
         assertTrue(hits.items().isEmpty());
-        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).search(anyString(), any(), anyInt());
     }
 
     @Test
@@ -96,7 +97,7 @@ class PublicContentServiceSearchTest {
                 "https://www.youtube.com/embed/abcdefghijk")) {
             assertSame(byId, service.search(url, null, 20), url);
         }
-        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).search(anyString(), any(), anyInt());
     }
 
     @Test
@@ -138,13 +139,13 @@ class PublicContentServiceSearchTest {
         when(searchIndex.byId(channelId, null)).thenReturn(SearchIndex.Hits.NONE);
 
         assertEquals("none", service.search(channelId, null, 20).match());
-        verify(searchIndex, never()).search(anyString(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).search(anyString(), any(), anyInt());
     }
 
     @Test
     void anUnknownTypeAnswersNoneInsteadOfEveryType() throws Exception {
         // F10 / Codex P3: /search validates nothing, and the legacy search answered [] for any type but ALL/CHANNELS/PLAYLISTS/VIDEOS.
-        lenient().when(searchIndex.search(any(), any(), anyBoolean(), anyInt(), any()))
+        lenient().when(searchIndex.search(any(), any(), anyInt()))
                 .thenReturn(new SearchIndex.Hits(items(1), "exact"));
         lenient().when(searchIndex.byId(any(), any())).thenReturn(new SearchIndex.Hits(items(1), "exact"));
         for (String type : List.of("VIDEO", "FOO", "HOME", "", "https://youtu.be/abcdefghijk")) {
@@ -160,7 +161,7 @@ class PublicContentServiceSearchTest {
     @Test
     void allAndNoTypeStillSearchEveryType() throws Exception {
         SearchIndex.Hits text = new SearchIndex.Hits(items(1), "exact");
-        when(searchIndex.search("quran", null, false, 20, null)).thenReturn(text);
+        when(searchIndex.search("quran", null, 20)).thenReturn(text);
         assertSame(text, service.search("quran", null, 20));
         assertSame(text, service.search("quran", "all", 20));
     }
@@ -168,7 +169,7 @@ class PublicContentServiceSearchTest {
     @Test
     void theQueryIsTrimmedAndCutTo128CharactersBeforeTheIndexSeesIt() throws Exception {
         SearchIndex.Hits text = new SearchIndex.Hits(items(1), "exact");
-        when(searchIndex.search("a".repeat(128), null, false, 20, null)).thenReturn(text);
+        when(searchIndex.search("a".repeat(128), null, 20)).thenReturn(text);
 
         assertSame(text, service.search("  " + "a".repeat(300) + "  ", null, 20));
     }
@@ -180,15 +181,16 @@ class PublicContentServiceSearchTest {
     }
 
     @Test
-    void inTabSearchPagesWithTheBase64OffsetCursor() throws Exception {
-        when(searchIndex.search("quran", "CHANNEL", true, 21, null)).thenReturn(new SearchIndex.Hits(items(25), "exact"));
+    void inTabSearchPagesWithABase64CursorOfTheOffsetAndTheIndexSnapshot() throws Exception {
+        when(searchIndex.searchPage("quran", "CHANNEL", 21, null, -1)).thenReturn(new SearchIndex.Hits(items(25), "exact", 7));
         PublicContentService.SearchPage first = service.searchContent("CHANNELS", null, 20, null, null, null, "quran");
         assertEquals(20, first.page().getData().size());
         assertEquals("exact", first.match());
         String cursor = first.page().getPageInfo().getNextCursor();
-        assertEquals(Base64.getEncoder().encodeToString("20".getBytes()), cursor);
+        assertEquals(Base64.getEncoder().encodeToString("20:7".getBytes()), cursor);
 
-        when(searchIndex.search("quran", "CHANNEL", true, 41, null)).thenReturn(new SearchIndex.Hits(items(25), "exact"));
+        // The next page asks for the first page's snapshot (Cubic P3, 1.0.4).
+        when(searchIndex.searchPage("quran", "CHANNEL", 41, null, 7)).thenReturn(new SearchIndex.Hits(items(25), "exact", 7));
         PublicContentService.SearchPage second = service.searchContent("CHANNELS", cursor, 20, null, null, null, "quran");
         assertEquals(5, second.page().getData().size());
         assertNull(second.page().getPageInfo().getNextCursor());
@@ -201,20 +203,20 @@ class PublicContentServiceSearchTest {
     @Test
     void aCursorPastTheCapAnswersAnEmptyPageWithoutSearching() throws Exception {
         // F2 / stage 4 H1: a crafted offset made the index re-run the query once per 10 hits, or overflowed.
-        lenient().when(searchIndex.search(any(), any(), anyBoolean(), anyInt(), any()))
-                .thenReturn(new SearchIndex.Hits(items(25), "exact"));
+        lenient().when(searchIndex.searchPage(any(), any(), anyInt(), any(), anyLong()))
+                .thenReturn(new SearchIndex.Hits(items(25), "exact", 7));
         for (String offset : List.of("1001", "2000000000", String.valueOf(Integer.MAX_VALUE), "3000000000")) {
             PublicContentService.SearchPage page = assertDoesNotThrow(
                     () -> service.searchContent("CHANNELS", cursor(offset), 20, null, null, null, "quran"), offset);
             assertTrue(page.page().getData().isEmpty(), offset);
             assertNull(page.page().getPageInfo().getNextCursor(), offset);
         }
-        verify(searchIndex, never()).search(any(), any(), anyBoolean(), anyInt(), any());
+        verify(searchIndex, never()).searchPage(any(), any(), anyInt(), any(), anyLong());
     }
 
     @Test
     void theLastCursorUnderTheCapStillSearches() throws Exception {
-        when(searchIndex.search("quran", "CHANNEL", true, 1021, null)).thenReturn(new SearchIndex.Hits(items(1005), "exact"));
+        when(searchIndex.searchPage("quran", "CHANNEL", 1021, null, -1)).thenReturn(new SearchIndex.Hits(items(1005), "exact", 7));
 
         PublicContentService.SearchPage page = service.searchContent("CHANNELS", cursor("1000"), 20, null, null, null, "quran");
 
@@ -250,10 +252,10 @@ class PublicContentServiceSearchTest {
         longOne.setStatus("APPROVED");
         longOne.setDurationSeconds(3600);
         when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(List.of(shortOne, longOne));
-        when(searchIndex.search(eq("quran"), eq("VIDEO"), eq(true), eq(21), any())).thenReturn(SearchIndex.Hits.NONE);
+        when(searchIndex.searchPage(eq("quran"), eq("VIDEO"), eq(21), any(), eq(-1L))).thenReturn(SearchIndex.Hits.NONE);
 
         service.searchContent("VIDEOS", null, 20, null, "SHORT", null, "quran");
 
-        verify(searchIndex).search("quran", "VIDEO", true, 21, Set.of("vShort"));
+        verify(searchIndex).searchPage("quran", "VIDEO", 21, Set.of("vShort"), -1);
     }
 }

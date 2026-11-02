@@ -6,7 +6,6 @@ import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.AuthService;
 import com.google.cloud.Timestamp;
 import com.google.cloud.firestore.QueryDocumentSnapshot;
-import com.google.cloud.firestore.QuerySnapshot;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.UserRecord;
 import org.junit.jupiter.api.Test;
@@ -20,6 +19,7 @@ import java.util.List;
 import java.util.Map;
 
 import static org.junit.jupiter.api.Assertions.*;
+import static org.mockito.Mockito.timeout;
 import static org.mockito.Mockito.verify;
 
 class AutoRevokeOnRoleChangeIT extends BaseIntegrationTest {
@@ -44,14 +44,18 @@ class AutoRevokeOnRoleChangeIT extends BaseIntegrationTest {
 
         authService.updateUserRoleAsActor(targetUid, "moderator", adminUid);
 
-        verify(firebaseAuth).revokeRefreshTokens(targetUid);
+        // Two async hops (11c5cac4): the revoke runs on authExecutor, then its audit row on
+        // auditExecutor. Checking right away raced them and failed under full-suite load.
+        verify(firebaseAuth, timeout(10_000)).revokeRefreshTokens(targetUid);
 
-        QuerySnapshot snap = firestore.collection("audit_logs")
-                .whereEqualTo("action", "USER_SESSIONS_REVOKED_AUTO")
-                .whereEqualTo("entityId", targetUid)
-                .get().get();
-
-        List<QueryDocumentSnapshot> docs = snap.getDocuments();
+        List<QueryDocumentSnapshot> docs = List.of();
+        for (int i = 0; i < 100 && docs.isEmpty(); i++) {
+            if (i > 0) Thread.sleep(100);
+            docs = firestore.collection("audit_logs")
+                    .whereEqualTo("action", "USER_SESSIONS_REVOKED_AUTO")
+                    .whereEqualTo("entityId", targetUid)
+                    .get().get().getDocuments();
+        }
         assertEquals(1, docs.size(),
                 "expected exactly one USER_SESSIONS_REVOKED_AUTO entry for " + targetUid);
 

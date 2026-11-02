@@ -19,11 +19,13 @@ public struct InnerTube: Sendable {
     /// instead of making that mistake.
     public let clock: SystemClock
 
+    /// - Parameter challengeSolver: the app's backend solver for the HD upgrade (spec R20); nil keeps HD off.
     public init(
         keyValueStore: KeyValueStore,
         availabilityGate: AvailabilityGate,
         locale: InnerTubeLocale,
-        remoteConfigURL: URL
+        remoteConfigURL: URL,
+        challengeSolver: ChallengeSolving? = nil
     ) {
         let clock = SystemClock()
         self.clock = clock
@@ -42,7 +44,8 @@ public struct InnerTube: Sendable {
             gate: availabilityGate,
             monotonicClock: clock,
             wallClock: clock,
-            locale: locale
+            locale: locale,
+            challengeSolver: challengeSolver
         )
 
         browse = BrowseClient(

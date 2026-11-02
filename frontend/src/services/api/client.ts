@@ -80,6 +80,8 @@ apiClient.interceptors.response.use(
       toast.error('Server error. Please try again later.');
     }
 
+    // Final reject only: the retry above re-sends error.config. Keeps the ID token out of any logged error.
+    delete error.config?.headers?.Authorization;
     return Promise.reject(error);
   }
 );

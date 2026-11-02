@@ -78,10 +78,10 @@ public class Channel {
      * Optional free-text note from the submitter ("why I'm suggesting this").
      * Shown to admins in the approval queue. Server-enforced max length: 1000 chars.
      *
-     * WRITE_ONLY: PublicContentService.getChannelDetails returns this entity raw on
-     * /api/v1/channels/{id}, which is permitAll. Without this, every approved channel's
-     * private "context for the admin" note would be public. Admin-side reads still go
-     * through PendingApprovalDto, which has its own surface for this field.
+     * WRITE_ONLY: admin routes still serialize the raw entity (RegistryController's channel lists,
+     * ChannelController.updateExclusions); the note reaches admins only through PendingApprovalDto,
+     * which has its own surface for this field. The public detail route serializes PublicDetails
+     * (2026-10-17 hotfix) and never carried it.
      */
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String submitterNote;

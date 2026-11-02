@@ -102,7 +102,9 @@ class RevokeSessionsIT extends BaseIntegrationTest {
     }
 
     private String seedUser(String email, String role, UserStatus status) throws Exception {
-        String uid = "test-" + email.replace("@", "-at-").replace(".", "-");
+        // Firebase-shaped uid: the bulk endpoints reject anything but ^[A-Za-z0-9]{20,128}$
+        // (BulkUserActionRequest). The 14-char prefix keeps even a short email at 20+.
+        String uid = "testuid0000000" + email.replaceAll("[^A-Za-z0-9]", "");
         User u = new User();
         u.setUid(uid);
         u.setEmail(email);

@@ -355,6 +355,74 @@ import Testing
         }
     }
 
+    // MARK: - Playback Phase 2: the TV rung's adaptive fields (spec §4.2 Parser)
+
+    @Test func aTVCaptureDecodesTheAdaptiveFields() throws {
+        let formats = try parser.adaptiveFormats(loadFixture("player-tv-Ix7uzPm3cU8"))
+        let top = try #require(formats.first { $0.itag == 137 })
+        #expect(top.initRange == 0...741)
+        #expect(top.indexRange == 742...4457)
+        #expect(top.contentLength == 176_807_396)
+        #expect([top.width, top.height, top.fps] == [1920, 1080, 25])
+        #expect(top.averageBitrate == 766_893)
+        #expect(top.mimeType == #"video/mp4; codecs="avc1.640028""#)
+        let audio = formats.filter { $0.itag == 140 }
+        #expect(audio.map(\.bitrate) == [132_171, 132_175, 132_207])
+        #expect(audio.map(\.isDrc) == [false, true, false])
+        #expect(audio.map(\.xtags) == [nil, "CggKA2RyYxIBMQ", "CgcKAnZiEgEx"])
+    }
+
+    @Test func aTVCaptureStillParsesThroughTheUnchangedPath() throws {
+        guard case .ok = try parser.parse(loadFixture("player-tv-uZT3McCJHzQ")).playability else {
+            Issue.record("expected .ok"); return
+        }
+    }
+
+    /// Spec §9.1 / RV I11: only `videoDetails.isLive == true` is live NOW. An ended broadcast that can still be
+    /// extracted (pqC-1yfFvu8's shape: `isLive` absent, `isLiveContent` true) keeps the sticky `isLive` but is not live now.
+    @Test func isLiveNowNeedsVideoDetailsIsLive() throws {
+        let ended = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{"hlsManifestUrl":"https://manifest.googlevideo.com/api/manifest/hls_variant/x.m3u8","expiresInSeconds":"21540"},"videoDetails":{"isLiveContent":true}}"#.utf8)
+        guard case .ok(let endedData) = try parser.parse(ended).playability else { Issue.record("expected .ok"); return }
+        #expect(endedData.isLive)
+        #expect(!endedData.isLiveNow)
+
+        guard case .ok(let liveData) = try parser.parse(try loadFixture("player-live")).playability else {
+            Issue.record("expected .ok"); return
+        }
+        #expect(liveData.isLiveNow)
+    }
+
+    /// Owner issue 1: the player shows the source's own title (`videoDetails.title`), never a list's translation.
+    @Test func okHlsFixtureCarriesTheOriginalTitle() throws {
+        guard case .ok(let streaming) = try parser.parse(loadFixture("player-ok-hls")).playability else {
+            Issue.record("expected .ok"); return
+        }
+        #expect(streaming.title == "جزء عم المعلم مشاري راشد العفاسي")
+    }
+
+    /// Stage 9 I-C9c (Cubic P3): the title is display-only, so one that is not a string reads as no title instead of failing
+    /// the decode every 360p resolve depends on (the `messages` rule).
+    @Test(arguments: ["123", #"{"runs":[{"text":"x"}]}"#, "true"])
+    func aTitleThatIsNotAStringReadsAsNoTitle(_ title: String) throws {
+        let body = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{},"videoDetails":{"title":\#(title),"isLive":false}}"#.utf8)
+        guard case .ok(let streaming) = try parser.parse(body).playability else { Issue.record("expected .ok"); return }
+        #expect(streaming.title == nil)
+        #expect(!streaming.isLiveNow)
+    }
+
+    @Test func anOKResponseWithoutATitleHasNoTitle() throws {
+        let body = Data(#"{"playabilityStatus":{"status":"OK"},"streamingData":{}}"#.utf8)
+        guard case .ok(let streaming) = try parser.parse(body).playability else { Issue.record("expected .ok"); return }
+        #expect(streaming.title == nil)
+    }
+
+    /// Stage 9 P3: one malformed TV format entry is dropped, the rest survive (it used to throw for the whole video).
+    @Test func oneMalformedAdaptiveFormatDoesNotDropTheGoodOnes() throws {
+        let body = Data(#"{"streamingData":{"adaptiveFormats":[{"itag":137,"mimeType":"video/mp4","bitrate":1000,"initRange":{"start":"0"}},{"itag":140,"mimeType":"audio/mp4","bitrate":"128"},{"itag":18,"mimeType":"video/mp4","bitrate":500,"url":"https://r1.googlevideo.com/v18"},"junk"]}}"#.utf8)
+        let formats = try PlayerResponseParser().adaptiveFormats(body)
+        #expect(formats.map(\.itag) == [18])
+    }
+
     private func loadFixture(_ name: String) throws -> Data {
         let url = try #require(Bundle.module.url(forResource: name, withExtension: "json", subdirectory: "Fixtures"))
         return try Data(contentsOf: url)

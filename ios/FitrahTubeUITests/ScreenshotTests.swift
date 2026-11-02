@@ -2495,6 +2495,32 @@ final class ScreenshotTests: XCTestCase {
         try write(named: "detail-c6-ipad-en-light-playlist-a11y3", into: directory)
     }
 
+    /// Owner issue 2 (1.0.4): a playlist row tap seeds Up Next from the screen's own rows. The fixture
+    /// queue source serves `fixture-*` ids and the playlist screen `item-*`, so a first row of
+    /// `item-0-3` proves the player listed what the screen passed. en-light then ar-dark, on
+    /// whichever device runs it (iPhone: one column; iPad: the grid).
+    func testIssue2PlaylistRowTapSeedsUpNext() throws {
+        let directory = try shotsDirectory()
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let app = launch(playlistScreen(), locale: locale, extraArguments: [])
+            XCTAssertTrue(any(app, "playlist.row.3").waitForExistence(timeout: 20), "issue 2 \(locale.key): rows never appeared")
+            any(app, "playlist.row.3").tap()
+            let header = app.staticTexts["player.upNext.header"]
+            XCTAssertTrue(header.waitForExistence(timeout: 20), "issue 2 \(locale.key): Up Next never appeared")
+            XCTAssertEqual(upNextRows(app).first?.identifier, "player.upNext.row.3.item-0-3",
+                           "issue 2 \(locale.key): Up Next is not the playlist's own rows")
+            if locale.key == "ar" {
+                XCTAssertGreaterThan(header.frame.midX, app.windows.firstMatch.frame.midX, "issue 2 ar: the header must lead from the right")
+            }
+            settleFrame(header)
+            try write(named: "issue2-\(locale.key)-\(locale.theme)-rowtap", into: directory)
+            drag(app, up: true)
+            settleFrame(header)
+            try write(named: "issue2-\(locale.key)-\(locale.theme)-rowtap-list", into: directory)
+        }
+    }
+
     // MARK: - Phase 3 Task 6: the Saved screen (plan 2026-09-01-ios-phase3-offline-cast)
 
     /// `-fitrah-seed-offline` inserts one row per `OfflineStatus`, so one screen shows the full
@@ -2824,6 +2850,48 @@ final class ScreenshotTests: XCTestCase {
             try write(named: "not-available-\(locale.key)", into: directory)
             unavailable.terminate()
         }
+    }
+
+    /// Playback Phase 2 (plan Task 19, spec R34): 360p starts with its pill, the synthetic HD is swapped in, and the time
+    /// carries on from where it was -- never restarting at 0. en + ar; iPhone 17 and iPad Pro 13-inch (M5) via
+    /// screenshots.sh.
+    func testPlaybackPhase2States() throws {
+        let directory = try shotsDirectory()
+        let base = try XCTUnwrap(ProcessInfo.processInfo.environment["FITRAH_SYNTHETIC_BASE_URL"],
+                                 "FITRAH_SYNTHETIC_BASE_URL unset — run via ios/scripts/screenshots.sh")
+        XCUIDevice.shared.orientation = .portrait
+        for locale in Self.locales {
+            let swap = Screen(key: "playback-hd-swap",
+                              arguments: ["-fitrah-fake-player-synthetic", base, "-fitrah-route-probe", "YES",
+                                          "-fitrah-route", "player", "fixture-video"],
+                              anchor: .button("unused"))
+            let app = launch(swap, locale: locale, extraArguments: [])
+            let probe = app.descendants(matching: .any)["player.debugRoute"]
+            XCTAssertTrue(probe.waitForExistence(timeout: 20), "hd-swap/\(locale.key): route probe never mounted")
+            let pill = app.staticTexts["player.rung2Pill"]
+            XCTAssertTrue(pill.waitForExistence(timeout: 20), "hd-swap/\(locale.key): the 360p never started")
+            try write(named: "standard-before-swap-\(locale.key)", into: directory)
+            wait(for: [expectation(for: NSPredicate(format: "exists == false"), evaluatedWith: pill)], timeout: 30)
+            // The hook answers 3 s after the resolve, so the swap lands past 2 s of 360p; a restart at 0 reads 0-1 here.
+            for _ in 0..<12 {
+                XCTAssertGreaterThanOrEqual(Self.probeTime(probe), 2, "hd-swap/\(locale.key): the HD restarted instead of carrying the position")
+                usleep(250_000)
+            }
+            let swappedAt = Self.probeTime(probe)
+            let deadline = Date().addingTimeInterval(15)
+            while Self.probeTime(probe) < swappedAt + 2, Date() < deadline { usleep(250_000) }
+            XCTAssertGreaterThanOrEqual(Self.probeTime(probe), swappedAt + 2, "hd-swap/\(locale.key): HD never advanced")
+            XCTAssertFalse(app.buttons["player.state.retryButton"].exists, "hd-swap/\(locale.key): Retry shown")
+            XCTAssertFalse(app.staticTexts["player.state.message"].exists, "hd-swap/\(locale.key): error copy shown")
+            try write(named: "hd-after-swap-\(locale.key)", into: directory)
+            app.terminate()
+        }
+    }
+
+    /// The route probe's `time=<Int>` (`AirPlayRouteProbe`), or -1 when absent.
+    private static func probeTime(_ probe: XCUIElement) -> Int {
+        guard let value = probe.value as? String, let range = value.range(of: #"time=\d+"#, options: .regularExpression) else { return -1 }
+        return Int(value[range].dropFirst(5)) ?? -1
     }
 
     // MARK: - Helpers

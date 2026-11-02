@@ -19,6 +19,17 @@ import java.util.List;
 @IgnoreExtraProperties
 public class Video {
 
+    /** The source of a report's take-down record (ContentReportService.takeDownRecord). */
+    public static final String TAKE_DOWN_SOURCE = "REPORT";
+
+    /**
+     * Stage 9 B21: a report's take-down record, REJECTED from REPORT. A model rule (Cubic users5), so the repository's
+     * whole-doc writes check it without depending on the service layer.
+     */
+    public static boolean isTakeDownRecord(String status, String source) {
+        return "REJECTED".equals(status) && TAKE_DOWN_SOURCE.equals(source);
+    }
+
     @DocumentId
     private String id;
 
@@ -93,7 +104,14 @@ public class Video {
     @JsonProperty(access = JsonProperty.Access.WRITE_ONLY)
     private String submitterNote;
 
-    private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | null
+    private String source; // "USER_IMPORT" | "ADMIN" | "MODERATOR" | "BULK" | "REPORT" (a take-down record) | null
+
+    /**
+     * Stage 9 B13: on a take-down record only, the source keys ("channel:UC…", "playlist:PL…") its report excluded the id
+     * on, so Restore lifts exactly those. Server-only: never read from or written to a request body.
+     */
+    @com.fasterxml.jackson.annotation.JsonIgnore
+    private List<String> takeDownExclusions;
 
     /**
      * Finding 3: PUBLIC (default; null on legacy docs is treated as PUBLIC) or PERSONAL.
@@ -240,6 +258,14 @@ public class Video {
 
     public void setSource(String source) {
         this.source = source;
+    }
+
+    public List<String> getTakeDownExclusions() {
+        return takeDownExclusions;
+    }
+
+    public void setTakeDownExclusions(List<String> takeDownExclusions) {
+        this.takeDownExclusions = takeDownExclusions;
     }
 
     public String getVisibility() {

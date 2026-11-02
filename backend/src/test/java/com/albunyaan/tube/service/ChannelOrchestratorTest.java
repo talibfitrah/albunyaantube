@@ -7,6 +7,7 @@ import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
 import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamItemDto;
+import com.albunyaan.tube.search.CrawlPacer;
 import org.junit.jupiter.api.AfterEach;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -341,34 +342,6 @@ class ChannelOrchestratorTest {
             // Assert
             assertNull(result);
         }
-
-        @Test
-        @DisplayName("Should return video info on successful validation")
-        void validateAndFetchVideo_success() throws Exception {
-            // Arrange
-            StreamInfo streamInfo = mock(StreamInfo.class);
-            when(gateway.fetchStreamInfo(anyString())).thenReturn(streamInfo);
-
-            // Act
-            StreamInfo result = orchestrator.validateAndFetchVideo("abc123");
-
-            // Assert
-            assertNotNull(result);
-        }
-
-        @Test
-        @DisplayName("Should return null on video validation failure")
-        void validateAndFetchVideo_failure() throws Exception {
-            // Arrange
-            when(gateway.fetchStreamInfo(anyString()))
-                    .thenThrow(new ExtractionException("Not found"));
-
-            // Act
-            StreamInfo result = orchestrator.validateAndFetchVideo("invalid");
-
-            // Assert
-            assertNull(result);
-        }
     }
 
     @Nested
@@ -393,13 +366,6 @@ class ChannelOrchestratorTest {
         @DisplayName("Should return empty map for null playlist input")
         void batchValidatePlaylists_nullInput() {
             Map<String, PlaylistInfo> result = orchestrator.batchValidatePlaylists(null);
-            assertTrue(result.isEmpty());
-        }
-
-        @Test
-        @DisplayName("Should return empty map for null video input")
-        void batchValidateVideos_nullInput() {
-            Map<String, StreamInfo> result = orchestrator.batchValidateVideos(null);
             assertTrue(result.isEmpty());
         }
 
@@ -834,7 +800,8 @@ class ChannelOrchestratorTest {
         }
 
         @Test
-        @DisplayName("R3/R4 video: the bot check (both apostrophes) stays a rate limit, recorded once by the breaker")
+        @DisplayName("R3/R4/B17 video: the bot check (both apostrophes) stays a rate-limit ERROR, never recorded by "
+                + "the shared breaker")
         void videoBotCheck_staysARateLimit() {
             for (String reason : new String[] {"Sign in to confirm you're not a bot",
                     "Sign in to confirm you\u2019re not a bot"}) {
@@ -845,8 +812,30 @@ class ChannelOrchestratorTest {
                 var result = withBreaker(breaker).batchValidateVideosWithDetails(List.of(VIDEO));
 
                 assertError(result, VIDEO, "Rate limit");
-                assertEquals(1, breaker.getStatusSnapshot().getTotalRateLimitErrors(), reason);
+                assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors(), reason);
             }
+        }
+
+        /** B17 (breaker-investigation option a1): prod's 06:00 run, refused from its first /player request on. */
+        @Test
+        @DisplayName("B17 video: a batch stops at its first bot check; the rest are skipped and the breaker stays CLOSED")
+        void videoBotCheck_stopsTheBatchAndNeverOpensTheBreaker() {
+            YouTubeCircuitBreaker breaker = enabledBreaker();
+            List<String> ids = List.of("validatorT1", "validatorT2", "validatorT3");
+            for (String ignored : ids) {
+                replies.add(new Response(200, "", Map.of(), "{\"playerResponse\":{\"playabilityStatus\":{\"status\":"
+                        + "\"LOGIN_REQUIRED\",\"reason\":\"Sign in to confirm you're not a bot\"}}}", PLAYER));
+            }
+
+            var result = withBreaker(breaker).batchValidateVideosWithDetails(ids);
+
+            assertError(result, "validatorT1", "Rate limit");
+            assertEquals(1, result.getErrorCount());
+            assertTrue(result.isSkipped("validatorT2") && result.isSkipped("validatorT3"), "the rest wait for the next run");
+            assertEquals(0, result.getNotFoundCount(), "never archived");
+            assertEquals(2, replies.size(), "one refused /player request per batch");
+            assertEquals(0, breaker.getStatusSnapshot().getTotalRateLimitErrors());
+            assertEquals(YouTubeCircuitBreaker.State.CLOSED, breaker.getCurrentState());
         }
 
         // ---- Round 4: only the bot check is a sign-in rate limit (breaker on, through the gateway) ----
@@ -937,7 +926,7 @@ class ChannelOrchestratorTest {
             }).build();
             NewPipeConfiguration config = new NewPipeConfiguration();
             ReflectionTestUtils.setField(config, "userAgent", "test-agent");
-            return config.newPipeDownloader(http);
+            return config.newPipeDownloader(http, mock(CrawlPacer.class));
         }
 
         @Test

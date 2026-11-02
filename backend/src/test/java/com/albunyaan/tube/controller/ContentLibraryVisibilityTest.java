@@ -45,6 +45,7 @@ class ContentLibraryVisibilityTest {
     @Mock private com.albunyaan.tube.service.TagEnrichmentService tagEnrichmentService;
     @Mock private com.albunyaan.tube.service.ImportGraduationService importGraduationService;
     @Mock private UserRepository userRepository;
+    @Mock private com.albunyaan.tube.service.LiveCategoryGuard liveCategoryGuard;
 
     @InjectMocks
     private ContentLibraryController controller;

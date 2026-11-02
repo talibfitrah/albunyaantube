@@ -15,6 +15,8 @@ struct SavedScreen: View {
     /// Free-space capacity, read once per appearance instead of once per `body` — see
     /// `OfflineStorage.availableBytes(cached:base:)`, which the footer reads it through.
     @State private var availableBytes: Int64?
+    /// The thumbnail copies' total, read with it (stage 9 I13) — see `OfflineStorage.usedBytes`.
+    @State private var thumbnailBytes: Int64?
 
     var body: some View {
         Group {
@@ -40,8 +42,12 @@ struct SavedScreen: View {
         .background(Color.background.ignoresSafeArea())
         .navigationTitle(String(localized: "offline_saved_title"))
         .navigationBarTitleDisplayMode(.inline)
-        .task(id: container.offlineStore.items.count) {
+        // Keyed on the statuses, not the count (stage 9 I13): a save's thumbnail copy lands after its row (I9), and its
+        // next status change re-reads it; a progress tick changes none.
+        // ponytail: a save that completes before its copy lands counts it from the next visit.
+        .task(id: container.offlineStore.items.map(\.status)) {
             availableBytes = OfflineStorage.availableBytes(base: container.offlineBase)
+            thumbnailBytes = OfflineStorage.thumbnailBytes(items: container.offlineStore.items, base: container.offlineBase)
         }
     }
 
@@ -50,7 +56,8 @@ struct SavedScreen: View {
     private var footer: some View {
         let items = container.offlineStore.items
         return Text(OfflineStorage.footer(count: items.count,
-                                          used: OfflineStorage.usedBytes(items: items),
+                                          used: OfflineStorage.usedBytes(items: items, thumbnailBytes: thumbnailBytes,
+                                                                         base: container.offlineBase),
                                           available: OfflineStorage.availableBytes(
                                               cached: availableBytes, base: container.offlineBase),
                                           locale: locale))
@@ -75,7 +82,8 @@ private struct SavedRow: View {
 
     var body: some View {
         HStack(alignment: .center, spacing: Spacing.sm) {
-            RemoteImage(url: item.thumbnailUrl.flatMap(URL.init))
+            RemoteImage(url: item.thumbnailUrl.flatMap(URL.init),
+                         savedCopy: OfflineStorage.thumbnailURL(itemId: item.id, base: container.offlineBase))
                 .frame(width: 104, height: 104 * 9 / 16)
                 .clipShape(RoundedRectangle(cornerRadius: Radius.homeThumbnail))
             VStack(alignment: .leading, spacing: Spacing.xs) {
@@ -152,6 +160,30 @@ extension PlayerArgs {
         self.init(videoId: item.videoId, title: item.title, channelName: item.channelName,
                   thumbnailURL: item.thumbnailUrl.flatMap(URL.init), durationSeconds: item.durationSeconds)
         offlineItemId = item.id
+    }
+
+    /// 1.0.4 I10 (offline-downloads R3, local-first): what every `.player` route opens
+    /// (`MainShellView.destination`) -- the saved copy when this video is saved in full, through the
+    /// same offline path the Saved row's Open takes, whichever screen opened it. The caller's
+    /// metadata rides along; what it lacks (a deep link carries only an id) comes from the row.
+    /// ponytail: a playlist open keeps streaming -- the offline path has no queue (`PlayerScreen`
+    /// gives it no queue source, `OfflineResolver` answers one row); a queue-aware local resolver
+    /// would play saved items inside a playlist too.
+    @MainActor func preferringSavedCopy(store: OfflineStore, base: URL, isOnline: Bool) -> PlayerArgs {
+        // Stage 9 I-C10.2 (Android A-M6): an audio-only copy has no picture, so it stands in for the stream only offline.
+        // Cubic P2 (Android 4a7fa2df): never in live-channel mode (§9.1): a saved copy of the id is a recording, not the live.
+        guard offlineItemId == nil, playlistId == nil, liveChannelId == nil, let item = store.item(videoId: videoId),
+              item.status == OfflineStatus.completed.rawValue, !item.audioOnly || !isOnline, let localPath = item.localPath,
+              FileManager.default.fileExists(
+                atPath: OfflineStorage.fileURL(relativePath: localPath, base: base).path(percentEncoded: false))
+        else { return self }
+        var args = self
+        args.offlineItemId = item.id
+        args.title = title ?? item.title
+        args.channelName = channelName ?? item.channelName
+        args.thumbnailURL = thumbnailURL ?? item.thumbnailUrl.flatMap(URL.init)
+        args.durationSeconds = durationSeconds ?? item.durationSeconds
+        return args
     }
 }
 
