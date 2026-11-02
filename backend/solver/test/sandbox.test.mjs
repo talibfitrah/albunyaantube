@@ -206,7 +206,9 @@ test('the watchdog kills only a solver whose event loop is blocked past a legiti
   const solverPort = UNIT.match(/SOLVER_PORT=(\d+)/)[1];
   assert.match(probe, new RegExp(`http://127\\.0\\.0\\.1:${solverPort}/health`), 'the probe watches the port the solver unit binds');
   const { root, cache } = install(t);
-  fs.writeFileSync(path.join(root, 'app', 'hang.mjs'), 'setTimeout(() => { for (;;); }, 1000);');
+  const go = path.join(root, 'app', 'hang-now');                        // written once the server answers (Cubic r1 P3)
+  fs.writeFileSync(path.join(root, 'app', 'hang.mjs'),
+    `import fs from 'node:fs'; const t = setInterval(() => { if (fs.existsSync(${JSON.stringify(go)})) { clearInterval(t); for (;;); } }, 50);`);
   const start = async (preload) => {
     const port = await freePort();
     const child = spawn(process.execPath, [...unitFlags(root, cache), ...preload, path.join(root, 'app', 'server.mjs')], {
@@ -219,7 +221,8 @@ test('the watchdog kills only a solver whose event loop is blocked past a legiti
     spawn('/bin/sh', ['-c', probe.replace('4417', String(port)).replace(/--max-time \d+/, '--max-time 3')]).on('exit', resolve);
   });
   const [hung, warming, refused] = await Promise.all([start([`--import=${path.join(root, 'app', 'hang.mjs')}`]), start([]), freePort()]);
-  await new Promise((r) => setTimeout(r, 1500));                       // the hung server's loop is blocked from here on
+  fs.writeFileSync(go, '');
+  await new Promise((r) => setTimeout(r, 500));                        // the hung server's loop is blocked from here on
   assert.deepEqual(await Promise.all([check(hung), check(warming), check(refused)]), [28, 0, 7]);
 });
 

@@ -663,10 +663,17 @@ test('a solver killed while a player hangs in a solve does not rebuild that play
     await once(server, 'exit');
     const builds = [];
     const warnings = [];
-    const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), log: { log() {}, warn: (m) => warnings.push(m) } });
+    let clock = Date.now();
+    const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), now: () => clock,
+                                     log: { log() {}, warn: (m) => warnings.push(m) } });
     await restarted.poll();
     assert.deepEqual([builds.length, restarted.health().status], [0, 'warming'], 'the hung player was built again');
     assert.match(warnings[0], /^WARN player aaaaaaaa crashed the solver/);
+    // gstack review: a kill names whatever player was solving (a congested loop, a cgroup OOM), so the blame expires after an
+    // hour instead of holding a healthy player off until YouTube rotates its hash; a hostile one costs a kill an hour.
+    clock += 3_600_000;
+    await restarted.poll();
+    assert.deepEqual([builds.length, restarted.health().status], [1, 'ok'], 'the dropped player stayed skipped past the hour');
   } finally {
     server.kill('SIGKILL');
     yt.close();

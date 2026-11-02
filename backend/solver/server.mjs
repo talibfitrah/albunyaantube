@@ -141,16 +141,18 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
   const held = new Map();                       // hash -> { sts, player }; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
   // Names the player being built or solving. A fatal V8 OOM or the watchdog's SIGKILL (S20) skips every catch, so a marker left
-  // at start means that player killed the last process: it is deleted and not built again by this process, or each restart
-  // would rebuild it and crash (Cubic P3).
+  // at start means that player killed the last process: it is deleted and not built again for an hour (`bootCrash`), or each
+  // restart would rebuild it and crash (Cubic P3).
   const marker = path.join(cacheDir, 'building');
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
   let ran = null;                               // the player whose realm ran last
   let cacheWritable = probeCache();
-  const crashed = new Set();                    // every player that broke this process (build OOM or an unhandled rejection); skipped until a restart
-  const bootCrash = dropCrashedPlayer();
-  if (bootCrash) crashed.add(bootCrash);
+  const crashed = new Set();                    // every player that broke THIS process (an unhandled rejection); skipped until a restart
+  // The last process's death is weaker evidence: a watchdog kill of a merely congested loop or a cgroup OOM names whatever
+  // player was running (gstack review), so that one is skipped for an hour, not until YouTube rotates its hash. A player that
+  // really hangs or OOMs costs one restart an hour, inside the unit's StartLimitBurst.
+  const bootCrash = dropCrashedPlayer(), bootCrashAt = now();
 
   function dropCrashedPlayer() {
     try {
@@ -158,7 +160,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       fs.rmSync(marker, { force: true });
       if (!/^[0-9a-f]{8}$/.test(hash)) return null;
       fs.rmSync(path.join(cacheDir, `${hash}.js`), { force: true });
-      log.warn(`WARN player ${hash} crashed the solver; deleted and skipped until a restart`);
+      log.warn(`WARN player ${hash} crashed the solver; deleted and skipped for an hour`);
       return hash;
     } catch {
       return null;                                // no marker: the last process did not die building
@@ -210,6 +212,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
       if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');
+      if (hash === bootCrash && now() - bootCrashAt < HOUR_MS) throw new Error('this player crashed the last solver; skipped for an hour');
       step = 'cache';
       file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
