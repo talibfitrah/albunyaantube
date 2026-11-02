@@ -1,0 +1,25 @@
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_f2fa10ff0e3300 256-257
+frontend/src/composables/useInfiniteScroll.ts
+  s_543f5b01a05d75::t_83595511e1eabd 6,20,44,95
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_a76929aa2985f9 547-548,557,562
+frontend/tests/useInfiniteScroll.spec.ts
+  s_543f5b01a05d75::t_a148135db62376 19,307-312
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "356997c7395cfd1fec63696841ff4f2050198664",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
