@@ -162,7 +162,8 @@ struct QualityCeilingTests {
         await model.qualityLoad?.value
         #expect(model.qualityOptions == [.auto, .dataSaver], "the master answered 503")
         transport.answer(status: 200, body: Self.master)
-        model.currentItem = AVPlayerItem(url: clip)
+        model.currentItem = AVPlayerItem(url: clip)              // e.g. the Data Saver pick's own rebuild
+        #expect(model.qualityOptions == [.auto, .dataSaver], "Cubic r3: the re-read hid the two rows while it ran")
         await model.qualityLoad?.value
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
     }

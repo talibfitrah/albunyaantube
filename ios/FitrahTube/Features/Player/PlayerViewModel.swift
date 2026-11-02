@@ -186,8 +186,9 @@ extension StreamState {
     /// renditions load, and for a single file; Auto and Data Saver alone while its master could not be read.
     private(set) var qualityOptions: [QualityOption] = []
     private(set) var qualityLoad: Task<Void, Never>?
-    /// The stream `qualityOptions` belong to.
+    /// The stream `qualityOptions` belong to, and whether its master could not be read (read again on its next item).
     private var qualityStreamURL: URL?
+    private var qualityReadFailed = false
     private let masterTransport: any BoundedHTTPTransport
 
     /// Called for every item the host builds. Another stream (another video, the HD hand-over) reloads the rows and clears
@@ -195,9 +196,10 @@ extension StreamState {
     private func loadQualityOptions() {
         let resolved = currentItem == nil ? nil : state.resolved
         let url = resolved.map { PlayerHostView.streamURL($0.stream) }
-        guard url != qualityStreamURL else { return }
+        guard url != qualityStreamURL || qualityReadFailed else { return }
+        if url != qualityStreamURL { qualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
         qualityStreamURL = url
-        qualityOptions = []
+        qualityReadFailed = false
         qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
         qualityLoad = resolved.map { resolved in
             Task {
@@ -207,7 +209,7 @@ extension StreamState {
                 // rows no rendition decides stay, so a carried Data Saver can be turned off (Cubic r2 P3).
                 if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else {
                     qualityOptions = [.auto, .dataSaver]
-                    qualityStreamURL = nil
+                    qualityReadFailed = true
                 }
             }
         }
