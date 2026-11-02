@@ -1,0 +1,31 @@
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_543f5b01a05d75::t_59b715bcc0a65b 349,437-438
+  s_543f5b01a05d75::t_6b93f507338980 866-884
+  s_543f5b01a05d75::t_21d148b609629f 439,885,968,991,1018
+ios/FitrahTubeTests/QualityCeilingTests.swift
+  s_543f5b01a05d75::t_fd55ee66bc0b6b 318-320
+  s_543f5b01a05d75::t_085168f58c512e 365-385
+ios/FitrahTube/Features/Player/QualityCeiling.swift
+  s_543f5b01a05d75::t_6b93f507338980 188-189
+  s_543f5b01a05d75::t_59b715bcc0a65b 117-118,125-126,140,184-185,187
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_543f5b01a05d75::t_b7c4fa45dd4c89 215-235
+ios/FitrahTube/Features/Player/HDStager.swift
+  s_543f5b01a05d75::t_6b93f507338980 91,93,95
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d1d288062c1040523fcdbe1dea64bcbf70b78d28",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
