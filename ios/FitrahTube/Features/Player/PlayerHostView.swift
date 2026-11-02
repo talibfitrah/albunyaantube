@@ -925,13 +925,20 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // B5 Task 4: a DIFFERENT video (`continuesCurrentVideo == false`) never reuses the item
         // either -- a same-URL advance handed the ended item back and the queue stalled one short
         // of its terminus.
-        // `freshItem`: a lower quality pick (`QualityOption.needsFreshItem`) -- the live item's buffer holds the higher rendition.
-        if continuesCurrentVideo, !freshItem, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
+        // `freshItem`: a lower quality pick (`QualityOption.needsFreshItem`) -- the live item's buffer holds the higher
+        // rendition. Not on a stream live now: its replacement would start at the live edge (`resumePosition`), losing a
+        // viewer's place behind it; the lower cap binds its next segments anyway.
+        let rebuild = freshItem && !state.isLiveNow
+        if continuesCurrentVideo, !rebuild, let existing, (existing.currentItem?.asset as? AVURLAsset)?.url == url,
            existing.currentItem?.status != .failed, existing.currentItem !== failedItem {
             return existing
         }
-        let item = AVPlayerItem(asset: asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
-                                             onRefused: onRefused))
+        // A rebuild reuses the playing item's asset, as `HDStager.handOver` does: no new master, playlist or `sidx` request.
+        let reused = rebuild && continuesCurrentVideo ? existing?.currentItem.flatMap { current in
+            current.status != .failed && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
+        } : nil
+        let item = AVPlayerItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
+                                                       onRefused: onRefused))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
         // host and a fresh AVPlayer is being built. `continuesCurrentVideo == false` (an
@@ -986,9 +993,9 @@ struct PlayerHostView: UIViewControllerRepresentable {
         // fallback in the turn it was made. `swapArgs` is what re-enables it, per stream.
         if url.isFileURL { existing.allowsExternalPlayback = false }
         existing.replaceCurrentItem(with: item)
-        // A quality pick is exact, as `HDStager.handOver` is: the default tolerance snapped a live HLS back to the previous
-        // segment boundary (measured 19 s -> 15 s on C3BXt0zJr3o).
-        if resume > 0, freshItem {
+        // A quality pick is exact, as `HDStager.handOver` is: the default tolerance snapped the playing HLS back to the
+        // previous segment boundary (measured 19 s -> 15 s on C3BXt0zJr3o).
+        if resume > 0, rebuild {
             existing.seek(to: resumeTime, toleranceBefore: .zero, toleranceAfter: .zero)
         } else if resume > 0 {
             existing.seek(to: resumeTime)

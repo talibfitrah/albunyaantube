@@ -245,8 +245,9 @@ final class ScreenshotTests: XCTestCase {
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
         let content = element(for: screen.anchor, in: app)
         XCTAssertTrue(content.waitForExistence(timeout: 20), "player-audio-language: AVPlayerViewController's content view never appeared")
-        let qualityButton = app.buttons["player.qualityMenu.button"]
-        XCTAssertTrue(qualityButton.waitForExistence(timeout: 10), "player-audio-language: quality menu button never appeared (sanity: player is ready)")
+        // Sanity: rung 1 (`.ready`), not rung 2. The quality button no longer proves it: this single-file fixture has one
+        // rendition, so it offers no quality menu (`QualityOption.menu(for:)`).
+        XCTAssertFalse(app.staticTexts["player.rung2Pill"].exists, "player-audio-language: the fixture resolved rung 2, not rung 1")
         let audioButton = app.buttons["player.audioLanguageMenu.button"]
         XCTAssertFalse(audioButton.waitForExistence(timeout: 5), "player-audio-language: audio-language menu button should stay hidden for a single-track asset")
         try write(named: "player-audio-language-hidden", into: directory)
@@ -257,7 +258,7 @@ final class ScreenshotTests: XCTestCase {
     /// tracks. `FixtureHLSPlayerResolver` resolves `.hls` with `captionTracks: []` (no bundled HLS
     /// sample carries real caption tracks), so -- same shape as Task 5's hidden-state proof --
     /// this proves the negative: the button never appears once the player is ready (anchored on
-    /// the quality button, proving `.ready`, mirroring Task 5's pattern).
+    /// the content view, with no rung-2 pill proving `.ready`, mirroring Task 5's pattern).
     func testPlayerCaptionsMenuHiddenForFixtureWithNoTracks() throws {
         let directory = try shotsDirectory()
         let screen = Screen(key: "player-captions",
@@ -267,8 +268,9 @@ final class ScreenshotTests: XCTestCase {
         let app = launch(screen, locale: Self.locales[0], extraArguments: [])
         let content = element(for: screen.anchor, in: app)
         XCTAssertTrue(content.waitForExistence(timeout: 20), "player-captions: AVPlayerViewController's content view never appeared")
-        let qualityButton = app.buttons["player.qualityMenu.button"]
-        XCTAssertTrue(qualityButton.waitForExistence(timeout: 10), "player-captions: quality menu button never appeared (sanity: player is ready)")
+        // Sanity: rung 1 (`.ready`), not rung 2. The quality button no longer proves it: this single-file fixture has one
+        // rendition, so it offers no quality menu (`QualityOption.menu(for:)`).
+        XCTAssertFalse(app.staticTexts["player.rung2Pill"].exists, "player-captions: the fixture resolved rung 2, not rung 1")
         let captionsButton = app.buttons["player.captionsMenu.button"]
         XCTAssertFalse(captionsButton.waitForExistence(timeout: 5), "player-captions: captions menu button should stay hidden when the stream has no caption tracks")
         try write(named: "player-captions-hidden", into: directory)

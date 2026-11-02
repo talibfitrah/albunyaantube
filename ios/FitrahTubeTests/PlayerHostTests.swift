@@ -203,12 +203,26 @@ struct PlayerHostTests {
 
         #expect(rebuilt === player)
         #expect(rebuilt?.currentItem !== oldItem)
-        #expect((rebuilt?.currentItem?.asset as? AVURLAsset)?.url == url)
+        // Review of a2c737ba: the SAME asset, as `HDStager.handOver` does -- no new master, playlist or `sidx` request.
+        #expect(rebuilt?.currentItem?.asset === oldItem?.asset)
         for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
             try await Task.sleep(for: .milliseconds(10))
         }
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
         #expect(player.timeControlStatus == .paused, "a paused player stays paused (I5)")
+    }
+
+    /// Review of a2c737ba: a live stream keeps its item on a lower pick. A replacement live item starts at the live edge
+    /// (`resumePosition`), so a viewer behind live would lose their place; the lower cap binds the next segments anyway.
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestOnALiveStreamKeepsTheItem() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.ready(Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []),
+                                               client: .visionos, userAgent: "TestUA", resolvedAt: Date(), expiresAt: nil,
+                                               isLiveNow: true))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        player.pause()
+        let item = player.currentItem
+        #expect(PlayerHostView.player(for: state, replacing: player, freshItem: true)?.currentItem === item)
     }
 
     // MARK: - Recovery chain at the host (Task 7: resume intent; fix round 2: the wall-clock sampler)

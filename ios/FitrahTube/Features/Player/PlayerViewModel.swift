@@ -199,8 +199,10 @@ extension StreamState {
         qualityOptions = []
         qualityLoad = resolved.map { resolved in
             Task {
-                let menu = QualityOption.menu(for: await QualityOption.variantSizes(of: resolved))
-                if url == qualityStreamURL { qualityOptions = menu }
+                let sizes = await QualityOption.variantSizes(of: resolved)
+                guard url == qualityStreamURL else { return }
+                // A master that could not be read is read again for the next item built on this stream.
+                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else { qualityStreamURL = nil }
             }
         }
     }

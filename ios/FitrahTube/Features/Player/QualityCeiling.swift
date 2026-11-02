@@ -7,8 +7,8 @@ import Network
 /// `preferredMaximumResolution` + `preferredPeakBitRate`, clamped further on cellular
 /// (`…ForExpensiveNetworks`-equivalent ceiling, applied manually below -- see `apply` doc) and by
 /// Low Data Mode (`NWPath.isConstrained`). Android's `QualityTrackSelector` equivalent.
-/// Owner request 2026-11-02: the rows are the current stream's REAL renditions (`menu(for:)`), so a pick capped at a
-/// rendition's own size is that rendition.
+/// Owner request 2026-11-02: the rows are the current stream's REAL renditions (`menu(for:)`), and a pick caps at that
+/// rendition's own size: AVPlayer never plays above it, while ABR may still drop below it on a weak link (a ceiling, not a pin).
 enum QualityOption: Hashable {
     case auto
     /// One of the stream's video variants (`variantSizes(of:)`), capped at exactly its pixel size.
@@ -67,7 +67,8 @@ enum QualityOption: Hashable {
     /// renditions: a single file (rung 2's itag 18, an offline save) has nothing to choose.
     static func menu(for sizes: [CGSize]) -> [QualityOption] {
         var largest: [Int: CGSize] = [:]
-        for size in sizes where area(size) > 0 {
+        // Sizes come from a master or a player response: one no screen shows is dropped (Int.max trapped back in `Int`).
+        for size in sizes where plausible.contains(size.width) && plausible.contains(size.height) {
             let key = Int(min(size.width, size.height))
             if area(size) > area(largest[key] ?? .zero) { largest[key] = size }
         }
@@ -79,16 +80,21 @@ enum QualityOption: Hashable {
     /// The stream's video rendition sizes. Not `AVURLAsset.variants`: that fetches every rendition's media playlist
     /// first (measured), which on tv_samsung is a `sidx` GET each, past `SyntheticHLSLoader`'s 2-GET ceiling. tv_samsung's
     /// model carries the sizes; a native master costs one GET of its text; a progressive file is one rendition.
-    static func variantSizes(of resolved: Resolved) async -> [CGSize] {
+    /// nil: the master could not be read (no network for a moment, an error status), which is not "one rendition".
+    static func variantSizes(of resolved: Resolved) async -> [CGSize]? {
         guard case .hls(let url, _, _, _, let synthetic) = resolved.stream else { return [] }
         if let synthetic {
             return synthetic.video.compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
         }
         var request = URLRequest(url: url)
         request.setValue(resolved.userAgent, forHTTPHeaderField: "User-Agent")
-        guard let (data, _) = try? await URLSession.shared.data(for: request) else { return [] }
+        guard let (data, response) = try? await session.data(for: request),
+              (response as? HTTPURLResponse).map({ (200..<300).contains($0.statusCode) }) ?? true else { return nil }
         return masterSizes(String(decoding: data, as: UTF8.self))
     }
+
+    /// Ephemeral: the signed, IP-bound master URL and its body are never written to the shared disk cache or cookie jar.
+    private static let session = URLSession(configuration: .ephemeral)
 
     /// Each `#EXT-X-STREAM-INF`'s `RESOLUTION` (RFC 8216 §4.3.4.2); I-frame playlists and audio-only variants have none.
     static func masterSizes(_ master: String) -> [CGSize] {
@@ -135,8 +141,8 @@ enum QualityOption: Hashable {
 
     static func ceiling(for option: QualityOption, layerSize: CGSize, isExpensive: Bool,
                          isConstrained: Bool) -> (resolution: CGSize, bitrate: Double) {
-        // Owner request 2026-11-02: a rendition the user picked is delivered, network or not (Android parity: a manual
-        // pick overrides `QualityTrackSelector`'s network ceiling). The clamps below bind Auto and Data Saver.
+        // Owner request 2026-11-02: a picked rendition's cap ignores the network clamps (Android parity: a manual pick
+        // overrides `QualityTrackSelector`'s network ceiling) -- ABR may still play below it. The clamps bind Auto and Data Saver.
         if case .rendition(let width, let height) = option {
             return (CGSize(width: width, height: height), 0)
         }
@@ -161,17 +167,22 @@ enum QualityOption: Hashable {
     /// already buffered above it (measured on the iPhone 17 simulator: 1920x1080 still drawn 36 s after a 480p pick; a
     /// fresh item on the same asset drew 854x480 within 3 s). True when a pick lowers the effective ceiling, so the host
     /// rebuilds the item at the live position. A raise needs nothing (1080p drawn within 3 s), and `old == nil` is the
-    /// first prepare, not a pick.
+    /// first prepare, not a pick. Width and height are compared apart, as AVFoundation caps them: a portrait layer's Auto
+    /// has more area than 720p yet a narrower width (review of a2c737ba).
     static func needsFreshItem(from old: QualityOption?, to new: QualityOption, layerSize: CGSize, isExpensive: Bool,
                                isConstrained: Bool) -> Bool {
         guard let old, old != new else { return false }
         let before = ceiling(for: old, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         let after = ceiling(for: new, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
-        return isLower(area(after.resolution), than: area(before.resolution)) || isLower(after.bitrate, than: before.bitrate)
+        return isLower(after.resolution.width, than: before.resolution.width)
+            || isLower(after.resolution.height, than: before.resolution.height) || isLower(after.bitrate, than: before.bitrate)
     }
 
     /// `0` is AVFoundation's "unbounded" for both the resolution and the bitrate cap.
     private static func isLower(_ new: Double, than old: Double) -> Bool { new > 0 && (old == 0 || new < old) }
 
     private static func area(_ size: CGSize) -> Double { Double(size.width) * Double(size.height) }
+
+    /// 8K is 7680 wide; 16384 leaves room and stays far inside `Int`.
+    private static let plausible: ClosedRange<CGFloat> = 1...16_384
 }

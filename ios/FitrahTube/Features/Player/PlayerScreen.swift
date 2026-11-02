@@ -694,10 +694,9 @@ struct PlayerScreen: View {
 
 #if DEBUG
 /// Same bundled fixture as `FixturePlayerResolver`, tagged `.hls` instead of `.progressive` so
-/// `PlayerViewModel.map` resolves to `.ready`, not `.rung2Progressive` (where the quality control
-/// is hidden by contract) -- lets `testPlayerQualityMenu` screenshot the menu with no real HLS
-/// asset and no network. `AVPlayer` plays the local file identically either way; only this app's
-/// own state-mapping tag differs.
+/// `PlayerViewModel.map` resolves to `.ready`, not `.rung2Progressive` -- rung-1 chrome with no real
+/// HLS asset and no network. It is one rendition, so it offers no quality menu (`QualityOption.menu(for:)`).
+/// `AVPlayer` plays the local file identically either way; only this app's own state-mapping tag differs.
 private struct FixtureHLSPlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,

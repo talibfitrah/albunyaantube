@@ -48,6 +48,14 @@ struct QualityCeilingTests {
         #expect(QualityOption.menu(for: [CGSize(width: 640, height: 360), .zero]).isEmpty)
     }
 
+    /// Review of a2c737ba: sizes come from a master playlist or a player response. One no device can show (`Int.max`
+    /// wide trapped converting back to `Int`; a negative pair has a positive area) is not a rendition.
+    @Test func implausibleSizesAreNotRenditions() {
+        let sizes = [CGSize(width: Double(Int.max), height: 1080), CGSize(width: -1280, height: -720),
+                     CGSize(width: 1280, height: 720), CGSize(width: 640, height: 360)]
+        #expect(QualityOption.menu(for: sizes) == [.auto, Self.p720, Self.p360, .dataSaver])
+    }
+
     /// A vertical video (a Short) is labelled by its short side, as YouTube labels it.
     @Test func aVerticalRenditionIsLabelledByItsShortSide() {
         #expect(QualityOption.rendition(width: 1080, height: 1920).label == "1080p (1080×1920)")
@@ -89,7 +97,7 @@ struct QualityCeilingTests {
     @Test func aProgressiveStreamHasNoSizes() async {
         let resolved = Resolved(stream: .progressive(url: URL(string: "https://fixture.invalid/18.mp4")!, label: "360p"),
                                 client: .android, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
-        #expect(await QualityOption.variantSizes(of: resolved).isEmpty)
+        #expect(await QualityOption.variantSizes(of: resolved) == [])
     }
 
     private struct OneStream: StreamResolving {
@@ -124,6 +132,28 @@ struct QualityCeilingTests {
         await model.qualityLoad?.value
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
         model.currentItem = AVPlayerItem(url: clip)
+        #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
+    }
+
+    /// Review of a2c737ba: a master that could not be read (offline for a moment, an error status) is not "one rendition".
+    /// The rows stay empty, and the next item built for the same stream reads it again instead of keeping the menu gone.
+    @MainActor @Test(.timeLimit(.minutes(1))) func aMasterThatFailedToLoadIsReadAgainForTheNextItem() async throws {
+        let master = FileManager.default.temporaryDirectory.appending(path: "quality-\(UUID().uuidString).m3u8")
+        defer { try? FileManager.default.removeItem(at: master) }
+        let resolved = Resolved(stream: .hls(url: master, isLive: false, audioOnlyURL: nil, captionTracks: []),
+                                client: .visionos, userAgent: "UA", resolvedAt: Date(), expiresAt: nil)
+        let model = PlayerViewModel(resolver: OneStream(resolved: resolved),
+                                    settings: UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "QualityCeilingTests.\(UUID().uuidString)")!),
+                                    args: PlayerArgs(videoId: "quality"))
+        await model.open()
+        let clip = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        model.currentItem = AVPlayerItem(url: clip)
+        await model.qualityLoad?.value
+        #expect(model.qualityOptions.isEmpty, "the master is missing")
+        try "#EXTM3U\n#EXT-X-STREAM-INF:BANDWIDTH=2,RESOLUTION=1280x720\n720.m3u8\n#EXT-X-STREAM-INF:BANDWIDTH=1,RESOLUTION=640x360\n360.m3u8\n"
+            .write(to: master, atomically: true, encoding: .utf8)
+        model.currentItem = AVPlayerItem(url: clip)
+        await model.qualityLoad?.value
         #expect(model.qualityOptions == [.auto, Self.p720, Self.p360, .dataSaver])
     }
 
@@ -251,6 +281,9 @@ struct QualityCeilingTests {
         #expect(needsFreshItem(Self.p1080, Self.p720))
         #expect(needsFreshItem(Self.p360, .rendition(width: 426, height: 240)))
         #expect(needsFreshItem(.auto, Self.p480, layer: CGSize(width: 1206, height: 678)))
+        // Review of a2c737ba: the cap binds width and height apart. A portrait layer's Auto is a bigger AREA than 720p,
+        // but its 1206-pixel width admits nothing wider than 854x480 -- a downgrade.
+        #expect(needsFreshItem(Self.p720, .auto, layer: CGSize(width: 1206, height: 2622)))
     }
 
     @Test func aLowerBitratePickNeedsAFreshItem() {
