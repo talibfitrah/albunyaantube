@@ -9,8 +9,7 @@ stable release.
 
 ## [1.0.4] - 2026-11-01
 
-- iOS: videos that played only in standard quality now switch to HD a few seconds after they start, at the same point, when HD is available; if HD falters, playback carries on in standard quality without stopping.
-- Backend: a small, sandboxed playback helper (at most 384 MB of memory; 20 requests a minute per account) supports HD on iOS; it never handles video.
+- iOS + backend: the code to switch standard-quality videos to HD shipped switched off (server setting); it stays off until its server helper passes review. Playback is unchanged.
 - Live channels: the "Channels Live" category shows each channel's current live stream (a channel with several shows all of them), hides a channel while it is off air, and drops a link to a specific stream once that stream ends; ended streams also leave search and the video lists. Only admins can add to it: channels, or streams that are live right now. Installed apps get this with no update.
 - Admin: categories have a type (Standard or Live channels); the live category's sorting view shows each channel's live state and a warning when the live check looks wrong; refusals at every add, approve and import say why, in English, Arabic and Dutch.
 - Android: a live channel keeps playing past the stream link's ~6-hour expiry with no visible refresh (before, it rebuffered every 50 minutes); when a live stream ends or restarts under a new link, the player finds the channel's current stream instead of moving to the next video.
