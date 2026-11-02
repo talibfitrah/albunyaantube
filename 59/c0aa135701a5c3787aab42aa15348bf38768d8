@@ -1,0 +1,25 @@
+releases-meta.json
+  s_a062f3d069d8de::t_a1f65d755f80e9 5
+  s_a062f3d069d8de::t_40d623e74967cd 2-4,6
+CHANGELOG.md
+  s_a062f3d069d8de::t_51b22f20e6dd65 10-11
+  s_a062f3d069d8de::t_251c94ea0527fb 9
+android/app/build.gradle.kts
+  s_a062f3d069d8de::t_72a1c5281b073e 90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "59c0aa135701a5c3787aab42aa15348bf38768d8",
+  "prompts": {},
+  "sessions": {
+    "s_a062f3d069d8de": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "7133e569-198a-441e-a2e5-06e62d80bdc5",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
