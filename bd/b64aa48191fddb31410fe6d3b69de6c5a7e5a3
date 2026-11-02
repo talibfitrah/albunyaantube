@@ -1,0 +1,42 @@
+backend/src/test/java/com/albunyaan/tube/service/LiveChannelServiceTest.java
+  s_dbb6b1f3671904::t_5b83cfa6a037c8 109,111,115,117
+backend/src/test/java/com/albunyaan/tube/integration/LiveChannelPollerIT.java
+  s_dbb6b1f3671904::t_ee3964787b7a9e 20-21,78-79,82-83,138,144,162,184,214
+  s_dbb6b1f3671904::t_db947f7ae70783 80-81
+backend/src/main/java/com/albunyaan/tube/service/LiveChannelService.java
+  s_dbb6b1f3671904::t_3e75082658ec26 100-101
+  s_dbb6b1f3671904::t_5b83cfa6a037c8 190
+backend/src/main/java/com/albunyaan/tube/scheduler/LiveChannelPoller.java
+  s_dbb6b1f3671904::t_3e75082658ec26 452-453
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_dbb6b1f3671904::t_3e75082658ec26 1023
+backend/src/main/java/com/albunyaan/tube/model/LiveChannelState.java
+  s_dbb6b1f3671904::t_5b83cfa6a037c8 12
+android/app/src/main/java/com/albunyaan/tube/player/LivePlaylistRedirector.kt
+  s_dbb6b1f3671904::t_0441d563093830 101
+backend/src/main/java/com/albunyaan/tube/service/LiveCategoryGuard.java
+  s_dbb6b1f3671904::t_83bd9a971bf526 152
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_dbb6b1f3671904::t_2b933961302ec4 1462
+backend/src/test/java/com/albunyaan/tube/scheduler/LiveChannelPollerTest.java
+  s_dbb6b1f3671904::t_5b83cfa6a037c8 798-799
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_dbb6b1f3671904::t_2d2188b1cb36f9 1770
+  s_dbb6b1f3671904::t_0441d563093830 864,1763
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "bdb64aa48191fddb31410fe6d3b69de6c5a7e5a3",
+  "prompts": {},
+  "sessions": {
+    "s_dbb6b1f3671904": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "86c247ed-9e03-4ff4-bf56-dedc7748e1ee",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
