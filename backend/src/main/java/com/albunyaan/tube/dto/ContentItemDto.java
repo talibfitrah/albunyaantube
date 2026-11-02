@@ -37,6 +37,9 @@ public class ContentItemDto {
     /** Spec §4.1: the channel whose current live this item is (expanded LIVE-category items only). */
     private String liveChannelId;
 
+    /** True on an exact live link of a LIVE category (LiveCategoryService.items); the apps poll GET /live/links/{id}. */
+    private Boolean liveLink;
+
     // Search-only provenance (inner-search R28): the admitted channel or playlist that lists a stream or inner video.
     // Absent on catalog items (NON_NULL); installed apps ignore unknown fields (F31).
     private String sourceType; // CHANNEL or PLAYLIST
@@ -212,6 +215,14 @@ public class ContentItemDto {
 
     public void setLiveChannelId(String liveChannelId) {
         this.liveChannelId = liveChannelId;
+    }
+
+    public Boolean getLiveLink() {
+        return liveLink;
+    }
+
+    public void setLiveLink(Boolean liveLink) {
+        this.liveLink = liveLink;
     }
 
     public String getSourceType() {

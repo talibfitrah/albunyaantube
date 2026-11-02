@@ -95,14 +95,14 @@ class PlayerViewModelLiveChannelTest {
     /** The backend's answers, one per call (the last repeats). */
     private class FailingLives(private vararg val errors: Exception) : ContentService by FakeContentService() {
         var calls = 0
-        override suspend fun fetchChannelLives(channelId: String): ChannelLives = throw errors[minOf(calls++, errors.lastIndex)]
+        override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives = throw errors[minOf(calls++, errors.lastIndex)]
     }
 
     private fun http(code: Int) = HttpException(Response.error<Any>(code, "".toResponseBody(null)))
 
     /** A backend answer that arrives only when the test completes it. */
     private fun later(answer: kotlinx.coroutines.CompletableDeferred<ChannelLives>) = object : ContentService by FakeContentService() {
-        override suspend fun fetchChannelLives(channelId: String): ChannelLives = answer.await()
+        override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives = answer.await()
     }
 
     /** A resolve that fails on the network [failures] times, then answers [live]. */
@@ -425,15 +425,20 @@ class PlayerViewModelLiveChannelTest {
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
             advanceTimeBy(1_000); runCurrent()
             content.channelLives[channel] = ChannelLives(emptyList())
+            repository.failIds += "Rs7St51oDDc"
 
             assertTrue(vm.forceRefreshForAutoRecovery())
-            runCurrent()
-            assertEquals(1, repository.resolveCallCount)                          // nothing listed: wait
+            advanceClocks(10_000)
+            // Cubic R4-1: the first decision re-resolves the id whatever the list says; it fails, nothing listed: wait.
+            val tried = repository.resolveCallCount
+            assertTrue(tried > 1)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            repository.failIds.clear()
             content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
 
-            advanceClocks(15_000)
+            advanceClocks(40_000)
 
-            assertEquals(2, repository.resolveCallCount)
+            assertEquals(tried + 1, repository.resolveCallCount)
             assertTrue(vm.state.value.streamState is StreamState.Ready)
         }
     }
@@ -467,10 +472,14 @@ class PlayerViewModelLiveChannelTest {
             assertEquals(2, repository.resolveCallCount)
             assertEquals("Rs7St51oDDc", (vm.state.value.streamState as StreamState.Ready).streamId)
 
+            // Cubic R4-1: the page's other live is switched to only after the same id's own re-resolve fails.
             content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
+            repository.failIds += "Rs7St51oDDc"
             repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            advanceClocks(31_000)
             vm.forceRefreshForAutoRecovery()
-            runCurrent()
+            advanceClocks(10_000)
+            assertEquals(listOf("Rs7St51oDDc", "newSunnah01"), repository.resolvedVideoIds.drop(2).distinct())
             assertEquals("newSunnah01", (vm.state.value.streamState as StreamState.Ready).streamId)
         }
     }
@@ -550,8 +559,8 @@ class PlayerViewModelLiveChannelTest {
     /** Important 1: a resolve that fails (F3: an ended 24/7 id) asks the backend, which lists the new live. */
     @Test fun `a failed resolve asks the backend and switches`() = runTest(dispatcher) {
         val repository = FakePlayerRepository().apply {
-            failNextResolve = true                                                   // 3 nulls, then the next call
-            resolvedStreamsAfterFailure = streams("newSunnah01", isLive = true)
+            failIds += "Rs7St51oDDc"
+            resolvedStreams = streams("newSunnah01", isLive = true)
         }
         val content = FakeContentService()
         val vm = playerViewModel(repository = repository, contentService = content, ioDispatcher = dispatcher)
@@ -559,9 +568,10 @@ class PlayerViewModelLiveChannelTest {
             content.channelLives[channel] = ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah")))
 
             vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
-            advanceTimeBy(4_000); runCurrent()
+            advanceClocks(10_000)
 
-            assertEquals(listOf("Rs7St51oDDc", "Rs7St51oDDc", "Rs7St51oDDc", "newSunnah01"), repository.resolvedVideoIds)
+            // Cubic R4-1: the failure's first decision re-resolves the id (3 more attempts); only its failure switches.
+            assertEquals(List(6) { "Rs7St51oDDc" } + "newSunnah01", repository.resolvedVideoIds)
             assertEquals("newSunnah01", (vm.state.value.streamState as StreamState.Ready).streamId)
         }
     }
@@ -585,24 +595,6 @@ class PlayerViewModelLiveChannelTest {
 
             assertTrue(vm.state.value.streamState is StreamState.Ready)
             assertEquals(1, content.channelLivesCalls.size)
-        }
-    }
-
-    /** Minor 3: the DEBUG force-end belongs to the item it was armed for. */
-    @Test fun `the debug force-end follows the item`() = runTest(dispatcher) {
-        val (vm, _, content) = setup(streams("Rs7St51oDDc", isLive = true))
-        vm.cancelAfter {
-            content.channelLives[channel] = ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")))
-            vm.debugLiveForceEndMs = 60_000
-            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
-            advanceTimeBy(30_000); runCurrent()
-            vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)   // reopened
-            runCurrent()
-
-            advanceTimeBy(31_000); runCurrent()
-            assertTrue("the first arming was cancelled", content.channelLivesCalls.isEmpty())
-            advanceTimeBy(30_000); runCurrent()
-            assertEquals(listOf(channel), content.channelLivesCalls)
         }
     }
 
@@ -670,7 +662,7 @@ class PlayerViewModelLiveChannelTest {
     @Test fun `a live failure is Loading until the backend answers`() = runTest(dispatcher) {
         val answer = kotlinx.coroutines.CompletableDeferred<ChannelLives>()
         val later = object : ContentService by FakeContentService() {
-            override suspend fun fetchChannelLives(channelId: String): ChannelLives = answer.await()
+            override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives = answer.await()
         }
         val (vm, repository, _) = setup(streams("Rs7St51oDDc", isLive = true), later)
         vm.cancelAfter {
@@ -735,6 +727,237 @@ class PlayerViewModelLiveChannelTest {
             runCurrent()
 
             assertEquals("D12 matches the backend's title at once", "newSunnah01", vm.state.value.currentItem?.streamId)
+        }
+    }
+
+    /**
+     * 1.0.5: the channel's /live page, read on the phone. [canonical] null = unreadable; [live] false = an upcoming
+     * waiting room (no `"isLive":true`). [order] records which source was asked, and the backend's `live` param.
+     */
+    private fun livePage(canonical: String?, order: MutableList<String>, live: Boolean = true) =
+        com.albunyaan.tube.data.extractor.LiveChannelResolver(object : org.schabi.newpipe.extractor.downloader.Downloader() {
+            override fun execute(request: org.schabi.newpipe.extractor.downloader.Request): org.schabi.newpipe.extractor.downloader.Response {
+                order += "page"
+                canonical ?: throw java.io.IOException("offline")
+                val flag = if (live) "\"isLive\":true" else "\"isUpcoming\":true"
+                val id = canonical.substringAfter("watch?v=", "")
+                val details = """{"videoDetails":{"videoId":"$id",$flag,"channelId":"$channel","shortDescription":""}}"""
+                val html = """<html><head><meta name="title" content="Sunnah"><link rel="canonical" href="$canonical"></head><body>$details</body></html>"""
+                return org.schabi.newpipe.extractor.downloader.Response(200, "", emptyMap(), html, request.url())
+            }
+        }, dispatcher)
+
+    /** The backend's answer to each `live` param (null = none sent). */
+    private fun backend(order: MutableList<String>, answer: (live: String?) -> ChannelLives) = object : ContentService by FakeContentService() {
+        override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives { order += "backend:$live"; return answer(live) }
+    }
+
+    private fun setupOnDevice(canonical: String?, order: MutableList<String>, live: Boolean = true, answer: (String?) -> ChannelLives):
+        Pair<PlayerViewModel, FakePlayerRepository> {
+        val repository = FakePlayerRepository().apply { resolvedStreams = streams("Rs7St51oDDc", isLive = true) }
+        val vm = playerViewModel(repository = repository, contentService = backend(order, answer),
+            liveChannelResolver = livePage(canonical, order, live), ioDispatcher = dispatcher)
+        vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+        return vm to repository
+    }
+
+    private val newLive = "https://www.youtube.com/watch?v=newSunnah01"
+
+    @Test fun `the page's live is switched to once the backend passes it`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, repository) = setupOnDevice(newLive, order) { live -> ChannelLives(listOfNotNull(live?.let { LiveItem(it, "Sunnah") })) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("newSunnah01", vm.state.value.currentItem?.streamId)
+            assertEquals(listOf("page", "backend:newSunnah01"), order)
+        }
+    }
+
+    /** Curation: a live the backend leaves out (excluded, blocked) is never played. */
+    @Test fun `a live the backend leaves out is not switched to`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice(newLive, order) { ChannelLives(emptyList()) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)            // step 4 waits
+        }
+    }
+
+    /** A channel no longer in the live category: the backend's 404 keeps its meaning, whatever the page says. */
+    @Test fun `an unlisted channel gives up although its page is live`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice(newLive, order) { throw http(404) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals(StreamState.Error(R.string.player_stream_unavailable), vm.state.value.streamState)
+        }
+    }
+
+    /** The backend's list may still hold the ended current id (an older backend): only the page's live counts. */
+    @Test fun `a stale current id in the backend's answer never stops the switch`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, repository) = setupOnDevice(newLive, order) { live ->
+            ChannelLives(listOf(LiveItem("Rs7St51oDDc", "Sunnah")) + listOfNotNull(live?.let { LiveItem(it, "Sunnah") }))
+        }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("newSunnah01", vm.state.value.currentItem?.streamId)
+            assertEquals(listOf("page", "backend:newSunnah01"), order)
+        }
+    }
+
+    /** Fail closed: curation (exclusions, blocks, ENDED) is the backend's, so a backend that can't be asked plays nothing new. */
+    @Test fun `an unreachable backend never plays the page's live`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice(newLive, order) { throw java.io.IOException("offline") }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)            // step 4 waits and asks again
+            assertEquals(listOf("page", "backend:newSunnah01"), order)
+        }
+    }
+
+    /** The backend's 503 (at boot, or a channel added a moment ago) is no answer either: wait, never the unchecked live. */
+    @Test fun `a backend 503 never plays the page's live`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice(newLive, order) { throw http(503) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)
+            assertEquals(listOf("page", "backend:newSunnah01"), order)
+        }
+    }
+
+    @Test fun `an upcoming page asks the backend as before`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice(newLive, order, live = false) { ChannelLives(emptyList()) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals(listOf("page", "backend:null"), order)
+            assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+        }
+    }
+
+    /**
+     * Not live: the page's answer decides. The plain call (no `live`) only tells the backend to refresh its snapshot of
+     * the channel, so an ended live leaves the LIVE category; its answer (here a live) is ignored.
+     */
+    @Test fun `a not-live page waits and sends the backend one plain call it ignores`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice("https://www.youtube.com/channel/$channel", order) { ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah"))) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+            assertEquals(StreamState.Loading, vm.state.value.streamState)            // step 4 waits
+            assertEquals(listOf("page", "backend:null"), order)
+        }
+    }
+
+    /** Cubic K3: the plain call's 404 (the channel left its live category) gives up at once, as before the page. */
+    @Test fun `a not-live page whose plain call is a 404 gives up at once`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, _) = setupOnDevice("https://www.youtube.com/channel/$channel", order) { throw http(404) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals(StreamState.Error(R.string.player_stream_unavailable), vm.state.value.streamState)
+            assertEquals(listOf("page", "backend:null"), order)
+            advanceClocks(60_000)
+            assertEquals("no more asks after the give-up", listOf("page", "backend:null"), order)
+        }
+    }
+
+    /** A plain call's 404 that lands after its incident or item is gone stops nothing. */
+    @Test fun `a stale plain-call 404 is ignored`() = runTest(dispatcher) {
+        for (moveOn in listOf<(PlayerViewModel) -> Unit>(
+            { it.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel) },   // a new incident's item
+            { it.loadVideo(videoId = "lec00000001") },                                                        // another item
+        )) {
+            val order = mutableListOf<String>()
+            val plain = kotlinx.coroutines.CompletableDeferred<ChannelLives>()   // answers only when the test says so
+            val repository = FakePlayerRepository().apply { resolvedStreams = streams("Rs7St51oDDc", isLive = true) }
+            val content = object : ContentService by FakeContentService() {
+                override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives { order += "backend:$live"; return plain.await() }
+            }
+            val vm = playerViewModel(repository = repository, contentService = content,
+                liveChannelResolver = livePage("https://www.youtube.com/channel/$channel", order), ioDispatcher = dispatcher)
+            vm.cancelAfter {
+                vm.loadVideo(videoId = "Rs7St51oDDc", sourceChannelId = channel, liveChannelId = channel)
+                advanceTimeBy(1_000); runCurrent()
+                vm.markCurrentComplete()
+                runCurrent()
+                assertEquals(listOf("page", "backend:null"), order)
+
+                moveOn(vm)
+                advanceTimeBy(1_000); runCurrent()
+                assertTrue(vm.state.value.streamState is StreamState.Ready)
+                plain.completeExceptionally(http(404))
+                runCurrent()
+
+                assertTrue(vm.state.value.streamState is StreamState.Ready)
+            }
+        }
+    }
+
+    /** Any other plain-call answer (a 503, no connection, a list) changes nothing and crashes nothing. */
+    @Test fun `a failing plain call after a not-live page changes nothing`() = runTest(dispatcher) {
+        for (error in listOf(http(503), java.io.IOException("offline"))) {
+            val order = mutableListOf<String>()
+            val (vm, _) = setupOnDevice("https://www.youtube.com/channel/$channel", order) { throw error }
+            vm.cancelAfter {
+                advanceTimeBy(1_000); runCurrent()
+                vm.markCurrentComplete()
+                runCurrent()
+
+                assertEquals("Rs7St51oDDc", vm.state.value.currentItem?.streamId)
+                assertEquals(StreamState.Loading, vm.state.value.streamState)        // step 4 waits, never gives up
+                assertEquals(listOf("page", "backend:null"), order)
+            }
+        }
+    }
+
+    @Test fun `an unreadable page falls back to the backend`() = runTest(dispatcher) {
+        val order = mutableListOf<String>()
+        val (vm, repository) = setupOnDevice(null, order) { ChannelLives(listOf(LiveItem("newSunnah01", "Sunnah"))) }
+        vm.cancelAfter {
+            advanceTimeBy(1_000); runCurrent()
+            repository.resolvedStreams = streams("newSunnah01", isLive = true)
+            vm.markCurrentComplete()
+            runCurrent()
+
+            assertEquals("newSunnah01", vm.state.value.currentItem?.streamId)
+            assertEquals(listOf("page", "backend:null"), order)
         }
     }
 

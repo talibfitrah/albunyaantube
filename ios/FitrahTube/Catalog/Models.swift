@@ -32,6 +32,8 @@ nonisolated struct ContentItem: Identifiable, Hashable, Sendable {
     var itemCountText: String? = nil
     /// Spec §4.1: set on a live-category item that stands for this channel's current live.
     var liveChannelId: String? = nil
+    /// An exact live link of a live category (`liveLink: true`): the player asks `/live/links/{id}` while it plays.
+    var liveLink: Bool = false
 }
 
 /// Spec §4.1: `GET /api/v1/live/channels/{id}`, a live-category channel's current lives (1.0.4 live-channel mode).
@@ -41,6 +43,9 @@ nonisolated struct LiveChannelLives: Hashable, Sendable {
         let title: String
     }
     let lives: [Live]
+    /// Cubic r9: the phone's /live page's one live (curated), not the channel's list. It never proves the current id
+    /// ended: another running live of a multi-live channel can be the one the page shows (`LiveChannelRecovery`).
+    var partial = false
 }
 
 nonisolated struct CursorPage<Item: Sendable & Hashable>: Sendable, Hashable {

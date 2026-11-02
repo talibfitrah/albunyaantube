@@ -120,14 +120,4 @@ public class AuditLogRepository {
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(AuditLog.class);
     }
-
-    public List<AuditLog> findByAction(String action, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("action", action)
-                .orderBy("timestamp", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(AuditLog.class);
-    }
 }

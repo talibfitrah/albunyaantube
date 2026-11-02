@@ -268,7 +268,7 @@ export const messages = {
         type: 'Type',
         typeStandard: 'Standard',
         typeLive: 'Live channels',
-        typeLiveHelp: 'Channels and live streams only. Channels show their current live streams; links to a stream that ended are removed automatically. Clearing the type turns this back into an ordinary category.'
+        typeLiveHelp: 'Channels and live streams only. Channels show their current live streams; links to a stream that ended are hidden from the live category automatically. Clearing the type turns this back into an ordinary category.'
       }
     },
     approvals: {
@@ -372,7 +372,7 @@ export const messages = {
     },
     contentSorting: {
       live: {
-        note: 'Users see each channel\'s current live streams. Offline channels are hidden until they are live again. A link to a specific stream is removed when that stream ends.',
+        note: 'Users see each channel\'s current live streams. Offline channels are hidden until they are live again. A link to a specific stream is hidden from the live category once it ends, and flagged here so you can verify it and remove it. The server checks once a day.',
         live: 'Live · {count}',
         offlineSince: 'Offline since {time}',
         offline: 'Offline',
@@ -382,9 +382,11 @@ export const messages = {
         suspectSince: 'Live check suspect since {time}: showing the last known streams',
         notSeen: 'Not live ({misses} of 2)',
         noChannel: 'Not shown: channel unknown',
+        ended: 'Ended on YouTube — hidden from the live category; verify and remove',
         excluded: 'Excluded stream (not shown)',
         blocked: 'Blocked in the library (not shown)',
-        pending: 'Not checked yet'
+        pending: 'Not checked yet',
+        openOnYoutube: 'Open on YouTube'
       },
       title: 'Content Sorting',
       subtitle: 'Manage the display order of categories and content within each category',
@@ -1914,7 +1916,7 @@ export const messages = {
         type: 'النوع',
         typeStandard: 'عادية',
         typeLive: 'قنوات البث المباشر',
-        typeLiveHelp: 'القنوات والبث المباشر فقط. تعرض القنوات بثها المباشر الحالي، وتُحذف روابط البث المنتهي تلقائيًا. إزالة النوع تعيدها فئة عادية.'
+        typeLiveHelp: 'القنوات والبث المباشر فقط. تعرض القنوات بثها المباشر الحالي، وتُخفى روابط البث المنتهي من فئة البث المباشر تلقائيًا. إزالة النوع تعيدها فئة عادية.'
       }
     },
     approvals: {
@@ -2031,7 +2033,7 @@ export const messages = {
     },
     contentSorting: {
       live: {
-        note: 'يرى المستخدمون البث المباشر الحالي لكل قناة. تُخفى القنوات غير المتصلة حتى تعود إلى البث. ويُحذف رابط البث المحدد عند انتهائه.',
+        note: 'يرى المستخدمون البث المباشر الحالي لكل قناة. تُخفى القنوات غير المتصلة حتى تعود إلى البث. ويُخفى رابط البث المحدد من فئة البث المباشر عند انتهائه، ويُعلَّم هنا لتتحقق منه وتحذفه. يتحقق الخادم مرة واحدة يوميًا.',
         live: 'مباشر · {count}',
         offlineSince: 'غير متصل منذ {time}',
         offline: 'غير متصل',
@@ -2041,9 +2043,11 @@ export const messages = {
         suspectSince: 'فحص البث مشكوك فيه منذ {time}: يُعرض آخر بث معروف',
         notSeen: 'ليس مباشرًا ({misses} من 2)',
         noChannel: 'غير معروض: القناة غير معروفة',
+        ended: 'انتهى على YouTube — مخفي من فئة البث المباشر؛ تحقّق منه واحذفه',
         excluded: 'بث مستبعد (غير معروض)',
         blocked: 'محظور في المكتبة (غير معروض)',
-        pending: 'لم يُفحص بعد'
+        pending: 'لم يُفحص بعد',
+        openOnYoutube: 'افتح على YouTube'
       },
       title: 'ترتيب المحتوى',
       subtitle: 'إدارة ترتيب عرض الفئات والمحتوى داخل كل فئة',
@@ -3353,7 +3357,7 @@ export const messages = {
         type: 'Type',
         typeStandard: 'Standaard',
         typeLive: 'Live kanalen',
-        typeLiveHelp: 'Alleen kanalen en livestreams. Kanalen tonen hun huidige livestreams; links naar een beëindigde stream worden automatisch verwijderd. Het type wissen maakt er weer een gewone categorie van.'
+        typeLiveHelp: 'Alleen kanalen en livestreams. Kanalen tonen hun huidige livestreams; links naar een beëindigde stream worden automatisch verborgen in de livecategorie. Het type wissen maakt er weer een gewone categorie van.'
       }
     },
     approvals: {
@@ -3470,7 +3474,7 @@ export const messages = {
     },
     contentSorting: {
       live: {
-        note: 'Gebruikers zien de huidige livestreams van elk kanaal. Offline kanalen zijn verborgen tot ze weer live zijn. Een link naar een specifieke stream wordt verwijderd zodra die stream eindigt.',
+        note: 'Gebruikers zien de huidige livestreams van elk kanaal. Offline kanalen zijn verborgen tot ze weer live zijn. Een link naar een specifieke stream wordt na afloop verborgen in de livecategorie en hier gemarkeerd, zodat je hem kunt controleren en verwijderen. De server controleert eenmaal per dag.',
         live: 'Live · {count}',
         offlineSince: 'Offline sinds {time}',
         offline: 'Offline',
@@ -3480,9 +3484,11 @@ export const messages = {
         suspectSince: 'Livecontrole twijfelachtig sinds {time}: de laatst bekende streams worden getoond',
         notSeen: 'Niet live ({misses} van 2)',
         noChannel: 'Niet getoond: kanaal onbekend',
+        ended: 'Beëindigd op YouTube — verborgen in de livecategorie; controleer en verwijder',
         excluded: 'Uitgesloten stream (niet getoond)',
         blocked: 'Geblokkeerd in de bibliotheek (niet getoond)',
-        pending: 'Nog niet gecontroleerd'
+        pending: 'Nog niet gecontroleerd',
+        openOnYoutube: 'Openen op YouTube'
       },
       title: 'Inhoud sorteren',
       subtitle: 'Beheer de weergavevolgorde van categorieën en inhoud binnen elke categorie',

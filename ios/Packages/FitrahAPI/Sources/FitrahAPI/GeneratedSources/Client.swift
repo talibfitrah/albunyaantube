@@ -519,9 +519,9 @@ public struct Client: APIProtocol {
     }
     /// Current live streams of a live-category channel
     ///
-    /// Served from the poller's snapshot: refreshed every 10 minutes, and within about 15 seconds of a moderation
-    /// change (a take-down, an exclusion, an un-approve, a channel leaving a live category, a category losing LIVE or
-    /// deleted)
+    /// Served from the poller's snapshot: a channel showing a live is re-read about once a day and one showing none
+    /// about every 4 hours (sooner after a call that shows the snapshot is stale), and the snapshot follows a moderation change (a take-down, an exclusion, an un-approve,
+    /// a channel leaving a live category, a category losing LIVE or deleted) within about 15 seconds
     ///
     ///
     /// - Remark: HTTP `GET /v1/live/channels/{channelId}`.
@@ -542,6 +542,13 @@ public struct Client: APIProtocol {
                     method: .get
                 )
                 suppressMutabilityWarning(&request)
+                try converter.setQueryItemAsURI(
+                    in: &request,
+                    style: .form,
+                    explode: true,
+                    name: "live",
+                    value: input.query.live
+                )
                 converter.setAcceptHeader(
                     in: &request.headerFields,
                     contentTypes: input.headers.accept
@@ -580,6 +587,28 @@ public struct Client: APIProtocol {
                         headers: headers,
                         body: body
                     ))
+                case 400:
+                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
+                    let body: Operations.GetLiveChannel.Output.BadRequest.Body
+                    let chosenContentType = try converter.bestContentType(
+                        received: contentType,
+                        options: [
+                            "application/json"
+                        ]
+                    )
+                    switch chosenContentType {
+                    case "application/json":
+                        body = try await converter.getResponseBodyAsJSON(
+                            Components.Schemas.ErrorResponse.self,
+                            from: responseBody,
+                            transforming: { value in
+                                .json(value)
+                            }
+                        )
+                    default:
+                        preconditionFailure("bestContentType chose an invalid content type.")
+                    }
+                    return .badRequest(.init(body: body))
                 case 404:
                     let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
                     let body: Operations.GetLiveChannel.Output.NotFound.Body
@@ -604,6 +633,112 @@ public struct Client: APIProtocol {
                     return .notFound(.init(body: body))
                 case 503:
                     let headers: Operations.GetLiveChannel.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Retry-After",
+                        as: Swift.Int.self
+                    ))
+                    return .serviceUnavailable(.init(headers: headers))
+                default:
+                    return .undocumented(
+                        statusCode: response.status.code,
+                        .init(
+                            headerFields: response.headerFields,
+                            body: responseBody
+                        )
+                    )
+                }
+            }
+        )
+    }
+    /// Whether an exact live link is still served in a live category
+    ///
+    /// The removal check for an exact live link (a live-category item with `liveLink: true`) while it plays. Answered
+    /// from the poller's in-memory view, which follows a moderation change (the link leaving every live category, a
+    /// take-down, an un-approve, a category losing LIVE or deleted) within about 15 seconds. A link the poller found
+    /// ENDED (its stream ended: hidden from the category's list) is still served here, since an ended stream is never a
+    /// removal; its check asks the poller for an on-demand read of its channel, which shows it again once it is live.
+    /// No YouTube or registry read per call.
+    ///
+    ///
+    /// - Remark: HTTP `GET /v1/live/links/{videoId}`.
+    /// - Remark: Generated from `#/paths//v1/live/links/{videoId}/get(getLiveLink)`.
+    public func getLiveLink(_ input: Operations.GetLiveLink.Input) async throws -> Operations.GetLiveLink.Output {
+        try await client.send(
+            input: input,
+            forOperation: Operations.GetLiveLink.id,
+            serializer: { input in
+                let path = try converter.renderedPath(
+                    template: "/v1/live/links/{}",
+                    parameters: [
+                        input.path.videoId
+                    ]
+                )
+                var request: HTTPTypes.HTTPRequest = .init(
+                    soar_path: path,
+                    method: .get
+                )
+                suppressMutabilityWarning(&request)
+                converter.setAcceptHeader(
+                    in: &request.headerFields,
+                    contentTypes: input.headers.accept
+                )
+                return (request, nil)
+            },
+            deserializer: { response, responseBody in
+                switch response.status.code {
+                case 204:
+                    let headers: Operations.GetLiveLink.Output.NoContent.Headers = .init(cacheControl: try converter.getOptionalHeaderFieldAsURI(
+                        in: response.headerFields,
+                        name: "Cache-Control",
+                        as: Swift.String.self
+                    ))
+                    return .noContent(.init(headers: headers))
+                case 400:
+                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
+                    let body: Operations.GetLiveLink.Output.BadRequest.Body
+                    let chosenContentType = try converter.bestContentType(
+                        received: contentType,
+                        options: [
+                            "application/json"
+                        ]
+                    )
+                    switch chosenContentType {
+                    case "application/json":
+                        body = try await converter.getResponseBodyAsJSON(
+                            Components.Schemas.ErrorResponse.self,
+                            from: responseBody,
+                            transforming: { value in
+                                .json(value)
+                            }
+                        )
+                    default:
+                        preconditionFailure("bestContentType chose an invalid content type.")
+                    }
+                    return .badRequest(.init(body: body))
+                case 404:
+                    let contentType = converter.extractContentTypeIfPresent(in: response.headerFields)
+                    let body: Operations.GetLiveLink.Output.NotFound.Body
+                    let chosenContentType = try converter.bestContentType(
+                        received: contentType,
+                        options: [
+                            "application/json"
+                        ]
+                    )
+                    switch chosenContentType {
+                    case "application/json":
+                        body = try await converter.getResponseBodyAsJSON(
+                            Components.Schemas.ErrorResponse.self,
+                            from: responseBody,
+                            transforming: { value in
+                                .json(value)
+                            }
+                        )
+                    default:
+                        preconditionFailure("bestContentType chose an invalid content type.")
+                    }
+                    return .notFound(.init(body: body))
+                case 503:
+                    let headers: Operations.GetLiveLink.Output.ServiceUnavailable.Headers = .init(retryAfter: try converter.getOptionalHeaderFieldAsURI(
                         in: response.headerFields,
                         name: "Retry-After",
                         as: Swift.Int.self

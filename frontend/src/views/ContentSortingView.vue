@@ -180,6 +180,8 @@
                         {{ item.title }}
                         <span v-for="chip in rowChips(cat.id, item.contentId)" :key="chip.key"
                               class="live-chip" :class="`live-chip--${chip.tone}`">{{ t(chip.key, chip.params ?? {}) }}</span>
+                        <a v-if="rowYoutubeUrl(cat.id, item.contentId)" :href="rowYoutubeUrl(cat.id, item.contentId)!"
+                           target="_blank" rel="noopener noreferrer" class="live-youtube-link">{{ t('contentSorting.live.openOnYoutube') }}</a>
                       </td>
                       <td class="col-content-type">
                         <span class="type-badge" :class="'type-' + item.contentType">{{ item.contentType }}</span>
@@ -340,7 +342,7 @@ import {
 import { toast } from '@/utils/toast';
 import { apiErrorWithOffenders, offenderTitles } from '@/services/http';
 import { liveCategoryIds } from '@/components/contentSearch/bulk/useCategoryPicker';
-import { getLiveStatus, liveChips, type LiveStatus } from '@/services/liveChannels';
+import { getLiveStatus, liveChips, liveYoutubeUrl, type LiveStatus } from '@/services/liveChannels';
 import { useFocusTrap } from '@/composables/useFocusTrap';
 import type { Ref } from 'vue';
 
@@ -353,8 +355,14 @@ const formatTime = (iso: string) => new Date(iso).toLocaleString(locale.value);
 function liveCategory(categoryId: string) {
   return liveStatus.value?.categories.find(c => c.id === categoryId) ?? null;
 }
+function rowEntry(categoryId: string, contentId: string) {
+  return liveCategory(categoryId)?.entries.find(e => e.contentId === contentId);
+}
 function rowChips(categoryId: string, contentId: string) {
-  return liveChips(liveCategory(categoryId)?.entries.find(e => e.contentId === contentId), formatTime);
+  return liveChips(rowEntry(categoryId, contentId), formatTime);
+}
+function rowYoutubeUrl(categoryId: string, contentId: string) {
+  return liveYoutubeUrl(rowEntry(categoryId, contentId));
 }
 
 function contentKey(item: { contentType?: string; type?: string; contentId?: string; id?: string }): string {
@@ -1470,4 +1478,5 @@ tr.drag-over {
 .live-chip--ok { background: var(--color-success-soft); color: var(--color-success); }
 .live-chip--warn { background: var(--color-warning-soft); color: var(--color-warning); }
 .live-chip--bad { background: var(--color-danger-soft); color: var(--color-danger); }
+.live-youtube-link { margin-inline-start: 0.5rem; font-size: 0.75rem; white-space: nowrap; }
 </style>

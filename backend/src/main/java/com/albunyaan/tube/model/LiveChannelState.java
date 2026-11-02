@@ -1,6 +1,7 @@
 package com.albunyaan.tube.model;
 
 import com.google.cloud.firestore.annotation.DocumentId;
+import com.google.cloud.firestore.annotation.IgnoreExtraProperties;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -9,8 +10,9 @@ import java.util.Map;
 
 /**
  * Spec §3: {@code live_channel_state/{UC id}}, one per polled channel. Times are epoch milliseconds. Served from
- * LiveChannelService's in-memory snapshot (D1); written by the poller, the add-time seed (D15) and the migration.
+ * LiveChannelService's in-memory snapshot (D1); written by the poller and the add-time seed (D15).
  */
+@IgnoreExtraProperties   // docs the old model wrote carry archived/archivedFrom (empty maps in prod)
 public class LiveChannelState {
 
     public static final String UNKNOWN = "UNKNOWN";
@@ -24,17 +26,22 @@ public class LiveChannelState {
     private String reason;
     private List<Live> lives = new ArrayList<>();
     private Long checkedAt;
+    /**
+     * Cubic r2 #2: the last read that listed a live here. The latest across channels is R10's proof that YouTube answers
+     * normally; persisted so a restart keeps it. Docs written before it load null (no proof yet).
+     */
+    private Long liveSeenAt;
     private Long offlineSince;
     private int errorCount;
     private Long errorSince;
     private String lastError;
     private Long nextPollAt;
     private Map<String, Miss> misses = new HashMap<>();
-    /** R12: ids this poller archived, with the validationStatus to restore ("" = none). */
-    // ponytail: never pruned by design (R12 restore-on-reappearance); move to a subcollection if a doc nears 1 MiB.
-    private Map<String, String> archived = new HashMap<>();
-    /** Stage 9 B13 (R12): the LIVE categories each archived link left, so its restore puts it back there. */
-    private Map<String, List<String>> archivedFrom = new HashMap<>();
+    /**
+     * Owner ruling 2026-11-02: links R15 ended, hidden from the category list until a read lists them live (admin status
+     * ENDED). Codex r6 C4: pruned to the channel's current links on every view publish.
+     */
+    private List<String> ended = new ArrayList<>();
     private Long updatedAt;
 
     public LiveChannelState() {
@@ -54,6 +61,7 @@ public class LiveChannelState {
         c.lives = new ArrayList<>();
         lives.forEach(l -> c.lives.add(new Live(l.videoId, l.title)));
         c.checkedAt = checkedAt;
+        c.liveSeenAt = liveSeenAt;
         c.offlineSince = offlineSince;
         c.errorCount = errorCount;
         c.errorSince = errorSince;
@@ -61,8 +69,7 @@ public class LiveChannelState {
         c.nextPollAt = nextPollAt;
         c.misses = new HashMap<>();
         misses.forEach((k, v) -> c.misses.put(k, new Miss(v.count, v.since)));
-        c.archived = new HashMap<>(archived);
-        c.archivedFrom = new HashMap<>(archivedFrom);
+        c.ended = new ArrayList<>(ended);
         c.updatedAt = updatedAt;
         return c;
     }
@@ -77,6 +84,8 @@ public class LiveChannelState {
     public void setLives(List<Live> lives) { this.lives = lives == null ? new ArrayList<>() : lives; }
     public Long getCheckedAt() { return checkedAt; }
     public void setCheckedAt(Long checkedAt) { this.checkedAt = checkedAt; }
+    public Long getLiveSeenAt() { return liveSeenAt; }
+    public void setLiveSeenAt(Long liveSeenAt) { this.liveSeenAt = liveSeenAt; }
     public Long getOfflineSince() { return offlineSince; }
     public void setOfflineSince(Long offlineSince) { this.offlineSince = offlineSince; }
     public int getErrorCount() { return errorCount; }
@@ -89,10 +98,8 @@ public class LiveChannelState {
     public void setNextPollAt(Long nextPollAt) { this.nextPollAt = nextPollAt; }
     public Map<String, Miss> getMisses() { return misses; }
     public void setMisses(Map<String, Miss> misses) { this.misses = misses == null ? new HashMap<>() : misses; }
-    public Map<String, String> getArchived() { return archived; }
-    public void setArchived(Map<String, String> archived) { this.archived = archived == null ? new HashMap<>() : archived; }
-    public Map<String, List<String>> getArchivedFrom() { return archivedFrom; }
-    public void setArchivedFrom(Map<String, List<String>> archivedFrom) { this.archivedFrom = archivedFrom == null ? new HashMap<>() : archivedFrom; }
+    public List<String> getEnded() { return ended; }
+    public void setEnded(List<String> ended) { this.ended = ended == null ? new ArrayList<>() : ended; }
     public Long getUpdatedAt() { return updatedAt; }
     public void setUpdatedAt(Long updatedAt) { this.updatedAt = updatedAt; }
 

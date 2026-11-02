@@ -45,17 +45,20 @@ nonisolated struct FakeCatalogClient: CatalogClient {
     private let contentPages: [CursorPage<ContentItem>]
     private let searchResultsStore: [ContentItem]
     private let liveChannelsStore: [String: LiveChannelLives]
+    private let liveLinksStore: Set<String>
 
     init(categories: [Category] = FakeCatalogClient.sampleCategories,
          homePages: [CursorPage<HomeSection>] = FakeCatalogClient.sampleHomePages,
          contentPages: [CursorPage<ContentItem>] = FakeCatalogClient.sampleContentPages,
          searchResults: [ContentItem] = FakeCatalogClient.sampleSearchResults,
-         liveChannels: [String: LiveChannelLives] = [:]) {
+         liveChannels: [String: LiveChannelLives] = [:],
+         liveLinks: Set<String> = []) {
         categoriesStore = categories
         self.homePages = homePages
         self.contentPages = contentPages
         searchResultsStore = searchResults
         liveChannelsStore = liveChannels
+        liveLinksStore = liveLinks
     }
 
     func categories() async throws -> [Category] { categoriesStore }
@@ -70,9 +73,13 @@ nonisolated struct FakeCatalogClient: CatalogClient {
 
     func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: searchResultsStore) }
 
-    func liveChannel(id: String) async throws -> LiveChannelLives {
+    func liveChannel(id: String, live: String?) async throws -> LiveChannelLives {
         guard let lives = liveChannelsStore[id] else { throw LiveChannelNotFound() }  // the live client's 404
         return lives
+    }
+
+    func liveLink(videoId: String) async throws {
+        guard liveLinksStore.contains(videoId) else { throw LiveLinkNotFound() }        // the live client's 404
     }
 
     private func page<Item: Sendable & Hashable>(_ cursor: String?, from pages: [CursorPage<Item>]) -> CursorPage<Item> {

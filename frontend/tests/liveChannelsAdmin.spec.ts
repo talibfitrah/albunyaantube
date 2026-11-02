@@ -3,7 +3,7 @@ import { messages } from '@/locales/messages';
 import apiClient from '@/services/api/client';
 import { createCategory, updateCategory } from '@/services/categoryService';
 import { ApiError, apiErrorCode, apiErrorOffenders, apiErrorToMessage, apiErrorWithOffenders } from '@/services/http';
-import { getLiveStatus, liveChips, type LiveEntryStatus } from '@/services/liveChannels';
+import { getLiveStatus, liveChips, liveYoutubeUrl, type LiveEntryStatus } from '@/services/liveChannels';
 
 vi.mock('@/services/api/client');
 
@@ -17,7 +17,8 @@ const KEYS = [
   'categoryModal.liveOnlyChannelsAndLive',
   'contentSorting.live.note', 'contentSorting.live.live', 'contentSorting.live.offlineSince', 'contentSorting.live.terminated',
   'contentSorting.live.errorSince', 'contentSorting.live.suspectSince', 'contentSorting.live.notSeen', 'contentSorting.live.noChannel',
-  'contentSorting.live.excluded', 'contentSorting.live.blocked', 'contentSorting.live.pending'
+  'contentSorting.live.excluded', 'contentSorting.live.blocked', 'contentSorting.live.pending', 'contentSorting.live.openOnYoutube',
+  'contentSorting.live.ended'
 ];
 
 function lookup(locale: 'en' | 'ar' | 'nl', key: string): unknown {
@@ -100,7 +101,7 @@ describe('live channels: row chips (spec §8)', () => {
     ({ contentType: 'channel', contentId: 'c', status: 'LIVE', lives: [], ...over } as LiveEntryStatus);
 
   it('says plain "Offline" when there is no offlineSince (F-M10)', () => {
-    expect(liveChips(channel({ status: 'OFFLINE', offlineSince: null }), time)).toEqual([{ key: 'contentSorting.live.offline', tone: 'warn' }]);
+    expect(liveChips(channel({ status: 'OFFLINE', offlineSince: null }), time)).toEqual([{ key: 'contentSorting.live.offline', tone: 'bad' }]);
     expect(liveChips(channel({ status: 'OFFLINE', offlineSince: 'X' }), time)[0]).toMatchObject({ key: 'contentSorting.live.offlineSince', params: { time: 'T(X)' } });
   });
 
@@ -126,6 +127,34 @@ describe('live channels: row chips (spec §8)', () => {
     expect(liveChips(undefined, time)).toEqual([]);
   });
 
+  it('marks the dead states (offline, terminated, not seen) bad', () => {
+    expect(liveChips(channel({ status: 'OFFLINE', offlineSince: 'X' }), time)[0].tone).toBe('bad');
+    expect(liveChips(channel({ status: 'OFFLINE', reason: 'TERMINATED' }), time)[0].tone).toBe('bad');
+    const link = { contentType: 'video', contentId: 'v', status: 'MISSING', misses: 1 } as LiveEntryStatus;
+    expect(liveChips(link, time)[0].tone).toBe('bad');
+  });
+
+  // Owner ruling 2026-11-02: an ended link is hidden but stays in the category until the admin removes it.
+  it('flags an ended link bad, for the admin to verify and remove', () => {
+    const link = { contentType: 'video', contentId: 'v', status: 'ENDED', youtubeId: 'yee9gj7t8n-' } as LiveEntryStatus;
+    expect(liveChips(link, time)).toEqual([{ key: 'contentSorting.live.ended', tone: 'bad' }]);
+    expect(liveYoutubeUrl(link)).toBe('https://www.youtube.com/watch?v=yee9gj7t8n-');
+  });
+
+  it('says in the note that ended links are hidden and flagged, checked once a day', () => {
+    expect(lookup('en', 'contentSorting.live.note')).not.toContain('is removed when that stream ends');
+    expect(lookup('en', 'contentSorting.live.note')).toContain('once a day');
+  });
+
+  // Cubic r5 R5-2: an ended link is hidden from its live category only; it stays an approved video (search, playback).
+  it.each(['en', 'ar', 'nl'] as const)('in %s, says an ended link is hidden from the live category, not from users', locale => {
+    for (const key of ['contentSorting.live.ended', 'contentSorting.live.note', 'categories.dialog.typeLiveHelp']) {
+      const copy = lookup(locale, key) as string;
+      expect(copy, `${locale}:${key}`).not.toMatch(/hidden from users|removed automatically|verborgen voor gebruikers|automatisch verwijderd|عن المستخدمين|تُحذف روابط/);
+      expect(copy, `${locale}:${key}`).toMatch(/live category|livecategorie|فئة البث المباشر/);
+    }
+  });
+
   // As built (Task 12 review, spec §4.2): the public list drops a BLOCKED link and a non-servable channel whole.
   it('flags a blocked link as not shown', () => {
     const link = { contentType: 'video', contentId: 'v', status: 'BLOCKED' } as LiveEntryStatus;
@@ -138,6 +167,24 @@ describe('live channels: row chips (spec §8)', () => {
     expect(liveChips(channel({ servable: false, status: 'UNKNOWN' }), time)).toEqual([{ key: 'contentSorting.live.blocked', tone: 'bad' }]);
     expect(liveChips(channel({ servable: true, lives: [{ id: 'a', title: '', served: 'SERVED' }] }), time)[0])
       .toMatchObject({ key: 'contentSorting.live.live', params: { count: 1 } });
+  });
+});
+
+describe('live channels: open on YouTube', () => {
+  const UC = 'UC' + 'a'.repeat(21) + '_';
+
+  it('links a channel to its live page and a link to its watch page', () => {
+    expect(liveYoutubeUrl({ contentType: 'channel', contentId: 'c', status: 'OFFLINE', channelId: UC })).toBe(`https://www.youtube.com/channel/${UC}/live`);
+    expect(liveYoutubeUrl({ contentType: 'video', contentId: 'v', status: 'MISSING', youtubeId: 'yee9gj7t8n-' })).toBe('https://www.youtube.com/watch?v=yee9gj7t8n-');
+  });
+
+  it('gives no link for a missing or malformed id', () => {
+    expect(liveYoutubeUrl(undefined)).toBeNull();
+    expect(liveYoutubeUrl({ contentType: 'channel', contentId: 'c', status: 'LIVE', channelId: null })).toBeNull();
+    expect(liveYoutubeUrl({ contentType: 'channel', contentId: 'c', status: 'LIVE', channelId: 'UCshort' })).toBeNull();
+    expect(liveYoutubeUrl({ contentType: 'channel', contentId: 'c', status: 'LIVE', channelId: UC + '/x' })).toBeNull();
+    expect(liveYoutubeUrl({ contentType: 'video', contentId: 'v', status: 'LIVE', youtubeId: 'abc"><b>x' })).toBeNull();
+    expect(liveYoutubeUrl({ contentType: 'video', contentId: 'v', status: 'LIVE', youtubeId: 'yee9gj7t8nQQ' })).toBeNull();
   });
 });
 

@@ -149,7 +149,7 @@ public class LiveCategoryGuard {
 
     /**
      * Spec D8: a LIVE category is top-level and nothing nests under it. True when a category with this parent may be
-     * LIVE: no parent and no subcategories. The category update and the live-channels migration (stage 9 B16) both ask.
+     * LIVE: no parent and no subcategories. The category update asks.
      */
     public static boolean liveShape(com.albunyaan.tube.repository.CategoryRepository categories, String categoryId,
                                     String parentId) throws ExecutionException, InterruptedException, TimeoutException {
@@ -244,6 +244,7 @@ public class LiveCategoryGuard {
             }
         }
         if (refused.isEmpty()) {
+            if (!adds.isEmpty()) live.liveAddChecked();                       // R4-1: its write's eviction refreshes the view
             Set<String> seeds = new LinkedHashSet<>();                         // rule 3 (D15): once per channel, once verified
             for (Change c : adds) {
                 if ("channel".equals(c.type()) && c.youtubeId() != null) {
@@ -315,6 +316,7 @@ public class LiveCategoryGuard {
             throw new LiveCategoryException(HttpStatus.BAD_REQUEST, LiveCategoryException.NOT_LIVE,
                     "Video " + c.youtubeId() + " is not live on channel " + channel + " now", details);
         }
+        live.liveAgain(channel, c.youtubeId());                                // Cubic r6 K1 (c): live, so not ENDED
         return channel;
     }
 

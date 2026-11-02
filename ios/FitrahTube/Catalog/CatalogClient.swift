@@ -6,7 +6,11 @@ nonisolated protocol CatalogClient: Sendable {
     func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection>
     func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem>
     func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult
-    func liveChannel(id: String) async throws -> LiveChannelLives
+    /// `live`: a live id the phone read on the channel's own page; the backend serves it only if it passes curation.
+    func liveChannel(id: String, live: String?) async throws -> LiveChannelLives
+    /// Returns while the exact live link `videoId` is still served in a live category (the 204); `LiveLinkNotFound` once
+    /// it is not (the 404).
+    func liveLink(videoId: String) async throws
 }
 
 /// The default for conformers that never serve live categories (test doubles): live-channel mode treats it as "no
@@ -17,6 +21,9 @@ nonisolated struct LiveChannelUnsupported: Error {}
 /// (Android: 404 stops, IO or JSON errors retry).
 nonisolated struct LiveChannelNotFound: Error {}
 
+/// The link endpoint's 404: the exact live link is no longer served. The heartbeat stops playback; any other error keeps it.
+nonisolated struct LiveLinkNotFound: Error {}
+
 /// Any other answer (a 5xx, an undocumented status): retryable, never a `LiveChannelNotFound`.
 nonisolated struct LiveChannelUnexpectedStatus: Error {
     let statusCode: Int
@@ -25,7 +32,8 @@ nonisolated struct LiveChannelUnexpectedStatus: Error {
 }
 
 extension CatalogClient {
-    func liveChannel(id: String) async throws -> LiveChannelLives { throw LiveChannelUnsupported() }
+    func liveChannel(id: String, live: String?) async throws -> LiveChannelLives { throw LiveChannelUnsupported() }
+    func liveLink(videoId: String) async throws { throw LiveChannelUnsupported() }
 }
 
 /// `X-Search-Match` (spec §4.6). A missing or unknown value -- an older backend, or `none` with an

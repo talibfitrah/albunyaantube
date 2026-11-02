@@ -33,26 +33,44 @@ nonisolated struct LiveChannelRecovery: Sendable {
         self.startedAt = startedAt
     }
 
-    /// `retryAfter` (stage 9 I13): the backend's 503 Retry-After, the shortest next wait.
-    mutating func next(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int? = nil) -> Step {
-        let step = decide(trigger, lives: lives, now: now, retryAfter: retryAfter)
+    /// `retryAfter` (stage 9 I13): the backend's 503 Retry-After, the shortest next wait. `partial` (Cubic r9): `lives` is
+    /// the phone's page's one live, not the channel's list (`LiveChannelLives.partial`).
+    mutating func next(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int? = nil,
+                       partial: Bool = false) -> Step {
+        let step = decide(trigger, lives: lives, now: now, retryAfter: retryAfter, partial: partial)
         // Stage 9 I-C10.4 (Android stage 4 S2): the id goes into the thumbnail URL and the resolve; anything but a video id
         // is no answer.
-        if case .switchTo(let id, _) = step, !TitlesClient.isVideoId(id) { return decide(trigger, lives: nil, now: now, retryAfter: nil) }
+        if case .switchTo(let id, _) = step, !TitlesClient.isVideoId(id) {
+            return decide(trigger, lives: nil, now: now, retryAfter: nil, partial: partial)
+        }
         return step
     }
 
-    private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int?) -> Step {
+    private mutating func decide(_ trigger: Trigger, lives: [LiveChannelLives.Live]?, now: Date, retryAfter: Int?,
+                                 partial: Bool) -> Step {
         if trigger == .ended { ended = true }
         let elapsed = now.timeIntervalSince(startedAt)
+        // Cubic R4-1 (Android parity): a failure's first decision re-resolves the current id whatever the list says. The
+        // page shows one live, so a multi-live channel's other running live (or a wrong not-live page) must not switch
+        // away from it. With no answer it is the incident's blind try.
+        if !ended, waits == 0, !sameIdSpent, elapsed < Self.giveUpAfter {
+            sameIdSpent = true
+            if lives == nil { triedBlind = true }
+            return .sameId
+        }
         var deadline = Self.giveUpAfter
         if let lives, !lives.isEmpty, !lives.contains(where: { $0.id == currentId }) {
-            if lives.count == 1 { return .switchTo(id: lives[0].id, title: lives[0].title) }
             // I-P1: a blank backend title is no title, and matches no other live (not even a blank one).
             if let title = currentTitle, !title.trimmingCharacters(in: .whitespacesAndNewlines).isEmpty,
                let same = lives.first(where: { $0.title == title }) { return .switchTo(id: same.id, title: same.title) }
+            if lives.count == 1, ended || !partial { return .switchTo(id: lives[0].id, title: lives[0].title) }
             if elapsed >= Self.titleWait { return .switchTo(id: lives[0].id, title: lives[0].title) }
             deadline = Self.titleWait
+            // Cubic r9: the page's one live of another show: the current id may still run (a blip), so once per wake
+            if partial, !ended, !sameIdSpent {
+                sameIdSpent = true
+                return .sameId
+            }
         } else if !ended, !sameIdSpent, elapsed < Self.giveUpAfter, lives?.contains(where: { $0.id == currentId }) == true {
             sameIdSpent = true
             return .sameId

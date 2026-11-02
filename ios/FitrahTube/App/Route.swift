@@ -122,6 +122,8 @@ nonisolated struct PlayerArgs: Hashable, Sendable {
     /// D12's title match compares with the backend's list. Set where a live item is made (a list item, a switch); never
     /// the displayed `title`, which takes the stream's original title like every other video.
     var liveTitle: String? = nil
+    /// An exact live link (`ContentItem.liveLink`): the player's removal heartbeat asks the link endpoint for it.
+    var liveLink: Bool = false
     /// Phase 3 Task 7: set, the player plays this `OfflineItem`'s saved file through
     /// `OfflineResolver` (no network, reduced chrome — `PlayerViewModel.isOfflinePlayback`).
     /// Additive with a nil default so every existing construction — deep links included
@@ -146,5 +148,6 @@ extension PlayerArgs {
                   durationSeconds: item.durationSeconds, viewCount: item.viewCount, channelId: item.liveChannelId)
         liveChannelId = item.liveChannelId          // §9.3(b): the availability gate checks the channel (F15)
         if item.liveChannelId != nil { liveTitle = item.title }   // I-P1: D12's backend title, before any retitle
+        liveLink = item.liveLink
     }
 }

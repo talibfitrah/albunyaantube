@@ -1020,7 +1020,7 @@ public class SearchIndex {
 
     /**
      * Q18: CategoryController evicts the public caches after every category create, update (LIVE on, or the kill switch
-     * off) and delete, as LiveChannelsMigration does after it sets LIVE; each eviction re-reads the LIVE set on the writer.
+     * off) and delete; each eviction re-reads the LIVE set on the writer.
      * A burst queues one read. ponytail: a failed read keeps the last set until the next eviction or the 6-hourly
      * reconcile; retry it as reread() does if that window ever matters.
      */

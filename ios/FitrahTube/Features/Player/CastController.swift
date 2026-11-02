@@ -238,6 +238,91 @@ import SwiftUI
         }
     }
 
+    /// An admin removal (the live heartbeat): the receiver stops playing this screen's load. Only ours -- another screen's
+    /// video on the TV is untouched. The session stays up for the next cast. The load is spent here, so the receiver's
+    /// IDLE that follows is never read as a failure (`receiverDidUpdate`) and no hand-back seeks to its position.
+    func stopReceiver(_ videoId: String, owner: UUID) {
+        guard loadedClaim == CastClaim(videoId: videoId, owner: owner) else { return }
+        loadedClaim = nil
+        lastStreamPosition = nil
+        cancelLoadRequest()
+        guard castAvailable, let client = GCKCastContext.sharedInstance().sessionManager.currentSession?.remoteMediaClient,
+              Self.receiverPlays(videoId, load: castLoad,
+                                 receiverURL: client.mediaStatus?.mediaInformation?.contentURL) else { return }
+        client.stop()
+    }
+
+    /// The URL this app's last real `load()` handed the receiver, per video. An `.adopt` re-stamps `loadedClaim` with no
+    /// URL, so this is kept apart from `loadedContentURL`. nil once a new session begins.
+    private var castLoad: CastLoad?
+    nonisolated struct CastLoad: Sendable, Equatable { var videoId: String; var url: URL }
+
+    /// Codex r3: a removal stops the receiver only while it still plays the URL this app loaded for `videoId`. Another
+    /// sender's load on the same TV, or a load of ours the receiver never took, is not ours to stop.
+    nonisolated static func receiverPlays(_ videoId: String, load: CastLoad?, receiverURL: URL?) -> Bool {
+        guard let load, load.videoId == videoId, let receiverURL else { return false }
+        return receiverURL == load.url
+    }
+
+    /// Cubic round 7 (Android `CastRemovalWatch`): a cast live keeps playing on the TV after its player is popped, and the
+    /// popped `PlayerViewModel` takes its removal heartbeat with it. The heartbeat moves here, app lifetime, while the
+    /// receiver plays that player's load (`loadedClaim`, the claim of what this app cast). One watch at a time.
+    private var removalWatch: (videoId: String, task: Task<Void, Never>)?
+
+    /// From a popped player: ask `removed` each `tick` while the receiver plays its load; a removal stops the receiver.
+    /// Ends when the session ends, when the receiver gets another load (another video, or a reopened player's adopt),
+    /// and on a removal. Any other answer keeps the TV playing.
+    func watchRemoval(_ videoId: String, owner: UUID, tick: @escaping @Sendable () async throws -> Void,
+                      removed: @escaping @Sendable (String) async -> Bool) {
+        let claim = CastClaim(videoId: videoId, owner: owner)
+        guard isSessionActive, loadedClaim == claim else { return }
+        removalWatch?.task.cancel()
+        removalWatch = (videoId, Task { [weak self] in
+            while true {
+                do { try await tick() } catch { return }
+                guard let self, !Task.isCancelled, self.isSessionActive, self.loadedClaim == claim else { return }
+                switch self.receiverMedia(videoId) {
+                case false: return
+                case nil: continue                                    // no status this tick: ask nothing, stop nothing
+                case true: break
+                }
+                guard await removed(videoId) else { continue }
+                guard !Task.isCancelled, self.isSessionActive, self.loadedClaim == claim else { return }
+                // Codex r6: the status can go between the ask and its answer; a stop then reaches nothing, so ask again
+                // next tick and stop then
+                switch self.receiverMedia(videoId) {
+                case false: return
+                case nil: continue
+                case true: break
+                }
+                self.stopReceiver(videoId, owner: owner)
+                return
+            }
+        })
+    }
+
+    /// The receiver plays (or is loading) this screen's load of `videoId`: its removal check runs whatever the phone shows.
+    func castsLoad(_ videoId: String, owner: UUID) -> Bool {
+        isSessionActive && loadedClaim == CastClaim(videoId: videoId, owner: owner)
+    }
+
+    /// Codex r4, r5: the receiver's media now, read at each watch tick (a replacement that landed before the watch began
+    /// sends no later update): true, this app's load of `videoId`; false, other media (the watch ends); nil, no media
+    /// status right now (a reconnect, a pending load), so the watch waits. No SDK in tests: `receiverDidUpdate` drives those.
+    private func receiverMedia(_ videoId: String) -> Bool? {
+        guard castAvailable else { return true }
+        guard let url = GCKCastContext.sharedInstance().sessionManager.currentSession?.remoteMediaClient?.mediaStatus?
+            .mediaInformation?.contentURL else { return nil }
+        return Self.receiverPlays(videoId, load: castLoad, receiverURL: url)
+    }
+
+    /// A reopened player heartbeats `videoId` itself again, so each tick asks the backend once.
+    func releaseRemovalWatch(_ videoId: String) {
+        guard removalWatch?.videoId == videoId else { return }
+        removalWatch?.task.cancel()
+        removalWatch = nil
+    }
+
     // MARK: - Session lifecycle seams
     //
     // The `GCKSessionManagerListener` callbacks below carry no decisions of their own: every one
@@ -252,6 +337,7 @@ import SwiftUI
         castingClaim = nil
         // Nothing of ours is on this receiver yet, whatever the last one was playing.
         loadedClaim = nil
+        castLoad = nil
         // A failure that landed with no claimant mounted is never consumed, and it belongs to a
         // session that is over. A new session is the natural place to drop an unread one.
         lastLoadFailure = nil
@@ -331,6 +417,13 @@ import SwiftUI
     ///   paused); after, a PLAYBACK failure carrying where the TV got to.
     /// - Once per load: a failure spends `loadedClaim`, so the receiver's repeats find nothing.
     func receiverDidUpdate(_ update: ReceiverUpdate) {
+        // Codex r3: another load replaced ours on the receiver (another sender's, say): nothing of ours is left to watch.
+        // Only a status that names other media ends it; one with no media says nothing either way. Cubic r8: ours ended
+        // on the TV (idle with a reason: finished, error, interrupted, cancelled) has nothing left to stop either.
+        if loadRequest == nil, let watched = removalWatch?.videoId, update.contentURL != nil {
+            let ours = Self.receiverPlays(watched, load: castLoad, receiverURL: update.contentURL)
+            if !ours || (update.playerState == .idle && update.idleReason != .none) { releaseRemovalWatch(watched) }
+        }
         guard let loadedClaim, let loadedContentURL, update.contentURL == loadedContentURL else { return }
         receiverState = update.playerState
         switch update.playerState {
@@ -382,6 +475,7 @@ import SwiftUI
     func recordLoad(_ videoId: String, owner: UUID, contentURL: URL? = nil) {
         loadedClaim = CastClaim(videoId: videoId, owner: owner)
         loadedContentURL = contentURL
+        if let contentURL { castLoad = CastLoad(videoId: videoId, url: contentURL) }   // an adopt (no URL) keeps it
         receiverState = .unknown
         playedPosition = nil
     }

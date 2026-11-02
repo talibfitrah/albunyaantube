@@ -107,6 +107,7 @@ class LiveCategoryServiceTest {
         assertThat(first.getViewCount()).isNull();
         assertThat(first.getThumbnailUrl()).isEqualTo("https://i.ytimg.com/vi/eC4LfEVxvKg/hqdefault_live.jpg");
         assertThat(first.getChannelTitle()).isEqualTo("name-" + QURAN);
+        assertThat(items).allSatisfy(i -> assertThat(i.getLiveLink()).isNull());   // a channel's lives: liveChannelId only
     }
 
     @Test
@@ -171,6 +172,7 @@ class LiveCategoryServiceTest {
 
         assertThat(ids(items)).containsExactly("Rs7St51oDDc");
         assertThat(items.get(0).getLiveChannelId()).isNull();                // D11: links carry no liveChannelId
+        assertThat(items.get(0).getLiveLink()).isTrue();                     // the apps' cue for GET /live/links/{id}
     }
 
     /** D4: a link and a channel live with the same id keep the first position. */
@@ -309,6 +311,46 @@ class LiveCategoryServiceTest {
 
         assertThat(statusEntries().get(0)).containsEntry("status", "BLOCKED");
         assertThat(service.items(CAT)).isEmpty();
+    }
+
+    /** Owner 2026-11-02: a link R15 ended stays in its category but is hidden from it, and the admin sees ENDED. */
+    @Test
+    void anEndedLinkIsNotServedAndShowsEnded() throws Exception {
+        link("Rs7St51oDDc", "UCROKYPep-UuODNwyipe6JMw");
+        link("pqC-1yfFvu8", "UCROKYPep-UuODNwyipe6JMw");
+        LiveChannelState sunnah = LiveChannelState.unknown("UCROKYPep-UuODNwyipe6JMw");
+        sunnah.getEnded().add("Rs7St51oDDc");
+        states.add(sunnah);
+        live.loadStates(states);
+
+        assertThat(ids(service.items(CAT))).containsExactly("pqC-1yfFvu8");
+        List<Map<String, Object>> entries = statusEntries();
+        assertThat(entries.get(0)).containsEntry("status", "ENDED");
+        assertThat(entries.get(1)).containsEntry("status", "LIVE");
+    }
+
+    /** The public live endpoint's filter (servedLives) drops an ended id too: R11's one filter. */
+    @Test
+    void servedLivesDropAnEndedId() {
+        Channel c = entry(ZAD, LiveChannelState.LIVE, "eaOtcUNHDB8", "Rs7St51oDDc");
+        LiveChannelState s = states.get(0);
+        s.getEnded().add("Rs7St51oDDc");
+
+        assertThat(LiveCategoryService.servedLives(c, s, Map.of())).extracting(LiveChannelState.Live::getVideoId)
+                .containsExactly("eaOtcUNHDB8");
+    }
+
+    /** B4: the admin row uses the public endpoint's rule, so an ended id a channel still lists is never counted SERVED. */
+    @Test
+    void anEndedLiveOnAChannelEntryShowsEndedNotServed() throws Exception {
+        entry(ZAD, LiveChannelState.LIVE, "eaOtcUNHDB8", "Rs7St51oDDc");
+        states.get(0).getEnded().add("Rs7St51oDDc");
+        live.loadStates(states);
+
+        @SuppressWarnings("unchecked")
+        List<Map<String, Object>> lives = (List<Map<String, Object>>) statusEntries().get(0).get("lives");
+        assertThat(lives).extracting(l -> l.get("served")).containsExactly("SERVED", "ENDED");
+        assertThat(ids(service.items(CAT))).containsExactly("eaOtcUNHDB8");
     }
 
     private static boolean publicFilter(Object service, Object doc) {

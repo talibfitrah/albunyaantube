@@ -15,4 +15,14 @@ class ContentItemMapperTest {
         assertNull(ContentItemMapper.fromVideo(video).getUploadedDaysAgo(),
                 "Unknown uploadedAt must be null, not a fabricated 0 (renders as 'Today')");
     }
+
+    /** liveLink marks only LiveCategoryService's exact links; the shared mappers leave it out of the JSON. */
+    @Test
+    void theMappersLeaveLiveLinkNull() {
+        Video video = new Video();
+        video.setYoutubeId("aaaaaaaaaaa");
+
+        assertNull(ContentItemMapper.fromVideo(video).getLiveLink());
+        assertNull(ContentItemMapper.fromLive(new com.albunyaan.tube.model.Channel("UCa"), "aaaaaaaaaaa", "t").getLiveLink());
+    }
 }

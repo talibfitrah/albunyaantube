@@ -220,11 +220,21 @@ struct LiveCatalogClientTests {
         let json = Data(#"{"channelId":"UCOll3M-P7oKs5cSrQ9ytt6g","status":"LIVE","lives":[{"id":"eaOtcUNHDB8","title":"Zad"}]}"#.utf8)
         let (sut, transport) = makeClient(responseBody: json)
 
-        let lives = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g")
+        let lives = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g", live: nil)
 
         #expect(lives == LiveChannelLives(
             lives: [.init(id: "eaOtcUNHDB8", title: "Zad")]))
         #expect(transport.lastRequest?.path == "/v1/live/channels/UCOll3M-P7oKs5cSrQ9ytt6g")
+    }
+
+    /// The live the phone read on the channel's page rides as `?live=`; the backend decides whether it is served.
+    @Test func liveChannelSendsThePagesLive() async throws {
+        let json = Data(#"{"channelId":"UCOll3M-P7oKs5cSrQ9ytt6g","status":"LIVE","lives":[]}"#.utf8)
+        let (sut, transport) = makeClient(responseBody: json)
+
+        _ = try await sut.liveChannel(id: "UCOll3M-P7oKs5cSrQ9ytt6g", live: "D4Vhq0AJAUs")
+
+        #expect(transport.lastRequest?.path == "/v1/live/channels/UCOll3M-P7oKs5cSrQ9ytt6g?live=D4Vhq0AJAUs")
     }
 
     @Test func aLiveCategoryItemKeepsItsChannel() async throws {
@@ -242,13 +252,63 @@ struct LiveCatalogClientTests {
         #expect(PlayerArgs(item: page.items[0]).liveTitle == "Zad")                // I-P1: D12's backend title (open, queue)
     }
 
+    /// An exact live link (a plain VIDEO of a live category) carries `liveLink: true` into the player args; the heartbeat
+    /// asks `/live/links/{id}` for it.
+    @Test func aLiveLinkItemKeepsItsFlag() async throws {
+        let json = Data(#"""
+        {"data":[{"id":"eaOtcUNHDB8","type":"VIDEO","title":"Zad","durationSeconds":0,"liveLink":true},
+                 {"id":"vod00000001","type":"VIDEO","title":"Lecture","durationSeconds":60}],
+         "pageInfo":{"hasNext":false}}
+        """#.utf8)
+        let (sut, _) = makeClient(responseBody: json)
+
+        let page = try await sut.content(type: nil, cursor: nil, limit: 20, filter: FilterState(categoryId: "live"), query: nil)
+
+        #expect(page.items.map(\.liveLink) == [true, false])
+        #expect(PlayerArgs(item: page.items[0]).liveLink)
+        #expect(PlayerArgs(item: page.items[0]).liveChannelId == nil)
+        #expect(!PlayerArgs(item: page.items[1]).liveLink)
+    }
+
+    @Test func aLiveLink204IsStillServed() async throws {
+        let (sut, transport) = makeClient(responseBody: Data())
+        transport.status = .noContent
+
+        try await sut.liveLink(videoId: "eaOtcUNHDB8")
+
+        #expect(transport.lastRequest?.path == "/v1/live/links/eaOtcUNHDB8")
+    }
+
+    @Test func aLiveLink404IsNotFound() async {
+        let (sut, transport) = makeClient(responseBody: Data(#"{"status":404,"error":"Not Found","message":"gone"}"#.utf8))
+        transport.status = .notFound
+
+        await #expect(throws: LiveLinkNotFound.self) { try await sut.liveLink(videoId: "eaOtcUNHDB8") }
+    }
+
+    @Test func aLiveLink503IsNotNotFound() async {
+        let (sut, transport) = makeClient(responseBody: Data())
+        transport.status = .serviceUnavailable
+        transport.extraHeaders = [.retryAfter: "60"]
+
+        let error = await #expect(throws: LiveChannelUnexpectedStatus.self) { try await sut.liveLink(videoId: "eaOtcUNHDB8") }
+        #expect(error?.statusCode == 503)
+    }
+
+    @Test func theFakeAnswersAnUnknownLinkLikeThe404() async throws {
+        let fake = FakeCatalogClient(liveLinks: ["eaOtcUNHDB8"])
+
+        try await fake.liveLink(videoId: "eaOtcUNHDB8")
+        await #expect(throws: LiveLinkNotFound.self) { try await fake.liveLink(videoId: "Rs7St51oDDc") }
+    }
+
     /// The backend's 404 (GlobalExceptionHandler's body): not a servable live channel, stop asking.
     @Test func aLiveChannel404IsNotFound() async {
         let json = Data(#"{"timestamp":"2026-10-17T15:00:00","status":404,"error":"Not Found","message":"LiveChannel not found","path":"/api/v1/live/channels/UCx"}"#.utf8)
         let (sut, transport) = makeClient(responseBody: json)
         transport.status = .notFound
 
-        await #expect(throws: LiveChannelNotFound.self) { try await sut.liveChannel(id: "UCx") }
+        await #expect(throws: LiveChannelNotFound.self) { try await sut.liveChannel(id: "UCx", live: nil) }
     }
 
     /// Anything else is "no answer": retryable, never mistaken for a 404. Stage 9 I13: the documented 503 (the live
@@ -258,18 +318,28 @@ struct LiveCatalogClientTests {
         transport.status = .serviceUnavailable
         transport.extraHeaders = [.retryAfter: "60"]
 
-        let error = await #expect(throws: (any Error).self) { try await sut.liveChannel(id: "UCx") }
+        let error = await #expect(throws: (any Error).self) { try await sut.liveChannel(id: "UCx", live: nil) }
         #expect(error != nil && !(error is LiveChannelNotFound))
         #expect((error as? LiveChannelUnexpectedStatus)?.statusCode == 503)
         #expect((error as? LiveChannelUnexpectedStatus)?.retryAfter == 60)
+    }
+
+    /// The documented 400 (a malformed `live`) is no answer like any other status: retryable, never a 404.
+    @Test func aLiveChannel400IsAnUnexpectedStatus() async {
+        let (sut, transport) = makeClient(responseBody: Data(#"{"error":"BAD_REQUEST","message":"invalid live"}"#.utf8))
+        transport.status = .badRequest
+
+        let error = await #expect(throws: LiveChannelUnexpectedStatus.self) { try await sut.liveChannel(id: "UCx", live: "bad") }
+        #expect(error?.statusCode == 400)
+        #expect(error?.retryAfter == nil)
     }
 
     @Test func theFakeAnswersAnUnknownChannelLikeThe404() async throws {
         let lives = LiveChannelLives(lives: [])
         let fake = FakeCatalogClient(liveChannels: ["UCa": lives])
 
-        #expect(try await fake.liveChannel(id: "UCa") == lives)
-        await #expect(throws: LiveChannelNotFound.self) { try await fake.liveChannel(id: "UCx") }
+        #expect(try await fake.liveChannel(id: "UCa", live: nil) == lives)
+        await #expect(throws: LiveChannelNotFound.self) { try await fake.liveChannel(id: "UCx", live: nil) }
     }
 
     @Test func aNonLiveItemOpensThePlayerWithNoChannel() {

@@ -66,13 +66,31 @@ nonisolated struct LiveCatalogClient: CatalogClient {
     /// 404 is the backend's "not a servable live channel" (stop); any other status, and a transport or decode
     /// failure (`ClientError`), is retryable. Stage 9 I13: the documented 503 (the live states still load, or no poll has
     /// listed the channel yet) carries its Retry-After, live-channel mode's next wait.
-    func liveChannel(id: String) async throws -> LiveChannelLives {
-        switch try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id))) {
+    func liveChannel(id: String, live: String?) async throws -> LiveChannelLives {
+        switch try await client.getLiveChannel(Operations.GetLiveChannel.Input(path: .init(channelId: id), query: .init(live: live))) {
         case .ok(let ok):
             let dto = try ok.body.json
             return LiveChannelLives(lives: dto.lives.map { LiveChannelLives.Live(id: $0.id, title: $0.title) })
         case .notFound:
             throw LiveChannelNotFound()
+        case .badRequest:
+            throw LiveChannelUnexpectedStatus(statusCode: 400)
+        case .serviceUnavailable(let busy):
+            throw LiveChannelUnexpectedStatus(statusCode: 503, retryAfter: busy.headers.retryAfter)
+        case .undocumented(let statusCode, _):
+            throw LiveChannelUnexpectedStatus(statusCode: statusCode)
+        }
+    }
+
+    /// 204: still served. 404: removed (`LiveLinkNotFound`). Anything else, and a transport failure, is no answer.
+    func liveLink(videoId: String) async throws {
+        switch try await client.getLiveLink(Operations.GetLiveLink.Input(path: .init(videoId: videoId))) {
+        case .noContent:
+            return
+        case .notFound:
+            throw LiveLinkNotFound()
+        case .badRequest:
+            throw LiveChannelUnexpectedStatus(statusCode: 400)
         case .serviceUnavailable(let busy):
             throw LiveChannelUnexpectedStatus(statusCode: 503, retryAfter: busy.headers.retryAfter)
         case .undocumented(let statusCode, _):
@@ -117,6 +135,7 @@ nonisolated struct LiveCatalogClient: CatalogClient {
             itemCount: dto.itemCount
         )
         item.liveChannelId = dto.liveChannelId
+        item.liveLink = dto.liveLink == true
         return item
     }
 }

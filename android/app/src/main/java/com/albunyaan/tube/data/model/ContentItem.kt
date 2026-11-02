@@ -14,6 +14,8 @@ sealed class ContentItem {
         val channelName: String? = null,
         /** Spec §4.1: set on a live-category item that stands for this channel's current live. */
         val liveChannelId: String? = null,
+        /** Owner ruling: an exact live link of a live category; the player asks GET /live/links/{id} while it plays. */
+        val liveLink: Boolean = false,
     ) : ContentItem()
 
     data class Channel(

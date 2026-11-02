@@ -207,8 +207,13 @@ class FakeContentService : ContentService {
     val channelLives = mutableMapOf<String, ChannelLives>()
     val channelLivesCalls = mutableListOf<String>()
 
-    override suspend fun fetchChannelLives(channelId: String): ChannelLives {
+    override suspend fun fetchChannelLives(channelId: String, live: String?): ChannelLives {
         channelLivesCalls += channelId
         return channelLives[channelId] ?: throw java.io.IOException("no lives scripted for $channelId")
     }
+
+    /** Exact live links: every link is still served (204). */
+    val liveLinkCalls = mutableListOf<String>()
+
+    override suspend fun checkLiveLink(videoId: String) { liveLinkCalls += videoId }
 }

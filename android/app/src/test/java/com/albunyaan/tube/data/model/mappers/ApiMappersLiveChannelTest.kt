@@ -3,7 +3,9 @@ package com.albunyaan.tube.data.model.mappers
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Test
 
 /** Spec §4.1: an expanded live-category item carries its channel into the domain model. */
@@ -22,5 +24,18 @@ class ApiMappersLiveChannelTest {
         val video = ContentItemDto(id = "Rs7St51oDDc", type = ContentItemDto.Type.VIDEO).toDomain() as ContentItem.Video
 
         assertNull(video.liveChannelId)
+    }
+
+    /** Owner ruling: an exact live link's `liveLink: true` survives the wire (Moshi, as NetworkModule builds it) and the mapper. */
+    @Test fun `an exact live link keeps its flag from JSON to the domain`() {
+        val adapter = com.squareup.moshi.Moshi.Builder()
+            .addLast(com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory()).build()
+            .adapter(ContentItemDto::class.java)
+
+        val link = adapter.fromJson("""{"id":"Rs7St51oDDc","type":"VIDEO","liveLink":true}""")!!.toDomain() as ContentItem.Video
+        val plain = adapter.fromJson("""{"id":"Rs7St51oDDc","type":"VIDEO"}""")!!.toDomain() as ContentItem.Video
+
+        assertTrue(link.liveLink)
+        assertFalse(plain.liveLink)
     }
 }

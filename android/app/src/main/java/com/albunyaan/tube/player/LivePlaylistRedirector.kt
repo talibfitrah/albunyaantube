@@ -98,7 +98,7 @@ class LivePlaylistRedirector internal constructor(
     }
 
     companion object {
-        private const val TAG = "LiveSwap"
+        private const val TAG = "LivePlaylistRedirector"
         private const val PLAYLIST_PATH = "/api/manifest/hls_playlist/"
         private val ITAG = Regex("/itag/(\\d+)/")
         private val IP = Regex("/ip/([^/]+)/")

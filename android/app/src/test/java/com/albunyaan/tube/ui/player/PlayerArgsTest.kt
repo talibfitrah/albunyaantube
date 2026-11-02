@@ -42,4 +42,15 @@ class PlayerArgsTest {
         assertEquals("UCOll3M-P7oKs5cSrQ9ytt6g", args.getString("liveChannelId"))
         assertEquals("UCOll3M-P7oKs5cSrQ9ytt6g", args.getString("channelId"))
     }
+
+    /** Owner ruling: an exact live link opens the player with its flag, so the player asks /live/links while it plays. */
+    @Test fun `an exact live link carries its flag into the player`() {
+        val video = ContentItem.Video(
+            id = "Rs7St51oDDc", title = "Live", category = "Live", durationSeconds = 0,
+            uploadedDaysAgo = null, description = "", liveLink = true,
+        )
+
+        assertEquals(true, PlayerFragment.argsFor(video).getBoolean("liveLink"))
+        assertEquals(false, PlayerFragment.argsFor(video.copy(liveLink = false)).getBoolean("liveLink"))
+    }
 }

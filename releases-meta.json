@@ -1,4 +1,9 @@
 {
+  "1.0.5": {
+    "en": "Live channels: many more channels stay listed, and a stream an admin removes stops within about a minute, also on TV.",
+    "ar": "القنوات المباشرة: قنوات أكثر بكثير تبقى معروضة، والبث الذي يزيله المشرف يتوقف خلال دقيقة تقريبًا، حتى على التلفاز.",
+    "nl": "Livekanalen: veel meer kanalen blijven zichtbaar, en een verwijderde stream stopt binnen ongeveer een minuut, ook op tv."
+  },
   "1.0.4": {
     "en": "Live channels keep playing, video titles stay in their original language, and playlists always show a picture.",
     "ar": "القنوات المباشرة تستمر في البث، وعناوين المقاطع تبقى بلغتها الأصلية، وقوائم التشغيل تعرض صورة دائمًا.",

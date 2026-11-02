@@ -48,6 +48,13 @@ internal fun playerViewModel(
     ioDispatcher: kotlinx.coroutines.CoroutineDispatcher = kotlinx.coroutines.Dispatchers.IO,
     networkMonitor: com.albunyaan.tube.util.NetworkMonitor =
         com.albunyaan.tube.util.NetworkMonitor(androidx.test.core.app.ApplicationProvider.getApplicationContext()),
+    // No /live page by default: every recovery falls back to [contentService], as before the on-device resolver.
+    liveChannelResolver: com.albunyaan.tube.data.extractor.LiveChannelResolver =
+        com.albunyaan.tube.data.extractor.LiveChannelResolver(object : org.schabi.newpipe.extractor.downloader.Downloader() {
+            override fun execute(request: org.schabi.newpipe.extractor.downloader.Request) = throw java.io.IOException("no page")
+        }, ioDispatcher),
+    // No cast session: a closed player never hands its heartbeat to the cast watch.
+    castWatch: CastRemovalWatch = CastRemovalWatch(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)) { null },
 ) = PlayerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
@@ -71,6 +78,8 @@ internal fun playerViewModel(
     livePlaylistRedirector = livePlaylistRedirector,
     ioDispatcher = ioDispatcher,
     networkMonitor = networkMonitor,
+    liveChannelResolver = liveChannelResolver,
+    castWatch = castWatch,
 )
 
 internal class FakePlayerRepository : PlayerRepository {
@@ -80,6 +89,9 @@ internal class FakePlayerRepository : PlayerRepository {
     var alwaysFail = false
     var resolvedStreamsAfterFailure: ResolvedStreams? = null
     private var failCount = 0
+
+    /** These ids resolve to nothing (an ended 24/7 id, F3), whatever else is set. */
+    val failIds: MutableSet<String> = mutableSetOf()
 
     /** Mirrors the chokepoint inside GlobalStreamResolver: these ids throw [ContentUnavailableException]. */
     val archivedIds: MutableSet<String> = mutableSetOf()
@@ -108,7 +120,7 @@ internal class FakePlayerRepository : PlayerRepository {
         if (hang) awaitCancellation()
         if (resolveDelayMs > 0) kotlinx.coroutines.delay(resolveDelayMs)
         if (videoId in archivedIds) throw ContentUnavailableException(videoId)
-        if (alwaysFail) return null
+        if (alwaysFail || videoId in failIds) return null
         if (failNextResolve) {
             failCount++
             if (failCount > 3) { // all 3 attempts of one resolve failed; the next call succeeds

@@ -170,7 +170,10 @@ class FakeContentApi : ContentApi {
     override suspend fun checkVideoAvailable(id: String): retrofit2.Response<Unit> =
         retrofit2.Response.success(Unit)
 
-    override suspend fun fetchLiveChannel(id: String): ChannelLives = ChannelLives(emptyList())
+    override suspend fun fetchLiveChannel(id: String, live: String?): ChannelLives = ChannelLives(emptyList())
+
+    /** Every exact live link is still served (204). */
+    override suspend fun getLiveLink(videoId: String): retrofit2.Response<Unit> = retrofit2.Response.success(Unit)
 
     /** The server knows no ids: rows keep their list titles. */
     override suspend fun fetchTitles(ids: String): retrofit2.Response<Map<String, String>> =
