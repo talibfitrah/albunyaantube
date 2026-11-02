@@ -253,6 +253,8 @@ const nestedPlaylistRegistryId = ref('')
 const { containerRef, isLoading, hasMore, reset, pageLoaded, resume } = useInfiniteScroll({
   threshold: 200,
   throttleMs: 500,
+  // Search, Shorts and Live pages cost 101 quota units (search.list): no unattended empty-page scans.
+  maxEmptyPages: 1,
   // Init loads page 1 itself; a scroll during it would steal that load and flash "No results".
   // After an init error, loading would clear it and show rows without their exclusion state.
   onLoadMore: () => { if (!initialLoading.value && !error.value) loadMore() }

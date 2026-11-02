@@ -544,7 +544,8 @@ describe('ChannelDetailModal', () => {
     expect(fetchChannelExclusions).not.toHaveBeenCalled();
   });
 
-  it('pauses auto-loading after 5 empty pages and continues on Load more', async () => {
+  // Channel lists use search.list (101 quota units a page): no unattended empty-page scanning.
+  it('pauses at the first empty page and loads one page per Load more', async () => {
     vi.useFakeTimers();
     onTestFinished(() => vi.useRealTimers());
     const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
@@ -553,11 +554,11 @@ describe('ChannelDetailModal', () => {
     renderModal();
 
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(getChannelVideos).toHaveBeenCalledTimes(5);
+    expect(getChannelVideos).toHaveBeenCalledTimes(1);
     expect(screen.queryByText(/No more items|No results found/i)).toBeNull();
 
     await fireEvent.click(screen.getByText('Load more'));
     await vi.advanceTimersByTimeAsync(10_000);
-    expect(getChannelVideos).toHaveBeenCalledTimes(10); // 5 more, paused again
+    expect(getChannelVideos).toHaveBeenCalledTimes(2);
   });
 });

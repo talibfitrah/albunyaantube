@@ -16,6 +16,7 @@ describe('useInfiniteScroll', () => {
   const createTestComponent = (options: {
     threshold?: number;
     throttleMs?: number;
+    maxEmptyPages?: number;
     onLoadMore: () => void;
   }) => {
     return defineComponent({
@@ -300,6 +301,12 @@ describe('useInfiniteScroll', () => {
     wrapper.vm.resume();
     expect(wrapper.vm.hasMore).toBe(true);
     wrapper.vm.pageLoaded(0, false);
+    expect(wrapper.vm.hasMore).toBe(false);
+  });
+
+  it('honours a custom empty-page cap', async () => {
+    const wrapper = mount(createTestComponent({ onLoadMore: vi.fn(), maxEmptyPages: 1 }));
+    wrapper.vm.pageLoaded(0, true);
     expect(wrapper.vm.hasMore).toBe(false);
   });
 

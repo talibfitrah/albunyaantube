@@ -3,6 +3,7 @@ import { ref, Ref, watch, onBeforeUnmount } from 'vue'
 export interface InfiniteScrollOptions {
   threshold?: number        // Distance from bottom to trigger load (default: 200px)
   throttleMs?: number       // Throttle delay in milliseconds (default: 500ms)
+  maxEmptyPages?: number    // Empty pages in a row before auto-loading pauses (default: 5)
   onLoadMore: () => void    // Must set isLoading = true before its first await; the composable never does
 }
 
@@ -16,7 +17,7 @@ export interface InfiniteScrollReturn {
 }
 
 // Pages can come back empty (e.g. a search filtered client-side) while more exist; auto-fill
-// would fetch them back to back forever, so it pauses after this many in a row.
+// would fetch them back to back forever, so by default it pauses after this many in a row.
 const MAX_EMPTY_PAGES = 5
 
 /**
@@ -40,6 +41,7 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
   const {
     threshold = 200,
     throttleMs = 500,
+    maxEmptyPages = MAX_EMPTY_PAGES,
     onLoadMore
   } = options
 
@@ -90,7 +92,7 @@ export function useInfiniteScroll(options: InfiniteScrollOptions): InfiniteScrol
   // Callers report each page; hasMore turns false at the end or when paused (resume() continues).
   const pageLoaded = (itemCount: number, hasNextPage: boolean) => {
     emptyPages = itemCount ? 0 : emptyPages + 1
-    hasMore.value = hasNextPage && emptyPages < MAX_EMPTY_PAGES
+    hasMore.value = hasNextPage && emptyPages < maxEmptyPages
   }
 
   const resume = () => {
