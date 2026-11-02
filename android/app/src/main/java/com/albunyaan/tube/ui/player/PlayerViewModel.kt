@@ -78,6 +78,8 @@ class PlayerViewModel @Inject constructor(
     private val livePlaylistRedirector: com.albunyaan.tube.player.LivePlaylistRedirector,
     @javax.inject.Named("io") private val ioDispatcher: CoroutineDispatcher,
     private val networkMonitor: com.albunyaan.tube.util.NetworkMonitor,
+    private val liveChannelResolver: com.albunyaan.tube.data.extractor.LiveChannelResolver,
+    private val castWatch: CastRemovalWatch,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -233,6 +235,8 @@ class PlayerViewModel @Inject constructor(
 
     // PR5: Pending refresh job for cancellation when video changes or new refresh requested
     private var pendingRefreshJob: Job? = null
+    /** What the running [liveHeartbeatJob] checks: (id, live channel, exact link). */
+    private var liveHeartbeatKey: Triple<String, String?, Boolean>? = null
 
     // Sticky audio language: preserves user's audio language choice across force-refreshes,
     // retries, and playlist advances. Set by selectAudioTrack, read by toSelectionWithPreferredAudio.
@@ -260,6 +264,7 @@ class PlayerViewModel @Inject constructor(
     // Spec §9.1: live-channel mode (the item carries liveChannelId). Main thread only, like currentItem.
     private var liveIncident: LiveChannelRecovery? = null
     private var liveRetryJob: Job? = null
+    private var liveHeartbeatJob: Job? = null
     /** §9.1 step 4 retries only while the screen is open (Cubic r4): false from [onPlayerViewDestroyed] to the next load. */
     private var liveScreenOpen = true
 
@@ -823,6 +828,7 @@ class PlayerViewModel @Inject constructor(
         viewCount: Long? = null,
         sourceChannelId: String? = null,
         liveChannelId: String? = null,
+        liveLink: Boolean = false,
     ) {
         // 1.0.4 R3, local-first: Home, Search, Favorites, History, Me, channel tabs and deep links all
         // open one video here, so a saved copy plays from its file as it does from Downloads. The
@@ -835,7 +841,7 @@ class PlayerViewModel @Inject constructor(
             val opening = UpNextItem(
                 id = videoId, title = title, channelName = channelName, thumbnailUrl = thumbnailUrl,
                 durationSeconds = durationSeconds, viewCount = viewCount, streamId = videoId,
-                sourceChannelId = sourceChannelId, liveChannelId = liveChannelId,
+                sourceChannelId = sourceChannelId, liveChannelId = liveChannelId, liveLink = liveLink,
             )
             currentItem = opening
             updateState { it.copy(streamState = StreamState.Loading, currentItem = opening) }
@@ -844,7 +850,7 @@ class PlayerViewModel @Inject constructor(
                 withTimeoutOrNull(STARTUP_LOAD_WAIT_MS) { startupLoad.join() }
                 waitedForStartupLoad = true
                 startupWait = null
-                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId)
+                loadVideo(videoId, title, channelName, thumbnailUrl, description, durationSeconds, viewCount, sourceChannelId, liveChannelId, liveLink)
             }
             return
         }
@@ -885,6 +891,7 @@ class PlayerViewModel @Inject constructor(
             viewCount = viewCount,
             sourceChannelId = sourceChannelId,
             liveChannelId = liveChannelId,
+            liveLink = liveLink,
             liveTitle = title.takeIf { liveChannelId != null },   // the entry point's title is the backend's live title
         )
 
@@ -906,6 +913,8 @@ class PlayerViewModel @Inject constructor(
         // transitions away from any previous video's Ready / Error state
         // immediately on the main thread.
         resolveStreamFor(item)
+        // An exact live link can reach Ready through a prefetch, which returns before the live-channel start: start here.
+        if (liveLink) startLiveHeartbeat(item)
     }
 
     /**
@@ -1716,6 +1725,7 @@ class PlayerViewModel @Inject constructor(
                 }
                 liveIncident = null                                   // live again: the incident is over
                 updateState { it.copy(liveStarted = true) }
+                startLiveHeartbeat(item)
             }
             val selection = resolved.toSelectionWithPreferredAudio(stickyAudioLanguage)
             if (selection == null) {
@@ -1870,11 +1880,18 @@ class PlayerViewModel @Inject constructor(
     fun onPlayerViewDestroyed() {
         liveScreenOpen = false
         liveRetryJob?.cancel()
+        // The player is released: nothing plays here to stop. A live this app casts plays on, so the cast watch (app
+        // lifetime: a popped player clears this ViewModel too) takes the heartbeat over until the cast ends (Cubic K4).
+        if (liveHeartbeatJob?.isActive == true) currentItem?.let { item ->
+            val content = contentService                     // the watch outlives this ViewModel: never capture it
+            castWatch.watch(item.streamId, LIVE_HEARTBEAT_MS) { content.liveRemoved(item) }
+        }
+        liveHeartbeatJob?.cancel()
         startupWait?.cancel()   // Cubic r5 #9: its late loadVideo would reopen the latch with no view
     }
 
     /**
-     * §9.1: ask the backend for the channel's current lives, then switch, wait, recover the same id, or give up.
+     * §9.1: find the channel's current lives (its /live page, else the backend), then switch, wait, recover the same id, or give up.
      * Main thread only (it and [switchLive] touch [currentItem], the queue state and the resolve job).
      */
     private fun onLiveChannelTrigger(trigger: LiveChannelRecovery.Trigger) {
@@ -1888,19 +1905,43 @@ class PlayerViewModel @Inject constructor(
         liveRetryJob?.cancel()
         liveRetryJob = viewModelScope.launch(dispatcher) {
             var notLiveChannel = false
-            val lives = try {
-                contentService.fetchChannelLives(channelId).lives
+            // The channel's /live page on the phone first. Not live: the page decides. Live: the backend passes it through
+            // curation (?live=). No answer: the backend alone, as before.
+            val page = liveChannelResolver.lives(channelId)
+            val pageLive = page?.singleOrNull()?.id
+            if (page?.isEmpty() == true) {
+                // Fire-and-forget: the plain call makes the backend refresh its snapshot of the channel, so an ended live
+                // leaves the LIVE category. Its own job, never awaited; its answer and every error are ignored, except a
+                // 404 (Cubic K3): the channel is not a live entry, so this incident, if still running, gives up at once.
+                viewModelScope.launch(dispatcher) {
+                    val notLive = try { contentService.fetchChannelLives(channelId, null); false }
+                    catch (e: kotlinx.coroutines.CancellationException) { throw e }
+                    catch (e: Exception) { (e as? retrofit2.HttpException)?.code() == 404 }
+                    if (notLive && liveIncident === incident && currentItem?.streamId == incident.currentId) {
+                        liveRetryJob?.cancel()
+                        pendingRefreshJob?.cancel()
+                        resolveJob?.cancel()   // a same-id re-resolve in flight must not play the removed channel
+                        giveUpLive()
+                    }
+                }
+            }
+            val lives = if (page?.isEmpty() == true) page else try {
+                val answer = contentService.fetchChannelLives(channelId, pageLive).lives
+                // The page's live, if curation passed it; nothing else in the answer (a stale ended id never blocks it).
+                if (pageLive == null) answer else answer.filter { it.id == pageLive }
             } catch (e: kotlinx.coroutines.CancellationException) {
                 throw e
             } catch (e: Exception) {
-                // A 404 is the backend saying this is not a servable live channel: stop. Anything else is no answer.
+                // A 404 is the backend saying this is not a servable live channel: stop. Anything else (a 503 at boot,
+                // 5xx, timeout, unreachable): no answer, so the recovery waits and asks again. Fail closed: curation
+                // (exclusions, blocks, ENDED) is the backend's, so the page's live is never played unchecked.
                 notLiveChannel = (e as? retrofit2.HttpException)?.code() == 404
                 null
             }
             // The incident ended (a live resolve, a give-up, a new load) or the user moved on.
             if (liveIncident !== incident || currentItem?.streamId != incident.currentId) return@launch
             val step = if (notLiveChannel) LiveChannelRecovery.Step.GiveUp
-            else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime())
+            else incident.next(trigger, lives, android.os.SystemClock.elapsedRealtime(), partial = pageLive != null)
             when (step) {
                 is LiveChannelRecovery.Step.SwitchTo -> switchLive(step.id, step.title)
                 LiveChannelRecovery.Step.SameId -> recoverLiveSameId()
@@ -1911,9 +1952,54 @@ class PlayerViewModel @Inject constructor(
                     // The same trigger again: in a failure incident, each wake re-resolves a listed id once (Rev 8).
                     onLiveChannelTrigger(trigger)
                 }
-                LiveChannelRecovery.Step.GiveUp -> {
+                LiveChannelRecovery.Step.GiveUp -> giveUpLive()
+            }
+        }
+    }
+
+    private fun giveUpLive() {
+        liveIncident = null
+        updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+    }
+
+    /**
+     * Owner requirement: an admin removal (the channel leaves its live category, the live is excluded, blocked or taken
+     * down) stops a live already playing within [LIVE_HEARTBEAT_MS]. The backend answers from its moderated view: a 404,
+     * or an answer without the id, is a removal (ContentUnavailable, never recovery). No answer (offline, 5xx, the 503 at
+     * boot) keeps playing. One sequential job per live Ready, so ticks never overlap; it ends with the item, the screen
+     * ([onPlayerViewDestroyed]) or the ViewModel. An incident asks the backend itself, so it skips the tick.
+     * Owner ruling: an exact live link ([UpNextItem.liveLink], started at load) asks GET /live/links/{id} instead; only a
+     * 404 is a removal.
+     */
+    private fun startLiveHeartbeat(item: UpNextItem) {
+        val channelId = item.liveChannelId
+        if (channelId == null && !item.liveLink) return
+        // Cubic r8: a re-resolve of the same live keeps the running tick; restarting it on each one, under 60 s apart on a
+        // flaky network, would never let the removal check run.
+        val key = Triple(item.streamId, channelId, item.liveLink)
+        if (liveHeartbeatJob?.isActive == true && liveHeartbeatKey == key) return
+        liveHeartbeatKey = key
+        castWatch.release(item.streamId)   // watched here again: one ask per tick
+        liveHeartbeatJob?.cancel()
+        liveHeartbeatJob = viewModelScope.launch(dispatcher) {
+            fun current() = currentItem?.streamId == item.streamId && currentItem?.liveChannelId == channelId &&
+                currentItem?.liveLink == item.liveLink
+            // Codex r4, r5: the TV playing this app's load needs the check too, whatever the phone's own resolve or
+            // recovery is doing.
+            fun playing() = current() &&
+                ((liveIncident == null && _state.value.streamState is StreamState.Ready) || castWatch.casting(item.streamId))
+            while (current()) {
+                delay(LIVE_HEARTBEAT_MS)
+                if (!playing()) continue
+                if (contentService.liveRemoved(item) && playing()) {
+                    android.util.Log.i("PlayerViewModel", "Live ${item.streamId} removed per backend; emitting ContentUnavailable")
+                    resolveJob?.cancel()
+                    liveRefreshJob?.cancel()
+                    pendingRefreshJob?.cancel()      // Cubic r8: a queued delayed refresh would play the removed live again
+                    liveRetryJob?.cancel()           // Codex r5: so would a recovery in progress
                     liveIncident = null
-                    updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+                    updateState { it.copy(streamState = StreamState.ContentUnavailable) }
+                    return@launch
                 }
             }
         }
@@ -2068,6 +2154,8 @@ class PlayerViewModel @Inject constructor(
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
         /** A failed live refresh retries this often inside the lead window (Task 26 hand-off). */
         private const val LIVE_REFRESH_RETRY_MS = 2 * 60 * 1000L
+        /** Live-channel removal heartbeat: an admin removal stops a playing live within this. */
+        private const val LIVE_HEARTBEAT_MS = 60_000L
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
@@ -2392,6 +2480,8 @@ data class UpNextItem(
     val viewCount: Long? = null,
     val sourceChannelId: String? = null,
     val liveChannelId: String? = null,
+    /** Owner ruling: an exact live link of a live category, checked by the removal heartbeat while it plays. */
+    val liveLink: Boolean = false,
     /** Live-channel mode: the backend's title for this live, which D12 recovery matches. Display metadata never writes it. */
     val liveTitle: String? = null,
 )
@@ -2534,4 +2624,22 @@ sealed class PlayerUiEvent {
 
     /** Emitted when a web-sourced dub audio resolve failed; fragment toasts and stays on current audio. */
     object DubAudioResolveFailed : PlayerUiEvent()
+}
+
+/**
+ * The heartbeat's question: is [item] removed per the backend's moderated view? A 404, or a channel answer without the
+ * id, is a removal; no answer (offline, 5xx, the 503 at boot) is not. An exact live link asks GET /live/links/{id}.
+ */
+private suspend fun com.albunyaan.tube.data.source.ContentService.liveRemoved(item: UpNextItem): Boolean = try {
+    val channelId = item.liveChannelId
+    if (channelId != null) {
+        fetchChannelLives(channelId, item.streamId).lives.none { it.id == item.streamId }
+    } else {
+        checkLiveLink(item.streamId)
+        false
+    }
+} catch (e: kotlinx.coroutines.CancellationException) {
+    throw e
+} catch (e: Exception) {
+    (e as? retrofit2.HttpException)?.code() == 404
 }

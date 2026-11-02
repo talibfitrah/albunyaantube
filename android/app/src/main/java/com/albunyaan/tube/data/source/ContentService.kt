@@ -89,9 +89,14 @@ interface ContentService {
     suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean
 
     /**
-     * Spec §9.2(b): the backend's current lives for a live-category channel. A default body so the test fakes that
+     * Spec §9.2(b): the backend's current lives for a live-category channel, plus [live] (the channel page's live) when it
+     * passes curation. A default body so the test fakes that
      * never play a live-channel item need no change; RetrofitContentService is the only production implementation.
      */
-    suspend fun fetchChannelLives(channelId: String): com.albunyaan.tube.data.source.api.ChannelLives =
+    suspend fun fetchChannelLives(channelId: String, live: String? = null): com.albunyaan.tube.data.source.api.ChannelLives =
         throw UnsupportedOperationException("fetchChannelLives is RetrofitContentService's")
+
+    /** Owner ruling: returns while the exact live link [videoId] is still served (204); any other status throws its HttpException. */
+    suspend fun checkLiveLink(videoId: String): Unit =
+        throw UnsupportedOperationException("checkLiveLink is RetrofitContentService's")
 }

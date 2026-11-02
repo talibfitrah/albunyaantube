@@ -47,7 +47,8 @@ fun ApiContentItemDto.toDomain(): DomainContentItem {
             thumbnailUrl = this.thumbnailUrl,
             viewCount = this.viewCount,
             channelName = this.channelTitle,
-            liveChannelId = this.liveChannelId
+            liveChannelId = this.liveChannelId,
+            liveLink = this.liveLink == true
         )
         ApiContentItemDto.Type.CHANNEL -> DomainContentItem.Channel(
             id = this.id,

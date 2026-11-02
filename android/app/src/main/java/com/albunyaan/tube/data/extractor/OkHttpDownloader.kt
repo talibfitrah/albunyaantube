@@ -5,6 +5,7 @@ import com.albunyaan.tube.BuildConfig
 import java.io.File
 import java.io.IOException
 import java.util.Locale
+import java.util.concurrent.TimeUnit
 import okhttp3.MediaType.Companion.toMediaTypeOrNull
 import okhttp3.OkHttpClient
 import okhttp3.RequestBody.Companion.toRequestBody
@@ -74,9 +75,15 @@ class OkHttpDownloader(
             )
         }
 
+        val bound = request as? BoundedGet
         val call = client.newCall(builder.build())
+        bound?.let { call.timeout().timeout(it.callTimeoutMs, TimeUnit.MILLISECONDS) }
         val response = call.execute()
         response.use {
+            // request(n) buffers up to n bytes and is false at the end of the body: true = more than maxBytes.
+            if (bound != null && it.body?.source()?.request(bound.maxBytes + 1) == true) {
+                throw IOException("Body over ${bound.maxBytes} bytes: ${request.url()}")
+            }
             val responseBody = it.body?.string() ?: ""
             captureInfo?.let { info ->
                 writeDebugCapture(
@@ -152,3 +159,10 @@ class OkHttpDownloader(
         private const val CONTENT_TYPE = "Content-Type"
     }
 }
+
+/**
+ * A GET whose whole call (connect, headers, body) ends at [callTimeoutMs] and whose body past [maxBytes] is an
+ * IOException. NewPipe's Downloader has no per-call cancel; this passes through [RateLimitedDownloader] unchanged.
+ */
+class BoundedGet(url: String, headers: Map<String, List<String>>, val callTimeoutMs: Long, val maxBytes: Long) :
+    Request("GET", url, headers, null, null, false)

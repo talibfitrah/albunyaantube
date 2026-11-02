@@ -362,12 +362,16 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
 
     // Overlay controls are now always visible for better UX
     // Users need constant access to quality, cast, and minimize buttons
+    /** Holds the video this app last loaded to the receiver ([CastRemovalWatch.loaded]): it outlives this fragment. */
+    @Inject lateinit var castWatch: CastRemovalWatch
+
     private val castSessionListener = object : com.google.android.gms.cast.framework.SessionManagerListener<com.google.android.gms.cast.framework.CastSession> {
         override fun onSessionStarted(session: com.google.android.gms.cast.framework.CastSession, sessionId: String) {
             loadMediaToCast()
         }
 
         override fun onSessionEnded(session: com.google.android.gms.cast.framework.CastSession, error: Int) {
+            castWatch.loaded = null
             // Resume local playback
             player?.playWhenReady = true
         }
@@ -417,6 +421,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
         val viewCount = arguments?.getLong("viewCount", -1L)?.takeIf { it >= 0 }
         val sourceChannelId = arguments?.getString("channelId")?.takeIf { it.isNotBlank() }
         val liveChannelId = arguments?.getString("liveChannelId")?.takeIf { it.isNotBlank() }
+        val liveLink = arguments?.getBoolean("liveLink", false) ?: false
 
         val downloadId = arguments?.getString(ARG_DOWNLOAD_ID)
 
@@ -441,6 +446,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                     viewCount = viewCount,
                     sourceChannelId = sourceChannelId,
                     liveChannelId = liveChannelId,
+                    liveLink = liveLink,
                 )
             }
         }
@@ -2771,8 +2777,12 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
     private fun maybePrepareStream(state: PlayerState) {
         val streamState = state.streamState
         if (streamState !is StreamState.Ready) {
-            if (streamState is StreamState.Error) {
+            // ContentUnavailable can land mid-playback (a live removed by the admin): stop it as an error does.
+            if (streamState is StreamState.Error || streamState == StreamState.ContentUnavailable) {
                 player?.stop()
+                // Owner ruling: an admin removal stops the cast receiver too, only while it plays this app's load of
+                // that video (Cubic R4-2: a blocked video opened on the phone never stops another one on the TV).
+                if (streamState == StreamState.ContentUnavailable) state.currentItem?.streamId?.let(castWatch::stop)
                 cancelTtlWatcher()
                 preparedStreamKey = null
                 preparedStreamUrl = null
@@ -3958,7 +3968,9 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
                 .setCurrentTime(player?.currentPosition ?: 0)
                 .build()
 
+            castWatch.loaded = null                      // a load that throws leaves no claim on whatever the receiver plays
             remoteMediaClient.load(request)
+            castWatch.loaded = currentItem.streamId to videoUrl
 
             // Pause local playback
             player?.playWhenReady = false
@@ -4270,6 +4282,7 @@ class PlayerFragment : Fragment(R.layout.fragment_player) {
             "viewCount" to (video.viewCount ?: -1L),
             "channelId" to video.liveChannelId,
             "liveChannelId" to video.liveChannelId,
+            "liveLink" to video.liveLink,
         )
 
         private const val DEFAULT_AUDIO_MIME = "audio/mp4"

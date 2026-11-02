@@ -68,7 +68,8 @@ class LiveChannelRecoveryTest {
         assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, null, at(1)))
         assertEquals("Rev 8 is for a listed id: no answer at a wake is no second blind try",
             Step.Wait(30), r.next(Trigger.FAILURE, null, at(16)))
-        assertEquals(Step.Wait(15), recovery().next(Trigger.FAILURE, emptyList(), at(0)))   // an answer of none is no blind try
+        // Cubic R4-1: an answer of none gets the first decision's try too (the page can say not-live while the id runs).
+        assertEquals(Step.SameId, recovery().next(Trigger.FAILURE, emptyList(), at(0)))
     }
 
     /**
@@ -104,7 +105,8 @@ class LiveChannelRecoveryTest {
     /** Spec Rev 8: the 10-minute limit to the error state is unchanged; the wake at the limit gives up. */
     @Test fun `the wake at ten minutes gives up rather than re-resolve`() {
         val r = recovery()
-        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, emptyList(), at(0)))
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, emptyList(), at(0)))
+        assertEquals(Step.Wait(15), r.next(Trigger.FAILURE, emptyList(), at(1)))
         assertEquals(Step.GiveUp, r.next(Trigger.FAILURE, listOf(LiveItem("old0000000a", "x")), at(600)))
     }
 
@@ -116,7 +118,50 @@ class LiveChannelRecoveryTest {
         assertEquals(Step.Wait(15), recovery().next(Trigger.ENDED, listOf(LiveItem("new0000000", "x")), at(0)))  // 10 chars
     }
 
+    /**
+     * Cubic R4-1: the page shows one live, so a multi-live channel's other running live (this one) is missing from the
+     * answer. A failure's first decision re-resolves the current id whatever the list says; later ones apply the rules.
+     */
+    @Test fun `a failure's first decision is always the same id`() {
+        val other = listOf(LiveItem("zzz0000000a", "Other show"))
+        val r = recovery()
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, other, at(0)))
+        assertEquals("the second decision switches to the page's live", Step.SwitchTo("zzz0000000a", "Other show"),
+            r.next(Trigger.FAILURE, other, at(5)))
+        assertEquals("a wrong not-live page never blocks the first try", Step.SameId,
+            recovery().next(Trigger.FAILURE, emptyList(), at(0)))
+        assertEquals("an end is unchanged", Step.SwitchTo("zzz0000000a", "Other show"),
+            recovery().next(Trigger.ENDED, other, at(0)))
+        val rotation = recovery()
+        assertEquals(Step.SameId, rotation.next(Trigger.FAILURE, other, at(0)))
+        assertEquals("the same-id try found it ended: a single-live rotation still reaches the new live",
+            Step.SwitchTo("zzz0000000a", "Other show"), rotation.next(Trigger.ENDED, other, at(5)))
+    }
+
     /** Stage 3 M4: the backend sends "" for an unknown title; a blank title identifies no show, so D12 still waits. */
+    /**
+     * Cubic r9: the phone's page shows one live, not the channel's list, so it never proves the current id ended. Makkah
+     * failing twice while the page shows Madinah keeps re-resolving Makkah once per wake; Madinah only after the D12
+     * title wait, or at once when Makkah is known ended or the page's live carries its title (a 24/7 rotation).
+     */
+    @Test fun `a page live of another show keeps the failing current id until the title wait`() {
+        val madinah = listOf(LiveItem("madinah0001", "Madinah"))
+        val r = recovery()
+        assertEquals(Step.SameId, r.next(Trigger.FAILURE, madinah, at(0), partial = true))
+        assertEquals("its failure waits", Step.Wait(15), r.next(Trigger.FAILURE, madinah, at(5), partial = true))
+        assertEquals("the wake tries the current id again", Step.SameId, r.next(Trigger.FAILURE, madinah, at(20), partial = true))
+        assertEquals(Step.SwitchTo("madinah0001", "Madinah"), r.next(Trigger.FAILURE, madinah, at(120), partial = true))
+
+        assertEquals("known ended", Step.SwitchTo("madinah0001", "Madinah"),
+            recovery().next(Trigger.ENDED, madinah, at(0), partial = true))
+        val rotation = recovery()
+        rotation.next(Trigger.FAILURE, null, at(0))
+        assertEquals("a rotation under the same title", Step.SwitchTo("new0000000a", "Laith & Layla"),
+            rotation.next(Trigger.FAILURE, listOf(LiveItem("new0000000a", "Laith & Layla")), at(5), partial = true))
+        assertEquals("the backend's full list still switches at once", Step.SwitchTo("madinah0001", "Madinah"),
+            recovery().apply { next(Trigger.FAILURE, null, at(0)) }.next(Trigger.FAILURE, madinah, at(5)))
+    }
+
     @Test fun `a blank title matches no sibling`() {
         val siblings = listOf(LiveItem("kazwa000001", ""), LiveItem("zaky0000001", "A Day With Zaky"))
         assertEquals(Step.Wait(15), LiveChannelRecovery("old0000000a", "", t0).next(Trigger.ENDED, siblings, at(0)))

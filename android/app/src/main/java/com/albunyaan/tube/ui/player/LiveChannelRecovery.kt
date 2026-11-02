@@ -3,7 +3,7 @@ package com.albunyaan.tube.ui.player
 import com.albunyaan.tube.data.source.api.LiveItem
 
 /**
- * Spec §9.1 and D12: what to do after a live-channel trigger, given the backend's current lives (null = no answer).
+ * Spec §9.1 and D12: what to do after a live-channel trigger, given the channel's current lives (null = no answer).
  * Pure; PlayerViewModel does the I/O and the waiting. One instance per incident; [next] counts the waits.
  */
 class LiveChannelRecovery(val currentId: String, private val currentTitle: String?, private val startedAtMs: Long) {
@@ -26,26 +26,39 @@ class LiveChannelRecovery(val currentId: String, private val currentTitle: Strin
      */
     private var sameIdAtWait = -1
 
-    fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long): Step {
+    /**
+     * [partial]: [lives] is the phone's /live page's one live (curated), not the channel's list (Cubic r9): it never
+     * proves the current id ended, as another running live of a multi-live channel can be the one the page shows.
+     */
+    fun next(trigger: Trigger, lives: List<LiveItem>?, nowMs: Long, partial: Boolean = false): Step {
         if (trigger == Trigger.ENDED) ended = true
-        val step = decide(lives, nowMs)
+        val step = decide(lives, nowMs, partial)
         // Stage 4 S2: the id goes into a thumbnail URL and the extractor's watch URL; anything but a video id is no answer.
-        return if (step is Step.SwitchTo && !VIDEO_ID.matches(step.id)) decide(null, nowMs) else step
+        return if (step is Step.SwitchTo && !VIDEO_ID.matches(step.id)) decide(null, nowMs, partial) else step
     }
 
-    private fun decide(lives: List<LiveItem>?, nowMs: Long): Step {
+    private fun decide(lives: List<LiveItem>?, nowMs: Long, partial: Boolean): Step {
         val elapsed = nowMs - startedAtMs
+        // Cubic R4-1: a failure's first decision re-resolves the current id whatever the list says. The page shows one
+        // live, so a multi-live channel's other running live (or a wrong not-live page) must not switch away from it.
+        if (!ended && waits == 0 && sameIdAtWait < 0 && elapsed < GIVE_UP_MS) {
+            sameIdAtWait = 0
+            return Step.SameId
+        }
         var deadline = GIVE_UP_MS
         if (!lives.isNullOrEmpty() && lives.none { it.id == currentId }) {
-            if (lives.size == 1) return Step.SwitchTo(lives[0].id, lives[0].title)
             // A blank title (the backend sends "" for none) identifies no show (stage 3 M4).
             lives.firstOrNull { it.title == currentTitle?.ifBlank { null } }?.let { return Step.SwitchTo(it.id, it.title) }
+            if (lives.size == 1 && (ended || !partial)) return Step.SwitchTo(lives[0].id, lives[0].title)
             if (elapsed >= TITLE_WAIT_MS) return Step.SwitchTo(lives[0].id, lives[0].title)
             deadline = TITLE_WAIT_MS
-        } else if (!ended && sameIdAtWait != waits && elapsed < GIVE_UP_MS &&
-            (lives?.any { it.id == currentId } ?: (sameIdAtWait < 0))
-        ) {
-            // Listed: once per wake. No answer: the incident's first try only, Rev 5 (the gate fails open; the live
+            // Cubic r9: the page's one live of another show: the current id may still run (a blip), so once per wake
+            if (partial && !ended && sameIdAtWait != waits) {
+                sameIdAtWait = waits
+                return Step.SameId
+            }
+        } else if (!ended && sameIdAtWait != waits && elapsed < GIVE_UP_MS && lives?.any { it.id == currentId } == true) {
+            // Listed: once per wake. No answer gets only the first decision's try (Rev 5: the gate fails open; the live
             // check keeps recordings out).
             sameIdAtWait = waits
             return Step.SameId

@@ -52,9 +52,16 @@ interface ContentApi {
     @HEAD("api/v1/videos/{id}")
     suspend fun checkVideoAvailable(@Path("id") id: String): Response<Unit>
 
-    /** Spec §4.1: a live-category channel's current lives (1.0.4 live-channel mode). */
+    /**
+     * Spec §4.1: a live-category channel's current lives (1.0.4 live-channel mode). [live]: a live the phone found on the
+     * channel's page; the backend adds it only if it passes curation (null = not sent).
+     */
     @GET("api/v1/live/channels/{id}")
-    suspend fun fetchLiveChannel(@Path("id") id: String): ChannelLives
+    suspend fun fetchLiveChannel(@Path("id") id: String, @Query("live") live: String? = null): ChannelLives
+
+    /** An exact live link's removal check: 204 still served, 404 removed (stop), 503/other: keep playing. */
+    @GET("api/v1/live/links/{videoId}")
+    suspend fun getLiveLink(@Path("videoId") videoId: String): Response<Unit>
 
     /** Owner issue 1(b): the original titles the server knows for up to 50 video ids (comma-joined); unknown ids are left out. */
     @GET("api/v1/titles")

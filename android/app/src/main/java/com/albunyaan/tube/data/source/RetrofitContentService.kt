@@ -160,5 +160,10 @@ class RetrofitContentService(
         }
     }
 
-    override suspend fun fetchChannelLives(channelId: String) = api.fetchLiveChannel(channelId)
+    override suspend fun fetchChannelLives(channelId: String, live: String?) = api.fetchLiveChannel(channelId, live)
+
+    override suspend fun checkLiveLink(videoId: String) {
+        val response = api.getLiveLink(videoId)
+        if (!response.isSuccessful) throw retrofit2.HttpException(response)
+    }
 }
