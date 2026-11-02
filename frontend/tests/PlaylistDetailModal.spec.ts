@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom';
 import { render, screen, fireEvent, waitFor } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
-import { beforeEach, describe, expect, it, vi } from 'vitest';
+import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue';
 import { messages } from '@/locales/messages';
 import {
@@ -386,5 +386,210 @@ describe('PlaylistDetailModal', () => {
     await rerender({ open: true, playlistId: 'playlist-123', playlistYoutubeId: 'PLxxxxxx' });
 
     await scrollToBottomLoadsPage2();
+  });
+
+  // jsdom lays nothing out; give the list a height so an under-filled page is detectable.
+  function layOutList() {
+    const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);
+    onTestFinished(() => spy.mockRestore());
+  }
+
+  async function search(query: string) {
+    await fireEvent.update(screen.getByPlaceholderText(/search within playlist/i), query);
+    await fireEvent.click(screen.getByText('🔍'));
+  }
+
+  // Search filters each page client-side, so a page can hold 0 matches but have a next page.
+  it('keeps loading when a search page has no matches but more pages exist', async () => {
+    layOutList();
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'i1', videoId: 'v1', title: 'Video 1' }], nextPageToken: null } as any)
+      .mockResolvedValueOnce({ items: [], nextPageToken: 'p2' } as any)
+      .mockResolvedValueOnce({ items: [{ id: 'i9', videoId: 'v9', title: 'Needle' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    await search('needle');
+
+    await waitFor(() => expect(screen.getByText('Needle')).toBeInTheDocument());
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', 'p2', 'needle');
+  });
+
+  it('pauses auto-loading after 5 empty pages in a row, then continues on demand', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
+    layOutList();
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'i1', videoId: 'v1', title: 'Video 1' }], nextPageToken: null } as any)
+      .mockResolvedValue({ items: [], nextPageToken: 'more' } as any);
+    renderModal();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+
+    await search('absent');
+    await vi.advanceTimersByTimeAsync(0);
+    // Still scanning: a spinner, not a premature "No results".
+    expect(screen.getByText(/Loading more/i)).toBeInTheDocument();
+    expect(screen.queryByText(/No results found/i)).toBeNull();
+
+    await vi.advanceTimersByTimeAsync(10_000);
+    // init page + 5 empty search pages, then paused: not exhausted, so no "No results".
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(6);
+    expect(screen.queryByText(/No results found/i)).toBeNull();
+
+    await fireEvent.click(screen.getByText('Load more'));
+    await vi.advanceTimersByTimeAsync(10_000);
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(11); // 5 more, paused again
+  });
+
+  const flush = () => new Promise((r) => setTimeout(r, 20));
+  const propsFor = (id: string) => ({ playlistId: `reg-${id}`, playlistYoutubeId: `PL${id}` });
+
+  // Close A, open B: A's late init must not overwrite B.
+  it('drops a late initial load from the previously opened playlist', async () => {
+    let releaseA!: () => void;
+    vi.mocked(getPlaylistDetails).mockImplementation((id: string) =>
+      id === 'PLA'
+        ? new Promise((resolve) => { releaseA = () => resolve({ title: 'Playlist A' } as any); })
+        : Promise.resolve({ title: 'Playlist B' } as any)
+    );
+    vi.mocked(fetchPlaylistExclusions).mockImplementation(async (id: string) => (id === 'reg-A' ? ['video3'] : []));
+    const { rerender } = renderModal(propsFor('A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Playlist B')).toBeInTheDocument();
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  it('drops a late exclusions fetch from the previously opened playlist', async () => {
+    let releaseA!: () => void;
+    vi.mocked(fetchPlaylistExclusions).mockImplementation((id: string) =>
+      id === 'reg-A'
+        ? new Promise((resolve) => { releaseA = () => resolve(['video3']); })
+        : Promise.resolve([])
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(fetchPlaylistExclusions).toHaveBeenCalledWith('reg-A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    releaseA();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
+  });
+
+  it('drops a late initial-load failure from the previously opened playlist', async () => {
+    let failA!: () => void;
+    vi.mocked(getPlaylistDetails).mockImplementation((id: string) =>
+      id === 'PLA'
+        ? new Promise((_, reject) => { failA = () => reject(new Error('A down')); })
+        : Promise.resolve({ title: 'Playlist B' } as any)
+    );
+    const { rerender } = renderModal(propsFor('A'));
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+
+    failA();
+    await flush();
+
+    expect(screen.queryByText('A down')).toBeNull();
+    expect(screen.getByText('Video 3')).toBeInTheDocument();
+  });
+
+  it('stops initializing once unmounted', async () => {
+    let releaseDetails!: () => void;
+    vi.mocked(getPlaylistDetails).mockReturnValue(new Promise((resolve) => { releaseDetails = () => resolve({ title: 'P' } as any); }));
+    const { unmount } = renderModal();
+    unmount();
+
+    releaseDetails();
+    await flush();
+
+    expect(fetchPlaylistExclusions).not.toHaveBeenCalled();
+  });
+
+  // Init failed while a search page was in flight: auto-fill must not clear the error and show
+  // rows without their exclusion state.
+  it('keeps an initialization error when an in-flight search page lands', async () => {
+    vi.useFakeTimers();
+    onTestFinished(() => vi.useRealTimers());
+    layOutList();
+    let failExclusions!: () => void;
+    vi.mocked(fetchPlaylistExclusions).mockReturnValueOnce(new Promise((_, reject) => { failExclusions = () => reject(new Error('Exclusions down')); }));
+    let finishSearch!: () => void;
+    vi.mocked(getPlaylistVideos).mockReset().mockImplementation(
+      (_id: string, token?: string) => token
+        ? Promise.resolve({ items: [{ id: 'i2', videoId: 'video2', title: 'Video 2' }], nextPageToken: null } as any)
+        : new Promise((resolve) => { finishSearch = () => resolve({ items: [{ id: 'i1', videoId: 'video1', title: 'Video 1' }], nextPageToken: 'p2' } as any); })
+    );
+    renderModal();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(fetchPlaylistExclusions).toHaveBeenCalled();
+    await search('video');
+
+    failExclusions();
+    await vi.advanceTimersByTimeAsync(0);
+    expect(screen.getByText('Exclusions down')).toBeInTheDocument();
+    finishSearch();
+    await vi.advanceTimersByTimeAsync(5_000); // well past any throttled auto-load
+
+    expect(screen.getByText('Exclusions down')).toBeInTheDocument();
+    expect(getPlaylistVideos).toHaveBeenCalledTimes(1);
+  });
+
+  it('re-runs initialization when searching after it failed', async () => {
+    vi.mocked(fetchPlaylistExclusions).mockRejectedValueOnce(new Error('Exclusions down'));
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Exclusions down')).toBeInTheDocument());
+
+    await search('video');
+
+    await waitFor(() => expect(screen.getByText('Video 1').closest('.item')).toHaveClass('excluded'));
+    expect(fetchPlaylistExclusions).toHaveBeenCalledTimes(2);
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', undefined, 'video');
+  });
+
+  it('keeps a late exclusion write when the same playlist is reopened', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addPlaylistExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('A') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).toHaveClass('excluded');
+  });
+
+  it('drops a late exclusion write from the previously opened playlist', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addPlaylistExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve([] as any); }));
+    vi.mocked(fetchPlaylistExclusions).mockResolvedValue([]);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('B') });
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    finishAdd();
+    await flush();
+
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
   });
 });

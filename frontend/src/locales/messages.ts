@@ -556,6 +556,7 @@ export const messages = {
       },
       retry: 'Retry',
       close: 'Close',
+      loadMore: 'Load more',
       opensInNewTab: 'opens in a new tab'
     },
     videoPreview: {
@@ -2217,6 +2218,7 @@ export const messages = {
       },
       retry: 'إعادة المحاولة',
       close: 'إغلاق',
+      loadMore: 'تحميل المزيد',
       opensInNewTab: 'يفتح في علامة تبويب جديدة'
     },
     videoPreview: {
@@ -3658,6 +3660,7 @@ export const messages = {
       },
       retry: 'Opnieuw proberen',
       close: 'Sluiten',
+      loadMore: 'Meer laden',
       opensInNewTab: 'opent in een nieuw tabblad'
     },
     videoPreview: {
