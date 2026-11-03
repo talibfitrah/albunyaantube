@@ -987,14 +987,34 @@ class PlayerViewModel @Inject constructor(
 
     private fun savedCopyOf(videoId: String): DownloadEntry? = downloadRepository.savedCopyOf(videoId)
 
+    /**
+     * The stream gates for a saved copy, in their order: the video's own answer (410 hides it), then its uploader's
+     * channel ([com.albunyaan.tube.data.source.Exclusions.hides], memo first). Fails open: a failed or slow answer plays.
+     */
+    private suspend fun savedCopyHidden(request: DownloadRequest): Boolean {
+        val video = com.albunyaan.tube.data.source.AvailabilityCheckType.VIDEO
+        val gone = try {
+            withTimeoutOrNull(SAVED_COPY_CHECK_MS) { !contentService.verifyAvailable(video, request.videoId) } == true
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            false
+        }
+        // ponytail: a copy saved before 1.0.8 has no channel id, so only its video answer guards it until the 30-day
+        // expiry sweep deletes it; a one-off id backfill from a resolve would cover its channel too.
+        val channelId = request.channelId
+        return gone || channelId != null &&
+            exclusions.hides(channelId, request.videoId, fresh = false) { contentService.isInApprovedRegistry(video, request.videoId) }
+    }
+
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
             it.request.id == downloadId && it.status == DownloadStatus.COMPLETED
         }
 
     /**
-     * The local-file "resolve": re-reads the entry and file each time. Its one network read: online, the uploader's
-     * channel may hide it (excluded, or gone), memo first, at most the lists' 2 s, failing open; offline it plays.
+     * The local-file "resolve": re-reads the entry and file each time. Online it first runs the stream gates
+     * ([savedCopyHidden]); offline it plays.
      */
     private suspend fun resolveDownload(downloadId: String) {
         val entry = completedDownload(downloadId)
@@ -1003,10 +1023,7 @@ class PlayerViewModel @Inject constructor(
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
             return
         }
-        // ponytail: a copy saved before 1.0.8 has no channel id, so it plays unchecked until the 30-day expiry sweep
-        // deletes it; re-saving it (or a one-off id backfill from a resolve) would cover those.
-        val channelId = entry.request.channelId
-        if (channelId != null && networkMonitor.isCurrentlyOnline() && exclusions.hides(channelId, entry.request.videoId, fresh = false)) {
+        if (networkMonitor.isCurrentlyOnline() && savedCopyHidden(entry.request)) {
             updateState { it.copy(streamState = StreamState.ContentUnavailable) }
             return
         }
@@ -2161,6 +2178,8 @@ class PlayerViewModel @Inject constructor(
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
         /** Longest a first open waits for the download list's startup load before it streams. */
         private const val STARTUP_LOAD_WAIT_MS = 2_000L
+        /** Longest a saved copy waits for the video's own answer before it plays (the lists' wait). */
+        private const val SAVED_COPY_CHECK_MS = 2_000L
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
         /** A failed live refresh retries this often inside the lead window (Task 26 hand-off). */
         private const val LIVE_REFRESH_RETRY_MS = 2 * 60 * 1000L

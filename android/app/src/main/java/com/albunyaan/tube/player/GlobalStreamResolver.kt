@@ -427,11 +427,15 @@ class GlobalStreamResolver private constructor(
                     null
                 }
                 // No channel context (Favorites, Search, a deep link, a download): a channel video is never registered on
-                // its own, so ask its uploader's channel: excluded there, or the channel gone (410), it does not play.
-                // Fail open: a failed or slow ask reads the last answer or none; 404 = none.
+                // its own, so ask its uploader's channel: excluded there it does not play; a gone channel (410) blocks it
+                // unless the video is approved on its own. Fail open: a failed or slow ask reads the last answer or none.
+                // ponytail: approved-playlist items carry no context here (jobs are shared by video id), so a gone
+                // channel blocks them too; pass a playlist id through resolveStreams if that must change.
                 val uploader = streams?.uploaderChannelId
                 if (sourceChannelId.isNullOrBlank() && !uploader.isNullOrBlank() && exclusions != null &&
-                    exclusions.hides(uploader, videoId)
+                    exclusions.hides(uploader, videoId) {
+                        contentService?.isInApprovedRegistry(AvailabilityCheckType.VIDEO, videoId) == true
+                    }
                 ) {
                     Log.i(TAG, "[$caller] $videoId hidden by its uploader's channel; throwing ContentUnavailableException")
                     throw ContentUnavailableException(videoId)

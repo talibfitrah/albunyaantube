@@ -496,6 +496,34 @@ class PlayerViewModelDownloadPlaybackTest {
         assertTrue("offline, the saved copy plays", offline.state.value.streamState is StreamState.Ready)
     }
 
+    // Ruling, specific beats general: a saved copy gets the stream gates in their order. The video's own 410 blocks
+    // (a copy with no channel id too); a gone channel blocks only a video nothing approved on its own.
+    @Test fun `a saved copy the video's own 410 or a gone channel hides does not play, unless the video is approved`() = runTest {
+        val gone = retrofit2.Response.error<Unit>(410, okhttp3.ResponseBody.create(null, ""))
+        api.stub {
+            onBlocking { checkVideoAvailable("v22") } doReturn gone
+            onBlocking { checkVideoAvailable("v23") } doReturn retrofit2.Response.success(Unit)
+            onBlocking { checkVideoAvailable("v24") } doReturn retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(
+            completed("d22", "v22", tmp.newFile("v22.mp4")),                       // saved before channel ids
+            completed("d23", "v23", tmp.newFile("v23.mp4"), channelId = "UCgone"), // approved on its own
+            completed("d24", "v24", tmp.newFile("v24.mp4"), channelId = "UCgone"), // only its gone channel answers
+        )
+        val vm = createViewModel(com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions))
+
+        vm.loadDownload("d22")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        vm.loadDownload("d23")
+        advanceUntilIdle()
+        assertTrue("the video's own approval outranks its channel's 410", vm.state.value.streamState is StreamState.Ready)
+        vm.loadDownload("d24")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+    }
+
     private val api = mock<com.albunyaan.tube.data.source.api.ContentApi>()
     private val exclusions = com.albunyaan.tube.data.source.Exclusions(
         api, { 0L }, kotlinx.coroutines.CoroutineScope(testDispatcher),
@@ -504,8 +532,10 @@ class PlayerViewModelDownloadPlaybackTest {
     private var online = true
     private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
 
-    private fun createViewModel() = playerViewModel(
+    private fun createViewModel(
+        contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
+    ) = playerViewModel(
         repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
-        networkMonitor = network, exclusions = exclusions,
+        networkMonitor = network, exclusions = exclusions, contentService = contentService,
     )
 }

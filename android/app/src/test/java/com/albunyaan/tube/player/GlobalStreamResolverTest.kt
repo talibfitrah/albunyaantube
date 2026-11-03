@@ -888,6 +888,25 @@ class GlobalStreamResolverTest {
     }
 
     @Test
+    fun `a video approved on its own plays though its uploader's channel is gone`() = runTest {
+        // Specific beats general: the video's own 2xx outranks its channel's 410.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(retrofit2.Response.success(Unit))
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_approved", createMockStreams("lecture_approved").copy(uploaderChannelId = "UCgone"))
+
+        assertNotNull(gatedResolver.resolveStreams("lecture_approved", caller = "test"))
+    }
+
+    @Test
     fun `a stalled uploader channel ask fails open within the list wait`(): Unit = runBlocking {
         // Real time: the resolver's test scope is Unconfined, so its waits run on the wall clock too.
         val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
