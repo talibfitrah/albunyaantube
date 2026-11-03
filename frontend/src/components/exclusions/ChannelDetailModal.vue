@@ -208,6 +208,7 @@ import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchChannelExclusions, addChannelExclusion, removeChannelExclusion } from '@/services/exclusions'
 import { getChannelDetails, getChannelVideos, getChannelPlaylists, getChannelShorts, getChannelLiveStreams } from '@/services/youtubeService'
+import { apiErrorOrMessage } from '@/services/http'
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue'
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue'
 
@@ -248,6 +249,11 @@ let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
 // Bumped on every open, close, re-init and unmount: a late init from an older one is dropped.
 // Separate from requestIdCounter, which a search or page load bumps mid-open.
 let openId = 0
+// Successful exclusion writes, in order. A read of the exclusions can reach the server before a
+// write commits yet answer after it landed, so init replays the writes that landed during its read.
+// ponytail: grows by one entry per click for the component's life; trim if that ever matters.
+type ExclusionWrite = { channelId: string; type: string; itemId: string; excluded: boolean }
+const writeLog: ExclusionWrite[] = []
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -316,11 +322,13 @@ async function loadInitialData() {
     // Load exclusions — videos/shorts/live all use the videos exclusion list
     // Skip when channelId is empty (e.g., previewing from search results)
     if (props.channelId) {
+      const writesBefore = writeLog.length
       const exclusions = await fetchChannelExclusions(props.channelId)
       if (id !== openId) return
       excludedIds.value = new Set(
         activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
       )
+      writeLog.slice(writesBefore).forEach(applyWrite)
     } else {
       excludedIds.value = new Set()
     }
@@ -334,7 +342,7 @@ async function loadInitialData() {
     if (status === 404) {
       error.value = $t('exclusions.channelDetail.fetchError');
     } else {
-      error.value = err.message || $t('common.error');
+      error.value = apiErrorOrMessage(err, $t, 'common.error.message');
     }
   } finally {
     if (id === openId) initialLoading.value = false
@@ -408,7 +416,7 @@ async function loadMore() {
       return
     }
 
-    error.value = err.message || $t('common.error')
+    error.value = apiErrorOrMessage(err, $t, 'common.error.message')
     hasMore.value = false
   } finally {
     // Only clear loading if this is still the latest request
@@ -450,6 +458,8 @@ function performSearch() {
   items.value = []
   nextPageToken.value = null
   reset()
+  // The search replaces init's first page: its rows must not wait behind init's spinner for it.
+  if (initialized.value) initialLoading.value = false
   // After an init error the exclusion state may be missing: re-run init (with this query) instead.
   if (error.value && !initialized.value) loadInitialData()
   else loadMore()
@@ -460,8 +470,15 @@ function isExcluded(id: string): boolean {
 }
 
 // A write resolving after a close/reopen or tab switch must not touch another list's local state.
-function isSameExclusionList(channelId: string, type: string): boolean {
-  return channelId === props.channelId && type === exclusionType.value
+function applyWrite(write: ExclusionWrite) {
+  if (write.channelId !== props.channelId || write.type !== exclusionType.value) return
+  if (write.excluded) excludedIds.value.add(write.itemId)
+  else excludedIds.value.delete(write.itemId)
+}
+
+function recordWrite(write: ExclusionWrite) {
+  writeLog.push(write)
+  applyWrite(write)
 }
 
 async function addExclusion(itemId: string) {
@@ -472,7 +489,7 @@ async function addExclusion(itemId: string) {
 
   try {
     await addChannelExclusion(channelId, type, itemId)
-    if (isSameExclusionList(channelId, type)) excludedIds.value.add(itemId)
+    recordWrite({ channelId, type, itemId, excluded: true })
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.excludeError'))
@@ -489,7 +506,7 @@ async function removeExclusion(itemId: string) {
 
   try {
     await removeChannelExclusion(channelId, type, itemId)
-    if (isSameExclusionList(channelId, type)) excludedIds.value.delete(itemId)
+    recordWrite({ channelId, type, itemId, excluded: false })
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.removeError'))

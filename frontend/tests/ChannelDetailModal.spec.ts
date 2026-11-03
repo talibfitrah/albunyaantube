@@ -4,6 +4,7 @@ import { createI18n } from 'vue-i18n';
 import { beforeEach, describe, expect, it, onTestFinished, vi } from 'vitest';
 import ChannelDetailModal from '@/components/exclusions/ChannelDetailModal.vue';
 import { messages } from '@/locales/messages';
+import { ApiError } from '@/services/http';
 import {
   fetchChannelExclusions,
   addChannelExclusion,
@@ -624,5 +625,60 @@ describe('ChannelDetailModal', () => {
     await fireEvent.click(screen.getByText('Load more'));
     await vi.advanceTimersByTimeAsync(10_000);
     expect(getChannelVideos).toHaveBeenCalledTimes(2);
+  });
+
+  // Coded errors (timeouts, failed YouTube requests) read in the admin's language; uncoded ones keep their message.
+  it('shows a timed-out page in the admin language', async () => {
+    i18n.global.locale.value = 'ar';
+    onTestFinished(() => { i18n.global.locale.value = 'en'; });
+    vi.mocked(getChannelVideos).mockReset().mockRejectedValue(new ApiError('YouTube API request timed out', 0, 'REQUEST_TIMEOUT'));
+    renderModal();
+
+    await waitFor(() => expect(screen.getByText(messages.ar.apiErrors.REQUEST_TIMEOUT)).toBeInTheDocument());
+  });
+
+  it('shows a failed YouTube request in the admin language', async () => {
+    vi.mocked(getChannelDetails).mockRejectedValue(new ApiError('YouTube API request failed (HTTP 403)', 403, 'YOUTUBE_REQUEST_FAILED'));
+    renderModal();
+
+    await waitFor(() => expect(screen.getByText(messages.en.apiErrors.YOUTUBE_REQUEST_FAILED)).toBeInTheDocument());
+  });
+
+  // Reopened while a write is saving: the reopen's read can reach the server before the write
+  // commits and come back without it, after the write already landed.
+  it('keeps an exclusion write that lands while the reopen reads exclusions', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    let finishRead!: () => void;
+    vi.mocked(fetchChannelExclusions)
+      .mockResolvedValueOnce({ videos: [], playlists: [] } as any)
+      .mockReturnValueOnce(new Promise((resolve) => { finishRead = () => resolve({ videos: [], playlists: [] } as any); }));
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('A') });
+    await waitFor(() => expect(fetchChannelExclusions).toHaveBeenCalledTimes(2));
+    finishAdd();
+    await flush();
+    finishRead();
+
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    expect(screen.getByText('Video 3').closest('.item')).toHaveClass('excluded');
+  });
+
+  it('shows search rows while the first page it replaced is still loading', async () => {
+    vi.mocked(getChannelVideos)
+      .mockReset()
+      .mockReturnValueOnce(new Promise(() => {}))
+      .mockResolvedValueOnce({ items: [{ id: 'v9', title: 'Needle' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(getChannelVideos).toHaveBeenCalledTimes(1));
+
+    await fireEvent.update(screen.getByPlaceholderText(/search within channel/i), 'needle');
+    await fireEvent.click(screen.getByText('🔍'));
+
+    await waitFor(() => expect(screen.getByText('Needle')).toBeInTheDocument());
   });
 });

@@ -8,7 +8,8 @@
  * The API key should be a browser-restricted key from Google Cloud Console.
  */
 
-import type { EnrichedSearchResult, SearchPageResponse } from '@/types/api';
+import type { YouTubeEnrichedSearchResult } from '@/types/registry';
+import { ApiError } from './http';
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
@@ -90,6 +91,12 @@ interface YouTubePlaylistItemEntry {
   };
 }
 
+interface SearchPage {
+  items: YouTubeEnrichedSearchResult[];
+  nextPageToken: string | null;
+  totalResults: number;
+}
+
 interface YouTubePlaylistItemsResponse {
   items: YouTubePlaylistItemEntry[];
   nextPageToken?: string;
@@ -123,11 +130,11 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
       response.text()
         .then(body => console.error(`YouTube API error ${status}:`, body), () => {})
         .finally(() => clearTimeout(timer));
-      throw new Error(`YouTube API request failed (HTTP ${status})`);
+      throw new ApiError(`YouTube API request failed (HTTP ${status})`, status, 'YOUTUBE_REQUEST_FAILED');
     }
     return await response.json();
   } catch (err) {
-    if (controller.signal.aborted) throw new Error('YouTube API request timed out');
+    if (controller.signal.aborted) throw new ApiError('YouTube API request timed out', 0, 'REQUEST_TIMEOUT');
     throw err;
   } finally {
     if (!errorBodyPending) clearTimeout(timer);
@@ -136,9 +143,8 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
 
 /**
  * Search YouTube for all content types with pagination.
- * Returns data in SearchPageResponse format compatible with the backend proxy.
  */
-export async function searchAll(query: string, pageToken?: string): Promise<SearchPageResponse> {
+export async function searchAll(query: string, pageToken?: string): Promise<SearchPage> {
   const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
     part: 'snippet',
     q: query,
@@ -165,8 +171,7 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
     playlistIds.length > 0 ? getPlaylistStats(playlistIds) : Promise.resolve(new Map<string, YouTubePlaylistItem>())
   ]);
 
-  // Map to EnrichedSearchResult
-  const items: EnrichedSearchResult[] = searchData.items.map(item => {
+  const items: YouTubeEnrichedSearchResult[] = searchData.items.map(item => {
     const thumbnail = item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url || '';
 
     if (item.id.channelId) {
@@ -228,7 +233,7 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
 export async function searchByType(
   query: string,
   type: 'channel' | 'playlist' | 'video'
-): Promise<EnrichedSearchResult[]> {
+): Promise<YouTubeEnrichedSearchResult[]> {
   const typeMap: Record<string, string> = { channel: 'channel', playlist: 'playlist', video: 'video' };
 
   const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
@@ -432,10 +437,9 @@ export function parseYouTubeUrl(input: string): YouTubeUrlInfo | null {
 
 /**
  * Look up a single YouTube item by URL info using the Data API.
- * Returns results in SearchPageResponse format.
  */
-export async function lookupByYouTubeUrl(urlInfo: YouTubeUrlInfo): Promise<SearchPageResponse> {
-  const items: EnrichedSearchResult[] = [];
+export async function lookupByYouTubeUrl(urlInfo: YouTubeUrlInfo): Promise<SearchPage> {
+  const items: YouTubeEnrichedSearchResult[] = [];
 
   if (urlInfo.type === 'video') {
     const stats = await getVideoStats([urlInfo.id]);

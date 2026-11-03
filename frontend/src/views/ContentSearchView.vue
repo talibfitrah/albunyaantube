@@ -129,8 +129,14 @@
         />
       </div>
 
+      <!-- A page failed: its token is still current, so Retry fetches that page again -->
+      <div v-if="loadMoreError" class="error-message" role="alert">
+        <p>{{ loadMoreError }}</p>
+        <button type="button" @click="loadMoreResults">{{ t('contentSearch.retry') }}</button>
+      </div>
+
       <!-- Load More button -->
-      <div v-if="hasMoreResults" class="load-more-container">
+      <div v-else-if="hasMoreResults" class="load-more-container">
         <button
           type="button"
           class="btn-load-more"
@@ -187,7 +193,7 @@ import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
-import { apiErrorToMessage } from '@/services/http';
+import { apiErrorToMessage, apiErrorOrMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
 import PlaylistCard from '@/components/search/PlaylistCard.vue';
@@ -217,6 +223,9 @@ const detectedUrl = computed(() => {
 const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref<string | null>(null);
+const loadMoreError = ref<string | null>(null);
+// Bumped by every search: a page from an earlier search is dropped.
+let searchId = 0;
 const hasSearched = ref(false);
 const wasUrlLookup = ref(false);
 const channels = ref<AdminSearchChannelResult[]>([]);
@@ -351,8 +360,10 @@ async function handleSearch() {
     return;
   }
 
+  searchId++;
   isLoading.value = true;
   error.value = null;
+  loadMoreError.value = null;
   hasSearched.value = true;
   wasUrlLookup.value = !!detectedUrl.value;
   currentPage.value = 0;
@@ -383,7 +394,7 @@ async function handleSearch() {
     // Don't check existing items upfront - check on-demand when user clicks "Add"
     // This speeds up search significantly!
   } catch (err: any) {
-    error.value = err instanceof Error ? err.message : t('contentSearch.error');
+    error.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
     isLoading.value = false;
   }
@@ -511,11 +522,14 @@ async function loadMoreResults() {
     return; // Prevent duplicate requests
   }
 
+  const id = searchId;
   isLoadingMore.value = true;
+  loadMoreError.value = null;
 
   try {
     // Always load 'all' types for pagination since contentType filter is client-side
     const response = await searchYouTube(searchQuery.value, 'all', nextPageToken.value);
+    if (id !== searchId) return;
 
     // Assign insertion sequences to new items before appending
     for (const c of response.channels) itemSequence.value.set(itemKey('channel', c), insertionSeq++);
@@ -533,8 +547,7 @@ async function loadMoreResults() {
 
     currentPage.value++;
   } catch (err: any) {
-    console.error('Failed to load more results', err);
-    hasMoreResults.value = false;
+    if (id === searchId) loadMoreError.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
     isLoadingMore.value = false;
   }

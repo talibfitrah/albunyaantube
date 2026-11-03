@@ -105,17 +105,7 @@
 
 | Method | Path | Query Params | Request Body | Response | Notes |
 |--------|------|--------------|--------------|----------|-------|
-| GET | `/api/admin/youtube/search/unified` | `query` | - | `List<EnrichedSearchResult>` | Single API call, mixed results |
-| GET | `/api/admin/youtube/search/all` | `query`, `pageToken` | - | `SearchPageResponse` | Paginated search |
-| GET | `/api/admin/youtube/search/channels` | `query` | - | `List<EnrichedSearchResult>` | - |
-| GET | `/api/admin/youtube/search/playlists` | `query` | - | `List<EnrichedSearchResult>` | - |
-| GET | `/api/admin/youtube/search/videos` | `query` | - | `List<EnrichedSearchResult>` | - |
-| GET | `/api/admin/youtube/channels/{channelId}` | - | - | `ChannelDetailsDto` | - |
-| GET | `/api/admin/youtube/channels/{channelId}/videos` | `pageToken`, `q` | - | `List<StreamItemDto>` | Optional search filter |
-| GET | `/api/admin/youtube/channels/{channelId}/playlists` | `pageToken` | - | `List<PlaylistItemDto>` | - |
-| GET | `/api/admin/youtube/playlists/{playlistId}` | - | - | `PlaylistDetailsDto` | - |
-| GET | `/api/admin/youtube/playlists/{playlistId}/videos` | `pageToken`, `q` | - | `List<StreamItemDto>` | Optional search filter |
-| GET | `/api/admin/youtube/videos/{videoId}` | - | - | `StreamDetailsDto` | - |
+| GET | `/api/admin/youtube/search` | `q`, `type` (default `ALL`), `pageToken` | - | `YouTubeSearchResponse` | Bad `pageToken`: 400 |
 | POST | `/api/admin/youtube/check-existing` | - | `ExistingContentRequest` | `ExistingContentResponse` | Check which IDs exist in registry |
 
 ---

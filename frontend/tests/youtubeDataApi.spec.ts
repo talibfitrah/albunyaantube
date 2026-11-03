@@ -113,12 +113,12 @@ describe('youtubeDataApi', () => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
       }));
       const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
-      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error & { code?: string }) => `${e.code}: ${e.message}`);
 
       await vi.advanceTimersByTimeAsync(29_000);
       expect(await Promise.race([outcome, 'pending'])).toBe('pending');
       await vi.advanceTimersByTimeAsync(1_000);
-      expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request timed out');
+      expect(await Promise.race([outcome, 'pending'])).toBe('REQUEST_TIMEOUT: YouTube API request timed out');
     } finally {
       AbortSignal.timeout = timeout;
       vi.useRealTimers();
@@ -136,10 +136,10 @@ describe('youtubeDataApi', () => {
         return { ok: false, status: 403, text: () => new Promise(() => {}) };
       });
       const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
-      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error & { code?: string }) => `${e.code}: ${e.message}`);
 
       await vi.advanceTimersByTimeAsync(0);
-      expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request failed (HTTP 403)');
+      expect(await Promise.race([outcome, 'pending'])).toBe('YOUTUBE_REQUEST_FAILED: YouTube API request failed (HTTP 403)');
       await vi.advanceTimersByTimeAsync(30_000);
       expect(signal?.aborted).toBe(true);
     } finally {

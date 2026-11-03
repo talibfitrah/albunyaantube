@@ -10,6 +10,7 @@ import {
   removePlaylistExclusion
 } from '@/services/exclusions';
 import type { ExclusionPage } from '@/types/exclusions';
+import { ApiError, authorizedJsonFetch } from '@/services/http';
 
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
@@ -213,6 +214,64 @@ describe('exclusions service', () => {
       expect(url).toBe('/api/admin/registry/playlists/playlist-123/exclusions/video1');
       expect(init.method).toBe('DELETE');
       expect(result).toEqual(mockUpdatedExclusions);
+    });
+  });
+
+  // A hung read must fail into the caller's error state instead of spinning forever. A write is
+  // never aborted: the server would still complete it, so the UI would report a false failure.
+  describe('read timeout', () => {
+    const hangUntilAborted = vi.fn((_url: string, init?: RequestInit) => new Promise<Response>((_resolve, reject) => {
+      init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+    }));
+
+    it('fails a read that does not answer within 30 seconds', async () => {
+      vi.useFakeTimers();
+      try {
+        global.fetch = hangUntilAborted as unknown as typeof fetch;
+        const outcome = fetchPlaylistExclusions('playlist-123').then(() => 'resolved', (e: { code?: string }) => e.code);
+
+        await vi.advanceTimersByTimeAsync(29_000);
+        expect(await Promise.race([outcome, 'pending'])).toBe('pending');
+        await vi.advanceTimersByTimeAsync(1_000);
+        expect(await Promise.race([outcome, 'pending'])).toBe('REQUEST_TIMEOUT');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // fetchAuditLogs passes its own signal (a superseded filter cancels its read).
+    it('times out a read that carries its own signal, and reports a caller abort as such', async () => {
+      vi.useFakeTimers();
+      try {
+        global.fetch = hangUntilAborted as unknown as typeof fetch;
+        const outcome = (signal: AbortSignal) =>
+          authorizedJsonFetch('/api/admin/audit', { signal }).then(() => 'resolved', (e: Error) => (e instanceof ApiError ? e.code : e.name));
+
+        const timedOut = outcome(new AbortController().signal);
+        await vi.advanceTimersByTimeAsync(30_000);
+        expect(await Promise.race([timedOut, 'pending'])).toBe('REQUEST_TIMEOUT');
+
+        const caller = new AbortController();
+        const cancelled = outcome(caller.signal);
+        caller.abort();
+        await vi.advanceTimersByTimeAsync(0);
+        expect(await Promise.race([cancelled, 'pending'])).toBe('AbortError');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    it('never aborts a write', async () => {
+      vi.useFakeTimers();
+      try {
+        global.fetch = hangUntilAborted as unknown as typeof fetch;
+        const outcome = addPlaylistExclusion('playlist-123', 'video3').then(() => 'resolved', () => 'rejected');
+
+        await vi.advanceTimersByTimeAsync(120_000);
+        expect(await Promise.race([outcome, 'pending'])).toBe('pending');
+      } finally {
+        vi.useRealTimers();
+      }
     });
   });
 });
