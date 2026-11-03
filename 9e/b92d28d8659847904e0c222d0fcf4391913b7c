@@ -1,0 +1,27 @@
+frontend/src/views/ContentSortingView.vue
+  s_543f5b01a05d75::t_d473c31acd0e74 343
+frontend/src/locales/messages.ts
+  s_543f5b01a05d75::t_39b27fc5ad85c9 391,561,586,938,2050,2220,2548,3490,3660,3988
+frontend/tests/liveChannelsAdmin.spec.ts
+  s_543f5b01a05d75::t_d473c31acd0e74 6,20
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_4b08accdcc774b 647-656
+frontend/tests/ContentSortingLive.spec.ts
+  s_543f5b01a05d75::t_4b08accdcc774b 67-68,75
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9eb92d28d8659847904e0c222d0fcf4391913b7c",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
