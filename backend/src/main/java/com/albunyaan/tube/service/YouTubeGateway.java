@@ -603,7 +603,7 @@ public class YouTubeGateway {
      * internal endpoints, attacker hosts, or YouTube redirect helpers
      * that 302 to the {@code q=} param (NewPipe follows redirects).
      * Restrict to HTTPS YouTube hosts and deny the known open-redirect
-     * paths. Unverifiable tokens return null (YouTubeSearchService
+     * paths. Unverifiable tokens return null (NewPipeSearchClient
      * answers 400, never a silent first page). Architectural fix — HMAC-signed tokens or an OkHttp
      * network interceptor — is tracked in the plan-doc Review
      * follow-ups (F1a).

@@ -32,7 +32,9 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.verifyNoInteractions;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
@@ -123,20 +125,22 @@ class YouTubeSearchControllerTest {
                 () -> controller.search("q", YouTubeContentType.ALL, null));
     }
 
-    /** Real service, real token decoder, real advice: a token the backend never issued is a 400, not page 1 again. */
+    /**
+     * Real client, service, token decoder and advice: a token the backend never issued is a 400 before any YouTube
+     * request, never page 1 again.
+     */
     @Test
     void search_undecodablePageToken_is400() throws Exception {
-        NewPipeSearchClient client = mock(NewPipeSearchClient.class);
-        YouTubeGateway gateway = new YouTubeGateway(ServiceList.YouTube, 1, null, null);
+        YouTubeGateway gateway = spy(new YouTubeGateway(ServiceList.YouTube, 1, null, null));
         try {
             YouTubeSearchController real = new YouTubeSearchController(channelRepository, playlistRepository,
-                    videoRepository, new YouTubeSearchService(client, channelRepository, playlistRepository,
-                            videoRepository, gateway));
+                    videoRepository, new YouTubeSearchService(new NewPipeSearchClient(gateway), channelRepository,
+                            playlistRepository, videoRepository, gateway));
             MockMvcBuilders.standaloneSetup(real).setControllerAdvice(new GlobalExceptionHandler()).build()
                     .perform(get("/api/admin/youtube/search").param("q", "cats")
                             .param("pageToken", "https://evil.example.com/next"))
                     .andExpect(status().isBadRequest());
-            verifyNoInteractions(client);
+            verify(gateway, never()).createSearchExtractor(any(), anyList());
         } finally {
             gateway.shutdown();
         }

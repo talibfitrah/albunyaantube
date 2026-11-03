@@ -20,6 +20,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -292,18 +294,18 @@ class YouTubeSearchServiceTest {
     // =========================================================
 
     @Test
-    void search_undecodablePageToken_throwsIllegalArgumentWithoutSearching() throws Exception {
-        when(gateway.decodePageToken("garbage")).thenReturn(null);
+    void search_clientRejectsPageToken_staysA400NotA502() throws Exception {
+        when(newPipeClient.search("q", YouTubeContentType.VIDEO, "garbage"))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid pageToken"));
 
         assertThatThrownBy(() -> svc.search("q", YouTubeContentType.VIDEO, "garbage"))
-                .isInstanceOf(IllegalArgumentException.class);
-        verifyNoInteractions(newPipeClient);
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
     }
 
     @Test
     void search_laterPageFetchFails_throwsYouTubeSearchException() throws Exception {
-        String token = "https://www.youtube.com/youtubei/v1/search?page=2";
-        when(gateway.decodePageToken(token)).thenReturn(new org.schabi.newpipe.extractor.Page(token));
+        String token = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false";   // the one URL NewPipe 0.26.5 issues
         when(newPipeClient.search("q", YouTubeContentType.VIDEO, token))
                 .thenThrow(new java.io.IOException("continuation 503"));
 

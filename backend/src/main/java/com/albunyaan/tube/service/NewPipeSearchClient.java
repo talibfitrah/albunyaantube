@@ -5,7 +5,9 @@ import org.schabi.newpipe.extractor.InfoItem;
 import org.schabi.newpipe.extractor.ListExtractor.InfoItemsPage;
 import org.schabi.newpipe.extractor.Page;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
+import org.springframework.http.HttpStatus;
 import org.springframework.stereotype.Component;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 
@@ -29,10 +31,15 @@ public class NewPipeSearchClient {
      *
      * @param query     search query string
      * @param type      content type to filter by
-     * @param pageToken opaque page token from a previous response (null = first page)
+     * @param pageToken opaque page token from a previous response (null or empty = first page)
      * @return raw page of {@link InfoItem}s plus a next-page token
+     * @throws ResponseStatusException 400 for a token that does not decode, before any YouTube request
      */
     public RawPage search(String query, YouTubeContentType type, String pageToken) throws Exception {
+        Page decoded = gateway.decodePageToken(pageToken);
+        if (decoded == null && pageToken != null && !pageToken.isEmpty()) {
+            throw new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid pageToken");
+        }
         List<String> filters = switch (type) {
             case ALL      -> List.of();
             case CHANNEL  -> List.of("channels");
@@ -43,7 +50,6 @@ public class NewPipeSearchClient {
         SearchExtractor extractor = gateway.createSearchExtractor(query, filters);
         gateway.fetchSearchPage(extractor);
 
-        Page decoded = gateway.decodePageToken(pageToken);
         InfoItemsPage<InfoItem> page = (decoded == null)
                 ? extractor.getInitialPage()
                 : gateway.getSearchPage(extractor, decoded);
