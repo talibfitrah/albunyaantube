@@ -1,0 +1,41 @@
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_3fb7fe7f51347a 414-435
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_b7d16f473f6f46 299
+  s_543f5b01a05d75::t_cdfc79bfe098ab 453-454
+  s_543f5b01a05d75::t_1d5e829e17091a 82-83
+  s_543f5b01a05d75::t_c4ef8c72435016 168-169
+  s_543f5b01a05d75::t_3cf246e43df70b 243-244
+  s_543f5b01a05d75::t_5a958810c3c37d 100
+  s_543f5b01a05d75::t_1f5c7561df28b5 327
+frontend/src/services/youtubeDataApi.ts
+  s_543f5b01a05d75::t_b62ac426cce4f9 114,120-125,133
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_0591328160b44d 253
+  s_543f5b01a05d75::t_d5fb6702b92eee 336-337
+  s_543f5b01a05d75::t_ec0ef2b663dd98 49-50
+  s_543f5b01a05d75::t_35db2b2e5bb6da 121-122
+  s_543f5b01a05d75::t_022678c0afc842 233
+  s_543f5b01a05d75::t_6cd2f65c1726c0 58
+  s_543f5b01a05d75::t_3177a5136738bf 182-183
+frontend/tests/youtubeDataApi.spec.ts
+  s_543f5b01a05d75::t_fe06c8f11c7c93 128-129,133-137,141,143-144
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_39be07a293bab6 413-434
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "08b18efa73f3332505d657d3e2a76e4e34e6d795",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
