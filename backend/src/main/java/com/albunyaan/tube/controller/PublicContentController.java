@@ -10,6 +10,7 @@ import com.albunyaan.tube.search.SearchIndex;
 import com.albunyaan.tube.exception.ResourceNotFoundException;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.repository.UserRepository;
 import com.albunyaan.tube.service.PublicContentService;
 import com.albunyaan.tube.service.VisibilityPolicy;
 import com.google.firebase.auth.AuthErrorCode;
@@ -44,10 +45,13 @@ public class PublicContentController {
 
     private final PublicContentService contentService;
     private final FirebaseAuth firebaseAuth;
+    private final UserRepository userRepository;
 
-    public PublicContentController(PublicContentService contentService, FirebaseAuth firebaseAuth) {
+    public PublicContentController(PublicContentService contentService, FirebaseAuth firebaseAuth,
+                                   UserRepository userRepository) {
         this.contentService = contentService;
         this.firebaseAuth = firebaseAuth;
+        this.userRepository = userRepository;
     }
 
     /**
@@ -62,8 +66,8 @@ public class PublicContentController {
         try {
             return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), checkRevoked).getUid();
         } catch (FirebaseAuthException e) { // a bad, expired, revoked or disabled token: anonymous
-            if (e.getAuthErrorCode() == AuthErrorCode.CERTIFICATE_FETCH_FAILED) {
-                log.warn("Firebase signing keys unavailable; grantees get no PERSONAL details: {}", e.getMessage());
+            if (!TOKEN_REJECTIONS.contains(e.getAuthErrorCode())) { // Firebase unreachable: every grantee loses exclusions
+                log.warn("Bearer on a public detail route could not be checked ({}): {}", e.getAuthErrorCode(), e.getMessage());
             }
             return null;
         } catch (IllegalArgumentException e) { // an empty token
@@ -74,10 +78,33 @@ public class PublicContentController {
         }
     }
 
-    /** The 404 a missing id gets, for a grantee whose account is blocked, deleted or signed out everywhere. */
+    /** What a bad token, not a Firebase outage, looks like. */
+    private static final java.util.Set<AuthErrorCode> TOKEN_REJECTIONS = java.util.EnumSet.of(
+            AuthErrorCode.EXPIRED_ID_TOKEN, AuthErrorCode.INVALID_ID_TOKEN, AuthErrorCode.REVOKED_ID_TOKEN,
+            AuthErrorCode.USER_DISABLED, AuthErrorCode.USER_NOT_FOUND);
+
+    /**
+     * The 404 a missing id gets, for a grantee who may no longer read: tokens revoked or account disabled (Firebase),
+     * or blocked or deleted in Firestore, the account-status source of truth FirebaseAuthFilter reads. The same two
+     * checks /api/account/sync runs, where grantees get their PERSONAL items. Only a grantee reaches this, so neither
+     * round trip is an oracle or a cost to anyone else. A failed lookup refuses (fail closed).
+     */
     private void requireActiveGrantee(String visibility, String authorization, String type, String id) {
-        if (!VisibilityPolicy.isPublic(visibility) && verifiedUid(authorization, true) == null) {
-            throw new ResourceNotFoundException(type, id);
+        if (VisibilityPolicy.isPublic(visibility)) return;
+        String uid = verifiedUid(authorization, true);
+        if (uid == null || !activeInFirestore(uid)) throw new ResourceNotFoundException(type, id);
+    }
+
+    private boolean activeInFirestore(String uid) {
+        try {
+            // No doc yet (first sign-in) passes, as in FirebaseAuthFilter.
+            return userRepository.findByUidUncached(uid).map(u -> !u.isBlocked() && !u.isDeleted()).orElse(true);
+        } catch (InterruptedException e) {
+            Thread.currentThread().interrupt();
+            return false;
+        } catch (Exception e) {
+            log.warn("Account status check failed for a PERSONAL grantee: {}", e.toString());
+            return false;
         }
     }
 

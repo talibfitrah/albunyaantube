@@ -7,6 +7,9 @@ import com.albunyaan.tube.repository.CategoryContentOrderRepository;
 import com.albunyaan.tube.repository.CategoryRepository;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
+import com.albunyaan.tube.repository.UserRepository;
+import com.albunyaan.tube.model.User;
+import com.albunyaan.tube.model.UserStatus;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.service.LiveCategoryService;
 import com.albunyaan.tube.service.PublicContentService;
@@ -46,6 +49,7 @@ class PersonalDetailsAccessTest {
     private final ChannelRepository channels = mock(ChannelRepository.class);
     private final PlaylistRepository playlists = mock(PlaylistRepository.class);
     private final FirebaseAuth firebaseAuth = mock(FirebaseAuth.class);
+    private final UserRepository users = mock(UserRepository.class);
     private final ObjectMapper json = new ObjectMapper();
     private MockMvc mvc;
 
@@ -54,7 +58,7 @@ class PersonalDetailsAccessTest {
         PublicContentService service = new PublicContentService(channels, playlists, mock(VideoRepository.class),
                 mock(CategoryRepository.class), mock(CategoryContentOrderRepository.class), Runnable::run,
                 mock(com.albunyaan.tube.search.SearchIndex.class), mock(LiveCategoryService.class));
-        mvc = MockMvcBuilders.standaloneSetup(new PublicContentController(service, firebaseAuth))
+        mvc = MockMvcBuilders.standaloneSetup(new PublicContentController(service, firebaseAuth, users))
                 .addPlaceholderValue("app.security.cors.allowed-origins", "*")
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         token("grantee-token", "uid-grantee");
@@ -66,6 +70,11 @@ class PersonalDetailsAccessTest {
         token("revoked-token", "uid-grantee");
         when(firebaseAuth.verifyIdToken("revoked-token", true)).thenThrow(new FirebaseAuthException(
                 ErrorCode.UNAUTHENTICATED, "disabled", null, null, AuthErrorCode.USER_DISABLED));
+        // A grantee blocked in Firestore (the account-status source of truth) whose Firebase disable never landed.
+        token("blocked-token", "uid-blocked");
+        User blocked = new User();
+        blocked.setStatusEnum(UserStatus.BLOCKED);
+        when(users.findByUidUncached("uid-blocked")).thenReturn(Optional.of(blocked));
     }
 
     private void token(String value, String uid) throws Exception {
@@ -79,7 +88,7 @@ class PersonalDetailsAccessTest {
         Channel c = new Channel("UCpersonal1");
         c.setStatus("APPROVED");
         c.setVisibility("PERSONAL");
-        c.setPersonalGrants(List.of("uid-grantee"));
+        c.setPersonalGrants(List.of("uid-grantee", "uid-blocked"));
         Channel.ExcludedItems excluded = new Channel.ExcludedItems();
         excluded.setVideos(List.of("video000001"));
         excluded.setPlaylists(List.of("PLexcluded1"));
@@ -91,7 +100,7 @@ class PersonalDetailsAccessTest {
         Playlist p = new Playlist("PLpersonal1");
         p.setStatus("APPROVED");
         p.setVisibility("PERSONAL");
-        p.setPersonalGrants(List.of("uid-grantee"));
+        p.setPersonalGrants(List.of("uid-grantee", "uid-blocked"));
         p.setExcludedVideoIds(List.of("video000002"));
         return p;
     }
@@ -133,7 +142,7 @@ class PersonalDetailsAccessTest {
     void nobodyElseCanTellAPersonalChannelFromAMissingOne() throws Exception {
         String missing = body404(null, "/api/v1/channels/UCpersonal1");
         when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(personalChannel()));
-        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token"}) {
+        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token", "blocked-token"}) {
             assertEquals(missing, body404(bearer, "/api/v1/channels/UCpersonal1"), "caller " + bearer);
         }
     }
@@ -142,7 +151,7 @@ class PersonalDetailsAccessTest {
     void nobodyElseCanTellAPersonalPlaylistFromAMissingOne() throws Exception {
         String missing = body404(null, "/api/v1/playlists/PLpersonal1");
         when(playlists.findByYoutubeId("PLpersonal1")).thenReturn(Optional.of(personalPlaylist()));
-        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token"}) {
+        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token", "blocked-token"}) {
             assertEquals(missing, body404(bearer, "/api/v1/playlists/PLpersonal1"), "caller " + bearer);
         }
     }
@@ -169,6 +178,7 @@ class PersonalDetailsAccessTest {
         mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isOk());
         org.mockito.Mockito.verify(firebaseAuth, org.mockito.Mockito.never())
                 .verifyIdToken(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(true));
+        org.mockito.Mockito.verifyNoInteractions(users);
     }
 
     /** An admin's REJECT blocks every caller, grantee or not, as before: the gone check runs before the grant check. */
