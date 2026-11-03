@@ -15,6 +15,8 @@ import com.albunyaan.tube.service.YouTubeSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 import org.schabi.newpipe.extractor.ServiceList;
@@ -127,18 +129,21 @@ class YouTubeSearchControllerTest {
 
     /**
      * Real client, service, token decoder and advice: a token the backend never issued is a 400 before any YouTube
-     * request, never page 1 again.
+     * request, never page 1 again. That includes a YouTube URL with no continuation id (a pre-fix token, which YouTube
+     * answers with an empty last page) or an empty one.
      */
-    @Test
-    void search_undecodablePageToken_is400() throws Exception {
+    @ParameterizedTest
+    @ValueSource(strings = {"https://evil.example.com/next",
+            "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+            "https://www.youtube.com/youtubei/v1/search?prettyPrint=false#"})
+    void search_pageTokenTheBackendNeverIssued_is400(String token) throws Exception {
         YouTubeGateway gateway = spy(new YouTubeGateway(ServiceList.YouTube, 1, null, null));
         try {
             YouTubeSearchController real = new YouTubeSearchController(channelRepository, playlistRepository,
                     videoRepository, new YouTubeSearchService(new NewPipeSearchClient(gateway), channelRepository,
                             playlistRepository, videoRepository, gateway));
             MockMvcBuilders.standaloneSetup(real).setControllerAdvice(new GlobalExceptionHandler()).build()
-                    .perform(get("/api/admin/youtube/search").param("q", "cats")
-                            .param("pageToken", "https://evil.example.com/next"))
+                    .perform(get("/api/admin/youtube/search").param("q", "cats").param("pageToken", token))
                     .andExpect(status().isBadRequest());
             verify(gateway, never()).createSearchExtractor(any(), anyList());
         } finally {
