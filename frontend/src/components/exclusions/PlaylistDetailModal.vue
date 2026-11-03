@@ -192,7 +192,6 @@ let openId = 0
 // commits yet answer after that write landed, so init reads again when a write landed during its read
 // (replaying the write instead could undo another admin's later change).
 let writeCount = 0
-type ExclusionWrite = { playlistId: string; videoId: string; excluded: boolean }
 
 // Video preview state
 const showVideoPreview = ref(false)
@@ -356,24 +355,14 @@ function isExcluded(videoId: string): boolean {
 }
 
 // Writes apply to the local set only if the modal still shows the same playlist.
-function applyWrite(write: ExclusionWrite) {
-  if (write.playlistId !== props.playlistId) return
-  if (write.excluded) excludedIds.value.add(write.videoId)
-  else excludedIds.value.delete(write.videoId)
-}
-
-function recordWrite(write: ExclusionWrite) {
-  writeCount++
-  applyWrite(write)
-}
-
 async function addExclusion(videoId: string) {
   const playlistId = props.playlistId
   actionLoading[videoId] = true
 
   try {
     await addPlaylistExclusion(playlistId, videoId)
-    recordWrite({ playlistId, videoId, excluded: true })
+    writeCount++
+    if (playlistId === props.playlistId) excludedIds.value.add(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.excludeError'))
@@ -388,7 +377,8 @@ async function removeExclusion(videoId: string) {
 
   try {
     await removePlaylistExclusion(playlistId, videoId)
-    recordWrite({ playlistId, videoId, excluded: false })
+    writeCount++
+    if (playlistId === props.playlistId) excludedIds.value.delete(videoId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.playlistDetail.removeError'))

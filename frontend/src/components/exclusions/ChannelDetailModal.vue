@@ -253,7 +253,6 @@ let openId = 0
 // commits yet answer after that write landed, so init reads again when a write landed during its read
 // (replaying the write instead could undo another admin's later change).
 let writeCount = 0
-type ExclusionWrite = { channelId: string; type: string; itemId: string; excluded: boolean }
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -473,15 +472,8 @@ function isExcluded(id: string): boolean {
 }
 
 // A write resolving after a close/reopen or tab switch must not touch another list's local state.
-function applyWrite(write: ExclusionWrite) {
-  if (write.channelId !== props.channelId || write.type !== exclusionType.value) return
-  if (write.excluded) excludedIds.value.add(write.itemId)
-  else excludedIds.value.delete(write.itemId)
-}
-
-function recordWrite(write: ExclusionWrite) {
-  writeCount++
-  applyWrite(write)
+function isSameExclusionList(channelId: string, type: string): boolean {
+  return channelId === props.channelId && type === exclusionType.value
 }
 
 async function addExclusion(itemId: string) {
@@ -492,7 +484,8 @@ async function addExclusion(itemId: string) {
 
   try {
     await addChannelExclusion(channelId, type, itemId)
-    recordWrite({ channelId, type, itemId, excluded: true })
+    writeCount++
+    if (isSameExclusionList(channelId, type)) excludedIds.value.add(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.excludeError'))
@@ -509,7 +502,8 @@ async function removeExclusion(itemId: string) {
 
   try {
     await removeChannelExclusion(channelId, type, itemId)
-    recordWrite({ channelId, type, itemId, excluded: false })
+    writeCount++
+    if (isSameExclusionList(channelId, type)) excludedIds.value.delete(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.removeError'))
