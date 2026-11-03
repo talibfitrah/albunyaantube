@@ -691,7 +691,7 @@ struct PlayerScreen: View {
             return FixtureQueueSource(deadItems: false)
         }
         #endif
-        return LivePlaylistQueueSource(client: container.innerTube.browse, titles: container.titles)
+        return LivePlaylistQueueSource(client: container.innerTube.browse, titles: container.titles, gate: container.browseGate)
     }
 }
 

@@ -47,6 +47,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private let calendar: Calendar
     private let deadline: Deadline
     private let sleep: Sleep
+    /// A channel's admin exclusions (jar #15); its cached rows are filtered by them at bucketing.
+    private let excludedVideoIds: @Sendable (String) async -> Set<String>
 
     /// The loaded prefix of `allWeeks`, newest week first.
     private(set) var weeks: [WeekSection] = []
@@ -63,6 +65,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private var allWeeks: [WeekSection] = []
     private var loadedWeekCount = 1
     private var channelIds: [String] = []
+    /// Each channel's exclusions from the last refresh, which `rebucket` reads without a fetch.
+    private var hiddenByChannel: [String: Set<String>] = [:]
     private var filter: String?
     /// The UNFILTERED channel count at the last refresh (`MeViewModel.kt:181-195`).
     private var lastChannelCount: Int?
@@ -97,6 +101,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         weeks = []
         allWeeks = []
         channelIds = []
+        hiddenByChannel = [:]
         filter = nil
         lastChannelCount = nil
         loadedWeekCount = 1
@@ -120,13 +125,15 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     init(atom: AtomFeedFetcher, refreshState: any KeyValueStore,
          now: @escaping () -> Date, calendar: Calendar,
          deadline: @escaping Deadline = MeFeedRepository.withDeadline,
-         sleep: @escaping Sleep = MeFeedRepository.wallClockSleep) {
+         sleep: @escaping Sleep = MeFeedRepository.wallClockSleep,
+         excludedVideoIds: @escaping @Sendable (String) async -> Set<String> = { _ in [] }) {
         self.atom = atom
         self.states = refreshState
         self.now = now
         self.calendar = calendar
         self.deadline = deadline
         self.sleep = sleep
+        self.excludedVideoIds = excludedVideoIds
     }
 
     // MARK: - Refresh
@@ -209,6 +216,17 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
         guard !Task.isCancelled else { return }
+        // Jar #15: every subscribed channel's exclusions, asked together, here and never in `rebucket` -- a chip
+        // tap clears the feed first and must not wait on the network to refill it.
+        let excludedVideoIds = excludedVideoIds
+        let hidden = await withTaskGroup(of: (String, Set<String>).self) { group in
+            for id in channelIds { group.addTask { (id, await excludedVideoIds(id)) } }
+            var hidden: [String: Set<String>] = [:]
+            for await (id, ids) in group { hidden[id] = ids }
+            return hidden
+        }
+        guard !Task.isCancelled else { return }
+        hiddenByChannel = hidden
         await rebucket(filter: filter)
     }
 
@@ -314,7 +332,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 
         var items: [VideoItem] = []
         for id in ids {
-            items += await atom.cached(id)
+            let hidden = hiddenByChannel[id] ?? []
+            items += await atom.cached(id).filter { !hidden.contains($0.id) }
         }
         // A chip tapped during those hops has already cleared the feed and moved the generation
         // on; publishing here would put the PREVIOUS filter's rows under the new chip, which is

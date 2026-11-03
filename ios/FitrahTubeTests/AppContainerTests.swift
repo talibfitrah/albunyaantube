@@ -687,6 +687,24 @@ struct AppContainerTests {
                 "the search client must be built over the signed transport")
     }
 
+    /// Owner scope 2026-11-03: the lists' exclusion GET is signed, so a PERSONAL channel's grantee gets its lists (an
+    /// unsigned request reads 404). The approvals row's two halves: signed in production, the canned 503 in a fixture.
+    @Test func theBrowseGateIsSignedInProductionAndCannedInAFixture() throws {
+        func transport(_ container: AppContainer) throws -> Any {
+            try #require(Mirror(reflecting: container.browseGate).children.first { $0.label == "transport" }?.value,
+                         "BackendAvailabilityGate must keep a stored property named `transport`")
+        }
+        #expect(try transport(AppContainer.fake()) is FixedStatusTransport)
+        // The live rig (`browse: nil`): real browse, so a real (unsigned) exclusion fetch.
+        #expect(try transport(AppContainer.fake(browse: nil)) is URLSessionTransport)
+        let production = AppContainer(catalog: FakeCatalogClient(),
+                                      modelContainer: AppContainer.makeModelContainer(inMemory: true),
+                                      apiBaseURL: URL(string: "https://api.fitrah.test/")!,
+                                      browse: FakeBrowseSource(),
+                                      auth: FakeAuthClient(state: .signedOut))
+        #expect(try transport(production) is AuthorizedTransport, "the exclusion GET must be built over the signed transport")
+    }
+
     /// The transport posts from whatever isolation the request ran on; the center buffers one event
     /// and hands it over exactly once, so a re-render cannot route the user twice.
     ///

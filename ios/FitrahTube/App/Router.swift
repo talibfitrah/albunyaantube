@@ -49,6 +49,9 @@ nonisolated enum ReselectAction: Equatable {
     /// A TOKEN, not a `Bool`: `.onChange` needs a value that actually changes, so two consecutive
     /// submits are two refreshes rather than one silently dropped (`scrollToTopSignal`'s reason).
     private(set) var submissionsToken = 0
+    /// Bumped on a return to the foreground after an idle spell (`FitrahTubeApp.isCatalogReloadDue`): Home and the
+    /// three list tabs refresh in place, so newly approved content shows. A token for `submissionsToken`'s reason.
+    private(set) var catalogToken = 0
 
     private var shellIsReady = false
     /// The players a video open pauses (`push`). A parameter only so a test can pass its own table
@@ -84,6 +87,9 @@ nonisolated enum ReselectAction: Equatable {
 
     /// See `submissionsToken`.
     func submissionsChanged() { submissionsToken += 1 }
+
+    /// See `catalogToken`.
+    func catalogChanged() { catalogToken += 1 }
 
     /// Shared tap handler for the bottom `TabView` and the leading `NavigationRailView` (task-7b)
     /// -- switching tabs assigns directly; tapping the already-selected tab reselects (pop to

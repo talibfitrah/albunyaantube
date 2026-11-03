@@ -130,10 +130,17 @@ extension ContentItem {
 struct LivePlaylistQueueSource: PlaylistQueueSource {
     let client: BrowseClient
     let titles: TitlesClient
+    /// The playlist screen's exclusions (jar #15). `fresh: false`: that screen fetched them on this open.
+    let gate: BackendAvailabilityGate
 
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {
-        let page = try await client.playlistItems(playlistId, continuation: continuation)
+        let lists = await gate.exclusions(playlistId: playlistId, fresh: false) ?? Exclusions()
+        let page = try await BrowsePage.skippingEmpty(from: continuation) { c in
+            var page = try await client.playlistItems(playlistId, continuation: c)
+            page.items = await gate.visible(page.items, in: lists, fresh: false)
+            return page
+        }
         return (page.items.map { ContentItem(video: $0) }, page.nextContinuation)
     }
 

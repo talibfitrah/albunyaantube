@@ -107,6 +107,21 @@ struct MeFeedRepositoryTests {
         #expect(allItems(repo) == ["vid-0", "vid-1"])
     }
 
+    // MARK: - Exclusions (jar #15)
+
+    @Test func aVideoExcludedFromItsChannelLeavesTheFeed() async {
+        let transport = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))])
+        let alpha = Self.alpha
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    excludedVideoIds: { $0 == alpha ? ["vid-1"] : [] })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
     // MARK: - Bucketing
 
     @Test func anItemWithNoUploadInstantIsDroppedRatherThanBucketedIntoThisWeek() async {

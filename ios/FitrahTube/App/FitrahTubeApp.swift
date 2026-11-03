@@ -61,6 +61,8 @@ struct FitrahTubeApp: App {
     // `lastRemoteConfigRefresh`: the launch `.task` above consumes that one before the session has
     // loaded, and sharing it would silence the first foreground sync of every launch.
     @State private var lastSync: Date?
+    /// When the scene last went to the background; `isCatalogReloadDue` reads it on the return.
+    @State private var backgroundedAt: Date?
 
     var body: some Scene {
         WindowGroup {
@@ -88,7 +90,9 @@ struct FitrahTubeApp: App {
                     Task { await container.offlineManager.reattach() }
                 }
                 .onChange(of: scenePhase) { _, newPhase in
+                    if newPhase == .background { backgroundedAt = Date() }
                     guard newPhase == .active else { return }
+                    reloadCatalogIfIdle()
                     refreshRemoteConfigIfDue()
                     // Stage 5 / C2.1 + C4.2: NOTHING else re-reads `/me`. `AccountSession.refresh()`
                     // fires only on an auth transition, on `SignInViewModel.land()` and on the
@@ -210,6 +214,22 @@ struct FitrahTubeApp: App {
     static func shouldSyncOnForeground(uid: String?, now: Date, last: Date?, spacing: TimeInterval) -> Bool {
         guard uid != nil else { return false }
         return isRemoteConfigRefreshDue(now: now, last: last, spacing: spacing)
+    }
+
+    /// Home and the lists reload on a return after five idle minutes, so newly approved content shows without a
+    /// pull-to-refresh or a relaunch. nil = never backgrounded (launch): the first load is already running.
+    static func isCatalogReloadDue(backgroundedAt: Date?, now: Date) -> Bool {
+        backgroundedAt.map { now.timeIntervalSince($0) >= catalogIdleReload } ?? false
+    }
+    private static let catalogIdleReload: TimeInterval = 5 * 60
+
+    /// The scene-phase glue for `isCatalogReloadDue`: categories re-read, and the tab roots refresh in place.
+    private func reloadCatalogIfIdle() {
+        let due = Self.isCatalogReloadDue(backgroundedAt: backgroundedAt, now: Date())
+        backgroundedAt = nil
+        guard due else { return }
+        Task { await container.categories.reload() }
+        router.catalogChanged()
     }
 
     /// CF-B1-13: the spacing decision, extracted so it is testable without a running scene.
