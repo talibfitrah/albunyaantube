@@ -16,7 +16,7 @@ ExecStart=/opt/fitrah-solver/node/bin/node --permission \
   --allow-fs-read=/opt/fitrah-solver/ --allow-fs-read=/var/cache/fitrah-solver/ \
   --allow-fs-write=/var/cache/fitrah-solver/ \
   --max-old-space-size=96 /opt/fitrah-solver/app/server.mjs
-# S20: the gateway exits when its executor dies or hangs (an executor stuck in escaped player code cannot notice its connection
+# S20: the gateway exits when an executor dies or hangs (an executor stuck in escaped player code cannot notice its connection
 # closing), and every stop, a crash included, then SIGKILLs every executor. '+': as root, the one command here that is.
 ExecStopPost=-+/bin/systemctl kill --signal=SIGKILL fitrah-solver-exec@*.service
 MemoryMax=192M

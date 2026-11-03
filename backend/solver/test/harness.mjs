@@ -28,7 +28,7 @@ function execProfile(hidden) {
   return ['(version 1)', '(allow default)',
     has('PrivateNetwork=yes') && has('IPAddressDeny=any') ? '(deny network*)' : '',
     has('LimitFSIZE=0') && has('ProtectSystem=strict') ? '(deny file-write*)' : '',
-    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
+    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /dev/shm:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
   ].join('');
 }
 
@@ -61,8 +61,11 @@ export function selfTest(player, timeoutMs) {
   return selfTestPassed(inputs, solveRaw(player, inputs.map(([n]) => n), inputs.map(([, s]) => s), timeoutMs));
 }
 
-/** createSolver over an in-process executor built with `build` (text -> player); the executor rides along for `rejected`. */
+/** createSolver over one in-process executor built with `build` (text -> player), standing in for every player's own; it rides
+ *  along for `rejected`. */
 export function solverWith({ build, ...options }) {
   const executor = createExecutor(build);
-  return Object.assign(createSolver({ ...options, executor }), { executor });
+  const connect = (hash) => ({ build: async (h, text) => executor.build(h, text), solve: async (...args) => executor.solve(...args),
+                               close: () => executor.drop(hash) });
+  return Object.assign(createSolver({ ...options, connect }), { executor });
 }

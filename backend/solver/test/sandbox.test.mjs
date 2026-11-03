@@ -87,15 +87,15 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.equal(exec.at(-1), '/opt/fitrah-solver/app/executor.mjs');
   assert.deepEqual(execFlags('/R'), ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/app/', '--max-old-space-size=256']);
   for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'PrivateNetwork=yes', 'IPAddressDeny=any',
-    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro',
-    'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app', 'ProtectHome=yes', 'ProtectSystem=strict', 'PrivateTmp=yes',
-    'LimitFSIZE=0', 'MemoryMax=384M', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',
+    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /dev/shm:ro',
+    'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app', 'ProtectHome=yes', 'ProtectSystem=strict',
+    'LimitFSIZE=0', 'MemoryMax=384M', 'OOMScoreAdjust=1000', 'SyslogLevelPrefix=no', 'Before=fitrah-solver.service', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',
     'NoNewPrivileges=yes', 'RestrictNamespaces=yes', 'ProtectProc=invisible']) {
     assert.ok(EXEC_UNIT.split('\n').includes(line), line);
   }
-  assert.ok(!/ReadWritePaths|StateDirectory|CacheDirectory|LogsDirectory|RuntimeDirectory/.test(EXEC_UNIT), 'nothing writable');
+  assert.ok(!/^(ReadWritePaths|StateDirectory|CacheDirectory|LogsDirectory|RuntimeDirectory|PrivateTmp)=/m.test(EXEC_UNIT), 'nothing writable');
   const socket = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'systemd', 'fitrah-solver-exec.socket'), 'utf8').split('\n');
-  for (const line of ['ListenStream=/run/fitrah-solver-exec.sock', 'Accept=yes', 'MaxConnections=2']) assert.ok(socket.includes(line), line);
+  for (const line of ['ListenStream=/run/fitrah-solver-exec.sock', 'Accept=yes', 'MaxConnections=4']) assert.ok(socket.includes(line), line);
   assert.match(UNIT, /SOLVER_EXEC_SOCKET=\/run\/fitrah-solver-exec\.sock/, 'the gateway connects where the socket listens');
 });
 
@@ -218,7 +218,8 @@ test('a player that leaves an unhandled rejection is dropped and the real stack 
     assert.equal(stack.gateway.exitCode, null, `the rejection killed the gateway: ${stack.stderr()}`);
     assert.deepEqual([h.status, h.held], ['warming', []]);
     assert.match(stack.stderr(), /WARN player dddddddd left an unhandled promise rejection/);
-    assert.equal(stack.executors.size, 1, 'the executor stays up for the next player');
+    for (let i = 0; i < 50 && stack.executors.size; i++) await new Promise((r) => setTimeout(r, 100));
+    assert.equal(stack.executors.size, 0, 'the player\'s own executor exits with it; the next player gets a fresh one');
   });
 
 /** S20: the vm timeout is not a hard bound (Node's one TerminateExecution is lost inside its promise-reject callback). Since
@@ -233,9 +234,9 @@ test('a hung executor makes the gateway exit 1 with the crash marker naming the 
   const yt = await youtube(t, 'bbbbbbbb', 'var cfg={signatureTimestamp:' + Math.floor(Date.now() / 86_400_000) + '};');
   const gateway = spawn(process.execPath, ['--input-type=module', '-e', `
     import net from 'node:net'; import { connectExecutor, createSolver } from ${JSON.stringify(path.join(root, 'app', 'server.mjs'))};
-    const executor = connectExecutor(net.connect(${JSON.stringify(socketPath)}), { timeoutMs: 1500, onRejected() {},
-      onDead: (why) => { console.error('DEAD ' + why); process.exit(1); } });
-    createSolver({ executor, origin: ${JSON.stringify(yt)}, cacheDir: ${JSON.stringify(cache)}, log: { log() {}, warn: console.error } }).poll();`],
+    const connect = (hash, events) => connectExecutor(net.connect(${JSON.stringify(socketPath)}), { timeoutMs: 1500, ...events,
+      onDead: (why) => { events.onDead(why); console.error('DEAD ' + why); process.exit(1); } });
+    createSolver({ connect, origin: ${JSON.stringify(yt)}, cacheDir: ${JSON.stringify(cache)}, log: { log() {}, warn: console.error } }).poll();`],
   { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';
   gateway.stderr.on('data', (d) => { stderr += d; });

@@ -150,7 +150,6 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
       const { op, hash, text, n, s, timeoutMs } = JSON.parse(line);
       if (op === 'build') reply = executor.build(hash, text);
       else if (op === 'solve') reply = executor.solve(hash, n, s, timeoutMs);
-      else if (op === 'drop') reply = executor.drop(hash);
       else throw new Error('unknown op');
       reply = { ok: true, value: reply };
     } catch (error) {

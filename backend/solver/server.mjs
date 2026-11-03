@@ -1,7 +1,7 @@
 // FitrahTube playback challenge solver: the GATEWAY (spec 2026-10-14 §4.5, R25-R27, R39, R40; S20). Node built-ins only.
 // It serves the backend, fetches and caches base.js, and holds the bookkeeping, but never runs YouTube JS: that happens in
-// the executor (executor.mjs), one process per connection to fitrah-solver-exec.socket, with no network and nothing writable.
-// Every answer the executor gives is untrusted and checked here. Challenges are never logged.
+// the executor (executor.mjs), one process per connection to fitrah-solver-exec.socket, with no network and nothing writable,
+// and one connection per held player. Every answer the executor gives is untrusted and checked here. Challenges are never logged.
 import fs from 'node:fs';
 import http from 'node:http';
 import net from 'node:net';
@@ -12,8 +12,9 @@ export const CHALLENGE = /^[A-Za-z0-9_=-]+$/;
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const random = (length) => Array.from({ length }, () => ALPHABET[Math.floor(Math.random() * 64)]).join('');
-/** yt-dlp's rule too: a player that cannot transform `n` returns `enhanced_except_…`, which is in the alphabet. */
-const usable = (output) => typeof output === 'string' && CHALLENGE.test(output) && !output.startsWith('enhanced_except');
+/** yt-dlp's rule too: a player that cannot transform `n` returns `enhanced_except_…`, which is in the alphabet. Real answers
+ *  are about 20 (n) and 110 (s) characters; a longer one is a hostile player's, which the backend would cache (S20 review). */
+const usable = (output) => typeof output === 'string' && output.length <= 256 && CHALLENGE.test(output) && !output.startsWith('enhanced_except');
 const changed = (output, input) => usable(output) && output !== input;
 
 /** R26: 10 synthetic n (16 chars) and s (108 chars), solved by the executor as any request is. */
@@ -40,11 +41,12 @@ export function answers(n, s, raw) {
 
 const MAX_LINE = 1_048_576;                     // a solve reply is a few KB; more is an executor gone wrong, not a bigger answer
 
-/** The executor over one connection (production: fitrah-solver-exec.socket). One request at a time: createSolver serializes
- *  them, so each reply answers the one waiting call. An executor that answers late (`timeoutMs`, above any op's vm timeouts),
- *  out of turn, unparseably or too long, or hangs up, is dead: `onDead` runs once. It cannot be stopped from here (another
- *  uid, another namespace), so production's onDead exits this process with the crash marker in place, and the unit's
- *  ExecStopPost SIGKILLs every executor. */
+/** The executor over one connection (production: fitrah-solver-exec.socket), which holds one player. One request at a time:
+ *  createSolver serializes them, so each reply answers the one waiting call. An executor that answers late (`timeoutMs`, above
+ *  any op's vm timeouts), out of turn, unparseably or too long, or hangs up, is dead: `onDead` runs once. It cannot be stopped
+ *  from here (another uid, another namespace), so production's onDead exits this process with the crash marker naming the
+ *  connection's player, and the unit's ExecStopPost SIGKILLs every executor. `close` is the gateway's own hang-up: no onDead.
+ *  `onRejected` takes no hash: whatever the executor names, the connection's player is the one that ran there. */
 export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000 }) {
   let buffer = '', waiting = null, timer = null, dead = false;
   const die = (why) => {
@@ -54,7 +56,7 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
     stream.destroy();
     waiting?.reject(new Error(`executor ${why}`));
     waiting = null;
-    onDead(why);
+    onDead?.(why);
   };
   stream.setEncoding('utf8');
   stream.on('data', (chunk) => {
@@ -65,13 +67,13 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
       buffer = buffer.slice(i + 1);
       let message;
       try { message = JSON.parse(line); } catch { return die('sent an unparseable line'); }
-      if (message?.event === 'rejected') { onRejected(message.hash); continue; }
+      if (message?.event === 'rejected') { onRejected(); continue; }
       if (!waiting) return die('answered nothing it was asked');
       const { resolve, reject } = waiting;
       waiting = null;
       clearTimeout(timer);
       if (message?.ok === true) resolve(message.value);
-      else reject(new Error(String(message?.error).slice(0, 200)));    // its text reaches a WARN line: bounded
+      else reject(new Error(String(message?.error).slice(0, 200).replace(/[^\x20-\x7e]/g, '?')));   // reaches a WARN line: bounded, one line
     }
   });
   stream.on('error', () => die('connection failed'));
@@ -86,7 +88,7 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
   return {
     build: (hash, text) => call({ op: 'build', hash, text }),
     solve: (hash, n, s, solveTimeoutMs) => call({ op: 'solve', hash, n, s, timeoutMs: solveTimeoutMs }),
-    drop: (hash) => call({ op: 'drop', hash }),
+    close: () => { onDead = null; die('closed'); },
   };
 }
 
@@ -108,12 +110,13 @@ export function signatureTimestamp(playerText, nowMs) {
   return Math.abs(sts - Math.floor(nowMs / DAY_MS)) <= 60 ? sts : null;
 }
 
-/** At most 2 held players (R25), single-flight polling, a persisted 3-an-hour download budget (R39). `executor` holds the
- *  players and runs them (connectExecutor's shape; tests pass executor.mjs's createExecutor in-process). `now` and `log` are
- *  test seams. */
-export function createSolver({ origin = 'https://www.youtube.com', cacheDir, executor, now = Date.now, log = console,
+/** At most 2 held players (R25), single-flight polling, a persisted 3-an-hour download budget (R39). `connect(hash, events)`
+ *  opens the executor that builds and runs that one player (connectExecutor's shape, `events` its onRejected and onDead; tests
+ *  pass executor.mjs's createExecutor in-process). One per player (S20 review): what one escaped player does to its process
+ *  ends with that player, and a death or rejection on a connection names exactly its player. `now` and `log` are test seams. */
+export function createSolver({ origin = 'https://www.youtube.com', cacheDir, connect, now = Date.now, log = console,
                                solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 }) {
-  const held = new Map();                       // hash -> { sts }, the executor holds the player; insertion order is age
+  const held = new Map();                       // hash -> { sts, executor }; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
   // Names the player being built or solving. An executor that dies or hangs mid-op kills this process (connectExecutor's
   // onDead), as a fatal V8 OOM or the watchdog's SIGKILL would, and skips every finally, so a marker left at start means that
@@ -123,7 +126,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
   let executorRssMiB = null;                    // the executor's own report: where the players' memory is
-  let turn = Promise.resolve();                 // the executor runs one op at a time; so does this side (one marker, one reply)
+  let turn = Promise.resolve();                 // one op at a time, on any executor (one marker, one reply)
+  let queued = 0;
   let cacheWritable = probeCache();
   const crashed = new Set();                    // every player that broke THIS process (an unhandled rejection); skipped until a restart
   // The last process's death is weaker evidence: a watchdog kill of a merely congested loop or a cgroup OOM names whatever
@@ -139,6 +143,16 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
     });
     turn = run.catch(() => {});
     return run;
+  }
+
+  /** Opens `hash`'s executor. A rejection there drops the player and closes it; its death leaves the marker naming the player
+   *  for the next start (production's onDead then exits), even between ops, when no marker is up (S20 review). */
+  function open(hash) {
+    const executor = connect(hash, {
+      onRejected: () => { dropCrashed(hash); executor.close(); },
+      onDead: () => { try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ } },
+    });
+    return executor;
   }
 
   function dropCrashedPlayer() {
@@ -192,9 +206,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
 
   async function pollOnce() {
     let step = 'iframe_api';
-    let file = null;
+    let file = null, hash = null;
     try {
-      const hash = playerHash(await text(`${origin}/iframe_api`));
+      hash = playerHash(await text(`${origin}/iframe_api`));
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
@@ -223,12 +237,10 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
       const sts = signatureTimestamp(playerText, now());                     // before any eviction (M5)
       if (sts === null) throw new Error('sts missing or more than 60 days from today');
       step = 'evict';
+      let executor;
       const cpuMs = await guarded(hash, async () => {
-        if (held.size >= 2) {                                                // BEFORE the build (R27)
-          const oldest = held.keys().next().value;
-          held.delete(oldest);
-          await executor.drop(oldest);
-        }
+        if (held.size >= 2) evict(held.keys().next().value);                 // BEFORE the build (R27)
+        executor = open(hash);
         try {
           step = 'build';
           const built = await executor.build(hash, playerText);
@@ -239,22 +251,23 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
           if (!selfTestPassed(inputs, tested?.raw)) throw new Error('self-test failed');
           return (Number(built?.cpuMs) || 0) + (Number(tested?.cpuMs) || 0);
         } catch (error) {
-          try { await executor.drop(hash); } catch { /* a dead executor ends this process anyway */ }
+          executor.close();
           throw error;
         }
       });
       // an unhandled rejection reported while it built (Node reports it after the run): never adopted (Cubic r6 P2)
       step = 'adopt';
-      if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');
-      held.set(hash, { sts });
+      if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');   // its executor is closed
+      held.set(hash, { sts, executor });
       current = hash;
       log.log(`adopted player ${hash} sts ${sts} cpu ${Math.round(cpuMs)} ms`);
       lastPoll = { at: now(), ok: true, step: 'adopted' };
     } catch (error) {
       log.warn(`WARN poll failed at ${step}: ${error.message}`);
       lastPoll = { at: now(), ok: false, step };
-      // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again
-      if (file && ['sts', 'build', 'self-test'].includes(step)) try { fs.rmSync(file, { force: true }); } catch { /* the WARN above names the step */ }
+      // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again.
+      // One that broke the solver is skipped until a restart, and then rebuilt from the cache: no download (cold review).
+      if (file && ['sts', 'build', 'self-test'].includes(step) && !crashed.has(hash)) try { fs.rmSync(file, { force: true }); } catch { /* the WARN above names the step */ }
     }
   }
 
@@ -267,19 +280,26 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
   function noteRss(reply) { if (Number.isFinite(reply?.rssMiB)) executorRssMiB = reply.rssMiB; }
 
   function evict(playerId) {
+    held.get(playerId)?.executor.close();      // its process exits on the hang-up
     held.delete(playerId);
     if (current === playerId) current = held.keys().next().value ?? null;
   }
 
   async function solve({ playerId, n, s }) {
     if (!held.has(playerId)) return [409, { error: 'unknown player' }];
+    // S20 review: the backend gives up after 1 s and sends more, so a slow executor must not grow a queue of answers nobody reads
+    if (queued >= 32) return [503, { error: 'busy' }];
+    const asked = now();
+    queued++;
     // S20 review: a realm that escapes the vm timeout here hangs the executor; the marker makes the next process drop this
     // player, as for a build, or each restart rebuilds it and hangs again until StartLimitBurst stops the unit.
     return guarded(playerId, async () => {
+      queued--;
       if (!held.has(playerId)) return [409, { error: 'unknown player' }];   // evicted while it waited its turn
+      if (now() - asked > 1_000) return [503, { error: 'stale' }];          // its caller timed out
       let reply;
       try {
-        reply = await executor.solve(playerId, n, s, solveTimeoutMs);
+        reply = await held.get(playerId).executor.solve(playerId, n, s, solveTimeoutMs);
       } catch {                                   // a hung or broken player: evicted there and here, others stay served (ruling 1)
         evict(playerId);
         log.warn(`WARN solve failed for player ${playerId}; evicted`);
@@ -309,11 +329,13 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, exe
     };
   }
 
-  /** The executor named a player that left an unhandled rejection (Cubic r6 P2; executor.mjs `rejected`): it dropped it, so
-   *  this side evicts it and skips it until a restart, never a crash that each restart repeats. Untrusted: a hash only. */
+  /** A player left an unhandled rejection (Cubic r6 P2; executor.mjs `rejected`): its executor dropped it, so this side evicts
+   *  it and skips it until a restart, never a crash that each restart repeats. Production names the connection's player;
+   *  in-process tests name what the executor says, so only a hash is taken. */
   function dropCrashed(hash) {
     if (typeof hash !== 'string' || !/^[0-9a-f]{8}$/.test(hash)) return;
     evict(hash);
+    if (crashed.has(hash)) return;             // one WARN, however many it leaves
     crashed.add(hash);                           // a Set: a later rejection must not forget an earlier crasher (two players in A/B rotation)
     log.warn(`WARN player ${hash} left an unhandled promise rejection; evicted and skipped until a restart`);
   }
@@ -367,16 +389,14 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  let solver;
-  const executor = connectExecutor(net.connect(process.env.SOLVER_EXEC_SOCKET || '/run/fitrah-solver-exec.sock'), {
-    onRejected: (hash) => solver.dropCrashed(hash),
-    onDead: (why) => {          // exit with the marker in place; ExecStopPost then SIGKILLs every executor, a hung one too
-      console.error(`FATAL executor ${why}; exiting so systemd restarts the solver with a fresh executor (S20)`);
-      process.exit(1);
-    },
-  });
-  solver = createSolver({ executor, origin: process.env.SOLVER_ORIGIN || undefined,
-                          cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
+  const socket = process.env.SOLVER_EXEC_SOCKET || '/run/fitrah-solver-exec.sock';
+  const connect = (hash, events) => connectExecutor(net.connect(socket), { ...events, onDead: (why) => {
+    events.onDead(why);         // the marker names the player; ExecStopPost then SIGKILLs every executor, a hung one too
+    console.error(`FATAL executor of player ${hash} ${why}; exiting so systemd restarts the solver with fresh executors (S20)`);
+    process.exit(1);
+  } });
+  const solver = createSolver({ connect, origin: process.env.SOLVER_ORIGIN || undefined,
+                                cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });
   // A stop is a clean exit, never Node's default kill (Cubic r2 P2), and not a crash: an op in flight keeps its player.
   for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { solver.stopped(); process.exit(0); });

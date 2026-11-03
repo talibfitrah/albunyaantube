@@ -847,29 +847,38 @@ test('connectExecutor gives up on an executor that hangs up, answers late, out o
     await call.catch(() => {});
     await new Promise((r) => setTimeout(r, 150));
     assert.deepEqual(dead, [why], why);
-    await assert.rejects(executor.drop('aaaaaaaa'), /executor gone/, `${why}: a dead executor takes no more calls`);
+    await assert.rejects(executor.build('aaaaaaaa', 'x'), /executor gone/, `${why}: a dead executor takes no more calls`);
   }
 });
 
-test('connectExecutor answers one call per reply, passes a rejected-player event on, and bounds an error\'s text (S20)', async () => {
+test('connectExecutor answers one call per reply, passes a rejected event on, and bounds an error\'s text (S20)', async () => {
   const c = fakeConnection();
   const named = [];
-  const executor = connectExecutor(c.stream, { onRejected: (h) => named.push(h), onDead: () => assert.fail('not dead') });
+  const executor = connectExecutor(c.stream, { onRejected: (...h) => named.push(h), onDead: () => assert.fail('not dead') });
   const first = executor.solve('aaaaaaaa', ['abc'], [], 50);
-  await assert.rejects(executor.drop('aaaaaaaa'), /one executor call at a time/);
+  await assert.rejects(executor.build('aaaaaaaa', 'x'), /one executor call at a time/);
   assert.deepEqual(JSON.parse(c.sent[0]), { op: 'solve', hash: 'aaaaaaaa', n: ['abc'], s: [], timeoutMs: 50 });
   c.reply('{"event":"rejected","hash":"bbbbbbbb"}\n{"ok":true,');
   c.reply('"value":{"raw":[["cbaA"],[]]}}\n');
   assert.deepEqual(await first, { raw: [['cbaA'], []] });
-  assert.deepEqual(named, ['bbbbbbbb']);
+  assert.deepEqual(named, [[]], 'the executor\'s hash is never passed on: the connection names its player');
   const second = executor.build('aaaaaaaa', 'x');
   c.reply(`${JSON.stringify({ ok: false, error: 'E'.repeat(5000) })}\n`);
   await assert.rejects(second, (e) => e.message.length === 200);
+  const third = executor.build('aaaaaaaa', 'x');
+  c.reply(`${JSON.stringify({ ok: false, error: 'a\nWARN forged\u0000' })}\n`);
+  await assert.rejects(third, (e) => e.message === 'a?WARN forged?', 'one log line, no control character');
+  const fourth = executor.build('aaaaaaaa', 'x');
+  executor.close();                                                  // the gateway's own hang-up: no onDead
+  await assert.rejects(fourth, /executor closed/);
+  assert.equal(c.stream.destroyed, true);
 });
 
 test('the gateway keeps only usable answers and never throws on a malformed executor reply (S20)', () => {
   const n = ['abc', 'def', 'ghi'];
   assert.deepEqual(answers(n, ['s1'], [['cbaA', 'bad answer!', 42], ['enhanced_except_x']]), { n: { abc: 'cbaA' }, s: {} });
+  assert.deepEqual(answers(['a'], ['b'], [['A'.repeat(256)], ['B'.repeat(257)]]), { n: { a: 'A'.repeat(256) }, s: {} },
+    'a padded answer is a hostile player\'s: the backend would cache it (S20 review)');
   for (const raw of [null, 'x', {}, [null, null], [['no spaces!'], 'b'], [[{ toString: () => 'ok' }], []]]) {
     assert.deepEqual(answers(n, ['s1'], raw), { n: {}, s: {} }, JSON.stringify(raw));
   }
@@ -887,16 +896,72 @@ test('a rejected-player event names a held player only by its hash; anything els
   yt.close();
 });
 
-test('a player named by a rejection that arrives with its self-test answer is never adopted (S20, Cubic r6 P2)', async () => {
+test('a player whose rejection arrives in the same read as its self-test answer is never adopted (S20, Cubic r6 P2)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const answer = (request) => {
     if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
     const raw = [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))];
-    return `${JSON.stringify({ ok: true, value: { raw, cpuMs: 1 } })}\n{"event":"rejected","hash":"aaaaaaaa"}\n`;   // one chunk
+    return `${JSON.stringify({ ok: true, value: { raw, cpuMs: 1 } })}\n{"event":"rejected"}\n`;   // one chunk
   };
-  const executor = connectExecutor(fakeConnection(answer).stream, { onRejected: (h) => solver.dropCrashed(h), onDead: () => assert.fail('not dead') });
-  const solver = createSolver({ executor, origin: yt.url, cacheDir: tempDir(), log: quiet });
+  const dir = tempDir();
+  const solver = createSolver({ connect: (hash, events) => connectExecutor(fakeConnection(answer).stream, events), origin: yt.url,
+                                cacheDir: dir, log: quiet });
   await solver.poll();
   assert.deepEqual([solver.health().held, solver.health().lastPoll.step], [[], 'adopt']);
+  assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), true, 'skipped until a restart, then rebuilt from the cache: no download');
+  yt.close();
+});
+
+/** S20 review (Codex, security review): one executor per held player, so the connection, never the executor's own word, names
+ *  the player behind a rejection or a death; and a death between ops leaves the marker as one mid-op does. */
+test('each player has its own executor: a rejection or a death on it names that player, whatever the executor says (S20 review)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
+  const dir = tempDir();
+  const answer = (request) => {
+    if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
+    const raw = [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))];
+    return `${JSON.stringify({ ok: true, value: { raw, cpuMs: 1 } })}\n`;
+  };
+  const conns = {};
+  const warnings = [];
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: { log() {}, warn: (m) => warnings.push(m) },
+    connect: (hash, events) => { conns[hash] = fakeConnection(answer); return connectExecutor(conns[hash].stream, events); } });
+  await solver.poll(); await solver.poll();
+  assert.deepEqual(solver.health().held, ['aaaaaaaa', 'bbbbbbbb'], 'two players, two executors');
+  conns.aaaaaaaa.reply('{"event":"rejected","hash":"bbbbbbbb"}\n'.repeat(10_000));   // a flood that names the other player
+  assert.deepEqual(solver.health().held, ['bbbbbbbb'], 'the rejecting connection\'s player goes, the one it named stays');
+  assert.equal(conns.aaaaaaaa.stream.destroyed, true, 'its executor is hung up on');
+  assert.equal(warnings.filter((w) => /unhandled promise rejection/.test(w)).length, 1, 'one WARN, not one per event');
+  assert.deepEqual(await solver.solve({ playerId: 'bbbbbbbb', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
+  conns.bbbbbbbb.stream.destroy();                                 // escaped code exits its executor between ops
+  await new Promise((r) => setImmediate(r));
+  assert.equal(fs.readFileSync(path.join(dir, 'building'), 'utf8'), 'bbbbbbbb', 'the next start must drop this player');
+  yt.close();
+});
+
+test('a solve that waited past the backend\'s timeout is skipped, and at most 32 wait (S20 review)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  let clock = Date.now();
+  let release = null;
+  const answer = (request) => {
+    if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
+    return `${JSON.stringify({ ok: true, value: { raw: [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))] } })}\n`;
+  };
+  let hold = false;
+  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: quiet, now: () => clock,
+    connect: (hash, events) => {
+      const c = fakeConnection((request) => (hold && request.op === 'solve' ? (release = () => c.reply(answer(request)), '') : answer(request)));
+      return connectExecutor(c.stream, events);
+    } });
+  await solver.poll();
+  hold = true;
+  const first = solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] });
+  const waiting = Array.from({ length: 32 }, () => solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }));
+  assert.deepEqual(await solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [503, { error: 'busy' }]);
+  await new Promise((r) => setImmediate(r));
+  clock += 1_001;                                                  // the backend gave up on all of them
+  release();
+  assert.deepEqual((await first)[0], 200);
+  assert.deepEqual(new Set((await Promise.all(waiting)).map(([status]) => status)), new Set([503]), 'answered nobody');
   yt.close();
 });
