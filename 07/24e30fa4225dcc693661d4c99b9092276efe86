@@ -1,0 +1,21 @@
+backend/scripts/systemd/fitrah-solver-exec@.service
+  s_543f5b01a05d75::t_86b85704d98c94 58
+backend/solver/test/sandbox.test.mjs
+  s_543f5b01a05d75::t_0b99acc3c84138 97-98
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0724e30fa4225dcc693661d4c99b9092276efe86",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
