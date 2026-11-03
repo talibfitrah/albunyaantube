@@ -94,6 +94,8 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
     'NoNewPrivileges=yes', 'RestrictNamespaces=yes', 'ProtectProc=invisible']) {
     assert.ok(EXEC_UNIT.split('\n').includes(line), line);
   }
+  // a [Unit] key: under [Service] systemd ignores it ("Unknown key"), and an apparmor=0 host would start the executor
+  assert.ok(EXEC_UNIT.split('[Service]')[0].split('\n').includes('AssertSecurity=apparmor'), 'AssertSecurity= in [Unit]');
   assert.ok(!/^(ReadWritePaths|StateDirectory|CacheDirectory|LogsDirectory|RuntimeDirectory|PrivateTmp)=/m.test(EXEC_UNIT), 'nothing writable');
   const socket = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'systemd', 'fitrah-solver-exec.socket'), 'utf8').split('\n');
   for (const line of ['ListenStream=/run/fitrah-solver-exec.sock', 'Accept=yes', 'MaxConnections=4']) assert.ok(socket.includes(line), line);

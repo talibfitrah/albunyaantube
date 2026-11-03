@@ -55,7 +55,7 @@ ProtectSystem=strict
 # directory and /usr/lib/x86_64-linux-gnu, which node needs for its ELF loader (/lib64/ld-linux-x86-64.so.2) and shared
 # libraries (libstdc++, libc, ...). The few programs in that directory (the loader, libc, a glib helper) run in this same
 # sandbox and map no code from anywhere else, all of it noexec. systemd 255 skips mounts it made itself when it applies
-# NoExecPaths=/, so the app directory is named too.
+# NoExecPaths=/, so the app directory is named too. The AppArmor profile refuses every exec on top (node included, EACCES).
 NoExecPaths=/ /opt/fitrah-solver/app
 ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu
 # Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.
