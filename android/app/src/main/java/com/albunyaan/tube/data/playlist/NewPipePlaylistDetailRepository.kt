@@ -7,6 +7,7 @@ import com.albunyaan.tube.data.extractor.NewPipePriorityContext
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
@@ -47,6 +48,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     @Suppress("unused") private val extractorClient: NewPipeExtractorClient,
     private val indexRepository: IndexRepository,
     private val originalTitles: OriginalTitles,
+    private val exclusions: Exclusions,
 ) : PlaylistDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -201,8 +203,25 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.d(TAG, "Fetched more: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 }
 
+                // The next item offset for the caller's next call: YouTube's count, so positions stay YouTube's
+                // when exclusions drop items.
+                val nextItemOffset = itemOffset + items.size
+
+                // Owner bug 2026-11-03: drop what the dashboard excluded from this playlist and from each item's
+                // channel (a channel's own playlists are rarely registered themselves). Every reader of a playlist's
+                // items comes through here: the screen, the player queue and a playlist download.
+                val hidden = exclusions.videoIds(
+                    channelIds = items.mapNotNull { it.channelId?.takeIf(CANONICAL_CHANNEL_ID_REGEX::matches) },
+                    playlistIds = listOf(playlistId),
+                )
+                val shown = items.filterNot { it.videoId in hidden }
+                // A page of only excluded items must not read as the end or as an empty playlist.
+                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null) {
+                    return@withContext getItems(playlistId, nextPage, nextItemOffset)
+                }
+
                 // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.
-                val titled = originalTitles.retitle(items, { it.videoId }) { item, t -> item.copy(title = t) }
+                val titled = originalTitles.retitle(shown, { it.videoId }) { item, t -> item.copy(title = t) }
 
                 // Piggyback index loaded items (fire-and-forget, never blocks UI)
                 // Graceful indexing: don't block playlist loading on index errors (429, etc)
@@ -212,8 +231,6 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.w(TAG, "Indexing failed for playlist $playlistId (continuing anyway): ${e.message}")
                 }
 
-                // Return the next item offset for the caller to use on subsequent calls
-                val nextItemOffset = itemOffset + titled.size
                 PlaylistPage(items = titled, nextPage = nextPage, nextItemOffset = nextItemOffset)
             } catch (e: CancellationException) {
                 throw e

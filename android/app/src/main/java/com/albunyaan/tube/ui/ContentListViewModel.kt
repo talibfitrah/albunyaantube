@@ -11,7 +11,9 @@ import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.emptyFlow
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.asStateFlow
 import kotlinx.coroutines.job
@@ -31,7 +33,8 @@ import kotlinx.coroutines.launch
  */
 class ContentListViewModel(
     private val contentService: ContentService,
-    private val contentType: ContentType
+    private val contentType: ContentType,
+    foregroundReturns: Flow<Unit> = emptyFlow(),
 ) : ViewModel() {
 
     private val _content = MutableStateFlow<ContentState>(ContentState.Loading(LoadingType.INITIAL))
@@ -107,6 +110,7 @@ class ContentListViewModel(
 
     init {
         loadContent()
+        viewModelScope.launch { foregroundReturns.collect { refresh() } } // AppLifecycleTracker.returnsAfterIdle
     }
 
     /**
@@ -331,12 +335,13 @@ class ContentListViewModel(
 
     class Factory(
         private val contentService: ContentService,
-        private val contentType: ContentType
+        private val contentType: ContentType,
+        private val foregroundReturns: Flow<Unit>,
     ) : ViewModelProvider.Factory {
         @Suppress("UNCHECKED_CAST")
         override fun <T : ViewModel> create(modelClass: Class<T>): T {
             if (modelClass.isAssignableFrom(ContentListViewModel::class.java)) {
-                return ContentListViewModel(contentService, contentType) as T
+                return ContentListViewModel(contentService, contentType, foregroundReturns) as T
             }
             throw IllegalArgumentException("Unknown ViewModel class")
         }

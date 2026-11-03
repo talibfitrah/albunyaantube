@@ -14,9 +14,15 @@ import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.FakeContentService
+import com.albunyaan.tube.data.source.api.ContentApi
+import com.albunyaan.tube.data.source.api.RegistryEntry
 import com.albunyaan.tube.player.StreamRequestTelemetry
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.runBlocking
+import retrofit2.Response
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.test.StandardTestDispatcher
@@ -91,8 +97,15 @@ class ChannelDetailViewModelTest {
     private fun createViewModel(
         channelId: String = "UCtest123",
         contentService: ContentService = fakeContentService,
+        excludedVideoIds: List<String> = emptyList(),
     ): ChannelDetailViewModel {
-        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, contentService, channelId).apply {
+        val api: ContentApi = mock()
+        runBlocking {
+            whenever(api.getChannel(channelId))
+                .thenReturn(Response.success(RegistryEntry(excludedVideoIds = excludedVideoIds)))
+        }
+        val exclusions = Exclusions(api, { 0L }, CoroutineScope(testDispatcher))
+        return ChannelDetailViewModel(fakeRepository, fakeTelemetry, fakeCacheDao, contentService, exclusions, channelId).apply {
             timeProvider = { fakeCurrentTimeMs }
         }
     }
@@ -245,6 +258,24 @@ class ChannelDetailViewModelTest {
         val errorAppend = state as ChannelDetailViewModel.PaginatedState.ErrorAppend<*>
         assertEquals(1, errorAppend.items.size)
         assertEquals("cached-v1", (errorAppend.items[0] as ChannelVideo).id)
+    }
+
+    @Test
+    fun `videos cache pre-paint drops what the dashboard excluded from the channel`() = runTest {
+        // Owner bug 2026-11-03: the disk cache may hold a video cached before its exclusion; it must not resurrect.
+        fun row(id: String) = ChannelVideoCache(
+            videoId = id, channelId = "UCtest123", channelName = "Test Channel", title = "Cached $id",
+            thumbnailUrl = null, durationSeconds = null, viewCount = null, uploadedAt = null, isShort = false, fetchedAt = 0L,
+        )
+        fakeCacheDao.rowsForChannel = mapOf("UCtest123" to listOf(row("lesson00001"), row("lesson00002")))
+        fakeRepository.headerResponse = createTestHeader("UCtest123", "Test Channel")
+        fakeRepository.videosError = RuntimeException("Network down") // the cached paint is what stays on screen
+
+        val viewModel = createViewModel("UCtest123", excludedVideoIds = listOf("lesson00001"))
+        advanceUntilIdle()
+
+        val state = viewModel.videosState.value as ChannelDetailViewModel.PaginatedState.ErrorAppend<*>
+        assertEquals(listOf("lesson00002"), state.items.map { (it as ChannelVideo).id })
     }
 
     @Test

@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.source.ContentService
@@ -24,7 +25,8 @@ import javax.inject.Named
 class HomeViewModel @Inject constructor(
     private val app: Application,
     @Named("real") private val contentService: ContentService,
-    private val filterManager: FilterManager
+    private val filterManager: FilterManager,
+    private val lifecycleTracker: AppLifecycleTracker,
 ) : AndroidViewModel(app) {
 
     private val _homeState = MutableStateFlow<HomeState>(HomeState.Loading)
@@ -43,6 +45,7 @@ class HomeViewModel @Inject constructor(
 
     init {
         observeCategoryFilter()
+        viewModelScope.launch { lifecycleTracker.returnsAfterIdle.collect { refresh() } }
     }
 
     private fun observeCategoryFilter() {

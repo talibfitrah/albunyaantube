@@ -23,6 +23,7 @@ import com.albunyaan.tube.data.paging.DefaultContentPagingRepository
 import com.albunyaan.tube.data.report.ReportRepository
 import com.albunyaan.tube.data.report.RetrofitReportRepository
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.RetrofitContentService
 import com.albunyaan.tube.data.source.RetrofitDownloadService
 import com.albunyaan.tube.data.source.api.ContentApi
@@ -302,9 +303,10 @@ object DataModule {
     @Singleton
     @Named("retrofitContentService")
     fun provideRetrofitContentService(
-        contentApi: ContentApi
+        contentApi: ContentApi,
+        exclusions: Exclusions,
     ): ContentService {
-        return RetrofitContentService(contentApi)
+        return RetrofitContentService(contentApi, exclusions)
     }
 
     @Provides

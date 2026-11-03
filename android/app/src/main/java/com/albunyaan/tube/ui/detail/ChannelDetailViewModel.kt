@@ -16,6 +16,7 @@ import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
 import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import dagger.assisted.Assisted
 import dagger.assisted.AssistedFactory
@@ -45,6 +46,7 @@ class ChannelDetailViewModel @AssistedInject constructor(
     private val telemetry: StreamRequestTelemetry,
     private val channelVideoCacheDao: ChannelVideoCacheDao,
     @Named("real") private val contentService: ContentService,
+    private val exclusions: Exclusions,
     @Assisted private val channelId: String
 ) : ViewModel() {
 
@@ -1052,8 +1054,11 @@ class ChannelDetailViewModel @AssistedInject constructor(
      */
     private suspend fun readCachedVideosFor(channelId: String): List<ChannelVideo> {
         return try {
+            // Owner bug 2026-11-03: a row cached before its exclusion must not resurrect. loadInitial's gate has just
+            // fetched this channel's answer, so this is a memo read.
+            val hidden = exclusions.videoIds(listOf(channelId))
             channelVideoCacheDao.getForChannel(channelId)
-                .filter { !it.isShort }
+                .filter { !it.isShort && it.videoId !in hidden }
                 .map { it.toChannelVideo() }
         } catch (e: Exception) {
             Log.w(TAG, "Cache read failed for channel $channelId: ${e.message}")

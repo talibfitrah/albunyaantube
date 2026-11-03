@@ -6,6 +6,7 @@ import com.albunyaan.tube.data.model.api.models.ContentItemDto
 import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.CursorPage
+import com.albunyaan.tube.data.source.api.RegistryEntry
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
@@ -74,7 +75,7 @@ class RetrofitContentServiceTest {
 
     @Test
     fun `verifyAvailable CHANNEL returns true when backend returns 200`() = runTest {
-        whenever(api.checkChannelAvailable("UCabc")).thenReturn(Response.success(Unit))
+        whenever(api.getChannel("UCabc")).thenReturn(Response.success(RegistryEntry()))
 
         assertTrue(service.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
     }
@@ -83,7 +84,7 @@ class RetrofitContentServiceTest {
     fun `verifyAvailable CHANNEL returns true when backend returns 404 (not in registry, fail-open)`() = runTest {
         // 404 means the channel is not in the backend registry (or not yet approved).
         // Fail-open so NewPipe can resolve channels navigated to from playlists.
-        whenever(api.checkChannelAvailable("UCabc")).thenReturn(
+        whenever(api.getChannel("UCabc")).thenReturn(
             Response.error(404, "".toResponseBody(null))
         )
 
@@ -93,7 +94,7 @@ class RetrofitContentServiceTest {
     @Test
     fun `verifyAvailable CHANNEL returns false when backend returns 410 (explicitly admin-blocked)`() = runTest {
         // 410 Gone means the channel was explicitly archived/blocked by an admin.
-        whenever(api.checkChannelAvailable("UCabc")).thenReturn(
+        whenever(api.getChannel("UCabc")).thenReturn(
             Response.error(410, "".toResponseBody(null))
         )
 
@@ -102,18 +103,18 @@ class RetrofitContentServiceTest {
 
     @Test
     fun `verifyAvailable CHANNEL calls only the channel endpoint`() = runTest {
-        whenever(api.checkChannelAvailable("UCabc")).thenReturn(Response.success(Unit))
+        whenever(api.getChannel("UCabc")).thenReturn(Response.success(RegistryEntry()))
 
         service.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc")
 
-        verify(api).checkChannelAvailable("UCabc")
+        verify(api).getChannel("UCabc")
     }
 
     // --- PLAYLIST ---
 
     @Test
     fun `verifyAvailable PLAYLIST returns true when backend returns 200`() = runTest {
-        whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(Response.success(Unit))
+        whenever(api.getPlaylist("PLxyz")).thenReturn(Response.success(RegistryEntry()))
 
         assertTrue(service.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz"))
     }
@@ -123,7 +124,7 @@ class RetrofitContentServiceTest {
         // 404 means the playlist is not in the backend registry (e.g. fetched from a
         // channel's Playlists tab via NewPipe but not individually approved).
         // Fail-open so NewPipe can load the playlist directly.
-        whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(
+        whenever(api.getPlaylist("PLxyz")).thenReturn(
             Response.error(404, "".toResponseBody(null))
         )
 
@@ -133,7 +134,7 @@ class RetrofitContentServiceTest {
     @Test
     fun `verifyAvailable PLAYLIST returns false when backend returns 410 (explicitly admin-blocked)`() = runTest {
         // 410 Gone means the playlist was explicitly archived/blocked by an admin.
-        whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(
+        whenever(api.getPlaylist("PLxyz")).thenReturn(
             Response.error(410, "".toResponseBody(null))
         )
 
@@ -142,11 +143,45 @@ class RetrofitContentServiceTest {
 
     @Test
     fun `verifyAvailable PLAYLIST calls only the playlist endpoint`() = runTest {
-        whenever(api.checkPlaylistAvailable("PLxyz")).thenReturn(Response.success(Unit))
+        whenever(api.getPlaylist("PLxyz")).thenReturn(Response.success(RegistryEntry()))
 
         service.verifyAvailable(AvailabilityCheckType.PLAYLIST, "PLxyz")
 
-        verify(api).checkPlaylistAvailable("PLxyz")
+        verify(api).getPlaylist("PLxyz")
+    }
+
+    // --- Owner bug 2026-11-03: the gate's GET also carries the exclusions ---
+
+    @Test(expected = retrofit2.HttpException::class)
+    fun `verifyAvailable CHANNEL throws on a 500 so the caller decides (fail open)`() = runTest {
+        whenever(api.getChannel("UCabc")).thenReturn(Response.error(500, "".toResponseBody(null)))
+
+        service.verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc")
+    }
+
+    @Test
+    fun `the gate's GET is the answer the channel's lists read, not a second call`() = runTest {
+        val exclusions = Exclusions(api)
+        whenever(api.getChannel("UCabc"))
+            .thenReturn(Response.success(RegistryEntry(excludedVideoIds = listOf("lesson00001"))))
+
+        assertTrue(RetrofitContentService(api, exclusions).verifyAvailable(AvailabilityCheckType.CHANNEL, "UCabc"))
+
+        assertEquals(setOf("lesson00001"), exclusions.videoIds(listOf("UCabc")))
+        verify(api, times(1)).getChannel("UCabc")
+    }
+
+    @Test
+    fun `isInApprovedRegistry CHANNEL is true on a 2xx only`() = runTest {
+        whenever(api.getChannel("UCok")).thenReturn(Response.success(RegistryEntry()))
+        whenever(api.getChannel("UCnew")).thenReturn(Response.error(404, "".toResponseBody(null)))
+        whenever(api.getChannel("UCgone")).thenReturn(Response.error(410, "".toResponseBody(null)))
+        whenever(api.getChannel("UCdown")).thenReturn(Response.error(503, "".toResponseBody(null)))
+
+        assertTrue(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCok"))
+        assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCnew"))
+        assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCgone"))
+        assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCdown"))
     }
 
     // --- ERROR propagation ---

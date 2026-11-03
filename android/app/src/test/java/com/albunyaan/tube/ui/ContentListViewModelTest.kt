@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
+import kotlinx.coroutines.flow.MutableSharedFlow
 import kotlinx.coroutines.launch
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.UnconfinedTestDispatcher
@@ -219,6 +220,20 @@ class ContentListViewModelTest {
     }
 
     // --- Refresh tests ---
+
+    @Test
+    fun `a return to the app after idle reloads the list`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("old")), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("fresh")), null))
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        assertEquals(listOf("fresh"), (vm.content.value as ContentListViewModel.ContentState.Success).items.map { (it as ContentItem.Video).id })
+    }
 
     @Test
     fun `refresh resets pagination and reloads from beginning`() = runTest {

@@ -15,7 +15,8 @@ import kotlinx.coroutines.delay
 import retrofit2.HttpException
 
 class RetrofitContentService(
-    private val api: ContentApi
+    private val api: ContentApi,
+    private val exclusions: Exclusions = Exclusions(api),
 ) : ContentService {
 
     override suspend fun fetchContent(
@@ -126,29 +127,27 @@ class RetrofitContentService(
     }
 
     override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean {
-        val response = when (type) {
-            AvailabilityCheckType.CHANNEL -> api.checkChannelAvailable(youtubeId)
-            AvailabilityCheckType.PLAYLIST -> api.checkPlaylistAvailable(youtubeId)
-            AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId)
+        // A channel or playlist gate is a screen open: ask afresh, so the lists it shows next drop the newest exclusions.
+        val code = when (type) {
+            AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId, fresh = true).codeOrThrow()
+            AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId, fresh = true).codeOrThrow()
+            AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId).let { response ->
+                if (response.isSuccessful || response.code() == 404 || response.code() == 410) response.code()
+                else throw retrofit2.HttpException(response)
+            }
         }
-        return when {
-            response.isSuccessful -> true
-            // 410 Gone: explicitly admin-blocked — hard stop, never fail-open.
-            response.code() == 410 -> false
-            // 404: not in registry yet; fail-open so NewPipe can resolve directly.
-            response.code() == 404 -> true
-            else -> throw retrofit2.HttpException(response)
-        }
+        // 410 Gone: explicitly admin-blocked — hard stop, never fail-open.
+        // 404: not in registry yet; fail-open so NewPipe can resolve directly.
+        return code != 410
     }
 
     override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean {
         return try {
-            val response = when (type) {
-                AvailabilityCheckType.CHANNEL -> api.checkChannelAvailable(youtubeId)
-                AvailabilityCheckType.PLAYLIST -> api.checkPlaylistAvailable(youtubeId)
-                AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId)
+            when (type) {
+                AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId).registered
+                AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId).registered
+                AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId).isSuccessful
             }
-            response.isSuccessful
         } catch (ce: kotlinx.coroutines.CancellationException) {
             // Coroutine scope cancellation (ViewModel cleared / user navigated
             // away) must propagate so structured concurrency works. The broad

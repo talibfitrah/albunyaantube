@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.local.PlaylistVideoLinkDao
 import com.albunyaan.tube.data.local.SavedPlaylist
 import com.albunyaan.tube.data.local.SubscribedChannel
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import com.squareup.moshi.JsonAdapter
 import com.squareup.moshi.Moshi
@@ -33,6 +34,7 @@ import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.flatMapLatest
 import kotlinx.coroutines.flow.flow
 import kotlinx.coroutines.flow.flowOf
+import kotlinx.coroutines.flow.map
 import kotlinx.coroutines.isActive
 import kotlinx.coroutines.sync.Mutex
 import kotlinx.coroutines.sync.Semaphore
@@ -86,6 +88,9 @@ class MeFeedRepository @Inject constructor(
     private val playlistVideoLinkDao: PlaylistVideoLinkDao? = null,
     // B3: required for observeAwaiting(); always Hilt-injected in production.
     private val favoritesRepository: FavoritesRepository,
+    // Owner bug 2026-11-03: the dashboard's exclusions for the read flows. Nullable like the fields above so fixtures
+    // that never exercise it keep compiling; always Hilt-injected in production.
+    private val exclusions: Exclusions? = null,
 ) {
 
     /**
@@ -234,7 +239,7 @@ class MeFeedRepository @Inject constructor(
                         .map { it.channelId }
                         .toList()
                     val cutoff = currentTimeMillis() - FEED_WINDOW_MS
-                    cache.observeRecentForChannels(channelIds, cutoff)
+                    cache.observeRecentForChannels(channelIds, cutoff).map { it.visible(channelIds) }
                 }
             }
             .distinctUntilChanged()
@@ -328,7 +333,8 @@ class MeFeedRepository @Inject constructor(
                                 bucket.endMs,
                             )
                         }
-                        rowsFlow.collect { rows ->
+                        rowsFlow.collect { all ->
+                                val rows = all.visible(channelIds, playlistIds)
                                 val shorts = rows.asSequence()
                                     .filter { it.isShort }
                                     .map { it.toUi() }
@@ -435,7 +441,7 @@ class MeFeedRepository @Inject constructor(
             cache
                 .observeRangeForChannelsOrPlaylists(channelIds, playlistIds, windowStart, windowEnd)
                 .first()
-        }
+        }.visible(channelIds, playlistIds)
         if (rows.isEmpty()) return@withContext null
         // The most recent uploadedAt determines the EARLIEST non-empty bucket.
         val newest = rows.maxOfOrNull { it.uploadedAt ?: 0L } ?: return@withContext null
@@ -502,6 +508,7 @@ class MeFeedRepository @Inject constructor(
         val cachedInWindow = cache
             .observeRangeForChannels(channelIds, bucket.startMs, bucket.endMs)
             .first()
+            .visible(channelIds) // a channel whose only rows here are excluded still needs older pages
         val channelsWithItems: Set<String> = cachedInWindow.asSequence()
             .map { it.channelId }
             .toSet()
@@ -1252,6 +1259,24 @@ class MeFeedRepository @Inject constructor(
         isShort = isShort,
         fetchedAt = now,
     )
+
+    /**
+     * Owner bug 2026-11-03: the cached rows without what the dashboard excluded. A row's own channel's exclusions
+     * always apply; a saved playlist's apply to a row only when no subscribed channel ([subscribed]) brings it in too.
+     * Filtering at read means a row cached before its exclusion never resurrects.
+     */
+    private suspend fun List<ChannelVideoCache>.visible(
+        subscribed: List<String>,
+        playlistIds: List<String> = emptyList(),
+    ): List<ChannelVideoCache> {
+        val ex = exclusions ?: return this
+        if (isEmpty()) return this
+        val byChannel = ex.videoIds(channelIds = map { it.channelId })
+        val byPlaylist = if (playlistIds.isEmpty()) emptySet() else ex.videoIds(playlistIds = playlistIds)
+        if (byChannel.isEmpty() && byPlaylist.isEmpty()) return this
+        val subscribedSet = subscribed.toHashSet()
+        return filterNot { it.videoId in byChannel || (it.videoId in byPlaylist && it.channelId !in subscribedSet) }
+    }
 
     /**
      * ANDROID-PERSONAL-03 / T4: convert a Room cache row to the UI model.

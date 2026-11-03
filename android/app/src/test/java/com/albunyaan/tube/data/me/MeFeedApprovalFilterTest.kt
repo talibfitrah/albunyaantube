@@ -292,6 +292,86 @@ class MeFeedApprovalFilterTest {
         assertEquals(2, result.size)
     }
 
+    // ── Owner bug 2026-11-03: dashboard exclusions ───────────────────────────
+
+    @Test
+    fun `the Me feed drops what the dashboard excluded from a subscribed channel or saved playlist`() = runBlocking {
+        val channel = "UCaaaaaaaaaaaaaaaaaaaaaa" // subscribed
+        val other = "UCbbbbbbbbbbbbbbbbbbbbbb" // not subscribed: its videos come only through the saved playlist
+        insertChannel(channel, "APPROVED")
+        insertPlaylist("PLsaved", "APPROVED")
+        val now = System.currentTimeMillis()
+        fun row(id: String, of: String = channel) = com.albunyaan.tube.data.local.ChannelVideoCache(
+            videoId = id, channelId = of, channelName = "Shaykh", title = "Lesson $id", thumbnailUrl = null,
+            durationSeconds = 600, viewCount = null, uploadedAt = now - 60_000L, isShort = false, fetchedAt = now,
+        )
+        db.channelVideoCacheDao().upsertAll(
+            listOf(row("lesson00001"), row("lesson00002"), row("lesson00003"), row("lesson00004", other), row("lesson00005", other))
+        )
+        db.playlistVideoLinkDao().upsertAll(
+            listOf("lesson00002", "lesson00004", "lesson00005").map { com.albunyaan.tube.data.local.PlaylistVideoLink("PLsaved", it) }
+        )
+        val api: com.albunyaan.tube.data.source.api.ContentApi = mock()
+        fun entry(vararg ids: String) =
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = ids.toList()))
+        org.mockito.kotlin.whenever(api.getChannel(channel)).thenReturn(entry("lesson00001"))
+        org.mockito.kotlin.whenever(api.getChannel(other)).thenReturn(entry())
+        // lesson00002: excluded from the playlist, still approved in the subscribed channel, so it stays.
+        org.mockito.kotlin.whenever(api.getPlaylist("PLsaved")).thenReturn(entry("lesson00002", "lesson00004"))
+        val feed = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = NoopFetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            favoritesRepository = favs,
+            exclusions = com.albunyaan.tube.data.source.Exclusions(
+                api, { 0L }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined),
+            ),
+        )
+
+        assertEquals(
+            setOf("lesson00002", "lesson00003", "lesson00005"),
+            feed.observeWeek(0).first()!!.videos.map { it.videoId }.toSet(),
+        )
+        assertEquals(setOf("lesson00002", "lesson00003"), feed.observeFeed().first().map { it.videoId }.toSet())
+    }
+
+    @Test
+    fun `a week holding only excluded videos is not a week with content`() = runBlocking {
+        val channel = "UCaaaaaaaaaaaaaaaaaaaaaa"
+        insertChannel(channel, "APPROVED")
+        val now = System.currentTimeMillis()
+        db.channelVideoCacheDao().upsertAll(
+            listOf(
+                com.albunyaan.tube.data.local.ChannelVideoCache(
+                    videoId = "lesson00001", channelId = channel, channelName = "Shaykh", title = "Lesson", thumbnailUrl = null,
+                    durationSeconds = 600, viewCount = null, uploadedAt = now - 60_000L, isShort = false, fetchedAt = now,
+                )
+            )
+        )
+        val api: com.albunyaan.tube.data.source.api.ContentApi = mock()
+        org.mockito.kotlin.whenever(api.getChannel(channel)).thenReturn(
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lesson00001")))
+        )
+        val feed = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = NoopFetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            favoritesRepository = favs,
+            exclusions = com.albunyaan.tube.data.source.Exclusions(
+                api, { 0L }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined),
+            ),
+        )
+
+        assertEquals(null, feed.observeWeek(0).first())
+        assertEquals(null, feed.findNextNonEmptyWeekIndex(fromIndex = 0))
+    }
+
     // ── Fake dependencies ────────────────────────────────────────────────────
 
     private object NoopFetcher : ChannelFeedFetcher {
