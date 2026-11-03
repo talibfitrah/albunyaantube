@@ -7,6 +7,7 @@ import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.extractor.ResolvedStreams
 import com.albunyaan.tube.data.source.AvailabilityCheckType
 import com.albunyaan.tube.data.source.ContentService
+import com.albunyaan.tube.data.source.Exclusions
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
@@ -77,6 +78,8 @@ class GlobalStreamResolver private constructor(
      */
     private val contentService: ContentService?,
     private val resolverScope: CoroutineScope = CoroutineScope(SupervisorJob() + Dispatchers.IO),
+    // Owner bug 2026-11-03: what the dashboard excluded from the source channel does not play from it either.
+    private val exclusions: Exclusions? = null,
 ) {
     companion object {
         private const val TAG = "GlobalStreamResolver"
@@ -97,11 +100,13 @@ class GlobalStreamResolver private constructor(
         fun createForTesting(
             provider: StreamResolutionProvider,
             contentService: ContentService? = null,
+            exclusions: Exclusions? = null,
         ): GlobalStreamResolver {
             return GlobalStreamResolver(
                 provider,
                 contentService,
                 CoroutineScope(SupervisorJob() + Dispatchers.Unconfined),
+                exclusions,
             )
         }
     }
@@ -121,6 +126,7 @@ class GlobalStreamResolver private constructor(
     constructor(
         extractorClient: NewPipeExtractorClient,
         @Named("real") contentService: ContentService,
+        exclusions: Exclusions,
     ) : this(
         // ANDROID-PERSONAL-02 [Bug 1]: respect the caller-supplied priority
         // instead of hardcoding [Priority.PLAYER]. Only the real-time
@@ -155,6 +161,7 @@ class GlobalStreamResolver private constructor(
             }
         },
         contentService,
+        exclusions = exclusions,
     )
 
     /**
@@ -391,7 +398,9 @@ class GlobalStreamResolver private constructor(
                         if (!sourceChannelId.isNullOrBlank()) {
                             // Video is from an approved channel — check channel availability,
                             // not per-video registry (channel videos aren't individually registered).
-                            contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId)
+                            // The gate just asked the channel afresh, so its exclusions are a memo read.
+                            contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId) &&
+                                videoId !in exclusions?.channel(sourceChannelId)?.videoIds.orEmpty()
                         } else {
                             contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
                         }

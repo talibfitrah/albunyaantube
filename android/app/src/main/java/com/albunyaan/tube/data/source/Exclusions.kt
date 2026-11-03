@@ -13,6 +13,11 @@ import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
 import kotlinx.coroutines.coroutineScope
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
+import kotlinx.coroutines.flow.update
+import kotlinx.coroutines.sync.Semaphore
+import kotlinx.coroutines.sync.withPermit
 import kotlinx.coroutines.withTimeoutOrNull
 import retrofit2.HttpException
 import retrofit2.Response
@@ -39,8 +44,8 @@ class Exclusions @VisibleForTesting internal constructor(
 
     /**
      * [code]: 2xx registered, 404 not registered (or a PERSONAL grant this user does not hold: no exclusions known, never
-     * gone), 410 gone; null with [error] when the call failed. The shared OkHttp client signs the GET with the user's
-     * Firebase Bearer, so a grantee gets their PERSONAL item's lists.
+     * gone), 410 gone. A failed call sets [error] and keeps the last answer's code, null when there was none. The
+     * shared OkHttp client signs the GET with the user's Firebase Bearer, so a grantee gets their PERSONAL item's lists.
      */
     class Entry(
         val code: Int?,
@@ -60,25 +65,36 @@ class Exclusions @VisibleForTesting internal constructor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>) = size > MEMO_SIZE
     }
     private val inFlight = HashMap<String, Deferred<Entry>>()
+    // ponytail: one app-wide cap on concurrent asks, so a mixed-uploader playlist page cannot burst the backend.
+    private val permits = Semaphore(MAX_CONCURRENT)
+
+    /** Bumped each time an answer lands, so a list already shown (the Me feed) can filter again. */
+    private val _changes = MutableStateFlow(0)
+    val changes: StateFlow<Int> = _changes
 
     /** Channel [id]'s answer. [fresh]: a screen open asks again (joining an ask already running) so a new exclusion shows. */
     suspend fun channel(id: String, fresh: Boolean = false): Entry = lookup("channel:$id", fresh) { api.getChannel(id) }
 
     suspend fun playlist(id: String, fresh: Boolean = false): Entry = lookup("playlist:$id", fresh) { api.getPlaylist(id) }
 
-    /** The video ids the lists of these channels and playlists drop. An id with no answer within [WAIT_MS] adds none. */
+    /**
+     * The video ids the lists of these channels and playlists drop. An id with no answer within [WAIT_MS] adds its last
+     * answer's lists, or none if it never had one.
+     */
     suspend fun videoIds(channelIds: Collection<String> = emptyList(), playlistIds: Collection<String> = emptyList()): Set<String> =
         coroutineScope {
-            val asks = channelIds.filter { it.isNotBlank() }.distinct().map { async { waited { channel(it) } } } +
-                playlistIds.filter { it.isNotBlank() }.distinct().map { async { waited { playlist(it) } } }
+            val asks = channelIds.filter { it.isNotBlank() }.distinct().map { async { waited("channel:$it") { channel(it) } } } +
+                playlistIds.filter { it.isNotBlank() }.distinct().map { async { waited("playlist:$it") { playlist(it) } } }
             asks.awaitAll().flatMapTo(HashSet()) { it?.videoIds.orEmpty() }
         }
 
     /** The playlists a channel's Playlists tab drops, the same fail-open way. */
-    suspend fun playlistIds(channelId: String): Set<String> = waited { channel(channelId) }?.playlistIds.orEmpty()
+    suspend fun playlistIds(channelId: String): Set<String> =
+        waited("channel:$channelId") { channel(channelId) }?.playlistIds.orEmpty()
 
     // The ask keeps running in [scope] after the wait gives up, so its answer still serves the next page.
-    private suspend fun waited(ask: suspend () -> Entry): Entry? = withTimeoutOrNull(WAIT_MS) { ask() }
+    private suspend fun waited(key: String, ask: suspend () -> Entry): Entry? =
+        withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key] }
 
     private suspend fun lookup(key: String, fresh: Boolean, call: suspend () -> Response<RegistryEntry>): Entry {
         val job = synchronized(answers) {
@@ -86,7 +102,11 @@ class Exclusions @VisibleForTesting internal constructor(
                 val held = answers[key]
                 if (!fresh && held != null && held.until > now()) return held
                 scope.async(start = CoroutineStart.LAZY) {
-                    fetch(call, held).also { synchronized(answers) { answers[key] = it; inFlight.remove(key) } }
+                    try {
+                        fetch(call, held).also { synchronized(answers) { answers[key] = it }; _changes.update { n -> n + 1 } }
+                    } finally {
+                        synchronized(answers) { inFlight.remove(key) }
+                    }
                 }.also { inFlight[key] = it }
             }
         }
@@ -94,7 +114,7 @@ class Exclusions @VisibleForTesting internal constructor(
     }
 
     private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?): Entry = try {
-        val r = call()
+        val r = permits.withPermit { call() }
         val body = r.body()
         when {
             r.isSuccessful -> Entry(
@@ -110,13 +130,15 @@ class Exclusions @VisibleForTesting internal constructor(
         failed(e, held) // IOException, a Moshi error
     }
 
+    // Keeps the last answer's status too: one blip must not make a registered channel read as unregistered.
     private fun failed(e: Exception, held: Entry?) =
-        Entry(null, held?.videoIds.orEmpty(), held?.playlistIds.orEmpty(), e, now() + FAILURE_MS)
+        Entry(held?.code, held?.videoIds.orEmpty(), held?.playlistIds.orEmpty(), e, now() + FAILURE_MS)
 
     companion object {
         private const val ANSWER_MS = 5 * 60_000L // a list read away from a screen open (Me feed, player, next page)
         private const val FAILURE_MS = 30_000L
         private const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
         private const val MEMO_SIZE = 500
+        private const val MAX_CONCURRENT = 4
     }
 }

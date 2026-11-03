@@ -169,6 +169,20 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `a failed reload after idle keeps the feed on screen`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), null, false))
+        fakeContentService.homeFeedErrorOnCall = 1
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(listOf("cat1"), state.sections.map { it.categoryId })
+    }
+
+    @Test
     fun `refresh resets and reloads from beginning`() = runTest {
         // Initial load
         fakeContentService.homeFeedResponses.add(

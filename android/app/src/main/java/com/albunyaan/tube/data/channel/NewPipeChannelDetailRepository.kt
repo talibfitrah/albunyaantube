@@ -378,16 +378,24 @@ class NewPipeChannelDetailRepository @Inject constructor(
         // load fell back to the channel tab, so the channel-tab continuation token is
         // not mis-fed into the UU playlist's getMoreItems. The ViewModel prefers UU for
         // deep pagination whenever it is available.
-        val fetched = withContext(Dispatchers.IO) {
-            fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+        val fetch: suspend (Page?) -> ChannelPage<ChannelVideo> = { p ->
+            withContext(Dispatchers.IO) {
+                fetchTabContent(channelId, ChannelTabs.VIDEOS, p) { item ->
+                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                }
             }
         }
-        val shown = fetched.withoutExcluded(channelId) { it.id }
+        var fetched = fetch(page)
+        var shown = fetched.withoutExcluded(channelId) { it.id }
         // A first page of only excluded videos must not read as "no channel tab": the ViewModel would fall back to
         // the UU path, whose deep pagination is broken. The other tabs' ViewModel paths already walk an empty page.
-        val more = fetched.nextPage
-        if (shown.items.isEmpty() && fetched.items.isNotEmpty() && more != null) return getVideosViaChannelTab(channelId, more)
+        // Bounded, so one call cannot walk a whole excluded history.
+        var skipped = 0
+        while (shown.items.isEmpty() && fetched.items.isNotEmpty() && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
+            fetched = fetch(fetched.nextPage ?: break)
+            shown = fetched.withoutExcluded(channelId) { it.id }
+            skipped++
+        }
         return shown.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
     }
 
@@ -925,6 +933,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
         private const val MAX_CACHE_SIZE = 100 // Maximum cached channels — caps heap footprint
         private const val RATE_LIMIT_RETRY_ATTEMPTS = 2
         private const val RATE_LIMIT_RETRY_DELAY_MS = 1_000L
+        private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded videos one call walks past
         private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")
     }
 }

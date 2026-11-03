@@ -131,6 +131,56 @@ class ExclusionsTest {
     }
 
     @Test
+    fun `a slow refresh of an expired answer serves the last lists, never none`() = runTest {
+        whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.channel("UC1")
+        clock += 5 * 60_000L + 1
+        whenever(api.getChannel("UC1")).doSuspendableAnswer { delay(10_000); entry(listOf("lesson00001", "lesson00002")) }
+
+        assertEquals(setOf("lesson00001"), exclusions.videoIds(listOf("UC1")))
+    }
+
+    @Test
+    fun `a failure after an answer keeps its status, so a registered channel stays registered`() = runTest {
+        whenever(api.getChannel("UC1")).thenReturn(entry())
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.channel("UC1")
+
+        whenever(api.getChannel("UC1")).thenAnswer { throw IOException("down") }
+        val failed = exclusions.channel("UC1", fresh = true)
+
+        assertNotNull(failed.error)
+        assertTrue(failed.registered)
+    }
+
+    @Test
+    fun `each landed answer bumps changes, so a list already shown can filter again`() = runTest {
+        whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        val before = exclusions.changes.value
+
+        exclusions.channel("UC1")
+
+        assertEquals(before + 1, exclusions.changes.value)
+    }
+
+    @Test
+    fun `at most four asks reach the backend at once`() = runTest {
+        var running = 0
+        var most = 0
+        val slow: suspend () -> Response<RegistryEntry> = {
+            running++; most = maxOf(most, running); delay(100); running--; entry()
+        }
+        (1..10).forEach { whenever(api.getChannel("UC$it")).doSuspendableAnswer { slow() } }
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+
+        exclusions.videoIds((1..10).map { "UC$it" })
+
+        assertEquals(4, most)
+    }
+
+    @Test
     fun `videoIds unions every channel and playlist it is given`() = runTest {
         whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
         whenever(api.getChannel("UC2")).thenReturn(Response.error(404, "".toResponseBody(null)))

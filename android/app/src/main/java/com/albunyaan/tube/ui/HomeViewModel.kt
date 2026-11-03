@@ -45,7 +45,9 @@ class HomeViewModel @Inject constructor(
 
     init {
         observeCategoryFilter()
-        viewModelScope.launch { lifecycleTracker.returnsAfterIdle.collect { refresh() } }
+        viewModelScope.launch {
+            lifecycleTracker.returnsAfterIdle.collect { loadInitialFeed(keepOnScreen = _homeState.value is HomeState.Success) }
+        }
     }
 
     private fun observeCategoryFilter() {
@@ -60,15 +62,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun loadInitialFeed() {
+    /** [keepOnScreen]: a reload on return from the background swaps the feed only on success, with no skeleton. */
+    fun loadInitialFeed(keepOnScreen: Boolean = false) {
         loadJob?.cancel()
         loadMoreJob?.cancel()
         loadJob = viewModelScope.launch {
-            sections.clear()
-            nextCursor = null
-            hasMore = true
             isLoadingMore = false
-            _homeState.value = HomeState.Loading
+            if (!keepOnScreen) {
+                sections.clear()
+                nextCursor = null
+                hasMore = true
+                _homeState.value = HomeState.Loading
+            }
 
             try {
                 val contentLimit = DeviceConfig.getHomeDataLimit(app)
@@ -79,6 +84,7 @@ class HomeViewModel @Inject constructor(
                     contentLimit = contentLimit,
                     category = currentCategory
                 )
+                sections.clear()
                 sections.addAll(result.sections)
                 nextCursor = result.nextCursor
                 hasMore = result.hasMore
@@ -91,7 +97,11 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Error loading initial home feed", e)
-                _homeState.value = HomeState.Error(e.message ?: "Unknown error")
+                _homeState.value = if (keepOnScreen && sections.isNotEmpty()) {
+                    HomeState.Success(sections.toList(), hasMore) // also clears a cancelled load-more's footer
+                } else {
+                    HomeState.Error(e.message ?: "Unknown error")
+                }
             }
         }
     }

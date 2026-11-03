@@ -239,7 +239,7 @@ class MeFeedRepository @Inject constructor(
                         .map { it.channelId }
                         .toList()
                     val cutoff = currentTimeMillis() - FEED_WINDOW_MS
-                    cache.observeRecentForChannels(channelIds, cutoff).map { it.visible(channelIds) }
+                    cache.observeRecentForChannels(channelIds, cutoff).againOnExclusions().map { it.visible(channelIds) }
                 }
             }
             .distinctUntilChanged()
@@ -333,7 +333,7 @@ class MeFeedRepository @Inject constructor(
                                 bucket.endMs,
                             )
                         }
-                        rowsFlow.collect { all ->
+                        rowsFlow.againOnExclusions().collect { all ->
                                 val rows = all.visible(channelIds, playlistIds)
                                 val shorts = rows.asSequence()
                                     .filter { it.isShort }
@@ -1277,6 +1277,10 @@ class MeFeedRepository @Inject constructor(
         val subscribedSet = subscribed.toHashSet()
         return filterNot { it.videoId in byChannel || (it.videoId in byPlaylist && it.channelId !in subscribedSet) }
     }
+
+    /** Re-emits the rows when an exclusion answer lands, so one that arrived after the 2 s wait still filters. */
+    private fun <T> Flow<T>.againOnExclusions(): Flow<T> =
+        exclusions?.let { ex -> combine(this, ex.changes) { rows, _ -> rows } } ?: this
 
     /**
      * ANDROID-PERSONAL-03 / T4: convert a Room cache row to the UI model.

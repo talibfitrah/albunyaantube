@@ -135,6 +135,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         playlistId: String,
         page: Page?,
         itemOffset: Int
+    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0)
+
+    /** [skipped]: pages of only excluded items already walked past for this call. */
+    private suspend fun getItems(
+        playlistId: String,
+        page: Page?,
+        itemOffset: Int,
+        skipped: Int,
     ): PlaylistPage<PlaylistItem> {
         return withContext(Dispatchers.IO) {
             try {
@@ -215,9 +223,10 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     playlistIds = listOf(playlistId),
                 )
                 val shown = items.filterNot { it.videoId in hidden }
-                // A page of only excluded items must not read as the end or as an empty playlist.
-                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null) {
-                    return@withContext getItems(playlistId, nextPage, nextItemOffset)
+                // A page of only excluded items must not read as the end or as an empty playlist. Bounded, so one
+                // call cannot walk a whole excluded history past the callers' page timeouts.
+                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
+                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1)
                 }
 
                 // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.
@@ -566,6 +575,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         // [A-Za-z0-9_-]. We reject anything else so handles/names cannot
         // accidentally satisfy the registry HEAD lookup.
         private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
+        private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded items one call walks past
         private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours
         // Short TTL for cached negative results — see [resolveCanonicalChannelId].
         // Long enough to prevent re-fetch storms on persistent failures,

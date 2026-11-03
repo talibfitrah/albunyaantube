@@ -13,6 +13,7 @@ import com.albunyaan.tube.data.subscriptions.SubscriptionRepository
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.flow.first
+import kotlinx.coroutines.launch
 import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
@@ -20,6 +21,7 @@ import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.junit.runner.RunWith
+import org.mockito.kotlin.doSuspendableAnswer
 import org.mockito.kotlin.mock
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
@@ -336,6 +338,46 @@ class MeFeedApprovalFilterTest {
             feed.observeWeek(0).first()!!.videos.map { it.videoId }.toSet(),
         )
         assertEquals(setOf("lesson00002", "lesson00003"), feed.observeFeed().first().map { it.videoId }.toSet())
+    }
+
+    @Test
+    fun `an exclusion answer that lands after the feed is shown filters the feed on screen`() = runBlocking {
+        val channel = "UCaaaaaaaaaaaaaaaaaaaaaa"
+        insertChannel(channel, "APPROVED")
+        val now = System.currentTimeMillis()
+        db.channelVideoCacheDao().upsertAll(
+            listOf("lesson00001", "lesson00002").map {
+                com.albunyaan.tube.data.local.ChannelVideoCache(
+                    videoId = it, channelId = channel, channelName = "Shaykh", title = "Lesson", thumbnailUrl = null,
+                    durationSeconds = 600, viewCount = null, uploadedAt = now - 60_000L, isShort = false, fetchedAt = now,
+                )
+            }
+        )
+        val api: com.albunyaan.tube.data.source.api.ContentApi = mock()
+        val backendAnswers = kotlinx.coroutines.CompletableDeferred<Unit>()
+        org.mockito.kotlin.whenever(api.getChannel(channel)).doSuspendableAnswer {
+            backendAnswers.await() // slower than the list's 2 s wait: the feed first shows fail-open
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lesson00001")))
+        }
+        val feed = MeFeedRepository(
+            subscriptions = subs,
+            cache = db.channelVideoCacheDao(),
+            refreshStateDao = db.channelFeedRefreshStateDao(),
+            fetcher = NoopFetcher,
+            ioDispatcher = Dispatchers.Unconfined,
+            telemetry = MeRefreshTelemetry(),
+            favoritesRepository = favs,
+            exclusions = com.albunyaan.tube.data.source.Exclusions(
+                api, { 0L }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + Dispatchers.Unconfined),
+            ),
+        )
+        val shown = kotlinx.coroutines.flow.MutableStateFlow<Set<String>?>(null)
+        val screen = launch { feed.observeFeed().collect { rows -> shown.value = rows.map { it.videoId }.toSet() } }
+
+        kotlinx.coroutines.withTimeout(10_000) { shown.first { it == setOf("lesson00001", "lesson00002") } }
+        backendAnswers.complete(Unit)
+        kotlinx.coroutines.withTimeout(10_000) { shown.first { it == setOf("lesson00002") } }
+        screen.cancel()
     }
 
     @Test

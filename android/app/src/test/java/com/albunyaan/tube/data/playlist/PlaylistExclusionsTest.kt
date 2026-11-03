@@ -11,6 +11,7 @@ import kotlinx.coroutines.test.runTest
 import okhttp3.ResponseBody.Companion.toResponseBody
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNull
+import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
 import org.mockito.kotlin.any
@@ -73,6 +74,21 @@ class PlaylistExclusionsTest {
         assertEquals(listOf("lesson00003"), result.items.map { it.videoId })
         assertEquals(listOf(103), result.items.map { it.position })
         assertNull(result.nextPage)
+    }
+
+    @Test
+    fun `a long run of excluded pages stops after five skips and hands back where it got to`() = runTest {
+        whenever(api.fetchTitles(any())).thenReturn(Response.success(emptyMap()))
+        whenever(api.getPlaylist(PLAYLIST)).thenReturn(entry(*(1..9).map { "lesson0000$it" }.toTypedArray()))
+        whenever(api.getChannel(CHANNEL)).thenReturn(Response.error(404, "".toResponseBody(null)))
+        (1..9).forEach { youtube.pages["P$it"] = continuation(listOf("lesson0000$it" to CHANNEL), next = "P${it + 1}") }
+
+        val result = repository(Exclusions(api, { 1_000L }, backgroundScope)).getItems(PLAYLIST, page("P1"), itemOffset = 1)
+
+        assertEquals(emptyList<String>(), result.items.map { it.videoId })
+        // P1 plus five skipped pages read; the caller continues from P7.
+        assertTrue(String(result.nextPage!!.body!!).contains("\"P7\""))
+        assertEquals(7, result.nextItemOffset)
     }
 
     @Test
