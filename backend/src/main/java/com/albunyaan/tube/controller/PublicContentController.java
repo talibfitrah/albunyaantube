@@ -58,9 +58,10 @@ public class PublicContentController {
      * The caller's uid from a valid Firebase Bearer, else null. FirebaseAuthFilter skips /api/v1/*, so the two
      * routes that serve a PERSONAL item to its grantees read the token here. A missing, malformed, expired or
      * forged token is simply anonymous: never a 401, so it cannot tell the caller anything a missing id would not.
-     * ponytail: a Firebase signing-key outage here also reads as anonymous, so a grantee then gets the 404 and lists
-     * the item without its exclusions until Firebase is back (every signed-in route is down then anyway). Making it a
-     * 503 would break PUBLIC reads for every signed-in user instead.
+     * A Firebase outage here (signing keys unreachable) also reads as anonymous, so a grantee then gets the 404 and
+     * lists the item without its exclusions until Firebase is back. Deliberate: the keys are fetched before the
+     * signature is checked, so a forged token with plausible claims fails the same way; a 503 "only if the item is
+     * PERSONAL" would hand anyone with such a token a PERSONAL-vs-missing oracle for the length of the outage.
      */
     private String viewerUid(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) return null;
