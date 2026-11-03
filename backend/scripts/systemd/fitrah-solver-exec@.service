@@ -51,11 +51,11 @@ AppArmorProfile=fitrah-solver-exec
 BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu
 ProtectHome=yes
 ProtectSystem=strict
-# No shell and no tool (the drill spawned `sh -c id`; only --permission refused it): nothing executes outside node's
-# directory and /usr/lib/x86_64-linux-gnu, which node needs for its ELF loader (/lib64/ld-linux-x86-64.so.2) and shared
-# libraries (libstdc++, libc, ...). The few programs in that directory (the loader, libc, a glib helper) run in this same
-# sandbox and map no code from anywhere else, all of it noexec. systemd 255 skips mounts it made itself when it applies
-# NoExecPaths=/, so the app directory is named too. The AppArmor profile refuses every exec on top (node included, EACCES).
+# No shell and no tool (the drill spawned `sh -c id`; only --permission refused it). Every exec, node itself included, is
+# refused by the AppArmor profile above (deny /** x: EACCES). Under it, as the second layer, no code is mapped executable
+# outside node's directory and /usr/lib/x86_64-linux-gnu, which node needs for its ELF loader
+# (/lib64/ld-linux-x86-64.so.2) and shared libraries (libstdc++, libc, ...). systemd 255 skips mounts it made itself when
+# it applies NoExecPaths=/, so the app directory is named too.
 NoExecPaths=/ /opt/fitrah-solver/app
 ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu
 # Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.

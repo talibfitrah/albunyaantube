@@ -5,7 +5,7 @@
 # /run/fitrah-solver-exec.sock, which TemporaryFileSystem=/run:ro disconnects, and AppArmor 4.0.1 still mediates unix
 # sockets. Without attach_disconnected and unix, node's getsockname on stdin is denied and no executor gets ready (the
 # 2026-11-03 07:11Z deploy). Measured socket-activated: a solve end to end, the four mem writes EACCES, exec EACCES, no
-# profile switch (NoNewPrivileges=yes), 0 audit denials. Install: /etc/apparmor.d/fitrah-solver-exec, then
+# profile switch (NoNewPrivileges=yes), no other denial. Install: /etc/apparmor.d/fitrah-solver-exec, then
 # `apparmor_parser -r` it; apparmor.service loads it at every boot.
 abi <abi/4.0>,
 include <tunables/global>
