@@ -1,0 +1,66 @@
+android/app/src/main/java/com/albunyaan/tube/ui/HomeViewModel.kt
+  s_543f5b01a05d75::t_1dd8c9ec119c48 93-94
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_543f5b01a05d75::t_ce1f5c9e7b72e8 1170,2161-2163
+  s_543f5b01a05d75::t_7b25e4955a49e1 1114,2164,2319-2337,2363
+  s_543f5b01a05d75::t_90ff5864e578e9 36
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_543f5b01a05d75::t_0c967ae1321483 307-313
+  s_543f5b01a05d75::t_64684fbdee8018 261-306
+android/app/src/main/java/com/albunyaan/tube/ui/PlaylistsFragmentNew.kt
+  s_543f5b01a05d75::t_cf88d491b851e9 212,214
+android/app/src/main/java/com/albunyaan/tube/data/source/Exclusions.kt
+  s_543f5b01a05d75::t_89e055723306e4 79-81,83,138,140,145-146,149-154,157,171,180,185
+  s_543f5b01a05d75::t_1177dbb643f86c 90-91
+  s_543f5b01a05d75::t_26f320bc5a286c 141-142
+android/app/src/main/java/com/albunyaan/tube/ui/ChannelsFragmentNew.kt
+  s_543f5b01a05d75::t_cf88d491b851e9 222,224
+android/app/src/test/java/com/albunyaan/tube/data/shorts/ShortsFeedRepositoryTest.kt
+  s_543f5b01a05d75::t_54c7fa5d74130b 106
+  s_543f5b01a05d75::t_c1da81d2311898 98-105,107-108
+  s_543f5b01a05d75::t_ee25b47ed6c91b 97
+android/app/src/test/java/com/albunyaan/tube/data/playlist/PlaylistExclusionsTest.kt
+  s_543f5b01a05d75::t_31d370108a2401 119
+  s_543f5b01a05d75::t_0d29ac66090c98 98-110
+  s_543f5b01a05d75::t_155b6550032aa0 97
+android/app/src/test/java/com/albunyaan/tube/data/source/ExclusionsTest.kt
+  s_543f5b01a05d75::t_8ac453c59b620d 266,281-316
+  s_543f5b01a05d75::t_49984f577b71d8 267-280
+android/app/src/main/java/com/albunyaan/tube/data/playlist/NewPipePlaylistDetailRepository.kt
+  s_543f5b01a05d75::t_11d3d70d6eafdf 146-149,238-239
+android/app/src/test/java/com/albunyaan/tube/ui/detail/PlaylistDetailViewModelTest.kt
+  s_543f5b01a05d75::t_11d3d70d6eafdf 344-345,441-442,884-885
+android/app/src/main/java/com/albunyaan/tube/data/playlist/PlaylistDetailRepository.kt
+  s_543f5b01a05d75::t_11d3d70d6eafdf 39-40,46-47
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelTestDoubles.kt
+  s_543f5b01a05d75::t_11d3d70d6eafdf 171,201,203
+android/app/src/main/java/com/albunyaan/tube/data/shorts/ShortsFeedRepository.kt
+  s_543f5b01a05d75::t_0c5616aeb8854d 150-151
+android/app/src/main/java/com/albunyaan/tube/ui/VideosFragmentNew.kt
+  s_543f5b01a05d75::t_cf88d491b851e9 232,234
+android/app/src/androidTest/java/com/albunyaan/tube/data/playlist/FakePlaylistDetailRepository.kt
+  s_543f5b01a05d75::t_11d3d70d6eafdf 118-119
+android/app/src/main/java/com/albunyaan/tube/ui/ContentListViewModel.kt
+  s_543f5b01a05d75::t_cf88d491b851e9 410-416
+  s_543f5b01a05d75::t_21c4914f0f4c66 417
+  s_543f5b01a05d75::t_40619bf0328442 106-110,134,153,302-303,327-329
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_543f5b01a05d75::t_4f691d3afdb4fe 267-298
+  s_543f5b01a05d75::t_11d3d70d6eafdf 330-331
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f256f170b83e996a2708b348d7bbba673b7ff22b",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
