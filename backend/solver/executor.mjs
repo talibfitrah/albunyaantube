@@ -2,8 +2,9 @@
 // spawned per connection by fitrah-solver-exec.socket, its stdin and stdout that connection, and has no network, no secret
 // and nothing writable (fitrah-solver-exec@.service): player JS that escapes the vm realm below (Cubic r13 #1, r14 P1) reaches
 // host JS here and nothing else. The gateway (server.mjs) fetches, caches and validates. Node built-ins only.
-// Protocol: one JSON object per line. Requests {op: 'build'|'solve'|'drop', ...}, one reply each, in order: {ok, value} or
-// {ok: false, error}. Unasked: {event: 'rejected', hash} when a player left an unhandled rejection (Cubic r6 P2).
+// Protocol: one JSON object per line. First, unasked, {event: 'ready'}; the gateway sends nothing before it. Requests
+// {op: 'build'|'solve', ...}, one reply each, in order: {ok, value} or {ok: false, error}. Unasked: {event: 'rejected', hash}
+// when a player left an unhandled rejection (Cubic r6 P2). The gateway holds one player per executor and hangs up to drop it.
 import fs from 'node:fs';
 import path from 'node:path';
 import readline from 'node:readline';
