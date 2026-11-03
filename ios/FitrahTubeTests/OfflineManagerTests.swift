@@ -284,6 +284,23 @@ struct OfflineManagerTests {
         #expect(rig.flags.gateAsks.filter { $0.hasPrefix("vidPreV7") } == ["vidPreV7@-"])
     }
 
+    /// Exclusions at playback: a save opened with no channel (Search, a deep link, Favorites) stamps the uploader its
+    /// walk answered, so the saved copy asks that channel's exclusions before it plays. A recorded channel is kept.
+    @Test func aSaveWithNoChannelStampsTheUploaderItsWalkAnswered() async throws {
+        let rig = makeRig(.hls); defer { rig.cleanUp() }
+        rig.resolver.uploader = Self.channelId
+        let id = await save(rig)
+        #expect(rig.persisted(id: id)?.channelId == Self.channelId)
+
+        let kept = makeRig(.hls); defer { kept.cleanUp() }
+        kept.resolver.uploader = Self.channelId
+        var metadata = Self.metadata
+        metadata.channelId = "UCcontext"
+        await kept.manager.save(videoId: Self.lectureVideoId, quality: "360p", audioOnly: true, metadata: metadata)
+        #expect(kept.engine.starts.count == 1, "the walk ran")
+        #expect(kept.persisted(videoId: Self.lectureVideoId)?.channelId == "UCcontext")
+    }
+
     // MARK: - Resolve path
 
     /// Fix r4 N-1: an audio-only save takes the plain, cache-first walk, so the common save (the
@@ -3451,7 +3468,7 @@ struct OfflineManagerTests {
         defer { try? FileManager.default.removeItem(at: base) }
         let engine = ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base), configuration: .default)
         let manager = OfflineManager(
-            store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver),
+            store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver, gate: nil),
             limiterCheck: { await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { false }, isOnCellular: { false }, baseDirectory: base,
             // `.allowed`, not `.unreachable` (adversarial r1 P1-2): this rig asserts the save

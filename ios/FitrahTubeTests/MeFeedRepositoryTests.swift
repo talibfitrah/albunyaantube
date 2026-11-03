@@ -115,11 +115,27 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    exclusions: { Exclusions(videoIds: $0 == alpha ? ["vid-1"] : []) })
+                                    exclusions: { id, _ in Exclusions(videoIds: id == alpha ? ["vid-1"] : []) })
 
         await repo.refresh(channelIds: [Self.alpha], force: false)
 
         #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// A pull to refresh (`force`) asks the exclusions fresh, so a new exclusion shows at once; the automatic
+    /// refreshes reuse the gate's answer (up to `ExclusionMemo.maxAge`).
+    @Test func onlyAPullToRefreshAsksTheExclusionsFresh() async {
+        nonisolated final class Asked: @unchecked Sendable { let lock = NSLock(); var fresh: [Bool] = [] }
+        let asked = Asked()
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: ScriptedTransport([]), keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    exclusions: { _, fresh in asked.lock.withLock { asked.fresh.append(fresh) }; return Exclusions() })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        await repo.refresh(channelIds: [Self.alpha], force: true)
+
+        #expect(asked.lock.withLock { asked.fresh } == [false, true])
     }
 
     /// The exclusions GETs go out at most `maxConcurrent` at a time, like the feeds.
@@ -134,7 +150,7 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: ScriptedTransport([]), keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    exclusions: { _ in
+                                    exclusions: { _, _ in
                                         inFlight.enter()
                                         try? await Task.sleep(for: .milliseconds(20))
                                         inFlight.leave()
@@ -161,7 +177,7 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: overlap, keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    exclusions: { _ in overlap.lock.withLock { overlap.asked = true }; return Exclusions() })
+                                    exclusions: { _, _ in overlap.lock.withLock { overlap.asked = true }; return Exclusions() })
 
         await repo.refresh(channelIds: [Self.alpha], force: false)
 
@@ -186,7 +202,7 @@ struct MeFeedRepositoryTests {
     private func exclusionsRepo(_ transport: ScriptedTransport, _ answers: Answers) -> MeFeedRepository {
         MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
                          refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar, sleep: { _ in },
-                         exclusions: { await answers.answer($0) }, exclusionWait: .milliseconds(50))
+                         exclusions: { id, _ in await answers.answer(id) }, exclusionWait: .milliseconds(50))
     }
 
     /// Up to ~5 s for `condition`, polling: the late-answer cases wait on work the repository started itself.
@@ -287,7 +303,7 @@ struct MeFeedRepositoryTests {
                                      park: { _ in await parked.block() })
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: slow, keyValueStore: saved), refreshState: MemoryKV(),
                                     now: { Self.now }, calendar: Self.calendar, sleep: { _ in },
-                                    exclusions: { await answers.answer($0) }, exclusionWait: .milliseconds(50))
+                                    exclusions: { id, _ in await answers.answer(id) }, exclusionWait: .milliseconds(50))
 
         let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: false) }
         await parked.waitUntilBlocked()

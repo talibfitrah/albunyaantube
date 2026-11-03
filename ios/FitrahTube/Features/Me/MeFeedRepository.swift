@@ -47,9 +47,9 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private let calendar: Calendar
     private let deadline: Deadline
     private let sleep: Sleep
-    /// A channel's admin exclusions (jar #15), as `BackendAvailabilityGate.exclusions(channelId:)` answers them; its
+    /// A channel's admin exclusions (jar #15), as `BackendAvailabilityGate.exclusions(channelId:fresh:)` answers them; its
     /// cached rows are filtered by them at bucketing (`landed`).
-    private let exclusions: @Sendable (String) async -> Exclusions?
+    private let exclusions: @Sendable (_ channelId: String, _ fresh: Bool) async -> Exclusions?
     private let exclusionWait: Duration
 
     /// The loaded prefix of `allWeeks`, newest week first.
@@ -73,8 +73,10 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// video hidden once stays hidden while the next answer is on its way. `goneChannelIds` answered 410.
     private var hiddenByChannel: [String: Set<String>] = [:]
     private var goneChannelIds: Set<String> = []
-    /// The running round's exclusion asks (`askExclusions`): answers land as they arrive (`landed`), the feed waits
-    /// for them at most `exclusionWait`, and an answer later than that filters the feed in place.
+    /// The running round's exclusion asks (`askExclusions`). Each answer filters the feed as it lands (`landed`), and
+    /// a channel not answered yet stays held back however long that takes: the rows never wait on `exclusionWait`.
+    /// It bounds only the round's end (the spinner, the final rebucket): feeds in, and every answer or
+    /// `exclusionWait` since the asks went out, whichever is first.
     private var exclusionsRound = 0
     private var exclusionsPending: Set<String> = []
     private var exclusionsWaiting: Task<Void, Never>?
@@ -145,7 +147,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
          now: @escaping () -> Date, calendar: Calendar,
          deadline: @escaping Deadline = MeFeedRepository.withDeadline,
          sleep: @escaping Sleep = MeFeedRepository.wallClockSleep,
-         exclusions: @escaping @Sendable (String) async -> Exclusions? = { _ in Exclusions() },
+         exclusions: @escaping @Sendable (String, Bool) async -> Exclusions? = { _, _ in Exclusions() },
          exclusionWait: Duration = .seconds(2)) {
         self.atom = atom
         self.states = refreshState
@@ -212,7 +214,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 
         // Jar #15: every subscribed channel's exclusions, here and never in `rebucket` -- a chip tap clears the feed
         // first and must not wait on the network to refill it. Asked alongside the feeds.
-        let answered = askExclusions(channelIds)
+        let answered = askExclusions(channelIds, fresh: force)
         let at = now()
         let due = channelIds.filter { MeFeedRefreshGate.decide(state(for: $0), now: at, force: force) == .fetch }
         if due.isEmpty {
@@ -245,9 +247,11 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     }
 
     /// Asks every channel's exclusions, bounded like the feeds; no stagger, as the memo answers most of these without
-    /// a request. Returns the wait the feed renders after: every answer in, or `exclusionWait`, whichever is first.
-    /// A slow backend (30 channels could take 24 s) then holds the feed no longer than that.
-    private func askExclusions(_ ids: [String]) -> Task<Void, Never> {
+    /// a request. `fresh` (a pull to refresh) skips the memo, so a new exclusion shows at once; the automatic refreshes
+    /// reuse an answer up to `ExclusionMemo.maxAge` old. Returns the round's wait: every answer in, or `exclusionWait`,
+    /// whichever is first. A slow backend (30 channels could take 24 s) holds the round's end no longer than that;
+    /// its late answers still filter in place, and their channels stay hidden until they do.
+    private func askExclusions(_ ids: [String], fresh: Bool) -> Task<Void, Never> {
         exclusionsTask?.cancel()
         exclusionsWaiting?.cancel()   // a superseded round stops waiting and sees its cancellation
         exclusionsRound += 1
@@ -259,7 +263,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         let ask = exclusions
         exclusionsTask = Task {
             _ = await Self.fanOut(ids, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in }) { id in
-                await self.landed(id, await ask(id), round: round)
+                await self.landed(id, await ask(id, fresh), round: round)
             }
         }
         return wait

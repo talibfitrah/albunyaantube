@@ -23,6 +23,8 @@ public struct StreamingData: Sendable, Equatable {
     /// `videoDetails.title`: the uploader's own title, untranslated at hl=en, ar and nl (VISIONOS live probes 2026-08-23
     /// and 2026-10-17). Owner issue 1: the player shows this, never a list's translation.
     public var title: String?
+    /// `videoDetails.channelId`: the uploader, whose exclusions playback asks. Read leniently, as `title` is.
+    public var channelId: String?
 
     public init(
         hlsManifestURL: URL? = nil,
@@ -32,7 +34,8 @@ public struct StreamingData: Sendable, Equatable {
         isLive: Bool = false,
         isLiveNow: Bool = false,
         captionTracks: [CaptionTrack] = [],
-        title: String? = nil
+        title: String? = nil,
+        channelId: String? = nil
     ) {
         self.hlsManifestURL = hlsManifestURL
         self.itag18URL = itag18URL
@@ -42,6 +45,7 @@ public struct StreamingData: Sendable, Equatable {
         self.isLiveNow = isLiveNow
         self.captionTracks = captionTracks
         self.title = title
+        self.channelId = channelId
     }
 }
 
@@ -114,7 +118,8 @@ public struct PlayerResponseParser: Sendable {
             isLive: wire.videoDetails?.isLive ?? wire.videoDetails?.isLiveContent ?? false,
             isLiveNow: wire.videoDetails?.isLive == true,
             captionTracks: captionTracks(from: wire.captions),
-            title: wire.videoDetails?.title
+            title: wire.videoDetails?.title,
+            channelId: wire.videoDetails?.channelId
         )
     }
 
@@ -224,14 +229,16 @@ public struct PlayerResponseParser: Sendable {
             /// Display-only, so read leniently (stage 9 I-C9c, the `messages` rule): a title that is not a string is no
             /// title, never a failed decode of the response every resolve needs.
             var title: String?
+            var channelId: String?
 
-            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title }
+            private enum CodingKeys: String, CodingKey { case isLive, isLiveContent, title, channelId }
 
             init(from decoder: Decoder) throws {
                 let container = try decoder.container(keyedBy: CodingKeys.self)
                 isLive = try container.decodeIfPresent(Bool.self, forKey: .isLive)
                 isLiveContent = try container.decodeIfPresent(Bool.self, forKey: .isLiveContent)
                 title = try? container.decodeIfPresent(String.self, forKey: .title)
+                channelId = try? container.decodeIfPresent(String.self, forKey: .channelId)
             }
         }
         struct ResponseContext: Decodable {

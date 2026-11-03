@@ -122,7 +122,8 @@ struct LiveBrowseSource: BrowseSource {
         return try await attempt({
             try await BrowsePage.skippingEmpty(from: continuation) { c in
                 var page = try await client.playlistItems(playlistId, continuation: c)
-                guard let shown = await gate.visible(page.items, in: lists, playlistId: playlistId, fresh: c == nil) else {
+                guard let shown = await gate.visible(page.items, in: lists, playlistId: playlistId,
+                                                         owner: page.ownerChannelId, fresh: c == nil) else {
                     return try Self.pulled(first: continuation == nil)   // excluded from its own channel
                 }
                 page.items = await titles.retitle(shown)

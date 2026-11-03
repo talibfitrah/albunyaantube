@@ -167,7 +167,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         #if DEBUG
         if parksOfflineStack { return ParkedStreamResolver() }
         #endif
-        return LiveStreamResolver(resolver: resolver)
+        return LiveStreamResolver(resolver: resolver, gate: browseGate)
     }()
 
     /// Phase 3 Task 8: the app's ONE Cast seam. `lazy` like the stores above — building it is free
@@ -269,7 +269,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         let gate = browseGate
         return MeFeedRepository(atom: innerTube.atom, refreshState: store,
                                 now: { Date() }, calendar: .autoupdatingCurrent,
-                                exclusions: { await gate.exclusions(channelId: $0, fresh: false) })
+                                exclusions: { await gate.exclusions(channelId: $0, fresh: $1) })
     }()
 
     /// The hand-written clients' signed transport. Not private and not a detail, for the same

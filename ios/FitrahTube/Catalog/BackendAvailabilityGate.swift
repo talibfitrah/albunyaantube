@@ -76,31 +76,59 @@ struct BackendAvailabilityGate: AvailabilityGate {
         }
     }
 
-    /// A playlist page minus its exclusions; nil = the playlist is gone. One the backend does not list -- a channel's
-    /// own playlist, usually -- takes each item's channel's exclusions instead: their videos are hidden, a 410
-    /// channel's items are hidden, and a channel that excluded this playlist makes it gone (a deep link to it). Those
-    /// asks are bounded: the `maxChannelAsks` channels with the most items on the page, `maxConcurrentAsks` at a time.
-    func visible(_ items: [VideoItem], in playlist: Exclusions, playlistId: String, fresh: Bool) async -> [VideoItem]? {
+    /// Playback's uploader check, whatever opened the video (Search, the library, a saved copy, a deep link). Specific
+    /// beats general (Android parity): the channel excluding this video always blocks; the channel's 410 blocks unless
+    /// the video was approved on its own (its route answers 2xx). `askingTheVideo` (a saved copy, which skips the
+    /// resolver's own HEAD) also asks the video's route, whose 410 blocks. No uploader, a channel the backend does not
+    /// list (404) or a failed ask plays (fail open). The memo first (`fresh: false`); each fetch waits at most 3 s.
+    // ponytail: approved-playlist context never reaches the resolver, so a playlist's approval does not lift a channel's
+    // 410 here; pass the playlist through `StreamResolving` if that case matters.
+    func plays(_ videoId: String, uploader: String?, askingTheVideo: Bool) async -> Bool {
+        async let asked: Int? = askingTheVideo ? videoStatus(videoId) : nil
+        var lists: Exclusions? = Exclusions(registered: false)
+        if let uploader { lists = await exclusions(channelId: uploader, fresh: false) }
+        let video = await asked
+        if video == 410 || lists?.videoIds.contains(videoId) == true { return false }
+        guard lists == nil else { return true }
+        let status = askingTheVideo ? video : await videoStatus(videoId)
+        return (200..<300).contains(status ?? 0)
+    }
+
+    /// The video's own route, HEAD; nil when no answer came.
+    private func videoStatus(_ videoId: String) async -> Int? {
+        let request = HTTPRequest(method: "HEAD", url: baseURL.appending(path: "api/v1/videos/\(videoId)"), headers: [:], body: nil)
+        return try? await send(request).status
+    }
+
+    /// A playlist page minus its exclusions; nil = the playlist is gone. Its `owner` (the first page's header) is
+    /// always asked, registered or not: a playlist its owner excluded is gone (a deep link to it), whoever uploaded
+    /// its items. One the backend does not list -- a channel's own playlist, usually -- also takes each item's
+    /// channel's exclusions: their videos are hidden, a 410 channel's items are hidden, and a channel that excluded
+    /// this playlist makes it gone. Those asks are bounded: the owner plus the channels with the most items on the
+    /// page, `maxChannelAsks` in all, `maxConcurrentAsks` at a time.
+    func visible(_ items: [VideoItem], in playlist: Exclusions, playlistId: String, owner: String?,
+                 fresh: Bool) async -> [VideoItem]? {
         var hidden = playlist.videoIds
         var goneChannels = Set<String>()
         var gone = false
+        var asked = owner.map { [$0] } ?? []
         if !playlist.registered {
-            let counts = Dictionary(items.compactMap(\.channelId).map { ($0, 1) }, uniquingKeysWith: +)
-            let asked = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-                .prefix(Self.maxChannelAsks).map(\.key)
-            await withTaskGroup(of: (String, Exclusions?).self) { group in
-                func absorb(_ answer: (String, Exclusions?)?) {
-                    guard let (channelId, lists) = answer else { return }
-                    guard let lists else { goneChannels.insert(channelId); return }
-                    hidden.formUnion(lists.videoIds)
-                    if lists.playlistIds.contains(playlistId) { gone = true }
-                }
-                for (n, channelId) in asked.enumerated() {
-                    if n >= Self.maxConcurrentAsks { absorb(await group.next()) }
-                    group.addTask { (channelId, await exclusions(channelId: channelId, fresh: fresh)) }
-                }
-                while let answer = await group.next() { absorb(answer) }
+            let counts = Dictionary(items.compactMap(\.channelId).filter { $0 != owner }.map { ($0, 1) }, uniquingKeysWith: +)
+            asked += counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                .prefix(Self.maxChannelAsks - asked.count).map(\.key)
+        }
+        await withTaskGroup(of: (String, Exclusions?).self) { group in
+            func absorb(_ answer: (String, Exclusions?)?) {
+                guard let (channelId, lists) = answer else { return }
+                guard let lists else { goneChannels.insert(channelId); return }
+                hidden.formUnion(lists.videoIds)
+                if lists.playlistIds.contains(playlistId) { gone = true }
             }
+            for (n, channelId) in asked.enumerated() {
+                if n >= Self.maxConcurrentAsks { absorb(await group.next()) }
+                group.addTask { (channelId, await exclusions(channelId: channelId, fresh: fresh)) }
+            }
+            while let answer = await group.next() { absorb(answer) }
         }
         if gone { return nil }
         return items.filter { !hidden.contains($0.id) && !goneChannels.contains($0.channelId ?? "") }

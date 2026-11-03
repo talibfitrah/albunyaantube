@@ -147,7 +147,8 @@ struct PlayerScreen: View {
             if let offlineItemId = args.offlineItemId {
                 vm = PlayerViewModel(resolver: OfflineResolver(store: container.offlineStore,
                                                                itemId: offlineItemId,
-                                                               base: container.offlineBase),
+                                                               base: container.offlineBase,
+                                                               gate: container.browseGate),
                                      settings: container.settings, args: args,
                                      cast: container.castController)
             } else {
@@ -674,7 +675,7 @@ struct PlayerScreen: View {
         #endif
         // The `#if DEBUG` fixture resolvers above are returned UNWRAPPED -- the screenshot rig must
         // never be rate limited.
-        return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver),
+        return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver, gate: container.browseGate),
                                    rateLimiter: container.innerTube.rateLimiter,
                                    clock: container.innerTube.clock)
     }

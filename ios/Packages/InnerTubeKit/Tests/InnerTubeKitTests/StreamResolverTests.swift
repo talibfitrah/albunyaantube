@@ -223,6 +223,24 @@ import Testing
         #expect(resolved.title == "T-android")
     }
 
+    /// Exclusions at playback: the uploader (`videoDetails.channelId`) rides on the Resolved, from either rung and
+    /// from the cache, so the app can ask that channel's exclusions whatever screen opened the video.
+    @Test func bothRungsCarryTheUploaderAndTheCacheKeepsIt() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let cached = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(cached.channelId == "UCmMcOjsVehVlEOteyrhjI2Q")
+        #expect(transport.callCount == 1)
+
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UC-android"}}
+        """.utf8))
+        let (fallback, _) = makeResolver(transport: RecordingTransport([try fixtureResponse("player-unplayable-kids"), android]))
+        let progressive = try await fallback.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(progressive.channelId == "UC-android")
+    }
+
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
 
     /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,

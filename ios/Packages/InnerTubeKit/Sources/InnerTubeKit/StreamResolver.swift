@@ -505,13 +505,13 @@ public actor StreamResolver {
                 return .resolved(Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    isLiveNow: streaming.isLiveNow, title: streaming.title))
+                    isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
                 return .resolved(Resolved(
                     stream: .progressive(url: itag18, label: "360p"),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    title: streaming.title))
+                    title: streaming.title, channelId: streaming.channelId))
             }
             return .advance
         case .unplayable:

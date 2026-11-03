@@ -173,6 +173,23 @@ import Testing
         #expect(first.viewCountText != nil)
     }
 
+    /// The playlist's owner, from its header's "by <channel>" link: a deep-linked playlist whose items all come from
+    /// other uploaders still asks its owner's exclusions. Both live header shapes; a continuation page has no header.
+    @Test func playlistItemsParsesTheOwnerFromTheHeader() async throws {
+        let client = makeClient(RecordingTransport([
+            try fixtureResponse("browse-playlist"), try fixtureResponse("browse-playlist-videolist"),
+            try fixtureResponse("browse-playlist-videolist-page2"),
+        ]))
+
+        let first = try await client.playlistItems(Self.playlistId, continuation: nil)
+        let second = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+        let page2 = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: "next")
+
+        #expect(first.ownerChannelId == "UCzKh27VVFQijk9K2DuL5peg")
+        #expect(second.ownerChannelId == "UCbunYN0o9Yaid7zHaor_UHA")
+        #expect(page2.ownerChannelId == nil)
+    }
+
     @Test func playlistItemsSendsVLPrefixedBrowseId() async throws {
         let transport = RecordingTransport([try fixtureResponse("browse-playlist")])
         let client = makeClient(transport)

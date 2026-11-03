@@ -57,12 +57,20 @@ extension StreamResolving {
 /// exactly what `RateLimitedResolver` (the decorator wrapped around this) now performs.
 struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
+    /// Every stream the app plays, casts or saves resolves here, so this is where the uploader's exclusions
+    /// (`BackendAvailabilityGate.plays`) reach a video opened with no channel context. nil only in tests.
+    let gate: BackendAvailabilityGate?
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
-        try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
-                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
+        let resolved = try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
+                                                  forceRefresh: forceRefresh, requiresMuxed: requiresMuxed,
+                                                  requiresHLS: requiresHLS)
+        guard await gate?.plays(videoId, uploader: resolved.channelId, askingTheVideo: false) ?? true else {
+            throw ExtractionError.unavailable(videoId: videoId)
+        }
+        return resolved
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {

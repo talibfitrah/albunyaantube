@@ -93,6 +93,8 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         get { lock.withLock { _titles } }
         set { lock.withLock { _titles = newValue } }
     }
+    /// Every answer's `Resolved.channelId` (`videoDetails.channelId`, the uploader); default none.
+    nonisolated(unsafe) var uploader: String?
     /// What every answer plays, when set: the bundled clip, so a hosted player really plays. nil = the address below.
     private var _playedURL: URL?
     var playedURL: URL? {
@@ -198,15 +200,15 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
                                          audioOnlyURL: URL(string: "https://r1/a140")!,
                                          captionTracks: captionTracks[videoId] ?? []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
-                            expiresAt: expiresAt, title: titles[videoId])
+                            expiresAt: expiresAt, title: titles[videoId], channelId: uploader)
         case .liveHLS:
             return Resolved(stream: .hls(url: playedURL, isLive: true, audioOnlyURL: nil,
                                          captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
-                            expiresAt: expiresAt, title: titles[videoId])
+                            expiresAt: expiresAt, title: titles[videoId], channelId: uploader)
         case .progressive:
             return Resolved(stream: .progressive(url: playedURL, label: "360p"), client: .android,
-                            userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt, title: titles[videoId])
+                            userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt, title: titles[videoId], channelId: uploader)
         case .failure(let error):
             throw error
         }

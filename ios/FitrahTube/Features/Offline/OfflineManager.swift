@@ -981,6 +981,14 @@ actor OfflineManager: OfflineSaving {
         // window already tore the row down — starting the engine now would download a full file
         // for a dead row, in parallel with whatever the freed slot picked up next.
         guard stillCurrent(row.id, attempt) else { return }
+        // A save made with no channel (Search, a deep link) records the uploader its walk answered, so the saved copy
+        // asks that channel's exclusions before it plays (`OfflineResolver`), and the gate asks about it from now on.
+        if row.channelId == nil, let uploader = resolved.channelId {
+            _ = await write { store in
+                store.item(id: row.id)?.channelId = uploader
+                try store.save()
+            }
+        }
         // The forced walk answered AND it is still this attempt's row, so the 403 budget is spent.
         // BELOW the currency guard, not above it: only `forget` clears `pendingForceRefresh`, so a
         // row re-claimed through `pause`/`scheduleRetry`/`release` keeps the intent armed — and a

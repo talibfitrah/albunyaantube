@@ -138,7 +138,8 @@ struct LivePlaylistQueueSource: PlaylistQueueSource {
         guard let lists = await gate.exclusions(playlistId: playlistId, fresh: false) else { return ([], nil) }   // 410: pulled
         let page = try await BrowsePage.skippingEmpty(from: continuation) { c in
             var page = try await client.playlistItems(playlistId, continuation: c)
-            guard let shown = await gate.visible(page.items, in: lists, playlistId: playlistId, fresh: false) else {
+            guard let shown = await gate.visible(page.items, in: lists, playlistId: playlistId,
+                                                         owner: page.ownerChannelId, fresh: false) else {
                 return BrowsePage<VideoItem>(items: [], nextContinuation: nil)   // excluded from its own channel: queues nothing
             }
             page.items = shown

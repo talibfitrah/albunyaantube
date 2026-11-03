@@ -3,8 +3,8 @@ import InnerTubeKit
 
 /// Phase 3 Task 7 (reconciliation note 5): offline playback is a resolver stub, not a player
 /// fork. `PlayerViewModel` accepts any `StreamResolving`; this one answers from the store row
-/// and `FileManager` alone — it holds no transport, no client, no `URLSession`, so it performs
-/// ZERO network calls by construction. Idempotent: recovery re-resolves route back here and get
+/// and `FileManager`, plus one ask of the row's channel's exclusions (`gate`: memo first, fail open,
+/// so offline it plays). Idempotent: recovery re-resolves route back here and get
 /// the same answer (`forceRefresh` is accepted and ignored, like `kind:`).
 ///
 /// `expiresAt: nil` means the TTL-refresh path never fires (`Resolved.isExpired` and
@@ -20,6 +20,9 @@ struct OfflineResolver: StreamResolving {
     /// under; tests point it at a temp directory. No default on purpose: the compiler forces
     /// every construction seam to pass the manager's base, so the two can never drift apart.
     let base: URL
+    /// A saved copy plays without `LiveStreamResolver` (offline, and online too: `preferringSavedCopy`), so it asks
+    /// the same uploader check, plus the video's own 410 that the resolver's HEAD would have asked. nil only in tests.
+    let gate: BackendAvailabilityGate?
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
@@ -32,6 +35,13 @@ struct OfflineResolver: StreamResolving {
         guard FileManager.default.fileExists(atPath: localURL.path(percentEncoded: false)) else {
             throw ExtractionError.unavailable(videoId: videoId)
         }
+        // The row's channel is the player's, else the uploader its save walk answered (`OfflineManager`).
+        // ponytail: a row saved with neither (no channel context, before the uploader was stamped) skips the channel
+        // check (its video's own 410 still applies); re-saving it records one.
+        let (channelId, qualityLabel) = (item.channelId, item.qualityLabel)
+        guard await gate?.plays(videoId, uploader: channelId, askingTheVideo: true) ?? true else {
+            throw ExtractionError.unavailable(videoId: videoId)
+        }
         let stream: ResolvedStream
         switch OfflineFileKind(rawValue: localURL.pathExtension) {
         case .movpkg:
@@ -41,7 +51,7 @@ struct OfflineResolver: StreamResolving {
         case .mp4, .m4a:
             // An audio-only m4a rides `.progressive` too: the player renders no video for it
             // (acceptable — the metadata area carries the screen, note 5).
-            stream = .progressive(url: localURL, label: item.qualityLabel)
+            stream = .progressive(url: localURL, label: qualityLabel)
         case nil:
             throw ExtractionError.unavailable(videoId: videoId)
         }

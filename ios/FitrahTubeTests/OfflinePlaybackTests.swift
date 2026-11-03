@@ -121,7 +121,7 @@ struct OfflinePlaybackTests {
     @Test func aMovpkgResolvesToTheHlsShapeOnTheVisionosClient() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "movpkg")
-        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil)
         let resolved = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         let expected = OfflineStorage.fileURL(relativePath: item.localPath!, base: rig.base)
@@ -139,7 +139,7 @@ struct OfflinePlaybackTests {
     @Test func anMp4ResolvesToProgressiveWithTheRowsQualityLabel() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "mp4")
-        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil)
         let resolved = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         guard case .progressive(let url, let label) = resolved.stream else {
@@ -153,7 +153,7 @@ struct OfflinePlaybackTests {
     @Test func anM4aResolvesToProgressiveToo() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "m4a", audioOnly: true)
-        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil)
         let resolved = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         guard case .progressive = resolved.stream else {
@@ -166,7 +166,7 @@ struct OfflinePlaybackTests {
     @Test func theResolverIsIdempotentAcrossForcedReResolves() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "m4a", audioOnly: true)
-        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil)
         let first = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                                sourceChannelId: nil, forceRefresh: false)
         let second = try await resolver.resolve(item.videoId, purpose: .player, kind: .autoRecovery,
@@ -178,10 +178,46 @@ struct OfflinePlaybackTests {
         #expect(firstURL == secondURL)
     }
 
+    /// Exclusions reach a saved copy, which plays without the streaming resolver (offline, and online too:
+    /// `preferringSavedCopy`). Its channel excluded it, its channel is 410 and the video was not approved on its own,
+    /// or the video's own route is 410: the existing unavailable outcome. A failed ask (offline) plays, and so do a
+    /// row with no channel recorded and a video approved on its own under a 410 channel.
+    @Test func aSavedCopyAsksItsChannelsExclusionsBeforeItPlays() async throws {
+        let rig = makeRig(); defer { rig.cleanUp() }
+        let excluded = try completed(rig, ext: "mp4")
+        let pulled = try completed(rig, ext: "mp4")
+        let approved = try completed(rig, ext: "mp4")
+        let rejected = try completed(rig, ext: "mp4")
+        let offline = try completed(rig, ext: "mp4")
+        let legacy = try completed(rig, ext: "m4a", audioOnly: true)
+        excluded.channelId = "UCexcluder"; pulled.channelId = "UCpulled"; approved.channelId = "UCpulled"
+        offline.channelId = "UCoffline"
+        try rig.store.save()
+        let backend = ExclusionsTests.Backend()
+        backend.answer("/api/v1/channels/UCexcluder", .lists(videos: [excluded.videoId], playlists: []))
+        backend.answer("/api/v1/channels/UCpulled", .status(410))
+        backend.answer("/api/v1/videos/\(approved.videoId)", .status(200))
+        backend.answer("/api/v1/videos/\(rejected.videoId)", .status(410))
+        backend.answer("/api/v1/channels/UCoffline", .throwing)
+        backend.answer("/api/v1/videos/\(offline.videoId)", .throwing)
+        let gate = BackendAvailabilityGate(transport: backend, baseURL: ExclusionsTests.base)
+
+        for item in [excluded, pulled, rejected] {
+            await #expect(throws: ExtractionError.unavailable(videoId: item.videoId)) {
+                _ = try await OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: gate)
+                    .resolve(item.videoId, purpose: .player, kind: .player, sourceChannelId: nil, forceRefresh: false)
+            }
+        }
+        for item in [approved, offline, legacy] {
+            _ = try await OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: gate)
+                .resolve(item.videoId, purpose: .player, kind: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+    }
+
     @Test func aMissingFileThrowsUnavailable() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
         let item = try completed(rig, ext: "m4a", audioOnly: true, writeFile: false)
-        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil)
         await #expect(throws: ExtractionError.unavailable(videoId: item.videoId)) {
             _ = try await resolver.resolve(item.videoId, purpose: .player, kind: .player,
                                            sourceChannelId: nil, forceRefresh: false)
@@ -195,7 +231,7 @@ struct OfflinePlaybackTests {
         let item = try completed(rig, ext: "mp4", writeFile: false)
         var args = PlayerArgs(videoId: item.videoId)
         args.offlineItemId = item.id
-        let vm = PlayerViewModel(resolver: OfflineResolver(store: rig.store, itemId: item.id, base: rig.base),
+        let vm = PlayerViewModel(resolver: OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil),
                                  settings: makeSettings(), args: args)
         await vm.open()
         #expect(vm.state == .contentUnavailable)
@@ -214,7 +250,7 @@ struct OfflinePlaybackTests {
         try FileManager.default.copyItem(at: source, to: saved)
         var args = PlayerArgs(videoId: item.videoId)
         args.offlineItemId = item.id
-        let vm = PlayerViewModel(resolver: OfflineResolver(store: rig.store, itemId: item.id, base: rig.base),
+        let vm = PlayerViewModel(resolver: OfflineResolver(store: rig.store, itemId: item.id, base: rig.base, gate: nil),
                                  settings: makeSettings(), args: args)
 
         await vm.open()
@@ -284,7 +320,7 @@ struct OfflinePlaybackTests {
 
     @Test func aDeletedRowThrowsUnavailable() async throws {
         let rig = makeRig(); defer { rig.cleanUp() }
-        let resolver = OfflineResolver(store: rig.store, itemId: "no-such-row", base: rig.base)
+        let resolver = OfflineResolver(store: rig.store, itemId: "no-such-row", base: rig.base, gate: nil)
         await #expect(throws: ExtractionError.unavailable(videoId: "vid")) {
             _ = try await resolver.resolve("vid", purpose: .player, kind: .player,
                                            sourceChannelId: nil, forceRefresh: false)
@@ -583,7 +619,7 @@ struct OfflinePlaybackTests {
         let engine = ProgressiveEngine(directory: OfflineStorage.directoryURL(base: base),
                                        configuration: .default)
         let manager = OfflineManager(
-            store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver),
+            store: store, engine: engine, resolver: LiveStreamResolver(resolver: innerTube.resolver, gate: nil),
             limiterCheck: { await innerTube.rateLimiter.check($0, kind: .prefetch, now: innerTube.clock.now) },
             wifiOnly: { false }, isOnCellular: { false }, baseDirectory: base,
             // `.allowed`, not `.unreachable` (adversarial r1 P1-2): this rig asserts the save
@@ -608,7 +644,7 @@ struct OfflinePlaybackTests {
         #expect(row.status == OfflineStatus.completed.rawValue)
 
         // (a) Zero network by construction — see the doc comment above.
-        let resolver = OfflineResolver(store: store, itemId: id, base: base)
+        let resolver = OfflineResolver(store: store, itemId: id, base: base, gate: nil)
         let resolved = try await resolver.resolve(Self.lectureVideoId, purpose: .player, kind: .player,
                                                   sourceChannelId: nil, forceRefresh: false)
         // (c) The Resolved shape rides `.progressive` with `expiresAt == nil`.

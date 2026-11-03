@@ -70,13 +70,16 @@ public struct Resolved: Sendable {
     public var isLiveNow: Bool
     /// The source's own title (`StreamingData.title`, owner issue 1). nil when the answer carries none (TVHTML5, offline).
     public var title: String?
+    /// The uploader's channel (`videoDetails.channelId`), whose exclusions playback asks. nil when the answer carries
+    /// none (offline, a fixture).
+    public var channelId: String?
     /// Stage 6 I-M2: the app's identity of the network this stream was minted on (googlevideo URLs are IP-bound, `ip=` in
     /// `sparams`). Set by the app on an HD upgrade; InnerTubeKit never reads it.
     public var mintNetwork: String?
 
     public init(
         stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?, isLiveNow: Bool = false,
-        title: String? = nil
+        title: String? = nil, channelId: String? = nil
     ) {
         self.stream = stream
         self.client = client
@@ -85,6 +88,7 @@ public struct Resolved: Sendable {
         self.expiresAt = expiresAt
         self.isLiveNow = isLiveNow
         self.title = title
+        self.channelId = channelId
     }
 
     public func isExpired(now: Date) -> Bool {

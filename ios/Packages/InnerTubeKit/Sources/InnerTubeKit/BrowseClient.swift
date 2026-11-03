@@ -5,6 +5,8 @@ import Foundation
 public struct BrowsePage<T: Sendable>: Sendable {
     public var items: [T]
     public var nextContinuation: String?
+    /// A playlist's first page only: the owner's channel, from the header's "by <channel>" link. nil elsewhere.
+    public var ownerChannelId: String?
 
     public init(items: [T], nextContinuation: String?) {
         self.items = items
@@ -234,10 +236,12 @@ public actor BrowseClient {
     /// parity, `MAX_APPEND_EMPTY_PAGE_FETCHES`).
     private func videoPage(browseId: String?, params: String?, continuation: String?) async throws -> BrowsePage<VideoItem> {
         var page = try Self.parsePage(await send(browseId: browseId, params: params, continuation: continuation))
+        let owner = page.ownerChannelId   // only the first response has a header
         for _ in 1...5 {
             guard page.items.isEmpty, let next = page.nextContinuation else { break }
             page = try Self.parsePage(await send(browseId: nil, params: nil, continuation: next))
         }
+        page.ownerChannelId = owner
         return page
     }
 
@@ -323,7 +327,19 @@ public actor BrowseClient {
                 items.append(item)
             }
         }
-        return BrowsePage(items: items, nextContinuation: nextContinuation)
+        var page = BrowsePage(items: items, nextContinuation: nextContinuation)
+        page.ownerChannelId = playlistOwner(json)
+        return page
+    }
+
+    /// A playlist header's "by <channel>" link (`pageHeaderViewModel` metadata row, avatar stack; both live captures).
+    /// A channel's own tabs carry no avatar stack there, so they answer nil.
+    private static func playlistOwner(_ json: [String: Any]) -> String? {
+        let rows = dig(json, "header", "pageHeaderRenderer", "content", "pageHeaderViewModel", "metadata",
+                       "contentMetadataViewModel", "metadataRows") as? [[String: Any]] ?? []
+        let parts = rows.flatMap { $0["metadataParts"] as? [[String: Any]] ?? [] }
+        let runs = parts.flatMap { dig($0, "avatarStack", "avatarStackViewModel", "text", "commandRuns") as? [[String: Any]] ?? [] }
+        return runs.lazy.compactMap { dig($0, "onTap", "innertubeCommand", "browseEndpoint", "browseId") as? String }.first
     }
 
     private static func parsePlaylistPage(_ data: Data) throws -> BrowsePage<PlaylistTile> {
