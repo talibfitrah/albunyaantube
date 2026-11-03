@@ -18,6 +18,9 @@ StandardError=journal
 # Its stderr is its own text: no <0> prefix may make it an emergency wall message (S20 review).
 SyslogLevelPrefix=no
 DynamicUser=yes
+# A uid of its own per instance (%i is the connection's, e.g. 3-4567-61234): left to the unit name, every instance shares
+# one, and one escaped player could kill or stop the other player's executor, which the gateway would then blame (S20 review).
+User=fsx-%i
 # No network: an empty network namespace, every IP denied, and no socket family but AF_UNIX, with no unix socket in view.
 PrivateNetwork=yes
 IPAddressDeny=any

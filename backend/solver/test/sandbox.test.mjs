@@ -86,7 +86,7 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.equal(exec[0], '/opt/fitrah-solver/node/bin/node');
   assert.equal(exec.at(-1), '/opt/fitrah-solver/app/executor.mjs');
   assert.deepEqual(execFlags('/R'), ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/app/', '--max-old-space-size=256']);
-  for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'PrivateNetwork=yes', 'IPAddressDeny=any',
+  for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'User=fsx-%i', 'PrivateNetwork=yes', 'IPAddressDeny=any',
     'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /dev/shm:ro',
     'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app', 'ProtectHome=yes', 'ProtectSystem=strict',
     'LimitFSIZE=0', 'MemoryMax=384M', 'OOMScoreAdjust=1000', 'SyslogLevelPrefix=no', 'Before=fitrah-solver.service', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',

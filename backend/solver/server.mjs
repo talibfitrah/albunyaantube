@@ -40,6 +40,8 @@ export function answers(n, s, raw) {
 }
 
 const MAX_LINE = 1_048_576;                     // a solve reply is a few KB; more is an executor gone wrong, not a bigger answer
+/** An executor's number, never coerced: JSON's {"valueOf":1,"toString":1} makes Number() and String() throw. */
+const ms = (value) => (Number.isFinite(value) ? value : 0);
 
 /** The executor over one connection (production: fitrah-solver-exec.socket), which holds one player. One request at a time:
  *  createSolver serializes them, so each reply answers the one waiting call. An executor that answers late (`timeoutMs`, above
@@ -73,7 +75,8 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
       waiting = null;
       clearTimeout(timer);
       if (message?.ok === true) resolve(message.value);
-      else reject(new Error(String(message?.error).slice(0, 200).replace(/[^\x20-\x7e]/g, '?')));   // reaches a WARN line: bounded, one line
+      else reject(new Error(typeof message?.error === 'string'                            // reaches a WARN line: bounded, one line
+        ? message.error.slice(0, 200).replace(/[^\x20-\x7e]/g, '?') : 'executor error'));
     }
   });
   stream.on('error', () => die('connection failed'));
@@ -249,7 +252,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
           const tested = await executor.solve(hash, inputs.map(([n]) => n), inputs.map(([, s]) => s), selfTestTimeoutMs);
           noteRss(tested);
           if (!selfTestPassed(inputs, tested?.raw)) throw new Error('self-test failed');
-          return (Number(built?.cpuMs) || 0) + (Number(tested?.cpuMs) || 0);
+          return ms(built?.cpuMs) + ms(tested?.cpuMs);
         } catch (error) {
           executor.close();
           throw error;
@@ -306,7 +309,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
         return [500, { error: 'solve failed' }];
       }
       noteRss(reply);
-      cpuRing.push(Number(reply?.cpuMs) || 0);     // R30: the realm run's CPU, as the executor measured it
+      cpuRing.push(ms(reply?.cpuMs));              // R30: the realm run's CPU, as the executor measured it
       if (cpuRing.length > 1000) cpuRing.shift();
       solves++;
       // R30: p95 budget 2 ms, WARN above 5 ms at most once an hour. ponytail: checked every 100th solve, not every one.

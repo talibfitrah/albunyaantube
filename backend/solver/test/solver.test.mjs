@@ -868,6 +868,9 @@ test('connectExecutor answers one call per reply, passes a rejected event on, an
   const third = executor.build('aaaaaaaa', 'x');
   c.reply(`${JSON.stringify({ ok: false, error: 'a\nWARN forged\u0000' })}\n`);
   await assert.rejects(third, (e) => e.message === 'a?WARN forged?', 'one log line, no control character');
+  const coerced = executor.build('aaaaaaaa', 'x');
+  c.reply('{"ok":false,"error":{"toString":1}}\n');               // String() of it throws: in the data handler, a crash
+  await assert.rejects(coerced, /^Error: executor error$/);
   const fourth = executor.build('aaaaaaaa', 'x');
   executor.close();                                                  // the gateway's own hang-up: no onDead
   await assert.rejects(fourth, /executor closed/);
