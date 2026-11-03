@@ -275,6 +275,10 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: >
+            Only to a grantee of a PERSONAL channel, when their account-status check cannot run
+            ({"code":"SERVICE_UNAVAILABLE"}, as FirebaseAuthFilter). Retry; keep any exclusions already held.
 
   /v1/playlists/{playlistId}:
     get:
@@ -308,6 +312,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Only to a grantee of a PERSONAL playlist, as getPublicChannel's 503.
 
   /v1/videos/{videoId}:
     get:

@@ -193,6 +193,22 @@ class PersonalDetailsAccessTest {
         }
     }
 
+    /**
+     * A grantee's status check that cannot run is a 503 (retry, keep cached exclusions), not the 404 that would
+     * make the app list the item without them. Only a grantee gets this far, so it says nothing to anyone else.
+     */
+    @Test
+    void aGranteeCheckOutageIs503() throws Exception {
+        when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(personalChannel()));
+
+        when(users.findByUidUncached("uid-grantee")).thenThrow(new java.util.concurrent.TimeoutException("firestore"));
+        mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isServiceUnavailable());
+
+        when(firebaseAuth.verifyIdToken("grantee-token", true)).thenThrow(
+                new FirebaseAuthException(ErrorCode.UNAVAILABLE, "getUser timed out", null, null, null));
+        mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isServiceUnavailable());
+    }
+
     /** The 404 body without its timestamp, the one field that differs between any two calls. */
     private String body404(String bearer, String path) throws Exception {
         MvcResult result = mvc.perform(as(get(path), bearer)).andExpect(status().isNotFound()).andReturn();

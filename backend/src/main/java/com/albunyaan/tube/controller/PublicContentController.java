@@ -58,19 +58,15 @@ public class PublicContentController {
      * The caller's uid from a valid Firebase Bearer, else null. FirebaseAuthFilter skips /api/v1/*, so the two
      * routes that serve a PERSONAL item to its grantees read the token here. A missing, malformed, expired or
      * forged token is simply anonymous: never a 401, so it cannot tell the caller anything a missing id would not.
-     * {@code checkRevoked}: also ask Firebase whether the account is disabled (blocked or deleted, AuthService) or its
-     * tokens revoked. A network round trip, so only a grantee about to be served a PERSONAL item pays it.
+     * ponytail: a Firebase signing-key outage here also reads as anonymous, so a grantee then gets the 404 and lists
+     * the item without its exclusions until Firebase is back (every signed-in route is down then anyway). Making it a
+     * 503 would break PUBLIC reads for every signed-in user instead.
      */
-    private String verifiedUid(String authorization, boolean checkRevoked) {
+    private String viewerUid(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) return null;
         try {
-            return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), checkRevoked).getUid();
-        } catch (FirebaseAuthException e) { // a bad, expired, revoked or disabled token: anonymous
-            if (!TOKEN_REJECTIONS.contains(e.getAuthErrorCode())) { // Firebase unreachable: every grantee loses exclusions
-                log.warn("Bearer on a public detail route could not be checked ({}): {}", e.getAuthErrorCode(), e.getMessage());
-            }
-            return null;
-        } catch (IllegalArgumentException e) { // an empty token
+            return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), false).getUid();
+        } catch (FirebaseAuthException | IllegalArgumentException e) { // a bad, expired or empty token: anonymous
             return null;
         } catch (RuntimeException e) { // a broken Firebase setup: still anonymous, but every grantee would lose exclusions
             log.warn("Bearer on a public detail route could not be verified: {}", e.toString());
@@ -78,34 +74,48 @@ public class PublicContentController {
         }
     }
 
-    /** What a bad token, not a Firebase outage, looks like. */
+    /** A token Firebase refused, as against Firebase failing to answer. */
     private static final java.util.Set<AuthErrorCode> TOKEN_REJECTIONS = java.util.EnumSet.of(
             AuthErrorCode.EXPIRED_ID_TOKEN, AuthErrorCode.INVALID_ID_TOKEN, AuthErrorCode.REVOKED_ID_TOKEN,
             AuthErrorCode.USER_DISABLED, AuthErrorCode.USER_NOT_FOUND);
 
     /**
-     * The 404 a missing id gets, for a grantee who may no longer read: tokens revoked or account disabled (Firebase),
-     * or blocked or deleted in Firestore, the account-status source of truth FirebaseAuthFilter reads. The same two
-     * checks /api/account/sync runs, where grantees get their PERSONAL items. Only a grantee reaches this, so neither
-     * round trip is an oracle or a cost to anyone else. A failed lookup refuses (fail closed).
+     * For a PERSONAL item (so the caller is a grantee): the checks /api/account/sync runs, where grantees get their
+     * PERSONAL items. Tokens revoked or account disabled (Firebase), or blocked or deleted in Firestore (the status
+     * source of truth FirebaseAuthFilter reads) -> the missing-id 404. A check that cannot run -> 503, as the filter
+     * answers, so the app retries rather than listing the item without its exclusions. Only a grantee gets here, so
+     * neither round trip nor the 503 is an oracle or a cost to anyone else.
      */
-    private void requireActiveGrantee(String visibility, String authorization, String type, String id) {
-        if (VisibilityPolicy.isPublic(visibility)) return;
-        String uid = verifiedUid(authorization, true);
-        if (uid == null || !activeInFirestore(uid)) throw new ResourceNotFoundException(type, id);
+    private ResponseEntity<?> serveToActiveGrantee(String visibility, String authorization, String type, String id,
+                                                    Object body) {
+        if (!VisibilityPolicy.isPublic(visibility)) {
+            try {
+                String uid = firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), true).getUid();
+                // No Firestore doc yet (first sign-in) passes, as in FirebaseAuthFilter.
+                if (userRepository.findByUidUncached(uid).map(u -> u.isBlocked() || u.isDeleted()).orElse(false)) {
+                    throw new ResourceNotFoundException(type, id);
+                }
+            } catch (FirebaseAuthException e) {
+                if (TOKEN_REJECTIONS.contains(e.getAuthErrorCode())) throw new ResourceNotFoundException(type, id);
+                return granteeCheckUnavailable(e);
+            } catch (InterruptedException e) {
+                Thread.currentThread().interrupt();
+                return granteeCheckUnavailable(e);
+            } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
+                return granteeCheckUnavailable(e);
+            }
+        }
+        // no-store: the apps read the exclusions here on every open, so no cache may hold one back, and a grantee's
+        // answer must never be served to anyone else.
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(body);
     }
 
-    private boolean activeInFirestore(String uid) {
-        try {
-            // No doc yet (first sign-in) passes, as in FirebaseAuthFilter.
-            return userRepository.findByUidUncached(uid).map(u -> !u.isBlocked() && !u.isDeleted()).orElse(true);
-        } catch (InterruptedException e) {
-            Thread.currentThread().interrupt();
-            return false;
-        } catch (Exception e) {
-            log.warn("Account status check failed for a PERSONAL grantee: {}", e.toString());
-            return false;
-        }
+    /** FirebaseAuthFilter's own 503 for a status check that failed. */
+    private static ResponseEntity<?> granteeCheckUnavailable(Exception cause) {
+        log.warn("Account status check failed for a PERSONAL grantee: {}", cause.toString());
+        return ResponseEntity.status(org.springframework.http.HttpStatus.SERVICE_UNAVAILABLE)
+                .cacheControl(CacheControl.noStore())
+                .body(Map.of("code", "SERVICE_UNAVAILABLE", "message", "Account status check failed; try again."));
     }
 
     /**
@@ -218,11 +228,8 @@ public class PublicContentController {
     public ResponseEntity<?> getChannelDetails(@PathVariable String channelId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Channel channel = contentService.getChannelDetails(channelId, verifiedUid(authorization, false));
-        requireActiveGrantee(channel.getVisibility(), authorization, "Channel", channelId);
-        // no-store: the apps read the channel's exclusions here on every open, so no cache may hold one back, and a
-        // grantee's answer must never be served to anyone else.
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(PublicDetails.of(channel));
+        Channel channel = contentService.getChannelDetails(channelId, viewerUid(authorization));
+        return serveToActiveGrantee(channel.getVisibility(), authorization, "Channel", channelId, PublicDetails.of(channel));
     }
 
     /**
@@ -235,9 +242,9 @@ public class PublicContentController {
     public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Playlist playlist = contentService.getPlaylistDetails(playlistId, verifiedUid(authorization, false));
-        requireActiveGrantee(playlist.getVisibility(), authorization, "Playlist", playlistId);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(PublicDetails.of(playlist));
+        Playlist playlist = contentService.getPlaylistDetails(playlistId, viewerUid(authorization));
+        return serveToActiveGrantee(playlist.getVisibility(), authorization, "Playlist", playlistId,
+                PublicDetails.of(playlist));
     }
 
     /**
