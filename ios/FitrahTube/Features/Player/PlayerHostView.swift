@@ -1106,12 +1106,16 @@ nonisolated final class LandingItem: AVPlayerItem, @unchecked Sendable {
         return { [weak self] finished in
             completion?(finished)
             guard let self else { return }
-            // AVFoundation completes on its own queue; `status` is read on main.
-            Task { @MainActor in
-                guard self.status != .failed else { return }
-                self.landing.withLock { if $0.seek == seek { $0.target = nil } }
-            }
+            // Landed: the clock reads the target from here on (probed), whatever the item does next.
+            if finished { return self.landed(seek) }
+            // Cut off with no later seek: kept on a failed item. AVFoundation completes on its own queue; `status`
+            // is read on main.
+            Task { @MainActor in if self.status != .failed { self.landed(seek) } }
         }
+    }
+
+    private func landed(_ seek: Int) {
+        landing.withLock { if $0.seek == seek { $0.target = nil } }
     }
 }
 
