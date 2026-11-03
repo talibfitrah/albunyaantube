@@ -245,7 +245,14 @@ paths:
       summary: Get channel details by YouTube ID
       operationId: getPublicChannel
       tags: [Public Content]
-      security: []
+      description: >
+        Bearer optional. A PERSONAL channel (approved for specific users only) answers 200 only when the
+        request carries a valid Firebase ID token of one of its grantees, so the grantee's app can read its
+        exclusions. Everyone else (no token, another user's token, an invalid or expired token) gets the same
+        404 a missing id gets; a bad token is never a 401 here. Cache-Control is always no-store.
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: channelId
           in: path
@@ -255,13 +262,13 @@ paths:
           description: YouTube channel ID
       responses:
         '200':
-          description: Public channel fields (never the registry entity)
+          description: Public channel fields (never the registry entity), for a PUBLIC channel or a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicChannelDetail'
         '404':
-          description: Channel not found
+          description: Channel not found, not yet approved, or PERSONAL and the caller is not a grantee
           content:
             application/json:
               schema:
@@ -272,7 +279,12 @@ paths:
       summary: Get playlist details by YouTube ID
       operationId: getPublicPlaylist
       tags: [Public Content]
-      security: []
+      description: >
+        Bearer optional, as getPublicChannel: a PERSONAL playlist answers 200 only to a grantee's valid
+        Firebase ID token; everyone else gets the missing-id 404. Cache-Control is always no-store.
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: playlistId
           in: path
@@ -282,13 +294,13 @@ paths:
           description: YouTube playlist ID
       responses:
         '200':
-          description: Public playlist fields (never the registry entity)
+          description: Public playlist fields (never the registry entity), for a PUBLIC playlist or a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicPlaylistDetail'
         '404':
-          description: Playlist not found
+          description: Playlist not found, not yet approved, or PERSONAL and the caller is not a grantee
           content:
             application/json:
               schema:

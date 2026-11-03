@@ -933,6 +933,11 @@ public class PublicContentService {
     }
 
     public Channel getChannelDetails(String channelId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getChannelDetails(channelId, null);
+    }
+
+    /** {@code viewerUid}: the caller's verified Firebase uid, or null for an anonymous caller. */
+    public Channel getChannelDetails(String channelId, String viewerUid) throws ExecutionException, InterruptedException, TimeoutException {
         Channel channel = channelRepository.findByYoutubeId(channelId)
                 .orElseThrow(() -> new ResourceNotFoundException("Channel", channelId));
 
@@ -950,10 +955,9 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Channel", channelId);
         }
 
-        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id so a
-        // non-grantee can't fetch the curated DTO. Grantees reach personal items via
-        // authenticated sync + on-device NewPipe.
-        if (!isPublicVisibility(channel.getVisibility())) {
+        // Finding 3: a PERSONAL item is served only to a grantee (the apps read its exclusions here);
+        // anyone else gets the very 404 a missing id gets (fail-open), so its existence never leaks.
+        if (!VisibilityPolicy.isAccessible(channel.getVisibility(), channel.getPersonalGrants(), viewerUid)) {
             throw new ResourceNotFoundException("Channel", channelId);
         }
 
@@ -961,6 +965,11 @@ public class PublicContentService {
     }
 
     public Playlist getPlaylistDetails(String playlistId) throws ExecutionException, InterruptedException, TimeoutException {
+        return getPlaylistDetails(playlistId, null);
+    }
+
+    /** {@code viewerUid}: the caller's verified Firebase uid, or null for an anonymous caller. */
+    public Playlist getPlaylistDetails(String playlistId, String viewerUid) throws ExecutionException, InterruptedException, TimeoutException {
         Playlist playlist = playlistRepository.findByYoutubeId(playlistId)
                 .orElseThrow(() -> new ResourceNotFoundException("Playlist", playlistId));
 
@@ -976,8 +985,8 @@ public class PublicContentService {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
 
-        // Finding 3: PERSONAL items aren't public — 404 (fail-open) on the public by-id.
-        if (!isPublicVisibility(playlist.getVisibility())) {
+        // Finding 3: a PERSONAL item only for a grantee, else the missing-id 404, as for channels.
+        if (!VisibilityPolicy.isAccessible(playlist.getVisibility(), playlist.getPersonalGrants(), viewerUid)) {
             throw new ResourceNotFoundException("Playlist", playlistId);
         }
 

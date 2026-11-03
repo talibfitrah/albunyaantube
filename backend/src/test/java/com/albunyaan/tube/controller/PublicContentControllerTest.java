@@ -290,7 +290,7 @@ public class PublicContentControllerTest {
     @Test
     @DisplayName("GET /api/v1/channels/{channelId} - Channel Not Found → 404")
     void testGetChannelDetails_NotFound() throws Exception {
-        when(contentService.getChannelDetails(anyString()))
+        when(contentService.getChannelDetails(anyString(), isNull()))
                 .thenThrow(new ResourceNotFoundException("Channel", "nonexistent"));
 
         mockMvc.perform(get("/api/v1/channels/{channelId}", "nonexistent")
@@ -302,7 +302,7 @@ public class PublicContentControllerTest {
     @Test
     @DisplayName("GET /api/v1/channels/{channelId} - REJECTED/ARCHIVED channel → 410")
     void testGetChannelDetails_Gone() throws Exception {
-        when(contentService.getChannelDetails(anyString()))
+        when(contentService.getChannelDetails(anyString(), isNull()))
                 .thenThrow(new ContentGoneException("Channel", "UCblocked"));
 
         mockMvc.perform(get("/api/v1/channels/{channelId}", "UCblocked")
@@ -315,7 +315,7 @@ public class PublicContentControllerTest {
     @Test
     @DisplayName("GET /api/v1/playlists/{playlistId} - Playlist Not Found → 404")
     void testGetPlaylistDetails_NotFound() throws Exception {
-        when(contentService.getPlaylistDetails(anyString()))
+        when(contentService.getPlaylistDetails(anyString(), isNull()))
                 .thenThrow(new ResourceNotFoundException("Playlist", "nonexistent"));
 
         mockMvc.perform(get("/api/v1/playlists/{playlistId}", "nonexistent")
@@ -327,7 +327,7 @@ public class PublicContentControllerTest {
     @Test
     @DisplayName("GET /api/v1/playlists/{playlistId} - REJECTED/ARCHIVED playlist → 410")
     void testGetPlaylistDetails_Gone() throws Exception {
-        when(contentService.getPlaylistDetails(anyString()))
+        when(contentService.getPlaylistDetails(anyString(), isNull()))
                 .thenThrow(new ContentGoneException("Playlist", "PLblocked"));
 
         mockMvc.perform(get("/api/v1/playlists/{playlistId}", "PLblocked")
@@ -601,7 +601,7 @@ public class PublicContentControllerTest {
         channel.setKeywords(List.of("seerah"));
         channel.setDisplayOrder(1);
         channel.setLastValidatedAt(Timestamp.now());
-        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+        when(contentService.getChannelDetails("UCabc123", null)).thenReturn(channel);
 
         JsonNode json = publicDetail("/api/v1/channels/UCabc123", Set.of(
                 "youtubeId", "name", "description", "thumbnailUrl", "subscribers", "videoCount",
@@ -630,7 +630,7 @@ public class PublicContentControllerTest {
         playlist.setKeywords(List.of("fiqh"));
         playlist.setDisplayOrder(2);
         playlist.setLastValidatedAt(Timestamp.now());
-        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+        when(contentService.getPlaylistDetails("PLabc123", null)).thenReturn(playlist);
 
         JsonNode json = publicDetail("/api/v1/playlists/PLabc123", Set.of(
                 "youtubeId", "title", "description", "thumbnailUrl", "itemCount", "excludedVideoIds"));
@@ -655,7 +655,7 @@ public class PublicContentControllerTest {
         excluded.setPlaylists(List.of("PLexcluded1"));
         excluded.setPosts(List.of("post0000001"));
         channel.setExcludedItems(excluded);
-        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+        when(contentService.getChannelDetails("UCabc123", null)).thenReturn(channel);
 
         mockMvc.perform(get("/api/v1/channels/UCabc123"))
                 .andExpect(status().isOk())
@@ -672,7 +672,7 @@ public class PublicContentControllerTest {
         Channel channel = new Channel();
         channel.setYoutubeId("UCabc123");
         channel.setExcludedItems(null);
-        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+        when(contentService.getChannelDetails("UCabc123", null)).thenReturn(channel);
 
         mockMvc.perform(get("/api/v1/channels/UCabc123"))
                 .andExpect(status().isOk())
@@ -686,7 +686,7 @@ public class PublicContentControllerTest {
         Playlist playlist = new Playlist();
         playlist.setYoutubeId("PLabc123");
         playlist.setExcludedVideoIds(List.of("sCQwxFEMlZ4", "video000002"));
-        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+        when(contentService.getPlaylistDetails("PLabc123", null)).thenReturn(playlist);
 
         mockMvc.perform(get("/api/v1/playlists/PLabc123"))
                 .andExpect(status().isOk())
@@ -705,11 +705,11 @@ public class PublicContentControllerTest {
         excluded.setShorts(java.util.Arrays.asList("", null));
         excluded.setPlaylists(java.util.Arrays.asList(null, "PLexcluded1"));
         channel.setExcludedItems(excluded);
-        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+        when(contentService.getChannelDetails("UCabc123", null)).thenReturn(channel);
         Playlist playlist = new Playlist();
         playlist.setYoutubeId("PLabc123");
         playlist.setExcludedVideoIds(java.util.Arrays.asList("sCQwxFEMlZ4", null, ""));
-        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+        when(contentService.getPlaylistDetails("PLabc123", null)).thenReturn(playlist);
 
         mockMvc.perform(get("/api/v1/channels/UCabc123"))
                 .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains("video000001")))
@@ -724,7 +724,7 @@ public class PublicContentControllerTest {
         Playlist playlist = new Playlist();
         playlist.setYoutubeId("PLabc123");
         playlist.setExcludedVideoIds(null);
-        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+        when(contentService.getPlaylistDetails("PLabc123", null)).thenReturn(playlist);
 
         mockMvc.perform(get("/api/v1/playlists/PLabc123"))
                 .andExpect(status().isOk())

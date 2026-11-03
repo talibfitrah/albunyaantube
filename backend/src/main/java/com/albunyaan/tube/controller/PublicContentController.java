@@ -11,7 +11,9 @@ import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import com.google.firebase.auth.FirebaseAuth;
 import org.springframework.http.CacheControl;
+import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
 import org.springframework.web.bind.annotation.*;
 
@@ -35,9 +37,27 @@ public class PublicContentController {
     private static final Logger log = LoggerFactory.getLogger(PublicContentController.class);
 
     private final PublicContentService contentService;
+    private final FirebaseAuth firebaseAuth;
 
-    public PublicContentController(PublicContentService contentService) {
+    public PublicContentController(PublicContentService contentService, FirebaseAuth firebaseAuth) {
         this.contentService = contentService;
+        this.firebaseAuth = firebaseAuth;
+    }
+
+    /**
+     * The caller's uid from a valid Firebase Bearer, else null. FirebaseAuthFilter skips /api/v1/*, so the two
+     * routes that serve a PERSONAL item to its grantees read the token here. A missing, malformed, expired or
+     * forged token is simply anonymous: never a 401, so it cannot tell the caller anything a missing id would not.
+     * No revocation check, as on every /api/v1/* read (FirebaseAuthFilter): a revoked token keeps a grantee's read
+     * access until it expires (at most 1 h).
+     */
+    private String viewerUid(String authorization) {
+        if (authorization == null || !authorization.startsWith("Bearer ")) return null;
+        try {
+            return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length())).getUid();
+        } catch (Exception e) { // FirebaseAuthException, or IllegalArgumentException for an empty token
+            return null;
+        }
     }
 
     /**
@@ -139,28 +159,36 @@ public class PublicContentController {
     }
 
     /**
-     * Get channel details by ID.
+     * Get channel details by ID. A PERSONAL channel answers 200 only to a grantee's Bearer; anyone else gets the
+     * missing-id 404. The token is verified before the lookup whatever the id, so both 404s take the same path.
      *
      * @param channelId YouTube channel ID
      * @return Channel details with playlists
      */
     @GetMapping("/channels/{channelId}")
-    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        // no-store: the apps read the channel's exclusions here on every open, so no cache may hold one back.
+    public ResponseEntity<?> getChannelDetails(@PathVariable String channelId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        String viewerUid = viewerUid(authorization);
+        // no-store: the apps read the channel's exclusions here on every open, so no cache may hold one back, and a
+        // grantee's answer must never be served to anyone else.
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(PublicDetails.of(contentService.getChannelDetails(channelId)));
+                .body(PublicDetails.of(contentService.getChannelDetails(channelId, viewerUid)));
     }
 
     /**
-     * Get playlist details by ID.
+     * Get playlist details by ID. PERSONAL: as {@link #getChannelDetails}.
      *
      * @param playlistId YouTube playlist ID
      * @return Playlist details with videos
      */
     @GetMapping("/playlists/{playlistId}")
-    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+    public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId,
+            @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        String viewerUid = viewerUid(authorization);
         return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(PublicDetails.of(contentService.getPlaylistDetails(playlistId)));
+                .body(PublicDetails.of(contentService.getPlaylistDetails(playlistId, viewerUid)));
     }
 
     /**
