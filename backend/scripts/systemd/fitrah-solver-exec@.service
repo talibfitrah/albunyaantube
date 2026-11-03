@@ -4,6 +4,8 @@ CollectMode=inactive-or-failed
 # Stopped after the gateway at shutdown: an executor gone first reads to the gateway as a crash, and the next start would
 # skip a healthy player for an hour (S20 review).
 Before=fitrah-solver.service
+# AppArmorProfile= below is ignored when AppArmor is off in the kernel (apparmor=0): then this does not start at all.
+AssertSecurity=apparmor
 
 [Service]
 # Threat model (Cubic r13 #1, r14 P1): player JS escapes the vm realm to host JS in this process. Everything below is what
@@ -42,7 +44,7 @@ PrivateIPC=yes
 # by four paths). No unit option stops it on systemd 255 / kernel 6.8: ProtectProc= and ProcSubset= leave it, and
 # InaccessiblePaths=/proc/self/mem leaves /proc/self/task/<tid>/mem and /proc/thread-self/mem; proc_mem.force_override=
 # is kernel 6.12+. This AppArmor profile (scripts/apparmor/fitrah-solver-exec, loaded before this starts) denies the write
-# by every path. Not loaded: the executor does not start, so playback stays at 360p (fail closed).
+# by every path. Not loaded (231/APPARMOR) or AppArmor off (AssertSecurity= above): no executor starts, playback stays 360p.
 AppArmorProfile=fitrah-solver-exec
 # The loader's directory is bound here only so it stays read-only under ExecPaths= below (an ExecPaths= path of its own
 # becomes a mount that ProtectSystem= no longer makes read-only).

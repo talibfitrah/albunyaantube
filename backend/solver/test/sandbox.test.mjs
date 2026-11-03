@@ -88,7 +88,7 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.deepEqual(execFlags('/R'), ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/app/', '--max-old-space-size=256']);
   for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'User=fsx-%i', 'PrivateNetwork=yes', 'IPAddressDeny=any',
     'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro /dev/mqueue:ro', 'PrivateIPC=yes',
-    'AppArmorProfile=fitrah-solver-exec', 'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu', 'ProtectHome=yes', 'ProtectSystem=strict',
+    'AppArmorProfile=fitrah-solver-exec', 'AssertSecurity=apparmor', 'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu', 'ProtectHome=yes', 'ProtectSystem=strict',
     'NoExecPaths=/ /opt/fitrah-solver/app', 'ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu',
     'LimitFSIZE=0', 'MemoryMax=384M', 'OOMScoreAdjust=1000', 'SyslogLevelPrefix=no', 'Before=fitrah-solver.service', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',
     'NoNewPrivileges=yes', 'RestrictNamespaces=yes', 'ProtectProc=invisible']) {
@@ -100,7 +100,9 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.match(UNIT, /SOLVER_EXEC_SOCKET=\/run\/fitrah-solver-exec\.sock/, 'the gateway connects where the socket listens');
   // the profile the unit names: no write to its own memory by any /proc path (self, task, thread-self are all <pid>/...)
   const profile = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'apparmor', 'fitrah-solver-exec'), 'utf8').split('\n').map((l) => l.trim());
-  for (const line of ['profile fitrah-solver-exec {', 'deny @{PROC}/@{pid}/mem w,', 'deny @{PROC}/@{pid}/task/@{tid}/mem w,']) {
+  // without the include @{PROC} is undefined and it will not load; without `all,` it denies the executor everything
+  for (const line of ['abi <abi/4.0>,', 'include <tunables/global>', 'profile fitrah-solver-exec {', 'all,',
+    'deny @{PROC}/@{pid}/mem w,', 'deny @{PROC}/@{pid}/task/@{tid}/mem w,']) {
     assert.ok(profile.includes(line), line);
   }
 });

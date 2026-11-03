@@ -1,6 +1,8 @@
 # FitrahTube solver executor (fitrah-solver-exec@.service, AppArmorProfile=). The unit's sandbox is the confinement; this
 # profile adds the one thing no unit option can: no write to the executor's own memory through /proc (<pid>/mem, and
-# task/<tid>/mem, which /proc/self, /proc/thread-self and /proc/self/task reach). Reading it stays allowed. Install:
+# task/<tid>/mem, which /proc/self, /proc/thread-self and /proc/self/task reach). Reading it stays allowed. Measured
+# 2026-11-03 under the unit: every profile switch (unconfined, firefox, ...) is refused, which the unit's
+# NoNewPrivileges=yes enforces, and so is any exec (no `x` rule: spawning node fails EACCES). Install:
 # /etc/apparmor.d/fitrah-solver-exec, then `apparmor_parser -r` it; apparmor.service loads it at every boot.
 abi <abi/4.0>,
 include <tunables/global>
