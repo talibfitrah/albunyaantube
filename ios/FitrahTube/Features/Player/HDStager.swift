@@ -86,7 +86,7 @@ import UIKit
     /// Played at the LIVE position; the rate carries over: a paused player stays paused.
     func handOver(to player: AVPlayer) {
         hidden.replaceCurrentItem(with: nil)
-        let fresh = AVPlayerItem(asset: item.asset)
+        let fresh = LandingItem(asset: item.asset)
         configure(fresh)
         let now = PlayerHostView.position(of: player)
         player.replaceCurrentItem(with: fresh)

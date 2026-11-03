@@ -239,7 +239,7 @@ struct PlayerHostTests {
     /// item either way).
     @Test(.timeLimit(.minutes(1))) func aFailedItemKeepsItsLandingTarget() async throws {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
-        let player = AVPlayer(playerItem: AVPlayerItem(url: missing))
+        let player = AVPlayer(playerItem: LandingItem(url: missing))
         PlayerHostView.seek(player, to: 30, exact: true)
         for _ in 0..<300 where player.currentItem?.status != .failed { try await Task.sleep(for: .milliseconds(10)) }
         try await Task.sleep(for: .milliseconds(100))   // the completion's main-actor hop
@@ -260,6 +260,48 @@ struct PlayerHostTests {
         for _ in 0..<300 where abs(player.currentTime().seconds - 0.3) > 0.05 { try await Task.sleep(for: .milliseconds(10)) }
         try await Task.sleep(for: .milliseconds(100))
         #expect(abs(PlayerHostView.position(of: player) - 0.3) <= 0.05)
+    }
+
+    /// A lower pick, then a scrub, then another replacement before the scrub lands: the replacement resumes at the scrub.
+    /// AVKit's scrubber seeks with exactly this call (probed on the iOS 26.2 glass timeline: `AVPlayer.seek(to:
+    /// toleranceBefore:toleranceAfter:completionHandler:)`). Every read from the scrub to its landing is the scrub target,
+    /// never the cut-off pick's target (the old map entry) nor the swapped-in item's 0 clock.
+    @Test(.timeLimit(.minutes(1))) func aReplacementBeforeAScrubLandsResumesAtTheScrub() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        #expect(PlayerHostView.position(of: player) >= 1, "the pick left a landing target")
+
+        player.seek(to: CMTime(seconds: 0.4, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        var reads = [PlayerHostView.position(of: player)]
+        for _ in 0..<300 where abs(player.currentTime().seconds - 0.4) > 0.05 {
+            try await Task.sleep(for: .milliseconds(1))
+            reads.append(PlayerHostView.position(of: player))
+        }
+        #expect(reads.allSatisfy { abs($0 - 0.4) <= 0.05 }, "reads during the scrub's landing: \(reads)")
+
+        // The bug's sequence end to end: pick, scrub, a second replacement inside the scrub's landing window.
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        player.seek(to: CMTime(seconds: 0.7, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        for _ in 0..<300 where abs(player.currentTime().seconds - 0.7) > 0.05 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(abs(player.currentTime().seconds - 0.7) <= 0.05)
+    }
+
+    /// The app's other seeks (double tap, lock screen, Shorts scrubber, the Cast hand-back) use the shorter `AVPlayer`
+    /// forms. Each one's target is the position from the call on, before it lands.
+    @Test func everyCMTimeSeekFormRecordsItsTarget() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let player = AVPlayer(playerItem: LandingItem(url: url))
+        player.seek(to: CMTime(seconds: 0.4, preferredTimescale: 600))
+        #expect(PlayerHostView.position(of: player) == 0.4)
+        player.seek(to: CMTime(seconds: 0.6, preferredTimescale: 600), completionHandler: { _ in })
+        #expect(PlayerHostView.position(of: player) == 0.6)
+        player.seek(to: CMTime(seconds: 0.8, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero)
+        #expect(PlayerHostView.position(of: player) == 0.8)
     }
 
     /// Re-review of the fix: a rebuild never reuses the asset of the item recovery just reported failed (M4: never handed

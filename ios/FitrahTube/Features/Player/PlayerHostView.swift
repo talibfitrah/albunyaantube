@@ -5,6 +5,7 @@ import InnerTubeKit
 import MediaPlayer
 import Network
 import SwiftUI
+import Synchronization
 
 /// `AVPlayerViewController` host for rung-1 (HLS) and rung-2 (progressive) playback (spec §10, plan
 /// §6.5). Stock chrome gives scrubber/±10s/speed/subtitle-menu/AirPlay for free; captions overlay,
@@ -864,31 +865,16 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// reach one whose host AND coordinator are gone while AVKit's PiP window still holds it.
     static let builtPlayers = NSHashTable<AVPlayer>.weakObjects()
 
-    /// Codex review: a swapped-in item's clock reads 0 until its seek lands, so a second swap inside that window (two
-    /// quick lower picks) restarted the video. Each item's target stands in for its position until the seek completes.
-    /// Weak keys: a seek whose item fails never completes (measured), and a dead item's entry must not outlive it.
-    private static let landingSeeks = NSMapTable<AVPlayerItem, NSNumber>.weakToStrongObjects()
-
-    /// The position a replacement item carries: the current item's seek target while that seek is landing, else its clock.
+    /// The position a replacement item carries: the current item's latest seek target while that seek is landing (a
+    /// swapped-in item's clock reads 0 until then, any item's the old time), else its clock.
     static func position(of player: AVPlayer) -> TimeInterval {
-        player.currentItem.flatMap { landingSeeks.object(forKey: $0)?.doubleValue } ?? player.currentTime().seconds
+        (player.currentItem as? LandingItem)?.landingTarget ?? player.currentTime().seconds
     }
 
-    /// Seeks a just-swapped item, keeping its target readable (`position(of:)`) until the seek completes or is cut off
-    /// by a later one. Only this seek's own entry is cleared.
+    /// Seeks a just-swapped item; `LandingItem` keeps the target readable (`position(of:)`) until it lands.
     static func seek(_ player: AVPlayer, to seconds: TimeInterval, exact: Bool) {
-        guard let item = player.currentItem else { return }
-        let target = NSNumber(value: seconds)
-        landingSeeks.setObject(target, forKey: item)
         let tolerance = exact ? CMTime.zero : .positiveInfinity
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) {
-            [weak item] _ in
-            Task { @MainActor in
-                // A failed item never reached its target: recovery's replacement resumes there.
-                guard let item, item.status != .failed, landingSeeks.object(forKey: item) === target else { return }
-                landingSeeks.removeObject(forKey: item)
-            }
-        }
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance)
     }
 
     /// Owner ruling 2026-09-24: nothing plays behind the sign-in wall. Pause and empty, which ends
@@ -966,7 +952,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let reused = rebuild && continuesCurrentVideo ? existing?.currentItem.flatMap { current in
             current.status != .failed && current !== failedItem && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
         } : nil
-        let item = AVPlayerItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
+        let item = LandingItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
                                                        onRefused: onRefused))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
@@ -1083,6 +1069,48 @@ struct PlayerHostView: UIViewControllerRepresentable {
             return audioOnly ? (audioOnlyURL ?? url) : url
         case .progressive(let url, _):
             return url   // rung 2 has no separate audio rendition; the toggle is hidden there anyway
+        }
+    }
+}
+
+/// Every item the host plays. It records where its latest seek is going, whoever made it: ours, the double tap, the lock
+/// screen, or AVKit's scrubber. AVKit's timeline calls `AVPlayer.seek(to:toleranceBefore:toleranceAfter:completionHandler:)`
+/// (probed on iOS 26.2), and every `AVPlayer` CMTime seek reaches one of the two overrides below (probed; the date seeks
+/// do not, and nothing here uses them). Until that seek lands the item's clock reads the old time, or 0 on a swapped-in
+/// item, so a replacement inside the window (a quality pick, recovery, the audio-only swap) resumed at a stale target or
+/// at 0:00 instead of the scrub.
+nonisolated final class LandingItem: AVPlayerItem, @unchecked Sendable {
+    /// `seek` numbers the seeks; `target` is the latest one's until it completes. A failed item's stays: it never
+    /// reached its target, and recovery's replacement resumes there (its completion never runs, measured).
+    private let landing = Mutex((seek: 0, target: TimeInterval?.none))
+
+    var landingTarget: TimeInterval? { landing.withLock { $0.target } }
+
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime,
+                       completionHandler: ((Bool) -> Void)? = nil) {
+        super.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter,
+                   completionHandler: landing(at: time, then: completionHandler))
+    }
+
+    override func seek(to time: CMTime, completionHandler: ((Bool) -> Void)? = nil) {
+        super.seek(to: time, completionHandler: landing(at: time, then: completionHandler))
+    }
+
+    /// Records the target before the seek starts, so a seek it cuts off never clears it.
+    private func landing(at time: CMTime, then completion: ((Bool) -> Void)?) -> (Bool) -> Void {
+        let seek = landing.withLock { state in
+            state.seek += 1
+            state.target = time.isNumeric ? time.seconds : nil
+            return state.seek
+        }
+        return { [weak self] finished in
+            completion?(finished)
+            guard let self else { return }
+            // AVFoundation completes on its own queue; `status` is read on main.
+            Task { @MainActor in
+                guard self.status != .failed else { return }
+                self.landing.withLock { if $0.seek == seek { $0.target = nil } }
+            }
         }
     }
 }
