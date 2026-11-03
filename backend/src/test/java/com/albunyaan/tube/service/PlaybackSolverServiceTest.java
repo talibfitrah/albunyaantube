@@ -289,25 +289,26 @@ class PlaybackSolverServiceTest {
     }
 
     /**
-     * Stage 9 Cubic r8 #11: Node's event loop is blocked for ~2-5 s while the sidecar builds a new player, so a refresh
-     * then gets no answer within 1 s (or none at all) though the sidecar still holds the copied player. The copy is
-     * kept and served; the failure is still remembered for 10 s, so a hung sidecar sees one /player call per 10 s.
+     * Spec §4.6 (sidecar down, stopped or timed out: 503 + 120) and Task 24 Step 2: a stopped solver makes the upgrade's
+     * playerInfo 503, so the device makes no tv_samsung POST it cannot solve. 2026-11-03 prod: the copy kept here (Cubic
+     * r8 #11, whose premise, a gateway loop blocked by a build, S20 removed) was served while the solver was stopped,
+     * and the device's POST then got 503 from /solve. The failure is still remembered for 10 s.
      */
     @ParameterizedTest
     @ValueSource(booleans = {true, false})
-    void aRefreshWithNoAnswerKeepsTheCopy(boolean hung) {
+    void aRefreshWithNoAnswerDropsTheCopy(boolean hung) {
         PlaybackSolverService service = service(true);
         assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
-        now.set(now.get().plusSeconds(61));                               // the copy expired during a player build
+        now.set(now.get().plusSeconds(61));
         if (hung) playerGate = new CountDownLatch(1); else sidecar.stop(0);
 
-        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
         now.set(now.get().plusSeconds(9));
-        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(200, PLAYER, null));
+        assertThat(service.player()).isEqualTo(new PlaybackSolverService.Answer(503, Map.of(), 120));
         if (hung) assertThat(playerHits.get()).isEqualTo(2);              // remembered: no call inside the 10 s
     }
 
-    /** Cubic r8 #11: the sidecar's own answer that it holds no player (503) still drops the copy, as before. */
+    /** The sidecar's own answer that it holds no player (503) drops the copy too. */
     @Test
     void aSidecarThatSaysItHoldsNoPlayerStillDropsTheCopy() {
         PlaybackSolverService service = service(true);
