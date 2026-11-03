@@ -5,6 +5,8 @@ stable release.
 
 ## [Unreleased]
 
+- Exclusions (backend, Android 1.0.6, iOS next build): videos and playlists an admin excludes from a channel or playlist no longer show in that channel's or playlist's lists, the Me feed or Shorts, also for personal channels and playlists (only the person they belong to can see those). On Android a channel-excluded video also stops playing from Favorites, Search, deep links and saved copies opened online (offline, saved copies still play). A rejected or archived channel blocks its videos unless the video itself was approved; an unreachable server never blocks playback.
+- Lists (Android 1.0.6, iOS next build): coming back after more than 5 minutes refreshes the first page in place, so you keep your place in the list and see new items and exclusions without a manual refresh.
 - iOS (next build): after a quality change, a scrub that has not landed yet is kept, so playback resumes at the scrubbed position instead of the old one or 0:00.
 - Admin dashboard: a failed later page keeps the rows already loaded and offers a retry of that page; YouTube and server reads time out after 30 s with a message in English, Arabic or Dutch; Content Search "load more" errors show with a retry.
 - Android Suggest: "load more" on YouTube search results returns the next page (it returned an empty last page before).

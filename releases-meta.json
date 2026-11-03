@@ -1,4 +1,9 @@
 {
+  "1.0.6": {
+    "en": "Videos and playlists an admin hides no longer show or play anywhere, and lists keep your place after a break.",
+    "ar": "المقاطع وقوائم التشغيل التي يخفيها المشرف لم تعد تظهر أو تعمل في أي مكان، والقوائم تحفظ موضعك بعد الاستراحة.",
+    "nl": "Video's en playlists die een beheerder verbergt, tonen en spelen nergens meer; lijsten houden je plek na een pauze."
+  },
   "1.0.5": {
     "en": "Live channels: many more channels stay listed, and a stream an admin removes stops within about a minute, also on TV.",
     "ar": "القنوات المباشرة: قنوات أكثر بكثير تبقى معروضة، والبث الذي يزيله المشرف يتوقف خلال دقيقة تقريبًا، حتى على التلفاز.",
