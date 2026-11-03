@@ -531,6 +531,43 @@ struct ExclusionsTests {
         }
     }
 
+    /// Specific beats general: an approved (registered) playlist's items stay when its owner's channel is 410 -- only
+    /// the owner's exclusions reach it.
+    @Test func anApprovedPlaylistKeepsItsItemsWhenItsOwnerIs410() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.answer("/api/v1/playlists/PL1", .lists(videos: [], playlists: []))
+        backend.answer("/api/v1/channels/UCzKh27VVFQijk9K2DuL5peg", .status(410))
+
+        #expect(try await Self.source(backend).playlistItems("PL1", continuation: nil).items.count == 5)
+    }
+
+    /// An excluded video always leaves, on every page: a continuation page has no header (no owner), so its items'
+    /// own channels are asked, registered playlist or not.
+    @Test func anUploadersExclusionHidesItsVideoOnALaterPageOfAnApprovedPlaylist() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist-videolist.json")
+        backend.nextPage = Self.fixture("browse-playlist-videolist-page2.json")
+        backend.answer("/api/v1/playlists/PLw", .lists(videos: [], playlists: []))
+        let excluded = try #require(try await Self.source(backend).playlistItems("PLw", continuation: "next").items.first?.id)
+        backend.answer("/api/v1/channels/UCbunYN0o9Yaid7zHaor_UHA", .lists(videos: [excluded], playlists: []))
+        let after = try await Self.source(backend).playlistItems("PLw", continuation: "next").items.map(\.id)
+        #expect(!after.isEmpty)
+        #expect(!after.contains(excluded))
+    }
+
+    /// The channel-context HEAD (`verify`, a playlist screen's open) follows the same rule as `plays`: a channel's 410
+    /// refuses unless the video was approved on its own; a video probe that gets no answer plays (fail open).
+    @Test func theChannelProbeLetsAVideoApprovedOnItsOwnThroughItsChannels410() async throws {
+        let cases: [(Backend.Answer, plays: Bool)] = [(.status(200), true), (.status(404), false), (.throwing, true)]
+        for (video, plays) in cases {
+            let backend = Backend()
+            backend.answer("/api/v1/channels/UC1", .status(410))
+            backend.answer("/api/v1/videos/vid1", video)
+            #expect(try await Self.gate(backend).verify(videoId: "vid1", sourceChannelId: "UC1") == plays, "\(video)")
+        }
+    }
+
     // MARK: - Choke point 4: playback, whatever opened the video (Search, Library, Downloads, a deep link)
 
     static let lecture = "xc7keR2piUM"
@@ -558,12 +595,13 @@ struct ExclusionsTests {
             (.lists(videos: [Self.lecture], playlists: []), 404, false), (.status(410), 404, false),
             (.lists(videos: ["other"], playlists: []), 404, true), (.status(404), 404, true), (.throwing, 404, true),
             (.status(410), 200, true), (.lists(videos: [Self.lecture], playlists: []), 200, false),
+            (.status(410), -1, true),   // -1: the video's HEAD gets no answer, which plays (fail open)
         ]
         for (answer, video, plays) in cases {
             let backend = Backend()
             let resolver = Self.playback(backend)
             backend.answer("/api/v1/channels/\(Self.lectureUploader)", answer)
-            backend.answer("/api/v1/videos/\(Self.lecture)", .status(video))
+            backend.answer("/api/v1/videos/\(Self.lecture)", video < 0 ? .throwing : .status(video))
             var played = true
             do {
                 _ = try await resolver.resolve(Self.lecture, purpose: .player, kind: .player, sourceChannelId: nil, forceRefresh: false)

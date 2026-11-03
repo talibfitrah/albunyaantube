@@ -81,12 +81,13 @@ nonisolated struct OfflineGateClient: Sendable {
         if videoId == offlineAllowedVideoId { return .allowed }
         #endif
         // Both legs at once (review P3). The video's 410 refuses; so does the channel's, unless the video was
-        // approved on its own (its model answered: specific beats general, `BackendAvailabilityGate.plays`); an
-        // explicit false blocks; a channel nobody could vouch for is no answer at all.
+        // approved on its own (its model answered: specific beats general, `BackendAvailabilityGate.plays`) or its
+        // leg failed (no answer, never a delete); an explicit false blocks; a channel nobody could vouch for is no
+        // answer at all.
         async let channel = channelAnswer(channelId)
         async let video = videoAnswer(videoId)
         let (channelVerdict, (videoVerdict, approved)) = await (channel, video)
-        if videoVerdict == .gone || (channelVerdict == .gone && !approved) { return .gone }
+        if videoVerdict == .gone || (channelVerdict == .gone && !approved && videoVerdict != .unreachable) { return .gone }
         if videoVerdict == .notAllowed { return .notAllowed }
         return channelVerdict == .unreachable ? .unreachable : videoVerdict
     }

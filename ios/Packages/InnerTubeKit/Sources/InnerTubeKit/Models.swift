@@ -58,6 +58,11 @@ public enum ClientFamily: Sendable {
     }
 }
 
+/// `id` when it is a channel id (`UC` + 22), else nil: an uploader or owner read from YouTube goes into backend paths.
+func channelId(_ id: String?) -> String? {
+    id.flatMap { $0.wholeMatch(of: /UC[A-Za-z0-9_-]{22}/) != nil ? $0 : nil }
+}
+
 /// A resolved stream plus the context needed to play/expire it.
 public struct Resolved: Sendable {
     public var stream: ResolvedStream

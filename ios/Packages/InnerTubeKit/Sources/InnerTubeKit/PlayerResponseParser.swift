@@ -238,7 +238,7 @@ public struct PlayerResponseParser: Sendable {
                 isLive = try container.decodeIfPresent(Bool.self, forKey: .isLive)
                 isLiveContent = try container.decodeIfPresent(Bool.self, forKey: .isLiveContent)
                 title = try? container.decodeIfPresent(String.self, forKey: .title)
-                channelId = try? container.decodeIfPresent(String.self, forKey: .channelId)
+                channelId = InnerTubeKit.channelId(try? container.decodeIfPresent(String.self, forKey: .channelId))
             }
         }
         struct ResponseContext: Decodable {

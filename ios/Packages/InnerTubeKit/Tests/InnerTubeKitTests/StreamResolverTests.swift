@@ -234,11 +234,20 @@ import Testing
         #expect(transport.callCount == 1)
 
         let android = HTTPResponse(status: 200, headers: [:], body: Data("""
-        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UC-android"}}
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UCandroidUploader0000000"}}
         """.utf8))
         let (fallback, _) = makeResolver(transport: RecordingTransport([try fixtureResponse("player-unplayable-kids"), android]))
         let progressive = try await fallback.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
-        #expect(progressive.channelId == "UC-android")
+        #expect(progressive.channelId == "UCandroidUploader0000000")
+    }
+
+    /// The uploader goes into backend paths and onto saved rows, so anything that is not a channel id is no uploader.
+    @Test func anUploaderThatIsNotAChannelIdIsNone() async throws {
+        let body = String(decoding: try fixtureResponse("player-ok-hls").body, as: UTF8.self)
+            .replacingOccurrences(of: "UCmMcOjsVehVlEOteyrhjI2Q", with: "x/../../videos/abc")
+        let (resolver, _) = makeResolver(transport: RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(body.utf8))]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(resolved.channelId == nil)
     }
 
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)

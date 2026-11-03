@@ -188,6 +188,11 @@ import Testing
         #expect(first.ownerChannelId == "UCzKh27VVFQijk9K2DuL5peg")
         #expect(second.ownerChannelId == "UCbunYN0o9Yaid7zHaor_UHA")
         #expect(page2.ownerChannelId == nil)
+
+        let forged = String(decoding: try fixtureResponse("browse-playlist").body, as: UTF8.self)
+            .replacingOccurrences(of: "UCzKh27VVFQijk9K2DuL5peg", with: "x/../../videos/abc")
+        let client2 = makeClient(RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(forged.utf8))]))
+        #expect(try await client2.playlistItems(Self.playlistId, continuation: nil).ownerChannelId == nil)
     }
 
     @Test func playlistItemsSendsVLPrefixedBrowseId() async throws {

@@ -46,10 +46,13 @@ struct BackendAvailabilityGate: AvailabilityGate {
 
     /// §5.2 semantics: `sourceChannelId` present -> check the channel (channel-sourced videos
     /// aren't individually registered); else check the video. 2xx/404 -> available; 410 ->
-    /// unavailable (admin-blocked/rejected/archived, a hard stop); a thrown transport/HTTP error
+    /// unavailable (admin-blocked/rejected/archived, a hard stop) -- a channel's unless the video was approved on its
+    /// own (specific beats general, `plays`); a thrown transport/HTTP error
     /// fails open so offline users can still play a cached manifest.
     func verify(videoId: String, sourceChannelId: String?) async throws -> Bool {
-        await probe(sourceChannelId.map { "api/v1/channels/\($0)" } ?? "api/v1/videos/\(videoId)")
+        guard let sourceChannelId else { return await probe("api/v1/videos/\(videoId)") }
+        if await probe("api/v1/channels/\(sourceChannelId)") { return true }
+        return Self.approved(await videoStatus(videoId))
     }
 
     // MARK: - Exclusions (jar #15)
@@ -90,9 +93,11 @@ struct BackendAvailabilityGate: AvailabilityGate {
         let video = await asked
         if video == 410 || lists?.videoIds.contains(videoId) == true { return false }
         guard lists == nil else { return true }
-        let status = askingTheVideo ? video : await videoStatus(videoId)
-        return (200..<300).contains(status ?? 0)
+        return Self.approved(askingTheVideo ? video : await videoStatus(videoId))
     }
+
+    /// Under a 410 channel: the video's own route approved it (2xx), or gave no answer (fail open).
+    private static func approved(_ status: Int?) -> Bool { status.map { (200..<300).contains($0) } ?? true }
 
     /// The video's own route, HEAD; nil when no answer came.
     private func videoStatus(_ videoId: String) async -> Int? {
@@ -100,27 +105,24 @@ struct BackendAvailabilityGate: AvailabilityGate {
         return try? await send(request).status
     }
 
-    /// A playlist page minus its exclusions; nil = the playlist is gone. Its `owner` (the first page's header) is
-    /// always asked, registered or not: a playlist its owner excluded is gone (a deep link to it), whoever uploaded
-    /// its items. One the backend does not list -- a channel's own playlist, usually -- also takes each item's
-    /// channel's exclusions: their videos are hidden, a 410 channel's items are hidden, and a channel that excluded
-    /// this playlist makes it gone. Those asks are bounded: the owner plus the channels with the most items on the
-    /// page, `maxChannelAsks` in all, `maxConcurrentAsks` at a time.
+    /// A playlist page minus its exclusions; nil = the playlist is gone. Its `owner` (the first page's header) and its
+    /// items' channels are asked, registered or not: their excluded videos are hidden, and a channel that excluded
+    /// this playlist makes it gone (a deep link to it), whoever uploaded its items. A 410 channel's items are hidden
+    /// only from a playlist the backend does not list (a channel's own, usually): an approved playlist's approval
+    /// outranks its channels' 410 (specific beats general). The asks are bounded: the owner plus the channels with
+    /// the most items on the page, `maxChannelAsks` in all, `maxConcurrentAsks` at a time.
     func visible(_ items: [VideoItem], in playlist: Exclusions, playlistId: String, owner: String?,
                  fresh: Bool) async -> [VideoItem]? {
         var hidden = playlist.videoIds
         var goneChannels = Set<String>()
         var gone = false
-        var asked = owner.map { [$0] } ?? []
-        if !playlist.registered {
-            let counts = Dictionary(items.compactMap(\.channelId).filter { $0 != owner }.map { ($0, 1) }, uniquingKeysWith: +)
-            asked += counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
-                .prefix(Self.maxChannelAsks - asked.count).map(\.key)
-        }
+        let counts = Dictionary(items.compactMap(\.channelId).filter { $0 != owner }.map { ($0, 1) }, uniquingKeysWith: +)
+        let asked = (owner.map { [$0] } ?? []) + counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(Self.maxChannelAsks - (owner == nil ? 0 : 1)).map(\.key)
         await withTaskGroup(of: (String, Exclusions?).self) { group in
             func absorb(_ answer: (String, Exclusions?)?) {
                 guard let (channelId, lists) = answer else { return }
-                guard let lists else { goneChannels.insert(channelId); return }
+                guard let lists else { if !playlist.registered { goneChannels.insert(channelId) }; return }
                 hidden.formUnion(lists.videoIds)
                 if lists.playlistIds.contains(playlistId) { gone = true }
             }

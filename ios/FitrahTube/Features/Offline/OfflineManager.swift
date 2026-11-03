@@ -988,6 +988,7 @@ actor OfflineManager: OfflineSaving {
                 store.item(id: row.id)?.channelId = uploader
                 try store.save()
             }
+            guard stillCurrent(row.id, attempt) else { return }   // the write suspended too
         }
         // The forced walk answered AND it is still this attempt's row, so the 403 budget is spent.
         // BELOW the currency guard, not above it: only `forget` clears `pendingForceRefresh`, so a

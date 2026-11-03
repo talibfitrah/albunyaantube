@@ -339,7 +339,7 @@ public actor BrowseClient {
                        "contentMetadataViewModel", "metadataRows") as? [[String: Any]] ?? []
         let parts = rows.flatMap { $0["metadataParts"] as? [[String: Any]] ?? [] }
         let runs = parts.flatMap { dig($0, "avatarStack", "avatarStackViewModel", "text", "commandRuns") as? [[String: Any]] ?? [] }
-        return runs.lazy.compactMap { dig($0, "onTap", "innertubeCommand", "browseEndpoint", "browseId") as? String }.first
+        return channelId(runs.lazy.compactMap { dig($0, "onTap", "innertubeCommand", "browseEndpoint", "browseId") as? String }.first)
     }
 
     private static func parsePlaylistPage(_ data: Data) throws -> BrowsePage<PlaylistTile> {
