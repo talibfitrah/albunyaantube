@@ -340,12 +340,7 @@ async function loadInitialData() {
     await loadMore()
   } catch (err: any) {
     if (id !== openId) return
-    const status = err?.response?.status;
-    if (status === 404) {
-      error.value = $t('exclusions.channelDetail.fetchError');
-    } else {
-      error.value = apiErrorOrMessage(err, $t, 'common.error.message');
-    }
+    error.value = apiErrorOrMessage(err, $t, 'common.error.message');
   } finally {
     if (id === openId) initialLoading.value = false
   }

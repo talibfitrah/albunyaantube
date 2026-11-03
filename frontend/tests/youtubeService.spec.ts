@@ -8,7 +8,6 @@ import {
   getChannelPlaylists,
   getPlaylistDetails,
   getPlaylistVideos,
-  toggleIncludeState,
   addToPendingApprovals
 } from '@/services/youtubeService';
 import apiClient from '@/services/api/client';
@@ -282,32 +281,6 @@ describe('YouTubeService', () => {
       expect(result.items).toHaveLength(2);
       expect(result.items[0].title).toBe('React Tutorial');
       expect(result.items[1].title).toBe('React Hooks');
-    });
-  });
-
-  describe('toggleIncludeState', () => {
-    it('should toggle channel include state', async () => {
-      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
-
-      await toggleIncludeState('channel-1', 'channel', 'INCLUDED');
-
-      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/channels/channel-1/toggle');
-    });
-
-    it('should toggle playlist include state', async () => {
-      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
-
-      await toggleIncludeState('playlist-1', 'playlist', 'INCLUDED');
-
-      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/playlists/playlist-1/toggle');
-    });
-
-    it('should toggle video include state', async () => {
-      vi.mocked(apiClient.patch).mockResolvedValueOnce({ data: {} });
-
-      await toggleIncludeState('video-1', 'video', 'INCLUDED');
-
-      expect(apiClient.patch).toHaveBeenCalledWith('/api/admin/registry/videos/video-1/toggle');
     });
   });
 

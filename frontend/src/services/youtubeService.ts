@@ -240,27 +240,6 @@ export async function addToPendingApprovals(
   }
 }
 
-/**
- * @deprecated Use addToPendingApprovals instead
- * Toggle include/exclude state for a channel or playlist
- */
-export async function toggleIncludeState(
-  itemId: string,
-  itemType: 'channel' | 'playlist' | 'video',
-  newState: 'INCLUDED' | 'NOT_INCLUDED'
-): Promise<void> {
-  let endpoint: string;
-  if (itemType === 'channel') {
-    endpoint = `/api/admin/registry/channels/${itemId}/toggle`;
-  } else if (itemType === 'video') {
-    endpoint = `/api/admin/registry/videos/${itemId}/toggle`;
-  } else {
-    endpoint = `/api/admin/registry/playlists/${itemId}/toggle`;
-  }
-
-  await apiClient.patch(endpoint);
-}
-
 // Transform YouTubeEnrichedSearchResult to AdminSearchChannelResult
 function transformChannelResult(channel: YouTubeEnrichedSearchResult): AdminSearchChannelResult {
   return {

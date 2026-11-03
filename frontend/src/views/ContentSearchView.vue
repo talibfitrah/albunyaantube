@@ -192,7 +192,6 @@ import { ref, computed } from 'vue';
 import { useI18n } from 'vue-i18n';
 import { toast } from '@/utils/toast';
 import { searchYouTube, addToPendingApprovals, parseYouTubeUrl } from '@/services/youtubeService';
-import apiClient from '@/services/api/client';
 import { apiErrorToMessage, apiErrorOrMessage } from '@/services/http';
 import { useAuthStore } from '@/stores/auth';
 import ChannelCard from '@/components/search/ChannelCard.vue';
@@ -237,7 +236,6 @@ const existingChannelIds = ref<Set<string>>(new Set());
 const existingPlaylistIds = ref<Set<string>>(new Set());
 const existingVideoIds = ref<Set<string>>(new Set());
 const hasMoreResults = ref(true);
-const currentPage = ref(0);
 const nextPageToken = ref<string | null>(null);
 
 // Monotonic sequence counter for stable pagination ordering.
@@ -370,7 +368,6 @@ async function handleSearch() {
   loadMoreError.value = null;
   hasSearched.value = true;
   wasUrlLookup.value = !!detectedUrl.value;
-  currentPage.value = 0;
   nextPageToken.value = null;
 
   try {
@@ -396,29 +393,10 @@ async function handleSearch() {
     // Update pagination state
     nextPageToken.value = response.nextPageToken || null;
     hasMoreResults.value = !!response.nextPageToken;
-
-    // Don't check existing items upfront - check on-demand when user clicks "Add"
-    // This speeds up search significantly!
   } catch (err: any) {
     if (id === searchId) error.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
     if (id === searchId) isLoading.value = false;
-  }
-}
-
-async function checkExistingItems() {
-  try {
-    const response = await apiClient.post('/api/admin/youtube/check-existing', {
-      channelIds: channels.value.map(c => c.ytId),
-      playlistIds: playlists.value.map(p => p.ytId),
-      videoIds: videos.value.map(v => v.ytId)
-    });
-
-    existingChannelIds.value = new Set(response.data.existingChannels);
-    existingPlaylistIds.value = new Set(response.data.existingPlaylists);
-    existingVideoIds.value = new Set(response.data.existingVideos);
-  } catch (err: any) {
-    console.error('Failed to check existing items', err);
   }
 }
 
@@ -550,8 +528,6 @@ async function loadMoreResults() {
     // Update pagination state
     nextPageToken.value = response.nextPageToken || null;
     hasMoreResults.value = !!response.nextPageToken;
-
-    currentPage.value++;
   } catch (err: any) {
     if (id === searchId) loadMoreError.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
