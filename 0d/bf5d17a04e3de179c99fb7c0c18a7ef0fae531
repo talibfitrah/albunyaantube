@@ -1,0 +1,32 @@
+backend/src/test/java/com/albunyaan/tube/controller/LegalPagesControllerTest.java
+  s_543f5b01a05d75::t_9d27cb89c48919 229
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_543f5b01a05d75::t_aad8a46e2c9e5b 606-607
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayTest.java
+  s_543f5b01a05d75::t_b8900a3c58fcf9 450,500
+backend/src/main/java/com/albunyaan/tube/config/CacheConfig.java
+  s_543f5b01a05d75::t_66a3ebc877ed41 36,87
+backend/src/test/java/com/albunyaan/tube/service/YouTubeSearchServiceTest.java
+  s_543f5b01a05d75::t_63316294b42502 290-313
+backend/src/test/java/com/albunyaan/tube/controller/YouTubeSearchControllerTest.java
+  s_543f5b01a05d75::t_6c74a38c40ae3b 11-13,20,23,35,37-38,125-142
+  s_543f5b01a05d75::t_c5499adf1a470f 143
+backend/src/main/java/com/albunyaan/tube/service/YouTubeSearchService.java
+  s_543f5b01a05d75::t_c1452c67c10fb7 80-83
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0dbf5d17a04e3de179c99fb7c0c18a7ef0fae531",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
