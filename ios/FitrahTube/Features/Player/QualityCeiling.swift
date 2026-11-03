@@ -15,11 +15,11 @@ enum QualityOption: Hashable {
     case rendition(width: Int, height: Int)
     case dataSaver
 
-    /// player.md §3's LTE/5G ceiling: Auto and Data Saver are clamped to this on an `isExpensive` path
-    /// (Wi-Fi/offline: no clamp); a picked rendition is not (`ceiling(for:)`).
     /// The two caps an item holds: `preferredMaximumResolution`, `preferredPeakBitRate`.
     typealias Ceiling = (resolution: CGSize, bitrate: Double)
 
+    /// player.md §3's LTE/5G ceiling: Auto and Data Saver are clamped to this on an `isExpensive` path
+    /// (Wi-Fi/offline: no clamp); a picked rendition is not (`ceiling(for:)`).
     private static let cellularResolution = CGSize(width: 1280, height: 720)
     private static let cellularBitrate: Double = 2_500_000 // 2.5 Mbps
 
