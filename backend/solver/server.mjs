@@ -356,9 +356,10 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   function health() {
     let fetchesLastHour = null;
     try { fetchesLastHour = fetchLog().filter((t) => now() - t < HOUR_MS).length; } catch { /* reported as null */ }
+    const shown = started ? current : null;
     const status = held.size && started ? 'ok' : (!cacheWritable || logBroken) ? 'no-cache' : throttled ? 'throttled' : 'warming';
     return {
-      status, current: started ? current : null, sts: started ? held.get(current)?.sts ?? null : null, held: [...held.keys()],
+      status, current: shown, sts: held.get(shown)?.sts ?? null, held: [...held.keys()],
       rssMiB: Math.round(process.memoryUsage().rss / 1_048_576), executorRssMiB, solves, p95CpuMs: Number(p95().toFixed(3)),
       lastPoll, fetchesLastHour, cacheWritable,
     };
@@ -378,9 +379,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   /** A stop (SIGTERM) is not a crash: whatever op is in flight, the next start must not drop its player (Cubic r2 P2). */
   function stopped() { try { fs.rmSync(marker, { force: true }); } catch { /* nothing to keep */ } }
 
-  let restored = null;
-  const poll = () => (polling ??= (restored ??= restore()).then(() => pollOnce())
-    .then(() => { if (!started) { started = true; saveHeld(); } }).finally(() => { polling = null; }));
+  const first = () => restore().then(() => pollOnce()).then(() => { started = true; saveHeld(); });
+  const poll = () => (polling ??= (started ? pollOnce() : first()).finally(() => { polling = null; }));
   return { poll, solve, health, dropCrashed, stopped };
 }
 
