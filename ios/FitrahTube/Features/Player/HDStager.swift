@@ -91,9 +91,6 @@ import UIKit
         let now = PlayerHostView.position(of: player)
         player.replaceCurrentItem(with: fresh)
         PlayerHostView.seek(player, to: now, exact: true)
-        #if DEBUG
-        print("HDStager: HD swapped in at \(now) s")   // read by the device leg (Task 23), deleted in Task 24
-        #endif
     }
 
     // MARK: - the rules (pure)
