@@ -911,6 +911,26 @@ class GlobalStreamResolverTest {
     }
 
     @Test
+    fun `a failed video check fails open though its uploader's channel is gone`() = runTest {
+        // Unknown is not "not approved": only a known 404 lets the channel's 410 stand in for the video.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any()))
+            .thenAnswer { throw java.io.IOException("backend down") }
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_unknown", createMockStreams("lecture_unknown").copy(uploaderChannelId = "UCgone"))
+
+        assertNotNull(gatedResolver.resolveStreams("lecture_unknown", caller = "test"))
+    }
+
+    @Test
     fun `a stalled uploader channel ask fails open within the list wait`(): Unit = runBlocking {
         // Real time: the resolver's test scope is Unconfined, so its waits run on the wall clock too.
         val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()

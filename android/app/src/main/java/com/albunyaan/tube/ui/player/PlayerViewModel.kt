@@ -1003,7 +1003,7 @@ class PlayerViewModel @Inject constructor(
         // expiry sweep deletes it; a one-off id backfill from a resolve would cover its channel too.
         val channelId = request.channelId
         return code == 410 || channelId != null &&
-            exclusions.hides(channelId, request.videoId, fresh = false, approved = code in 200..299)
+            exclusions.hides(channelId, request.videoId, fresh = false, goneBlocks = code == 404)
     }
 
     private fun completedDownload(downloadId: String): DownloadEntry? =

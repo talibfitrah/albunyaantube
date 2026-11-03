@@ -115,12 +115,13 @@ class Exclusions @VisibleForTesting internal constructor(
 
     /**
      * Whether channel [channelId] hides [videoId] from a playback with no channel context. Specific beats general: an
-     * exclusion always hides; a gone channel (410) hides only a video not [approved] on its own (its own HEAD's 2xx).
+     * exclusion always hides; a gone channel (410) hides it only when [goneBlocks]: the video's own HEAD said 404
+     * (not registered on its own). Its own 2xx outranks the 410, and an unknown answer fails open.
      * [fresh] asks again (a stream resolve); a saved copy reads the memo first. Fails open like the lists.
      */
-    suspend fun hides(channelId: String, videoId: String, fresh: Boolean = true, approved: Boolean): Boolean =
+    suspend fun hides(channelId: String, videoId: String, fresh: Boolean = true, goneBlocks: Boolean): Boolean =
         waited("channel:$channelId") { channel(channelId, fresh) }
-            ?.let { videoId in it.videoIds || (it.code == 410 && !approved) } == true
+            ?.let { videoId in it.videoIds || (it.code == 410 && goneBlocks) } == true
 
     /** The playlists a channel's Playlists tab drops, the same fail-open way. */
     suspend fun playlistIds(channelId: String): Set<String> =

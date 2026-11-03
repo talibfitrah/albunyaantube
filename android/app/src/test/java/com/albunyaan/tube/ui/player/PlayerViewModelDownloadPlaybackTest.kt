@@ -525,6 +525,19 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
     }
 
+    @Test fun `a saved copy whose video check fails plays though its channel is gone`() = runTest {
+        api.stub {
+            onBlocking { checkVideoAvailable("v25") } doAnswer { throw java.io.IOException("backend down") }
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(completed("d25", "v25", tmp.newFile("v25.mp4"), channelId = "UCgone"))
+        val vm = createViewModel(com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions))
+
+        vm.loadDownload("d25")
+        advanceUntilIdle()
+        assertTrue("unknown is not 'not approved'", vm.state.value.streamState is StreamState.Ready)
+    }
+
     private val api = mock<com.albunyaan.tube.data.source.api.ContentApi>()
     private val exclusions = com.albunyaan.tube.data.source.Exclusions(
         api, { 0L }, kotlinx.coroutines.CoroutineScope(testDispatcher),
