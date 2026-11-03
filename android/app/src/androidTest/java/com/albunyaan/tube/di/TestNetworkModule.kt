@@ -161,11 +161,12 @@ class FakeContentApi : ContentApi {
         )
     }
 
-    override suspend fun checkChannelAvailable(id: String): retrofit2.Response<Unit> =
-        retrofit2.Response.success(Unit)
+    /** Registered, nothing excluded. */
+    override suspend fun getChannel(id: String): retrofit2.Response<com.albunyaan.tube.data.source.api.RegistryEntry> =
+        retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry())
 
-    override suspend fun checkPlaylistAvailable(id: String): retrofit2.Response<Unit> =
-        retrofit2.Response.success(Unit)
+    override suspend fun getPlaylist(id: String): retrofit2.Response<com.albunyaan.tube.data.source.api.RegistryEntry> =
+        retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry())
 
     override suspend fun checkVideoAvailable(id: String): retrofit2.Response<Unit> =
         retrofit2.Response.success(Unit)

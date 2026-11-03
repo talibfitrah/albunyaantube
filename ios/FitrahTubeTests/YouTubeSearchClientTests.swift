@@ -6,7 +6,7 @@ import Testing
 
 /// Ruling F1's FIFTH hand-written client, pinned the way the other four are: against canned bodies,
 /// never against a live host. **Every assertion here is about the BACKEND's
-/// `GET /api/admin/youtube/search` (`YouTubeSearchController.java:26-27,51-56`) — nothing in this
+/// `GET /api/admin/youtube/search` (`YouTubeSearchController.java:15-17,27-32`) — nothing in this
 /// file, and nothing in the client, addresses youtube.com.**
 ///
 /// The shape comes off the Java, not off prose: `YouTubeSearchResponse` is
@@ -158,7 +158,7 @@ struct YouTubeSearchClientTests {
     // MARK: - No truncation
 
     /// `q` is `@NotBlank @Size(max = 200)` and `pageToken` `@Size(max = 2048)`
-    /// (`YouTubeSearchController.java:52-54`). The client sends BOTH verbatim: an over-long query is
+    /// (`YouTubeSearchController.java:29-31`). The client sends BOTH verbatim: an over-long query is
     /// real user input whose rejection the user should see as the server's 400, never as a silent
     /// trim that searched for something the user did not type. (Task 22's cursor-id validation is
     /// not the precedent — an invalid id is a *guaranteed* 400 the client can avoid spending a page

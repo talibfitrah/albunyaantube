@@ -93,21 +93,21 @@ extension BackendAvailabilityGateTests {
         // (BackendAvailabilityGate.swift:34); the playlist screen needs the third path.
         let box = RequestBox()
         let gate = BackendAvailabilityGate(transport: StubTransport(status: 410, box: box), baseURL: Self.baseURL)
-        #expect(await gate.verify(playlistId: "PLabc123") == false)
-        #expect(box.request?.method == "HEAD")
+        #expect(await gate.exclusions(playlistId: "PLabc123", fresh: true) == nil)
+        #expect(box.request?.method == "GET")   // jar #15: the body carries the exclusions
         #expect(box.request?.url.path == "/api/v1/playlists/PLabc123")
     }
 
     @Test func aPlaylistTransportFailureFailsOpen() async throws {
         let gate = BackendAvailabilityGate(
             transport: StubTransport(status: nil, error: URLError(.timedOut), box: RequestBox()), baseURL: Self.baseURL)
-        #expect(await gate.verify(playlistId: "PLabc123") == true)
+        #expect(await gate.exclusions(playlistId: "PLabc123", fresh: true) != nil)
     }
 
     @Test func aChannelReturning410IsBlockedOnItsOwnPath() async throws {
         let box = RequestBox()
         let gate = BackendAvailabilityGate(transport: StubTransport(status: 410, box: box), baseURL: Self.baseURL)
-        #expect(await gate.verify(channelId: "UCabc123") == false)
+        #expect(await gate.exclusions(channelId: "UCabc123", fresh: true) == nil)
         #expect(box.request?.url.path == "/api/v1/channels/UCabc123")
     }
 }

@@ -2,7 +2,7 @@
  * YouTube Service
  *
  * All YouTube data fetching uses YouTube Data API v3 directly (requires VITE_YOUTUBE_API_KEY).
- * Registry operations (add to pending, check existing) always go through backend.
+ * Registry operations (add to pending) always go through backend.
  */
 
 import apiClient from './api/client';
@@ -238,27 +238,6 @@ export async function addToPendingApprovals(
     };
     await apiClient.post<Video>('/api/admin/registry/videos', payload, LIVE_GUARDED);
   }
-}
-
-/**
- * @deprecated Use addToPendingApprovals instead
- * Toggle include/exclude state for a channel or playlist
- */
-export async function toggleIncludeState(
-  itemId: string,
-  itemType: 'channel' | 'playlist' | 'video',
-  newState: 'INCLUDED' | 'NOT_INCLUDED'
-): Promise<void> {
-  let endpoint: string;
-  if (itemType === 'channel') {
-    endpoint = `/api/admin/registry/channels/${itemId}/toggle`;
-  } else if (itemType === 'video') {
-    endpoint = `/api/admin/registry/videos/${itemId}/toggle`;
-  } else {
-    endpoint = `/api/admin/registry/playlists/${itemId}/toggle`;
-  }
-
-  await apiClient.patch(endpoint);
 }
 
 // Transform YouTubeEnrichedSearchResult to AdminSearchChannelResult

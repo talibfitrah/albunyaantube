@@ -71,8 +71,8 @@ nonisolated enum SuggestError: Error, Equatable {
 }
 
 /// Ruling F1's FIFTH hand-written client (the ruling named four; no OpenAPI path covers this one).
-/// `GET api/admin/youtube/search?q&type&pageToken` (`YouTubeSearchController.java:26-27` for the
-/// mapping and the `@PreAuthorize` that makes 403 the role gate, `:51-56` for the three params),
+/// `GET api/admin/youtube/search?q&type&pageToken` (`YouTubeSearchController.java:15-17` for the
+/// mapping and the `@PreAuthorize` that makes 403 the role gate, `:27-32` for the three params),
 /// over `AuthorizedTransport` — an admin path, so the Bearer is required and a 403 is the role gate
 /// answering, not a network fault.
 ///

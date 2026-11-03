@@ -4,6 +4,7 @@ import android.app.Application
 import android.util.Log
 import androidx.lifecycle.AndroidViewModel
 import androidx.lifecycle.viewModelScope
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.HomeSection
 import com.albunyaan.tube.data.source.ContentService
@@ -24,7 +25,8 @@ import javax.inject.Named
 class HomeViewModel @Inject constructor(
     private val app: Application,
     @Named("real") private val contentService: ContentService,
-    private val filterManager: FilterManager
+    private val filterManager: FilterManager,
+    private val lifecycleTracker: AppLifecycleTracker,
 ) : AndroidViewModel(app) {
 
     private val _homeState = MutableStateFlow<HomeState>(HomeState.Loading)
@@ -39,10 +41,14 @@ class HomeViewModel @Inject constructor(
     private var currentCategory: String? = null
 
     val canLoadMore: Boolean
-        get() = hasMore && !isLoadingMore
+        // Not while a reload runs: the feed it keeps on screen pages on a cursor the reload is about to replace.
+        get() = hasMore && !isLoadingMore && loadJob?.isActive != true
 
     init {
         observeCategoryFilter()
+        viewModelScope.launch {
+            lifecycleTracker.returnsAfterIdle.collect { loadInitialFeed(keepOnScreen = _homeState.value is HomeState.Success) }
+        }
     }
 
     private fun observeCategoryFilter() {
@@ -57,15 +63,18 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    fun loadInitialFeed() {
+    /** [keepOnScreen]: a reload on return from the background swaps the feed only on success, with no skeleton. */
+    fun loadInitialFeed(keepOnScreen: Boolean = false) {
         loadJob?.cancel()
         loadMoreJob?.cancel()
         loadJob = viewModelScope.launch {
-            sections.clear()
-            nextCursor = null
-            hasMore = true
             isLoadingMore = false
-            _homeState.value = HomeState.Loading
+            if (!keepOnScreen) {
+                sections.clear()
+                nextCursor = null
+                hasMore = true
+                _homeState.value = HomeState.Loading
+            }
 
             try {
                 val contentLimit = DeviceConfig.getHomeDataLimit(app)
@@ -76,6 +85,7 @@ class HomeViewModel @Inject constructor(
                     contentLimit = contentLimit,
                     category = currentCategory
                 )
+                sections.clear()
                 sections.addAll(result.sections)
                 nextCursor = result.nextCursor
                 hasMore = result.hasMore
@@ -88,7 +98,11 @@ class HomeViewModel @Inject constructor(
             } catch (e: Exception) {
                 if (e is CancellationException) throw e
                 Log.e(TAG, "Error loading initial home feed", e)
-                _homeState.value = HomeState.Error(e.message ?: "Unknown error")
+                _homeState.value = if (keepOnScreen && sections.isNotEmpty()) {
+                    HomeState.Success(sections.toList(), hasMore) // also clears a cancelled load-more's footer
+                } else {
+                    HomeState.Error(e.message ?: "Unknown error")
+                }
             }
         }
     }

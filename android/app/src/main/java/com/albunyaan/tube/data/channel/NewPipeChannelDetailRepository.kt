@@ -8,6 +8,7 @@ import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
 import com.albunyaan.tube.data.local.ChannelVideoCache
 import com.albunyaan.tube.data.local.ChannelVideoCacheDao
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.player.StreamRequestTelemetry
 import kotlinx.coroutines.CancellationException
@@ -67,6 +68,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
     private val telemetry: StreamRequestTelemetry,
     private val channelVideoCacheDao: ChannelVideoCacheDao,
     private val originalTitles: OriginalTitles,
+    private val exclusions: Exclusions,
 ) : ChannelDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -260,7 +262,10 @@ class NewPipeChannelDetailRepository @Inject constructor(
                 Log.w(TAG, "Uploads playlist fetch failed for $channelId: ${e.message}")
                 throw e
             }
-        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
+        }.withoutExcluded(channelId) { it.id }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
+        // The disk cache the next open paints from never holds an excluded video either.
+        val shownIds = result.items.mapTo(HashSet()) { it.id }
+        keptForCache.retainAll { extractVideoId(it.url) in shownIds }
         // Persist kept videos to local cache so the next channel open can paint
         // from disk before NewPipe responds. Use upsertAll — never
         // delete-then-insert — so deep-paged Me-tab history for this channel
@@ -373,17 +378,31 @@ class NewPipeChannelDetailRepository @Inject constructor(
         // load fell back to the channel tab, so the channel-tab continuation token is
         // not mis-fed into the UU playlist's getMoreItems. The ViewModel prefers UU for
         // deep pagination whenever it is available.
-        return withContext(Dispatchers.IO) {
-            fetchTabContent(channelId, ChannelTabs.VIDEOS, page) { item ->
-                (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
-            }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
+        val fetch: suspend (Page?) -> ChannelPage<ChannelVideo> = { p ->
+            withContext(Dispatchers.IO) {
+                fetchTabContent(channelId, ChannelTabs.VIDEOS, p) { item ->
+                    (item as? StreamInfoItem)?.takeIf { !it.isShortFormContent }?.toChannelVideo()
+                }
+            }
         }
+        var fetched = fetch(page)
+        var shown = fetched.withoutExcluded(channelId) { it.id }
+        // A first page of only excluded videos must not read as "no channel tab": the ViewModel would fall back to
+        // the UU path, whose deep pagination is broken. The other tabs' ViewModel paths already walk an empty page.
+        // Bounded, so one call cannot walk a whole excluded history.
+        var skipped = 0
+        while (shown.items.isEmpty() && fetched.items.isNotEmpty() && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
+            fetched = fetch(fetched.nextPage ?: break)
+            shown = fetched.withoutExcluded(channelId) { it.id }
+            skipped++
+        }
+        return shown.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
     }
 
     override suspend fun getLiveStreams(channelId: String, page: Page?): ChannelPage<ChannelLiveStream> {
         val result = fetchTabContent(channelId, ChannelTabs.LIVESTREAMS, page) { item ->
             (item as? StreamInfoItem)?.toChannelLiveStream()
-        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
+        }.withoutExcluded(channelId) { it.id }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         // Graceful indexing: don't block live stream loading on index errors (429, etc)
         try {
             indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
@@ -396,7 +415,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
     override suspend fun getShorts(channelId: String, page: Page?): ChannelPage<ChannelShort> {
         val result = fetchTabContent(channelId, ChannelTabs.SHORTS, page) { item ->
             (item as? StreamInfoItem)?.toChannelShort()
-        }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
+        }.withoutExcluded(channelId) { it.id }.withOriginalTitles({ it.id }) { v, t -> v.copy(title = t) }
         // Graceful indexing: don't block shorts loading on index errors (429, etc)
         try {
             indexRepository.indexChannelStreams(channelId, result.items.map { it.toIndexItem() })
@@ -407,9 +426,11 @@ class NewPipeChannelDetailRepository @Inject constructor(
     }
 
     override suspend fun getPlaylists(channelId: String, page: Page?): ChannelPage<ChannelPlaylist> {
-        return fetchTabContent(channelId, ChannelTabs.PLAYLISTS, page) { item ->
+        val result = fetchTabContent(channelId, ChannelTabs.PLAYLISTS, page) { item ->
             (item as? PlaylistInfoItem)?.toChannelPlaylist()
         }
+        val hidden = exclusions.playlistIds(channelId)
+        return if (hidden.isEmpty()) result else result.copy(items = result.items.filterNot { it.id in hidden })
     }
 
     override suspend fun getAbout(channelId: String, forceRefresh: Boolean): ChannelHeader {
@@ -716,6 +737,12 @@ class NewPipeChannelDetailRepository @Inject constructor(
         return null
     }
 
+    /** Owner bug 2026-11-03: the page without the videos, shorts and lives the dashboard excluded from [channelId]. */
+    private suspend fun <T> ChannelPage<T>.withoutExcluded(channelId: String, id: (T) -> String): ChannelPage<T> {
+        val hidden = exclusions.videoIds(listOf(channelId))
+        return if (hidden.isEmpty()) this else copy(items = items.filterNot { id(it) in hidden })
+    }
+
     /** Owner issue 1(b): the page's video titles as their uploaders wrote them, where the server knows them. */
     private suspend fun <T> ChannelPage<T>.withOriginalTitles(id: (T) -> String, withTitle: (T, String) -> T) =
         copy(items = originalTitles.retitle(items, id, withTitle))
@@ -906,6 +933,7 @@ class NewPipeChannelDetailRepository @Inject constructor(
         private const val MAX_CACHE_SIZE = 100 // Maximum cached channels — caps heap footprint
         private const val RATE_LIMIT_RETRY_ATTEMPTS = 2
         private const val RATE_LIMIT_RETRY_DELAY_MS = 1_000L
+        private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded videos one call walks past
         private val UCID_REGEX = Regex("/channel/(UC[A-Za-z0-9_-]+)")
     }
 }

@@ -521,6 +521,14 @@ public enum Components {
             public var subscribers: Swift.Int64?
             /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/videoCount`.
             public var videoCount: Swift.Int?
+            /// Video ids an admin excluded from this channel (its Videos, Shorts and Live lists). The apps list a channel on the device, so they must drop these ids from every list of the channel. Never null.
+            ///
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/excludedVideoIds`.
+            public var excludedVideoIds: [Swift.String]
+            /// Playlist ids an admin excluded from this channel's Playlists tab. Never null.
+            ///
+            /// - Remark: Generated from `#/components/schemas/PublicChannelDetail/excludedPlaylistIds`.
+            public var excludedPlaylistIds: [Swift.String]
             /// Creates a new `PublicChannelDetail`.
             ///
             /// - Parameters:
@@ -530,13 +538,17 @@ public enum Components {
             ///   - thumbnailUrl:
             ///   - subscribers:
             ///   - videoCount:
+            ///   - excludedVideoIds: Video ids an admin excluded from this channel (its Videos, Shorts and Live lists). The apps list a channel on the device, so they must drop these ids from every list of the channel. Never null.
+            ///   - excludedPlaylistIds: Playlist ids an admin excluded from this channel's Playlists tab. Never null.
             public init(
                 youtubeId: Swift.String,
                 name: Swift.String? = nil,
                 description: Swift.String? = nil,
                 thumbnailUrl: Swift.String? = nil,
                 subscribers: Swift.Int64? = nil,
-                videoCount: Swift.Int? = nil
+                videoCount: Swift.Int? = nil,
+                excludedVideoIds: [Swift.String],
+                excludedPlaylistIds: [Swift.String]
             ) {
                 self.youtubeId = youtubeId
                 self.name = name
@@ -544,6 +556,8 @@ public enum Components {
                 self.thumbnailUrl = thumbnailUrl
                 self.subscribers = subscribers
                 self.videoCount = videoCount
+                self.excludedVideoIds = excludedVideoIds
+                self.excludedPlaylistIds = excludedPlaylistIds
             }
             public enum CodingKeys: String, CodingKey {
                 case youtubeId
@@ -552,6 +566,8 @@ public enum Components {
                 case thumbnailUrl
                 case subscribers
                 case videoCount
+                case excludedVideoIds
+                case excludedPlaylistIds
             }
         }
         /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail`.
@@ -568,6 +584,10 @@ public enum Components {
             public var thumbnailUrl: Swift.String?
             /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/itemCount`.
             public var itemCount: Swift.Int?
+            /// Video ids an admin excluded from this playlist. The apps list a playlist on the device, so they must drop these ids from it. Never null.
+            ///
+            /// - Remark: Generated from `#/components/schemas/PublicPlaylistDetail/excludedVideoIds`.
+            public var excludedVideoIds: [Swift.String]
             /// Creates a new `PublicPlaylistDetail`.
             ///
             /// - Parameters:
@@ -576,18 +596,21 @@ public enum Components {
             ///   - description:
             ///   - thumbnailUrl:
             ///   - itemCount:
+            ///   - excludedVideoIds: Video ids an admin excluded from this playlist. The apps list a playlist on the device, so they must drop these ids from it. Never null.
             public init(
                 youtubeId: Swift.String,
                 title: Swift.String? = nil,
                 description: Swift.String? = nil,
                 thumbnailUrl: Swift.String? = nil,
-                itemCount: Swift.Int? = nil
+                itemCount: Swift.Int? = nil,
+                excludedVideoIds: [Swift.String]
             ) {
                 self.youtubeId = youtubeId
                 self.title = title
                 self.description = description
                 self.thumbnailUrl = thumbnailUrl
                 self.itemCount = itemCount
+                self.excludedVideoIds = excludedVideoIds
             }
             public enum CodingKeys: String, CodingKey {
                 case youtubeId
@@ -595,6 +618,7 @@ public enum Components {
                 case description
                 case thumbnailUrl
                 case itemCount
+                case excludedVideoIds
             }
         }
         /// Unified DTO for content items (channels, playlists, videos) in public API. Fields are nullable to accommodate different content types.

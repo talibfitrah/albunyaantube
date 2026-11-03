@@ -194,7 +194,12 @@ test('the fetch log allows 3 downloads an hour, survives a restart, and reopens 
   const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
   await restarted.poll();
   assert.equal(yt.downloads(), 3);
-  assert.equal(restarted.health().status, 'throttled');
+  assert.equal(restarted.health().lastPoll.step, 'fetch-budget');   // throttled, still serving what it held (restored)
+  assert.deepEqual(restarted.health().held, ['bbbbbbbb', 'cccccccc']);
+  fs.rmSync(path.join(dir, 'held.json'));                           // one that held nothing says throttled
+  const cold = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
+  await cold.poll();
+  assert.equal(cold.health().status, 'throttled');
   t += 3_600_001;
   await restarted.poll();
   assert.equal(yt.downloads(), 4);
@@ -210,6 +215,64 @@ test('a base.js already in the cache is reused after a restart, with no download
   await restarted.poll();
   assert.equal(yt.downloads(), 1);
   assert.equal(restarted.health().status, 'ok');
+  yt.close();
+});
+
+// 2026-11-03 prod: stopped holding 4efb8b2c, restarted, iframe_api said 9c8bc104, and the restart held only that one, so a
+// device's 30-min cached 4efb8b2c got 409. A restart re-adopts what it held, from the cache, before it polls (Task 4).
+test('a restart re-adopts the players it held from the cache, with no download, before the new one', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
+  const dir = tempDir();
+  const first = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await first.poll();
+  await first.poll();
+  assert.deepEqual(first.health().held, ['aaaaaaaa', 'bbbbbbbb']);
+  const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await restarted.poll();                                         // iframe_api now says cccccccc
+  assert.deepEqual(restarted.health().held, ['bbbbbbbb', 'cccccccc']);
+  assert.equal(restarted.health().current, 'cccccccc');
+  assert.equal(yt.downloads(), 3);                                // aaaaaaaa and bbbbbbbb came from the cache
+  const [status] = await restarted.solve({ playerId: 'bbbbbbbb', n: ['abcdefgh'], s: [] });
+  assert.equal(status, 200);
+  yt.close();
+});
+
+// Cold review P2 / P3: while it restores, /player names no player (a restored one may be evicted seconds later and the
+// backend would hand it out for 30 min), and held.json keeps the last process's list (a stop then loses none of it).
+test('until its first poll settles, a restart names no current player and keeps the saved held list', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
+  const dir = tempDir();
+  const first = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await first.poll();
+  await first.poll();
+  const seen = [];
+  const build = fakeBuild();
+  let restarted;
+  restarted = solverWith({ origin: yt.url, cacheDir: dir, log: quiet, build: (text) => {
+    seen.push([restarted.health().current, fs.readFileSync(path.join(dir, 'held.json'), 'utf8')]);
+    return build(text);
+  } });
+  await restarted.poll();
+  const saved = '["aaaaaaaa","bbbbbbbb"]';
+  assert.deepEqual(seen, [[null, saved], [null, saved], [null, saved]]);   // building a, b (restore), then c
+  assert.equal(restarted.health().current, 'cccccccc');
+  assert.equal(fs.readFileSync(path.join(dir, 'held.json'), 'utf8'), '["bbbbbbbb","cccccccc"]');
+  yt.close();
+});
+
+test('a restart restores nothing it cannot take from the cache, and never downloads for it (R39)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
+  const dir = tempDir();
+  await solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet }).poll();
+  fs.rmSync(path.join(dir, 'aaaaaaaa.js'));
+  const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await restarted.poll();
+  assert.deepEqual(restarted.health().held, ['bbbbbbbb']);
+  assert.equal(yt.downloads(), 2);
+  fs.writeFileSync(path.join(dir, 'held.json'), '{"not":"a list"}');   // corrupt: restores nothing, still polls
+  const third = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await third.poll();
+  assert.deepEqual(third.health().held, ['bbbbbbbb']);
   yt.close();
 });
 

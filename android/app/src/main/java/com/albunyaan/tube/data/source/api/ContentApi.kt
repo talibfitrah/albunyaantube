@@ -43,11 +43,12 @@ interface ContentApi {
         @Query("category") category: String? = null
     ): HomeFeedResponse
 
-    @HEAD("api/v1/channels/{id}")
-    suspend fun checkChannelAvailable(@Path("id") id: String): Response<Unit>
+    /** The availability gate and the dashboard's exclusions in one answer: 2xx registered, 404 not registered, 410 gone. */
+    @GET("api/v1/channels/{id}")
+    suspend fun getChannel(@Path("id") id: String): Response<RegistryEntry>
 
-    @HEAD("api/v1/playlists/{id}")
-    suspend fun checkPlaylistAvailable(@Path("id") id: String): Response<Unit>
+    @GET("api/v1/playlists/{id}")
+    suspend fun getPlaylist(@Path("id") id: String): Response<RegistryEntry>
 
     @HEAD("api/v1/videos/{id}")
     suspend fun checkVideoAvailable(@Path("id") id: String): Response<Unit>
@@ -76,6 +77,16 @@ interface ContentApi {
 data class CursorPage(
     val data: List<ContentItemDto>,
     val pageInfo: PageInfo
+)
+
+/**
+ * Owner bug 2026-11-03: what the dashboard excluded from a registry channel (its Videos, Shorts and Live lists; its
+ * Playlists tab) or playlist (no playlist list). The backend never sends null; the defaults only cover a missing key.
+ */
+@JsonClass(generateAdapter = true)
+data class RegistryEntry(
+    val excludedVideoIds: List<String> = emptyList(),
+    val excludedPlaylistIds: List<String> = emptyList(),
 )
 
 @JsonClass(generateAdapter = true)

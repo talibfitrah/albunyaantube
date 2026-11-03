@@ -223,7 +223,8 @@ struct TitlesClientTests {
                                  remoteConfigStore: RemoteConfigStore(transport: transport, keyValueStore: store, url: Self.baseURL),
                                  sessionStore: SessionStore(monotonicClock: SystemClock(), wallClock: SystemClock(), keyValueStore: store),
                                  locale: InnerTubeLocale(hl: "en", gl: "US")),
-            titles: TitlesClient(transport: transport, baseURL: Self.baseURL, deviceId: DeviceId(value: "t")))
+            titles: TitlesClient(transport: transport, baseURL: Self.baseURL, deviceId: DeviceId(value: "t")),
+            gate: BackendAvailabilityGate(transport: transport, baseURL: Self.baseURL))
         let page = try await source.page(playlistId: "PLtest", continuation: nil)
         #expect(page.items.count > 1)
         #expect(page.items.allSatisfy { $0.title != FixtureTransport.original })

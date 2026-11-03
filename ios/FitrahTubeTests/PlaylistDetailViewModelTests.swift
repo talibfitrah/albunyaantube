@@ -122,7 +122,7 @@ struct PlaylistDetailViewModelTests {
     }
 
     @Test func aTransportFailureOnTheGateFailsOpenAndStillLoads() async {
-        // :112-119 -- through the REAL LiveBrowseSource + BackendAvailabilityGate: the HEAD probe
+        // :112-119 -- through the REAL LiveBrowseSource + BackendAvailabilityGate: the GET
         // throws, the browse POST answers the fixture, the screen loads.
         let transport = RoutingTransport(head: .throwing)
         let vm = PlaylistDetailViewModel(playlistId: "PL1", title: nil, category: nil, count: nil,
@@ -515,7 +515,7 @@ struct PlaylistDetailViewModelTests {
 
     // MARK: - Live-source harness
 
-    /// Routes by request: the gate's HEAD, the browse POST (InnerTubeKit's own `browse-playlist.json`,
+    /// Routes by request: the gate's GET, the browse POST (InnerTubeKit's own `browse-playlist.json`,
     /// read off disk), the index push (recorded), `/titles` (the first asked id gets `original`), and everything else
     /// (remote config) throws.
     private nonisolated final class RoutingTransport: HTTPTransport, @unchecked Sendable {
@@ -538,10 +538,10 @@ struct PlaylistDetailViewModelTests {
         }()
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
-            if request.method == "HEAD" {
+            if request.url.path.hasPrefix("/api/v1/playlists/") {   // the gate's GET (jar #15)
                 switch head {
                 case .throwing: throw URLError(.notConnectedToInternet)
-                case .status(let s): return HTTPResponse(status: s, headers: [:], body: Data())
+                case .status(let s): return HTTPResponse(status: s, headers: [:], body: Data(#"{"excludedVideoIds":[]}"#.utf8))
                 }
             }
             if request.url.path.hasSuffix("index/streams") {

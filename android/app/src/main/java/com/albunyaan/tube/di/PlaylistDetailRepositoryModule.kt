@@ -4,6 +4,7 @@ import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.playlist.NewPipePlaylistDetailRepository
 import com.albunyaan.tube.data.playlist.PlaylistDetailRepository
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.OriginalTitles
 import dagger.Module
 import dagger.Provides
@@ -27,7 +28,8 @@ object PlaylistDetailRepositoryModule {
         extractorClient: NewPipeExtractorClient,
         indexRepository: IndexRepository,
         originalTitles: OriginalTitles,
+        exclusions: Exclusions,
     ): PlaylistDetailRepository {
-        return NewPipePlaylistDetailRepository(extractorClient, indexRepository, originalTitles)
+        return NewPipePlaylistDetailRepository(extractorClient, indexRepository, originalTitles, exclusions)
     }
 }

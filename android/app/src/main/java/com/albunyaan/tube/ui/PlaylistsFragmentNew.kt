@@ -15,6 +15,7 @@ import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -45,10 +46,14 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
     @Inject
     lateinit var filterManager: FilterManager
 
+    @Inject
+    lateinit var lifecycleTracker: AppLifecycleTracker
+
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
             contentService,
-            ContentType.PLAYLISTS
+            ContentType.PLAYLISTS,
+            lifecycleTracker.returnsAfterIdle,
         )
     }
 

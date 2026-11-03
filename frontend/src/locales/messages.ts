@@ -938,7 +938,6 @@ export const messages = {
         noMoreItems: 'No more items',
         excludeError: 'Error adding exclusion',
         removeError: 'Error removing exclusion',
-        fetchError: 'Channel details could not be fetched. YouTube may have changed the page layout, or the channel may be temporarily unavailable.',
         itemCount: '{count} items',
         openOnYouTube: 'Open on YouTube'
       },
@@ -2552,7 +2551,6 @@ export const messages = {
         noMoreItems: 'لا توجد عناصر أخرى',
         excludeError: 'خطأ في إضافة الاستثناء',
         removeError: 'خطأ في إزالة الاستثناء',
-        fetchError: 'تعذر جلب تفاصيل القناة. قد يكون يوتيوب قد غيّر تخطيط الصفحة، أو القناة غير متاحة مؤقتاً.',
         itemCount: '{count} عنصر',
         openOnYouTube: 'فتح على يوتيوب'
       },
@@ -3996,7 +3994,6 @@ export const messages = {
         noMoreItems: 'Geen items meer',
         excludeError: 'Fout bij toevoegen van uitzondering',
         removeError: 'Fout bij verwijderen van uitzondering',
-        fetchError: 'Kanaalgegevens konden niet worden opgehaald. YouTube heeft mogelijk de pagina-indeling gewijzigd, of het kanaal is tijdelijk niet beschikbaar.',
         itemCount: '{count} items',
         openOnYouTube: 'Openen op YouTube'
       },

@@ -223,15 +223,18 @@ struct PlayerScreen: View {
         .rungAnnouncements(model: model)
     }
 
-    /// The error card's Retry, on both screens: a user tap, so the user's Play (round 4), then the retry.
+    /// The error card's Retry, on both screens: a user tap, so the user's Play (round 4), then the retry. The hold goes at
+    /// the tap, not in the task: an open landing before the task runs holds this screen again.
     static func retryTapped(_ model: PlayerViewModel) {
         BackgroundPlaybackController.userAskedToPlay()
+        model.heldByOpen = false
         Task { await model.retry() }
     }
 
-    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump.
-    private static func playUpNext(_ model: PlayerViewModel, at index: Int) {
+    /// An Up Next tap is the user's Play (round 3, m2), then the queue jump. The hold goes at the tap, as Retry's.
+    static func playUpNext(_ model: PlayerViewModel, at index: Int) {
         BackgroundPlaybackController.userAskedToPlay()
+        model.heldByOpen = false
         Task { await model.play(at: index) }
     }
 
@@ -688,7 +691,7 @@ struct PlayerScreen: View {
             return FixtureQueueSource(deadItems: false)
         }
         #endif
-        return LivePlaylistQueueSource(client: container.innerTube.browse, titles: container.titles)
+        return LivePlaylistQueueSource(client: container.innerTube.browse, titles: container.titles, gate: container.browseGate)
     }
 }
 

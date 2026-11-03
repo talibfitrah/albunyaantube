@@ -70,7 +70,6 @@
 | GET | `/api/admin/registry/channels/{id}` | - | - | `Channel` | - |
 | POST | `/api/admin/registry/channels` | - | `Channel` | `Channel` | 201 Created, 409 Conflict if exists |
 | PUT | `/api/admin/registry/channels/{id}` | - | `Channel` | `Channel` | - |
-| PATCH | `/api/admin/registry/channels/{id}/toggle` | - | - | `Channel` | Toggle APPROVED/PENDING |
 | DELETE | `/api/admin/registry/channels/{id}` | - | - | `204 No Content` | Admin only |
 
 ### Playlists
@@ -83,7 +82,6 @@
 | POST | `/api/admin/registry/playlists` | - | `Playlist` | `Playlist` | 201 Created, 409 Conflict if exists |
 | POST | `/api/admin/registry/playlists/{id}/exclusions/{videoId}` | - | - | `List<String>` | Add video exclusion |
 | PUT | `/api/admin/registry/playlists/{id}` | - | `Playlist` | `Playlist` | - |
-| PATCH | `/api/admin/registry/playlists/{id}/toggle` | - | - | `Playlist` | Toggle APPROVED/PENDING |
 | DELETE | `/api/admin/registry/playlists/{id}` | - | - | `204 No Content` | Admin only |
 | DELETE | `/api/admin/registry/playlists/{id}/exclusions/{videoId}` | - | - | `List<String>` | Remove video exclusion |
 
@@ -95,7 +93,6 @@
 | GET | `/api/admin/registry/videos/{id}` | - | - | `Video` | - |
 | POST | `/api/admin/registry/videos` | - | `Video` | `Video` | 201 Created, 409 Conflict if exists |
 | PUT | `/api/admin/registry/videos/{id}` | - | `Video` | `Video` | - |
-| PATCH | `/api/admin/registry/videos/{id}/toggle` | - | - | `Video` | Toggle APPROVED/PENDING |
 | DELETE | `/api/admin/registry/videos/{id}` | - | - | `204 No Content` | Admin only |
 
 ---
@@ -106,7 +103,6 @@
 | Method | Path | Query Params | Request Body | Response | Notes |
 |--------|------|--------------|--------------|----------|-------|
 | GET | `/api/admin/youtube/search` | `q`, `type` (default `ALL`), `pageToken` | - | `YouTubeSearchResponse` | Bad `pageToken`: 400 |
-| POST | `/api/admin/youtube/check-existing` | - | `ExistingContentRequest` | `ExistingContentResponse` | Check which IDs exist in registry |
 
 ---
 

@@ -93,6 +93,12 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         get { lock.withLock { _titles } }
         set { lock.withLock { _titles = newValue } }
     }
+    /// What every answer plays, when set: the bundled clip, so a hosted player really plays. nil = the address below.
+    private var _playedURL: URL?
+    var playedURL: URL? {
+        get { lock.withLock { _playedURL } }
+        set { lock.withLock { _playedURL = newValue } }
+    }
     var calls: [Call] { lock.withLock { _calls } }
     var outcomes: [String: Outcome] {
         get { lock.withLock { _outcomes } }
@@ -184,22 +190,22 @@ final class RecordingResolver: StreamResolving, @unchecked Sendable {
         // `AVURLAsset`s from, and a real googlevideo host there started DNS from un-gated unit tests
         // (the class R7-22 fixed in `OfflineComplianceTests`). An address literal on the discard
         // port needs no lookup at all, and no assertion in the suite reads anything but the string.
-        let nonResolvingURL = URL(string: "https://127.0.0.1:9/x.m3u8")!
+        let playedURL = self.playedURL ?? URL(string: "https://127.0.0.1:9/x.m3u8")!
         let expiresAt = Date().addingTimeInterval(expiresIn)
         switch outcome {
         case .hls:
-            return Resolved(stream: .hls(url: nonResolvingURL, isLive: false,
+            return Resolved(stream: .hls(url: playedURL, isLive: false,
                                          audioOnlyURL: URL(string: "https://r1/a140")!,
                                          captionTracks: captionTracks[videoId] ?? []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt, title: titles[videoId])
         case .liveHLS:
-            return Resolved(stream: .hls(url: nonResolvingURL, isLive: true, audioOnlyURL: nil,
+            return Resolved(stream: .hls(url: playedURL, isLive: true, audioOnlyURL: nil,
                                          captionTracks: []),
                             client: .visionos, userAgent: "UA", resolvedAt: Date(),
                             expiresAt: expiresAt, title: titles[videoId])
         case .progressive:
-            return Resolved(stream: .progressive(url: nonResolvingURL, label: "360p"), client: .android,
+            return Resolved(stream: .progressive(url: playedURL, label: "360p"), client: .android,
                             userAgent: "UA", resolvedAt: Date(), expiresAt: expiresAt, title: titles[videoId])
         case .failure(let error):
             throw error

@@ -178,7 +178,7 @@ class ConditionalSaveKeepsArchiveTest {
         assertEquals(ValidationStatus.ARCHIVED, saved.getValidationStatus());
     }
 
-    /** RegistryController.updateChannel / toggleChannelStatus: a stale ERROR is not written over the take-down. */
+    /** RegistryController.updateChannel: a stale ERROR is not written over the take-down. */
     @Test
     void aChannelUpdateSaveReadBeforeATakeDownKeepsItsArchive() throws Exception {
         storedDoc("APPROVED", "ARCHIVED");

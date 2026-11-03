@@ -62,7 +62,8 @@ struct DegradedLatch: Sendable {
 /// to `LivePlaylistQueueSource`): everything decidable lives in `BrowseFallback`, `DegradedLatch`,
 /// `IndexClient`, `TitlesClient` and `BackendAvailabilityGate`, all tested; this is a pass-through whose
 /// behaviour is the clients' own. Live rows take their original titles (`TitlesClient`, owner issue 1(b))
-/// before the push and the return; Atom rows already carry them.
+/// before the push and the return; Atom rows already carry them. Every list drops the admin's exclusions
+/// (jar #15, `BackendAvailabilityGate.exclusions`), pinned through this type by `ExclusionsTests`.
 ///
 /// Degraded mode is three different substitutions, not one (plan Task 2 table): the header comes
 /// from the backend's `Channel` DTO, Videos from the Atom feed (15 newest, no pagination), and
@@ -81,44 +82,70 @@ struct LiveBrowseSource: BrowseSource {
     func isDegraded() async -> Bool { BrowseFallback.isLatched(until: latch.until, now: Date()) }
 
     func channelHeader(_ id: String) async throws -> ChannelHeader {
-        guard await gate.verify(channelId: id) else { throw BrowseSourceError.unavailable }
+        guard await gate.exclusions(channelId: id, fresh: true) != nil else { throw BrowseSourceError.unavailable }
         return try await attempt({ try await client.channelHeader(id) }, degraded: degradedHeader.map { f in { try await f(id) } })
     }
 
     func channelVideos(_ id: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         try await attempt({
-            var page = try await client.channelVideos(id, continuation: continuation)
-            page.items = await titles.retitle(page.items)
-            Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
-            return page
+            try await channelPage(id, from: continuation) { try await client.channelVideos(id, continuation: $0) }
         }, degraded: {
             // The feed is one page; a continuation request in degraded mode has nothing to add.
             guard continuation == nil else { return BrowsePage(items: [], nextContinuation: nil) }
-            return BrowsePage(items: try await atom.latest(id), nextContinuation: nil)
+            let hidden = await gate.exclusions(channelId: id, fresh: true)?.videoIds ?? []
+            return BrowsePage(items: try await atom.latest(id).filter { !hidden.contains($0.id) }, nextContinuation: nil)
         })
     }
 
     func channelTab(_ id: String, tab: ChannelTab, continuation: String?) async throws -> BrowsePage<VideoItem> {
         try await attempt({
-            var page = try await client.channelTab(id, tab: tab, continuation: continuation)
-            page.items = await titles.retitle(page.items)
-            Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
-            return page
+            try await channelPage(id, from: continuation) { try await client.channelTab(id, tab: tab, continuation: $0) }
         }, degraded: nil)
     }
 
     func channelPlaylists(_ id: String, continuation: String?) async throws -> BrowsePage<PlaylistTile> {
-        try await attempt({ try await client.channelPlaylists(id, continuation: continuation) }, degraded: nil)
+        try await attempt({
+            try await BrowsePage.skippingEmpty(from: continuation) { c in
+                async let lists = gate.exclusions(channelId: id, fresh: c == nil)   // alongside YouTube, not after it
+                var page = try await client.channelPlaylists(id, continuation: c)
+                let hidden = await lists?.playlistIds ?? []
+                page.items.removeAll { hidden.contains($0.id) }
+                return page
+            }
+        }, degraded: nil)
     }
 
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
-        if continuation == nil, await !gate.verify(playlistId: playlistId) { throw BrowseSourceError.unavailable }
+        guard let lists = await gate.exclusions(playlistId: playlistId, fresh: continuation == nil) else {
+            // 410: pulled. A first page shows it; a later one (pulled mid-scroll) ends the list.
+            if continuation == nil { throw BrowseSourceError.unavailable }
+            return BrowsePage(items: [], nextContinuation: nil)
+        }
         return try await attempt({
-            var page = try await client.playlistItems(playlistId, continuation: continuation)
-            page.items = await titles.retitle(page.items)
-            Task { [page] in await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
-            return page
+            try await BrowsePage.skippingEmpty(from: continuation) { c in
+                var page = try await client.playlistItems(playlistId, continuation: c)
+                page.items = await gate.visible(page.items, in: lists, fresh: c == nil)
+                page.items = await titles.retitle(page.items)
+                Task { [page] in await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
+                return page
+            }
         }, degraded: nil)
+    }
+
+    /// Videos, Live, Shorts: one page minus the channel's exclusions, retitled and pushed. `fresh` on a first page,
+    /// so the next open of the channel shows a new exclusion. Asked alongside YouTube: on an open, it joins the
+    /// header's fetch in flight (one GET) and adds no round trip after the page.
+    private func channelPage(_ id: String, from continuation: String?,
+                             _ fetch: (String?) async throws -> BrowsePage<VideoItem>) async throws -> BrowsePage<VideoItem> {
+        try await BrowsePage.skippingEmpty(from: continuation) { c in
+            async let lists = gate.exclusions(channelId: id, fresh: c == nil)
+            var page = try await fetch(c)
+            let hidden = await lists?.videoIds ?? []
+            page.items.removeAll { hidden.contains($0.id) }
+            page.items = await titles.retitle(page.items)
+            Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
+            return page
+        }
     }
 
     /// A live latch skips the probe entirely; a fresh bot-check writes the latch and substitutes;
@@ -142,6 +169,24 @@ struct LiveBrowseSource: BrowseSource {
                 return try await degraded()
             }
         }
+    }
+}
+
+extension BrowsePage {
+    /// A page the exclusions emptied is skipped, never returned: an empty page with a cursor reads as the end on a
+    /// first load (`.empty`) and stalls an append, whose near-end trigger has no new row to fire on. `BrowseClient`
+    /// already follows the pages YouTube itself sends empty. A list that stays empty ends: no cursor, no retry loop.
+    // ponytail: 20 skipped pages (~600 excluded in a row) then the list ends; raise it if an admin ever excludes more.
+    static func skippingEmpty(from continuation: String?, _ fetch: (String?) async throws -> BrowsePage) async throws -> BrowsePage {
+        var seen = Set([continuation].compactMap { $0 })
+        var page = try await fetch(continuation)
+        for _ in 0..<20 {
+            guard page.items.isEmpty, let next = page.nextContinuation, seen.insert(next).inserted else { break }
+            try Task.checkCancellation()
+            page = try await fetch(next)
+        }
+        if page.items.isEmpty { page.nextContinuation = nil }
+        return page
     }
 }
 

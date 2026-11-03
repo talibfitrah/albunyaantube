@@ -107,6 +107,68 @@ struct MeFeedRepositoryTests {
         #expect(allItems(repo) == ["vid-0", "vid-1"])
     }
 
+    // MARK: - Exclusions (jar #15)
+
+    @Test func aVideoExcludedFromItsChannelLeavesTheFeed() async {
+        let transport = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))])
+        let alpha = Self.alpha
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    excludedVideoIds: { $0 == alpha ? ["vid-1"] : [] })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// The exclusions GETs go out at most `maxConcurrent` at a time, like the feeds.
+    @Test func theExclusionsAreAskedAFewChannelsAtATime() async {
+        nonisolated final class InFlight: @unchecked Sendable {
+            let lock = NSLock(); var now = 0; var peak = 0
+            func enter() { lock.withLock { now += 1; peak = max(peak, now) } }
+            func leave() { lock.withLock { now -= 1 } }
+        }
+        let inFlight = InFlight()
+        let channels = (0..<12).map { "UC\($0)" }
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: ScriptedTransport([]), keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    excludedVideoIds: { _ in
+                                        inFlight.enter()
+                                        try? await Task.sleep(for: .milliseconds(20))
+                                        inFlight.leave()
+                                        return [] })
+
+        await repo.refresh(channelIds: channels, force: false)
+
+        #expect(inFlight.peak <= MeFeedRefreshGate.maxConcurrent)   // an upper bound: no reliance on timing
+    }
+
+    /// The exclusions are asked alongside the feeds, not after them: a refresh waits for the slower, not the sum.
+    @Test func theExclusionsAreAskedWhileTheFeedsLoad() async {
+        nonisolated final class Overlap: HTTPTransport, @unchecked Sendable {
+            let lock = NSLock(); var asked = false; var sawAsked = false
+            let response: HTTPResponse
+            init(_ response: HTTPResponse) { self.response = response }
+            func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+                for _ in 0..<100 where !lock.withLock({ asked }) { try? await Task.sleep(for: .milliseconds(10)) }
+                lock.withLock { sawAsked = asked }
+                return response
+            }
+        }
+        let overlap = Overlap(feed(entry("vid-0", Self.week0)))
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: overlap, keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    excludedVideoIds: { _ in overlap.lock.withLock { overlap.asked = true }; return [] })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(overlap.lock.withLock { overlap.sawAsked })
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
     // MARK: - Bucketing
 
     @Test func anItemWithNoUploadInstantIsDroppedRatherThanBucketedIntoThisWeek() async {

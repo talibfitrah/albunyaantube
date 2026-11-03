@@ -7,6 +7,7 @@ import com.albunyaan.tube.data.extractor.NewPipePriorityContext
 import com.albunyaan.tube.data.extractor.Priority
 import com.albunyaan.tube.data.index.IndexRepository
 import com.albunyaan.tube.data.index.StreamIndexItem
+import com.albunyaan.tube.data.source.Exclusions
 import com.albunyaan.tube.data.source.OriginalTitles
 import com.albunyaan.tube.download.DownloadPolicy
 import kotlinx.coroutines.CancellationException
@@ -47,6 +48,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     @Suppress("unused") private val extractorClient: NewPipeExtractorClient,
     private val indexRepository: IndexRepository,
     private val originalTitles: OriginalTitles,
+    private val exclusions: Exclusions,
 ) : PlaylistDetailRepository {
 
     private val youtubeService = ServiceList.YouTube
@@ -133,6 +135,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         playlistId: String,
         page: Page?,
         itemOffset: Int
+    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0)
+
+    /** [skipped]: pages of only excluded items already walked past for this call. */
+    private suspend fun getItems(
+        playlistId: String,
+        page: Page?,
+        itemOffset: Int,
+        skipped: Int,
     ): PlaylistPage<PlaylistItem> {
         return withContext(Dispatchers.IO) {
             try {
@@ -201,8 +211,26 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.d(TAG, "Fetched more: ${items.size} items starting at $itemOffset, hasMore=${nextPage != null}")
                 }
 
+                // The next item offset for the caller's next call: YouTube's count, so positions stay YouTube's
+                // when exclusions drop items.
+                val nextItemOffset = itemOffset + items.size
+
+                // Owner bug 2026-11-03: drop what the dashboard excluded from this playlist and from each item's
+                // channel (a channel's own playlists are rarely registered themselves). Every reader of a playlist's
+                // items comes through here: the screen, the player queue and a playlist download.
+                val hidden = exclusions.videoIds(
+                    channelIds = items.mapNotNull { it.channelId?.takeIf(CANONICAL_CHANNEL_ID_REGEX::matches) },
+                    playlistIds = listOf(playlistId),
+                )
+                val shown = items.filterNot { it.videoId in hidden }
+                // A page of only excluded items must not read as the end or as an empty playlist. Bounded, so one
+                // call cannot walk a whole excluded history past the callers' page timeouts.
+                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
+                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1)
+                }
+
                 // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.
-                val titled = originalTitles.retitle(items, { it.videoId }) { item, t -> item.copy(title = t) }
+                val titled = originalTitles.retitle(shown, { it.videoId }) { item, t -> item.copy(title = t) }
 
                 // Piggyback index loaded items (fire-and-forget, never blocks UI)
                 // Graceful indexing: don't block playlist loading on index errors (429, etc)
@@ -212,8 +240,6 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     Log.w(TAG, "Indexing failed for playlist $playlistId (continuing anyway): ${e.message}")
                 }
 
-                // Return the next item offset for the caller to use on subsequent calls
-                val nextItemOffset = itemOffset + titled.size
                 PlaylistPage(items = titled, nextPage = nextPage, nextItemOffset = nextItemOffset)
             } catch (e: CancellationException) {
                 throw e
@@ -547,8 +573,9 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         private const val MAX_CACHE_SIZE = 100 // Maximum cached playlists
         // Canonical YouTube channel ids are 24 characters: "UC" + 22 of
         // [A-Za-z0-9_-]. We reject anything else so handles/names cannot
-        // accidentally satisfy the registry HEAD lookup.
+        // accidentally satisfy the registry lookup.
         private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
+        private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded items one call walks past
         private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours
         // Short TTL for cached negative results — see [resolveCanonicalChannelId].
         // Long enough to prevent re-fetch storms on persistent failures,

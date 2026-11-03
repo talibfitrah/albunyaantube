@@ -13,6 +13,7 @@ import androidx.navigation.fragment.findNavController
 import androidx.recyclerview.widget.GridLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
+import com.albunyaan.tube.app.AppLifecycleTracker
 import com.albunyaan.tube.data.filters.FilterManager
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.data.model.ContentType
@@ -52,12 +53,16 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
     @Inject
     lateinit var filterManager: FilterManager
 
+    @Inject
+    lateinit var lifecycleTracker: AppLifecycleTracker
+
     private var prefetchController: PredictivePrefetchController? = null
 
     private val viewModel: ContentListViewModel by viewModels {
         ContentListViewModel.Factory(
             contentService,
-            ContentType.VIDEOS
+            ContentType.VIDEOS,
+            lifecycleTracker.returnsAfterIdle,
         )
     }
 

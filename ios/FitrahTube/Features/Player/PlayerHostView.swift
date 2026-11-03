@@ -5,6 +5,7 @@ import InnerTubeKit
 import MediaPlayer
 import Network
 import SwiftUI
+import Synchronization
 
 /// `AVPlayerViewController` host for rung-1 (HLS) and rung-2 (progressive) playback (spec §10, plan
 /// §6.5). Stock chrome gives scrubber/±10s/speed/subtitle-menu/AirPlay for free; captions overlay,
@@ -49,7 +50,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
-                                        interrupted: BackgroundPlaybackController.sessionInterrupted,
+                                        interrupted: BackgroundPlaybackController.sessionInterrupted || model.heldByOpen,
                                         onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
@@ -98,7 +99,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
                                         failedItem: context.coordinator.failedItem,
-                                        interrupted: context.coordinator.background.interrupted,
+                                        interrupted: context.coordinator.background.interrupted || model.heldByOpen,
                                         onRefused: model.hdRefusalHook(for: state.resolved), freshItem: freshItem)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
@@ -481,6 +482,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             super.init()
             // An auto-advance in flight counts too (round 3, m1): its ended item reads paused.
             background.resumeIntentPending = { [weak self] in self?.resumeOnNextItem == true || self?.model?.isAdvancing == true }
+            background.autoplayHeld = { [weak self] in self?.model?.heldByOpen == true }
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
                     self?.path = newPath
@@ -671,10 +673,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             case .restart:
                 // B4: Android REPEAT_MODE_ONE (PlayerBinder.kt:154).
                 endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak player] _ in
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self, weak player] _ in
                     MainActor.assumeIsolated {
                         player?.seek(to: .zero)
-                        player?.play()
+                        if self?.model?.heldByOpen != true { player?.play() }   // an end queued before an open's pause
                     }
                 }
             case .advance:
@@ -712,6 +714,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     // stock AVKit chrome republishes here without a second observer. The stall
                     // watchdog is NOT fed from here any more: see `sampleTimer`.
                     self?.background.refreshNowPlaying()
+                    // Nothing automatic plays a held player, so one playing is the user's Play: it ends the hold. Here, as
+                    // playback starts, not at the next 1 s sample: an end inside that second found it still held. `rate`,
+                    // which `pause()` zeroes synchronously, so the open's own pause is never misread as playing.
+                    if (self?.observedPlayer?.rate ?? 0) != 0 { self?.model?.heldByOpen = false }
                 }
             }
             // `.common`, so it keeps ticking while a scroll view tracks a touch.
@@ -720,8 +726,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
             RunLoop.main.add(timer, forMode: .common)
             sampleTimer = timer
-            // Fix r5 N4-1: never during an interruption; its end's `.resume` plays this item.
-            if resumes, self.model?.pausedForCast != true, !background.interrupted { player.play() }
+            // Fix r5 N4-1: never during an interruption; its end's `.resume` plays this item. Nor once a
+            // newer open has paused this screen (`heldByOpen`).
+            if resumes, self.model?.pausedForCast != true, self.model?.heldByOpen != true, !background.interrupted {
+                player.play()
+            }
             // Stamped here for EVERY new item that is starting -- recovery's resumed replacement (N1)
             // and an item the builder already started, like an auto-advance's (final review I1) -- not
             // left to the sampler's first tick a second away: a failure inside that second would read
@@ -864,31 +873,18 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// reach one whose host AND coordinator are gone while AVKit's PiP window still holds it.
     static let builtPlayers = NSHashTable<AVPlayer>.weakObjects()
 
-    /// Codex review: a swapped-in item's clock reads 0 until its seek lands, so a second swap inside that window (two
-    /// quick lower picks) restarted the video. Each item's target stands in for its position until the seek completes.
-    /// Weak keys: a seek whose item fails never completes (measured), and a dead item's entry must not outlive it.
-    private static let landingSeeks = NSMapTable<AVPlayerItem, NSNumber>.weakToStrongObjects()
-
-    /// The position a replacement item carries: the current item's seek target while that seek is landing, else its clock.
+    /// The position a replacement item carries: the current item's latest seek target while that seek is landing (a
+    /// swapped-in item's clock reads 0 until then, any item's the old time), else its clock.
     static func position(of player: AVPlayer) -> TimeInterval {
-        player.currentItem.flatMap { landingSeeks.object(forKey: $0)?.doubleValue } ?? player.currentTime().seconds
+        (player.currentItem as? LandingItem)?.landingTarget ?? player.currentTime().seconds
     }
 
-    /// Seeks a just-swapped item, keeping its target readable (`position(of:)`) until the seek completes or is cut off
-    /// by a later one. Only this seek's own entry is cleared.
+    /// Seeks a just-swapped item; `LandingItem` keeps the target readable (`position(of:)`) until it lands. On the item
+    /// itself, so the app's own seek never depends on how `AVPlayer` forwards one.
     static func seek(_ player: AVPlayer, to seconds: TimeInterval, exact: Bool) {
-        guard let item = player.currentItem else { return }
-        let target = NSNumber(value: seconds)
-        landingSeeks.setObject(target, forKey: item)
         let tolerance = exact ? CMTime.zero : .positiveInfinity
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) {
-            [weak item] _ in
-            Task { @MainActor in
-                // A failed item never reached its target: recovery's replacement resumes there.
-                guard let item, item.status != .failed, landingSeeks.object(forKey: item) === target else { return }
-                landingSeeks.removeObject(forKey: item)
-            }
-        }
+        player.currentItem?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance,
+                                 toleranceAfter: tolerance, completionHandler: nil)
     }
 
     /// Owner ruling 2026-09-24: nothing plays behind the sign-in wall. Pause and empty, which ends
@@ -934,7 +930,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// says `.shouldResume`, because an advance in flight at the begin counts as playing (round 3, m1:
     /// `resumeIntentPending`), as recovery's replacement does (`Coordinator.observe`). The update pass passes its controller's flag; the
     /// make pass passes the session's (round 2): a host rebuilt mid-interruption (an auto-skip past
-    /// an error state) has a controller that never saw the begin.
+    /// an error state) has a controller that never saw the begin. Both also pass `true` while a newer
+    /// open holds the screen (`PlayerViewModel.heldByOpen`): the same "nothing automatic starts".
     /// Phase 2 (R42): `onRefused` goes on a rebuilt `fitrah-hls` asset (`PlayerViewModel.hdRefusalHook`).
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,
@@ -966,7 +963,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         let reused = rebuild && continuesCurrentVideo ? existing?.currentItem.flatMap { current in
             current.status != .failed && current !== failedItem && (current.asset as? AVURLAsset)?.url == url ? current.asset : nil
         } : nil
-        let item = AVPlayerItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
+        let item = LandingItem(asset: reused ?? asset(url: url, userAgent: resolved.userAgent, synthetic: resolved.stream.synthetic,
                                                        onRefused: onRefused))
         // A live player's own clock is authoritative when we have one; `resumeFallback` (the VM's
         // hoisted currentTime, CF-B1-8) covers the case where a non-playable state dismantled the
@@ -1087,6 +1084,52 @@ struct PlayerHostView: UIViewControllerRepresentable {
     }
 }
 
+/// Every item the host plays. It records where its latest seek is going, whoever made it: ours, the double tap, the lock
+/// screen, or AVKit's scrubber. AVKit's timeline calls `AVPlayer.seek(to:toleranceBefore:toleranceAfter:completionHandler:)`,
+/// and every `AVPlayer` CMTime seek reaches one of the two overrides below (both probed on iOS 18.6 and 26.2; the date
+/// seeks do not, and nothing here uses them). Until that seek lands the item's clock reads the old time, or 0 on a
+/// swapped-in item, so a replacement inside the window (a quality pick, recovery, the audio-only swap) resumed at a stale
+/// target or at 0:00 instead of the scrub.
+nonisolated final class LandingItem: AVPlayerItem, @unchecked Sendable {
+    /// `seek` numbers the seeks; `target` is the latest one's until it completes. A failed item's stays: it never
+    /// reached its target, and recovery's replacement resumes there (its completion never runs, measured).
+    private let landing = Mutex((seek: 0, target: TimeInterval?.none))
+
+    var landingTarget: TimeInterval? { landing.withLock { $0.target } }
+
+    override func seek(to time: CMTime, toleranceBefore: CMTime, toleranceAfter: CMTime,
+                       completionHandler: ((Bool) -> Void)? = nil) {
+        super.seek(to: time, toleranceBefore: toleranceBefore, toleranceAfter: toleranceAfter,
+                   completionHandler: landing(at: time, then: completionHandler))
+    }
+
+    override func seek(to time: CMTime, completionHandler: ((Bool) -> Void)? = nil) {
+        super.seek(to: time, completionHandler: landing(at: time, then: completionHandler))
+    }
+
+    /// Records the target before the seek starts, so a seek it cuts off never clears it.
+    private func landing(at time: CMTime, then completion: ((Bool) -> Void)?) -> (Bool) -> Void {
+        let seek = landing.withLock { state in
+            state.seek += 1
+            state.target = time.isNumeric ? time.seconds : nil
+            return state.seek
+        }
+        return { [weak self] finished in
+            completion?(finished)
+            guard let self else { return }
+            // Landed: the clock reads the target from here on (probed), whatever the item does next.
+            if finished { return self.landed(seek) }
+            // Cut off with no later seek: kept on a failed item. AVFoundation completes on its own queue; `status`
+            // is read on main.
+            Task { @MainActor in if self.status != .failed { self.landed(seek) } }
+        }
+    }
+
+    private func landed(_ seek: Int) {
+        landing.withLock { if $0.seek == seek { $0.target = nil } }
+    }
+}
+
 /// The two playback surfaces this app has. Not a feature flag and not a style: each case is a set
 /// of four AVKit properties that must move together, and naming the surface is what stops them
 /// drifting apart. Spec 10's Shorts paragraph is the whole right-hand column.
@@ -1136,7 +1179,7 @@ enum PiPDismantlePolicy {
 }
 
 #if DEBUG
-/// Real-device checks only (`DeviceChecks`, mounted by `-fitrah-route-probe YES`): a 1 pt, clear,
+/// UI checks only (`DeviceChecks`, `SinglePlayerChecks`; mounted by `-fitrah-route-probe YES`): a 1 pt, clear,
 /// non-interactive element whose accessibility VALUE is computed when XCUITest asks, so it reports
 /// the LIVE audio route and what the Cast receiver last said about OUR load, rather than whatever
 /// the last SwiftUI render saw. Nothing visible.
@@ -1169,9 +1212,14 @@ struct AirPlayRouteProbe: UIViewRepresentable {
                 let receiver = cast.map { states[min($0.receiverState.rawValue, states.count - 1)] } ?? "none"
                 let status = model?.debugLastRecoveryStatus.map { String($0) } ?? "-"
                 let offline = model?.isOfflinePlayback == true   // the saved file? (round 3, m6)
-                return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs="
-                    + outputs.joined(separator: ",") + ";cast=\(receiver)"
-                    + ";time=\(Int(model?.currentTime ?? 0));status=\(status);offline=\(offline)"
+                // Every player in the process, not this screen's: two playing is double audio.
+                let playing = PlayerHostView.builtPlayers.allObjects.filter { $0.rate > 0 }.count
+                let video = model?.args.videoId ?? "-"
+                let external = model?.currentPlayer?.isExternalPlaybackActive == true
+                let time = Int(model?.currentTime ?? 0)
+                return ["video=\(video)", "external=\(external)", "outputs=" + outputs.joined(separator: ","),
+                        "cast=\(receiver)", "time=\(time)", "status=\(status)", "offline=\(offline)",
+                        "playing=\(playing)"].joined(separator: ";")
             }
             set {}
         }

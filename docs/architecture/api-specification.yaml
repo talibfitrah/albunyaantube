@@ -245,7 +245,16 @@ paths:
       summary: Get channel details by YouTube ID
       operationId: getPublicChannel
       tags: [Public Content]
-      security: []
+      description: >
+        Bearer optional. A PERSONAL channel (approved for specific users only) answers 200 only when the
+        request carries a valid Firebase ID token of one of its grantees, so the grantee's app can read its
+        exclusions. Everyone else (no token, another user's token, an invalid, expired or revoked token, a
+        blocked or deleted grantee) gets the same
+        404 a missing id gets; a bad token is never a 401 here. A REJECTED, ARCHIVED or UNAVAILABLE id
+        answers 410 to every caller, PERSONAL or not, as before. Cache-Control is always no-store.
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: channelId
           in: path
@@ -255,24 +264,34 @@ paths:
           description: YouTube channel ID
       responses:
         '200':
-          description: Public channel fields (never the registry entity)
+          description: Public channel fields (never the registry entity), for a PUBLIC channel or a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicChannelDetail'
         '404':
-          description: Channel not found
+          description: Channel not found, not yet approved, or PERSONAL and the caller is not a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: >
+            Only to a grantee of a PERSONAL channel, when their account-status check cannot run
+            ({"code":"SERVICE_UNAVAILABLE"}, as FirebaseAuthFilter). Retry; keep any exclusions already held.
 
   /v1/playlists/{playlistId}:
     get:
       summary: Get playlist details by YouTube ID
       operationId: getPublicPlaylist
       tags: [Public Content]
-      security: []
+      description: >
+        Bearer optional, as getPublicChannel: a PERSONAL playlist answers 200 only to a grantee's valid
+        Firebase ID token; everyone else gets the missing-id 404 (410s as getPublicChannel). Cache-Control is
+        always no-store.
+      security:
+        - {}
+        - bearerAuth: []
       parameters:
         - name: playlistId
           in: path
@@ -282,17 +301,19 @@ paths:
           description: YouTube playlist ID
       responses:
         '200':
-          description: Public playlist fields (never the registry entity)
+          description: Public playlist fields (never the registry entity), for a PUBLIC playlist or a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/PublicPlaylistDetail'
         '404':
-          description: Playlist not found
+          description: Playlist not found, not yet approved, or PERSONAL and the caller is not a grantee
           content:
             application/json:
               schema:
                 $ref: '#/components/schemas/ErrorResponse'
+        '503':
+          description: Only to a grantee of a PERSONAL playlist, as getPublicChannel's 503.
 
   /v1/videos/{videoId}:
     get:
@@ -1383,23 +1404,6 @@ paths:
         '204':
           description: Channel deleted
 
-  /admin/registry/channels/{id}/toggle:
-    patch:
-      summary: Toggle channel APPROVED/PENDING status
-      operationId: registryToggleChannel
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
-
   /admin/registry/playlists:
     get:
       summary: List all playlists in registry
@@ -1508,23 +1512,6 @@ paths:
       responses:
         '204':
           description: Playlist deleted
-
-  /admin/registry/playlists/{id}/toggle:
-    patch:
-      summary: Toggle playlist APPROVED/PENDING status
-      operationId: registryTogglePlaylist
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists/{id}/exclusions:
     get:
@@ -1704,28 +1691,6 @@ paths:
         '204':
           description: Video deleted
 
-  /admin/registry/videos/{id}/toggle:
-    patch:
-      summary: Toggle video APPROVED/PENDING status
-      operationId: registryToggleVideo
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '409':
-          description: |
-            The video is a report's take-down record. Restore it under Archived content, or add the video again.
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
-        '503':
-          $ref: '#/components/responses/LiveCheckUnavailable'
-
   # ============================================================================
   # BULK SUBMISSION (Admin/Moderator)
   # ============================================================================
@@ -1865,26 +1830,6 @@ paths:
           description: Insufficient role (ADMIN or MODERATOR required)
         '502':
           description: Extraction or network failure from YouTube
-
-  /admin/youtube/check-existing:
-    post:
-      summary: Check which YouTube IDs already exist in registry
-      operationId: youtubeCheckExisting
-      tags: [YouTube]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExistingContentRequest'
-      responses:
-        '200':
-          description: Existing content IDs
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExistingContentResponse'
-
 
   /admin/users:
     get:
@@ -2247,8 +2192,8 @@ paths:
       responses:
         '200':
           description: |
-            The solver's current player. While the solver gives no answer (it cannot be reached, or answers late or
-            unreadably: building a new player blocks it for seconds), the last copy, which it still holds.
+            The solver's current player, from a copy refreshed after 60 s. While one call refreshes it (at most
+            1 s), the others get the copy being replaced.
           content:
             application/json:
               schema:
@@ -2276,9 +2221,9 @@ paths:
                     type: string
         '503':
           description: |
-            No player now. `Retry-After: 120`: the solver is switched off, holds no player (none fetched yet, or its
-            last one was dropped), or cannot be reached, answers late (1 s) or unreadably while no earlier copy is held
-            (with one, that copy is the 200); a failed lookup is remembered for 10 s and answered the same way.
+            No player now. `Retry-After: 120`: the solver is switched off, cannot be reached, answers late (1 s) or
+            unreadably, or holds no player (none fetched yet, or its last one was dropped); a failed lookup is
+            remembered for 10 s and answered the same way.
             `Retry-After: 10`: another call is fetching the player right now and no earlier copy is held. Body `{}`.
           headers:
             Retry-After:
@@ -4419,46 +4364,6 @@ components:
             type: string
           nullable: true
 
-    ExistingContentRequest:
-      type: object
-      description: Request to check which YouTube IDs already exist in registry
-      properties:
-        channelIds:
-          type: array
-          items:
-            type: string
-          default: []
-        playlistIds:
-          type: array
-          items:
-            type: string
-          default: []
-        videoIds:
-          type: array
-          items:
-            type: string
-          default: []
-
-    ExistingContentResponse:
-      type: object
-      description: Response indicating which YouTube IDs already exist
-      properties:
-        existingChannels:
-          type: array
-          items:
-            type: string
-          description: YouTube channel IDs that already exist
-        existingPlaylists:
-          type: array
-          items:
-            type: string
-          description: YouTube playlist IDs that already exist
-        existingVideos:
-          type: array
-          items:
-            type: string
-          description: YouTube video IDs that already exist
-
     # Content Library DTOs
     ContentLibraryResponse:
       type: object
@@ -5120,7 +5025,7 @@ components:
 
     PublicChannelDetail:
       type: object
-      required: [youtubeId]
+      required: [youtubeId, excludedVideoIds, excludedPlaylistIds]
       properties:
         youtubeId:
           type: string
@@ -5141,10 +5046,22 @@ components:
         videoCount:
           type: integer
           nullable: true
+        excludedVideoIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Video ids an admin excluded from this channel (its Videos, Shorts and Live lists). The apps list a
+            channel on the device, so they must drop these ids from every list of the channel. Never null.
+        excludedPlaylistIds:
+          type: array
+          items:
+            type: string
+          description: Playlist ids an admin excluded from this channel's Playlists tab. Never null.
 
     PublicPlaylistDetail:
       type: object
-      required: [youtubeId]
+      required: [youtubeId, excludedVideoIds]
       properties:
         youtubeId:
           type: string
@@ -5161,6 +5078,13 @@ components:
         itemCount:
           type: integer
           nullable: true
+        excludedVideoIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Video ids an admin excluded from this playlist. The apps list a playlist on the device, so they must
+            drop these ids from it. Never null.
 
     # Public API Response Wrappers
     ChannelDetailResponse:

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 import SwiftUI
@@ -48,8 +49,18 @@ nonisolated enum ReselectAction: Equatable {
     /// A TOKEN, not a `Bool`: `.onChange` needs a value that actually changes, so two consecutive
     /// submits are two refreshes rather than one silently dropped (`scrollToTopSignal`'s reason).
     private(set) var submissionsToken = 0
+    /// Bumped on a return to the foreground after an idle spell (`FitrahTubeApp.isCatalogReloadDue`): Home and the
+    /// three list tabs refresh in place, so newly approved content shows. A token for `submissionsToken`'s reason.
+    private(set) var catalogToken = 0
 
     private var shellIsReady = false
+    /// The players a video open pauses (`push`). A parameter only so a test can pass its own table
+    /// instead of pausing the suite's parallel players, `RootView.didRoute`'s reason.
+    private let players: NSHashTable<AVPlayer>
+
+    init(players: NSHashTable<AVPlayer> = PlayerHostView.builtPlayers) {
+        self.players = players
+    }
 
     nonisolated struct ScrollToTopSignal: Equatable {
         let tab: Tab
@@ -59,8 +70,16 @@ nonisolated enum ReselectAction: Equatable {
     func push(_ route: Route) {
         // A player or Shorts push is always a tap or a deep link: the user's Play (round 3 m2). Here,
         // not where the screen mounts (round 5, N2): an iPad resize across 600 pt re-runs the mount.
+        // One video plays at a time (2026-11-03 double audio): every open of a new one -- tap, deep
+        // link, the saved copy's Open -- pauses what plays now. The screen it covers stops nothing
+        // itself: its host's dismantle pauses, but a live PiP window defers that (`PiPDismantlePolicy`).
+        // And holds them (review P1): an automatic start already in flight must not restart one under
+        // the new video. The opened screen's model is built after this, so it is never held.
         switch route {
-        case .player, .shorts: BackgroundPlaybackController.userAskedToPlay()
+        case .player, .shorts:
+            BackgroundPlaybackController.userAskedToPlay()
+            players.allObjects.forEach { $0.pause() }
+            PlayerViewModel.all.allObjects.forEach { $0.heldByOpen = true }
         default: break
         }
         paths[selectedTab, default: []].append(route)
@@ -68,6 +87,9 @@ nonisolated enum ReselectAction: Equatable {
 
     /// See `submissionsToken`.
     func submissionsChanged() { submissionsToken += 1 }
+
+    /// See `catalogToken`.
+    func catalogChanged() { catalogToken += 1 }
 
     /// Shared tap handler for the bottom `TabView` and the leading `NavigationRailView` (task-7b)
     /// -- switching tabs assigns directly; tapping the already-selected tab reselects (pop to

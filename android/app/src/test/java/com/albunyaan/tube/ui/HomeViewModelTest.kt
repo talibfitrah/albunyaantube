@@ -5,6 +5,9 @@ import android.app.UiModeManager
 import android.content.Context
 import android.content.res.Configuration
 import androidx.datastore.core.DataStore
+import androidx.lifecycle.LifecycleOwner
+import com.albunyaan.tube.app.AppLifecycleTracker
+import org.mockito.kotlin.mock
 import androidx.datastore.preferences.core.PreferenceDataStoreFactory
 import androidx.datastore.preferences.core.Preferences
 import com.albunyaan.tube.data.filters.FilterManager
@@ -24,12 +27,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -61,6 +66,9 @@ class HomeViewModelTest {
     private lateinit var filterManager: FilterManager
     private lateinit var viewModel: HomeViewModel
     private lateinit var tempPrefsFile: File
+    private var clock = 0L
+    private val tracker = AppLifecycleTracker { clock }
+    private val owner: LifecycleOwner = mock()
 
     @Before
     fun setup() {
@@ -83,7 +91,7 @@ class HomeViewModelTest {
     private fun createViewModel(): HomeViewModel {
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_NORMAL) // Phone mode = 10 item limit
-        return HomeViewModel(app, fakeContentService, filterManager)
+        return HomeViewModel(app, fakeContentService, filterManager, tracker)
     }
 
     @Test
@@ -149,6 +157,50 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `a return to the app after five idle minutes reloads the feed`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), null, false))
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat2", "Fresh", 1)), null, false))
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(listOf("cat2"), state.sections.map { it.categoryId })
+    }
+
+    @Test
+    fun `a failed reload after idle keeps the feed on screen`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), null, false))
+        fakeContentService.homeFeedErrorOnCall = 1
+        viewModel = createViewModel()
+        advanceUntilIdle()
+
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(listOf("cat1"), state.sections.map { it.categoryId })
+    }
+
+    @Test
+    fun `no load-more runs on the old cursor while the idle reload is fetching`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), "old", true))
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        assertTrue(viewModel.canLoadMore)
+
+        fakeContentService.homeFeedGate = kotlinx.coroutines.CompletableDeferred()
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        runCurrent() // the reload is running: its fetch has not returned yet
+
+        assertFalse(viewModel.canLoadMore)
+        fakeContentService.homeFeedGate!!.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `refresh resets and reloads from beginning`() = runTest {
         // Initial load
         fakeContentService.homeFeedResponses.add(
@@ -207,7 +259,7 @@ class HomeViewModelTest {
 
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_NORMAL)
-        viewModel = HomeViewModel(app, fakeContentService, filterManager)
+        viewModel = HomeViewModel(app, fakeContentService, filterManager, tracker)
         advanceUntilIdle()
 
         assertEquals(10, fakeContentService.lastContentLimit)
@@ -221,7 +273,7 @@ class HomeViewModelTest {
 
         val app = RuntimeEnvironment.getApplication()
         setDeviceMode(app, Configuration.UI_MODE_TYPE_TELEVISION)
-        viewModel = HomeViewModel(app, fakeContentService, filterManager)
+        viewModel = HomeViewModel(app, fakeContentService, filterManager, tracker)
         advanceUntilIdle()
 
         assertEquals(20, fakeContentService.lastContentLimit)
@@ -261,6 +313,7 @@ class HomeViewModelTest {
         var homeFeedError: Exception? = null
         var homeFeedErrorOnCall: Int? = null
         var lastContentLimit: Int? = null
+        var homeFeedGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         private var homeFeedCallCount = 0
 
         override suspend fun fetchHomeFeed(
@@ -270,6 +323,7 @@ class HomeViewModelTest {
             category: String?
         ): HomeFeedResult {
             lastContentLimit = contentLimit
+            homeFeedGate?.await()
             val callIndex = homeFeedCallCount++
             if (homeFeedErrorOnCall == callIndex) {
                 throw RuntimeException("Simulated error on call $callIndex")
