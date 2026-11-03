@@ -17,7 +17,7 @@ class FakeInnerTube : Downloader() {
         // NewPipe reads the web client version off sw.js before its first InnerTube call.
         if (request.url().contains("sw.js")) return Response(200, "", emptyMap(), SW_JS, request.url())
         val body = request.dataToSend()?.let { String(it) }.orEmpty()
-        val answer = pages.entries.firstOrNull { body.contains(it.key) }?.value ?: "{}"
+        val answer = pages.entries.firstOrNull { body.contains("\"continuation\":\"${it.key}\"") }?.value ?: "{}"
         return Response(200, "", emptyMap(), answer, request.url())
     }
 

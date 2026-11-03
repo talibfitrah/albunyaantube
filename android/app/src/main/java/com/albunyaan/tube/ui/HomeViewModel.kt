@@ -41,7 +41,8 @@ class HomeViewModel @Inject constructor(
     private var currentCategory: String? = null
 
     val canLoadMore: Boolean
-        get() = hasMore && !isLoadingMore
+        // Not while a reload runs: the feed it keeps on screen pages on a cursor the reload is about to replace.
+        get() = hasMore && !isLoadingMore && loadJob?.isActive != true
 
     init {
         observeCategoryFilter()

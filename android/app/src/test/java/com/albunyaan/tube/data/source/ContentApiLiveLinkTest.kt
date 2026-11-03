@@ -18,14 +18,13 @@ import retrofit2.converter.moshi.MoshiConverterFactory
 class ContentApiLiveLinkTest {
 
     private val server = MockWebServer().apply { start() }
-    private val service = RetrofitContentService(
-        Retrofit.Builder()
-            .baseUrl(server.url("/"))
-            .client(OkHttpClient())
-            .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()))
-            .build()
-            .create(ContentApi::class.java)
-    )
+    private val api = Retrofit.Builder()
+        .baseUrl(server.url("/"))
+        .client(OkHttpClient())
+        .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()))
+        .build()
+        .create(ContentApi::class.java)
+    private val service = RetrofitContentService(api, Exclusions(api))
 
     @After fun tearDown() = server.shutdown()
 

@@ -65,10 +65,11 @@ class Exclusions @VisibleForTesting internal constructor(
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>) = size > MEMO_SIZE
     }
     private val inFlight = HashMap<String, Deferred<Entry>>()
-    // ponytail: one app-wide cap on concurrent asks, so a mixed-uploader playlist page cannot burst the backend.
+    // ponytail: one app-wide cap on concurrent background asks, so a mixed-uploader playlist page cannot burst the
+    // backend; gate calls skip it.
     private val permits = Semaphore(MAX_CONCURRENT)
 
-    /** Bumped each time an answer lands, so a list already shown (the Me feed) can filter again. */
+    /** Bumped each time an answer changes a list, so a list already shown (the Me feed) can filter again. */
     private val _changes = MutableStateFlow(0)
     val changes: StateFlow<Int> = _changes
 
@@ -103,7 +104,14 @@ class Exclusions @VisibleForTesting internal constructor(
                 if (!fresh && held != null && held.until > now()) return held
                 scope.async(start = CoroutineStart.LAZY) {
                     try {
-                        fetch(call, held).also { synchronized(answers) { answers[key] = it }; _changes.update { n -> n + 1 } }
+                        fetch(call, held, queued = !fresh).also {
+                            synchronized(answers) { answers[key] = it }
+                            // Only a changed list re-filters what is on screen; an unchanged or empty re-ask must not,
+                            // or a memo that evicts its own keys would re-ask forever.
+                            if (it.videoIds != held?.videoIds.orEmpty() || it.playlistIds != held?.playlistIds.orEmpty()) {
+                                _changes.update { n -> n + 1 }
+                            }
+                        }
                     } finally {
                         synchronized(answers) { inFlight.remove(key) }
                     }
@@ -113,8 +121,9 @@ class Exclusions @VisibleForTesting internal constructor(
         return job.await()
     }
 
-    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?): Entry = try {
-        val r = permits.withPermit { call() }
+    // [queued]: a list's background ask waits for a permit; a gate call (a screen open, a playback) never does.
+    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?, queued: Boolean): Entry = try {
+        val r = if (queued) permits.withPermit { call() } else call()
         val body = r.body()
         when {
             r.isSuccessful -> Entry(
@@ -135,7 +144,7 @@ class Exclusions @VisibleForTesting internal constructor(
         Entry(held?.code, held?.videoIds.orEmpty(), held?.playlistIds.orEmpty(), e, now() + FAILURE_MS)
 
     companion object {
-        private const val ANSWER_MS = 5 * 60_000L // a list read away from a screen open (Me feed, player, next page)
+        private const val ANSWER_MS = 5 * 60_000L // a list read away from a gate call (Me feed, next page)
         private const val FAILURE_MS = 30_000L
         private const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
         private const val MEMO_SIZE = 500

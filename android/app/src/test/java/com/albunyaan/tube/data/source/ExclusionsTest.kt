@@ -166,6 +166,19 @@ class ExclusionsTest {
     }
 
     @Test
+    fun `an answer that changes no list does not bump changes`() = runTest {
+        // An unregistered channel, asked again after its memo expired or was evicted, must not re-filter every list.
+        whenever(api.getChannel("UCnew")).thenReturn(Response.error(404, "".toResponseBody(null)))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        val before = exclusions.changes.value
+
+        exclusions.channel("UCnew")
+        exclusions.channel("UCnew", fresh = true)
+
+        assertEquals(before, exclusions.changes.value)
+    }
+
+    @Test
     fun `at most four asks reach the backend at once`() = runTest {
         var running = 0
         var most = 0
@@ -178,6 +191,19 @@ class ExclusionsTest {
         exclusions.videoIds((1..10).map { "UC$it" })
 
         assertEquals(4, most)
+    }
+
+    @Test
+    fun `a gate call never queues behind background asks`() = runTest {
+        (1..8).forEach { whenever(api.getChannel("UC$it")).doSuspendableAnswer { delay(60_000); entry() } }
+        whenever(api.getChannel("UCopen")).thenReturn(entry(listOf("lesson00001")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.videoIds((1..8).map { "UC$it" }) // gives up after 2 s; the asks keep every permit busy
+
+        val start = currentTime
+        exclusions.channel("UCopen", fresh = true)
+
+        assertEquals(start, currentTime)
     }
 
     @Test

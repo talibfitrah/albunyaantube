@@ -169,7 +169,7 @@ class PlaylistDetailViewModel @AssistedInject constructor(
      * Runs entirely off the header critical path:
      *  1. If [rawChannelId] is already a canonical UC id, use it directly.
      *  2. Otherwise resolve [parentChannelUrl] to a UC id via NewPipe (cached).
-     *  3. With the canonical id in hand, check the registry HEAD gate.
+     *  3. With the canonical id in hand, check the registry gate.
      *  4. On approval, copy the header with the canonical id AND
      *     [PlaylistHeader.isChannelLinkable] flipped true so the fragment can
      *     show the channel name as a tappable link that navigates to the

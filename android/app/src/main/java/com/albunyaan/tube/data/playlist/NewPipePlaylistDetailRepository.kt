@@ -573,7 +573,7 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         private const val MAX_CACHE_SIZE = 100 // Maximum cached playlists
         // Canonical YouTube channel ids are 24 characters: "UC" + 22 of
         // [A-Za-z0-9_-]. We reject anything else so handles/names cannot
-        // accidentally satisfy the registry HEAD lookup.
+        // accidentally satisfy the registry lookup.
         private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
         private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded items one call walks past
         private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours

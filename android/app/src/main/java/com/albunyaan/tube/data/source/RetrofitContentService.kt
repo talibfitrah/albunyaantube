@@ -16,7 +16,7 @@ import retrofit2.HttpException
 
 class RetrofitContentService(
     private val api: ContentApi,
-    private val exclusions: Exclusions = Exclusions(api),
+    private val exclusions: Exclusions,
 ) : ContentService {
 
     override suspend fun fetchContent(
@@ -127,7 +127,8 @@ class RetrofitContentService(
     }
 
     override suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean {
-        // A channel or playlist gate is a screen open: ask afresh, so the lists it shows next drop the newest exclusions.
+        // Every channel or playlist gate call (a screen open, a playback) asks afresh, so the lists read next drop the
+        // newest exclusions.
         val code = when (type) {
             AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId, fresh = true).codeOrThrow()
             AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId, fresh = true).codeOrThrow()

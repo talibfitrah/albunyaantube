@@ -803,7 +803,11 @@ class GlobalStreamResolverTest {
             retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("vid_excluded")))
         )
         val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
-        val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, FakeContentService(), exclusions)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
         fakeProvider.setResult("vid_excluded", createMockStreams("vid_excluded"))
         fakeProvider.setResult("vid_kept", createMockStreams("vid_kept"))
 
@@ -817,6 +821,8 @@ class GlobalStreamResolverTest {
 
         assertEquals(0, fakeProvider.getCallCount("vid_excluded"))
         assertEquals(1, fakeProvider.getCallCount("vid_kept"))
+        // One registry GET per resolve: the exclusion check reads the gate's own answer.
+        org.mockito.kotlin.verify(api, org.mockito.kotlin.times(2)).getChannel("UCsource")
     }
 
     @Test

@@ -27,12 +27,14 @@ import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.StandardTestDispatcher
 import kotlinx.coroutines.test.TestScope
 import kotlinx.coroutines.test.advanceUntilIdle
+import kotlinx.coroutines.test.runCurrent
 import kotlinx.coroutines.test.resetMain
 import kotlinx.coroutines.test.runTest
 import kotlinx.coroutines.test.setMain
 import java.io.File
 import org.junit.After
 import org.junit.Assert.assertEquals
+import org.junit.Assert.assertFalse
 import org.junit.Assert.assertTrue
 import org.junit.Before
 import org.junit.Test
@@ -183,6 +185,22 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `no load-more runs on the old cursor while the idle reload is fetching`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), "old", true))
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        assertTrue(viewModel.canLoadMore)
+
+        fakeContentService.homeFeedGate = kotlinx.coroutines.CompletableDeferred()
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        runCurrent() // the reload is running: its fetch has not returned yet
+
+        assertFalse(viewModel.canLoadMore)
+        fakeContentService.homeFeedGate!!.complete(Unit)
+        advanceUntilIdle()
+    }
+
+    @Test
     fun `refresh resets and reloads from beginning`() = runTest {
         // Initial load
         fakeContentService.homeFeedResponses.add(
@@ -295,6 +313,7 @@ class HomeViewModelTest {
         var homeFeedError: Exception? = null
         var homeFeedErrorOnCall: Int? = null
         var lastContentLimit: Int? = null
+        var homeFeedGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         private var homeFeedCallCount = 0
 
         override suspend fun fetchHomeFeed(
@@ -304,6 +323,7 @@ class HomeViewModelTest {
             category: String?
         ): HomeFeedResult {
             lastContentLimit = contentLimit
+            homeFeedGate?.await()
             val callIndex = homeFeedCallCount++
             if (homeFeedErrorOnCall == callIndex) {
                 throw RuntimeException("Simulated error on call $callIndex")

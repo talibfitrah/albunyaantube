@@ -66,7 +66,7 @@ class GlobalStreamResolver private constructor(
     private val resolutionProvider: StreamResolutionProvider,
     /**
      * Backend availability gate for the archived-content fix. When non-null, every
-     * call to [resolveStreams] hits this with a HEAD probe BEFORE invoking NewPipe
+     * call to [resolveStreams] hits this with a registry probe BEFORE invoking NewPipe
      * — so an archived/removed videoId can never trigger an extraction (closes
      * the NB1 prefetch leak: list-tap thumbnails for archived videos used to
      * bypass the per-caller gate that lived in [DefaultPlayerRepository]).
@@ -382,7 +382,7 @@ class GlobalStreamResolver private constructor(
                 //
                 // Why inside the async (and not at the top of resolveStreams):
                 // joiners of an in-flight job must NOT each do their own HEAD
-                // call. Putting the gate here means exactly one HEAD per
+                // call. Putting the gate here means exactly one registry probe per
                 // extraction — the gate fires for the first caller; later
                 // joiners share its outcome (the gate's
                 // [ContentUnavailableException] propagates to all awaiters).

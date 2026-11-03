@@ -30,7 +30,7 @@ import retrofit2.Response
 class RetrofitContentServiceTest {
 
     private val api: ContentApi = mock()
-    private val service = RetrofitContentService(api)
+    private val service = RetrofitContentService(api, Exclusions(api))
 
     // --- VIDEO ---
 
@@ -260,7 +260,7 @@ class RetrofitContentServiceTest {
             val api: ContentApi = mock()
             whenever(api.search("quran", null, 50)).thenReturn(unavailable(retryAfter = "5", code = code), Response.success(listOf()))
 
-            val error = runCatching { RetrofitContentService(api).search("quran", null, 50) }.exceptionOrNull()
+            val error = runCatching { RetrofitContentService(api, Exclusions(api)).search("quran", null, 50) }.exceptionOrNull()
 
             assertEquals("a $code was not surfaced as it came", code, (error as? HttpException)?.code())
             verify(api, times(1)).search("quran", null, 50)
