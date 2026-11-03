@@ -1,0 +1,21 @@
+ios/project.yml
+  s_543f5b01a05d75::t_0445d715d4cba0 28
+CHANGELOG.md
+  s_543f5b01a05d75::t_0445d715d4cba0 8
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f7281e26a4872317b812f8d31c500b536dabdaa3",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
