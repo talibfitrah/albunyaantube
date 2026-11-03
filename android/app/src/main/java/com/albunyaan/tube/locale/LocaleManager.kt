@@ -91,7 +91,7 @@ object LocaleManager {
     fun applyStoredLocaleWithResult(context: Context): String {
         // Read from synchronous cache (fast, no blocking)
         val effectiveLocale = SettingsPreferences.getCachedLocale(context)
-            ?: SettingsPreferences.getSystemLocale()  // Fall back to detected system locale on cache miss
+            ?: SettingsPreferences.getSystemLocale(context)  // Fall back to detected system locale on cache miss
 
         applyLocale(effectiveLocale)
         return effectiveLocale
@@ -120,7 +120,7 @@ object LocaleManager {
         preferences.setLocale(selection)
 
         // Resolve and apply the effective locale
-        val effectiveLocale = SettingsPreferences.resolveEffectiveLocale(selection)
+        val effectiveLocale = SettingsPreferences.resolveEffectiveLocale(context, selection)
         applyLocale(effectiveLocale)
     }
 
@@ -196,7 +196,7 @@ object LocaleManager {
      */
     fun getLanguageDisplayNameWithResolved(context: Context, selection: String): String {
         return if (selection == SettingsPreferences.LOCALE_SYSTEM) {
-            val resolved = SettingsPreferences.getSystemLocale()
+            val resolved = SettingsPreferences.getSystemLocale(context)
             val resolvedName = getNativeDisplayName(resolved)
             context.getString(R.string.settings_language_system_resolved, resolvedName)
         } else {

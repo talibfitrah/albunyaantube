@@ -1,8 +1,13 @@
 package com.albunyaan.tube.locale
 
 import android.content.res.Configuration
+import android.content.res.Resources
+import android.os.Build
+import android.os.LocaleList
 import androidx.appcompat.app.AppCompatDelegate
 import androidx.core.os.LocaleListCompat
+import com.albunyaan.tube.preferences.SettingsPreferences
+import kotlinx.coroutines.runBlocking
 import org.junit.After
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertNotNull
@@ -13,10 +18,14 @@ import org.junit.runner.RunWith
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.RuntimeEnvironment
 import org.robolectric.annotation.Config
+import org.robolectric.annotation.Implementation
+import org.robolectric.annotation.Implements
+import org.robolectric.shadows.ShadowLocaleManager
 import java.util.Locale
 
 /**
- * Unit tests for LocaleManager.getCurrentLocale(context) fallback ordering.
+ * Unit tests for LocaleManager.getCurrentLocale(context) fallback ordering, and for
+ * resolving "System default" to the device language (see the tests at the end).
  *
  * Tests verify the resolution order:
  * 1. AppCompatDelegate.getApplicationLocales() - per-app locale
@@ -181,5 +190,54 @@ class LocaleManagerTest {
             "de",
             result.language
         )
+    }
+
+    /**
+     * On API 33+ the platform folds the per-app language into the process configuration,
+     * so Resources.getSystem() reports the app's language, not the device's. Only
+     * LocaleManager.getSystemLocales() keeps the device list. Robolectric's stock shadow
+     * reads Resources.getSystem() for both, so this shadow pins the device list to nl-NL.
+     * Dutch, not English, so a fall-through to the "en" fallback cannot pass the tests.
+     */
+    @Implements(value = android.app.LocaleManager::class, minSdk = Build.VERSION_CODES.TIRAMISU)
+    class DutchDeviceLocaleManager : ShadowLocaleManager() {
+        @Implementation
+        override fun getSystemLocales(): LocaleList = LocaleList.forLanguageTags("nl-NL")
+    }
+
+    /** Device nl-NL, app currently in Arabic, as after picking Arabic in the picker. */
+    private fun <T> withAppInArabic(block: () -> T): T {
+        val system = Resources.getSystem()
+        val original = Configuration(system.configuration)
+        val arabic = Configuration(original).apply { setLocales(LocaleList.forLanguageTags("ar")) }
+        @Suppress("DEPRECATION")
+        system.updateConfiguration(arabic, system.displayMetrics)
+        try {
+            return block()
+        } finally {
+            @Suppress("DEPRECATION")
+            system.updateConfiguration(original, system.displayMetrics)
+        }
+    }
+
+    @Test
+    @Config(sdk = [35], shadows = [DutchDeviceLocaleManager::class])
+    fun `system default label names the device language, not the app language`() {
+        val context = RuntimeEnvironment.getApplication()
+        val label = withAppInArabic {
+            LocaleManager.getLanguageDisplayNameWithResolved(context, SettingsPreferences.LOCALE_SYSTEM)
+        }
+        assertEquals("System default (Nederlands)", label)
+    }
+
+    @Test
+    @Config(sdk = [35], shadows = [DutchDeviceLocaleManager::class])
+    fun `choosing system default after Arabic caches the device language`() {
+        val context = RuntimeEnvironment.getApplication()
+        withAppInArabic {
+            runBlocking { LocaleManager.saveAndApplyLocale(context, SettingsPreferences.LOCALE_SYSTEM) }
+        }
+        // cached_locale is what the next cold start applies (applyStoredLocaleWithResult).
+        assertEquals("nl", SettingsPreferences.getCachedLocale(context))
     }
 }
