@@ -8,11 +8,12 @@ import InnerTubeKit
 /// `/api/v1/videos/{id}` and `/api/v1/channels/{id}` are GET-only in `api-specification.yaml`,
 /// but Spring MVC auto-serves HEAD for any `@GetMapping` (same route, no body) -- so a real HEAD
 /// reaches the backend without going through the OpenAPI-generated `Client`, which only emits the
-/// methods declared in the spec. Reusing InnerTubeKit's own `HTTPTransport` (already public, no
-/// cookies, 15 s timeout) avoids inventing a second transport seam for this one call.
+/// methods declared in the spec. Reusing InnerTubeKit's own `HTTPTransport` (already public, 15 s
+/// timeout) avoids inventing a second transport seam.
 ///
 /// The browse lists use a GET instead (`exclusions`): since jar #15 the channel and playlist bodies carry the
 /// admin's exclusions, which the lists built on the phone from YouTube must drop. Same 410 and fail-open rules.
+/// `AppContainer.browseGate` injects the signed transport so a PERSONAL item's grantee gets its lists.
 struct BackendAvailabilityGate: AvailabilityGate {
     private let transport: HTTPTransport
     private let baseURL: URL
@@ -97,8 +98,9 @@ struct BackendAvailabilityGate: AvailabilityGate {
     }
 
     /// `StreamResolver.withTimeout` is `private` to InnerTubeKit, so this is the same race in the
-    /// smallest form that reaches here: whichever finishes first wins, and an expiry throws --
-    /// which `verify`'s `try?` above turns into the fail-open answer, same as any transport error.
+    /// smallest form that reaches here: whichever finishes first wins, and an expiry throws -- which
+    /// `probe`'s `try?` turns into the fail-open answer and `fetch`'s into `.failed`, same as any transport error.
+    /// The 3 s also caps the browse lists' exclusions GET, which the list's YouTube fetch runs alongside.
     private func send(_ request: HTTPRequest) async throws -> HTTPResponse {
         let transport = self.transport
         let timeout = self.timeout

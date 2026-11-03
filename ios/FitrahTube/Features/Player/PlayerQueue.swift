@@ -135,7 +135,7 @@ struct LivePlaylistQueueSource: PlaylistQueueSource {
 
     func page(playlistId: String, continuation: String?) async throws
         -> (items: [ContentItem], continuation: String?) {
-        let lists = await gate.exclusions(playlistId: playlistId, fresh: false) ?? Exclusions()
+        guard let lists = await gate.exclusions(playlistId: playlistId, fresh: false) else { return ([], nil) }   // 410: pulled
         let page = try await BrowsePage.skippingEmpty(from: continuation) { c in
             var page = try await client.playlistItems(playlistId, continuation: c)
             page.items = await gate.visible(page.items, in: lists, fresh: false)

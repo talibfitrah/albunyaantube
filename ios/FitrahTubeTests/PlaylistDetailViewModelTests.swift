@@ -541,7 +541,7 @@ struct PlaylistDetailViewModelTests {
             if request.url.path.hasPrefix("/api/v1/playlists/") {   // the gate's GET (jar #15)
                 switch head {
                 case .throwing: throw URLError(.notConnectedToInternet)
-                case .status(let s): return HTTPResponse(status: s, headers: [:], body: Data())
+                case .status(let s): return HTTPResponse(status: s, headers: [:], body: Data(#"{"excludedVideoIds":[]}"#.utf8))
                 }
             }
             if request.url.path.hasSuffix("index/streams") {

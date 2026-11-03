@@ -15,7 +15,7 @@ struct ExclusionsTests {
     /// The backend's channel/playlist GETs (per path, settable mid-test), `/titles` (no originals), the index push,
     /// the Atom feed, and youtubei (`firstPage` without a continuation in the body, `nextPage` with one).
     nonisolated final class Backend: HTTPTransport, @unchecked Sendable {
-        enum Answer { case lists(videos: [String], playlists: [String]), status(Int), throwing }
+        enum Answer { case lists(videos: [String], playlists: [String]), status(Int), body(String), throwing }
         private let lock = NSLock()
         private var answers: [String: Answer] = [:]
         private var counts: [String: Int] = [:]
@@ -41,6 +41,7 @@ struct ExclusionsTests {
                 switch answer {
                 case .throwing: throw URLError(.notConnectedToInternet)
                 case .status(let s): return HTTPResponse(status: s, headers: [:], body: Data())
+                case .body(let text): return HTTPResponse(status: 200, headers: [:], body: Data(text.utf8))
                 case .lists(let videos, let playlists):
                     let body = try JSONSerialization.data(withJSONObject: [
                         "youtubeId": String(path.split(separator: "/").last!), "name": "N",
@@ -145,6 +146,52 @@ struct ExclusionsTests {
     @Test func a404IsAnUnregisteredSourceWithNothingExcluded() async {
         let lists = await Self.gate(Backend()).exclusions(playlistId: "PLchannelOwn", fresh: true)
         #expect(lists == Exclusions(registered: false))
+    }
+
+    @Test func a200WithoutTheListsIsRegisteredWithNothingExcludedAndGarbageFailsOpen() async {
+        let backend = Backend()
+        backend.answer("/api/v1/channels/UC1", .body(#"{"youtubeId":"UC1"}"#))
+        backend.answer("/api/v1/channels/UC2", .body("not json"))
+        let gate = Self.gate(backend)
+        #expect(await gate.exclusions(channelId: "UC1", fresh: true) == Exclusions())
+        #expect(await gate.exclusions(channelId: "UC2", fresh: true) == Exclusions(registered: false))
+    }
+
+    /// A grantee's 503 (the backend could not check the grant) fails open and is not kept: the next open asks again.
+    @Test func a503FailsOpenAndTheNextOpenAsksAgain() async {
+        let backend = Backend()
+        backend.answer("/api/v1/playlists/PLmine", .status(503))
+        let gate = Self.gate(backend)
+        #expect(await gate.exclusions(playlistId: "PLmine", fresh: true) == Exclusions(registered: false))
+        backend.answer("/api/v1/playlists/PLmine", .lists(videos: ["vidA"], playlists: []))
+        #expect(await gate.exclusions(playlistId: "PLmine", fresh: true)?.videoIds == ["vidA"])
+    }
+
+    @Test func aPageListEndsAtAnEmptyLastPageOrARepeatedCursor() async throws {
+        let ended = try await Self.walkEmpty(from: "c0") { _, n in n < 3 ? "c\(n)" : nil }
+        #expect(ended.asked == ["c0", "c1", "c2"])
+        #expect(ended.page.items.isEmpty && ended.page.nextContinuation == nil)
+        let repeated = try await Self.walkEmpty(from: nil) { _, _ in "same" }
+        #expect(repeated.asked == [nil, "same"])
+        #expect(repeated.page.nextContinuation == nil)   // an empty page with a cursor would have the list ask again forever
+        let cycle = try await Self.walkEmpty(from: nil) { cursor, _ in cursor == "A" ? "B" : "A" }
+        #expect(cycle.asked == [nil, "A", "B"])
+        let endless = try await Self.walkEmpty(from: nil) { _, n in "c\(n)" }
+        #expect(endless.asked.count == 21)   // the first page plus at most 20 skipped
+        #expect(endless.page.nextContinuation == nil)
+    }
+
+    /// `skippingEmpty` over pages that are all empty; `next` names each page's cursor from the cursor asked and
+    /// the number of pages asked so far.
+    private static func walkEmpty(from start: String?, next: @escaping @Sendable (String?, Int) -> String?)
+        async throws -> (asked: [String?], page: BrowsePage<VideoItem>) {
+        nonisolated final class Asked: @unchecked Sendable { let lock = NSLock(); var all: [String?] = [] }
+        let asked = Asked()
+        let page = try await BrowsePage<VideoItem>.skippingEmpty(from: start) { @Sendable cursor in
+            let n = asked.lock.withLock { asked.all.append(cursor); return asked.all.count }
+            return BrowsePage(items: [], nextContinuation: next(cursor, n))
+        }
+        return (asked.lock.withLock { asked.all }, page)
     }
 
     @Test func aFailedFetchFailsOpenAndIsNotKeptAsTheAnswer() async {
@@ -328,6 +375,21 @@ struct ExclusionsTests {
                                            titles: TitlesClient(transport: backend, baseURL: Self.base, deviceId: DeviceId(value: "t")),
                                            gate: Self.gate(backend))
         #expect(!(try await cold.page(playlistId: "PL1", continuation: nil)).items.map(\.id).contains(excluded))
+    }
+
+    /// A pulled (410) playlist queues nothing, and a later page of a list pulled mid-scroll ends it.
+    @Test func a410PlaylistQueuesNothingAndEndsALaterPage() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.nextPage = Self.fixture("browse-playlist.json")
+        backend.answer("/api/v1/playlists/PL1", .status(410))
+        let queue = LivePlaylistQueueSource(client: Self.client(backend, MemoryStore()),
+                                            titles: TitlesClient(transport: backend, baseURL: Self.base, deviceId: DeviceId(value: "t")),
+                                            gate: Self.gate(backend))
+        let queued = try await queue.page(playlistId: "PL1", continuation: nil)
+        #expect(queued.items.isEmpty && queued.continuation == nil)
+        let later = try await Self.source(backend).playlistItems("PL1", continuation: "next")
+        #expect(later.items.isEmpty && later.nextContinuation == nil)
     }
 
     // MARK: - Freshness: newly approved content after a foreground

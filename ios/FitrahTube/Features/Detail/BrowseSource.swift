@@ -116,12 +116,15 @@ struct LiveBrowseSource: BrowseSource {
     }
 
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
-        let lists = await gate.exclusions(playlistId: playlistId, fresh: continuation == nil)
-        if continuation == nil, lists == nil { throw BrowseSourceError.unavailable }
+        guard let lists = await gate.exclusions(playlistId: playlistId, fresh: continuation == nil) else {
+            // 410: pulled. A first page shows it; a later one (pulled mid-scroll) ends the list.
+            if continuation == nil { throw BrowseSourceError.unavailable }
+            return BrowsePage(items: [], nextContinuation: nil)
+        }
         return try await attempt({
             try await BrowsePage.skippingEmpty(from: continuation) { c in
                 var page = try await client.playlistItems(playlistId, continuation: c)
-                page.items = await gate.visible(page.items, in: lists ?? Exclusions(), fresh: c == nil)
+                page.items = await gate.visible(page.items, in: lists, fresh: c == nil)
                 page.items = await titles.retitle(page.items)
                 Task { [page] in await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
                 return page
@@ -172,16 +175,17 @@ struct LiveBrowseSource: BrowseSource {
 extension BrowsePage {
     /// A page the exclusions emptied is skipped, never returned: an empty page with a cursor reads as the end on a
     /// first load (`.empty`) and stalls an append, whose near-end trigger has no new row to fire on. `BrowseClient`
-    /// already follows the pages YouTube itself sends empty.
-    // ponytail: no page cap (a cap returns the dead end this exists to remove) -- it ends at the first kept item,
-    // the list's end, or a cursor YouTube repeats; cap it if a list is ever excluded wholesale.
+    /// already follows the pages YouTube itself sends empty. A list that stays empty ends: no cursor, no retry loop.
+    // ponytail: 20 skipped pages (~600 excluded in a row) then the list ends; raise it if an admin ever excludes more.
     static func skippingEmpty(from continuation: String?, _ fetch: (String?) async throws -> BrowsePage) async throws -> BrowsePage {
-        var asked = continuation
-        var page = try await fetch(asked)
-        while page.items.isEmpty, let next = page.nextContinuation, next != asked {
-            asked = next
+        var seen = Set([continuation].compactMap { $0 })
+        var page = try await fetch(continuation)
+        for _ in 0..<20 {
+            guard page.items.isEmpty, let next = page.nextContinuation, seen.insert(next).inserted else { break }
+            try Task.checkCancellation()
             page = try await fetch(next)
         }
+        if page.items.isEmpty { page.nextContinuation = nil }
         return page
     }
 }

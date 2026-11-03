@@ -216,15 +216,11 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
         guard !Task.isCancelled else { return }
-        // Jar #15: every subscribed channel's exclusions, asked together, here and never in `rebucket` -- a chip
-        // tap clears the feed first and must not wait on the network to refill it.
-        let excludedVideoIds = excludedVideoIds
-        let hidden = await withTaskGroup(of: (String, Set<String>).self) { group in
-            for id in channelIds { group.addTask { (id, await excludedVideoIds(id)) } }
-            var hidden: [String: Set<String>] = [:]
-            for await (id, ids) in group { hidden[id] = ids }
-            return hidden
-        }
+        // Jar #15: every subscribed channel's exclusions, here and never in `rebucket` -- a chip tap clears the feed
+        // first and must not wait on the network to refill it. Bounded like the feeds; no stagger, as the memo
+        // answers most of these without a request.
+        let hidden = await Self.fanOut(channelIds, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in },
+                                       run: excludedVideoIds)
         guard !Task.isCancelled else { return }
         hiddenByChannel = hidden
         await rebucket(filter: filter)
@@ -236,12 +232,12 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
 
     /// Bounded fan-out: `limit` channels in flight, the next started as each finishes. `nonisolated`
     /// so the children run off the main actor — the only main-actor work is the bookkeeping above.
-    private nonisolated static func fanOut(
+    private nonisolated static func fanOut<Result: Sendable>(
         _ ids: [String], limit: Int, sleep: @escaping Sleep,
-        run: @escaping @Sendable (String) async -> MeFeedRefreshGate.Outcome
-    ) async -> [String: MeFeedRefreshGate.Outcome] {
-        await withTaskGroup(of: (String, MeFeedRefreshGate.Outcome).self) { group in
-            var results: [String: MeFeedRefreshGate.Outcome] = [:]
+        run: @escaping @Sendable (String) async -> Result
+    ) async -> [String: Result] {
+        await withTaskGroup(of: (String, Result).self) { group in
+            var results: [String: Result] = [:]
             var next = 0
             while next < min(max(limit, 1), ids.count) {
                 let id = ids[next]
