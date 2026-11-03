@@ -1,0 +1,34 @@
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_543f5b01a05d75::t_ddca77be175eaf 936-940,958-960,968-972,988-989
+backend/src/test/java/com/albunyaan/tube/controller/PersonalDetailsAccessTest.java
+  s_543f5b01a05d75::t_90845a9c037854 56
+  s_543f5b01a05d75::t_c65b35c57c051e 57
+  s_543f5b01a05d75::t_3d2afd347f95f5 1-55,58-92,94-160
+  s_543f5b01a05d75::t_5b31582d87caa7 93
+backend/src/main/java/com/albunyaan/tube/controller/PublicContentController.java
+  s_543f5b01a05d75::t_00139b9fd8ac0b 45-47
+  s_543f5b01a05d75::t_ddca77be175eaf 14,16,40,42,44,48-60,162-163,169-174,176,180,186-189,191
+backend/src/test/java/com/albunyaan/tube/integration/PersonalDetailsIT.java
+  s_543f5b01a05d75::t_cf641f36464648 1-111
+backend/src/test/java/com/albunyaan/tube/controller/PublicContentControllerTest.java
+  s_543f5b01a05d75::t_ddca77be175eaf 293,305,318,330,604,633,658,675,689,708,712,727
+docs/architecture/api-specification.yaml
+  s_543f5b01a05d75::t_e960c20b20ddda 282-287,297,303
+  s_543f5b01a05d75::t_b268055fda90d5 248-255,265,271
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5434a5f83b9e6e74f95c4425621ac00443a3d7f2",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
