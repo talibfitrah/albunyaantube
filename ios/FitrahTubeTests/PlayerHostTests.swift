@@ -235,8 +235,7 @@ struct PlayerHostTests {
 
     /// Codex review of the fix: an item that fails before its seek lands never reached the target, and recovery's
     /// replacement reads its position from it -- the target stays, or the video restarts at 0 (measured: the seek's
-    /// completion never runs for it, which is also why the store holds its items weakly; the cleanup skips a failed
-    /// item either way).
+    /// completion never runs for it; `LandingItem` keeps a failed item's target either way).
     @Test(.timeLimit(.minutes(1))) func aFailedItemKeepsItsLandingTarget() async throws {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
         let player = AVPlayer(playerItem: LandingItem(url: missing))
