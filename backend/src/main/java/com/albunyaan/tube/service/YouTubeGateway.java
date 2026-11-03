@@ -580,14 +580,16 @@ public class YouTubeGateway {
     // ==================== Pagination Helpers ====================
 
     /**
-     * Encode NewPipe Page object to string token
+     * Encode NewPipe Page object to string token: its URL, plus its id as the URL-encoded fragment. Search pages share
+     * one URL and differ only by id (the continuation YoutubeSearchExtractor.getPage posts), so the id must survive.
      */
     public String encodePageToken(Page page) {
         if (page == null) {
             return null;
         }
         try {
-            return page.getUrl();
+            return page.getId() == null ? page.getUrl()
+                    : page.getUrl() + "#" + java.net.URLEncoder.encode(page.getId(), java.nio.charset.StandardCharsets.UTF_8);
         } catch (Exception e) {
             logger.warn("Failed to encode page token: {}", e.getMessage());
             return null;
@@ -654,7 +656,10 @@ public class YouTubeGateway {
                 logger.warn("Rejected pageToken with redirect-shaped path: {}", pathLower);
                 return null;
             }
-            return new Page(token);
+            String fragment = uri.getRawFragment();   // the page id, as encodePageToken wrote it
+            return fragment == null ? new Page(token)
+                    : new Page(token.substring(0, token.indexOf('#')),
+                            java.net.URLDecoder.decode(fragment, java.nio.charset.StandardCharsets.UTF_8));
         } catch (IllegalArgumentException e) {
             logger.warn("Failed to decode page token (URI parse): {}", e.getMessage());
             return null;

@@ -121,6 +121,22 @@ class YouTubeGatewayTest {
             assertEquals(testUrl, decoded.getUrl());
         }
 
+        /**
+         * NewPipe 0.26.5 search pages share one URL and differ only by id: YoutubeSearchExtractor.getPage POSTs
+         * {"continuation": page.getId()}. A token without the id asks YouTube for a continuation of nothing.
+         */
+        @Test
+        void encodeDecodeCycle_keepsTheSearchContinuationId() {
+            String searchUrl = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false";
+            String continuation = "EqADEgRjYXRzGpYDU0NpQ0FRdE9RRlZJWlhJdE9IZ19-_%3D%3D+/#?&";
+
+            Page decoded = gateway.decodePageToken(gateway.encodePageToken(new Page(searchUrl, continuation)));
+
+            assertNotNull(decoded);
+            assertEquals(searchUrl, decoded.getUrl());
+            assertEquals(continuation, decoded.getId());
+        }
+
         // ── SSRF rejection tests for the pageToken decoder ──
         // The decoder is the user-supplied URL surface that dispatches
         // outbound HTTP via NewPipe — without these tests a maintainer
