@@ -85,11 +85,35 @@ describe('ContentSearchView load more', () => {
     await fireEvent.click(await screen.findByText(messages.en.contentSearch.loadMore));
     await search('tafsir');
     await screen.findByText('Video C');
+    // The replaced search's page no longer holds the new search's Load more.
+    expect(screen.getByText(messages.en.contentSearch.loadMore).closest('button')).not.toBeDisabled();
 
     failPage();
     await new Promise((r) => setTimeout(r, 20));
 
     expect(screen.queryByRole('alert')).toBeNull();
     expect(screen.getByText(messages.en.contentSearch.loadMore)).toBeInTheDocument();
+  });
+
+  it('keeps the latest search when an earlier one answers late', async () => {
+    let finishA!: () => void;
+    vi.mocked(searchYouTube)
+      .mockReturnValueOnce(new Promise((resolve) => { finishA = () => resolve(page('Video A', 'a2') as any); }))
+      .mockResolvedValueOnce(page('Video B', 'b2') as any)
+      .mockResolvedValueOnce(page('Video B2') as any);
+    mount();
+    await search('lecture');
+    await search('tafsir');
+    await screen.findByText('Video B');
+
+    finishA();
+    await new Promise((r) => setTimeout(r, 20));
+
+    expect(screen.queryByText('Video A')).toBeNull();
+    expect(screen.getByText('Video B')).toBeInTheDocument();
+    // Load more pages the search that is shown, even after the input text changes.
+    await fireEvent.update(screen.getByPlaceholderText(messages.en.contentSearch.searchPlaceholder), 'edited');
+    await fireEvent.click(screen.getByText(messages.en.contentSearch.loadMore));
+    expect(searchYouTube).toHaveBeenLastCalledWith('tafsir', 'all', 'b2');
   });
 });

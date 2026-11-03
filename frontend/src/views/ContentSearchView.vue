@@ -224,8 +224,10 @@ const isLoading = ref(false);
 const isLoadingMore = ref(false);
 const error = ref<string | null>(null);
 const loadMoreError = ref<string | null>(null);
-// Bumped by every search: a page from an earlier search is dropped.
+// Bumped by every search: a response from an earlier search is dropped.
 let searchId = 0;
+// The query the shown results came from: Load more pages it, not the input's current text.
+let shownQuery = '';
 const hasSearched = ref(false);
 const wasUrlLookup = ref(false);
 const channels = ref<AdminSearchChannelResult[]>([]);
@@ -360,8 +362,10 @@ async function handleSearch() {
     return;
   }
 
-  searchId++;
+  const id = ++searchId;
+  const query = searchQuery.value;
   isLoading.value = true;
+  isLoadingMore.value = false;
   error.value = null;
   loadMoreError.value = null;
   hasSearched.value = true;
@@ -371,7 +375,9 @@ async function handleSearch() {
 
   try {
     // Always search for 'all' types - contentType filter is applied client-side via computed properties
-    const response = await searchYouTube(searchQuery.value, 'all');
+    const response = await searchYouTube(query, 'all');
+    if (id !== searchId) return;
+    shownQuery = query;
 
     // Reset sequence counter and map for new search
     insertionSeq = 0;
@@ -394,9 +400,9 @@ async function handleSearch() {
     // Don't check existing items upfront - check on-demand when user clicks "Add"
     // This speeds up search significantly!
   } catch (err: any) {
-    error.value = apiErrorOrMessage(err, t, 'contentSearch.error');
+    if (id === searchId) error.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
-    isLoading.value = false;
+    if (id === searchId) isLoading.value = false;
   }
 }
 
@@ -528,7 +534,7 @@ async function loadMoreResults() {
 
   try {
     // Always load 'all' types for pagination since contentType filter is client-side
-    const response = await searchYouTube(searchQuery.value, 'all', nextPageToken.value);
+    const response = await searchYouTube(shownQuery, 'all', nextPageToken.value);
     if (id !== searchId) return;
 
     // Assign insertion sequences to new items before appending
@@ -549,7 +555,7 @@ async function loadMoreResults() {
   } catch (err: any) {
     if (id === searchId) loadMoreError.value = apiErrorOrMessage(err, t, 'contentSearch.error');
   } finally {
-    isLoadingMore.value = false;
+    if (id === searchId) isLoadingMore.value = false;
   }
 }
 
