@@ -505,7 +505,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 model.banner = BannerMessage(text: String(localized: model.videoZoomed
                     ? "player_resize_mode_zoom" : "player_resize_mode_fit"))
             case .back, .forward:
-                guard let target = PlayerGestures.seek(from: player.currentTime().seconds, zone: zone,
+                guard let target = PlayerGestures.seek(from: PlayerHostView.position(of: player), zone: zone,
                                                        duration: item.duration.seconds, step: 10) else { return }
                 player.seek(to: CMTime(seconds: target, preferredTimescale: 600))
                 model.currentTime = target
@@ -610,7 +610,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             self.playToEnd = playToEnd
             // I4: seeded from the live position, not 0 -- a replacement item is seeked back to the
             // outgoing item's time, which a 0 seed would misread as a full item's worth of progress.
-            watchdog = StallWatchdog(playbackTime: player.currentTime().seconds)
+            watchdog = StallWatchdog(playbackTime: PlayerHostView.position(of: player))
             // Plan review C1 (spec R43): an item that is already ready never publishes `.readyToPlay` to the `[.new]`
             // status sink below, so it is armed here, or its stalls would never fire and the drop-back could not happen.
             // (`.initial` on the sink would also re-run the DEBUG seek-near-end branch.) Since the Gate 1 ruling the HD
@@ -865,21 +865,27 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     /// Codex review: a swapped-in item's clock reads 0 until its seek lands, so a second swap inside that window (two
     /// quick lower picks) restarted the video. Each item's target stands in for its position until the seek completes.
-    private static var landingSeeks: [ObjectIdentifier: TimeInterval] = [:]
+    /// Weak keys: a seek whose item fails never completes (measured), and a dead item's entry must not outlive it.
+    private static let landingSeeks = NSMapTable<AVPlayerItem, NSNumber>.weakToStrongObjects()
 
     /// The position a replacement item carries: the current item's seek target while that seek is landing, else its clock.
     static func position(of player: AVPlayer) -> TimeInterval {
-        player.currentItem.flatMap { landingSeeks[ObjectIdentifier($0)] } ?? player.currentTime().seconds
+        player.currentItem.flatMap { landingSeeks.object(forKey: $0)?.doubleValue } ?? player.currentTime().seconds
     }
 
-    /// Seeks a just-swapped item, keeping its target readable (`position(of:)`) until the seek completes or is cut off.
+    /// Seeks a just-swapped item, keeping its target readable (`position(of:)`) until the seek completes or is cut off
+    /// by a later one. Only this seek's own entry is cleared.
     static func seek(_ player: AVPlayer, to seconds: TimeInterval, exact: Bool) {
         guard let item = player.currentItem else { return }
-        let key = ObjectIdentifier(item)
-        landingSeeks[key] = seconds
+        let target = NSNumber(value: seconds)
+        landingSeeks.setObject(target, forKey: item)
         let tolerance = exact ? CMTime.zero : .positiveInfinity
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) { _ in
-            Task { @MainActor in landingSeeks[key] = nil }
+        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) {
+            [weak item] _ in
+            Task { @MainActor in
+                guard let item, landingSeeks.object(forKey: item) === target else { return }
+                landingSeeks.removeObject(forKey: item)
+            }
         }
     }
 

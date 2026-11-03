@@ -147,7 +147,7 @@ import UIKit
         // Stage 6 I-M4: a cast holds playback, so the paused local player is nobody's to upgrade.
         guard eligible, !model.pausedForCast, let pending = model.stageableUpgrade(),
               case .hls(let masterURL, _, _, _, _) = pending.stream, let visible = player.currentItem else { return nil }
-        let position = player.currentTime().seconds
+        let position = PlayerHostView.position(of: player)
         guard let stager, stager.masterURL == masterURL else {
             guard standardHasHeadroom(ranges(visible), position: position, duration: duration(visible)),
                   loops || need(position: position, duration: duration(visible)) != nil else { return nil }

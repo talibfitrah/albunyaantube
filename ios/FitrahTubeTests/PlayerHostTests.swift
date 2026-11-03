@@ -233,6 +233,33 @@ struct PlayerHostTests {
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
     }
 
+    /// Codex review of the fix: an item that fails before its seek lands never reached the target, and recovery's
+    /// replacement reads its position from it -- the target stays, or the video restarts at 0 (measured: the seek's
+    /// completion never runs for it, which is also why the store holds its items weakly).
+    @Test(.timeLimit(.minutes(1))) func aFailedItemKeepsItsLandingTarget() async throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        let player = AVPlayer(playerItem: AVPlayerItem(url: missing))
+        PlayerHostView.seek(player, to: 30, exact: true)
+        for _ in 0..<300 where player.currentItem?.status != .failed { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100))   // the completion's main-actor hop
+        #expect(player.currentItem?.status == .failed)
+        #expect(PlayerHostView.position(of: player) == 30)
+    }
+
+    /// A seek of the user's own (AVKit's scrubber) during the landing window supersedes the landing target.
+    @Test(.timeLimit(.minutes(1))) func aLaterSeekSupersedesTheLandingTarget() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        player.seek(to: CMTime(seconds: 0.3, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        for _ in 0..<300 where abs(player.currentTime().seconds - 0.3) > 0.05 { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(abs(PlayerHostView.position(of: player) - 0.3) <= 0.05)
+    }
+
     /// Re-review of the fix: a rebuild never reuses the asset of the item recovery just reported failed (M4: never handed
     /// back, whatever its status says).
     @Test(.timeLimit(.minutes(1))) func aFreshItemRequestNeverReusesTheFailedItemsAsset() throws {

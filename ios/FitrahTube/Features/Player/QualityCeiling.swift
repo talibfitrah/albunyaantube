@@ -185,7 +185,8 @@ enum QualityOption: Hashable {
                                to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
                                isExpensive: Bool, isConstrained: Bool) -> Bool {
         guard let old, old.option != new else { return false }
-        // What the item holds (`apply`'s result), not a recomputation: nothing re-applies it when the network flags change.
+        // What the item holds (`apply`'s result), not a recomputation: no pass re-applies it when the path changes (only the
+        // `…ForExpensiveNetworks` backstop follows the path live), so today's flags can name a cap the item never had.
         let before = old.ceiling
         let after = ceiling(for: new, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         let sizeLowered = isLower(after.resolution.width, than: before.resolution.width)

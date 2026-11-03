@@ -416,7 +416,7 @@ import UIKit
     }
 
     private func skip(by interval: TimeInterval) -> MPRemoteCommandHandlerStatus {
-        act { $0.seek(to: $0.currentTime() + CMTime(seconds: interval, preferredTimescale: 600)) }
+        act { $0.seek(to: CMTime(seconds: PlayerHostView.position(of: $0) + interval, preferredTimescale: 600)) }
     }
 
     private func removeRemoteCommands() {
