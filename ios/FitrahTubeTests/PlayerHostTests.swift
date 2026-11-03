@@ -235,7 +235,8 @@ struct PlayerHostTests {
 
     /// Codex review of the fix: an item that fails before its seek lands never reached the target, and recovery's
     /// replacement reads its position from it -- the target stays, or the video restarts at 0 (measured: the seek's
-    /// completion never runs for it, which is also why the store holds its items weakly).
+    /// completion never runs for it, which is also why the store holds its items weakly; the cleanup skips a failed
+    /// item either way).
     @Test(.timeLimit(.minutes(1))) func aFailedItemKeepsItsLandingTarget() async throws {
         let missing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
         let player = AVPlayer(playerItem: AVPlayerItem(url: missing))
@@ -254,6 +255,7 @@ struct PlayerHostTests {
         for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
         player.pause()
         _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        #expect(PlayerHostView.position(of: player) >= 1, "the rebuild left a landing target")
         player.seek(to: CMTime(seconds: 0.3, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
         for _ in 0..<300 where abs(player.currentTime().seconds - 0.3) > 0.05 { try await Task.sleep(for: .milliseconds(10)) }
         try await Task.sleep(for: .milliseconds(100))

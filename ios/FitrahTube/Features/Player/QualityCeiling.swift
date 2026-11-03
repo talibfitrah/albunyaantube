@@ -17,6 +17,9 @@ enum QualityOption: Hashable {
 
     /// player.md §3's LTE/5G ceiling: Auto and Data Saver are clamped to this on an `isExpensive` path
     /// (Wi-Fi/offline: no clamp); a picked rendition is not (`ceiling(for:)`).
+    /// The two caps an item holds: `preferredMaximumResolution`, `preferredPeakBitRate`.
+    typealias Ceiling = (resolution: CGSize, bitrate: Double)
+
     private static let cellularResolution = CGSize(width: 1280, height: 720)
     private static let cellularBitrate: Double = 2_500_000 // 2.5 Mbps
 
@@ -115,7 +118,7 @@ enum QualityOption: Hashable {
     /// Production entry point (`PlayerHostView`): sets the ceiling for `item`, clamped by the
     /// current network path.
     @discardableResult
-    func apply(to item: AVPlayerItem, layerSize: CGSize, network: NWPath) -> (resolution: CGSize, bitrate: Double) {
+    func apply(to item: AVPlayerItem, layerSize: CGSize, network: NWPath) -> Ceiling {
         apply(to: item, layerSize: layerSize, isExpensive: network.isExpensive, isConstrained: network.isConstrained)
     }
 
@@ -123,7 +126,7 @@ enum QualityOption: Hashable {
     /// initializer, so a real one can't be constructed in a test (same reason
     /// `NetworkMonitor.isOnline(for:)` takes `NWPath.Status`, not `NWPath`, in this codebase).
     @discardableResult
-    func apply(to item: AVPlayerItem, layerSize: CGSize, isExpensive: Bool, isConstrained: Bool) -> (resolution: CGSize, bitrate: Double) {
+    func apply(to item: AVPlayerItem, layerSize: CGSize, isExpensive: Bool, isConstrained: Bool) -> Ceiling {
         let ceiling = Self.ceiling(for: self, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
         item.preferredMaximumResolution = ceiling.resolution
         item.preferredPeakBitRate = ceiling.bitrate
@@ -150,7 +153,7 @@ enum QualityOption: Hashable {
     }
 
     static func ceiling(for option: QualityOption, layerSize: CGSize, isExpensive: Bool,
-                         isConstrained: Bool) -> (resolution: CGSize, bitrate: Double) {
+                         isConstrained: Bool) -> Ceiling {
         // Owner request 2026-11-02: a picked rendition's cap ignores the network clamps (Android parity: a manual pick
         // overrides `QualityTrackSelector`'s network ceiling) -- ABR may still play below it. The clamps bind Auto and Data Saver.
         if case .rendition(let width, let height) = option {
@@ -181,7 +184,7 @@ enum QualityOption: Hashable {
     /// has more area than 720p yet a narrower width (review of a2c737ba). A lower SIZE cap rebuilds only when what is
     /// drawn (`playing`, the item's `presentationSize`; `.zero` = nothing yet, unknown) is above it (Cubic r2): picking the
     /// top rendition from a fullscreen Auto lowers the cap past the layer while ABR already plays under it.
-    static func needsFreshItem(from old: (option: QualityOption, ceiling: (resolution: CGSize, bitrate: Double))?,
+    static func needsFreshItem(from old: (option: QualityOption, ceiling: Ceiling)?,
                                to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
                                isExpensive: Bool, isConstrained: Bool) -> Bool {
         guard let old, old.option != new else { return false }

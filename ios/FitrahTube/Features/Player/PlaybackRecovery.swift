@@ -222,7 +222,7 @@ struct StallWatchdog: Equatable {
     private var lastBufferedEnd: TimeInterval = 0
     private var stalledSince: Date?
 
-    /// - Parameter playbackTime: seed from the live player's `currentTime()`. A replacement item is
+    /// - Parameter playbackTime: seed from the live player's position (`PlayerHostView.position(of:)`). A replacement item is
     ///   seeked back to the outgoing item's position, so seeding from 0 would read that offset as
     ///   real playback progress on the first tick and refund the recovery budget for free.
     init(playbackTime: TimeInterval = 0) {

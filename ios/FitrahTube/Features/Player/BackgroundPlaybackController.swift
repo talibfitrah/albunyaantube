@@ -311,7 +311,7 @@ import UIKit
     }
 
     private func publishNowPlaying() {
-        let elapsed = player?.currentTime().seconds ?? 0
+        let elapsed = player.map(PlayerHostView.position(of:)) ?? 0
         // CF-B6: `Resolved` carries no duration, so the item's own is the authority the moment it
         // is finite (HLS reports `indefinite` until the playlist is parsed, and always for a live
         // stream); `NowPlayingSnapshot.make` falls back to `args.durationSeconds` until then.

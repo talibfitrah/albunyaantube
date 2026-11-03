@@ -436,7 +436,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
         var layerSize: CGSize = .zero
         /// The pick `applyQuality` last applied and the ceiling it set on the item, so the update pass can tell a lower pick
         /// (`QualityOption.needsFreshItem`) even after the network flags changed.
-        var appliedQuality: (option: QualityOption, ceiling: (resolution: CGSize, bitrate: Double))?
+        var appliedQuality: (option: QualityOption, ceiling: QualityOption.Ceiling)?
         /// Drives `sample` once a second of WALL clock (Task 7 review I1 + P1). The periodic time
         /// observer runs on the item's timeline, which stops while AVPlayer waits for data -- so during
         /// a real stall it neither stamped `lastPlayingAt` nor ticked the stall watchdog. Per item,
@@ -692,13 +692,14 @@ struct PlayerHostView: UIViewControllerRepresentable {
                 forInterval: CMTime(seconds: 1, preferredTimescale: 600), queue: .main) { [weak self] time in
                 MainActor.assumeIsolated {
                     // B5 (CF-B1-8): the hoisted position, ~1 s coarse -- the host prefers a live
-                    // `currentTime()` and reads this only when rebuilding from no player. Gated on
+                    // `position(of:)` and reads this only when rebuilding from no player. Gated on
                     // the VM still being on the video this coordinator last built: between an
                     // advance's `swapArgs` (which zeroes it for the next video) and the update pass
                     // that swaps the item, the OLD item is still ticking here, and a fresh
                     // coordinator after a dismantle would read that clock back as the resume point.
                     if let self, self.lastVideoId == self.model?.args.videoId {
-                        self.model?.currentTime = time.seconds
+                        // A landing seek's target, not the swapped-in item's 0 (a Cast or a Retry starts from this).
+                        self.model?.currentTime = self.observedPlayer.map(PlayerHostView.position(of:)) ?? time.seconds
                         // B5 Task 3: `PlayerFullscreen.isActive`'s video-orientation input, same
                         // observer, same guard -- a portrait Short must never leak into the next video.
                         if let size = self.observedItem?.presentationSize, size.width > 0, size.height > 0 {
@@ -774,7 +775,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             let buffered = item.loadedTimeRanges.map { CMTimeRangeGetEnd($0.timeRangeValue).seconds }.max() ?? 0
             // Final review I2: the path monitor this host already runs for the quality clamp. With no
             // usable network a recovery's re-resolve fails at once; AVPlayer resumes by itself.
-            let tick = watchdog.tick(playbackTime: player.currentTime().seconds, bufferedEnd: buffered,
+            let tick = watchdog.tick(playbackTime: PlayerHostView.position(of: player), bufferedEnd: buffered,
                                      isStalled: player.timeControlStatus == .waitingToPlayAtSpecifiedRate,
                                      isLive: isLive, isOnline: isOnline(), now: Date())
             if tick.progressed { model?.recordPlaybackProgress() }
@@ -883,7 +884,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
         player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance) {
             [weak item] _ in
             Task { @MainActor in
-                guard let item, landingSeeks.object(forKey: item) === target else { return }
+                // A failed item never reached its target: recovery's replacement resumes there.
+                guard let item, item.status != .failed, landingSeeks.object(forKey: item) === target else { return }
                 landingSeeks.removeObject(forKey: item)
             }
         }
@@ -908,7 +910,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     /// Builds the `AVPlayer` for one `StreamState`, reusing `replacing` when it's already playing the
     /// resolved URL (an unrelated state change -- e.g. a later task's recovery counters -- must not
-    /// restart playback). Ruling 32 (session-only resume): `replacing`'s `currentTime()` carries into
+    /// restart playback). Ruling 32 (session-only resume): `replacing`'s position (`position(of:)`) carries into
     /// the replacement item; nothing here persists past this `AVPlayer`'s own lifetime.
     /// B5: `continuesCurrentVideo == false` (an auto-advance or an Up Next tap) starts the
     /// replacement at 0; `resumeFallback` is the VM's hoisted `currentTime` (CF-B1-8) for a fresh
