@@ -1,0 +1,56 @@
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_543f5b01a05d75::t_e9db6f71baf9fd 235
+  s_543f5b01a05d75::t_ef83893e3c3a61 226-227,230,234,237
+ios/FitrahTubeTests/PlayerHostTests.swift
+  s_543f5b01a05d75::t_ab09e6243c77fb 1095-1124,1131,1133-1136,1138,1140-1143
+  s_543f5b01a05d75::t_d6bba09d35bb91 1084
+  s_543f5b01a05d75::t_60e42977c9717e 946-960,963-994,997-1016,1019-1041,1044-1063,1066-1083,1085-1094,1125-1130,1132,1137,1139,1144-1163,1170-1203
+  s_543f5b01a05d75::t_8bd022c803f094 1042-1043
+  s_543f5b01a05d75::t_5b3dfd71b9bb26 961-962,995-996,1017-1018,1064-1065,1164-1169
+  s_bb82569f5605c3::t_dc40acf15e9ee1 6
+ios/FitrahTubeTests/Support/PlayerTestDoubles.swift
+  s_543f5b01a05d75::t_2b8e5086306bd1 193,197,203,208
+  s_543f5b01a05d75::t_5eede978b68cdd 96-101
+ios/FitrahTube/App/Router.swift
+  s_543f5b01a05d75::t_d5eacccb120b7c 73-74,79
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_543f5b01a05d75::t_350ec9b379823e 449-452
+  s_543f5b01a05d75::t_ef83893e3c3a61 1439,1445,1582
+  s_543f5b01a05d75::t_d5eacccb120b7c 447-448,453-456,481
+ios/FitrahTube/Features/Player/BackgroundPlaybackController.swift
+  s_543f5b01a05d75::t_d5eacccb120b7c 29-31,284
+ios/FitrahTubeTests/CastSessionTests.swift
+  s_543f5b01a05d75::t_9fc3c9d4c4ac2f 1478-1529
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_543f5b01a05d75::t_d5eacccb120b7c 53,102,485,676,679,729-733,933-934
+  s_543f5b01a05d75::t_350ec9b379823e 720
+  s_543f5b01a05d75::t_ef83893e3c3a61 717-719
+ios/FitrahTubeTests/BackgroundPlaybackControllerTests.swift
+  s_543f5b01a05d75::t_ff6909ba930086 682-694,697-700,703-704
+  s_543f5b01a05d75::t_422fa882c6508e 695-696
+  s_543f5b01a05d75::t_bf0634a27039ca 701-702
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "6bc2bab95327ceec20d02ef46a2e22d472af75b7",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    },
+    "s_bb82569f5605c3": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a16c-1bcf-7300-a432-f8dcabe17bab",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
