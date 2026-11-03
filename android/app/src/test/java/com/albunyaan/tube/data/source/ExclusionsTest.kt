@@ -306,8 +306,9 @@ class ExclusionsTest {
         val exclusions = Exclusions(api, { clock }, backgroundScope)
         exclusions.videoIds(playlistIds = listOf("PL1", "PL2", "PL3")) // PL3's ask waits behind PL1 and PL2
         exclusions.playlist("PL3", fresh = true) // the screen's gate: the new exclusion
+        clock += 6 * 60_000L // and it has gone stale by the time the queued ask runs
 
-        delay(60_000) // the queued ask gets its permit and fails
+        delay(60_000) // the queued ask gets its permit, asks again and fails
         val hidden = exclusions.videoIds(playlistIds = listOf("PL3"))
 
         assertEquals(2, calls)
@@ -330,6 +331,19 @@ class ExclusionsTest {
         user = "bob" // signs in during the 2 s wait; no other read clears the memo first
 
         assertEquals(emptySet<String>(), hidden.await())
+    }
+
+    @Test
+    fun `a queued ask a gate answered meanwhile sends no request of its own`() = runTest {
+        (1..2).forEach { whenever(api.getPlaylist("PL$it")).doSuspendableAnswer { delay(60_000); entry() } }
+        whenever(api.getPlaylist("PL3")).thenReturn(entry(listOf("lesson00009")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.videoIds(playlistIds = listOf("PL1", "PL2", "PL3")) // PL3's ask waits behind PL1 and PL2
+        exclusions.playlist("PL3", fresh = true)
+
+        delay(60_000) // the queued ask gets its permit
+
+        verify(api, times(1)).getPlaylist("PL3")
     }
 
     @Test

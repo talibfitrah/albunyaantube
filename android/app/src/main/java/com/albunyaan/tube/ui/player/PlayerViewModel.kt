@@ -2319,7 +2319,8 @@ class PlayerViewModel @Inject constructor(
     /**
      * A playlist page within one page timeout (null when the first fetch misses it). A page the exclusions emptied but
      * with more behind it is followed, a bounded number of times, while time is left, so it never reads as an
-     * unavailable or ended playlist; when time runs out the last page fetched is kept, with its cursor.
+     * unavailable or ended playlist; when time runs out or a follow-up fails, the last page fetched is kept, with its
+     * cursor.
      */
     private suspend fun playlistPage(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem>? {
         var got: PlaylistPage<PlaylistItem>? = null
@@ -2328,7 +2329,14 @@ class PlayerViewModel @Inject constructor(
             var offset = itemOffset
             var followed = 0
             while (true) {
-                val p = playlistDetailRepository.getItems(playlistId, at, offset, PLAYLIST_WALK_BUDGET_MS).also { got = it }
+                val p = try {
+                    playlistDetailRepository.getItems(playlistId, at, offset, PLAYLIST_WALK_BUDGET_MS)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (got == null) throw e else break // a failed follow-up keeps the page already fetched
+                }
+                got = p
                 if (p.items.isNotEmpty() || followed++ >= MAX_EMPTIED_PAGES_FOLLOWED) break
                 at = p.nextPage ?: break
                 offset = p.nextItemOffset

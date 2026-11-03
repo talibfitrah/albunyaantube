@@ -170,6 +170,7 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
     var getItemsCallCount = 0
     val walkBudgets = mutableListOf<Long?>()
     var hangOnPage: Int? = null // that page never answers (past any page timeout)
+    var failOnPage: Int? = null
     var failOnSecondPage = false
 
     fun setPages(pages: List<PlaylistPage<PlaylistItem>>) {
@@ -206,6 +207,7 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
         val pageIndex = if (page == null) 0 else currentPageIndex + 1
         currentPageIndex = pageIndex
         if (pageIndex == hangOnPage) kotlinx.coroutines.awaitCancellation()
+        if (pageIndex == failOnPage) throw java.io.IOException("Simulated network error for testing")
         return pages.getOrNull(pageIndex) ?: PlaylistPage(emptyList(), null)
     }
 

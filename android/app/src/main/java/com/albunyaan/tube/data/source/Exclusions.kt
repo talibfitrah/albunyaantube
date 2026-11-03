@@ -169,7 +169,13 @@ class Exclusions @VisibleForTesting internal constructor(
     }
 
     private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, last: () -> Entry?, permits: Semaphore?): Entry = try {
-        val r = if (permits != null) permits.withPermit { call() } else call()
+        val r = if (permits != null) {
+            permits.withPermit {
+                // A gate may have answered while this ask waited its turn: no second call for that id
+                last()?.takeIf { it.error == null && it.until > now() }?.let { return it }
+                call()
+            }
+        } else call()
         val body = r.body()
         when {
             r.isSuccessful -> Entry(
