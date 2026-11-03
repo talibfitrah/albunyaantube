@@ -1,0 +1,22 @@
+frontend/src/services/youtubeDataApi.ts
+  s_543f5b01a05d75::t_7cd09da9d7c94d 118-120
+frontend/tests/youtubeDataApi.spec.ts
+  s_543f5b01a05d75::t_e54ed74dd5095c 112
+  s_543f5b01a05d75::t_a8e3520c60eb66 128-142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "01f7729ac490569ba68eba5346e912c75e32663f",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
