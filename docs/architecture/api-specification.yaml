@@ -1383,23 +1383,6 @@ paths:
         '204':
           description: Channel deleted
 
-  /admin/registry/channels/{id}/toggle:
-    patch:
-      summary: Toggle channel APPROVED/PENDING status
-      operationId: registryToggleChannel
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
-
   /admin/registry/playlists:
     get:
       summary: List all playlists in registry
@@ -1508,23 +1491,6 @@ paths:
       responses:
         '204':
           description: Playlist deleted
-
-  /admin/registry/playlists/{id}/toggle:
-    patch:
-      summary: Toggle playlist APPROVED/PENDING status
-      operationId: registryTogglePlaylist
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
 
   /admin/registry/playlists/{id}/exclusions:
     get:
@@ -1704,28 +1670,6 @@ paths:
         '204':
           description: Video deleted
 
-  /admin/registry/videos/{id}/toggle:
-    patch:
-      summary: Toggle video APPROVED/PENDING status
-      operationId: registryToggleVideo
-      tags: [Registry]
-      parameters:
-        - name: id
-          in: path
-          required: true
-          schema:
-            type: string
-      responses:
-        '200':
-          description: Status toggled
-        '409':
-          description: |
-            The video is a report's take-down record. Restore it under Archived content, or add the video again.
-        '400':
-          $ref: '#/components/responses/LiveCategoryRefused'
-        '503':
-          $ref: '#/components/responses/LiveCheckUnavailable'
-
   # ============================================================================
   # BULK SUBMISSION (Admin/Moderator)
   # ============================================================================
@@ -1865,26 +1809,6 @@ paths:
           description: Insufficient role (ADMIN or MODERATOR required)
         '502':
           description: Extraction or network failure from YouTube
-
-  /admin/youtube/check-existing:
-    post:
-      summary: Check which YouTube IDs already exist in registry
-      operationId: youtubeCheckExisting
-      tags: [YouTube]
-      requestBody:
-        required: true
-        content:
-          application/json:
-            schema:
-              $ref: '#/components/schemas/ExistingContentRequest'
-      responses:
-        '200':
-          description: Existing content IDs
-          content:
-            application/json:
-              schema:
-                $ref: '#/components/schemas/ExistingContentResponse'
-
 
   /admin/users:
     get:
@@ -4418,46 +4342,6 @@ components:
           items:
             type: string
           nullable: true
-
-    ExistingContentRequest:
-      type: object
-      description: Request to check which YouTube IDs already exist in registry
-      properties:
-        channelIds:
-          type: array
-          items:
-            type: string
-          default: []
-        playlistIds:
-          type: array
-          items:
-            type: string
-          default: []
-        videoIds:
-          type: array
-          items:
-            type: string
-          default: []
-
-    ExistingContentResponse:
-      type: object
-      description: Response indicating which YouTube IDs already exist
-      properties:
-        existingChannels:
-          type: array
-          items:
-            type: string
-          description: YouTube channel IDs that already exist
-        existingPlaylists:
-          type: array
-          items:
-            type: string
-          description: YouTube playlist IDs that already exist
-        existingVideos:
-          type: array
-          items:
-            type: string
-          description: YouTube video IDs that already exist
 
     # Content Library DTOs
     ContentLibraryResponse:

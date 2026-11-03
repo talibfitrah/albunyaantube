@@ -36,7 +36,6 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.multipart;
-import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.patch;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.post;
 import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.put;
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.jsonPath;
@@ -174,17 +173,6 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
         assertThat(live.state(uc("r2"))).isNotNull();
     }
 
-    // ---- Row 3: toggle channel -> APPROVED ----
-
-    @Test
-    void row3_togglingAChannelInLiveToApprovedSeedsIt() throws Exception {
-        doc("channels", "ch-r3", Map.of("youtubeId", uc("r3"), "name", "C", "status", "PENDING", "categoryIds", List.of(LIVE)));
-        as("admin");
-        liveOn(uc("r3"), "it1r3live01");
-        send(patch("/api/admin/registry/channels/ch-r3/toggle"), Map.of()).andExpect(status().isOk());
-        assertThat(live.state(uc("r3"))).isNotNull();
-    }
-
     // ---- Row 4: single add playlist ----
 
     @Test
@@ -220,17 +208,6 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("LIVE_CATEGORY_TYPE_NOT_ALLOWED"));
         assertThat(playlists.findById("pl-r5").orElseThrow().getStatus()).isEqualTo("PENDING");
-    }
-
-    // ---- Row 6: toggle playlist -> APPROVED ----
-
-    @Test
-    void row6_togglingAPlaylistInLiveToApprovedIs400() throws Exception {
-        doc("playlists", "pl-r6", Map.of("youtubeId", "PLit1r600000000000000000000000000", "title", "P",
-                "status", "PENDING", "categoryIds", List.of(LIVE)));
-        as("admin");
-        send(patch("/api/admin/registry/playlists/pl-r6/toggle"), Map.of()).andExpect(status().isBadRequest());
-        assertThat(playlists.findById("pl-r6").orElseThrow().getStatus()).isEqualTo("PENDING");
     }
 
     // ---- Row 7: single add video ----
@@ -316,31 +293,6 @@ class LiveCategoryGuardIT extends BaseIntegrationTest {
                 .andExpect(status().isBadRequest())
                 .andExpect(jsonPath("$.code").value("LIVE_LINK_NOT_LIVE"));
         assertThat(videos.findById("doc-r8b").orElseThrow().getStatus()).isEqualTo("PENDING");
-    }
-
-    // ---- Row 9: toggle video -> APPROVED ----
-
-    @Test
-    void row9_togglingANonLiveVideoInLiveToApprovedIs400() throws Exception {
-        doc("videos", "doc-r9", Map.of("youtubeId", "it1r9vid001", "title", "V", "status", "PENDING",
-                "channelId", uc("r9"), "categoryIds", List.of(LIVE)));
-        as("admin");
-        liveOn(uc("r9"), "it1r9other1");
-        send(patch("/api/admin/registry/videos/doc-r9/toggle"), Map.of()).andExpect(status().isBadRequest());
-        assertThat(videos.findById("doc-r9").orElseThrow().getStatus()).isEqualTo("PENDING");
-    }
-
-    @Test
-    void row9_togglingALiveVideoToApprovedStoresTheVerifiedChannel() throws Exception {
-        doc("videos", "doc-r9b", Map.of("youtubeId", "it1r9bvid01", "title", "V", "status", "PENDING",
-                "categoryIds", List.of(LIVE)));
-        as("admin");
-        when(reader.resolveChannelId("it1r9bvid01")).thenReturn(Optional.of(uc("r9b")));
-        liveOn(uc("r9b"), "it1r9bvid01");
-        send(patch("/api/admin/registry/videos/doc-r9b/toggle"), Map.of()).andExpect(status().isOk());
-        Video stored = videos.findById("doc-r9b").orElseThrow();
-        assertThat(stored.getChannelId()).isEqualTo(uc("r9b"));
-        assertThat(stored.getStatus()).isEqualTo("APPROVED");
     }
 
     // ---- Row 10: bulk submit (whole request, D9) ----

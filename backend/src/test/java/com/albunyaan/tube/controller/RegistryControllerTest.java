@@ -261,37 +261,6 @@ class RegistryControllerTest {
     }
 
     @Test
-    void toggleChannelStatus_shouldToggleFromApprovedToPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        // Arrange
-        testChannel.setStatus("APPROVED");
-        when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
-        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-
-        // Act
-        ResponseEntity<Channel> response = registryController.toggleChannelStatus("channel-123", adminUser);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("PENDING", testChannel.getStatus());
-    }
-
-    @Test
-    void toggleChannelStatus_shouldToggleFromPendingToApproved() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        // Arrange
-        testChannel.setStatus("PENDING");
-        when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
-        when(channelRepository.save(any(Channel.class))).thenReturn(testChannel);
-
-        // Act
-        ResponseEntity<Channel> response = registryController.toggleChannelStatus("channel-123", adminUser);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("APPROVED", testChannel.getStatus());
-        assertEquals("admin-uid", testChannel.getApprovedBy());
-    }
-
-    @Test
     void deleteChannel_shouldDeleteChannel_whenExists() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
         // Arrange
         when(channelRepository.findById("channel-123")).thenReturn(Optional.of(testChannel));
@@ -407,21 +376,6 @@ class RegistryControllerTest {
         assertEquals("Updated Title", testPlaylist.getTitle());
         assertEquals("Updated Description", testPlaylist.getDescription());
         verify(playlistRepository).save(testPlaylist);
-    }
-
-    @Test
-    void togglePlaylistStatus_shouldToggleBetweenApprovedAndPending() throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        // Arrange
-        testPlaylist.setStatus("APPROVED");
-        when(playlistRepository.findById("playlist-123")).thenReturn(Optional.of(testPlaylist));
-        when(playlistRepository.save(any(Playlist.class))).thenReturn(testPlaylist);
-
-        // Act
-        ResponseEntity<Playlist> response = registryController.togglePlaylistStatus("playlist-123", adminUser);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("PENDING", testPlaylist.getStatus());
     }
 
     @Test
@@ -681,47 +635,12 @@ class RegistryControllerTest {
         verify(videoRepository, never()).deleteById(any());
     }
 
-    @Test
-    void toggleVideoStatus_shouldToggleFromApprovedToPending() throws Exception {
-        // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
-        video.setId("video-123");
-        video.setStatus("APPROVED");
-        when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
-        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(video);
-
-        // Act
-        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.toggleVideoStatus("video-123", adminUser);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("PENDING", video.getStatus());
-    }
-
-    @Test
-    void toggleVideoStatus_shouldToggleFromPendingToApproved() throws Exception {
-        // Arrange
-        com.albunyaan.tube.model.Video video = new com.albunyaan.tube.model.Video("sCQwxFEMlZ4");
-        video.setId("video-123");
-        video.setStatus("PENDING");
-        when(videoRepository.findById("video-123")).thenReturn(Optional.of(video));
-        when(videoRepository.save(any(com.albunyaan.tube.model.Video.class))).thenReturn(video);
-
-        // Act
-        ResponseEntity<com.albunyaan.tube.model.Video> response = registryController.toggleVideoStatus("video-123", adminUser);
-
-        // Assert
-        assertEquals(HttpStatus.OK, response.getStatusCode());
-        assertEquals("APPROVED", video.getStatus());
-        assertEquals("admin-uid", video.getApprovedBy());
-    }
-
     /**
      * Stage 9 B21 (Cubic r9 #14): a report's take-down record never leaves REJECTED by a status change. Approved it is a
      * blank public video; pending, the approvals queue approves it. Restore, or adding the video again, lifts it.
      */
     @Test
-    void aTakeDownRecordIsNeitherToggledNorUpdatedOutOfRejected() throws Exception {
+    void aTakeDownRecordIsNotUpdatedOutOfRejected() throws Exception {
         com.albunyaan.tube.model.Video record = new com.albunyaan.tube.model.Video("ilgiwqpcOC8");
         record.setId("doc-takedown");
         record.setStatus("REJECTED");
@@ -730,7 +649,6 @@ class RegistryControllerTest {
         org.mockito.Mockito.lenient().when(videoRepository.save(any(com.albunyaan.tube.model.Video.class)))
                 .thenAnswer(inv -> inv.getArgument(0));
 
-        assertEquals(HttpStatus.CONFLICT, registryController.toggleVideoStatus("doc-takedown", adminUser).getStatusCode());
         for (String status : List.of("APPROVED", "PENDING", "REQUEST_CHANGES")) {
             com.albunyaan.tube.dto.VideoUpdateRequest body = new com.albunyaan.tube.dto.VideoUpdateRequest();
             body.setStatus(status);

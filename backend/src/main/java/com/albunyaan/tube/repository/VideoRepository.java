@@ -58,7 +58,7 @@ public class VideoRepository {
 
     /**
      * Stage 9 B25 (Cubic r13 #2-#4): B24's rule for every whole-doc write. A stored ARCHIVED is kept unless the doc is
-     * a take-down record, decided in a transaction, so a validation run, an edit, a toggle, an import or an exclusion change that
+     * a take-down record, decided in a transaction, so a validation run, an edit, an import or an exclusion change that
      * read the doc before a take-down (B23) landed never serves it again. Un-archiving is deliberate: {@link #saveLiftingArchive}.
      */
     public Video save(Video video) throws ExecutionException, InterruptedException, TimeoutException {

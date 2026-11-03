@@ -356,43 +356,6 @@ public class RegistryController {
     }
 
     /**
-     * Toggle channel include/exclude state
-     */
-    @PatchMapping("/channels/{id}/toggle")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Channel> toggleChannelStatus(
-            @PathVariable String id,
-            @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Channel channel = channelRepository.findById(id).orElse(null);
-        if (channel == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // Toggle between APPROVED and PENDING
-        if ("APPROVED".equals(channel.getStatus())) {
-            channel.setStatus("PENDING");
-        } else {
-            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, channel, channel,
-                    channel.getCategoryIds(), "APPROVED"));
-            channel.setStatus("APPROVED");
-            channel.setApprovedBy(user.getUid());
-        }
-
-        Channel updated = channelRepository.save(channel);
-        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
-            for (String categoryId : updated.getCategoryIds()) {
-                sortOrderService.addContentToCategory(categoryId, updated.getId(), "channel");
-            }
-        } else {
-            sortOrderService.removeContentFromAllCategories(updated.getId(), "channel");
-        }
-        publicContentCacheService.evictPublicContentCaches();
-        auditLogService.log("channel_status_toggled", "channel", id, user);
-        return ResponseEntity.ok(updated);
-    }
-
-    /**
      * Delete channel from registry
      */
     @DeleteMapping("/channels/{id}")
@@ -660,43 +623,6 @@ public class RegistryController {
         Playlist updated = playlistRepository.save(existing);
         publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("playlist_updated_in_registry", "playlist", id, user);
-        return ResponseEntity.ok(updated);
-    }
-
-    /**
-     * Toggle playlist include/exclude state
-     */
-    @PatchMapping("/playlists/{id}/toggle")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Playlist> togglePlaylistStatus(
-            @PathVariable String id,
-            @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Playlist playlist = playlistRepository.findById(id).orElse(null);
-        if (playlist == null) {
-            return ResponseEntity.notFound().build();
-        }
-
-        // Toggle between APPROVED and PENDING
-        if ("APPROVED".equals(playlist.getStatus())) {
-            playlist.setStatus("PENDING");
-        } else {
-            liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, playlist, playlist,
-                    playlist.getCategoryIds(), "APPROVED"));
-            playlist.setStatus("APPROVED");
-            playlist.setApprovedBy(user.getUid());
-        }
-
-        Playlist updated = playlistRepository.save(playlist);
-        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
-            for (String categoryId : updated.getCategoryIds()) {
-                sortOrderService.addContentToCategory(categoryId, updated.getId(), "playlist");
-            }
-        } else {
-            sortOrderService.removeContentFromAllCategories(updated.getId(), "playlist");
-        }
-        publicContentCacheService.evictPublicContentCaches();
-        auditLogService.log("playlist_status_toggled", "playlist", id, user);
         return ResponseEntity.ok(updated);
     }
 
@@ -1105,49 +1031,6 @@ public class RegistryController {
         Video updated = videoRepository.save(existing);
         publicContentCacheService.evictPublicContentCaches();
         auditLogService.log("video_updated_in_registry", "video", id, user);
-        return ResponseEntity.ok(updated);
-    }
-
-    /**
-     * Toggle video include/exclude state
-     */
-    @PatchMapping("/videos/{id}/toggle")
-    @PreAuthorize("hasRole('ADMIN')")
-    public ResponseEntity<Video> toggleVideoStatus(
-            @PathVariable String id,
-            @AuthenticationPrincipal FirebaseUserDetails user
-    ) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        Video video = videoRepository.findById(id).orElse(null);
-        if (video == null) {
-            return ResponseEntity.notFound().build();
-        }
-        if (com.albunyaan.tube.service.ContentReportService.isTakeDownRecord(video)) {
-            return ResponseEntity.status(HttpStatus.CONFLICT).build();   // B21 (Cubic r9 #14), as in updateVideo
-        }
-
-        // Toggle between APPROVED and PENDING
-        if ("APPROVED".equals(video.getStatus())) {
-            video.setStatus("PENDING");
-        } else {
-            String verifiedChannel = liveCategoryGuard.check(true, LiveCategoryGuard.Change.of(id, video, video,
-                    video.getCategoryIds(), "APPROVED"));
-            if (verifiedChannel != null) {
-                video.setChannelId(verifiedChannel);
-            }
-            video.setStatus("APPROVED");
-            video.setApprovedBy(user.getUid());
-        }
-
-        Video updated = videoRepository.save(video);
-        if ("APPROVED".equals(updated.getStatus()) && updated.getCategoryIds() != null) {
-            for (String categoryId : updated.getCategoryIds()) {
-                sortOrderService.addContentToCategory(categoryId, updated.getId(), "video");
-            }
-        } else {
-            sortOrderService.removeContentFromAllCategories(updated.getId(), "video");
-        }
-        publicContentCacheService.evictPublicContentCaches();
-        auditLogService.log("video_status_toggled", "video", id, user);
         return ResponseEntity.ok(updated);
     }
 

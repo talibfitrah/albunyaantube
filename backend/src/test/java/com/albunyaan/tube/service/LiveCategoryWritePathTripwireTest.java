@@ -31,7 +31,7 @@ class LiveCategoryWritePathTripwireTest {
     private static final Map<String, Integer> ALLOWED = Map.ofEntries(
             Map.entry("controller/ContentLibraryController.java", 6),     // rows 12–13
             Map.entry("controller/ImportExportController.java", 1),       // ValidationRun status
-            Map.entry("controller/RegistryController.java", 27),          // rows 1–9
+            Map.entry("controller/RegistryController.java", 18),          // rows 1–9 (3, 6, 9: toggle routes, deleted)
             Map.entry("controller/SortOrderController.java", 2),          // row 14
             Map.entry("exception/GlobalExceptionHandler.java", 18),       // response bodies
             Map.entry("repository/ChannelRepository.java", 4),            // re-asserts the doc's own status (B25: save, saveLiftingArchive, saveIfStatus; B26: update)
@@ -56,7 +56,7 @@ class LiveCategoryWritePathTripwireTest {
     private static final Map<String, Integer> GUARDED = Map.ofEntries(
             Map.entry("controller/CategoryController.java", 1),
             Map.entry("controller/ImportExportController.java", 1),
-            Map.entry("controller/RegistryController.java", 12),
+            Map.entry("controller/RegistryController.java", 9),
             Map.entry("controller/ContentLibraryController.java", 2),
             Map.entry("service/ContentImportService.java", 1),
             Map.entry("service/BulkSubmissionService.java", 1),
