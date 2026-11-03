@@ -891,7 +891,10 @@ class GlobalStreamResolverTest {
     fun `a video approved on its own plays though its uploader's channel is gone`() = runTest {
         // Specific beats general: the video's own 2xx outranks its channel's 410.
         val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
-        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(retrofit2.Response.success(Unit))
+        // The gate's own answer is the approval: a second ask that fails must not turn it into a block.
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any()))
+            .thenReturn(retrofit2.Response.success(Unit))
+            .thenThrow(RuntimeException("second HEAD"))
         org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
             retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
         )
@@ -904,6 +907,7 @@ class GlobalStreamResolverTest {
         fakeProvider.setResult("lecture_approved", createMockStreams("lecture_approved").copy(uploaderChannelId = "UCgone"))
 
         assertNotNull(gatedResolver.resolveStreams("lecture_approved", caller = "test"))
+        org.mockito.kotlin.verify(api, org.mockito.kotlin.times(1)).checkVideoAvailable("lecture_approved")
     }
 
     @Test

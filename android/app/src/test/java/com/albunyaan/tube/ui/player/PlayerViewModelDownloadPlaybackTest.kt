@@ -519,6 +519,7 @@ class PlayerViewModelDownloadPlaybackTest {
         vm.loadDownload("d23")
         advanceUntilIdle()
         assertTrue("the video's own approval outranks its channel's 410", vm.state.value.streamState is StreamState.Ready)
+        org.mockito.kotlin.verify(api, org.mockito.kotlin.times(1)).checkVideoAvailable("v23") // one HEAD, its answer reused
         vm.loadDownload("d24")
         advanceUntilIdle()
         assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)

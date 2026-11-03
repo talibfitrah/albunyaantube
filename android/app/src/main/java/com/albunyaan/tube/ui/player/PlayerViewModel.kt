@@ -992,19 +992,18 @@ class PlayerViewModel @Inject constructor(
      * channel ([com.albunyaan.tube.data.source.Exclusions.hides], memo first). Fails open: a failed or slow answer plays.
      */
     private suspend fun savedCopyHidden(request: DownloadRequest): Boolean {
-        val video = com.albunyaan.tube.data.source.AvailabilityCheckType.VIDEO
-        val gone = try {
-            withTimeoutOrNull(SAVED_COPY_CHECK_MS) { !contentService.verifyAvailable(video, request.videoId) } == true
+        val code = try {
+            withTimeoutOrNull(SAVED_COPY_CHECK_MS) { contentService.videoAvailability(request.videoId) }
         } catch (e: kotlinx.coroutines.CancellationException) {
             throw e
         } catch (e: Exception) {
-            false
+            null
         }
         // ponytail: a copy saved before 1.0.8 has no channel id, so only its video answer guards it until the 30-day
         // expiry sweep deletes it; a one-off id backfill from a resolve would cover its channel too.
         val channelId = request.channelId
-        return gone || channelId != null &&
-            exclusions.hides(channelId, request.videoId, fresh = false) { contentService.isInApprovedRegistry(video, request.videoId) }
+        return code == 410 || channelId != null &&
+            exclusions.hides(channelId, request.videoId, fresh = false, approved = code in 200..299)
     }
 
     private fun completedDownload(downloadId: String): DownloadEntry? =

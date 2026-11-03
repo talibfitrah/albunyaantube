@@ -393,6 +393,8 @@ class GlobalStreamResolver private constructor(
                 // valid cached videos. The downstream resolver / NewPipe
                 // pipeline produces its own user-visible error if the actual
                 // extraction fails.
+                // The video's own answer when there is no channel context: 2xx means approved on its own (null: unknown).
+                var videoCode: Int? = null
                 if (contentService != null) {
                     val available = try {
                         if (!sourceChannelId.isNullOrBlank()) {
@@ -402,7 +404,7 @@ class GlobalStreamResolver private constructor(
                             contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId) &&
                                 videoId !in exclusions?.channel(sourceChannelId)?.videoIds.orEmpty()
                         } else {
-                            contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+                            contentService.videoAvailability(videoId).also { videoCode = it } != 410
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
@@ -433,9 +435,7 @@ class GlobalStreamResolver private constructor(
                 // channel blocks them too; pass a playlist id through resolveStreams if that must change.
                 val uploader = streams?.uploaderChannelId
                 if (sourceChannelId.isNullOrBlank() && !uploader.isNullOrBlank() && exclusions != null &&
-                    exclusions.hides(uploader, videoId) {
-                        contentService?.isInApprovedRegistry(AvailabilityCheckType.VIDEO, videoId) == true
-                    }
+                    exclusions.hides(uploader, videoId, approved = videoCode in 200..299)
                 ) {
                     Log.i(TAG, "[$caller] $videoId hidden by its uploader's channel; throwing ContentUnavailableException")
                     throw ContentUnavailableException(videoId)

@@ -74,6 +74,14 @@ interface ContentService {
     suspend fun verifyAvailable(type: AvailabilityCheckType, youtubeId: String): Boolean
 
     /**
+     * The video's own registry answer, the one HEAD behind [verifyAvailable] for a video: 2xx approved on its own,
+     * 404 not registered, 410 gone; throws on a failed call. A playback gate keeps it, so "approved on its own"
+     * (which outranks a gone channel) never costs a second HEAD. The default (fakes) never reports an approval.
+     */
+    suspend fun videoAvailability(youtubeId: String): Int =
+        if (verifyAvailable(AvailabilityCheckType.VIDEO, youtubeId)) 404 else 410
+
+    /**
      * Returns true ONLY when the id is registered AND APPROVED in our backend
      * (HTTP 2xx). Returns false on 404 (not in registry, e.g. parent channel of
      * a standalone playlist), 410 (admin-blocked), or any other status. Returns
