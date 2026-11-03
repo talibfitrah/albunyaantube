@@ -2171,8 +2171,8 @@ paths:
       responses:
         '200':
           description: |
-            The solver's current player, from a copy at most 60 s old (another call's refresh in flight: the
-            copy it is replacing).
+            The solver's current player, from a copy refreshed after 60 s. While one call refreshes it (at most
+            1 s), the others get the copy being replaced.
           content:
             application/json:
               schema:
