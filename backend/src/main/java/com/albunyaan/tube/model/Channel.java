@@ -226,13 +226,6 @@ public class Channel {
                     .filter(id -> id != null && !id.isBlank()).distinct().toList();
         }
 
-        /** Lifts a video id from every list {@link #videoIds()} reads; true when one held it. */
-        public boolean removeVideoId(String id) {
-            boolean removed = videos.removeIf(id::equals) | shorts.removeIf(id::equals) | liveStreams.removeIf(id::equals);
-            recalculateTotal();
-            return removed;
-        }
-
         private int calculateTotalExcludedCount() {
             return videos.size() + liveStreams.size() + shorts.size() + playlists.size() + posts.size();
         }

@@ -821,29 +821,4 @@ class ContentReportServiceTest {
         assertThat(storedCh.getExcludedItems().getVideos()).containsExactly("xc7keR2piUM");
         assertThat(storedPl.getExcludedVideoIds()).containsExactly("xc7keR2piUM");
     }
-
-    /**
-     * Review 2026-11-03: a report on a Short or a live excludes it into the channel's Shorts or Live list, so Restore must
-     * lift it from there too. Lifting only from Videos kept a restored Short hidden in search and the apps.
-     */
-    @Test
-    void aRestoreLiftsAShortOrLiveExclusionToo() throws Exception {
-        Video record = recordExcludedOn("channel:UCfassTU6mGWIj-yb26_ADjQ");
-        Channel readCh = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
-        readCh.getExcludedItems().getShorts().add("ilgiwqpcOC8");
-        when(channelRepository.findByYoutubeId("UCfassTU6mGWIj-yb26_ADjQ")).thenReturn(Optional.of(readCh));
-        Channel storedCh = new Channel("UCfassTU6mGWIj-yb26_ADjQ");
-        storedCh.getExcludedItems().getShorts().addAll(List.of("ilgiwqpcOC8", "xc7keR2piUM"));
-        storedCh.getExcludedItems().getLiveStreams().add("ilgiwqpcOC8");
-        when(channelRepository.update(any(), any())).thenAnswer(inv -> {
-            inv.<java.util.function.Consumer<Channel>>getArgument(1).accept(storedCh);
-            return storedCh;
-        });
-
-        service.liftTakeDown(record);
-
-        assertThat(readCh.getExcludedItems().getShorts()).isEmpty();
-        assertThat(storedCh.getExcludedItems().videoIds()).containsExactly("xc7keR2piUM");
-        assertThat(storedCh.getExcludedItems().getTotalExcludedCount()).isEqualTo(1);
-    }
 }

@@ -447,10 +447,10 @@ public class ContentReportService {
             String sourceId = key.substring(key.indexOf(':') + 1);
             if (key.startsWith("channel:")) {
                 var channel = channelRepository.findByYoutubeId(sourceId).orElse(null);
-                // From every list a report may have used: a Short's or a live's exclusion is not in Videos.
-                if (channel != null && channel.getExcludedItems() != null && channel.getExcludedItems().removeVideoId(videoId)) {
+                if (channel != null && channel.getExcludedItems() != null && channel.getExcludedItems().getVideos().remove(videoId)) {
+                    channel.setExcludedItems(channel.getExcludedItems());      // recounts
                     channelRepository.update(channel, c -> {                  // Cubic users3: on the doc as stored now
-                        if (c.getExcludedItems() != null) c.getExcludedItems().removeVideoId(videoId);
+                        if (c.getExcludedItems() != null) c.getExcludedItems().getVideos().remove(videoId);
                     });
                 }
             } else {
