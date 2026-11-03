@@ -33,16 +33,13 @@ public class CacheConfig {
     public static final String CACHE_YOUTUBE_VIDEO_SEARCH = "youtubeVideoSearch";
     public static final String CACHE_WORKSPACE_EXCLUSIONS = "workspaceExclusions";
 
-    // NewPipe extractor caches (used by SearchOrchestrator, ChannelOrchestrator)
+    // NewPipe extractor caches (used by YouTubeSearchService, ChannelOrchestrator)
     public static final String CACHE_NEWPIPE_SEARCH_RESULTS = "newpipeSearchResults";
     public static final String CACHE_NEWPIPE_CHANNEL_INFO = "newpipeChannelInfo";
     public static final String CACHE_NEWPIPE_PLAYLIST_INFO = "newpipePlaylistInfo";
     public static final String CACHE_NEWPIPE_VIDEO_INFO = "newpipeVideoInfo";
     public static final String CACHE_NEWPIPE_CHANNEL_VALIDATION = "newpipeChannelValidation";
     public static final String CACHE_NEWPIPE_PLAYLIST_VALIDATION = "newpipePlaylistValidation";
-    public static final String CACHE_NEWPIPE_CHANNEL_VIDEOS = "newpipeChannelVideos";
-    public static final String CACHE_NEWPIPE_CHANNEL_PLAYLISTS = "newpipeChannelPlaylists";
-    public static final String CACHE_NEWPIPE_PLAYLIST_VIDEOS = "newpipePlaylistVideos";
 
     // Category mapping cache (used by CategoryMappingService)
     public static final String CACHE_CATEGORY_NAME_MAPPING = "categoryNameMapping";
@@ -87,16 +84,13 @@ public class CacheConfig {
                 CACHE_YOUTUBE_PLAYLIST_SEARCH,
                 CACHE_YOUTUBE_VIDEO_SEARCH,
 
-                // NewPipe extractor caches (SearchOrchestrator, ChannelOrchestrator)
+                // NewPipe extractor caches (YouTubeSearchService, ChannelOrchestrator)
                 CACHE_NEWPIPE_SEARCH_RESULTS,
                 CACHE_NEWPIPE_CHANNEL_INFO,
                 CACHE_NEWPIPE_PLAYLIST_INFO,
                 CACHE_NEWPIPE_VIDEO_INFO,
                 CACHE_NEWPIPE_CHANNEL_VALIDATION,
                 CACHE_NEWPIPE_PLAYLIST_VALIDATION,
-                CACHE_NEWPIPE_CHANNEL_VIDEOS,
-                CACHE_NEWPIPE_CHANNEL_PLAYLISTS,
-                CACHE_NEWPIPE_PLAYLIST_VIDEOS,
 
                 // User status cache (overridden below to 60s TTL per D4)
                 CACHE_USER_STATUS

@@ -288,6 +288,30 @@ class YouTubeSearchServiceTest {
     }
 
     // =========================================================
+    // Later pages: a bad token is the client's fault (400), a failed fetch is upstream's (502)
+    // =========================================================
+
+    @Test
+    void search_undecodablePageToken_throwsIllegalArgumentWithoutSearching() throws Exception {
+        when(gateway.decodePageToken("garbage")).thenReturn(null);
+
+        assertThatThrownBy(() -> svc.search("q", YouTubeContentType.VIDEO, "garbage"))
+                .isInstanceOf(IllegalArgumentException.class);
+        verifyNoInteractions(newPipeClient);
+    }
+
+    @Test
+    void search_laterPageFetchFails_throwsYouTubeSearchException() throws Exception {
+        String token = "https://www.youtube.com/youtubei/v1/search?page=2";
+        when(gateway.decodePageToken(token)).thenReturn(new org.schabi.newpipe.extractor.Page(token));
+        when(newPipeClient.search("q", YouTubeContentType.VIDEO, token))
+                .thenThrow(new java.io.IOException("continuation 503"));
+
+        assertThatThrownBy(() -> svc.search("q", YouTubeContentType.VIDEO, token))
+                .isInstanceOf(YouTubeSearchException.class);
+    }
+
+    // =========================================================
     // Next page token is forwarded
     // =========================================================
 

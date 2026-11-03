@@ -21,14 +21,12 @@ import org.schabi.newpipe.extractor.exceptions.GeographicRestrictionException;
 import org.schabi.newpipe.extractor.exceptions.ParsingException;
 import org.schabi.newpipe.extractor.exceptions.PrivateContentException;
 import org.schabi.newpipe.extractor.exceptions.SignInConfirmNotBotException;
-import org.schabi.newpipe.extractor.linkhandler.ListLinkHandler;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfo;
 import org.schabi.newpipe.extractor.search.SearchExtractor;
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeChannelLinkHandlerFactory;
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubePlaylistLinkHandlerFactory;
 import org.schabi.newpipe.extractor.services.youtube.linkHandler.YoutubeStreamLinkHandlerFactory;
 import org.schabi.newpipe.extractor.stream.StreamInfo;
-import org.schabi.newpipe.extractor.stream.StreamInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamType;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -302,13 +300,6 @@ public class YouTubeGateway {
     // ==================== Search Operations ====================
 
     /**
-     * Create a search extractor for the given query
-     */
-    public SearchExtractor createSearchExtractor(String query) throws ExtractionException {
-        return youtube.getSearchExtractor(query);
-    }
-
-    /**
      * Create a search extractor with content-type filters.
      * Valid filter values: "videos", "channels", "playlists" (see YoutubeSearchQueryHandlerFactory).
      */
@@ -455,13 +446,6 @@ public class YouTubeGateway {
     }
 
     /**
-     * Create a channel tab extractor for the given tab
-     */
-    public ChannelTabExtractor createChannelTabExtractor(ListLinkHandler tab) throws ExtractionException {
-        return youtube.getChannelTabExtractor(tab);
-    }
-
-    /**
      * A channel's Live tab built straight from its UC id (spec D2): no ChannelInfo fetch first. NewPipe 0.26.5 reads
      * a "channel/UC…" id without a resolve request (pinned by LiveTabReaderTest).
      */
@@ -546,28 +530,6 @@ public class YouTubeGateway {
         return playlistLinkHandlerFactory.getUrl(playlistId);
     }
 
-    /**
-     * Get more items from a playlist page.
-     * Applies throttling and circuit breaker protection.
-     */
-    public ListExtractor.InfoItemsPage<StreamInfoItem> getPlaylistMoreItems(String playlistId, Page page)
-            throws IOException, ExtractionException {
-        checkCircuitBreaker();
-        applyThrottling();
-
-        try {
-            String url = playlistLinkHandlerFactory.getUrl(playlistId);
-            ListExtractor.InfoItemsPage<StreamInfoItem> result = PlaylistInfo.getMoreItems(youtube, url, page);
-            recordSuccess();
-            return result;
-        } catch (IOException | ExtractionException | RuntimeException e) {   // any failure resolves a HALF_OPEN probe
-            recordError(e);
-            throw e;
-        } finally {
-            releaseUnresolvedProbe();
-        }
-    }
-
     // ==================== Video Operations ====================
 
     /**
@@ -641,8 +603,8 @@ public class YouTubeGateway {
      * internal endpoints, attacker hosts, or YouTube redirect helpers
      * that 302 to the {@code q=} param (NewPipe follows redirects).
      * Restrict to HTTPS YouTube hosts and deny the known open-redirect
-     * paths. Unverifiable tokens return null (caller treats as first
-     * page). Architectural fix — HMAC-signed tokens or an OkHttp
+     * paths. Unverifiable tokens return null (YouTubeSearchService
+     * answers 400, never a silent first page). Architectural fix — HMAC-signed tokens or an OkHttp
      * network interceptor — is tracked in the plan-doc Review
      * follow-ups (F1a).
      */

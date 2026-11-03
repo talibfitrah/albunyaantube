@@ -77,6 +77,10 @@ public class YouTubeSearchService {
             unless = "#result == null"
     )
     public YouTubeSearchResponse search(String q, YouTubeContentType type, String pageToken) {
+        // A token we cannot decode is the client's fault (400), never a silent restart at page 1.
+        if (pageToken != null && !pageToken.isEmpty() && gateway.decodePageToken(pageToken) == null) {
+            throw new IllegalArgumentException("Invalid pageToken");
+        }
         try {
             NewPipeSearchClient.RawPage raw = newPipeClient.search(q, type, pageToken);
 

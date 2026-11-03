@@ -8,14 +8,19 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.YouTubeSearchRateLimitedException;
+import com.albunyaan.tube.exception.GlobalExceptionHandler;
+import com.albunyaan.tube.service.NewPipeSearchClient;
+import com.albunyaan.tube.service.YouTubeGateway;
 import com.albunyaan.tube.service.YouTubeSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.schabi.newpipe.extractor.ServiceList;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +32,10 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.verifyNoInteractions;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class YouTubeSearchControllerTest {
@@ -113,5 +121,24 @@ class YouTubeSearchControllerTest {
 
         assertThrows(YouTubeSearchRateLimitedException.class,
                 () -> controller.search("q", YouTubeContentType.ALL, null));
+    }
+
+    /** Real service, real token decoder, real advice: a token the backend never issued is a 400, not page 1 again. */
+    @Test
+    void search_undecodablePageToken_is400() throws Exception {
+        NewPipeSearchClient client = mock(NewPipeSearchClient.class);
+        YouTubeGateway gateway = new YouTubeGateway(ServiceList.YouTube, 1, null, null);
+        try {
+            YouTubeSearchController real = new YouTubeSearchController(channelRepository, playlistRepository,
+                    videoRepository, new YouTubeSearchService(client, channelRepository, playlistRepository,
+                            videoRepository, gateway));
+            MockMvcBuilders.standaloneSetup(real).setControllerAdvice(new GlobalExceptionHandler()).build()
+                    .perform(get("/api/admin/youtube/search").param("q", "cats")
+                            .param("pageToken", "https://evil.example.com/next"))
+                    .andExpect(status().isBadRequest());
+            verifyNoInteractions(client);
+        } finally {
+            gateway.shutdown();
+        }
     }
 }

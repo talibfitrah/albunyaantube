@@ -5,7 +5,6 @@ import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.dto.BatchValidationResult;
 import com.albunyaan.tube.dto.ChannelDetailsDto;
 import com.albunyaan.tube.dto.PlaylistDetailsDto;
-import com.albunyaan.tube.dto.PlaylistItemDto;
 import com.albunyaan.tube.dto.StreamItemDto;
 import com.albunyaan.tube.search.CrawlPacer;
 import org.junit.jupiter.api.AfterEach;

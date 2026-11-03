@@ -299,18 +299,6 @@ class YouTubeGatewayTest {
     }
 
     @Nested
-    @DisplayName("Search Operations")
-    class SearchOperationTests {
-
-        @Test
-        @DisplayName("Should create search extractor for query")
-        void createSearchExtractor_notNull() throws ExtractionException {
-            SearchExtractor extractor = gateway.createSearchExtractor("test query");
-            assertNotNull(extractor);
-        }
-    }
-
-    @Nested
     @DisplayName("Shutdown Behavior")
     class ShutdownTests {
 
@@ -459,7 +447,7 @@ class YouTubeGatewayTest {
          */
         @ParameterizedTest(name = "{0}")
         @ValueSource(strings = {"fetchSearchPage", "getSearchPage", "fetchChannelInfo", "fetchPlaylistInfo",
-                "getPlaylistMoreItems", "fetchStreamInfo"})
+                "fetchStreamInfo"})
         void otherGatewayCalls_neverLeaveTheHalfOpenProbeHeld(String method) {
             YouTubeCircuitBreaker circuitBreaker = new YouTubeCircuitBreaker(createTestProperties(), null);
             circuitBreaker.recordRateLimitError(new RuntimeException("rate limit"));
@@ -483,7 +471,6 @@ class YouTubeGatewayTest {
                     }
                     case "fetchChannelInfo" -> call = () -> g.fetchChannelInfo("UCOll3M-P7oKs5cSrQ9ytt6g");
                     case "fetchPlaylistInfo" -> call = () -> g.fetchPlaylistInfo(playlistId);
-                    case "getPlaylistMoreItems" -> call = () -> g.getPlaylistMoreItems(playlistId, page);
                     case "fetchStreamInfo" -> {
                         call = () -> g.fetchStreamInfo("eaOtcUNHDB8");
                         expected = IOException.class;   // "Probe request failed: …" wraps the NullPointerException
@@ -510,7 +497,7 @@ class YouTubeGatewayTest {
          */
         @ParameterizedTest(name = "{0}")
         @ValueSource(strings = {"fetchChannelInfo", "fetchTabPage", "getTabPage", "fetchPlaylistInfo",
-                "getPlaylistMoreItems", "fetchStreamInfo"})
+                "fetchStreamInfo"})
         void aProbeThatThrowsAnError_releasesTheProbe(String method) throws Exception {
             NoSuchMethodError linkage = new NoSuchMethodError("NewPipe linkage");
             StreamingService youtube = mock(StreamingService.class, RETURNS_DEEP_STUBS);
@@ -540,10 +527,6 @@ class YouTubeGatewayTest {
                     case "fetchPlaylistInfo" -> {
                         when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
                         call = () -> g.fetchPlaylistInfo(playlistId);
-                    }
-                    case "getPlaylistMoreItems" -> {
-                        when(youtube.getPlaylistExtractor(anyString())).thenThrow(linkage);
-                        call = () -> g.getPlaylistMoreItems(playlistId, page);
                     }
                     case "fetchStreamInfo" -> {
                         when(youtube.getStreamExtractor(anyString())).thenThrow(linkage);
