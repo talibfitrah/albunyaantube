@@ -226,7 +226,7 @@ class LegalPagesControllerTest {
     }
 
     /**
-     * Search terms are logged by the Spring app (SearchOrchestrator, PublicContentService)
+     * Search terms can be logged by the Spring app
      * into /opt/albunyaan/logs/app.log, which has no rotation (live check 2026-09-27) —
      * not the nginx logs that rotate after 14 days.
      */

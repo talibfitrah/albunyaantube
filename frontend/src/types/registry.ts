@@ -108,9 +108,9 @@ export interface YouTubeEnrichedSearchResult {
   title: string;
   description: string;
   thumbnailUrl: string;
-  publishedAt: string;
-  channelId: string;
-  channelTitle: string;
+  publishedAt?: string;
+  channelId?: string;
+  channelTitle?: string;
   // Channel-specific
   subscriberCount?: number;
   videoCount?: number;
@@ -120,10 +120,4 @@ export interface YouTubeEnrichedSearchResult {
   // Video-specific
   viewCount?: number;
   duration?: string;
-}
-
-export interface YouTubeSearchAllResponse {
-  channels: YouTubeEnrichedSearchResult[];
-  playlists: YouTubeEnrichedSearchResult[];
-  videos: YouTubeEnrichedSearchResult[];
 }

@@ -1,0 +1,85 @@
+[Unit]
+Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret, nothing writable and no shell (S20)
+CollectMode=inactive-or-failed
+# Stopped after the gateway at shutdown: an executor gone first reads to the gateway as a crash, and the next start would
+# skip a healthy player for an hour (S20 review).
+Before=fitrah-solver.service
+# AppArmorProfile= below is ignored when AppArmor is off in the kernel (apparmor=0): then this does not start at all.
+AssertSecurity=apparmor
+
+[Service]
+# Threat model (Cubic r13 #1, r14 P1): player JS escapes the vm realm to host JS in this process. Everything below is what
+# that host JS can then do, enforced by the kernel. The worst left: wrong answers (the app falls back to 360p), or a hang or
+# crash (the gateway exits, its ExecStopPost SIGKILLs this, systemd restarts both). One process per held player, so one
+# never touches another player's answers. An evicted one is hung up on; one whose escaped code will not exit lingers inside
+# the limits below until the gateway next restarts (a full socket makes it restart, naming no player), then is SIGKILLed.
+ExecStart=/opt/fitrah-solver/node/bin/node --experimental-vm-modules --permission --allow-fs-read=/opt/fitrah-solver/app/ \
+  --max-old-space-size=256 /opt/fitrah-solver/app/executor.mjs
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+# Its stderr is its own text: no <0> prefix may make it an emergency wall message (S20 review).
+SyslogLevelPrefix=no
+DynamicUser=yes
+# A uid of its own per instance (%i is the connection's, e.g. 3-4567-61234): left to the unit name, every instance shares
+# one, and one escaped player could kill or stop the other player's executor, which the gateway would then blame (S20 review).
+User=fsx-%i
+# No network: an empty network namespace, every IP denied, and no socket family but AF_UNIX, with no unix socket in view.
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+# Its view of the disk: the node binary and its own code, read-only. Nothing of /opt (the backend's .env and jar), /var
+# (the solver cache, logs), /run (every system socket) or /home; /etc and /usr hold no secret and the loader needs them, and
+# the dynamic uid reads only what any user may. /tmp, /var/tmp and /dev/shm are empty and read-only too: a directory, a
+# symlink or a unix socket needs no byte of file size, and each costs the host an inode (S20 review). DynamicUser= implies
+# PrivateTmp=, its own /tmp and /var/tmp mounts; systemd 255 merges a same-path entry's :ro into them, so each is named
+# here (the 2026-11-03 drill made a directory in /var/tmp, under only /var:ro). PrivateDevices= binds the host's /dev/pts
+# beside its /dev/ptmx, where each open makes a host pty: an empty /dev/pts fails the open, so no host login is starved.
+# It binds the host's /dev/mqueue too (the 2026-11-03 probe made a queue there, in the host IPC namespace): PrivateIPC=
+# gives the executor an IPC namespace of its own (SysV and POSIX queues, shared memory), and /dev/mqueue is empty and read-only.
+TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro /dev/mqueue:ro
+PrivateIPC=yes
+# A process may write its own memory through /proc/<pid>/mem, read-only code pages included (FOLL_FORCE): escaped JS could
+# patch node's code and run any syscall the filter allows, past --permission (the 2026-11-03 probe rewrote node's r-xp text
+# by four paths). No unit option stops it on systemd 255 / kernel 6.8: ProtectProc= and ProcSubset= leave it, and
+# InaccessiblePaths=/proc/self/mem leaves /proc/self/task/<tid>/mem and /proc/thread-self/mem; proc_mem.force_override=
+# is kernel 6.12+. This AppArmor profile (scripts/apparmor/fitrah-solver-exec, loaded before this starts) denies the write
+# by every path. Not loaded (231/APPARMOR) or AppArmor off (AssertSecurity= above): no executor starts, playback stays 360p.
+AppArmorProfile=fitrah-solver-exec
+# The loader's directory is bound here only so it stays read-only under ExecPaths= below (an ExecPaths= path of its own
+# becomes a mount that ProtectSystem= no longer makes read-only).
+BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu
+ProtectHome=yes
+ProtectSystem=strict
+# No shell and no tool (the drill spawned `sh -c id`; only --permission refused it). Every exec, node itself included, is
+# refused by the AppArmor profile above (deny /** x: EACCES). Under it, as the second layer, no code is mapped executable
+# outside node's directory and /usr/lib/x86_64-linux-gnu, which node needs for its ELF loader
+# (/lib64/ld-linux-x86-64.so.2) and shared libraries (libstdc++, libc, ...). systemd 255 skips mounts it made itself when
+# it applies NoExecPaths=/, so the app directory is named too.
+NoExecPaths=/ /opt/fitrah-solver/app
+ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu
+# Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.
+LimitFSIZE=0
+MemoryMax=384M
+# Under memory pressure the kernel kills an executor (the gateway then restarts both), never the backend's JVM.
+OOMScoreAdjust=1000
+CPUWeight=20
+TasksMax=32
+PrivateDevices=yes
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+UMask=0077

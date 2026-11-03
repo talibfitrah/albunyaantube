@@ -8,14 +8,21 @@ import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
 import com.albunyaan.tube.dto.YouTubeContentType;
 import com.albunyaan.tube.service.YouTubeSearchRateLimitedException;
+import com.albunyaan.tube.exception.GlobalExceptionHandler;
+import com.albunyaan.tube.service.NewPipeSearchClient;
+import com.albunyaan.tube.service.YouTubeGateway;
 import com.albunyaan.tube.service.YouTubeSearchService;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.Test;
 import org.junit.jupiter.api.extension.ExtendWith;
+import org.junit.jupiter.params.ParameterizedTest;
+import org.junit.jupiter.params.provider.ValueSource;
 import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
+import org.schabi.newpipe.extractor.ServiceList;
 import org.springframework.http.HttpStatus;
 import org.springframework.http.ResponseEntity;
+import org.springframework.test.web.servlet.setup.MockMvcBuilders;
 
 import java.util.List;
 import java.util.Map;
@@ -27,7 +34,12 @@ import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.spy;
+import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
+import static org.springframework.test.web.servlet.request.MockMvcRequestBuilders.get;
+import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 @ExtendWith(MockitoExtension.class)
 class YouTubeSearchControllerTest {
@@ -113,5 +125,29 @@ class YouTubeSearchControllerTest {
 
         assertThrows(YouTubeSearchRateLimitedException.class,
                 () -> controller.search("q", YouTubeContentType.ALL, null));
+    }
+
+    /**
+     * Real client, service, token decoder and advice: a token the backend never issued is a 400 before any YouTube
+     * request, never page 1 again. That includes a YouTube URL with no continuation id (a pre-fix token, which YouTube
+     * answers with an empty last page) or an empty one.
+     */
+    @ParameterizedTest
+    @ValueSource(strings = {"https://evil.example.com/next",
+            "https://www.youtube.com/youtubei/v1/search?prettyPrint=false",
+            "https://www.youtube.com/youtubei/v1/search?prettyPrint=false#"})
+    void search_pageTokenTheBackendNeverIssued_is400(String token) throws Exception {
+        YouTubeGateway gateway = spy(new YouTubeGateway(ServiceList.YouTube, 1, null, null));
+        try {
+            YouTubeSearchController real = new YouTubeSearchController(channelRepository, playlistRepository,
+                    videoRepository, new YouTubeSearchService(new NewPipeSearchClient(gateway), channelRepository,
+                            playlistRepository, videoRepository, gateway));
+            MockMvcBuilders.standaloneSetup(real).setControllerAdvice(new GlobalExceptionHandler()).build()
+                    .perform(get("/api/admin/youtube/search").param("q", "cats").param("pageToken", token))
+                    .andExpect(status().isBadRequest());
+            verify(gateway, never()).createSearchExtractor(any(), anyList());
+        } finally {
+            gateway.shutdown();
+        }
     }
 }

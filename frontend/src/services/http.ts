@@ -68,6 +68,16 @@ export function apiErrorToMessage(
   return t(fallbackKey);
 }
 
+/** A coded error reads in the admin's language (apiErrorToMessage); anything else keeps its own message. */
+export function apiErrorOrMessage(
+  err: unknown,
+  t: (key: string, fallback?: string) => string,
+  fallbackKey: string
+): string {
+  if (apiErrorCode(err)) return apiErrorToMessage(err, t, fallbackKey);
+  return (err instanceof Error && err.message) || t(fallbackKey);
+}
+
 /** The backend's typed error code, from either transport: fetch (ApiError) or axios (`response.data.code`). */
 export function apiErrorCode(err: unknown): string | undefined {
   if (err instanceof ApiError) return err.code;
@@ -134,7 +144,39 @@ export class ApiError extends Error {
   }
 }
 
+// Matches apiClient and youtubeGet.
+const READ_TIMEOUT_MS = 30_000;
+
 export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {}, allowRetry = true): Promise<T> {
+  // A hung read would leave its caller's spinner up forever, so reads time out. Writes never do:
+  // the server would still complete an aborted write while the UI reported it as failed.
+  const method = (init.method ?? 'GET').toUpperCase();
+  if (method !== 'GET') return sendJson<T>(path, init, allowRetry);
+  // Own controller, not AbortSignal.timeout/any (Safari < 16/17), following the caller's signal too.
+  const controller = new AbortController();
+  const callerSignal = init.signal;
+  const followCaller = () => controller.abort(callerSignal?.reason);
+  if (callerSignal?.aborted) followCaller();
+  callerSignal?.addEventListener('abort', followCaller);
+  let timedOut = false;
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // The deadline rejects the whole read, not only its fetch: a 401's token refresh can hang too.
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { timedOut = true; controller.abort(); reject(new Error('timeout')); }, READ_TIMEOUT_MS);
+  });
+  try {
+    return await Promise.race([sendJson<T>(path, { ...init, signal: controller.signal }, allowRetry), deadline]);
+  } catch (err) {
+    // Our flag, not the error's name: Safari can reject an aborted body read with a plain AbortError.
+    if (timedOut) throw new ApiError('Request timed out', 0, 'REQUEST_TIMEOUT');
+    throw err;
+  } finally {
+    clearTimeout(timer);
+    callerSignal?.removeEventListener('abort', followCaller);
+  }
+}
+
+async function sendJson<T>(path: string, init: RequestInit, allowRetry: boolean): Promise<T> {
   const authStore = useAuthStore();
   const url = `${API_BASE_URL}${path}`;
   const headers = new Headers(init.headers ?? {});
@@ -153,7 +195,7 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
   if (response.status === 401 && allowRetry) {
     const refreshed = await authStore.refreshToken();
     if (refreshed) {
-      return authorizedJsonFetch<T>(path, init, false);
+      return sendJson<T>(path, init, false);
     }
   }
 

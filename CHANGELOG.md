@@ -5,6 +5,7 @@ stable release.
 
 ## [Unreleased]
 
+- iOS (1.0.7): the quality menu lists the video's real resolutions (240p to 1080p) instead of a fixed list, and a lower pick takes effect immediately at the same position, also when picking several times in a row.
 - iOS (1.0.5): some playlists that opened empty (e.g. "White Noise for Babies") list their videos again.
 - Live channels (backend, Android 1.0.5, iOS 1.0.6): the "Channels Live" category scales to hundreds of channels. The apps find each channel's current stream on the phone, and the server only checks it against the catalog. The server checks each channel at most once a day while it is live, and an off-air channel every 4 hours at most, within a fixed daily budget of 864 requests; with a few hundred off-air channels that budget stretches each one's check to about once a day, so a channel that goes live can take that long to appear (before, about 4 channels hit the source's rate limit).
 - Live removal (Android 1.0.5, iOS 1.0.6): a channel or stream that an admin removes, or a stream link taken out of the live category, stops within about a minute on every phone that is playing it, and on the TV it is cast to, even after the player screen is closed. A busy or unreachable server never stops playback.

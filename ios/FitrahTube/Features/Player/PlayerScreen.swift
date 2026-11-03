@@ -359,9 +359,11 @@ struct PlayerScreen: View {
                                 // Task 7: neither offline -- a saved file has exactly one
                                 // rendition, and the rung-2 pill is a statement about the
                                 // extraction ladder, which an offline open never walked.
+                                // Rung 1 shows the menu once its stream's renditions load (`qualityOptions`
+                                // stays empty for a single rendition -- nothing to choose).
                                 if !model.isOfflinePlayback {
                                     if isRung1 {
-                                        qualityMenu(model)
+                                        if !model.qualityOptions.isEmpty { qualityMenu(model) }
                                     } else {
                                         rung2Pill
                                     }
@@ -488,7 +490,7 @@ struct PlayerScreen: View {
     private func qualityMenu(_ model: PlayerViewModel) -> some View {
         Menu {
             Section(String(localized: "player_quality_dialog_title")) {
-                ForEach(QualityOption.allCases, id: \.self) { option in
+                ForEach(model.qualityOptions, id: \.self) { option in
                     Button {
                         model.selectedQuality = option
                     } label: {
@@ -498,7 +500,7 @@ struct PlayerScreen: View {
                             Text(option.label)
                         }
                     }
-                    .accessibilityIdentifier("player.qualityOption.\(option)")
+                    .accessibilityIdentifier("player.qualityOption.\(option.id)")
                 }
             }
         } label: {
@@ -692,10 +694,9 @@ struct PlayerScreen: View {
 
 #if DEBUG
 /// Same bundled fixture as `FixturePlayerResolver`, tagged `.hls` instead of `.progressive` so
-/// `PlayerViewModel.map` resolves to `.ready`, not `.rung2Progressive` (where the quality control
-/// is hidden by contract) -- lets `testPlayerQualityMenu` screenshot the menu with no real HLS
-/// asset and no network. `AVPlayer` plays the local file identically either way; only this app's
-/// own state-mapping tag differs.
+/// `PlayerViewModel.map` resolves to `.ready`, not `.rung2Progressive` -- rung-1 chrome with no real
+/// HLS asset and no network. It is one rendition, so it offers no quality menu (`QualityOption.menu(for:)`).
+/// `AVPlayer` plays the local file identically either way; only this app's own state-mapping tag differs.
 private struct FixtureHLSPlayerResolver: StreamResolving {
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,

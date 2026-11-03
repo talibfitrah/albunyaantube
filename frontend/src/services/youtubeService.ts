@@ -22,13 +22,8 @@ import {
   lookupByYouTubeUrl,
   type YouTubeUrlInfo
 } from './youtubeDataApi';
-import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult } from '@/types/registry';
-import type {
-  EnrichedSearchResult,
-  Channel,
-  Playlist,
-  Video
-} from '@/types/api';
+import type { AdminSearchChannelResult, AdminSearchPlaylistResult, AdminSearchVideoResult, YouTubeEnrichedSearchResult } from '@/types/registry';
+import type { Channel, Playlist, Video } from '@/types/api';
 
 // Re-export for use in components
 export { parseYouTubeUrl } from './youtubeDataApi';
@@ -75,9 +70,9 @@ export async function searchYouTube(
 async function lookupByUrlDirect(urlInfo: YouTubeUrlInfo): Promise<YouTubeSearchResponse> {
   const response = await lookupByYouTubeUrl(urlInfo);
 
-  const channels: EnrichedSearchResult[] = [];
-  const playlists: EnrichedSearchResult[] = [];
-  const videos: EnrichedSearchResult[] = [];
+  const channels: YouTubeEnrichedSearchResult[] = [];
+  const playlists: YouTubeEnrichedSearchResult[] = [];
+  const videos: YouTubeEnrichedSearchResult[] = [];
 
   response.items.forEach(item => {
     if (item.type === 'channel') channels.push(item);
@@ -103,9 +98,9 @@ async function searchYouTubeDirect(
 ): Promise<YouTubeSearchResponse> {
   if (type === 'all') {
     const response = await ytSearchAll(query, pageToken);
-    const channels: EnrichedSearchResult[] = [];
-    const playlists: EnrichedSearchResult[] = [];
-    const videos: EnrichedSearchResult[] = [];
+    const channels: YouTubeEnrichedSearchResult[] = [];
+    const playlists: YouTubeEnrichedSearchResult[] = [];
+    const videos: YouTubeEnrichedSearchResult[] = [];
 
     response.items.forEach(item => {
       if (item.type === 'channel') channels.push(item);
@@ -146,7 +141,7 @@ export async function getChannelDetails(channelId: string) {
     ytListChannelPlaylists(channelId)
   ]);
 
-  const channelAsSearchResult: EnrichedSearchResult = {
+  const channelAsSearchResult: YouTubeEnrichedSearchResult = {
     id: channel.id,
     title: channel.name,
     thumbnailUrl: channel.thumbnailUrl,
@@ -156,7 +151,7 @@ export async function getChannelDetails(channelId: string) {
     type: 'channel'
   };
 
-  const videosAsSearchResults: EnrichedSearchResult[] = videosResult.items.map(v => ({
+  const videosAsSearchResults: YouTubeEnrichedSearchResult[] = videosResult.items.map(v => ({
     id: v.id,
     title: v.title,
     thumbnailUrl: v.thumbnailUrl,
@@ -169,7 +164,7 @@ export async function getChannelDetails(channelId: string) {
     type: 'video'
   }));
 
-  const playlistsAsSearchResults: EnrichedSearchResult[] = playlistsResult.items.map(p => ({
+  const playlistsAsSearchResults: YouTubeEnrichedSearchResult[] = playlistsResult.items.map(p => ({
     id: p.id,
     title: p.title,
     thumbnailUrl: p.thumbnailUrl,
@@ -266,8 +261,8 @@ export async function toggleIncludeState(
   await apiClient.patch(endpoint);
 }
 
-// Transform EnrichedSearchResult to AdminSearchChannelResult
-function transformChannelResult(channel: EnrichedSearchResult): AdminSearchChannelResult {
+// Transform YouTubeEnrichedSearchResult to AdminSearchChannelResult
+function transformChannelResult(channel: YouTubeEnrichedSearchResult): AdminSearchChannelResult {
   return {
     id: channel.id || '',
     ytId: channel.id || '',
@@ -284,12 +279,12 @@ function transformChannelResult(channel: EnrichedSearchResult): AdminSearchChann
   };
 }
 
-function transformChannelResults(channels: EnrichedSearchResult[]): AdminSearchChannelResult[] {
+function transformChannelResults(channels: YouTubeEnrichedSearchResult[]): AdminSearchChannelResult[] {
   return channels.map(transformChannelResult);
 }
 
-// Transform EnrichedSearchResult to AdminSearchPlaylistResult
-function transformPlaylistResults(playlists: EnrichedSearchResult[]): AdminSearchPlaylistResult[] {
+// Transform YouTubeEnrichedSearchResult to AdminSearchPlaylistResult
+function transformPlaylistResults(playlists: YouTubeEnrichedSearchResult[]): AdminSearchPlaylistResult[] {
   return playlists.map(playlist => {
     return {
       id: playlist.id || '',
@@ -318,8 +313,8 @@ function transformPlaylistResults(playlists: EnrichedSearchResult[]): AdminSearc
   });
 }
 
-// Transform EnrichedSearchResult to AdminSearchVideoResult
-function transformVideoResults(videos: EnrichedSearchResult[]): AdminSearchVideoResult[] {
+// Transform YouTubeEnrichedSearchResult to AdminSearchVideoResult
+function transformVideoResults(videos: YouTubeEnrichedSearchResult[]): AdminSearchVideoResult[] {
   return videos.map(video => {
     return {
       id: video.id || '',

@@ -40,10 +40,6 @@ struct BackendChallengeSolver: ChallengeSolving {
         // Stage 6 I-S2 (R21: never the device locale): CFNetwork adds the device's languages to a request that sets none.
         var request = request
         request.headers["Accept-Language"] = "en"
-        #if DEBUG
-        let started = ContinuousClock.now
-        defer { print("BackendChallengeSolver: \(request.url.lastPathComponent) \(ContinuousClock.now - started)") }   // Task 23
-        #endif
         let response: HTTPResponse
         do {
             response = try await transport.send(request)

@@ -8,7 +8,8 @@
  * The API key should be a browser-restricted key from Google Cloud Console.
  */
 
-import type { EnrichedSearchResult, SearchPageResponse } from '@/types/api';
+import type { YouTubeEnrichedSearchResult } from '@/types/registry';
+import { ApiError } from './http';
 
 const YOUTUBE_API_BASE = 'https://www.googleapis.com/youtube/v3';
 
@@ -90,6 +91,12 @@ interface YouTubePlaylistItemEntry {
   };
 }
 
+interface SearchPage {
+  items: YouTubeEnrichedSearchResult[];
+  nextPageToken: string | null;
+  totalResults: number;
+}
+
 interface YouTubePlaylistItemsResponse {
   items: YouTubePlaylistItemEntry[];
   nextPageToken?: string;
@@ -106,21 +113,38 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     if (value) url.searchParams.set(key, value);
   }
 
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    const status = response.status;
-    // Log full error for debugging but don't expose raw API response to callers
-    console.error(`YouTube API error ${status}:`, await response.text());
-    throw new Error(`YouTube API request failed (HTTP ${status})`);
+  // A hung request would otherwise leave the caller's spinner up forever; 30 s matches apiClient.
+  // Own controller, not AbortSignal.timeout: Safari < 16 lacks it, and Safari can reject an
+  // aborted body read with a plain AbortError, so "our signal aborted" is the timeout test.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
+  let errorBodyPending = false;
+  try {
+    const response = await fetch(url.toString(), { signal: controller.signal });
+    if (!response.ok) {
+      const status = response.status;
+      // Log full error for debugging but don't expose raw API response to callers.
+      // Not awaited: a stalled or failed body read must not hide the status. The timer stays
+      // armed until the read settles, so a stalled body is still aborted at the deadline.
+      errorBodyPending = true;
+      response.text()
+        .then(body => console.error(`YouTube API error ${status}:`, body), () => {})
+        .finally(() => clearTimeout(timer));
+      throw new ApiError(`YouTube API request failed (HTTP ${status})`, status, 'YOUTUBE_REQUEST_FAILED');
+    }
+    return await response.json();
+  } catch (err) {
+    if (controller.signal.aborted) throw new ApiError('YouTube API request timed out', 0, 'REQUEST_TIMEOUT');
+    throw err;
+  } finally {
+    if (!errorBodyPending) clearTimeout(timer);
   }
-  return response.json();
 }
 
 /**
  * Search YouTube for all content types with pagination.
- * Returns data in SearchPageResponse format compatible with the backend proxy.
  */
-export async function searchAll(query: string, pageToken?: string): Promise<SearchPageResponse> {
+export async function searchAll(query: string, pageToken?: string): Promise<SearchPage> {
   const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
     part: 'snippet',
     q: query,
@@ -147,8 +171,7 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
     playlistIds.length > 0 ? getPlaylistStats(playlistIds) : Promise.resolve(new Map<string, YouTubePlaylistItem>())
   ]);
 
-  // Map to EnrichedSearchResult
-  const items: EnrichedSearchResult[] = searchData.items.map(item => {
+  const items: YouTubeEnrichedSearchResult[] = searchData.items.map(item => {
     const thumbnail = item.snippet.thumbnails.high?.url || item.snippet.thumbnails.medium?.url || item.snippet.thumbnails.default?.url || '';
 
     if (item.id.channelId) {
@@ -210,7 +233,7 @@ export async function searchAll(query: string, pageToken?: string): Promise<Sear
 export async function searchByType(
   query: string,
   type: 'channel' | 'playlist' | 'video'
-): Promise<EnrichedSearchResult[]> {
+): Promise<YouTubeEnrichedSearchResult[]> {
   const typeMap: Record<string, string> = { channel: 'channel', playlist: 'playlist', video: 'video' };
 
   const searchData = await youtubeGet<YouTubeSearchResponse>('search', {
@@ -414,10 +437,9 @@ export function parseYouTubeUrl(input: string): YouTubeUrlInfo | null {
 
 /**
  * Look up a single YouTube item by URL info using the Data API.
- * Returns results in SearchPageResponse format.
  */
-export async function lookupByYouTubeUrl(urlInfo: YouTubeUrlInfo): Promise<SearchPageResponse> {
-  const items: EnrichedSearchResult[] = [];
+export async function lookupByYouTubeUrl(urlInfo: YouTubeUrlInfo): Promise<SearchPage> {
+  const items: YouTubeEnrichedSearchResult[] = [];
 
   if (urlInfo.type === 'video') {
     const stats = await getVideoStats([urlInfo.id]);

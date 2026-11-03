@@ -4,7 +4,8 @@ import assert from 'node:assert/strict';
 import fs from 'node:fs';
 import vm from 'node:vm';
 import { spawnSync } from 'node:child_process';
-import { buildPlayer, newContext, selfTest, solveAll } from '../server.mjs';
+import { buildPlayer, newContext } from '../executor.mjs';
+import { selfTest, solveAll, solverWith } from './harness.mjs';
 
 const SPIKE = new URL('../../../.superpowers/sdd/2026-10-14-playback-phase2/spike/out/', import.meta.url).pathname;
 const PLAYER = process.env.SOLVER_TEST_PLAYER ?? `${SPIKE}base.js`;      // player 21090930, the one the answers were recorded on
@@ -54,7 +55,7 @@ test('a failed build leaves no __player behind (fix 3)', () => {
 
 // Runs in a child process: terminating a microtask drain inside node:test's own async scope corrupts the runner's async-hook stack.
 test('a microtask loop scheduled by the player hits the timeout (fix 2)', { timeout: 30_000 }, () => {
-  const script = `import vm from 'node:vm'; import { newContext, selfTest } from ${JSON.stringify(new URL('../server.mjs', import.meta.url).href)};
+  const script = `import vm from 'node:vm'; import { newContext } from ${JSON.stringify(new URL('../executor.mjs', import.meta.url).href)}; import { selfTest } from ${JSON.stringify(new URL('./harness.mjs', import.meta.url).href)};
     const ctx = newContext();
     const player = { ctx, ...vm.runInContext("({ n: (x) => { Promise.resolve().then(() => { for (;;) {} }); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
     try { selfTest(player, 300); console.log('no timeout'); } catch (e) { console.log(e.code); }`;
@@ -96,7 +97,7 @@ import http from 'node:http';
 import os from 'node:os';
 import path from 'node:path';
 import { once } from 'node:events';
-import { createSolver, playerHash, serve, signatureTimestamp } from '../server.mjs';
+import { answers, connectExecutor, createSolver, playerHash, serve, signatureTimestamp } from '../server.mjs';
 
 const DAY = 86_400_000;
 const today = () => Math.floor(Date.now() / DAY);
@@ -147,7 +148,7 @@ test('signatureTimestamp keeps today ±60 days and refuses the rest (M13)', () =
 test('a new hash downloads once and is adopted; a held hash is never fetched again', async () => {
   const yt = await origin(['0229cd64']);
   const builds = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
   await solver.poll();
   await solver.poll();
   assert.equal(yt.downloads(), 1);
@@ -159,7 +160,7 @@ test('a new hash downloads once and is adopted; a held hash is never fetched aga
 test('an A/B flip between two held hashes never rebuilds (M10)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa', 'bbbbbbbb']);
   const builds = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
   for (let i = 0; i < 4; i++) await solver.poll();
   assert.equal(builds.length, 2);
   assert.equal(yt.downloads(), 2);
@@ -172,7 +173,7 @@ test('the oldest player is evicted BEFORE the third is built (R27)', async () =>
   const heldAtBuild = [];
   const build = fakeBuild();
   let solver;
-  solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: quiet,
+  solver = solverWith({ origin: yt.url, cacheDir: tempDir(), log: quiet,
     build: (text) => { heldAtBuild.push(solver.health().held.length); return build(text); } });
   for (let i = 0; i < 3; i++) await solver.poll();
   assert.deepEqual(heldAtBuild, [0, 1, 1]);
@@ -185,12 +186,12 @@ test('the fetch log allows 3 downloads an hour, survives a restart, and reopens 
   const dir = tempDir();
   let t = Date.now();
   const now = () => t;
-  const first = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
+  const first = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
   for (let i = 0; i < 4; i++) await first.poll();
   assert.equal(yt.downloads(), 3);
   assert.equal(first.health().fetchesLastHour, 3);
   assert.equal(first.health().lastPoll.step, 'fetch-budget');
-  const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
+  const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), now, log: quiet });
   await restarted.poll();
   assert.equal(yt.downloads(), 3);
   assert.equal(restarted.health().status, 'throttled');
@@ -204,8 +205,8 @@ test('the fetch log allows 3 downloads an hour, survives a restart, and reopens 
 test('a base.js already in the cache is reused after a restart, with no download', async () => {
   const yt = await origin(['aaaaaaaa']);
   const dir = tempDir();
-  await createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet }).poll();
-  const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet }).poll();
+  const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   await restarted.poll();
   assert.equal(yt.downloads(), 1);
   assert.equal(restarted.health().status, 'ok');
@@ -217,7 +218,7 @@ test('an unwritable cache fails closed: nothing is downloaded and /health says n
   const dir = tempDir();
   fs.chmodSync(dir, 0o500);
   try {
-    const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+    const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
     await solver.poll();
     assert.equal(yt.downloads(), 0);
     assert.deepEqual([solver.health().status, solver.health().cacheWritable], ['no-cache', false]);
@@ -231,7 +232,7 @@ test('a corrupt fetch log fails closed: nothing is downloaded and /health says n
   const yt = await origin(['aaaaaaaa']);
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, 'fetch-log.json'), '[17604');          // a write cut short
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   await solver.poll();
   assert.equal(yt.downloads(), 0);
   assert.deepEqual([solver.health().status, solver.health().lastPoll.step], ['no-cache', 'fetch-budget']);
@@ -241,7 +242,7 @@ test('a corrupt fetch log fails closed: nothing is downloaded and /health says n
 test('a player that fails the self-test is not adopted, and the WARN names the step (R26)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const warnings = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) },
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) },
     build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext('({ n: (x) => x, sig: (x) => x })', ctx) }; } });
   await solver.poll();
   assert.equal(solver.health().status, 'warming');
@@ -251,7 +252,7 @@ test('a player that fails the self-test is not adopted, and the WARN names the s
 
 test('/solve validates, answers 409 for an unknown player, and /player and /health have the spec shape', async () => {
   const yt = await origin(['aaaaaaaa']);
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: quiet });
   await solver.poll();
   const server = serve(solver, { host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
@@ -267,8 +268,36 @@ test('/solve validates, answers 409 for an unknown player, and /player and /heal
     assert.deepEqual(await (await fetch(`${base}/player`)).json(), { playerId: 'aaaaaaaa', sts: today() });
     const health = await (await fetch(`${base}/health`)).json();
     assert.deepEqual(Object.keys(health).sort(),
-      ['cacheWritable', 'current', 'fetchesLastHour', 'held', 'lastPoll', 'p95CpuMs', 'rssMiB', 'solves', 'status', 'sts']);
+      ['cacheWritable', 'current', 'executorRssMiB', 'fetchesLastHour', 'held', 'lastPoll', 'p95CpuMs', 'rssMiB', 'solves', 'status', 'sts']);
     assert.equal(health.solves, 1);
+  } finally {
+    server.close();
+    yt.close();
+  }
+});
+
+test('/solve takes at most 4 n and 64 s, the backend\'s own caps (PlaybackSolverService.valid), and refuses more', async () => {
+  // the backend forwards only what it accepted (its cache misses), so equal caps never refuse a request it sends
+  const java = fs.readFileSync(new URL('../../src/main/java/com/albunyaan/tube/service/PlaybackSolverService.java', import.meta.url), 'utf8');
+  assert.match(java, /n\.size\(\) <= 4 &&/);
+  assert.match(java, /s\.size\(\) <= 64 &&/);
+  const yt = await origin(['aaaaaaaa']);
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  await solver.poll();
+  const server = serve(solver, { host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  const post = (n, s) => fetch(`http://127.0.0.1:${server.address().port}/solve`,
+    { method: 'POST', body: JSON.stringify({ playerId: 'aaaaaaaa', n, s }) });
+  const list = (count, prefix) => Array.from({ length: count }, (_, i) => `${prefix}${i}`);
+  try {
+    const full = await post(list(4, 'n'), list(64, 's'));
+    assert.equal(full.status, 200);
+    const body = await full.json();
+    assert.equal(Object.keys(body.n).length, 4);
+    assert.equal(Object.keys(body.s).length, 64);
+    assert.equal((await post(list(5, 'n'), [])).status, 400);
+    assert.equal((await post([], list(65, 's'))).status, 400);
+    assert.equal(solver.health().solves, 1, 'a refused request never reaches the executor');
   } finally {
     server.close();
     yt.close();
@@ -293,11 +322,15 @@ test('a solve that times out evicts only that player and answers 500 (ruling 1)'
     const ctx = newContext();
     return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') { const e = Date.now() + 2000; while (Date.now() < e) {} } return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) };
   };
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: spin, log: quiet, solveTimeoutMs: 200 });
+  const dir = tempDir();
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: spin, log: quiet, solveTimeoutMs: 200 });
   await solver.poll(); await solver.poll();
-  assert.deepEqual(solver.solve({ playerId: 'bbbbbbbb', n: ['spin'], s: [] }), [500, { error: 'solve failed' }]);
+  assert.deepEqual(await solver.solve({ playerId: 'bbbbbbbb', n: ['spin'], s: [] }), [500, { error: 'solve failed' }]);
+  assert.equal(fs.existsSync(path.join(dir, 'building')), false, 'a failed solve left its crash marker');
   assert.deepEqual(solver.health().held, ['aaaaaaaa']);
-  assert.deepEqual(solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
+  assert.deepEqual(await solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
+  // S20 review: a solve that returns, either way, clears its crash marker, or a clean restart would drop a healthy player.
+  assert.equal(fs.existsSync(path.join(dir, 'building')), false);
   yt.close();
 });
 
@@ -306,7 +339,7 @@ test('a build that times out fails closed and the HTTP server keeps answering he
   const warnings = [];
   let calls = 0;
   const good = fakeBuild();
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) },
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) },
     build: (text) => (calls++ === 0 ? hangingBuild() : good(text)) });
   const server = serve(solver, { host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
@@ -330,7 +363,7 @@ test('a build that times out fails closed and the HTTP server keeps answering he
 test('a selfTest that throws is a failed build too, and the WARN names the step (ruling 1)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const warnings = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) }, selfTestTimeoutMs: 100,
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), log: { log() {}, warn: (m) => warnings.push(m) }, selfTestTimeoutMs: 100,
     build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: () => { const e = Date.now() + 2000; while (Date.now() < e) {} }, sig: (x) => x })", ctx) }; } });
   await solver.poll();
   assert.match(warnings[0], /^WARN poll failed at self-test/);
@@ -344,7 +377,7 @@ test('a player that fails to build, has no sts or fails the self-test is deleted
   const dir = tempDir();
   let calls = 0;
   const good = fakeBuild();
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: quiet, build: (t) => { if (calls++ === 0) throw new Error('bad build'); return good(t); } });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, log: quiet, build: (t) => { if (calls++ === 0) throw new Error('bad build'); return good(t); } });
   await solver.poll();
   assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), false);
   await solver.poll();
@@ -358,7 +391,7 @@ test('a fetch-log write failure reports no-cache (M1)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const dir = tempDir();
   fs.mkdirSync(path.join(dir, 'fetch-log.json.tmp'));          // the atomic write cannot create its temp file
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   await solver.poll();
   assert.equal(yt.downloads(), 0);
   assert.deepEqual([solver.health().status, solver.health().cacheWritable], ['no-cache', false]);
@@ -369,7 +402,7 @@ test('a fetch log with non-numeric entries fails closed (M2)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, 'fetch-log.json'), '["x", null]');
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   await solver.poll();
   assert.equal(yt.downloads(), 0);
   assert.equal(solver.health().status, 'no-cache');
@@ -377,7 +410,7 @@ test('a fetch log with non-numeric entries fails closed (M2)', async () => {
 });
 
 test('an oversize /solve body is refused at once with connection: close, and the server has a request timeout (M4)', async () => {
-  const solver = createSolver({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
   const server = serve(solver, { host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   try {
@@ -395,7 +428,7 @@ test('an oversize /solve body is refused at once with connection: close, and the
 });
 
 test('every answer closes its connection, so a pooled client never reuses one the sidecar timed out (Task 6)', async () => {
-  const solver = createSolver({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: 'http://127.0.0.1:1', cacheDir: tempDir(), build: fakeBuild(), log: quiet });
   const server = serve(solver, { host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   const agent = new http.Agent({ keepAlive: true });                  // a pooling client, like the JDK's
@@ -418,7 +451,7 @@ test('a player with no usable sts is refused BEFORE a held player is evicted (M5
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, 'cccccccc.js'), 'no timestamp here');
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   for (let i = 0; i < 3; i++) await solver.poll();
   assert.deepEqual(solver.health().held, ['aaaaaaaa', 'bbbbbbbb']);
   assert.equal(solver.health().lastPoll.step, 'sts');
@@ -429,7 +462,7 @@ test('a player with no usable sts is refused BEFORE a held player is evicted (M5
 test('a base.js over 8 MB is refused and not cached (M6)', async () => {
   const yt = await origin(['ffffffff']);
   const dir = tempDir();
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   await solver.poll();
   assert.equal(solver.health().lastPoll.step, 'download');
   assert.equal(fs.existsSync(path.join(dir, 'ffffffff.js')), false);
@@ -439,7 +472,7 @@ test('a base.js over 8 MB is refused and not cached (M6)', async () => {
 test('poll is single-flight: concurrent callers share one run (M9)', async () => {
   const yt = await origin(['aaaaaaaa']);
   const builds = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(builds), log: quiet });
   const a = solver.poll();
   const b = solver.poll();
   assert.equal(a, b);
@@ -454,7 +487,7 @@ test('a failed cache delete in a read-only directory leaves poll resolving and /
   const dir = tempDir();
   fs.writeFileSync(path.join(dir, 'aaaaaaaa.js'), 'no timestamp here');
   fs.chmodSync(dir, 0o500);
-  const solver = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  const solver = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
   const server = serve(solver, { host: '127.0.0.1', port: 0 });
   await once(server, 'listening');
   try {
@@ -471,6 +504,8 @@ test('a failed cache delete in a read-only directory leaves poll resolving and /
 // ---- stage 9 Cubic round 1: nothing the realm controls runs on the host, and a crashing player cannot loop restarts
 import { spawn } from 'node:child_process';
 const SERVER = JSON.stringify(new URL('../server.mjs', import.meta.url).href);
+const EXECUTOR = JSON.stringify(new URL('../executor.mjs', import.meta.url).href);
+const HARNESS = JSON.stringify(new URL('./harness.mjs', import.meta.url).href);
 
 /** Runs `script` (an ES module) in a child Node, killed after `ms`: a host stuck in realm code shows as signal SIGKILL. */
 async function child(script, ms = 8_000, flags = []) {
@@ -485,7 +520,7 @@ async function child(script, ms = 8_000, flags = []) {
 }
 
 /** A child that runs `body` against one realm (`ctx`, `player`) and prints what each call did. */
-const realmScript = (body) => `import vm from 'node:vm'; import { buildPlayer, newContext, selfTest, solveAll } from ${SERVER};
+const realmScript = (body) => `import vm from 'node:vm'; import { buildPlayer, newContext } from ${EXECUTOR}; import { selfTest, solveAll } from ${HARNESS};
   const ctx = newContext();
   const player = { ctx, ...vm.runInContext("({ n: (x) => x + 'A', sig: (x) => x.slice(1) })", ctx) };
   const outcome = (f) => { try { return JSON.stringify(f()); } catch (e) { return 'threw: ' + e.message; } };
@@ -519,27 +554,28 @@ test('a looping setter the player left on a solve global never runs on the host 
 
 test('a player that throws an object with a looping message getter never hangs the poll\'s WARN (Cubic P2)', async () => {
   const yt = await origin(['aaaaaaaa']);
-  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
+  const r = await child(`import vm from 'node:vm'; import { newContext } from ${EXECUTOR}; import { solverWith } from ${HARNESS};
     const warnings = [];
-    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, selfTestTimeoutMs: 300,
+    const solver = solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, selfTestTimeoutMs: 300,
       log: { log() {}, warn: (m) => warnings.push(m) },
       build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: () => { throw { get message() { for (;;) {} } }; }, sig: (x) => x })", ctx) }; } });
     await solver.poll();
     console.log(JSON.stringify(warnings));`);
   yt.close();
   assert.equal(r.signal, null, 'the host read the thrown object\'s message');
-  assert.match(JSON.parse(r.stdout)[0], /^WARN poll failed at self-test: .*timed out/);
+  // the executor answers a throwing function with null, its thrown value unread (S20): a failed self-test, never a hang
+  assert.match(JSON.parse(r.stdout)[0], /^WARN poll failed at self-test: self-test failed/);
 });
 
 test('a build that kills the process (a fatal V8 OOM skips every catch) never loops: the next start drops that player (Cubic P3)', async () => {
   const yt = await origin(['aaaaaaaa', 'aaaaaaaa', 'bbbbbbbb']);
   const dir = tempDir();
-  const r = await child(`import { createSolver } from ${SERVER};
-    createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(dir)}, log: { log() {}, warn() {} }, build: () => process.exit(9) }).poll();`);
+  const r = await child(`import { solverWith } from ${HARNESS};
+    solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(dir)}, log: { log() {}, warn() {} }, build: () => process.exit(9) }).poll();`);
   assert.equal(r.code, 9);
   assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), true, 'the crash skipped the catch that deletes a bad player');
   const builds = [];
-  const restarted = createSolver({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), log: quiet });
+  const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), log: quiet });
   await restarted.poll();
   assert.equal(builds.length, 0, 'the player that crashed the last build is not built again');
   assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), false);
@@ -588,12 +624,12 @@ test('Node\'s bookkeeping of an unhandled realm rejection never runs a realm Pro
 
 test('an unhandled rejection from a solve drops only that player; the host\'s own still exits as before (Cubic r6 P2)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
-  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
-    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
+  const r = await child(`import vm from 'node:vm'; import { newContext } from ${EXECUTOR}; import { solverWith } from ${HARNESS};
+    const solver = solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
       build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'reject') Promise.reject(1); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
-    process.on('unhandledRejection', solver.rejected);               // as the main block wires it
+    process.on('unhandledRejection', (r, p) => solver.dropCrashed(solver.executor.rejected(r, p)));               // as executor.mjs wires it
     await solver.poll(); await solver.poll();
-    const [status] = solver.solve({ playerId: 'aaaaaaaa', n: ['reject'], s: [] });
+    const [status] = await solver.solve({ playerId: 'aaaaaaaa', n: ['reject'], s: [] });
     await new Promise((r) => setTimeout(r, 50));
     console.log(JSON.stringify([status, solver.health().held]));
     Promise.reject(new Error('expected in this test: the host\\'s own unhandled rejection still exits the process'));`);
@@ -602,39 +638,45 @@ test('an unhandled rejection from a solve drops only that player; the host\'s ow
   assert.equal(r.code, 1, 'a host rejection was blamed on a player');
 });
 
-test('a stop during the startup build clears the crash marker and keeps the healthy player (Cubic r2 P2)',
-  { skip: !haveRecording && 'no recorded base.js', timeout: 30_000 }, async () => {
-    const hash = 'cccccccc';
-    // the recorded player, its sts moved to today: a real build takes ~1.5 s, long enough to stop the server inside it
-    const text = fs.readFileSync(PLAYER, 'utf8').replace(/((?:signatureTimestamp|sts)\s*:\s*)\d{5}/, (m, key) => key + today());
-    const yt = http.createServer((req, res) => {
-      if (req.url === '/iframe_api') return res.end(iframeText(hash));
-      if (req.url === `/s/player/${hash}/player_ias.vflset/en_US/base.js`) return res.end(text);
-      res.writeHead(404); res.end();
-    }).listen(0, '127.0.0.1');
-    await once(yt, 'listening');
-    const origin = `http://127.0.0.1:${yt.address().port}`;
-    const dir = tempDir();
+/** S20 review: the watchdog SIGKILLs a solver whose realm escaped the vm timeout. A hang in a SOLVE must name its player to the
+ *  next process exactly as a hang in a build does, or each restart rebuilds it from the cache, hangs on the next solve, and
+ *  the unit's StartLimitBurst leaves the solver dead. The spin is long enough for the kill to land inside it. */
+test('a solver killed while a player hangs in a solve does not rebuild that player (S20 review)', { timeout: 30_000 }, async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  const server = spawn(process.execPath, ['--experimental-vm-modules', '--input-type=module', '-e', `import vm from 'node:vm';
+    import { newContext } from ${EXECUTOR}; import { solverWith } from ${HARNESS};
+    const solver = solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(dir)}, log: { log() {}, warn() {} },
+      solveTimeoutMs: 60_000, build: () => { const ctx = newContext();
+        return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'spin') for (;;); return x.split('').reverse().join('') + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
+    await solver.poll();
+    console.log(solver.health().status);
+    solver.solve({ playerId: 'aaaaaaaa', n: ['spin'], s: [] });`], { stdio: ['ignore', 'pipe', 'inherit'] });
+  try {
+    const [line] = await once(server.stdout, 'data');
+    assert.equal(String(line).trim(), 'ok', 'the player was adopted');
     const marker = path.join(dir, 'building');
-    const server = spawn(process.execPath, ['--experimental-vm-modules', new URL('../server.mjs', import.meta.url).pathname], {
-      env: { ...process.env, SOLVER_ORIGIN: origin, SOLVER_CACHE_DIR: dir, SOLVER_PORT: '0' }, stdio: ['ignore', 'ignore', 'inherit'] });
-    try {
-      for (let i = 0; i < 1500 && !fs.existsSync(marker); i++) await new Promise((r) => setTimeout(r, 10));
-      assert.ok(fs.existsSync(marker), 'the startup build began');
-      server.kill('SIGTERM');                                        // systemctl stop / restart
-      const [code, signal] = await once(server, 'exit');
-      assert.equal(fs.existsSync(marker), false, 'a clean stop left the crash marker behind');
-      assert.deepEqual([code, signal], [0, null]);
-      assert.equal(fs.existsSync(path.join(dir, `${hash}.js`)), true, 'the healthy player was dropped');
-      const builds = [];
-      const restarted = createSolver({ origin, cacheDir: dir, build: fakeBuild(builds), log: quiet });
-      await restarted.poll();
-      assert.deepEqual([builds.length, restarted.health().status], [1, 'ok'], 'the next start builds it from the cache');
-    } finally {
-      server.kill('SIGKILL');
-      yt.close();
-    }
-  });
+    for (let i = 0; i < 200 && !fs.existsSync(marker); i++) await new Promise((r) => setTimeout(r, 10));
+    server.kill('SIGKILL');                                          // the watchdog
+    await once(server, 'exit');
+    const builds = [];
+    const warnings = [];
+    let clock = Date.now();
+    const restarted = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(builds), now: () => clock,
+                                     log: { log() {}, warn: (m) => warnings.push(m) } });
+    await restarted.poll();
+    assert.deepEqual([builds.length, restarted.health().status], [0, 'warming'], 'the hung player was built again');
+    assert.match(warnings[0], /^WARN player aaaaaaaa crashed the solver/);
+    // gstack review: a kill names whatever player was solving (a congested loop, a cgroup OOM), so the blame expires after an
+    // hour instead of holding a healthy player off until YouTube rotates its hash; a hostile one costs a kill an hour.
+    clock += 3_600_000;
+    await restarted.poll();
+    assert.deepEqual([builds.length, restarted.health().status], [1, 'ok'], 'the dropped player stayed skipped past the hour');
+  } finally {
+    server.kill('SIGKILL');
+    yt.close();
+  }
+});
 
 // ---- stage 9 Cubic r7 #1 (P1): dynamic import() inside the realm must not reach the host process
 test('player code calling import() in any of the five forms cannot reach the host process (Cubic r7 #1, P1)', async () => {
@@ -647,7 +689,7 @@ test('player code calling import() in any of the five forms cannot reach the hos
   };
   // Each form runs through the real buildPlayer -> inRealm path (the one every n/sig and base.js already uses). A realm
   // reason that is a primitive string cannot answer constructor.constructor with the host process; a host Error reason can.
-  const script = `import vm from 'node:vm'; import { buildPlayer, newContext } from ${SERVER};
+  const script = `import vm from 'node:vm'; import { buildPlayer, newContext } from ${EXECUTOR};
     const forms = ${JSON.stringify(forms)};
     const cap = (f) => "globalThis.leak='pending';"
       + "var grab=function(e){try{"
@@ -689,7 +731,7 @@ test('import() in code a promise job compiles (no referrer) cannot reach the hos
   };
   // `see` asks a value for constructor.constructor('return process')(): a realm primitive or realm object cannot answer with
   // the host process, a host object can. It is asked of the rejection reason AND of the import() promise itself (`ip`).
-  const script = `import vm from 'node:vm'; import { buildPlayer, newContext, solveAll } from ${SERVER};
+  const script = `import vm from 'node:vm'; import { buildPlayer, newContext } from ${EXECUTOR}; import { solveAll } from ${HARNESS};
     const forms = ${JSON.stringify(forms)};
     const see = "var see=function(v){if(v===null||(typeof v!=='object'&&typeof v!=='function'))return 'prim:'+typeof v;"
       + "try{var p=v.constructor.constructor('return process')();return (p&&typeof p==='object')?'LEAK pid='+p.pid:'realm';}catch(x){return 'realm';}};"
@@ -723,12 +765,12 @@ test('import() in code a promise job compiles (no referrer) cannot reach the hos
 
 test('a player that leaves an uncaught import() rejection is evicted, never a process exit (Cubic r7 #2)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
-  const r = await child(`import vm from 'node:vm'; import { createSolver, newContext } from ${SERVER};
-    const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
+  const r = await child(`import vm from 'node:vm'; import { newContext } from ${EXECUTOR}; import { solverWith } from ${HARNESS};
+    const solver = solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, log: { log() {}, warn() {} },
       build: () => { const ctx = newContext(); return { ctx, ...vm.runInContext("({ n: (x) => { if (x === 'imp') import('nope'); return x + 'A'; }, sig: (x) => x.slice(1) })", ctx) }; } });
-    process.on('unhandledRejection', solver.rejected);               // as the main block wires it
+    process.on('unhandledRejection', (r, p) => solver.dropCrashed(solver.executor.rejected(r, p)));               // as executor.mjs wires it
     await solver.poll(); await solver.poll();
-    const [status] = solver.solve({ playerId: 'aaaaaaaa', n: ['imp'], s: [] });
+    const [status] = await solver.solve({ playerId: 'aaaaaaaa', n: ['imp'], s: [] });
     await new Promise((r) => setTimeout(r, 80));
     console.log(JSON.stringify([status, solver.health().held]));`);
   yt.close();
@@ -750,7 +792,7 @@ test('a player that calls import() and then hangs past the vm timeout is evicted
     const atBuild = name.startsWith('build');
     const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa']);
     // compiled by buildPlayer (Function() inside inRealm's run), as base.js is: its import() calls denyImport
-    const r = await child(`import vm from 'node:vm'; import { buildPlayer, createSolver, newContext } from ${SERVER};
+    const r = await child(`import vm from 'node:vm'; import { buildPlayer, newContext } from ${EXECUTOR}; import { solverWith } from ${HARNESS};
       const ok = '_result.n = (x) => { if (x === "hang") { ' + ${JSON.stringify(hang)} + ' } return x.split("").reverse().join("") + "A"; };'
         + ' _result.sig = (x) => x.slice(1);';
       let builds = 0;
@@ -761,16 +803,16 @@ test('a player that calls import() and then hangs past the vm timeout is evicted
         return buildPlayer(ctx, 'x', 300);
       };
       const warnings = [];
-      const solver = createSolver({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, build, solveTimeoutMs: 300,
+      const solver = solverWith({ origin: ${JSON.stringify(yt.url)}, cacheDir: ${JSON.stringify(tempDir())}, build, solveTimeoutMs: 300,
         log: { log() {}, warn: (m) => warnings.push(m) } });
-      process.on('unhandledRejection', solver.rejected);             // as the main block wires it
+      process.on('unhandledRejection', (r, p) => solver.dropCrashed(solver.executor.rejected(r, p)));             // as executor.mjs wires it
       const tick = () => new Promise((r) => setTimeout(r, 80));     // Node reports a rejection once the run has returned
       await solver.poll(); await tick();                             // aaaaaaaa: adopted, or its build hangs
       const built = solver.health().lastPoll.step;
       await solver.poll(); await tick();                             // bbbbbbbb: adopted
-      const first = ${atBuild} ? built : solver.solve({ playerId: 'aaaaaaaa', n: ['hang'], s: [] })[0];
+      const first = ${atBuild} ? built : (await solver.solve({ playerId: 'aaaaaaaa', n: ['hang'], s: [] }))[0];
       await tick();
-      const next = solver.solve({ playerId: 'bbbbbbbb', n: ['abc'], s: [] });
+      const next = await solver.solve({ playerId: 'bbbbbbbb', n: ['abc'], s: [] });
       await solver.poll();                                           // iframe_api -> aaaaaaaa again
       console.log(JSON.stringify([first, solver.health().held, next, solver.health().lastPoll.step,
         warnings.some((w) => /player aaaaaaaa left an unhandled promise rejection; evicted and skipped/.test(w)), builds]));
@@ -787,15 +829,197 @@ test('a player that calls import() and then hangs past the vm timeout is evicted
 test('two players that each leave a realm rejection are both skipped until a restart (controller P3-2)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'aaaaaaaa']);
   const warnings = [];
-  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: { log() {}, warn: (m) => warnings.push(m) } });
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: { log() {}, warn: (m) => warnings.push(m) } });
   await solver.poll(); await solver.poll();                        // adopt aaaaaaaa, bbbbbbbb
   const realmRejection = Object.create(null);                      // a non-host promise: rejected() treats it as a realm one
-  solver.solve({ playerId: 'aaaaaaaa', n: ['x'], s: [] }); solver.rejected(1, realmRejection);   // crash attributed to aaaaaaaa
-  solver.solve({ playerId: 'bbbbbbbb', n: ['x'], s: [] }); solver.rejected(1, realmRejection);   // crash attributed to bbbbbbbb
+  const rejected = () => solver.dropCrashed(solver.executor.rejected(1, realmRejection));     // as executor.mjs's main wires it
+  await solver.solve({ playerId: 'aaaaaaaa', n: ['x'], s: [] }); rejected();                 // crash attributed to aaaaaaaa
+  await solver.solve({ playerId: 'bbbbbbbb', n: ['x'], s: [] }); rejected();                 // crash attributed to bbbbbbbb
   warnings.length = 0;
   await solver.poll();                                             // iframe_api -> aaaaaaaa again
   assert.equal(solver.health().lastPoll.step, 'hash', 'the earlier-crashed player was rebuilt, not skipped');
   assert.ok(!solver.health().held.includes('aaaaaaaa'), 'the earlier-crashed player was re-adopted');
   assert.match(warnings.at(-1), /skipped until a restart/);
+  yt.close();
+});
+
+// ---- S20: the executor is untrusted (escaped player code may run it). The gateway checks what it says and gives up on it.
+import { Duplex } from 'node:stream';
+
+/** A fake executor connection: `reply(text)` is what the executor sends, `sent` what the gateway wrote; `respond`, if
+ *  given, answers each request with the text it returns. */
+function fakeConnection(respond, { ready = true } = {}) {
+  const sent = [];
+  const stream = new Duplex({ read() {}, write(chunk, encoding, done) {
+    sent.push(String(chunk));
+    if (respond) setImmediate(() => stream.push(respond(JSON.parse(chunk))));
+    done();
+  } });
+  if (ready) stream.push('{"event":"ready"}\n');                    // as executor.mjs says before it reads a request
+  return { stream, sent, reply: (text) => stream.push(text) };
+}
+
+test('connectExecutor gives up on an executor that hangs up, answers late, out of turn, unparseably or too long (S20)', async () => {
+  const cases = {
+    'hung up': (c) => c.stream.destroy(),
+    'gave no answer in 100 ms': () => {},
+    'answered nothing it was asked': (c) => c.reply('{"ok":true,"value":1}\n{"ok":true,"value":2}\n'),
+    'sent an unparseable line': (c) => c.reply('{nope\n'),
+    'sent a line over 1 MiB': (c) => c.reply('x'.repeat(1_048_577)),
+  };
+  for (const [why, act] of Object.entries(cases)) {
+    const c = fakeConnection();
+    const dead = [];
+    const executor = connectExecutor(c.stream, { timeoutMs: 100, onRejected() {}, onDead: (w) => dead.push(w) });
+    const call = executor.solve('aaaaaaaa', ['abc'], [], 50);
+    act(c);
+    await call.catch(() => {});
+    await new Promise((r) => setTimeout(r, 150));
+    assert.deepEqual(dead, [why], why);
+    await assert.rejects(executor.build('aaaaaaaa', 'x'), /executor gone/, `${why}: a dead executor takes no more calls`);
+  }
+});
+
+test('connectExecutor answers one call per reply, passes a rejected event on, and bounds an error\'s text (S20)', async () => {
+  const c = fakeConnection();
+  const named = [];
+  const executor = connectExecutor(c.stream, { onRejected: (...h) => named.push(h), onDead: () => assert.fail('not dead') });
+  const early = executor.solve('aaaaaaaa', ['early'], [], 50);
+  assert.equal(c.sent.length, 0, 'nothing is sent before the executor is ready');
+  await new Promise((r) => setImmediate(r));                         // its ready line arrives
+  assert.deepEqual(JSON.parse(c.sent[0]).n, ['early']);
+  c.reply('{"ok":true,"value":null}\n');
+  await early;
+  c.sent.length = 0;
+  const first = executor.solve('aaaaaaaa', ['abc'], [], 50);
+  await assert.rejects(executor.build('aaaaaaaa', 'x'), /one executor call at a time/);
+  assert.deepEqual(JSON.parse(c.sent[0]), { op: 'solve', hash: 'aaaaaaaa', n: ['abc'], s: [], timeoutMs: 50 });
+  c.reply('{"event":"rejected","hash":"bbbbbbbb"}\n{"ok":true,');
+  c.reply('"value":{"raw":[["cbaA"],[]]}}\n');
+  assert.deepEqual(await first, { raw: [['cbaA'], []] });
+  assert.deepEqual(named, [[]], 'the executor\'s hash is never passed on: the connection names its player');
+  const second = executor.build('aaaaaaaa', 'x');
+  c.reply(`${JSON.stringify({ ok: false, error: 'E'.repeat(5000) })}\n`);
+  await assert.rejects(second, (e) => e.message.length === 200);
+  const third = executor.build('aaaaaaaa', 'x');
+  c.reply(`${JSON.stringify({ ok: false, error: 'a\nWARN forged\u0000' })}\n`);
+  await assert.rejects(third, (e) => e.message === 'a?WARN forged?', 'one log line, no control character');
+  const coerced = executor.build('aaaaaaaa', 'x');
+  c.reply('{"ok":false,"error":{"toString":1}}\n');               // String() of it throws: in the data handler, a crash
+  await assert.rejects(coerced, /^Error: executor error$/);
+  const fourth = executor.build('aaaaaaaa', 'x');
+  executor.close();                                                  // the gateway's own hang-up: no onDead
+  await assert.rejects(fourth, /executor closed/);
+  assert.equal(c.stream.destroyed, true);
+});
+
+test('the gateway keeps only usable answers and never throws on a malformed executor reply (S20)', () => {
+  const n = ['abc', 'def', 'ghi'];
+  assert.deepEqual(answers(n, ['s1'], [['cbaA', 'bad answer!', 42], ['enhanced_except_x']]), { n: { abc: 'cbaA' }, s: {} });
+  assert.deepEqual(answers(['a'], ['b'], [['A'.repeat(256)], ['B'.repeat(257)]]), { n: { a: 'A'.repeat(256) }, s: {} },
+    'a padded answer is a hostile player\'s: the backend would cache it (S20 review)');
+  for (const raw of [null, 'x', {}, [null, null], [['no spaces!'], 'b'], [[{ toString: () => 'ok' }], []]]) {
+    assert.deepEqual(answers(n, ['s1'], raw), { n: {}, s: {} }, JSON.stringify(raw));
+  }
+});
+
+test('a rejected-player event names a held player only by its hash; anything else is ignored (S20)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const warnings = [];
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: { log() {}, warn: (m) => warnings.push(m) } });
+  await solver.poll();
+  for (const bad of [null, 42, '../etc', 'AAAAAAAA', { toString: () => 'aaaaaaaa' }]) solver.dropCrashed(bad);
+  assert.deepEqual([solver.health().held, warnings], [['aaaaaaaa'], []]);
+  solver.dropCrashed('aaaaaaaa');
+  assert.deepEqual(solver.health().held, []);
+  yt.close();
+});
+
+test('a player whose rejection arrives in the same read as its self-test answer is never adopted (S20, Cubic r6 P2)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const answer = (request) => {
+    if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
+    const raw = [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))];
+    return `${JSON.stringify({ ok: true, value: { raw, cpuMs: 1 } })}\n{"event":"rejected"}\n`;   // one chunk
+  };
+  const dir = tempDir();
+  const solver = createSolver({ connect: (hash, events) => connectExecutor(fakeConnection(answer).stream, events), origin: yt.url,
+                                cacheDir: dir, log: quiet });
+  await solver.poll();
+  assert.deepEqual([solver.health().held, solver.health().lastPoll.step], [[], 'adopt']);
+  assert.equal(fs.existsSync(path.join(dir, 'aaaaaaaa.js')), true, 'skipped until a restart, then rebuilt from the cache: no download');
+  yt.close();
+});
+
+/** S20 review (Codex, security review): one executor per held player, so the connection, never the executor's own word, names
+ *  the player behind a rejection or a death; and a death between ops leaves the marker as one mid-op does. */
+test('each player has its own executor: a rejection or a death on it names that player, whatever the executor says (S20 review)', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
+  const dir = tempDir();
+  const answer = (request) => {
+    if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
+    const raw = [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))];
+    return `${JSON.stringify({ ok: true, value: { raw, cpuMs: 1 } })}\n`;
+  };
+  const conns = {};
+  const warnings = [];
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: { log() {}, warn: (m) => warnings.push(m) },
+    connect: (hash, events) => { conns[hash] = fakeConnection(answer); return connectExecutor(conns[hash].stream, events); } });
+  await solver.poll(); await solver.poll();
+  assert.deepEqual(solver.health().held, ['aaaaaaaa', 'bbbbbbbb'], 'two players, two executors');
+  conns.aaaaaaaa.reply('{"event":"rejected","hash":"bbbbbbbb"}\n'.repeat(10_000));   // a flood that names the other player
+  assert.deepEqual(solver.health().held, ['bbbbbbbb'], 'the rejecting connection\'s player goes, the one it named stays');
+  assert.equal(conns.aaaaaaaa.stream.destroyed, true, 'its executor is hung up on');
+  assert.equal(warnings.filter((w) => /unhandled promise rejection/.test(w)).length, 1, 'one WARN, not one per event');
+  assert.deepEqual(await solver.solve({ playerId: 'bbbbbbbb', n: ['abc'], s: [] }), [200, { n: { abc: 'cbaA' }, s: {} }]);
+  conns.bbbbbbbb.stream.destroy();                                 // escaped code exits its executor between ops
+  await new Promise((r) => setImmediate(r));
+  assert.equal(fs.readFileSync(path.join(dir, 'building'), 'utf8'), 'bbbbbbbb', 'the next start must drop this player');
+  yt.close();
+});
+
+/** Cubic r1 (S20): systemd drops a connection past MaxConnections, e.g. while executors an escaped player kept alive fill the
+ *  socket. That executor never ran the player, so the new player is not blamed: the marker goes and the next start builds it. */
+test('an executor that dies before it is ready blames no player (Cubic r1, S20)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  let dead = null;
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: quiet, connect: (hash, events) => {
+    const c = fakeConnection(null, { ready: false });
+    setImmediate(() => c.stream.destroy());                         // systemd's "Too many incoming connections"
+    return connectExecutor(c.stream, { ...events, onDead: (why, ready) => {
+      events.onDead(why, ready);                                     // production exits right here: the state it leaves
+      dead = [why, ready, fs.existsSync(path.join(dir, 'building')), fs.existsSync(path.join(dir, 'aaaaaaaa.js')), c.sent.length];
+    } });
+  } });
+  await solver.poll();
+  assert.deepEqual(dead, ['hung up', false, false, true, 0], '[why, ready, marker, cached player, requests sent before ready]');
+  yt.close();
+});
+
+test('a solve that waited past the backend\'s timeout is skipped, and at most 32 wait (S20 review)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  let clock = Date.now();
+  let release = null;
+  const answer = (request) => {
+    if (request.op !== 'solve') return '{"ok":true,"value":{"cpuMs":1}}\n';
+    return `${JSON.stringify({ ok: true, value: { raw: [request.n.map((x) => x.split('').reverse().join('') + 'A'), request.s.map((x) => x.slice(1))] } })}\n`;
+  };
+  let hold = false;
+  const solver = createSolver({ origin: yt.url, cacheDir: tempDir(), log: quiet, now: () => clock,
+    connect: (hash, events) => {
+      const c = fakeConnection((request) => (hold && request.op === 'solve' ? (release = () => c.reply(answer(request)), '') : answer(request)));
+      return connectExecutor(c.stream, events);
+    } });
+  await solver.poll();
+  hold = true;
+  const first = solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] });
+  const waiting = Array.from({ length: 32 }, () => solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }));
+  assert.deepEqual(await solver.solve({ playerId: 'aaaaaaaa', n: ['abc'], s: [] }), [503, { error: 'busy' }]);
+  await new Promise((r) => setImmediate(r));
+  clock += 1_001;                                                  // the backend gave up on all of them
+  release();
+  assert.deepEqual((await first)[0], 200);
+  assert.deepEqual(new Set((await Promise.all(waiting)).map(([status]) => status)), new Set([503]), 'answered nobody');
   yt.close();
 });

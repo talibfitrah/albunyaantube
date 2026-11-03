@@ -101,6 +101,52 @@ describe('youtubeDataApi', () => {
     });
   });
 
+  // A hung request must fail (into the caller's error state) instead of spinning forever.
+  // Safari < 16 has no AbortSignal.timeout, and Safari can reject an aborted body read with a
+  // plain AbortError, so both are simulated here.
+  it('fails a request that does not answer within 30 seconds', async () => {
+    vi.useFakeTimers();
+    const timeout = AbortSignal.timeout;
+    (AbortSignal as { timeout?: unknown }).timeout = undefined;
+    try {
+      mockFetch.mockImplementationOnce((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
+      }));
+      const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error & { code?: string }) => `${e.code}: ${e.message}`);
+
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(await Promise.race([outcome, 'pending'])).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await Promise.race([outcome, 'pending'])).toBe('REQUEST_TIMEOUT: YouTube API request timed out');
+    } finally {
+      AbortSignal.timeout = timeout;
+      vi.useRealTimers();
+    }
+  });
+
+  // The status is the useful signal (e.g. a 403 quota error); a stalled error body must not hide it,
+  // and the stalled read is still aborted at the deadline instead of staying open.
+  it('reports the HTTP status even when the error body never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      let signal: AbortSignal | undefined;
+      mockFetch.mockImplementationOnce(async (_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return { ok: false, status: 403, text: () => new Promise(() => {}) };
+      });
+      const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error & { code?: string }) => `${e.code}: ${e.message}`);
+
+      await vi.advanceTimersByTimeAsync(0);
+      expect(await Promise.race([outcome, 'pending'])).toBe('YOUTUBE_REQUEST_FAILED: YouTube API request failed (HTTP 403)');
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(signal?.aborted).toBe(true);
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe('isYouTubeDataApiAvailable', () => {
     it('should return true when API key is configured', async () => {
       const { isYouTubeDataApiAvailable } = await import('@/services/youtubeDataApi');

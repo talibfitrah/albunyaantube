@@ -88,12 +88,9 @@ import UIKit
         hidden.replaceCurrentItem(with: nil)
         let fresh = AVPlayerItem(asset: item.asset)
         configure(fresh)
-        let now = player.currentTime()
+        let now = PlayerHostView.position(of: player)
         player.replaceCurrentItem(with: fresh)
-        player.seek(to: now, toleranceBefore: .zero, toleranceAfter: .zero)
-        #if DEBUG
-        print("HDStager: HD swapped in at \(now.seconds) s")   // read by the device leg (Task 23), deleted in Task 24
-        #endif
+        PlayerHostView.seek(player, to: now, exact: true)
     }
 
     // MARK: - the rules (pure)
@@ -147,7 +144,7 @@ import UIKit
         // Stage 6 I-M4: a cast holds playback, so the paused local player is nobody's to upgrade.
         guard eligible, !model.pausedForCast, let pending = model.stageableUpgrade(),
               case .hls(let masterURL, _, _, _, _) = pending.stream, let visible = player.currentItem else { return nil }
-        let position = player.currentTime().seconds
+        let position = PlayerHostView.position(of: player)
         guard let stager, stager.masterURL == masterURL else {
             guard standardHasHeadroom(ranges(visible), position: position, duration: duration(visible)),
                   loops || need(position: position, duration: duration(visible)) != nil else { return nil }

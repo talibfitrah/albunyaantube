@@ -1,6 +1,7 @@
 export const messages = {
   en: {
-    // Backend typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>.
+    // Typed error codes, looked up by apiErrorToMessage() as apiErrors.<CODE>: the backend's, plus
+    // the client's own REQUEST_TIMEOUT and YOUTUBE_REQUEST_FAILED (services/http.ts, youtubeDataApi.ts).
     apiErrors: {
       MAIL_UNAVAILABLE: 'The email could not be sent — mail is not configured on the server.',
       LIVE_CATEGORY_ADMIN_ONLY: 'Only admins can add to the live category.',
@@ -11,7 +12,9 @@ export const messages = {
       LIVE_CATEGORY_FULL: 'The live category is full. Remove an entry first.',
       LIVE_CATEGORY_SHAPE: "A live category can't have a parent category or subcategories.",
       LIVE_CATEGORY_MEMBERS_INVALID: "This category holds items that aren't channels or live streams. Remove them first.",
-      RATE_LIMIT: 'Daily submission limit reached. Try again later.'
+      RATE_LIMIT: 'Daily submission limit reached. Try again later.',
+      REQUEST_TIMEOUT: 'The request timed out. Try again.',
+      YOUTUBE_REQUEST_FAILED: 'The YouTube request failed. Try again later.'
     },
     auth: {
       title: 'FitrahTube Admin',
@@ -556,6 +559,7 @@ export const messages = {
       },
       retry: 'Retry',
       close: 'Close',
+      loadMore: 'Load more',
       opensInNewTab: 'opens in a new tab'
     },
     videoPreview: {
@@ -1663,7 +1667,9 @@ export const messages = {
       LIVE_CATEGORY_FULL: 'فئة البث المباشر ممتلئة. احذف عنصرًا أولًا.',
       LIVE_CATEGORY_SHAPE: 'لا يمكن أن تكون لفئة البث المباشر فئة رئيسية أو فئات فرعية.',
       LIVE_CATEGORY_MEMBERS_INVALID: 'تحتوي هذه الفئة على عناصر ليست قنوات أو بثًا مباشرًا. احذفها أولًا.',
-      RATE_LIMIT: 'تم بلوغ الحد اليومي للإرسال. حاول مرة أخرى لاحقًا.'
+      RATE_LIMIT: 'تم بلوغ الحد اليومي للإرسال. حاول مرة أخرى لاحقًا.',
+      REQUEST_TIMEOUT: 'انتهت مهلة الطلب. حاول مرة أخرى.',
+      YOUTUBE_REQUEST_FAILED: 'فشل الطلب إلى يوتيوب. حاول مرة أخرى لاحقًا.'
     },
     auth: {
       title: 'إدارة فطرة تيوب',
@@ -2217,6 +2223,7 @@ export const messages = {
       },
       retry: 'إعادة المحاولة',
       close: 'إغلاق',
+      loadMore: 'تحميل المزيد',
       opensInNewTab: 'يفتح في علامة تبويب جديدة'
     },
     videoPreview: {
@@ -3106,7 +3113,9 @@ export const messages = {
       LIVE_CATEGORY_FULL: 'De livecategorie is vol. Verwijder eerst een item.',
       LIVE_CATEGORY_SHAPE: 'Een livecategorie kan geen bovenliggende categorie of subcategorieën hebben.',
       LIVE_CATEGORY_MEMBERS_INVALID: 'Deze categorie bevat items die geen kanalen of livestreams zijn. Verwijder ze eerst.',
-      RATE_LIMIT: 'Daglimiet voor inzendingen bereikt. Probeer het later opnieuw.'
+      RATE_LIMIT: 'Daglimiet voor inzendingen bereikt. Probeer het later opnieuw.',
+      REQUEST_TIMEOUT: 'Het verzoek duurde te lang. Probeer het opnieuw.',
+      YOUTUBE_REQUEST_FAILED: 'Het verzoek aan YouTube is mislukt. Probeer het later opnieuw.'
     },
     auth: {
       title: 'FitrahTube Beheer',
@@ -3658,6 +3667,7 @@ export const messages = {
       },
       retry: 'Opnieuw proberen',
       close: 'Sluiten',
+      loadMore: 'Meer laden',
       opensInNewTab: 'opent in een nieuw tabblad'
     },
     videoPreview: {

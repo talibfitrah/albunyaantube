@@ -1,0 +1,41 @@
+[Unit]
+Description=FitrahTube solver watchdog: SIGKILL a solver whose event loop stopped answering (S20)
+After=fitrah-solver.service
+
+[Service]
+Type=simple
+# S20: the vm timeout is not a hard bound. Node's watchdog calls TerminateExecution once, and if that lands while V8 runs Node's
+# host promise-reject callback (a realm's unhandled rejection, or import()'s host callback), it is caught and lost, so the realm
+# runs untimed and a for(;;) after it hangs the solver for good. A blocked process cannot rescue itself, and an in-process
+# watchdog thread needs --allow-worker, which lets host code start a Worker outside the permission model (R40). So: from here.
+# Since the S20 split the realm runs in the executor, and the gateway (fitrah-solver.service) exits itself when the executor
+# hangs; this still kills a gateway whose own loop stopped answering, for whatever reason.
+# Every 10 s; curl exits 28 only when the solver accepted (or queued) the connection but never answered within 45 s. Refused
+# (7: stopped, or in RestartSec) and any HTTP status, a warming 503 included (0), leave it to systemd's own restart logic.
+# 45 s: above the gateway's 30 s executor-op limit, and above one build's newContext + buildPlayer + selfTest, 10 s vm timeout each.
+# SIGKILL is an unclean exit, so the solver's Restart=on-failure restarts it after its RestartSec=60; its StartLimitBurst=4 an
+# hour then leaves it failed (the watchdog never starts it): `systemctl reset-failed fitrah-solver && systemctl start fitrah-solver`.
+# curl, not the solver's own node: root never runs a binary from /opt/fitrah-solver.
+ExecStart=/bin/sh -c 'while sleep 10; do curl -so /dev/null --max-time 45 http://127.0.0.1:4417/health; [ $$? -eq 28 ] && echo "FATAL solver accepted but did not answer /health within 45 s; SIGKILL" && systemctl kill --signal=SIGKILL fitrah-solver.service; done'
+Restart=always
+RestartSec=10
+# Root only for `systemctl kill` (systemd may check CAP_KILL as well as uid 0: keep it); the rest mirrors fitrah-solver.service,
+# minus ProtectProc=invisible, which hides /proc/1 and can make systemctl take itself for chrooted and skip the kill.
+CapabilityBoundingSet=CAP_KILL
+RestrictAddressFamilies=AF_UNIX AF_INET
+ProtectSystem=strict
+ProtectHome=yes
+PrivateTmp=yes
+PrivateDevices=yes
+NoNewPrivileges=yes
+InaccessiblePaths=-/opt/albunyaan
+SystemCallArchitectures=native
+RestrictNamespaces=yes
+LockPersonality=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+
+[Install]
+WantedBy=multi-user.target

@@ -1,7 +1,8 @@
 [Unit]
-Description=FitrahTube playback challenge solver (yt-dlp-ejs 0.8.0, Node 22)
-After=network-online.target
+Description=FitrahTube playback challenge solver gateway: HTTP for the backend, base.js fetch and cache (runs no player JS, S20)
+After=network-online.target fitrah-solver-exec.socket
 Wants=network-online.target
+Requires=fitrah-solver-exec.socket
 StartLimitIntervalSec=3600
 StartLimitBurst=4
 
@@ -10,12 +11,15 @@ Type=simple
 DynamicUser=yes
 CacheDirectory=fitrah-solver
 WorkingDirectory=/opt/fitrah-solver
-Environment=SOLVER_BIND=127.0.0.1 SOLVER_PORT=4417
-ExecStart=/opt/fitrah-solver/node/bin/node --experimental-vm-modules --permission \
+Environment=SOLVER_BIND=127.0.0.1 SOLVER_PORT=4417 SOLVER_EXEC_SOCKET=/run/fitrah-solver-exec.sock
+ExecStart=/opt/fitrah-solver/node/bin/node --permission \
   --allow-fs-read=/opt/fitrah-solver/ --allow-fs-read=/var/cache/fitrah-solver/ \
   --allow-fs-write=/var/cache/fitrah-solver/ \
-  --max-old-space-size=256 /opt/fitrah-solver/app/server.mjs
-MemoryMax=384M
+  --max-old-space-size=96 /opt/fitrah-solver/app/server.mjs
+# S20: the gateway exits when an executor dies or hangs (an executor stuck in escaped player code cannot notice its connection
+# closing), and every stop, a crash included, then SIGKILLs every executor. '+': as root, the one command here that is.
+ExecStopPost=-+/bin/systemctl kill --signal=SIGKILL fitrah-solver-exec@*.service
+MemoryMax=192M
 CPUWeight=20
 Restart=on-failure
 RestartSec=60
@@ -24,6 +28,8 @@ InaccessiblePaths=-/opt/albunyaan
 PrivateDevices=yes
 CapabilityBoundingSet=
 RestrictAddressFamilies=AF_INET AF_INET6 AF_UNIX
+# Cubic r14: no LAN and no cloud metadata. YouTube (public) and loopback (the backend's requests, the DNS stub) stay.
+IPAddressDeny=10.0.0.0/8 172.16.0.0/12 192.168.0.0/16 169.254.0.0/16 100.64.0.0/10 fc00::/7 fe80::/10
 SystemCallArchitectures=native
 RestrictNamespaces=yes
 LockPersonality=yes

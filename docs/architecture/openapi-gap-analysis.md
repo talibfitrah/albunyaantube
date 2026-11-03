@@ -107,16 +107,7 @@ All endpoints documented in the OpenAPI specification have corresponding impleme
 
 | Endpoint | OpenAPI Schema | Actual Implementation | Impact |
 |----------|----------------|----------------------|--------|
-| `GET /admin/youtube/search/unified` | `type: array<object>` | Returns `List<EnrichedSearchResult>` | High - Missing DTO schema |
-| `GET /admin/youtube/search/all` | Generic response | Returns `SearchPageResponse` | High - Missing schema |
-| `GET /admin/youtube/search/channels` | Generic response | Returns `List<EnrichedSearchResult>` | High - Missing schema |
-| `GET /admin/youtube/search/playlists` | Generic response | Returns `List<EnrichedSearchResult>` | High - Missing schema |
-| `GET /admin/youtube/search/videos` | Generic response | Returns `List<EnrichedSearchResult>` | High - Missing schema |
 | `GET /admin/youtube/check-existing` | Generic response | Returns `ExistingContentResponse` | High - Missing DTO schema |
-| `GET /admin/youtube/channels/{channelId}` | Generic response | Returns `ChannelDetailsDto` | Medium - Schema exists but not referenced |
-| `GET /admin/youtube/channels/{channelId}/videos` | Generic response | Returns `List<StreamItemDto>` | Medium - Missing schema reference |
-| `GET /admin/youtube/channels/{channelId}/playlists` | Generic response | Returns `List<PlaylistItemDto>` | Medium - Missing schema reference |
-| `GET /admin/youtube/playlists/{playlistId}/videos` | Generic response | Returns `List<StreamItemDto>` | Medium - Missing schema reference |
 | `GET /admin/users/role/{role}` | Generic response | Returns `List<User>` | Low - Schema exists |
 | `GET /player/next-up/{videoId}` | Generic response | Returns `NextUpDto` | High - Missing DTO schema |
 | `GET /admin/content` | Generic response | Returns `ContentLibraryResponse` | High - Missing DTO schema |
@@ -136,35 +127,32 @@ All endpoints documented in the OpenAPI specification have corresponding impleme
 
 **CRITICAL: Missing DTO Schemas (Need to be added to `components/schemas`)**
 
-1. **EnrichedSearchResult** - Used by YouTube search endpoints
-2. **SearchPageResponse** - Paginated YouTube search results
-3. **ExistingContentResponse** - Check which IDs exist in registry
-4. **ExistingContentRequest** - Request payload for check-existing endpoint
-5. **StreamItemDto** - Video/stream items in playlists/channels
-6. **StreamDetailsDto** - Detailed video/stream information
-7. **PlaylistItemDto** - Playlist items in channels
-8. **ChannelDetailsDto** - Already partially documented, needs completion
-9. **PlaylistDetailsDto** - Already partially documented, needs completion
-10. **NextUpDto** - Next-up video recommendations
-11. **PendingApprovalDto** - Pending approval items
-12. **ApprovalRequestDto** - Approval request payload
-13. **ApprovalResponseDto** - Approval response
-14. **RejectionRequestDto** - Rejection request payload
-15. **ContentLibraryResponse** - Content library paginated response
-16. **BulkActionRequest** - Bulk operations request
-17. **BulkActionResponse** - Bulk operations response
-18. **BulkCategoryAssignmentRequest** - Bulk category assignment
-19. **DownloadPolicyDto** - Download policy response
-20. **DownloadTokenDto** - Download token response
-21. **DownloadManifestDto** - Download manifest response
-22. **DashboardMetricsResponse** - Dashboard metrics (partially documented)
-23. **CategoryStats** - Category statistics
-24. **ImportResponse** - Import operation results
-25. **ExportResponse** - Export operation results
-26. **SimpleImportResponse** - Simple format import results
-27. **SimpleExportResponse** - Simple format export results
-28. **ValidationRun** - Video validation run details
-29. **ValidationRunResponse** - Validation run response
+1. **ExistingContentResponse** - Check which IDs exist in registry
+2. **ExistingContentRequest** - Request payload for check-existing endpoint
+3. **StreamItemDto** - Video/stream items in playlists/channels
+4. **StreamDetailsDto** - Detailed video/stream information
+5. **ChannelDetailsDto** - Already partially documented, needs completion
+6. **PlaylistDetailsDto** - Already partially documented, needs completion
+7. **NextUpDto** - Next-up video recommendations
+8. **PendingApprovalDto** - Pending approval items
+9. **ApprovalRequestDto** - Approval request payload
+10. **ApprovalResponseDto** - Approval response
+11. **RejectionRequestDto** - Rejection request payload
+12. **ContentLibraryResponse** - Content library paginated response
+13. **BulkActionRequest** - Bulk operations request
+14. **BulkActionResponse** - Bulk operations response
+15. **BulkCategoryAssignmentRequest** - Bulk category assignment
+16. **DownloadPolicyDto** - Download policy response
+17. **DownloadTokenDto** - Download token response
+18. **DownloadManifestDto** - Download manifest response
+19. **DashboardMetricsResponse** - Dashboard metrics (partially documented)
+20. **CategoryStats** - Category statistics
+21. **ImportResponse** - Import operation results
+22. **ExportResponse** - Export operation results
+23. **SimpleImportResponse** - Simple format import results
+24. **SimpleExportResponse** - Simple format export results
+25. **ValidationRun** - Video validation run details
+26. **ValidationRunResponse** - Validation run response
 
 ### 4.2 Model Fields Missing from OpenAPI Schemas
 
@@ -349,10 +337,7 @@ PageResponse:
 **Status:** ⚠️ Partially complete - HIGH PRIORITY
 
 **Issues:**
-1. **All search endpoints return generic objects** instead of `EnrichedSearchResult`
-2. Missing `SearchPageResponse` schema for paginated results
-3. Missing `ExistingContentRequest` and `ExistingContentResponse` schemas
-4. Missing `ChannelDetailsDto`, `PlaylistDetailsDto`, `StreamDetailsDto`, `StreamItemDto`, `PlaylistItemDto` schemas
+1. Missing `ExistingContentRequest` and `ExistingContentResponse` schemas
 
 **Recommendation:** Add all YouTube-related DTOs to components/schemas
 
@@ -446,11 +431,9 @@ PageResponse:
 ### CRITICAL (Fix Immediately)
 
 1. **Add Missing YouTube DTOs** (Priority: Critical)
-   - `EnrichedSearchResult`
-   - `SearchPageResponse`
    - `ExistingContentRequest`, `ExistingContentResponse`
    - `ChannelDetailsDto`, `PlaylistDetailsDto`, `StreamDetailsDto`
-   - `StreamItemDto`, `PlaylistItemDto`
+   - `StreamItemDto`
    
 2. **Add Pagination Response Schemas** (Priority: Critical)
    - `CursorPageDto<T>` generic structure
@@ -527,7 +510,7 @@ PageResponse:
 **Estimated Effort:** 4-6 hours
 
 Create schemas for:
-- YouTube DTOs (7 schemas)
+- YouTube DTOs (6 schemas)
 - Pagination responses (2 schemas)
 - Update core models (Channel, Playlist, Video)
 
@@ -535,7 +518,7 @@ Create schemas for:
 **Estimated Effort:** 2-3 hours
 
 Update all endpoints to reference explicit schemas instead of generic `object`:
-- YouTube endpoints (12 endpoints)
+- YouTube endpoints (2 endpoints)
 - Content Library endpoints (5 endpoints)
 - Download endpoints (6 endpoints)
 
@@ -567,11 +550,9 @@ Create schemas for:
 ## Section 9: Implementation Checklist
 
 ### Phase 1: Critical Fixes (Week 1)
-- [ ] Add `EnrichedSearchResult` schema
-- [ ] Add `SearchPageResponse` schema
 - [ ] Add `ExistingContentRequest`, `ExistingContentResponse` schemas
 - [ ] Add `ChannelDetailsDto`, `PlaylistDetailsDto`, `StreamDetailsDto` schemas
-- [ ] Add `StreamItemDto`, `PlaylistItemDto` schemas
+- [ ] Add `StreamItemDto` schema
 - [ ] Update `Channel`, `Playlist`, `Video` schemas with missing fields
 - [ ] Add `CursorPageDto<T>` generic schema
 - [ ] Update all YouTube endpoints to use explicit schemas
@@ -620,15 +601,12 @@ Create schemas for:
 ### Implemented DTOs (Need to be Added to OpenAPI)
 
 1. **Search & YouTube Integration**
-   - `EnrichedSearchResult`
-   - `SearchPageResponse`
    - `ExistingContentRequest`
    - `ExistingContentResponse`
    - `ChannelDetailsDto`
    - `PlaylistDetailsDto`
    - `StreamDetailsDto`
    - `StreamItemDto`
-   - `PlaylistItemDto`
 
 2. **Pagination**
    - `CursorPageDto<T>`

@@ -311,7 +311,7 @@ import UIKit
     }
 
     private func publishNowPlaying() {
-        let elapsed = player?.currentTime().seconds ?? 0
+        let elapsed = player.map(PlayerHostView.position(of:)) ?? 0
         // CF-B6: `Resolved` carries no duration, so the item's own is the authority the moment it
         // is finite (HLS reports `indefinite` until the playlist is parsed, and always for a live
         // stream); `NowPlayingSnapshot.make` falls back to `args.durationSeconds` until then.
@@ -416,7 +416,7 @@ import UIKit
     }
 
     private func skip(by interval: TimeInterval) -> MPRemoteCommandHandlerStatus {
-        act { $0.seek(to: $0.currentTime() + CMTime(seconds: interval, preferredTimescale: 600)) }
+        act { $0.seek(to: CMTime(seconds: PlayerHostView.position(of: $0) + interval, preferredTimescale: 600)) }
     }
 
     private func removeRemoteCommands() {

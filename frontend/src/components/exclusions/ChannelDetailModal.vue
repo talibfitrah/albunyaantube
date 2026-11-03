@@ -79,8 +79,8 @@
               <p>{{ $t('common.loading') }}</p>
             </div>
 
-            <!-- Error State -->
-            <div v-else-if="error" class="error-state">
+            <!-- Error State: init failed (a page's failure keeps the rows, below) -->
+            <div v-else-if="error && !initialized" class="error-state">
               <p>{{ error }}</p>
               <a
                 :href="`https://www.youtube.com/channel/${channelYoutubeId}`"
@@ -97,7 +97,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="items.length === 0" class="empty-state">
+            <div v-else-if="items.length === 0 && !nextPageToken && !error" class="empty-state">
               <p>{{ $t('exclusions.channelDetail.noResults') }}</p>
             </div>
 
@@ -150,14 +150,25 @@
             </div>
 
             <!-- Load More Indicator -->
-            <div v-if="isLoading && items.length > 0" class="loading-more">
+            <div v-if="(isLoading && items.length > 0) || scanning" class="loading-more">
               <div class="spinner"></div>
               <p>{{ $t('exclusions.channelDetail.loadingMore') }}</p>
             </div>
 
             <!-- No More Items -->
-            <div v-if="!hasMore && items.length > 0" class="no-more">
+            <div v-if="!hasMore && !nextPageToken && items.length > 0" class="no-more">
               {{ $t('exclusions.channelDetail.noMoreItems') }}
+            </div>
+
+            <!-- Auto-loading paused after a run of empty pages; more pages exist -->
+            <div v-if="!hasMore && nextPageToken && !error" class="no-more">
+              <button class="retry-btn" @click="continueLoading">{{ $t('common.loadMore') }}</button>
+            </div>
+
+            <!-- A page failed after init: its token is still current, so Retry fetches that page again -->
+            <div v-if="error && initialized" class="error-state" role="alert">
+              <p>{{ error }}</p>
+              <button class="retry-btn" @click="continueLoading">{{ $t('common.retry') }}</button>
             </div>
           </div>
 
@@ -192,11 +203,12 @@
 </template>
 
 <script setup lang="ts">
-import { ref, watch, reactive, computed } from 'vue'
+import { ref, watch, reactive, computed, onBeforeUnmount } from 'vue'
 import { useI18n } from 'vue-i18n'
 import { useInfiniteScroll } from '@/composables/useInfiniteScroll'
 import { fetchChannelExclusions, addChannelExclusion, removeChannelExclusion } from '@/services/exclusions'
 import { getChannelDetails, getChannelVideos, getChannelPlaylists, getChannelShorts, getChannelLiveStreams } from '@/services/youtubeService'
+import { apiErrorOrMessage } from '@/services/http'
 import VideoPreviewModal from '@/components/VideoPreviewModal.vue'
 import PlaylistDetailModal from '@/components/exclusions/PlaylistDetailModal.vue'
 
@@ -220,6 +232,8 @@ const hasRegistryId = computed(() => !!props.channelId)
 
 // State
 const activeTab = ref<'videos' | 'shorts' | 'live' | 'playlists'>('videos')
+// Videos, Shorts and Live share the video exclusion list.
+const exclusionType = computed(() => activeTab.value === 'playlists' ? 'playlist' : 'video')
 const searchQuery = ref('')
 const activeSearch = ref('')
 const items = ref<any[]>([])
@@ -227,9 +241,18 @@ const nextPageToken = ref<string | null>(null)
 const excludedIds = ref<Set<string>>(new Set())
 const actionLoading = reactive<Record<string, boolean>>({})
 const initialLoading = ref(false)
+// Details and exclusions loaded: rows can show their exclusion state, so a page error keeps them.
+const initialized = ref(false)
 const error = ref<string | null>(null)
 const channelDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
+// Bumped on every open, close, re-init and unmount: a late init from an older one is dropped.
+// Separate from requestIdCounter, which a search or page load bumps mid-open.
+let openId = 0
+// Successful exclusion writes so far. A read of the exclusions can reach the server before a write
+// commits yet answer after that write landed, so init reads again when a write landed during its read
+// (replaying the write instead could undo another admin's later change).
+let writeCount = 0
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -240,11 +263,20 @@ const nestedPlaylistYoutubeId = ref('')
 const nestedPlaylistRegistryId = ref('')
 
 // Infinite scroll
-const { containerRef, isLoading, hasMore, reset } = useInfiniteScroll({
+const { containerRef, isLoading, hasMore, reset, pageLoaded, resume } = useInfiniteScroll({
   threshold: 200,
   throttleMs: 500,
-  onLoadMore: loadMore
+  // Search, Shorts and Live pages cost 101 quota units (search.list): no unattended empty-page scans.
+  maxEmptyPages: 1,
+  // Init loads page 1 itself; a scroll during it would steal that load and flash "No results".
+  // After an init error, loading would clear it and show rows without their exclusion state.
+  onLoadMore: () => { if (!initialLoading.value && !error.value) loadMore() }
 })
+
+onBeforeUnmount(() => { openId++ })
+
+// No rows yet but more pages are on the way (e.g. a search whose first pages had no matches).
+const scanning = computed(() => !items.value.length && hasMore.value && !!nextPageToken.value && !error.value)
 
 // Watch for modal open
 watch(() => props.open, (isOpen) => {
@@ -253,6 +285,7 @@ watch(() => props.open, (isOpen) => {
   } else {
     // Invalidate any in-flight requests when closing
     requestIdCounter++
+    openId++
     isLoading.value = false
 
     // Reset state when closed
@@ -266,7 +299,9 @@ watch(() => props.open, (isOpen) => {
 }, { immediate: true })
 
 async function loadInitialData() {
+  const id = ++openId
   initialLoading.value = true
+  initialized.value = false
   error.value = null
   items.value = []
   nextPageToken.value = null
@@ -275,6 +310,7 @@ async function loadInitialData() {
   try {
     // Load channel details
     const detailsResponse = await getChannelDetails(props.channelYoutubeId)
+    if (id !== openId) return
     channelDetails.value = {
       name: detailsResponse.channel?.name || '',
       thumbnailUrl: detailsResponse.channel?.avatarUrl || '',
@@ -285,25 +321,33 @@ async function loadInitialData() {
     // Load exclusions — videos/shorts/live all use the videos exclusion list
     // Skip when channelId is empty (e.g., previewing from search results)
     if (props.channelId) {
-      const exclusions = await fetchChannelExclusions(props.channelId)
+      let exclusions: Awaited<ReturnType<typeof fetchChannelExclusions>>
+      let writesBefore: number
+      do {
+        writesBefore = writeCount
+        exclusions = await fetchChannelExclusions(props.channelId)
+        if (id !== openId) return
+      } while (writeCount !== writesBefore)
       excludedIds.value = new Set(
         activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
       )
     } else {
       excludedIds.value = new Set()
     }
+    initialized.value = true
 
     // Load initial items
     await loadMore()
   } catch (err: any) {
+    if (id !== openId) return
     const status = err?.response?.status;
     if (status === 404) {
       error.value = $t('exclusions.channelDetail.fetchError');
     } else {
-      error.value = err.message || $t('common.error');
+      error.value = apiErrorOrMessage(err, $t, 'common.error.message');
     }
   } finally {
-    initialLoading.value = false
+    if (id === openId) initialLoading.value = false
   }
 }
 
@@ -361,7 +405,7 @@ async function loadMore() {
     // Append new items
     items.value.push(...result.items)
     nextPageToken.value = result.nextPageToken || null
-    hasMore.value = !!result.nextPageToken
+    pageLoaded(result.items.length, !!result.nextPageToken)
   } catch (err: any) {
     // Verify context still matches before updating error state
     if (
@@ -374,7 +418,7 @@ async function loadMore() {
       return
     }
 
-    error.value = err.message || $t('common.error')
+    error.value = apiErrorOrMessage(err, $t, 'common.error.message')
     hasMore.value = false
   } finally {
     // Only clear loading if this is still the latest request
@@ -402,6 +446,11 @@ function switchTab(tab: 'videos' | 'shorts' | 'live' | 'playlists') {
   loadInitialData()
 }
 
+function continueLoading() {
+  resume()
+  loadMore()
+}
+
 function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
@@ -411,21 +460,32 @@ function performSearch() {
   items.value = []
   nextPageToken.value = null
   reset()
-  loadMore()
+  // The search replaces init's first page: its rows must not wait behind init's spinner for it.
+  if (initialized.value) initialLoading.value = false
+  // After an init error the exclusion state may be missing: re-run init (with this query) instead.
+  if (error.value && !initialized.value) loadInitialData()
+  else loadMore()
 }
 
 function isExcluded(id: string): boolean {
   return excludedIds.value.has(id)
 }
 
+// A write resolving after a close/reopen or tab switch must not touch another list's local state.
+function isSameExclusionList(channelId: string, type: string): boolean {
+  return channelId === props.channelId && type === exclusionType.value
+}
+
 async function addExclusion(itemId: string) {
   if (!hasRegistryId.value) return
+  const channelId = props.channelId
+  const type = exclusionType.value
   actionLoading[itemId] = true
 
   try {
-    const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
-    await addChannelExclusion(props.channelId, type, itemId)
-    excludedIds.value.add(itemId)
+    await addChannelExclusion(channelId, type, itemId)
+    writeCount++
+    if (isSameExclusionList(channelId, type)) excludedIds.value.add(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.excludeError'))
@@ -436,12 +496,14 @@ async function addExclusion(itemId: string) {
 
 async function removeExclusion(itemId: string) {
   if (!hasRegistryId.value) return
+  const channelId = props.channelId
+  const type = exclusionType.value
   actionLoading[itemId] = true
 
   try {
-    const type = activeTab.value === 'playlists' ? 'playlist' : 'video'
-    await removeChannelExclusion(props.channelId, type, itemId)
-    excludedIds.value.delete(itemId)
+    await removeChannelExclusion(channelId, type, itemId)
+    writeCount++
+    if (isSameExclusionList(channelId, type)) excludedIds.value.delete(itemId)
     emit('updated')
   } catch (err: any) {
     alert($t('exclusions.channelDetail.removeError'))

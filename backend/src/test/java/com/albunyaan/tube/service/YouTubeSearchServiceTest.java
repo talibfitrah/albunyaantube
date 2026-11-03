@@ -20,6 +20,8 @@ import org.schabi.newpipe.extractor.channel.ChannelInfoItem;
 import org.schabi.newpipe.extractor.exceptions.ReCaptchaException;
 import org.schabi.newpipe.extractor.playlist.PlaylistInfoItem;
 import org.schabi.newpipe.extractor.stream.StreamInfoItem;
+import org.springframework.http.HttpStatus;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.List;
 import java.util.Map;
@@ -285,6 +287,30 @@ class YouTubeSearchServiceTest {
         assertThatThrownBy(() -> svc.search("fail", YouTubeContentType.CHANNEL, null))
                 .isInstanceOf(YouTubeSearchException.class)
                 .hasMessageContaining("NewPipe down");
+    }
+
+    // =========================================================
+    // Later pages: a bad token is the client's fault (400), a failed fetch is upstream's (502)
+    // =========================================================
+
+    @Test
+    void search_clientRejectsPageToken_staysA400NotA502() throws Exception {
+        when(newPipeClient.search("q", YouTubeContentType.VIDEO, "garbage"))
+                .thenThrow(new ResponseStatusException(HttpStatus.BAD_REQUEST, "Invalid pageToken"));
+
+        assertThatThrownBy(() -> svc.search("q", YouTubeContentType.VIDEO, "garbage"))
+                .isInstanceOf(ResponseStatusException.class)
+                .satisfies(e -> assertThat(((ResponseStatusException) e).getStatusCode()).isEqualTo(HttpStatus.BAD_REQUEST));
+    }
+
+    @Test
+    void search_laterPageFetchFails_throwsYouTubeSearchException() throws Exception {
+        String token = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false#EqADEgRjYXRz";   // the shape the backend issues
+        when(newPipeClient.search("q", YouTubeContentType.VIDEO, token))
+                .thenThrow(new java.io.IOException("continuation 503"));
+
+        assertThatThrownBy(() -> svc.search("q", YouTubeContentType.VIDEO, token))
+                .isInstanceOf(YouTubeSearchException.class);
     }
 
     // =========================================================

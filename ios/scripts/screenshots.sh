@@ -81,11 +81,12 @@ TEST_RUNNER_FITRAH_SHOTS_DIR="$PLAYER_OUT" xcodebuild test \
 xcrun simctl shutdown "iPhone 17" >/dev/null 2>&1
 
 # Task 4 (quality ceiling): the FitrahTube quality menu open, anchored on our own SwiftUI control
-# (player.qualityMenu.button / player.qualityOption.*) -- never AVKit chrome.
+# (player.qualityMenu.button / player.qualityOption.*) -- never AVKit chrome. Live (network): the rows are the stream's
+# real renditions and a bundled single file has one, so the test skips unless SHORTS_LIVE=1.
 QUALITY_OUT="$ROOT/.superpowers/sdd/2026-08-24-ios-phase2b1-player-core/screenshots/b1-task4"
 echo "== player quality menu screenshot -> $QUALITY_OUT =="
 rm -rf "${QUALITY_OUT:?}"
-TEST_RUNNER_FITRAH_SHOTS_DIR="$QUALITY_OUT" xcodebuild test \
+TEST_RUNNER_SHORTS_LIVE=1 TEST_RUNNER_FITRAH_SHOTS_DIR="$QUALITY_OUT" xcodebuild test \
     -project FitrahTube.xcodeproj \
     -scheme FitrahTube \
     -testPlan FitrahTubeUITests \

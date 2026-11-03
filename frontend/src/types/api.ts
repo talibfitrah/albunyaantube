@@ -29,15 +29,10 @@ export type PageInfo = components['schemas']['PageInfo']
 export type CursorPageDto = components['schemas']['CursorPageDto']
 
 // YouTube Search
-export type EnrichedSearchResult = components['schemas']['EnrichedSearchResult']
-export type SearchPageResponse = components['schemas']['SearchPageResponse']
 export type ChannelDetailsDto = components['schemas']['ChannelDetailsDto']
 export type PlaylistDetailsDto = components['schemas']['PlaylistDetailsDto']
 export type StreamDetailsDto = components['schemas']['StreamDetailsDto']
 export type StreamItemDto = components['schemas']['StreamItemDto']
-export type PlaylistItemDto = components['schemas']['PlaylistItemDto']
-export type PaginatedStreamItems = components['schemas']['PaginatedStreamItems']
-export type PaginatedPlaylistItems = components['schemas']['PaginatedPlaylistItems']
 
 // Approval Workflow
 export type ApprovalMetadata = components['schemas']['ApprovalMetadata']

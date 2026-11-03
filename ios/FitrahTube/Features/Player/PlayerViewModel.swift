@@ -179,8 +179,41 @@ extension StreamState {
     /// The quality menu's current pick (spec §10, `QualityCeiling.swift`). Session-only, like
     /// Android's -- `QualityTrackSelector` never persists it either (player.md §4.3). `PlayerHostView`
     /// re-applies this to every new `AVPlayerItem` it builds, so a pick made mid-play survives a
-    /// re-resolve.
+    /// re-resolve. A picked rendition ends with its video (`beginStream`).
     var selectedQuality: QualityOption = .auto
+
+    /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
+    /// renditions load, and for a single file; Auto and Data Saver alone while its master could not be read.
+    private(set) var qualityOptions: [QualityOption] = []
+    private(set) var qualityLoad: Task<Void, Never>?
+    /// The stream `qualityOptions` belong to, and whether its master could not be read (read again on its next item).
+    private var qualityStreamURL: URL?
+    private var qualityReadFailed = false
+    private let masterTransport: any BoundedHTTPTransport
+
+    /// Called for every item the host builds. Another stream (another video, the HD hand-over) reloads the rows and clears
+    /// the old ones at once; the same stream (a lower pick's rebuild, the audio-only swap) keeps them, so no flicker.
+    private func loadQualityOptions() {
+        let resolved = currentItem == nil ? nil : state.resolved
+        let url = resolved.map { PlayerHostView.streamURL($0.stream) }
+        guard url != qualityStreamURL || qualityReadFailed else { return }
+        if url != qualityStreamURL { qualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
+        qualityStreamURL = url
+        qualityReadFailed = false
+        qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
+        qualityLoad = resolved.map { resolved in
+            Task {
+                let sizes = await QualityOption.variantSizes(of: resolved, transport: masterTransport)
+                guard !Task.isCancelled, url == qualityStreamURL else { return }
+                // A master that could not be read is read again for the next item built on this stream; meanwhile the two
+                // rows no rendition decides stay, so a carried Data Saver can be turned off (Cubic r2 P3).
+                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else {
+                    qualityOptions = [.auto, .dataSaver]
+                    qualityReadFailed = true
+                }
+            }
+        }
+    }
 
     /// The audio-language menu's sticky pick (`AudioLanguageMenu.swift`, player.md §2.2/§8.6): an
     /// extended-language-tag (or, for a track the asset gives no tag, its display name -- see
@@ -201,6 +234,7 @@ extension StreamState {
     var currentItem: AVPlayerItem? {
         didSet {
             guard currentItem !== oldValue else { return }
+            loadQualityOptions()
             audioLanguageGroup = nil
             audioLanguageOptions = []
             audioLanguageLoad = Task { await AudioLanguageMenu.load(self) }
@@ -419,8 +453,10 @@ extension StreamState {
          liveCheck: (@Sendable (_ channelId: String, _ videoId: String) async throws -> LiveChannelLives)? = nil,
          linkCheck: (@Sendable (_ videoId: String) async throws -> Void)? = nil,
          sleep: @escaping @Sendable (Duration) async throws -> Void = { try await Task.sleep(for: $0) },
-         clock: @escaping @Sendable () -> Date = { Date() }) {
+         clock: @escaping @Sendable () -> Date = { Date() },
+         masterTransport: any BoundedHTTPTransport = QualityOption.masterTransport) {
         self.resolver = resolver
+        self.masterTransport = masterTransport
         self.settings = settings
         self.args = args
         self.queueSource = queueSource
@@ -636,6 +672,8 @@ extension StreamState {
         liveHeartbeat?.cancel()              // it asks for the old id; the new stream's landing starts its own
         args = next
         currentTime = 0                      // a new video starts at the beginning
+        // A picked rendition is the old stream's own size (Cubic r1 P2); Data Saver is a mode and carries.
+        if case .rendition = selectedQuality { selectedQuality = .auto }
         videoZoomed = false                  // B5 Task 3: the fit/zoom override is per stream
         videoIsPortrait = false              // unknown reads as landscape until the new item is ready
         airPlayFellBack = false              // Task 8: the mirroring fallback is per stream too

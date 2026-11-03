@@ -16,6 +16,7 @@ describe('useInfiniteScroll', () => {
   const createTestComponent = (options: {
     threshold?: number;
     throttleMs?: number;
+    maxEmptyPages?: number;
     onLoadMore: () => void;
   }) => {
     return defineComponent({
@@ -65,8 +66,9 @@ describe('useInfiniteScroll', () => {
 
       await wrapper.vm.$nextTick();
 
-      expect(wrapper.vm.isLoading).toBe(true);
       expect(onLoadMore).toHaveBeenCalledTimes(1);
+      // The caller owns isLoading; pre-setting it made callers' guards skip the fetch (prod bug).
+      expect(wrapper.vm.isLoading).toBe(false);
     }
   });
 
@@ -118,7 +120,8 @@ describe('useInfiniteScroll', () => {
 
   it('should throttle scroll events', async () => {
     const onLoadMore = vi.fn().mockImplementation((wrapper: any) => {
-      // Simulate async load completion
+      // Like the real callers: set isLoading, then clear it when the async load completes
+      wrapper.vm.isLoading = true;
       setTimeout(() => {
         wrapper.vm.isLoading = false;
       }, 50);
@@ -226,6 +229,85 @@ describe('useInfiniteScroll', () => {
     wrapper.unmount();
 
     expect(removeEventListenerSpy).toHaveBeenCalledWith('scroll', expect.any(Function));
+  });
+
+  it('moves the listener when the container is re-created (v-if)', async () => {
+    const onLoadMore = vi.fn();
+    const Comp = defineComponent({
+      props: { show: Boolean },
+      setup(_, { expose }) {
+        const s = useInfiniteScroll({ onLoadMore });
+        expose(s);
+        return s;
+      },
+      render() {
+        return this.show ? h('div', { ref: 'containerRef' }) : h('span');
+      }
+    });
+    const wrapper = mount(Comp, { props: { show: true } });
+    await wrapper.vm.$nextTick();
+    const first = wrapper.vm.containerRef as HTMLElement;
+    expect(first).toBeInstanceOf(HTMLElement);
+
+    await wrapper.setProps({ show: false });
+    await wrapper.setProps({ show: true });
+    const second = wrapper.vm.containerRef as HTMLElement;
+    expect(second).toBeInstanceOf(HTMLElement);
+    expect(second).not.toBe(first);
+
+    // jsdom scroll metrics are 0, so any attached listener fires onLoadMore.
+    first.dispatchEvent(new Event('scroll'));
+    expect(onLoadMore).not.toHaveBeenCalled();
+    second.dispatchEvent(new Event('scroll'));
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+  });
+
+  // Underfill: a page that doesn't overflow the container never fires a scroll event.
+  it('loads more without a scroll when the content does not fill the container', async () => {
+    const onLoadMore = vi.fn();
+    const wrapper = mount(createTestComponent({ onLoadMore }));
+    const container = wrapper.vm.containerRef as HTMLElement;
+    Object.defineProperty(container, 'scrollHeight', { value: 500 });
+    Object.defineProperty(container, 'clientHeight', { value: 500 });
+
+    await wrapper.vm.$nextTick(); // container attached
+    vi.advanceTimersByTime(0);
+    expect(onLoadMore).toHaveBeenCalledTimes(1);
+
+    // The caller's load ends and the page still fits: check again.
+    wrapper.vm.isLoading = true;
+    await wrapper.vm.$nextTick();
+    wrapper.vm.isLoading = false;
+    await wrapper.vm.$nextTick();
+    vi.advanceTimersByTime(500);
+    expect(onLoadMore).toHaveBeenCalledTimes(2);
+  });
+
+  it('does not auto-load a container that is not laid out', async () => {
+    const onLoadMore = vi.fn();
+    mount(createTestComponent({ onLoadMore })); // jsdom: clientHeight 0
+    await vi.advanceTimersByTimeAsync(1000);
+    expect(onLoadMore).not.toHaveBeenCalled();
+  });
+
+  it('pauses after 5 empty pages in a row until resume()', async () => {
+    const wrapper = mount(createTestComponent({ onLoadMore: vi.fn() }));
+    for (let i = 0; i < 4; i++) wrapper.vm.pageLoaded(0, true);
+    expect(wrapper.vm.hasMore).toBe(true);
+    wrapper.vm.pageLoaded(1, true); // a non-empty page restarts the count
+    for (let i = 0; i < 5; i++) wrapper.vm.pageLoaded(0, true);
+    expect(wrapper.vm.hasMore).toBe(false);
+
+    wrapper.vm.resume();
+    expect(wrapper.vm.hasMore).toBe(true);
+    wrapper.vm.pageLoaded(0, false);
+    expect(wrapper.vm.hasMore).toBe(false);
+  });
+
+  it('honours a custom empty-page cap', async () => {
+    const wrapper = mount(createTestComponent({ onLoadMore: vi.fn(), maxEmptyPages: 1 }));
+    wrapper.vm.pageLoaded(0, true);
+    expect(wrapper.vm.hasMore).toBe(false);
   });
 
   it('should not trigger when scrolled far from bottom', async () => {

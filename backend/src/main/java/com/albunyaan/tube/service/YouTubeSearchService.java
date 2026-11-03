@@ -20,6 +20,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
+import org.springframework.web.server.ResponseStatusException;
 
 import java.util.ArrayList;
 import java.util.HashMap;
@@ -108,6 +109,8 @@ public class YouTubeSearchService {
             logger.warn("YouTubeSearchService.search rate-limited [type={}]: {}",
                     type, e.getMessage());
             throw new YouTubeSearchRateLimitedException(RATE_LIMIT_RETRY_AFTER_SEC, e);
+        } catch (ResponseStatusException e) {
+            throw e;   // the client's 400 for a bad pageToken; NewPipe never throws this type
         } catch (Exception e) {
             logger.warn("YouTubeSearchService.search failed [type={}, page={}]: {}",
                     type, pageToken, e.getMessage());

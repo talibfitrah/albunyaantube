@@ -186,6 +186,107 @@ struct PlayerHostTests {
         #expect(abs(player.currentTime().seconds - position) <= 0.1)
     }
 
+    /// Owner report 2026-11-02, issue 2: a lower quality pick on the SAME url must not hand the item back -- its buffer
+    /// still holds the higher rendition (`QualityOption.needsFreshItem`). The item is rebuilt on the same player at the
+    /// same position, exactly as a re-resolve's is.
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestRebuildsTheSameURLAtTheSamePosition() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        #expect(position >= 1)
+        let oldItem = player.currentItem
+
+        let rebuilt = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+
+        #expect(rebuilt === player)
+        #expect(rebuilt?.currentItem !== oldItem)
+        // Review of a2c737ba: the SAME asset, as `HDStager.handOver` does -- no new master, playlist or `sidx` request.
+        #expect(rebuilt?.currentItem?.asset === oldItem?.asset)
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+        #expect(player.timeControlStatus == .paused, "a paused player stays paused (I5)")
+    }
+
+    /// Codex review: two lower picks in a row (1080p -> 720p -> 480p within a second). The first rebuild's exact seek has
+    /// not landed when the second rebuild reads the position, and the new item's clock reads 0 until it does: the second
+    /// rebuild must carry the first one's target, not restart the video.
+    @Test(.timeLimit(.minutes(1))) func aSecondFreshItemRequestBeforeTheFirstSeekLandsKeepsThePosition() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        #expect(position >= 1)
+
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+    }
+
+    /// Codex review of the fix: an item that fails before its seek lands never reached the target, and recovery's
+    /// replacement reads its position from it -- the target stays, or the video restarts at 0 (measured: the seek's
+    /// completion never runs for it, which is also why the store holds its items weakly; the cleanup skips a failed
+    /// item either way).
+    @Test(.timeLimit(.minutes(1))) func aFailedItemKeepsItsLandingTarget() async throws {
+        let missing = FileManager.default.temporaryDirectory.appendingPathComponent("\(UUID().uuidString).mp4")
+        let player = AVPlayer(playerItem: AVPlayerItem(url: missing))
+        PlayerHostView.seek(player, to: 30, exact: true)
+        for _ in 0..<300 where player.currentItem?.status != .failed { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100))   // the completion's main-actor hop
+        #expect(player.currentItem?.status == .failed)
+        #expect(PlayerHostView.position(of: player) == 30)
+    }
+
+    /// A seek of the user's own (AVKit's scrubber) during the landing window supersedes the landing target.
+    @Test(.timeLimit(.minutes(1))) func aLaterSeekSupersedesTheLandingTarget() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)
+        #expect(PlayerHostView.position(of: player) >= 1, "the rebuild left a landing target")
+        player.seek(to: CMTime(seconds: 0.3, preferredTimescale: 600), toleranceBefore: .zero, toleranceAfter: .zero) { _ in }
+        for _ in 0..<300 where abs(player.currentTime().seconds - 0.3) > 0.05 { try await Task.sleep(for: .milliseconds(10)) }
+        try await Task.sleep(for: .milliseconds(100))
+        #expect(abs(PlayerHostView.position(of: player) - 0.3) <= 0.05)
+    }
+
+    /// Re-review of the fix: a rebuild never reuses the asset of the item recovery just reported failed (M4: never handed
+    /// back, whatever its status says).
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestNeverReusesTheFailedItemsAsset() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        player.pause()
+        let failed = player.currentItem
+        let rebuilt = PlayerHostView.player(for: state, replacing: player, failedItem: failed, freshItem: true)
+        #expect(rebuilt?.currentItem?.asset !== failed?.asset)
+    }
+
+    /// Review of a2c737ba: a live stream keeps its item on a lower pick. A replacement live item starts at the live edge
+    /// (`resumePosition`), so a viewer behind live would lose their place; the lower cap binds the next segments anyway.
+    @Test(.timeLimit(.minutes(1))) func aFreshItemRequestOnALiveStreamKeepsTheItem() throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.ready(Resolved(stream: .hls(url: url, isLive: true, audioOnlyURL: nil, captionTracks: []),
+                                               client: .visionos, userAgent: "TestUA", resolvedAt: Date(), expiresAt: nil,
+                                               isLiveNow: true))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        player.pause()
+        let item = player.currentItem
+        #expect(PlayerHostView.player(for: state, replacing: player, freshItem: true)?.currentItem === item)
+    }
+
     // MARK: - Recovery chain at the host (Task 7: resume intent; fix round 2: the wall-clock sampler)
 
     /// Task 7 fix round 1 (review N1): `lastPlayingAt` is per player and only the periodic sampler

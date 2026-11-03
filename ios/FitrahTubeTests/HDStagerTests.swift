@@ -372,6 +372,24 @@ struct HDStagerTests {
         player.replaceCurrentItem(with: nil)
     }
 
+    /// Review of the landing-seek fix: a hand-over while a quality rebuild's seek is still landing (the visible item's
+    /// clock reads 0) carries that seek's target, not 0.
+    @Test(.timeLimit(.minutes(1))) func aHandOverDuringALandingSeekCarriesItsTarget() async throws {
+        let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
+        let state = StreamState.rung2Progressive(PlayerHostTests.resolved(.progressive(url: url, label: "360p")))
+        let player = try #require(PlayerHostView.player(for: state, replacing: nil))
+        for _ in 0..<300 where player.currentTime().seconds < 1 { try await Task.sleep(for: .milliseconds(10)) }
+        player.pause()
+        let position = player.currentTime().seconds
+        _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)   // the quality rebuild: seek landing
+        let stager = HDStager(item: AVPlayerItem(url: url), masterURL: URL(string: "fitrah-hls://x/master.m3u8")!,
+                              position: position)
+        stager.handOver(to: player)
+        for _ in 0..<300 where abs(player.currentTime().seconds - position) > 0.1 { try await Task.sleep(for: .milliseconds(10)) }
+        #expect(abs(player.currentTime().seconds - position) <= 0.1)
+        player.replaceCurrentItem(with: nil)
+    }
+
     @Test func aStagerNotReadyWithinThirtySecondsFails() {   // R41, the 30 s deadline
         let (item, delegate) = Self.hangingItem()
         let start = Date()

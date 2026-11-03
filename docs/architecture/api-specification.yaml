@@ -4263,85 +4263,6 @@ components:
           description: Opaque token to pass as pageToken for the next page (null on last page)
 
     # YouTube Search & Preview DTOs
-    EnrichedSearchResult:
-      type: object
-      description: Unified search result with enriched metadata from YouTube
-      properties:
-        id:
-          type: string
-          description: YouTube ID (channel/playlist/video)
-        type:
-          type: string
-          enum: [channel, playlist, video]
-          description: Type of content
-        title:
-          type: string
-        description:
-          type: string
-          nullable: true
-        thumbnailUrl:
-          type: string
-          nullable: true
-        publishedAt:
-          type: string
-          format: date-time
-          nullable: true
-        channelId:
-          type: string
-          nullable: true
-          description: Channel ID (for videos/playlists)
-        channelTitle:
-          type: string
-          nullable: true
-          description: Channel name (for videos/playlists)
-        subscriberCount:
-          type: integer
-          format: int64
-          nullable: true
-          description: Subscriber count (channels only)
-        videoCount:
-          type: integer
-          format: int64
-          nullable: true
-          description: Video count (channels only)
-        itemCount:
-          type: integer
-          format: int64
-          nullable: true
-          description: Item count (playlists only)
-        viewCount:
-          type: integer
-          format: int64
-          nullable: true
-          description: View count (videos only)
-        duration:
-          type: string
-          nullable: true
-          description: ISO 8601 duration (videos only, e.g., PT4M13S)
-        videoThumbnails:
-          type: array
-          items:
-            type: string
-          nullable: true
-          description: First 4 video thumbnails (playlists only)
-
-    SearchPageResponse:
-      type: object
-      description: Paginated search response with next page token
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/EnrichedSearchResult'
-        nextPageToken:
-          type: string
-          nullable: true
-          description: Token for fetching next page (null if last page)
-        totalResults:
-          type: integer
-          nullable: true
-          description: Estimated total results
-
     ChannelDetailsDto:
       type: object
       description: Full channel details from YouTube
@@ -4375,32 +4296,6 @@ components:
           items:
             type: string
           nullable: true
-
-    PaginatedStreamItems:
-      type: object
-      description: Paginated response for stream/video items
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/StreamItemDto'
-        nextPageToken:
-          type: string
-          nullable: true
-          description: Token for fetching next page (null if last page)
-
-    PaginatedPlaylistItems:
-      type: object
-      description: Paginated response for playlist items
-      properties:
-        items:
-          type: array
-          items:
-            $ref: '#/components/schemas/PlaylistItemDto'
-        nextPageToken:
-          type: string
-          nullable: true
-          description: Token for fetching next page (null if last page)
 
     StreamItemDto:
       type: object
@@ -4439,27 +4334,6 @@ components:
           nullable: true
           description: Content type - VIDEO, SHORT, or LIVESTREAM
           enum: [VIDEO, SHORT, LIVESTREAM]
-
-    PlaylistItemDto:
-      type: object
-      description: Lightweight playlist item for lists
-      properties:
-        id:
-          type: string
-        name:
-          type: string
-        url:
-          type: string
-        thumbnailUrl:
-          type: string
-          nullable: true
-        uploaderName:
-          type: string
-          nullable: true
-        streamCount:
-          type: integer
-          format: int64
-          nullable: true
 
     PlaylistDetailsDto:
       type: object
