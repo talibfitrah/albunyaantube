@@ -1,0 +1,56 @@
+backend/scripts/systemd/fitrah-solver-exec@.service
+  s_543f5b01a05d75::t_d31845275831e5 1-48
+backend/scripts/systemd/fitrah-solver-watchdog.service
+  s_543f5b01a05d75::t_aad9d2a7c2184f 11-12,15
+backend/solver/server.mjs
+  s_543f5b01a05d75::t_5af5db48e76572 362,370-379,381-382
+  s_543f5b01a05d75::t_ca6e4743f8a7a7 1-4,7,9,19-27,30-32,34-36,41-90
+  s_543f5b01a05d75::t_d17af709aaa187 111-115,118-120,125-126,134-143,226-249,251,267-298,307,312-318,321-323,325
+  s_543f5b01a05d75::t_d31845275831e5 116
+  s_543f5b01a05d75::t_bbc82d5b4c1340 91-92
+backend/scripts/systemd/fitrah-solver.service
+  s_543f5b01a05d75::t_d31845275831e5 2-3,5,14-15,18-21,31-32
+  s_543f5b01a05d75::t_7275a9b9adf63c 22
+backend/solver/test/solver.test.mjs
+  s_543f5b01a05d75::t_4e2ef55a1f9cf8 7-8,151,163,176,189,194,208-209,221,235,245,255,298,314,338,352,366,377,385,403,426,437,447,462,479-480,495,529,531,545-546,550,599-600,602,620-621,637,740-741,743,767,778,780,804
+  s_543f5b01a05d75::t_3bb959b96fcd7e 100,887-896,899-902
+  s_543f5b01a05d75::t_870396160c01d0 300,303,604,745,785,787,807-809
+  s_543f5b01a05d75::t_de2d41768eadde 58,271,538-539,664,706
+  s_543f5b01a05d75::t_fc3a21d9206a24 817-820,824,830-872,874-886
+  s_543f5b01a05d75::t_f26cb1343ad960 821-823,825-829,897-898
+  s_543f5b01a05d75::t_646ad13aeba478 873
+backend/scripts/systemd/fitrah-solver-exec.socket
+  s_543f5b01a05d75::t_d31845275831e5 1-14
+backend/solver/test/sandbox.test.mjs
+  s_543f5b01a05d75::t_226e70810e9bd2 37,68,72-74,82-101,113-119,139,142,144
+  s_543f5b01a05d75::t_7275a9b9adf63c 69,201,337-339,347,360,362-363,366-375,377-378,380-389
+  s_543f5b01a05d75::t_44c82fff8fa1c9 154-169,175,177-200,204-206,211-212,214,216,218-247,267-268,279-281,289,294-298,334-336,340-346
+  s_543f5b01a05d75::t_087e24dd14b633 14,311-317,364-365
+  s_543f5b01a05d75::t_53dc8ee4f42895 329-330
+  s_543f5b01a05d75::t_054efc3badc840 249-264
+  s_543f5b01a05d75::t_1d0942f7a20f35 248,301-310,318-328,331-333,348-359,361,376,379
+backend/solver/test/harness.mjs
+  s_543f5b01a05d75::t_4e2ef55a1f9cf8 1-25,27-68
+  s_543f5b01a05d75::t_f26cb1343ad960 26
+backend/solver/test/memory-probe.mjs
+  s_543f5b01a05d75::t_44c82fff8fa1c9 5
+  s_543f5b01a05d75::t_5fdcc534b26f05 1-2,4,8-15,21,26-32
+backend/solver/executor.mjs
+  s_543f5b01a05d75::t_6be60f8a2260ba 1-161
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "ca7e1dba2274586fffda8bfba691ec30920caa56",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
