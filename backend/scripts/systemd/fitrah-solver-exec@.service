@@ -1,0 +1,48 @@
+[Unit]
+Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret and nothing writable (S20)
+CollectMode=inactive-or-failed
+
+[Service]
+# Threat model (Cubic r13 #1, r14 P1): player JS escapes the vm realm to host JS in this process. Everything below is what
+# that host JS can then do, enforced by the kernel. The worst left: wrong answers (the app falls back to 360p), or a hang or
+# crash (the gateway exits, its ExecStopPost SIGKILLs this, systemd restarts both).
+ExecStart=/opt/fitrah-solver/node/bin/node --experimental-vm-modules --permission --allow-fs-read=/opt/fitrah-solver/app/ \
+  --max-old-space-size=256 /opt/fitrah-solver/app/executor.mjs
+StandardInput=socket
+StandardOutput=socket
+StandardError=journal
+DynamicUser=yes
+# No network: an empty network namespace, every IP denied, and no socket family but AF_UNIX, with no unix socket in view.
+PrivateNetwork=yes
+IPAddressDeny=any
+RestrictAddressFamilies=AF_UNIX
+# Its view of the disk: the node binary and its own code, read-only. Nothing of /opt (the backend's .env and jar), /var
+# (the solver cache, logs), /run (every system socket) or /home; /etc and /usr hold no secret and the loader needs them.
+TemporaryFileSystem=/opt:ro /var:ro /run:ro
+BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app
+ProtectHome=yes
+ProtectSystem=strict
+PrivateTmp=yes
+# Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.
+LimitFSIZE=0
+MemoryMax=384M
+CPUWeight=20
+TasksMax=32
+PrivateDevices=yes
+CapabilityBoundingSet=
+NoNewPrivileges=yes
+SystemCallArchitectures=native
+SystemCallFilter=@system-service
+SystemCallErrorNumber=EPERM
+RestrictNamespaces=yes
+RestrictRealtime=yes
+RestrictSUIDSGID=yes
+LockPersonality=yes
+ProtectClock=yes
+ProtectHostname=yes
+ProtectKernelTunables=yes
+ProtectKernelModules=yes
+ProtectKernelLogs=yes
+ProtectControlGroups=yes
+ProtectProc=invisible
+UMask=0077

@@ -1,87 +1,14 @@
-// FitrahTube playback challenge solver (spec 2026-10-14 §4.5, R25-R27, R39, R40). Node built-ins only.
-// YouTube-supplied JS runs in its own vm realm (no process, fetch or require) under a 10 s timeout, inside Node's
-// permission model and the systemd unit's hardening. Challenges are never logged.
+// FitrahTube playback challenge solver: the GATEWAY (spec 2026-10-14 §4.5, R25-R27, R39, R40; S20). Node built-ins only.
+// It serves the backend, fetches and caches base.js, and holds the bookkeeping, but never runs YouTube JS: that happens in
+// the executor (executor.mjs), one process per connection to fitrah-solver-exec.socket, with no network and nothing writable.
+// Every answer the executor gives is untrusted and checked here. Challenges are never logged.
 import fs from 'node:fs';
 import http from 'node:http';
+import net from 'node:net';
 import path from 'node:path';
-import vm from 'node:vm';
-import { fileURLToPath, pathToFileURL } from 'node:url';
+import { pathToFileURL } from 'node:url';
 
 export const CHALLENGE = /^[A-Za-z0-9_=-]+$/;
-
-// Dynamic import() inside the realm is the one surface vm cannot strip: it is syntax, not a deletable global. Left alone,
-// `import('x')` rejects with a HOST TypeError (ERR_VM_DYNAMIC_IMPORT_CALLBACK_MISSING, or ..._FLAG without
-// --experimental-vm-modules), and `e.constructor.constructor('return process')()` then hands the player the host process
-// (Cubic r7 #1, P1). Node takes the callback from the import()'s referrer, so this is passed in BOTH places; either alone leaks:
-// - on EACH runInContext that runs EJS or player code: code that script compiles (direct, eval, indirect eval, Function, await)
-//   uses the script's own setting, and a script without one gets the host TypeError even when the context has a callback
-//   (newContext's `delete` line defines no function, so nothing ever imports with it as the referrer);
-// - on the context (newContext): code compiled with no script on the stack, i.e. in a promise job
-//   (`Promise.resolve('return import("z")').then(Function)`, `.then(eval)`), has no referrer and uses the context's (Cubic r9 #1).
-// It needs --experimental-vm-modules (newContext asserts it). It throws a primitive, so the realm's rejection reason is never a
-// host object. The throw still makes one host object: Node's importModuleDynamicallyCallback is async, so it turns the throw
-// into a rejected HOST promise, and the realm promise import() returns adopts it only in a realm microtask. A vm timeout that
-// cuts the run before that microtask leaves the host promise unhandled with DENIED as its reason (Cubic r10 #2; see rejected).
-const DENIED = 'import() is disabled inside the solver realm';
-const denyImport = () => { throw DENIED; };
-
-const EJS_DIR = path.join(path.dirname(fileURLToPath(import.meta.url)), 'vendor', 'ejs-0.8.0');
-const EJS_SOURCE = fs.readFileSync(path.join(EJS_DIR, 'lib.min.js'), 'utf8')
-  + '\nObject.assign(globalThis, lib);\n'
-  + fs.readFileSync(path.join(EJS_DIR, 'core.min.js'), 'utf8')
-  + '\nglobalThis.jsc = jsc;';
-
-/** A fresh realm holding EJS and nothing of Node's (R40). One per player, so eviction drops it whole. */
-export function newContext(timeoutMs = 10_000) {
-  // Fail closed: without --experimental-vm-modules every importModuleDynamically callback below, the context's and each run's,
-  // is ignored and import() leaks the host process (Cubic r7 #1). SourceTextModule is the flag's own marker. No realm is ever
-  // built unprotected. The context's callback covers import() with no referrer (Cubic r9 #1; see denyImport).
-  if (typeof vm.SourceTextModule !== 'function') throw new Error('the solver realm needs --experimental-vm-modules to deny dynamic import (Cubic r7 #1)');
-  // a null-prototype global: `{}` would hand the realm the host's Object.prototype, and constructor.constructor the host's process
-  const ctx = vm.createContext(Object.create(null), { microtaskMode: 'afterEvaluate', importModuleDynamically: denyImport }); // microtasks drain inside the timeout
-  // V8 runs these as host tasks, outside every vm timeout: a FinalizationRegistry cleanup (Cubic r2 P2; WeakRef goes with it)
-  // and a WebAssembly async compile's resolve, which reads a realm `then` getter off the module (Cubic r6 P2). Node reads
-  // promise[async_id_symbol] off each unhandled rejected promise after the run, which only a realm Proxy could answer with code
-  // (Cubic r6 P2). Atomics.waitAsync settles with a string, so it only queues microtasks, which drain inside the next timeout.
-  // base.js checks `typeof FinalizationRegistry` and `window.WebAssembly`; neither it nor EJS uses Proxy.
-  vm.runInContext('delete globalThis.FinalizationRegistry; delete globalThis.WeakRef; delete globalThis.WebAssembly; delete globalThis.Proxy;', ctx);
-  vm.runInContext(EJS_SOURCE, ctx, { timeout: timeoutMs, importModuleDynamically: denyImport });
-  return ctx;
-}
-
-/** Runs `source` in `ctx` under the vm timeout with `inputs` as globals, and returns what it evaluated to. Nothing the realm
- *  controls runs on the host (Cubic P2): inputs are defined, never assigned, so no realm setter fires; a throw comes back
- *  as a host Error whose message the realm built under the same timeout. Callers check the answer's type before using it. */
-function inRealm(ctx, source, inputs, timeoutMs) {
-  const names = Object.keys(inputs);
-  for (const name of names) Object.defineProperty(ctx, name, { value: inputs[name], writable: true, configurable: true });
-  let out;
-  try {
-    out = vm.runInContext(`(() => { try { return [${source}]; } catch (e) { try { return '' + (e?.message ?? e); } catch { return ''; } } })()`,
-      ctx, { timeout: timeoutMs, importModuleDynamically: denyImport });   // deny import() in all player code (Cubic r7 #1)
-  } finally { for (const name of names) Reflect.deleteProperty(ctx, name); }        // never throws on a locked property
-  if (typeof out === 'string') throw new Error(out || 'the player threw');
-  return out[0];                                                                     // our own array literal: no getter
-}
-
-/** A realm answer that must be a JSON string; anything else is refused unread. */
-function parsed(answer) {
-  if (typeof answer !== 'string') throw new Error('the player answered a non-string');
-  return JSON.parse(answer);
-}
-
-/** Preprocesses one base.js and pulls out its n/sig functions, entirely inside `ctx` under the vm timeout (R27). */
-export function buildPlayer(ctx, playerText, timeoutMs = 10_000) {
-  const fns = inRealm(ctx, `(() => {
-      const pre = jsc({ type: 'player', player: __player, requests: [], output_preprocessed: true }).preprocessed_player;
-      const r = { n: null, sig: null };
-      Function('_result', pre)(r);
-      const n = r.n, sig = r.sig;                     // read here, under the timeout: a getter never runs on the host
-      return typeof n === 'function' && typeof sig === 'function' ? [n, sig] : null;
-    })()`, { __player: playerText }, timeoutMs);
-  if (fns === null) throw new Error('no n/sig functions in this player');
-  return { ctx, n: fns[0], sig: fns[1] };
-}
 
 const ALPHABET = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
 const random = (length) => Array.from({ length }, () => ALPHABET[Math.floor(Math.random() * 64)]).join('');
@@ -89,31 +16,78 @@ const random = (length) => Array.from({ length }, () => ALPHABET[Math.floor(Math
 const usable = (output) => typeof output === 'string' && CHALLENGE.test(output) && !output.startsWith('enhanced_except');
 const changed = (output, input) => usable(output) && output !== input;
 
-/** R26: 10 synthetic n (16 chars) and s (108 chars) must each come back changed and in the challenge alphabet.
- *  Catches identity functions and the `[object Object]` class NewPipe 0.26.5 hit. Runs under the vm timeout. */
-export function selfTest(player, timeoutMs = 10_000) {
-  const inputs = Array.from({ length: 10 }, () => [random(16), random(108)]);
-  // Only the player's own (in-realm) functions and one JSON string cross in: no main-realm object is reachable (R40).
-  const outputs = parsed(inRealm(player.ctx, 'JSON.stringify(JSON.parse(__probeIn).map(([n, s]) => [__probeN(n), __probeS(s)]))',
-    { __probeN: player.n, __probeS: player.sig, __probeIn: JSON.stringify(inputs) }, timeoutMs));
-  // distinct inputs must give distinct outputs, which rejects constant functions
-  const distinct = (k) => new Set(outputs.map((o) => o[k])).size === outputs.length;
-  return distinct(0) && distinct(1) && inputs.every(([n, s], i) => changed(outputs[i][0], n) && changed(outputs[i][1], s));
+/** R26: 10 synthetic n (16 chars) and s (108 chars), solved by the executor as any request is. */
+export const selfTestInputs = () => Array.from({ length: 10 }, () => [random(16), random(108)]);
+
+/** R26: each must come back changed and in the challenge alphabet, and distinct inputs must give distinct outputs, which
+ *  rejects identity and constant functions and the `[object Object]` class NewPipe 0.26.5 hit. `raw` is the executor's. */
+export function selfTestPassed(inputs, raw) {
+  const [n, s] = Array.isArray(raw) && raw.every(Array.isArray) ? raw : [[], []];
+  const distinct = (list) => new Set(list).size === inputs.length;
+  return distinct(n) && distinct(s) && inputs.every(([ni, si], i) => changed(n[i], ni) && changed(s[i], si));
 }
 
-/** The held functions, run inside the realm under the same vm timeout as a build (R40), only strings crossing in and out.
- *  A challenge whose function throws or answers outside the alphabet is omitted. Throws on timeout. */
-export function solveAll(player, n, s, timeoutMs = 10_000) {
-  const raw = parsed(inRealm(player.ctx, `(() => {
-      const run = (fn, list) => list.map((c) => { try { const v = fn(c); return typeof v === 'string' ? v : null; } catch { return null; } });
-      const [n, s] = JSON.parse(__solveIn);
-      return JSON.stringify([run(__solveN, n), run(__solveS, s)]);
-    })()`, { __solveN: player.n, __solveS: player.sig, __solveIn: JSON.stringify([n, s]) }, timeoutMs));
+/** The executor's answers, as the spec's {n: {challenge: answer}, s: {...}}: a challenge whose answer is not usable is omitted.
+ *  `raw` is untrusted (S20): anything not the expected shape omits the answer, never throws. */
+export function answers(n, s, raw) {
   const out = { n: {}, s: {} };
-  [[n, raw[0], out.n], [s, raw[1], out.s]].forEach(([list, answers, into]) => {
-    list.forEach((challenge, i) => { if (usable(answers[i])) into[challenge] = answers[i]; });
+  const [rn, rs] = Array.isArray(raw) ? raw : [];
+  [[n, rn, out.n], [s, rs, out.s]].forEach(([list, got, into]) => {
+    list.forEach((challenge, i) => { const answer = Array.isArray(got) ? got[i] : undefined; if (usable(answer)) into[challenge] = answer; });
   });
   return out;
+}
+
+const MAX_LINE = 1_048_576;                     // a solve reply is a few KB; more is an executor gone wrong, not a bigger answer
+
+/** The executor over one connection (production: fitrah-solver-exec.socket). One request at a time: createSolver serializes
+ *  them, so each reply answers the one waiting call. An executor that answers late (`timeoutMs`, above any op's vm timeouts),
+ *  out of turn, unparseably or too long, or hangs up, is dead: `onDead` runs once. It cannot be stopped from here (another
+ *  uid, another namespace), so production's onDead exits this process with the crash marker in place, and the unit's
+ *  ExecStopPost SIGKILLs every executor. */
+export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000 }) {
+  let buffer = '', waiting = null, timer = null, dead = false;
+  const die = (why) => {
+    if (dead) return;
+    dead = true;
+    clearTimeout(timer);
+    stream.destroy();
+    waiting?.reject(new Error(`executor ${why}`));
+    waiting = null;
+    onDead(why);
+  };
+  stream.setEncoding('utf8');
+  stream.on('data', (chunk) => {
+    buffer += chunk;
+    if (buffer.length > MAX_LINE) return die('sent a line over 1 MiB');
+    for (let i; !dead && (i = buffer.indexOf('\n')) >= 0;) {
+      const line = buffer.slice(0, i);
+      buffer = buffer.slice(i + 1);
+      let message;
+      try { message = JSON.parse(line); } catch { return die('sent an unparseable line'); }
+      if (message?.event === 'rejected') { onRejected(message.hash); continue; }
+      if (!waiting) return die('answered nothing it was asked');
+      const { resolve, reject } = waiting;
+      waiting = null;
+      clearTimeout(timer);
+      if (message?.ok === true) resolve(message.value);
+      else reject(new Error(String(message?.error).slice(0, 200)));    // its text reaches a WARN line: bounded
+    }
+  });
+  stream.on('error', () => die('connection failed'));
+  stream.on('close', () => die('hung up'));
+  const call = (request) => new Promise((resolve, reject) => {
+    if (dead) return reject(new Error('executor gone'));
+    if (waiting) return reject(new Error('one executor call at a time'));
+    waiting = { resolve, reject };
+    timer = setTimeout(() => die(`gave no answer in ${timeoutMs} ms`), timeoutMs);
+    stream.write(`${JSON.stringify(request)}\n`);
+  });
+  return {
+    build: (hash, text) => call({ op: 'build', hash, text }),
+    solve: (hash, n, s, solveTimeoutMs) => call({ op: 'solve', hash, n, s, timeoutMs: solveTimeoutMs }),
+    drop: (hash) => call({ op: 'drop', hash }),
+  };
 }
 
 // ---------------------------------------------------------------- polling, fetch budget, HTTP (spec §4.5)
@@ -134,25 +108,38 @@ export function signatureTimestamp(playerText, nowMs) {
   return Math.abs(sts - Math.floor(nowMs / DAY_MS)) <= 60 ? sts : null;
 }
 
-/** At most 2 held players (R25), single-flight polling, a persisted 3-an-hour download budget (R39).
- *  `build`, `now` and `log` are test seams; production passes none of them. */
-export function createSolver({ origin = 'https://www.youtube.com', cacheDir, build = (text) => buildPlayer(newContext(), text),
-                               now = Date.now, log = console, solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 } = {}) {
-  const held = new Map();                       // hash -> { sts, player }; insertion order is age
+/** At most 2 held players (R25), single-flight polling, a persisted 3-an-hour download budget (R39). `executor` holds the
+ *  players and runs them (connectExecutor's shape; tests pass executor.mjs's createExecutor in-process). `now` and `log` are
+ *  test seams. */
+export function createSolver({ origin = 'https://www.youtube.com', cacheDir, executor, now = Date.now, log = console,
+                               solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 }) {
+  const held = new Map();                       // hash -> { sts }, the executor holds the player; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
-  // Names the player being built or solving. A fatal V8 OOM or the watchdog's SIGKILL (S20) skips every catch, so a marker left
-  // at start means that player killed the last process: it is deleted and not built again for an hour (`bootCrash`), or each
+  // Names the player being built or solving. An executor that dies or hangs mid-op kills this process (connectExecutor's
+  // onDead), as a fatal V8 OOM or the watchdog's SIGKILL would, and skips every finally, so a marker left at start means that
+  // player killed the last process: it is deleted and not built again for an hour (`bootCrash`), or each
   // restart would rebuild it and crash (Cubic P3).
   const marker = path.join(cacheDir, 'building');
   const cpuRing = [];
   let current = null, lastPoll = null, polling = null, throttled = false, logBroken = false, solves = 0, lastSlowWarn = -Infinity;
-  let ran = null;                               // the player whose realm ran last
+  let executorRssMiB = null;                    // the executor's own report: where the players' memory is
+  let turn = Promise.resolve();                 // the executor runs one op at a time; so does this side (one marker, one reply)
   let cacheWritable = probeCache();
   const crashed = new Set();                    // every player that broke THIS process (an unhandled rejection); skipped until a restart
   // The last process's death is weaker evidence: a watchdog kill of a merely congested loop or a cgroup OOM names whatever
   // player was running (gstack review), so that one is skipped for an hour, not until YouTube rotates its hash. A player that
   // really hangs or OOMs costs one restart an hour, inside the unit's StartLimitBurst.
   const bootCrash = dropCrashedPlayer(), bootCrashAt = now();
+
+  /** Runs `op` (an executor call) after every earlier one, with the crash marker naming `hash` until it settles. */
+  function guarded(hash, op) {
+    const run = turn.then(async () => {
+      try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ }
+      try { return await op(); } finally { try { fs.rmSync(marker, { force: true }); } catch { /* the WARN names the step */ } }
+    });
+    turn = run.catch(() => {});
+    return run;
+  }
 
   function dropCrashedPlayer() {
     try {
@@ -236,26 +223,38 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
       const sts = signatureTimestamp(playerText, now());                     // before any eviction (M5)
       if (sts === null) throw new Error('sts missing or more than 60 days from today');
       step = 'evict';
-      if (held.size >= 2) held.delete(held.keys().next().value);          // BEFORE the build (R27)
-      step = 'build';
-      try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ }
-      ran = hash;
-      const cpu0 = process.cpuUsage();
-      const player = build(playerText);
-      step = 'self-test';
-      if (!selfTest(player, selfTestTimeoutMs)) throw new Error('self-test failed');
-      held.set(hash, { sts, player });
+      const cpuMs = await guarded(hash, async () => {
+        if (held.size >= 2) {                                                // BEFORE the build (R27)
+          const oldest = held.keys().next().value;
+          held.delete(oldest);
+          await executor.drop(oldest);
+        }
+        try {
+          step = 'build';
+          const built = await executor.build(hash, playerText);
+          step = 'self-test';
+          const inputs = selfTestInputs();
+          const tested = await executor.solve(hash, inputs.map(([n]) => n), inputs.map(([, s]) => s), selfTestTimeoutMs);
+          noteRss(tested);
+          if (!selfTestPassed(inputs, tested?.raw)) throw new Error('self-test failed');
+          return (Number(built?.cpuMs) || 0) + (Number(tested?.cpuMs) || 0);
+        } catch (error) {
+          try { await executor.drop(hash); } catch { /* a dead executor ends this process anyway */ }
+          throw error;
+        }
+      });
+      // an unhandled rejection reported while it built (Node reports it after the run): never adopted (Cubic r6 P2)
+      step = 'adopt';
+      if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');
+      held.set(hash, { sts });
       current = hash;
-      const cpu = process.cpuUsage(cpu0);
-      log.log(`adopted player ${hash} sts ${sts} cpu ${Math.round((cpu.user + cpu.system) / 1000)} ms`);
+      log.log(`adopted player ${hash} sts ${sts} cpu ${Math.round(cpuMs)} ms`);
       lastPoll = { at: now(), ok: true, step: 'adopted' };
     } catch (error) {
       log.warn(`WARN poll failed at ${step}: ${error.message}`);
       lastPoll = { at: now(), ok: false, step };
       // a cached file that will not build, has no sts or fails the self-test must not wedge its hash: next poll downloads again
       if (file && ['sts', 'build', 'self-test'].includes(step)) try { fs.rmSync(file, { force: true }); } catch { /* the WARN above names the step */ }
-    } finally {
-      try { fs.rmSync(marker, { force: true }); } catch { /* as above */ }
     }
   }
 
@@ -265,35 +264,38 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     return sorted[Math.ceil(0.95 * sorted.length) - 1];
   }
 
-  function solve({ playerId, n, s }) {
-    const entry = held.get(playerId);
-    if (!entry) return [409, { error: 'unknown player' }];
-    let answers, cpu;
-    ran = playerId;
-    // S20 review: a realm that escapes the vm timeout here is SIGKILLed by the watchdog, and the marker makes the next process
-    // drop this player, as for a build; else each restart rebuilds it and hangs again until StartLimitBurst stops the unit.
-    try { fs.writeFileSync(marker, playerId); } catch { /* as in pollOnce */ }
-    const cpu0 = process.cpuUsage();
-    try {
-      answers = solveAll(entry.player, n, s, solveTimeoutMs);
-      cpu = process.cpuUsage(cpu0);             // R30 is the realm run's CPU; the marker's two syscalls stay outside it
-    } catch {                                   // a hung or broken player: evict it, others stay served (ruling 1)
-      held.delete(playerId);
-      if (current === playerId) current = held.keys().next().value ?? null;
-      log.warn(`WARN solve failed for player ${playerId}; evicted`);
-      return [500, { error: 'solve failed' }];
-    } finally {
-      try { fs.rmSync(marker, { force: true }); } catch { /* as in pollOnce */ }
-    }
-    cpuRing.push((cpu.user + cpu.system) / 1000);
-    if (cpuRing.length > 1000) cpuRing.shift();
-    solves++;
-    // R30: p95 budget 2 ms, WARN above 5 ms at most once an hour. ponytail: checked every 100th solve, not every one.
-    if (solves % 100 === 0 && p95() > 5 && now() - lastSlowWarn >= HOUR_MS) {
-      lastSlowWarn = now();
-      log.warn(`WARN solve CPU p95 ${p95().toFixed(2)} ms is over 5 ms`);
-    }
-    return [200, answers];
+  function noteRss(reply) { if (Number.isFinite(reply?.rssMiB)) executorRssMiB = reply.rssMiB; }
+
+  function evict(playerId) {
+    held.delete(playerId);
+    if (current === playerId) current = held.keys().next().value ?? null;
+  }
+
+  async function solve({ playerId, n, s }) {
+    if (!held.has(playerId)) return [409, { error: 'unknown player' }];
+    // S20 review: a realm that escapes the vm timeout here hangs the executor; the marker makes the next process drop this
+    // player, as for a build, or each restart rebuilds it and hangs again until StartLimitBurst stops the unit.
+    return guarded(playerId, async () => {
+      if (!held.has(playerId)) return [409, { error: 'unknown player' }];   // evicted while it waited its turn
+      let reply;
+      try {
+        reply = await executor.solve(playerId, n, s, solveTimeoutMs);
+      } catch {                                   // a hung or broken player: evicted there and here, others stay served (ruling 1)
+        evict(playerId);
+        log.warn(`WARN solve failed for player ${playerId}; evicted`);
+        return [500, { error: 'solve failed' }];
+      }
+      noteRss(reply);
+      cpuRing.push(Number(reply?.cpuMs) || 0);     // R30: the realm run's CPU, as the executor measured it
+      if (cpuRing.length > 1000) cpuRing.shift();
+      solves++;
+      // R30: p95 budget 2 ms, WARN above 5 ms at most once an hour. ponytail: checked every 100th solve, not every one.
+      if (solves % 100 === 0 && p95() > 5 && now() - lastSlowWarn >= HOUR_MS) {
+        lastSlowWarn = now();
+        log.warn(`WARN solve CPU p95 ${p95().toFixed(2)} ms is over 5 ms`);
+      }
+      return [200, answers(n, s, reply?.raw)];
+    });
   }
 
   function health() {
@@ -302,25 +304,25 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, bui
     const status = held.size ? 'ok' : (!cacheWritable || logBroken) ? 'no-cache' : throttled ? 'throttled' : 'warming';
     return {
       status, current, sts: held.get(current)?.sts ?? null, held: [...held.keys()],
-      rssMiB: Math.round(process.memoryUsage().rss / 1_048_576), solves, p95CpuMs: Number(p95().toFixed(3)),
+      rssMiB: Math.round(process.memoryUsage().rss / 1_048_576), executorRssMiB, solves, p95CpuMs: Number(p95().toFixed(3)),
       lastPoll, fetchesLastHour, cacheWritable,
     };
   }
 
-  /** The process's 'unhandledRejection' listener (Cubic r6 P2). Node reports a realm's rejection once the run that made it has
-   *  returned, before any other task, so it is the last-run player's: evicted and skipped until a restart, never a crash that
-   *  each restart repeats. So is the host promise Node made for the realm's import(): only denyImport rejects one with DENIED.
-   *  The realm's reason is never read; any other host promise's rejection still exits as Node's default does. */
-  function rejected(reason, promise) {
-    if (Object.getPrototypeOf(promise) === Promise.prototype && reason !== DENIED) throw reason;
-    held.delete(ran);
-    if (current === ran) current = held.keys().next().value ?? null;
-    crashed.add(ran);                           // a Set: a later rejection must not forget an earlier crasher (two players in A/B rotation)
-    log.warn(`WARN player ${ran} left an unhandled promise rejection; evicted and skipped until a restart`);
+  /** The executor named a player that left an unhandled rejection (Cubic r6 P2; executor.mjs `rejected`): it dropped it, so
+   *  this side evicts it and skips it until a restart, never a crash that each restart repeats. Untrusted: a hash only. */
+  function dropCrashed(hash) {
+    if (typeof hash !== 'string' || !/^[0-9a-f]{8}$/.test(hash)) return;
+    evict(hash);
+    crashed.add(hash);                           // a Set: a later rejection must not forget an earlier crasher (two players in A/B rotation)
+    log.warn(`WARN player ${hash} left an unhandled promise rejection; evicted and skipped until a restart`);
   }
 
+  /** A stop (SIGTERM) is not a crash: whatever op is in flight, the next start must not drop its player (Cubic r2 P2). */
+  function stopped() { try { fs.rmSync(marker, { force: true }); } catch { /* nothing to keep */ } }
+
   const poll = () => (polling ??= pollOnce().finally(() => { polling = null; }));
-  return { poll, solve, health, rejected };
+  return { poll, solve, health, dropCrashed, stopped };
 }
 
 const strings = (value) => Array.isArray(value) && value.every((x) => typeof x === 'string');
@@ -357,8 +359,7 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { error: 'malformed' }); }
       if (typeof body?.playerId !== 'string' || !strings(body.n) || !strings(body.s)) return send(400, { error: 'malformed' });
-      const [status, payload] = solver.solve(body);
-      send(status, payload);
+      solver.solve(body).then(([status, payload]) => send(status, payload), () => send(500, { error: 'solve failed' }));
     });
   });
   server.requestTimeout = 5000;
@@ -366,18 +367,19 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
 }
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
-  // Fail closed before binding (Cubic r7 #1): without the flag the import() deny callback is ignored and the realm leaks process.
-  if (typeof vm.SourceTextModule !== 'function') {
-    console.error('FATAL: the solver needs --experimental-vm-modules; without it dynamic import() inside the realm leaks the host process (Cubic r7 #1). Refusing to start.');
-    process.exit(1);
-  }
-  const solver = createSolver({ origin: process.env.SOLVER_ORIGIN || undefined,
-                                cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
+  let solver;
+  const executor = connectExecutor(net.connect(process.env.SOLVER_EXEC_SOCKET || '/run/fitrah-solver-exec.sock'), {
+    onRejected: (hash) => solver.dropCrashed(hash),
+    onDead: (why) => {          // exit with the marker in place; ExecStopPost then SIGKILLs every executor, a hung one too
+      console.error(`FATAL executor ${why}; exiting so systemd restarts the solver with a fresh executor (S20)`);
+      process.exit(1);
+    },
+  });
+  solver = createSolver({ executor, origin: process.env.SOLVER_ORIGIN || undefined,
+                          cacheDir: process.env.SOLVER_CACHE_DIR || '/var/cache/fitrah-solver' });
   serve(solver, { host: process.env.SOLVER_BIND || '127.0.0.1', port: Number(process.env.SOLVER_PORT || 4417) });
-  // A stop is a clean exit, never Node's default kill (Cubic r2 P2). The build, self-test and each solve are synchronous, so
-  // this handler runs only after their finally removed the crash marker: a restart never drops a healthy player.
-  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => process.exit(0));
-  process.on('unhandledRejection', solver.rejected);   // Node's default exit came after the run's finally cleared the marker
+  // A stop is a clean exit, never Node's default kill (Cubic r2 P2), and not a crash: an op in flight keeps its player.
+  for (const signal of ['SIGTERM', 'SIGINT']) process.on(signal, () => { solver.stopped(); process.exit(0); });
   const pollSafely = () => solver.poll().catch((e) => console.warn(`WARN poll rejected: ${e.message}`));   // never kill the process
   pollSafely();
   setInterval(pollSafely, 30 * 60_000);     // at startup and every 30 min (§4.5)

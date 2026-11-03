@@ -8,9 +8,11 @@ Type=simple
 # host promise-reject callback (a realm's unhandled rejection, or import()'s host callback), it is caught and lost, so the realm
 # runs untimed and a for(;;) after it hangs the solver for good. A blocked process cannot rescue itself, and an in-process
 # watchdog thread needs --allow-worker, which lets host code start a Worker outside the permission model (R40). So: from here.
+# Since the S20 split the realm runs in the executor, and the gateway (fitrah-solver.service) exits itself when the executor
+# hangs; this still kills a gateway whose own loop stopped answering, for whatever reason.
 # Every 10 s; curl exits 28 only when the solver accepted (or queued) the connection but never answered within 45 s. Refused
 # (7: stopped, or in RestartSec) and any HTTP status, a warming 503 included (0), leave it to systemd's own restart logic.
-# 45 s: one poll legitimately blocks the event loop for newContext + buildPlayer + selfTest, 10 s vm timeout each.
+# 45 s: above the gateway's 30 s executor-op limit, and above one build's newContext + buildPlayer + selfTest, 10 s vm timeout each.
 # SIGKILL is an unclean exit, so the solver's Restart=on-failure restarts it after its RestartSec=60; its StartLimitBurst=4 an
 # hour then leaves it failed (the watchdog never starts it): `systemctl reset-failed fitrah-solver && systemctl start fitrah-solver`.
 # curl, not the solver's own node: root never runs a binary from /opt/fitrah-solver.

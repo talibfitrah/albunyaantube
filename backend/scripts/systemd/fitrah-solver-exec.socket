@@ -1,0 +1,14 @@
+[Unit]
+Description=FitrahTube solver executor socket: one sandboxed executor per connection (S20)
+
+[Socket]
+ListenStream=/run/fitrah-solver-exec.sock
+# One executor process per connection, the connection its stdin and stdout: it needs no socket of its own, and whoever
+# connects gets a fresh, empty executor of their own, never the gateway's. So any local user may connect (the gateway's uid
+# is dynamic); the most they get is a sandbox poorer than their own, and MaxConnections bounds how many run.
+Accept=yes
+SocketMode=0666
+MaxConnections=2
+
+[Install]
+WantedBy=sockets.target
