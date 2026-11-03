@@ -184,6 +184,20 @@ class RetrofitContentServiceTest {
         assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCdown"))
     }
 
+    @Test
+    fun `isInApprovedRegistry asks live like the HEAD it replaced, never a memo or a held status`() = runTest {
+        whenever(api.getChannel("UCabc")).thenReturn(Response.success(RegistryEntry()))
+        assertTrue(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCabc"))
+
+        whenever(api.getChannel("UCabc")).thenReturn(Response.error(404, "".toResponseBody(null))) // just removed
+        assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCabc"))
+
+        whenever(api.getChannel("UCabc")).thenReturn(Response.success(RegistryEntry()))
+        service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCabc")
+        whenever(api.getChannel("UCabc")).thenReturn(Response.error(503, "".toResponseBody(null)))
+        assertFalse(service.isInApprovedRegistry(AvailabilityCheckType.CHANNEL, "UCabc")) // fails closed
+    }
+
     // --- ERROR propagation ---
 
     @Test(expected = retrofit2.HttpException::class)

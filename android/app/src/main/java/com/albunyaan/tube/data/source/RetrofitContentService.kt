@@ -145,8 +145,9 @@ class RetrofitContentService(
     override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean {
         return try {
             when (type) {
-                AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId).registered
-                AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId).registered
+                // Live like the HEAD it replaced; a failure fails closed, never the held status.
+                AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId, fresh = true).let { it.error == null && it.registered }
+                AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId, fresh = true).let { it.error == null && it.registered }
                 AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId).isSuccessful
             }
         } catch (ce: kotlinx.coroutines.CancellationException) {
