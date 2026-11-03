@@ -1,0 +1,53 @@
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_fdfd8ccd12aa28 211,252-256,325,331,345,419,461-462,473-481,492,509
+frontend/tests/ContentSearchView.spec.ts
+  s_543f5b01a05d75::t_2bcde9c97102d5 1-47,51-95
+  s_543f5b01a05d75::t_1950f50a3c3e99 48-50
+frontend/src/services/youtubeService.ts
+  s_543f5b01a05d75::t_6caaf1fee585b2 25-26,73-75,101-103,144,154,167,264-265,282,286-287,316-317
+frontend/src/services/http.ts
+  s_543f5b01a05d75::t_5442469a22711a 71-80,147-149,151-153,156,163-165,168-170,172-175,194
+  s_543f5b01a05d75::t_7944fd8d96989c 154-155,157-162,166-167,171
+frontend/src/views/ContentSearchView.vue
+  s_543f5b01a05d75::t_5eae6b1e87b452 132-137,139,196,226-228,363,366,397,525,527,532,550
+docs/architecture/openapi-gap-analysis.md
+  s_543f5b01a05d75::t_8e4cc7b058caf4 130-155,340,436,513,521,555
+frontend/tests/exclusionsService.spec.ts
+  s_543f5b01a05d75::t_2d1757c032e4e0 13,248
+  s_543f5b01a05d75::t_de3778f84a2af9 219-236,259-276
+  s_543f5b01a05d75::t_63fde6481c9a2c 237-247,249-258
+frontend/src/services/youtubeDataApi.ts
+  s_543f5b01a05d75::t_39b71013620f7f 12,133,137
+  s_543f5b01a05d75::t_6caaf1fee585b2 11,94-99,147,174,236,441-442
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_1efccc60a8baff 154,191-193,253,257,266,320,344-345,357-361,363-366,373,388
+  s_543f5b01a05d75::t_fdfd8ccd12aa28 194-195,356,362
+frontend/src/types/registry.ts
+  s_543f5b01a05d75::t_6caaf1fee585b2 111-113
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_f722cb4aa8b624 7,660-713
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_f722cb4aa8b624 7,629-683
+docs/architecture/endpoint-inventory.md
+  s_543f5b01a05d75::t_8e4cc7b058caf4 108
+frontend/src/locales/messages.ts
+  s_543f5b01a05d75::t_d36acfb30f6d13 3-4,15-17,1670-1672,3116-3118
+frontend/tests/youtubeDataApi.spec.ts
+  s_543f5b01a05d75::t_de3778f84a2af9 116,121,139,142
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "61272334dee5fbc95305446657f0b77fc4a0d153",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
