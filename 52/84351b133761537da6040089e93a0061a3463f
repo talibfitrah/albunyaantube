@@ -1,0 +1,19 @@
+backend/solver/executor.mjs
+  s_03a68a30b4a99b::t_e99feb3046ccd5 5-7
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5284351b133761537da6040089e93a0061a3463f",
+  "prompts": {},
+  "sessions": {
+    "s_03a68a30b4a99b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-ad3fa3fe78f74fdf2",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
