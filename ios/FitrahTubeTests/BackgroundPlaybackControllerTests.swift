@@ -688,7 +688,7 @@ import UIKit
         defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
         try await wait { BackgroundPlaybackController.sessionInterrupted }
 
-        Router().push(.player(PlayerArgs(videoId: "pushed-1")))
+        Router(players: NSHashTable<AVPlayer>.weakObjects()).push(.player(PlayerArgs(videoId: "pushed-1")))
 
         #expect(!BackgroundPlaybackController.sessionInterrupted, "a player push left the next start gated")
     }

@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 import SwiftUI
@@ -50,6 +51,13 @@ nonisolated enum ReselectAction: Equatable {
     private(set) var submissionsToken = 0
 
     private var shellIsReady = false
+    /// The players a video open pauses (`push`). A parameter only so a test can pass its own table
+    /// instead of pausing the suite's parallel players, `RootView.didRoute`'s reason.
+    private let players: NSHashTable<AVPlayer>
+
+    init(players: NSHashTable<AVPlayer> = PlayerHostView.builtPlayers) {
+        self.players = players
+    }
 
     nonisolated struct ScrollToTopSignal: Equatable {
         let tab: Tab
@@ -59,8 +67,13 @@ nonisolated enum ReselectAction: Equatable {
     func push(_ route: Route) {
         // A player or Shorts push is always a tap or a deep link: the user's Play (round 3 m2). Here,
         // not where the screen mounts (round 5, N2): an iPad resize across 600 pt re-runs the mount.
+        // One video plays at a time (2026-11-03 double audio): every open of a new one -- tap, deep
+        // link, the saved copy's Open -- pauses what plays now. The screen it covers stops nothing
+        // itself: its host's dismantle pauses, but a live PiP window defers that (`PiPDismantlePolicy`).
         switch route {
-        case .player, .shorts: BackgroundPlaybackController.userAskedToPlay()
+        case .player, .shorts:
+            BackgroundPlaybackController.userAskedToPlay()
+            players.allObjects.forEach { $0.pause() }
         default: break
         }
         paths[selectedTab, default: []].append(route)

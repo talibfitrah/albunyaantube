@@ -1,3 +1,4 @@
+import AVFoundation
 import Foundation
 import Observation
 import Testing
@@ -49,7 +50,7 @@ struct RouterTests {
     }
 
     @Test func shellDidAppearAppliesPendingRouteOnce() {
-        let router = Router()
+        let router = Router(players: NSHashTable<AVPlayer>.weakObjects())   // never pause the suite's players
         router.open(URL(string: "albunyaantube://video/abc123")!)
 
         router.shellDidAppear()
@@ -103,6 +104,57 @@ struct RouterTests {
         router.select(.home)
         #expect(router.paths[.home] == [])
         #expect(router.scrollToTopSignal == nil)
+    }
+
+    /// 2026-11-03 double audio: a video opened while another plays (a deep link, a tap in another
+    /// tab, the toolbar's Open of the saved copy) adds a second player screen. Only the first screen's
+    /// teardown stopped its player, and a live PiP window defers that (`PiPDismantlePolicy`). Every
+    /// one of those opens is a `.player`/`.shorts` push, so the push pauses every player there is;
+    /// the screen it opens builds the one that plays next.
+    @Test(arguments: [Route.player(PlayerArgs(videoId: "b")), .shorts(PlayerArgs(videoId: "b"))])
+    func openingAVideoPausesThePlayersAlreadyPlaying(route: Route) {
+        let playing = Self.playingPlayer()
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(playing)
+        let router = Router(players: players)
+        #expect(playing.rate > 0)
+
+        router.push(route)
+
+        #expect(playing.rate == 0, "the first video plays on under the second")
+    }
+
+    /// The share link's own path: `.onOpenURL` -> `open(_:)` -> the same push.
+    @Test func aVideoDeepLinkPausesThePlayerAlreadyPlaying() {
+        let playing = Self.playingPlayer()
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(playing)
+        let router = Router(players: players)
+        router.shellDidAppear()
+        #expect(playing.rate > 0)
+
+        router.open(URL(string: "https://app.fitrahtube.com/watch/nhaGO__rxHQ")!)
+
+        #expect(playing.rate == 0)
+    }
+
+    /// Browsing away from a playing lecture (its channel, search) is not a new video: it plays on.
+    @Test func aNonVideoPushLeavesPlaybackAlone() {
+        let playing = Self.playingPlayer()
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(playing)
+        let router = Router(players: players)
+
+        router.push(.search)
+
+        #expect(playing.rate > 0)
+        playing.pause()
+    }
+
+    private static func playingPlayer() -> AVPlayer {
+        let player = AVPlayer(url: URL(string: "https://127.0.0.1:9/first.m3u8")!)
+        player.play()
+        return player
     }
 
     /// Task 8 follow-up: `SplashView` now reacts to `router.pendingRoute` via `.onChange`, not by

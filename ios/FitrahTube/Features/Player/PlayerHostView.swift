@@ -1170,7 +1170,7 @@ enum PiPDismantlePolicy {
 }
 
 #if DEBUG
-/// Real-device checks only (`DeviceChecks`, mounted by `-fitrah-route-probe YES`): a 1 pt, clear,
+/// UI checks only (`DeviceChecks`, `SinglePlayerChecks`; mounted by `-fitrah-route-probe YES`): a 1 pt, clear,
 /// non-interactive element whose accessibility VALUE is computed when XCUITest asks, so it reports
 /// the LIVE audio route and what the Cast receiver last said about OUR load, rather than whatever
 /// the last SwiftUI render saw. Nothing visible.
@@ -1203,9 +1203,14 @@ struct AirPlayRouteProbe: UIViewRepresentable {
                 let receiver = cast.map { states[min($0.receiverState.rawValue, states.count - 1)] } ?? "none"
                 let status = model?.debugLastRecoveryStatus.map { String($0) } ?? "-"
                 let offline = model?.isOfflinePlayback == true   // the saved file? (round 3, m6)
-                return "external=\(model?.currentPlayer?.isExternalPlaybackActive == true);outputs="
-                    + outputs.joined(separator: ",") + ";cast=\(receiver)"
-                    + ";time=\(Int(model?.currentTime ?? 0));status=\(status);offline=\(offline)"
+                // Every player in the process, not this screen's: two playing is double audio.
+                let playing = PlayerHostView.builtPlayers.allObjects.filter { $0.rate > 0 }.count
+                let video = model?.args.videoId ?? "-"
+                let external = model?.currentPlayer?.isExternalPlaybackActive == true
+                let time = Int(model?.currentTime ?? 0)
+                return ["video=\(video)", "external=\(external)", "outputs=" + outputs.joined(separator: ","),
+                        "cast=\(receiver)", "time=\(time)", "status=\(status)", "offline=\(offline)",
+                        "playing=\(playing)"].joined(separator: ";")
             }
             set {}
         }

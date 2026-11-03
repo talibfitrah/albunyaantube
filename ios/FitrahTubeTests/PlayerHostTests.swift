@@ -912,6 +912,36 @@ struct PlayerHostTests {
         #expect(player.currentItem == nil)
     }
 
+    /// 2026-11-03 double audio, the PiP path: a share link tapped in another app while a lecture
+    /// plays (auto-PiP is on with background play, the default) opens a second player screen. The
+    /// first screen's host is dismantled with PiP live, which keeps its player playing in the window
+    /// (`PiPDismantlePolicy`), and the new screen's fresh player autoplays. The open is a `.player`
+    /// push: after it, exactly one player plays, and it is the new one.
+    @Test func aVideoOpenedOverAPiPWindowLeavesOnlyTheNewPlayerPlaying() throws {
+        func ready(_ name: String) -> StreamState {
+            .ready(Self.resolved(.hls(url: URL(string: "https://127.0.0.1:9/\(name).m3u8")!, isLive: false,
+                                      audioOnlyURL: nil, captionTracks: [])))
+        }
+        let first = try #require(PlayerHostView.player(for: ready("first"), replacing: nil))
+        let controller = AVPlayerViewController()
+        controller.player = first
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: true)
+        coordinator.background.pictureInPictureActive = true
+        PlayerHostView.dismantleUIViewController(controller, coordinator: coordinator)
+        #expect(first.rate > 0, "the PiP window keeps the first video playing through its screen's dismantle")
+        let table = NSHashTable<AVPlayer>.weakObjects()   // the shared one holds the parallel tests' players
+        table.add(first)
+
+        Router(players: table).push(.player(PlayerArgs(videoId: "second")))
+        let second = try #require(PlayerHostView.player(for: ready("second"), replacing: nil))
+
+        #expect(second.rate > 0, "the opened video plays")
+        #expect(first.rate == 0, "the PiP video plays on under it")
+        second.pause()
+        coordinator.background.pictureInPictureActive = false
+        coordinator.playerViewControllerDidStopPictureInPicture(controller)   // the deferred teardown
+    }
+
     // MARK: - Task 5: the delegate wiring
 
     @Test func pipStateFlipsOnWillStartNotDidStart() {
