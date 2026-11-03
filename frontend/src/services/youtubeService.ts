@@ -2,7 +2,7 @@
  * YouTube Service
  *
  * All YouTube data fetching uses YouTube Data API v3 directly (requires VITE_YOUTUBE_API_KEY).
- * Registry operations (add to pending, check existing) always go through backend.
+ * Registry operations (add to pending) always go through backend.
  */
 
 import apiClient from './api/client';
