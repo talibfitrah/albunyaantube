@@ -1,0 +1,26 @@
+android/app/src/test/java/com/albunyaan/tube/data/source/ExclusionsTest.kt
+  s_543f5b01a05d75::t_363946d9102e03 210-219
+  s_543f5b01a05d75::t_ff5baef427f12d 209
+android/app/src/main/java/com/albunyaan/tube/data/source/Exclusions.kt
+  s_543f5b01a05d75::t_8f0cc74382a3c7 115
+  s_543f5b01a05d75::t_c91bcf2ec31612 103-108
+  s_543f5b01a05d75::t_2fac03a8505c93 132
+  s_543f5b01a05d75::t_1ac3408a4b1845 69
+  s_543f5b01a05d75::t_7a232545a8f7ef 77-78,80-82
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "1bc71762d18b156d0ef1216b63d9537030d86cc8",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
