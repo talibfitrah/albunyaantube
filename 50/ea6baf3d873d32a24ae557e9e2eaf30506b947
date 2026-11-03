@@ -1,0 +1,31 @@
+backend/solver/server.mjs
+  s_543f5b01a05d75::t_fb7907aaa8c8f2 51,63,155-156,160-162,402-403
+  s_543f5b01a05d75::t_48d40c08c53f42 52-53,55,74,92
+backend/solver/executor.mjs
+  s_543f5b01a05d75::t_fb7907aaa8c8f2 160
+backend/solver/test/sandbox.test.mjs
+  s_543f5b01a05d75::t_29eb1b24b292c5 238
+backend/solver/test/solver.test.mjs
+  s_543f5b01a05d75::t_fb7907aaa8c8f2 953-959,961,966-967
+  s_543f5b01a05d75::t_29eb1b24b292c5 859-865
+  s_543f5b01a05d75::t_48d40c08c53f42 823,830,960,962-965,968
+  s_543f5b01a05d75::t_eb4b3b10864fe5 969-971
+backend/scripts/systemd/fitrah-solver-exec@.service
+  s_543f5b01a05d75::t_fb7907aaa8c8f2 11-13
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "50ea6baf3d873d32a24ae557e9e2eaf30506b947",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
