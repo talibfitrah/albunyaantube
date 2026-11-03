@@ -102,8 +102,7 @@ struct BackendAvailabilityGate: AvailabilityGate {
                 while let answer = await group.next() { absorb(answer) }
             }
         }
-        // A page of only pulled channels' items is a pulled playlist, not an empty page to skip past.
-        if gone || (!items.isEmpty && items.allSatisfy { goneChannels.contains($0.channelId ?? "") }) { return nil }
+        if gone { return nil }
         return items.filter { !hidden.contains($0.id) && !goneChannels.contains($0.channelId ?? "") }
     }
 

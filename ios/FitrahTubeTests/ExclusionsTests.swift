@@ -509,19 +509,6 @@ struct ExclusionsTests {
         #expect(queued.items.isEmpty && queued.continuation == nil)
     }
 
-    /// A playlist whose every item comes from a 410 channel is gone too, not an empty list walked page by page.
-    @Test func aPlaylistOfOnlyPulledChannelsIsGone() async throws {
-        let backend = Backend()
-        backend.firstPage = Self.fixture("browse-playlist.json")
-        backend.nextPage = Self.fixture("browse-playlist.json")
-        let channels = Set(try await Self.source(backend).playlistItems("PLown", continuation: nil).items.compactMap(\.channelId))
-        try #require(!channels.isEmpty && channels.count <= BackendAvailabilityGate.maxChannelAsks)
-        for channel in channels { backend.answer("/api/v1/channels/\(channel)", .status(410)) }
-
-        let source = Self.source(backend)
-        await #expect(throws: BrowseSourceError.unavailable) { try await source.playlistItems("PLown", continuation: nil) }
-    }
-
     // MARK: - Freshness: newly approved content after a foreground
 
     @Test func aReturnAfterFiveIdleMinutesReloadsTheCatalog() {
