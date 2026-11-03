@@ -103,8 +103,10 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   // the profile the unit names: no write to its own memory by any /proc path (self, task, thread-self are all <pid>/...)
   const profile = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'apparmor', 'fitrah-solver-exec'), 'utf8').split('\n').map((l) => l.trim());
   // without the include @{PROC} is undefined and it will not load; without `all,` it denies the executor everything
-  for (const line of ['abi <abi/4.0>,', 'include <tunables/global>', 'profile fitrah-solver-exec {', 'all,',
-    'deny @{PROC}/@{pid}/mem w,', 'deny @{PROC}/@{pid}/task/@{tid}/mem w,']) {
+  // the inherited socket is bound at /run/fitrah-solver-exec.sock, a path disconnected under TemporaryFileSystem=/run:ro:
+  // without attach_disconnected and unix, node's getsockname on stdin is denied and every executor dies unready (07:11Z)
+  for (const line of ['abi <abi/4.0>,', 'include <tunables/global>', 'profile fitrah-solver-exec flags=(attach_disconnected) {', 'all,',
+    'unix,', 'deny /** x,', 'deny @{PROC}/@{pid}/mem w,', 'deny @{PROC}/@{pid}/task/@{tid}/mem w,']) {
     assert.ok(profile.includes(line), line);
   }
 });

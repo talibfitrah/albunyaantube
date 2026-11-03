@@ -1,14 +1,19 @@
 # FitrahTube solver executor (fitrah-solver-exec@.service, AppArmorProfile=). The unit's sandbox is the confinement; this
-# profile adds the one thing no unit option can: no write to the executor's own memory through /proc (<pid>/mem, and
-# task/<tid>/mem, which /proc/self, /proc/thread-self and /proc/self/task reach). Reading it stays allowed. Measured
-# 2026-11-03 under the unit: every profile switch (unconfined, firefox, ...) is refused, which the unit's
-# NoNewPrivileges=yes enforces, and so is any exec (no `x` rule: spawning node fails EACCES). Install:
-# /etc/apparmor.d/fitrah-solver-exec, then `apparmor_parser -r` it; apparmor.service loads it at every boot.
+# profile adds what no unit option can: no write to the executor's own memory through /proc (<pid>/mem, and
+# task/<tid>/mem, which /proc/self, /proc/thread-self and /proc/self/task reach), and no exec at all. Reading it stays
+# allowed. `all,` alone does not cover the socket the executor runs on: its stdin and stdout are bound at
+# /run/fitrah-solver-exec.sock, which TemporaryFileSystem=/run:ro disconnects, and AppArmor 4.0.1 still mediates unix
+# sockets. Without attach_disconnected and unix, node's getsockname on stdin is denied and no executor gets ready (the
+# 2026-11-03 07:11Z deploy). Measured socket-activated: a solve end to end, the four mem writes EACCES, exec EACCES, no
+# profile switch (NoNewPrivileges=yes), 0 audit denials. Install: /etc/apparmor.d/fitrah-solver-exec, then
+# `apparmor_parser -r` it; apparmor.service loads it at every boot.
 abi <abi/4.0>,
 include <tunables/global>
 
-profile fitrah-solver-exec {
+profile fitrah-solver-exec flags=(attach_disconnected) {
   all,
+  unix,
+  deny /** x,
   deny @{PROC}/@{pid}/mem w,
   deny @{PROC}/@{pid}/task/@{tid}/mem w,
 }
