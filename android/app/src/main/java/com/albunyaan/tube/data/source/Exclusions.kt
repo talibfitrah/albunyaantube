@@ -66,7 +66,7 @@ class Exclusions @VisibleForTesting internal constructor(
     }
     private val inFlight = HashMap<String, Deferred<Entry>>()
     // ponytail: one app-wide cap on concurrent background asks, so a mixed-uploader playlist page cannot burst the
-    // backend; gate calls skip it.
+    // backend; gate calls and playlist asks skip it.
     private val permits = Semaphore(MAX_CONCURRENT)
 
     /** Bumped each time an answer changes a list, so a list already shown (the Me feed) can filter again. */
@@ -74,9 +74,12 @@ class Exclusions @VisibleForTesting internal constructor(
     val changes: StateFlow<Int> = _changes
 
     /** Channel [id]'s answer. [fresh]: a screen open asks again (joining an ask already running) so a new exclusion shows. */
-    suspend fun channel(id: String, fresh: Boolean = false): Entry = lookup("channel:$id", fresh) { api.getChannel(id) }
+    suspend fun channel(id: String, fresh: Boolean = false): Entry =
+        lookup("channel:$id", fresh, queued = !fresh) { api.getChannel(id) }
 
-    suspend fun playlist(id: String, fresh: Boolean = false): Entry = lookup("playlist:$id", fresh) { api.getPlaylist(id) }
+    // A playlist ask is one per page, never a burst: it skips the queue, so its own exclusions beat the wait.
+    suspend fun playlist(id: String, fresh: Boolean = false): Entry =
+        lookup("playlist:$id", fresh, queued = false) { api.getPlaylist(id) }
 
     /**
      * The video ids the lists of these channels and playlists drop. An id with no answer within [WAIT_MS] adds its last
@@ -97,14 +100,19 @@ class Exclusions @VisibleForTesting internal constructor(
     private suspend fun waited(key: String, ask: suspend () -> Entry): Entry? =
         withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key] }
 
-    private suspend fun lookup(key: String, fresh: Boolean, call: suspend () -> Response<RegistryEntry>): Entry {
+    private suspend fun lookup(
+        key: String,
+        fresh: Boolean,
+        queued: Boolean,
+        call: suspend () -> Response<RegistryEntry>,
+    ): Entry {
         val job = synchronized(answers) {
             inFlight[key] ?: run {
                 val held = answers[key]
                 if (!fresh && held != null && held.until > now()) return held
                 scope.async(start = CoroutineStart.LAZY) {
                     try {
-                        fetch(call, held, queued = !fresh).also {
+                        fetch(call, held, queued).also {
                             synchronized(answers) { answers[key] = it }
                             // Only a changed list re-filters what is on screen; an unchanged or empty re-ask must not,
                             // or a memo that evicts its own keys would re-ask forever.
@@ -121,7 +129,7 @@ class Exclusions @VisibleForTesting internal constructor(
         return job.await()
     }
 
-    // [queued]: a list's background ask waits for a permit; a gate call (a screen open, a playback) never does.
+    // [queued]: a list's background channel ask waits for a permit; a gate call or a playlist ask never does.
     private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?, queued: Boolean): Entry = try {
         val r = if (queued) permits.withPermit { call() } else call()
         val body = r.body()

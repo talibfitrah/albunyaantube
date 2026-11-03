@@ -207,6 +207,17 @@ class ExclusionsTest {
     }
 
     @Test
+    fun `a playlist's own exclusions never queue behind its uploaders' channel asks`() = runTest {
+        (1..8).forEach { whenever(api.getChannel("UC$it")).doSuspendableAnswer { delay(60_000); entry() } }
+        whenever(api.getPlaylist("PL1")).thenReturn(entry(listOf("lesson00009")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+
+        val hidden = exclusions.videoIds(channelIds = (1..8).map { "UC$it" }, playlistIds = listOf("PL1"))
+
+        assertEquals(setOf("lesson00009"), hidden)
+    }
+
+    @Test
     fun `videoIds unions every channel and playlist it is given`() = runTest {
         whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
         whenever(api.getChannel("UC2")).thenReturn(Response.error(404, "".toResponseBody(null)))
