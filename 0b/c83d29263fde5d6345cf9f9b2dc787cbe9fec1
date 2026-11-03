@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/controller/YouTubeSearchControllerTest.java
+  s_543f5b01a05d75::t_1383cefd82f7eb 132-133,135-139,146
+  s_543f5b01a05d75::t_3cafed81fe9c56 18-19
+backend/src/main/java/com/albunyaan/tube/service/NewPipeSearchClient.java
+  s_543f5b01a05d75::t_e22a9dfc0d8a3a 36-38,42-43
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0bc83d29263fde5d6345cf9f9b2dc787cbe9fec1",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}

@@ -1,0 +1,19 @@
+backend/src/test/java/com/albunyaan/tube/service/YouTubeSearchServiceTest.java
+  s_543f5b01a05d75::t_6fa0297d26ea29 308
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "e9206b9321f93171501bac4cf5c2d1d746c4404b",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
