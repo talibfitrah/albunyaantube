@@ -127,6 +127,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   // What this process holds, oldest first, so a restart (a stop, a crash, the watchdog's SIGKILL) re-adopts it from the cache
   // before it polls: a player the backend handed out before the restart, which devices cache for 30 min, keeps solving.
   const heldFile = path.join(cacheDir, 'held.json');
+  // Until the first poll (restore, then iframe_api) settles, /player names no player: a restored one may be evicted seconds
+  // later, and the backend would hand it out for 30 min. held.json keeps the last process's list until then (cold review).
+  let started = false;
   // Names the player being built or solving. An executor that dies or hangs mid-op kills this process (connectExecutor's
   // onDead), as a fatal V8 OOM or the watchdog's SIGKILL would, and skips every finally, so a marker left at start means that
   // player killed the last process: it is deleted and not built again for an hour (`bootCrash`), or each
@@ -302,6 +305,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   }
 
   function saveHeld() {
+    if (!started) return;
     try {
       fs.writeFileSync(`${heldFile}.tmp`, JSON.stringify([...held.keys()]));
       fs.renameSync(`${heldFile}.tmp`, heldFile);
@@ -352,9 +356,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   function health() {
     let fetchesLastHour = null;
     try { fetchesLastHour = fetchLog().filter((t) => now() - t < HOUR_MS).length; } catch { /* reported as null */ }
-    const status = held.size ? 'ok' : (!cacheWritable || logBroken) ? 'no-cache' : throttled ? 'throttled' : 'warming';
+    const status = held.size && started ? 'ok' : (!cacheWritable || logBroken) ? 'no-cache' : throttled ? 'throttled' : 'warming';
     return {
-      status, current, sts: held.get(current)?.sts ?? null, held: [...held.keys()],
+      status, current: started ? current : null, sts: started ? held.get(current)?.sts ?? null : null, held: [...held.keys()],
       rssMiB: Math.round(process.memoryUsage().rss / 1_048_576), executorRssMiB, solves, p95CpuMs: Number(p95().toFixed(3)),
       lastPoll, fetchesLastHour, cacheWritable,
     };
@@ -375,7 +379,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   function stopped() { try { fs.rmSync(marker, { force: true }); } catch { /* nothing to keep */ } }
 
   let restored = null;
-  const poll = () => (polling ??= (restored ??= restore()).then(() => pollOnce()).finally(() => { polling = null; }));
+  const poll = () => (polling ??= (restored ??= restore()).then(() => pollOnce())
+    .then(() => { if (!started) { started = true; saveHeld(); } }).finally(() => { polling = null; }));
   return { poll, solve, health, dropCrashed, stopped };
 }
 

@@ -237,6 +237,29 @@ test('a restart re-adopts the players it held from the cache, with no download, 
   yt.close();
 });
 
+// Cold review P2 / P3: while it restores, /player names no player (a restored one may be evicted seconds later and the
+// backend would hand it out for 30 min), and held.json keeps the last process's list (a stop then loses none of it).
+test('until its first poll settles, a restart names no current player and keeps the saved held list', async () => {
+  const yt = await origin(['aaaaaaaa', 'bbbbbbbb', 'cccccccc']);
+  const dir = tempDir();
+  const first = solverWith({ origin: yt.url, cacheDir: dir, build: fakeBuild(), log: quiet });
+  await first.poll();
+  await first.poll();
+  const seen = [];
+  const build = fakeBuild();
+  let restarted;
+  restarted = solverWith({ origin: yt.url, cacheDir: dir, log: quiet, build: (text) => {
+    seen.push([restarted.health().current, fs.readFileSync(path.join(dir, 'held.json'), 'utf8')]);
+    return build(text);
+  } });
+  await restarted.poll();
+  const saved = '["aaaaaaaa","bbbbbbbb"]';
+  assert.deepEqual(seen, [[null, saved], [null, saved], [null, saved]]);   // building a, b (restore), then c
+  assert.equal(restarted.health().current, 'cccccccc');
+  assert.equal(fs.readFileSync(path.join(dir, 'held.json'), 'utf8'), '["bbbbbbbb","cccccccc"]');
+  yt.close();
+});
+
 test('a restart restores nothing it cannot take from the cache, and never downloads for it (R39)', async () => {
   const yt = await origin(['aaaaaaaa', 'bbbbbbbb']);
   const dir = tempDir();
