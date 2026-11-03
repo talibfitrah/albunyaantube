@@ -124,6 +124,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
                                solveTimeoutMs = 10_000, selfTestTimeoutMs = 10_000 }) {
   const held = new Map();                       // hash -> { sts, executor }; insertion order is age
   const logFile = path.join(cacheDir, 'fetch-log.json');
+  // What this process holds, oldest first, so a restart (a stop, a crash, the watchdog's SIGKILL) re-adopts it from the cache
+  // before it polls: a player the backend handed out before the restart, which devices cache for 30 min, keeps solving.
+  const heldFile = path.join(cacheDir, 'held.json');
   // Names the player being built or solving. An executor that dies or hangs mid-op kills this process (connectExecutor's
   // onDead), as a fatal V8 OOM or the watchdog's SIGKILL would, and skips every finally, so a marker left at start means that
   // player killed the last process: it is deleted and not built again for an hour (`bootCrash`), or each
@@ -213,11 +216,12 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
     return Buffer.concat(parts).toString('utf8');
   }
 
-  async function pollOnce() {
+  /** Polls iframe_api, or with `restoring`, re-adopts that held player from the cache only: never a download. */
+  async function pollOnce(restoring) {
     let step = 'iframe_api';
-    let file = null, hash = null;
+    let file = null, hash = restoring ?? null;
     try {
-      hash = playerHash(await text(`${origin}/iframe_api`));
+      if (!restoring) hash = playerHash(await text(`${origin}/iframe_api`));
       step = 'hash';
       if (!hash) throw new Error('no player hash');
       if (held.has(hash)) { lastPoll = { at: now(), ok: true, step: 'held' }; return; }   // A/B never rebuilds (M10)
@@ -226,6 +230,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
       step = 'cache';
       file = path.join(cacheDir, `${hash}.js`);
       let playerText = fs.existsSync(file) ? fs.readFileSync(file, 'utf8') : null;
+      if (playerText === null && restoring) throw new Error('not in the cache');
       if (playerText === null) {
         step = 'fetch-budget';
         cacheWritable = probeCache();
@@ -269,6 +274,7 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
       if (crashed.has(hash)) throw new Error('this player broke the solver; skipped until a restart');   // its executor is closed
       held.set(hash, { sts, executor });
       current = hash;
+      saveHeld();
       log.log(`adopted player ${hash} sts ${sts} cpu ${Math.round(cpuMs)} ms`);
       lastPoll = { at: now(), ok: true, step: 'adopted' };
     } catch (error) {
@@ -292,6 +298,22 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
     held.get(playerId)?.executor.close();      // its process exits on the hang-up
     held.delete(playerId);
     if (current === playerId) current = held.keys().next().value ?? null;
+    saveHeld();
+  }
+
+  function saveHeld() {
+    try {
+      fs.writeFileSync(`${heldFile}.tmp`, JSON.stringify([...held.keys()]));
+      fs.renameSync(`${heldFile}.tmp`, heldFile);
+    } catch { /* a read-only cache restores nothing: the restart then holds only what iframe_api names, as before */ }
+  }
+
+  /** The last process's held players, oldest first; anything but a list of hashes restores nothing. */
+  async function restore() {
+    let saved = [];
+    try { saved = JSON.parse(fs.readFileSync(heldFile, 'utf8')); } catch { /* none, or unreadable */ }
+    if (!Array.isArray(saved)) return;
+    for (const hash of saved) if (typeof hash === 'string' && /^[0-9a-f]{8}$/.test(hash)) await pollOnce(hash);
   }
 
   async function solve({ playerId, n, s }) {
@@ -352,7 +374,8 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   /** A stop (SIGTERM) is not a crash: whatever op is in flight, the next start must not drop its player (Cubic r2 P2). */
   function stopped() { try { fs.rmSync(marker, { force: true }); } catch { /* nothing to keep */ } }
 
-  const poll = () => (polling ??= pollOnce().finally(() => { polling = null; }));
+  let restored = null;
+  const poll = () => (polling ??= (restored ??= restore()).then(() => pollOnce()).finally(() => { polling = null; }));
   return { poll, solve, health, dropCrashed, stopped };
 }
 
