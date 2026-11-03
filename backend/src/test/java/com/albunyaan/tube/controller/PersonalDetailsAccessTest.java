@@ -204,6 +204,10 @@ class PersonalDetailsAccessTest {
         when(users.findByUidUncached("uid-grantee")).thenThrow(new java.util.concurrent.TimeoutException("firestore"));
         mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isServiceUnavailable());
 
+        org.mockito.Mockito.reset(users);
+        when(users.findByUidUncached("uid-grantee")).thenThrow(new IllegalStateException("user doc will not map"));
+        mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isServiceUnavailable());
+
         when(firebaseAuth.verifyIdToken("grantee-token", true)).thenThrow(
                 new FirebaseAuthException(ErrorCode.UNAVAILABLE, "getUser timed out", null, null, null));
         mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isServiceUnavailable());

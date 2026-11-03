@@ -89,21 +89,21 @@ public class PublicContentController {
     private ResponseEntity<?> serveToActiveGrantee(String visibility, String authorization, String type, String id,
                                                     Object body) {
         if (!VisibilityPolicy.isPublic(visibility)) {
+            boolean refused;
             try {
                 String uid = firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), true).getUid();
                 // No Firestore doc yet (first sign-in) passes, as in FirebaseAuthFilter.
-                if (userRepository.findByUidUncached(uid).map(u -> u.isBlocked() || u.isDeleted()).orElse(false)) {
-                    throw new ResourceNotFoundException(type, id);
-                }
+                refused = userRepository.findByUidUncached(uid).map(u -> u.isBlocked() || u.isDeleted()).orElse(false);
             } catch (FirebaseAuthException e) {
-                if (TOKEN_REJECTIONS.contains(e.getAuthErrorCode())) throw new ResourceNotFoundException(type, id);
-                return granteeCheckUnavailable(e);
+                if (!TOKEN_REJECTIONS.contains(e.getAuthErrorCode())) return granteeCheckUnavailable(e);
+                refused = true;
             } catch (InterruptedException e) {
                 Thread.currentThread().interrupt();
                 return granteeCheckUnavailable(e);
-            } catch (ExecutionException | java.util.concurrent.TimeoutException e) {
-                return granteeCheckUnavailable(e);
+            } catch (ExecutionException | java.util.concurrent.TimeoutException | RuntimeException e) {
+                return granteeCheckUnavailable(e); // RuntimeException: e.g. a user doc that will not map
             }
+            if (refused) throw new ResourceNotFoundException(type, id);
         }
         // no-store: the apps read the exclusions here on every open, so no cache may hold one back, and a grantee's
         // answer must never be served to anyone else.
