@@ -90,6 +90,8 @@ class HomeViewModel @Inject constructor(
                     category = currentCategory
                 )
                 val fresh = result.sections.map { it.categoryId }.toSet()
+                // ponytail: a section pushed off page 1 drops out until a pull-to-refresh, since the kept cursor is
+                // past it; refetch the loaded pages if that matters more than the backend load.
                 val below = if (keepOnScreen) sections.drop(firstPageCount).filter { it.categoryId !in fresh } else emptyList()
                 if (!keepOnScreen || sections.size <= firstPageCount) { // only page 1 was loaded
                     nextCursor = result.nextCursor

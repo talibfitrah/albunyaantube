@@ -209,11 +209,9 @@ class PlaylistsFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
                             val screenWidthDp = resources.configuration.smallestScreenWidthDp
                             val rv = binding.recyclerView
-                            // A new list (another query) opens at its best match; a page appended below, the same list, or one
-                            // refreshed in place, keeps its place.
-                            val replaced = !state.inPlace && adapter.currentList.let { it.isNotEmpty() && playlists.take(it.size) != it }
+                            val toTop = opensAtTop(adapter.currentList, playlists, state.inPlace, atTop = !rv.canScrollVertically(-1))
                             adapter.submitList(playlists) {
-                                if (replaced) rv.scrollToPosition(0)
+                                if (toTop) rv.scrollToPosition(0)
                                 autofillHelper.check(
                                     itemCount = playlists.size,
                                     hasMoreData = state.hasMoreData,

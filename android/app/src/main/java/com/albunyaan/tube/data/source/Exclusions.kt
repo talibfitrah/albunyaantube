@@ -76,16 +76,19 @@ class Exclusions @VisibleForTesting internal constructor(
     // playlists cannot burst the backend. Gate calls and one playlist's own page ask skip them.
     private val channelPermits = Semaphore(MAX_CONCURRENT)
     private val playlistPermits = Semaphore(MAX_CONCURRENT_PLAYLISTS)
-    // The signed-in user the answers are for (guarded by [answers]): PERSONAL lists never carry over to another
+    // The signed-in user the answers are for, and a count of its changes (guarded by [answers]): PERSONAL lists never
+    // carry over to another. An ask is kept only within its own sign-in: one that spanned a sign-out and back in may
+    // have been signed as the other user.
     private var owner: String? = null
+    private var generation = 0
 
     /** Bumped each time an answer changes a list, so a list already shown (the Me feed) can filter again. */
     private val _changes = MutableStateFlow(0)
     val changes: StateFlow<Int> = _changes
 
     /**
-     * Channel [id]'s answer. [fresh]: a screen open asks again (joining another gate's ask already running, never a
-     * queued list ask) so a new exclusion shows.
+     * Channel [id]'s answer. [fresh]: a screen open asks again (joining an uncapped ask already running, never a queued
+     * list ask) so a new exclusion shows.
      */
     suspend fun channel(id: String, fresh: Boolean = false): Entry =
         lookup("channel:$id", fresh, if (fresh) null else channelPermits) { api.getChannel(id) }
@@ -132,20 +135,26 @@ class Exclusions @VisibleForTesting internal constructor(
                 answers.clear()
                 inFlight.clear()
                 owner = asker
+                generation++
             }
-            // A gate asks live: it never joins an ask that waits for a permit behind a list's burst.
-            inFlight[key]?.takeUnless { fresh && it.second }?.first ?: run {
+            val asked = generation
+            // An uncapped ask (a gate, one playlist's own page) never joins an ask waiting for a permit behind a burst.
+            inFlight[key]?.takeUnless { permits == null && it.second }?.first ?: run {
                 val held = answers[key]
                 if (!fresh && held != null && held.until > now()) return held
+                // The newest answer, not the one this ask started from: a gate may have stored one meanwhile.
+                val last = { synchronized(answers) { answers[key].takeIf { asked == generation } ?: held } }
                 val ask = scope.async(start = CoroutineStart.LAZY) {
                     try {
-                        fetch(call, held, permits).also {
-                            val kept = synchronized(answers) { (owner == asker).also { mine -> if (mine) answers[key] = it } }
+                        fetch(call, last, permits).also {
+                            val changed = synchronized(answers) {
+                                val before = last()
+                                (asked == generation).also { mine -> if (mine) answers[key] = it } &&
+                                    (it.videoIds != before?.videoIds.orEmpty() || it.playlistIds != before?.playlistIds.orEmpty())
+                            }
                             // Only a changed list re-filters what is on screen; an unchanged or empty re-ask must not,
                             // or a memo that evicts its own keys would re-ask forever.
-                            if (kept && (it.videoIds != held?.videoIds.orEmpty() || it.playlistIds != held?.playlistIds.orEmpty())) {
-                                _changes.update { n -> n + 1 }
-                            }
+                            if (changed) _changes.update { n -> n + 1 }
                         }
                     } finally {
                         val self = coroutineContext[Job]
@@ -159,7 +168,7 @@ class Exclusions @VisibleForTesting internal constructor(
         return job.await()
     }
 
-    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?, permits: Semaphore?): Entry = try {
+    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, last: () -> Entry?, permits: Semaphore?): Entry = try {
         val r = if (permits != null) permits.withPermit { call() } else call()
         val body = r.body()
         when {
@@ -168,12 +177,12 @@ class Exclusions @VisibleForTesting internal constructor(
                 now() + ANSWER_MS,
             )
             r.code() == 404 || r.code() == 410 -> Entry(r.code(), emptySet(), emptySet(), null, now() + ANSWER_MS)
-            else -> failed(HttpException(r), held)
+            else -> failed(HttpException(r), last())
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        failed(e, held) // IOException, a Moshi error
+        failed(e, last()) // IOException, a Moshi error
     }
 
     // Keeps the last answer's status too: one blip must not make a registered channel read as unregistered.

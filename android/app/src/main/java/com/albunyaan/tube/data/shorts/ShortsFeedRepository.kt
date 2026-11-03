@@ -147,6 +147,7 @@ class ShortsFeedRepository @Inject constructor(
          */
         internal const val MAX_TOKENS = 32
 
-        private const val MAX_EMPTY_PAGES_WALKED = 5 // ChannelDetailViewModel's MAX_APPEND_EMPTY_PAGE_FETCHES
+        // After the first fetch: 5 fetches in all, ChannelDetailViewModel's MAX_APPEND_EMPTY_PAGE_FETCHES
+        private const val MAX_EMPTY_PAGES_WALKED = 4
     }
 }

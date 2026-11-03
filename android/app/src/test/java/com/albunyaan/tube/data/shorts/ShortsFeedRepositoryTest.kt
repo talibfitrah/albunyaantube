@@ -95,6 +95,18 @@ class ShortsFeedRepositoryTest {
     }
 
     @Test
+    fun channelMode_theWalkPastEmptiedPagesFetchesAtMostFivePagesLikeTheChannelTab() = runBlocking {
+        val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), anyOrNull()))
+            .thenReturn(ChannelPage(items = emptyList(), nextPage = nextPage))
+
+        repo.loadChannelShortsPage(channelId = "UC1", cursor = null)
+
+        org.mockito.kotlin.verify(channelDetailRepository, org.mockito.kotlin.times(5)).getShorts(eq("UC1"), anyOrNull())
+        Unit
+    }
+
+    @Test
     fun channelMode_returnsCursorTokenWhenNextPageExists() = runBlocking {
         val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
         val short = ChannelShort(id = "short-1", title = "t", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)

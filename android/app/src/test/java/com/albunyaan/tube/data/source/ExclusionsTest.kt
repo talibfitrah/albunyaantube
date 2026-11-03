@@ -264,6 +264,57 @@ class ExclusionsTest {
     }
 
     @Test
+    fun `a playlist page never joins the Me feed's queued ask for the same playlist`() = runTest {
+        (1..2).forEach { whenever(api.getPlaylist("PL$it")).doSuspendableAnswer { delay(60_000); entry() } }
+        whenever(api.getPlaylist("PL3")).thenReturn(entry(listOf("lesson00009")))
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.videoIds(playlistIds = listOf("PL1", "PL2", "PL3")) // PL3's ask waits behind PL1 and PL2
+
+        val start = currentTime
+        val hidden = exclusions.videoIds(playlistIds = listOf("PL3")) // the user opens PL3
+
+        assertEquals(start, currentTime)
+        assertEquals(setOf("lesson00009"), hidden)
+    }
+
+    @Test
+    fun `an answer asked before a sign-out and back in is not kept, it may carry the other user's lists`() = runTest {
+        whenever(api.getChannel("UC1")).doSuspendableAnswer { delay(1_000); entry(listOf("lesson00001")) }
+        whenever(api.getChannel("UC2")).thenReturn(entry())
+        var user: String? = "alice"
+        val exclusions = Exclusions(api, { clock }, backgroundScope) { user }
+        val asked = async { exclusions.channel("UC1") }
+        delay(500)
+
+        user = "bob"
+        exclusions.channel("UC2") // bob reads while alice's ask, now signed as bob, is still out
+        user = "alice"
+        exclusions.channel("UC2")
+        asked.await()
+        exclusions.channel("UC1")
+
+        verify(api, times(2)).getChannel("UC1")
+    }
+
+    @Test
+    fun `a queued ask that fails late keeps the newer answer a gate stored meanwhile`() = runTest {
+        (1..2).forEach { whenever(api.getPlaylist("PL$it")).doSuspendableAnswer { delay(60_000); entry() } }
+        var calls = 0
+        whenever(api.getPlaylist("PL3")).doSuspendableAnswer {
+            if (calls++ == 0) entry(listOf("lesson00009")) else throw IOException("blip")
+        }
+        val exclusions = Exclusions(api, { clock }, backgroundScope)
+        exclusions.videoIds(playlistIds = listOf("PL1", "PL2", "PL3")) // PL3's ask waits behind PL1 and PL2
+        exclusions.playlist("PL3", fresh = true) // the screen's gate: the new exclusion
+
+        delay(60_000) // the queued ask gets its permit and fails
+        val hidden = exclusions.videoIds(playlistIds = listOf("PL3"))
+
+        assertEquals(2, calls)
+        assertEquals(setOf("lesson00009"), hidden)
+    }
+
+    @Test
     fun `a change of signed-in user drops every answer at once`() = runTest {
         whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
         var user: String? = "alice"

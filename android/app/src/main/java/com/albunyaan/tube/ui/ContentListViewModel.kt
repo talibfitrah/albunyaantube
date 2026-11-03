@@ -103,7 +103,11 @@ class ContentListViewModel(
 
     // Public read-only accessors for Fragment-side guards
     val canLoadMore: Boolean
-        get() = !_isLoadingMore && !_isRefreshing && _hasMoreData
+        get() = !_isLoadingMore && !_isRefreshing && !refreshingInPlace && _hasMoreData
+
+    // The return-after-idle reload: paging waits for it, so a scroll does not cancel it
+    private var inPlaceJob: Job? = null
+    private val refreshingInPlace: Boolean get() = inPlaceJob?.isActive == true
 
     // Accumulated items for pagination
     private val allItems = mutableListOf<ContentItem>()
@@ -127,7 +131,7 @@ class ContentListViewModel(
     private fun refreshFirstPageInPlace() {
         if (loadJob?.isActive == true) return
         if (_content.value !is ContentState.Success) return refresh()
-        loadJob = viewModelScope.launch {
+        inPlaceJob = viewModelScope.launch {
             val response = try {
                 contentService.fetchContent(contentType, null, PAGE_SIZE, currentFilters, _searchQuery.value.takeIf { it.isNotBlank() })
             } catch (e: CancellationException) {
@@ -146,6 +150,7 @@ class ContentListViewModel(
             markShown()
             _content.value = ContentState.Success(allItems.toList(), _hasMoreData, isSearchActive = isSearchActive, inPlace = true)
         }
+        loadJob = inPlaceJob
     }
 
     private val ContentItem.key: String
@@ -294,8 +299,8 @@ class ContentListViewModel(
      */
     fun loadMore() {
         // Guard: prevent duplicate/spam requests and requests during refresh
-        if (_isLoadingMore || _isRefreshing || !_hasMoreData) {
-            Log.d(TAG, "loadMore skipped: isLoadingMore=$_isLoadingMore, isRefreshing=$_isRefreshing, hasMoreData=$_hasMoreData")
+        if (_isLoadingMore || _isRefreshing || refreshingInPlace || !_hasMoreData) {
+            Log.d(TAG, "loadMore skipped: isLoadingMore=$_isLoadingMore, isRefreshing=$_isRefreshing, inPlace=$refreshingInPlace, hasMoreData=$_hasMoreData")
             return
         }
 
@@ -319,7 +324,9 @@ class ContentListViewModel(
                 )
 
                 if (allItems.isEmpty()) firstPageSize = response.data.size // a page-1 retry after a failed load
-                allItems.addAll(response.data)
+                // A cursor kept across a return-after-idle refresh can hand back rows page 1 now shows
+                val shown = allItems.mapTo(HashSet()) { it.key }
+                allItems.addAll(response.data.filter { it.key !in shown })
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -400,3 +407,11 @@ class ContentListViewModel(
         private const val PAGE_SIZE = 20
     }
 }
+
+/**
+ * Whether a tab's next list opens at its top. A new list (another query) opens at its best match; a page appended below,
+ * or the same list, keeps its place. One refreshed in place keeps it too, unless the user sat at the top: rows added
+ * there would land above the screen.
+ */
+internal fun <T> opensAtTop(shown: List<T>, next: List<T>, inPlace: Boolean, atTop: Boolean): Boolean =
+    if (inPlace) atTop else shown.isNotEmpty() && next.take(shown.size) != shown

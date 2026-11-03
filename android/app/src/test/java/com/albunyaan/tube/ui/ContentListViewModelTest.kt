@@ -259,6 +259,59 @@ class ContentListViewModelTest {
     }
 
     @Test
+    fun `a scroll while the return-after-idle refresh runs does not cancel it`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a"), createVideo("b")), CursorResponse.PageInfo("c1")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("c")), CursorResponse.PageInfo("c2")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("n"), createVideo("a")), CursorResponse.PageInfo("x1")))
+        fakeService.gates[2] = CompletableDeferred()
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        vm.loadMore() // the user scrolls near the bottom while page 1 reloads
+        fakeService.gates.getValue(2).complete(Unit)
+        advanceUntilIdle()
+
+        val state = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf("n", "a", "c"), state.items.map { (it as ContentItem.Video).id })
+        assertEquals(3, fakeService.asked.size)
+    }
+
+    @Test
+    fun `a page after a return-after-idle refresh drops rows already shown`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a"), createVideo("b")), CursorResponse.PageInfo("c1")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("c"), createVideo("d")), CursorResponse.PageInfo("c2")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("n"), createVideo("a")), CursorResponse.PageInfo("x1")))
+        // An offset cursor kept from before: "n" at the top shifted every row one down, so "d" comes again
+        fakeService.responses.add(CursorResponse(listOf(createVideo("d"), createVideo("e")), null))
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        vm.loadMore()
+        advanceUntilIdle()
+
+        val state = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf("n", "a", "c", "d", "e"), state.items.map { (it as ContentItem.Video).id })
+    }
+
+    @Test
+    fun `a list refreshed in place keeps its place, or its top so the new rows show`() {
+        assertTrue(opensAtTop(listOf("a", "b"), listOf("n", "a"), inPlace = true, atTop = true))
+        assertFalse(opensAtTop(listOf("a", "b"), listOf("n", "a"), inPlace = true, atTop = false))
+        assertTrue(opensAtTop(listOf("a", "b"), listOf("x", "y"), inPlace = false, atTop = false)) // another query
+        assertFalse(opensAtTop(listOf("a", "b"), listOf("a", "b", "c"), inPlace = false, atTop = false)) // a page below
+    }
+
+    @Test
     fun `a return after idle retries a first load that failed`() = runTest {
         // The tab shows its skeleton with no pull-to-refresh: the return is its automatic retry.
         fakeService.errorOnCall = 0

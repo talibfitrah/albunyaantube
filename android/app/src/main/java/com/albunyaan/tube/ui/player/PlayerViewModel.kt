@@ -33,6 +33,7 @@ import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.playlist.PlaylistItem
+import com.albunyaan.tube.data.playlist.PlaylistPage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -1110,9 +1111,7 @@ class PlayerViewModel @Inject constructor(
 
         // Load first page (always allowed full timeout - not part of deep-start budget)
         val firstPage = try {
-            withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-                playlistDetailRepository.getItems(playlistId, page = null, itemOffset = 1)
-            }
+            playlistPage(playlistId, page = null, itemOffset = 1)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Playlist first page fetch failed: ${e.message}")
@@ -1168,7 +1167,7 @@ class PlayerViewModel @Inject constructor(
             val pageTimeout = minOf(PAGE_FETCH_TIMEOUT_MS, remainingBudget)
             val morePage = try {
                 withTimeoutOrNull(pageTimeout) {
-                    playlistDetailRepository.getItems(playlistId, nextPage, nextItemOffset)
+                    playlistDetailRepository.getItems(playlistId, nextPage, nextItemOffset, PLAYLIST_WALK_BUDGET_MS)
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -2159,6 +2158,10 @@ class PlayerViewModel @Inject constructor(
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
+        // ponytail: the walk past excluded pages starts no page after 3 s, so the page it hands back (one more fetch, a
+        // <=2 s exclusions wait, a <=1.5 s titles wait) lands inside PAGE_FETCH_TIMEOUT_MS; lower it if pages are slower.
+        private const val PLAYLIST_WALK_BUDGET_MS = 3_000L
+        private const val MAX_EMPTIED_PAGES_FOLLOWED = 2 // each a fresh walk of up to 5 excluded pages
         private const val PAGE_FETCH_COOLDOWN_MS = 2000L  // 2s minimum gap between page fetches
         private const val MAX_ITEMS_TO_SCAN = 250         // Max items to scan for deep start
         private const val MAX_SCAN_TIME_MS = 3000L        // Max time for deep start scanning
@@ -2314,6 +2317,25 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * A playlist page, each fetch inside the page timeout (null when one times out). A page the exclusions emptied but
+     * with more behind it is followed a bounded number of times, so it never reads as an unavailable or ended playlist.
+     */
+    private suspend fun playlistPage(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem>? {
+        var got = withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+            playlistDetailRepository.getItems(playlistId, page, itemOffset, PLAYLIST_WALK_BUDGET_MS)
+        } ?: return null
+        var followed = 0
+        while (got.items.isEmpty() && followed++ < MAX_EMPTIED_PAGES_FOLLOWED) {
+            val next = got.nextPage ?: break
+            val offset = got.nextItemOffset
+            got = withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+                playlistDetailRepository.getItems(playlistId, next, offset, PLAYLIST_WALK_BUDGET_MS)
+            } ?: return null
+        }
+        return got
+    }
+
+    /**
      * PR6.6: Fetch the next page of playlist items.
      * Thread-safe via pagingMutex. Updates queue and paging state.
      *
@@ -2338,13 +2360,7 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: loading more items, offset=${currentState.nextItemOffset}")
 
             val page = try {
-                withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-                    playlistDetailRepository.getItems(
-                        currentState.playlistId,
-                        currentState.nextPage,
-                        currentState.nextItemOffset
-                    )
-                }
+                playlistPage(currentState.playlistId, currentState.nextPage, currentState.nextItemOffset)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.w("PlayerViewModel", "fetchNextPlaylistPage: error ${e.message}")

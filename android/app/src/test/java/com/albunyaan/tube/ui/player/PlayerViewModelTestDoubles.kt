@@ -168,6 +168,7 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
     private var pages: List<PlaylistPage<PlaylistItem>> = emptyList()
     private var currentPageIndex = 0
     var getItemsCallCount = 0
+    val walkBudgets = mutableListOf<Long?>()
     var failOnSecondPage = false
 
     fun setPages(pages: List<PlaylistPage<PlaylistItem>>) {
@@ -197,8 +198,9 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
         downloadPolicy = downloadPolicy,
     )
 
-    override suspend fun getItems(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem> {
+    override suspend fun getItems(playlistId: String, page: Page?, itemOffset: Int, walkBudgetMs: Long?): PlaylistPage<PlaylistItem> {
         getItemsCallCount++
+        walkBudgets += walkBudgetMs
         if (page != null && failOnSecondPage) throw java.io.IOException("Simulated network error for testing")
         val pageIndex = if (page == null) 0 else currentPageIndex + 1
         currentPageIndex = pageIndex

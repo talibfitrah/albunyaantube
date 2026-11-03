@@ -36,12 +36,15 @@ interface PlaylistDetailRepository {
      * @param page Pagination cursor, null for first page
      * @param itemOffset Starting position (1-based) for items in this page.
      *                   Used to assign correct playlist positions when paginating.
+     * @param walkBudgetMs A caller with a page timeout: the walk past pages of only excluded items starts no page
+     *                     after this long. Null: bounded in pages only.
      * @return Paginated list of playlist items (videos)
      */
     suspend fun getItems(
         playlistId: String,
         page: Page?,
-        itemOffset: Int = 1
+        itemOffset: Int = 1,
+        walkBudgetMs: Long? = null,
     ): PlaylistPage<PlaylistItem>
 
     /**

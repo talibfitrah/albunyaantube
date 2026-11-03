@@ -143,8 +143,10 @@ class NewPipePlaylistDetailRepository @VisibleForTesting internal constructor(
     override suspend fun getItems(
         playlistId: String,
         page: Page?,
-        itemOffset: Int
-    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0, walkUntil = now() + WALK_BUDGET_MS)
+        itemOffset: Int,
+        walkBudgetMs: Long?,
+    ): PlaylistPage<PlaylistItem> =
+        getItems(playlistId, page, itemOffset, skipped = 0, walkUntil = walkBudgetMs?.let { now() + it } ?: Long.MAX_VALUE)
 
     /** [skipped]: pages of only excluded items already walked past for this call; [walkUntil]: when it stops walking. */
     private suspend fun getItems(
@@ -233,8 +235,8 @@ class NewPipePlaylistDetailRepository @VisibleForTesting internal constructor(
                     playlistIds = listOf(playlistId),
                 )
                 val shown = items.filterNot { it.videoId in hidden }
-                // A page of only excluded items must not read as the end or as an empty playlist. Bounded in pages and
-                // in time, so one call cannot walk a whole excluded history past the callers' page timeouts.
+                // A page of only excluded items must not read as the end or as an empty playlist. Bounded in pages, and
+                // in time for a caller with a page timeout, so one call cannot walk past it.
                 if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED &&
                     now() < walkUntil
                 ) {
@@ -588,9 +590,6 @@ class NewPipePlaylistDetailRepository @VisibleForTesting internal constructor(
         // accidentally satisfy the registry lookup.
         private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
         private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded items one call walks past
-        // ponytail: the walk starts no page after 3 s, so the page it hands back (one more fetch, a <=2 s exclusions
-        // wait, a <=1.5 s titles wait) lands inside the player's 10 s page timeout; lower it if field pages are slower.
-        private const val WALK_BUDGET_MS = 3_000L
         private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours
         // Short TTL for cached negative results — see [resolveCanonicalChannelId].
         // Long enough to prevent re-fetch storms on persistent failures,
