@@ -224,12 +224,13 @@ import Testing
             transport: FixtureTransport(routes: []), keyValueStore: keyValueStoreWithLastGood(data),
             url: URL(string: "https://example.invalid/none")!)
         let config = await store.current()
-        // The published ladder is the two native rungs, same as the BUNDLED default. It lost its
-        // `embed` third rung to owner directive 2026-10-14 (no YouTube player), and `sanitized`
-        // would drop the entry even if it came back.
-        #expect(config.resolverOrder == ["visionosHLS", "androidItag18"])
+        // Playback Phase 2 (spec R2): the two native rungs, then the HD upgrade's switch, and the TV context as the fourth
+        // family. The published ladder lost its `embed` rung to owner directive 2026-10-14, and `sanitized` would drop
+        // that entry even if it came back.
+        #expect(config.resolverOrder == ["visionosHLS", "androidItag18", "tvSamsungAdaptive"])
         #expect(config.resolverOrder == raw.resolverOrder)   // no fallback may mask a bad published order
-        #expect(config.clients.count == 3)            // no clientName mismatch dropped a family
+        #expect(config.clients.count == 4)            // no clientName mismatch dropped a family
+        #expect(config.clients["tvSamsung"]?.clientName == "TVHTML5")
         #expect(config.featuredCategoryId != nil)     // ruling 63's key is present
     }
 
