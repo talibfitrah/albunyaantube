@@ -873,27 +873,30 @@ class GlobalStreamResolverTest {
             retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lecture_known")))
         )
         val askScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
-        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, askScope)
-        exclusions.channel("UCstalled") // an earlier answer in the memo
-        api.stub { onBlocking { getChannel("UCstalled") } doSuspendableAnswer { kotlinx.coroutines.awaitCancellation() } }
-        val gatedResolver = GlobalStreamResolver.createForTesting(
-            fakeProvider,
-            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
-            exclusions,
-        )
-        fakeProvider.setResult("lecture_slow", createMockStreams("lecture_slow").copy(uploaderChannelId = "UCstalled"))
-        fakeProvider.setResult("lecture_known", createMockStreams("lecture_known").copy(uploaderChannelId = "UCstalled"))
-
-        // A hung backend must not eat the player's resolve budget: the video plays.
-        assertNotNull(gatedResolver.resolveStreams("lecture_slow", caller = "test", timeoutMs = 5_000L))
-        // But a stale list beats showing what the admin hid.
         try {
-            gatedResolver.resolveStreams("lecture_known", caller = "test", timeoutMs = 5_000L)
-            fail("Expected ContentUnavailableException from the memo's last answer")
-        } catch (e: ContentUnavailableException) {
-            assertEquals("lecture_known", e.videoId)
+            val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, askScope)
+            exclusions.channel("UCstalled") // an earlier answer in the memo
+            api.stub { onBlocking { getChannel("UCstalled") } doSuspendableAnswer { kotlinx.coroutines.awaitCancellation() } }
+            val gatedResolver = GlobalStreamResolver.createForTesting(
+                fakeProvider,
+                com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+                exclusions,
+            )
+            fakeProvider.setResult("lecture_slow", createMockStreams("lecture_slow").copy(uploaderChannelId = "UCstalled"))
+            fakeProvider.setResult("lecture_known", createMockStreams("lecture_known").copy(uploaderChannelId = "UCstalled"))
+
+            // A hung backend must not eat the player's resolve budget: the video plays.
+            assertNotNull(gatedResolver.resolveStreams("lecture_slow", caller = "test", timeoutMs = 5_000L))
+            // But a stale list beats showing what the admin hid.
+            try {
+                gatedResolver.resolveStreams("lecture_known", caller = "test", timeoutMs = 5_000L)
+                fail("Expected ContentUnavailableException from the memo's last answer")
+            } catch (e: ContentUnavailableException) {
+                assertEquals("lecture_known", e.videoId)
+            }
+        } finally {
+            askScope.cancel()
         }
-        askScope.cancel()
     }
 
     @Test
