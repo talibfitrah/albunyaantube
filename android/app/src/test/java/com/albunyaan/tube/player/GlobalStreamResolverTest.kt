@@ -826,6 +826,40 @@ class GlobalStreamResolverTest {
     }
 
     @Test
+    fun `a video excluded from its uploader's channel does not play without channel context`() = runTest {
+        // Favorites, Downloads, Search, deep links: no sourceChannelId, and a channel video is never registered alone.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCuploader")).thenReturn(
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lecture_hidden")))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCunknown")).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_hidden", createMockStreams("lecture_hidden").copy(uploaderChannelId = "UCuploader"))
+        fakeProvider.setResult("lecture_kept", createMockStreams("lecture_kept").copy(uploaderChannelId = "UCuploader"))
+        fakeProvider.setResult("lecture_other", createMockStreams("lecture_other").copy(uploaderChannelId = "UCunknown"))
+
+        try {
+            gatedResolver.resolveStreams("lecture_hidden", caller = "test")
+            fail("Expected ContentUnavailableException for a video excluded from its uploader's channel")
+        } catch (e: ContentUnavailableException) {
+            assertEquals("lecture_hidden", e.videoId)
+        }
+        assertNotNull(gatedResolver.resolveStreams("lecture_kept", caller = "test"))
+        // A channel outside the registry (404) excludes nothing.
+        assertNotNull(gatedResolver.resolveStreams("lecture_other", caller = "test"))
+    }
+
+    @Test
     fun `available video proceeds to provider`() = runTest {
         val fakeContentService = FakeContentService()
         val gatedResolver = GlobalStreamResolver.createForTesting(fakeProvider, fakeContentService)

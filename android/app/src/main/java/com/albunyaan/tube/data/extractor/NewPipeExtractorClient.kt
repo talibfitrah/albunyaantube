@@ -648,6 +648,9 @@ class NewPipeExtractorClient(
             urlTimebaseVersion = ResolvedStreams.URL_TIMEBASE_VERSION,
             extractionClient = extractionClient,
             title = name?.takeIf { it.isNotBlank() },
+            // NewPipe builds it from videoDetails.channelId: https://www.youtube.com/channel/UC…
+            uploaderChannelId = uploaderUrl?.let { com.albunyaan.tube.data.me.AtomChannelFeedFetcher.CHANNEL_ID_REGEX.find(it) }
+                ?.groupValues?.get(1),
         )
     }
 

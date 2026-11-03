@@ -418,7 +418,7 @@ class GlobalStreamResolver private constructor(
                         throw ContentUnavailableException(videoId)
                     }
                 }
-                try {
+                val streams = try {
                     resolutionProvider.resolveStreams(videoId, forceRefresh, priority)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -426,6 +426,16 @@ class GlobalStreamResolver private constructor(
                     Log.e(TAG, "resolveStreams failed for $videoId: ${e.message}")
                     null
                 }
+                // No channel context (Favorites, Search, a deep link, a download): a channel video is never registered on
+                // its own, so ask its uploader's channel. A failed ask keeps its last lists or none (fail open); 404 = none.
+                val uploader = streams?.uploaderChannelId
+                if (sourceChannelId.isNullOrBlank() && !uploader.isNullOrBlank() &&
+                    exclusions != null && videoId in exclusions.channel(uploader, fresh = true).videoIds
+                ) {
+                    Log.i(TAG, "[$caller] $videoId excluded from its uploader's channel; throwing ContentUnavailableException")
+                    throw ContentUnavailableException(videoId)
+                }
+                streams
                 // Note: cleanup happens via invokeOnCompletion below, not in finally
             }
             val inFlight = InFlight(newJob, priority)
