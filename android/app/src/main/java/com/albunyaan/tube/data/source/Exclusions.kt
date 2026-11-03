@@ -113,6 +113,10 @@ class Exclusions @VisibleForTesting internal constructor(
             asks.awaitAll().flatMapTo(HashSet()) { it?.videoIds.orEmpty() }
         }
 
+    /** The videos channel [id] hides, for a playback with no channel context: asked afresh, the same fail-open way. */
+    suspend fun channelVideoIds(id: String): Set<String> =
+        waited("channel:$id") { channel(id, fresh = true) }?.videoIds.orEmpty()
+
     /** The playlists a channel's Playlists tab drops, the same fail-open way. */
     suspend fun playlistIds(channelId: String): Set<String> =
         waited("channel:$channelId") { channel(channelId) }?.playlistIds.orEmpty()
@@ -198,7 +202,7 @@ class Exclusions @VisibleForTesting internal constructor(
     companion object {
         private const val ANSWER_MS = 5 * 60_000L // a list read away from a gate call (Me feed, next page)
         private const val FAILURE_MS = 30_000L
-        internal const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
+        private const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
         private const val MEMO_SIZE = 500
         private const val MAX_CONCURRENT = 4
         private const val MAX_CONCURRENT_PLAYLISTS = 2
