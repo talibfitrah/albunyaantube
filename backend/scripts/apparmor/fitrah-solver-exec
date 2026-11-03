@@ -1,0 +1,12 @@
+# FitrahTube solver executor (fitrah-solver-exec@.service, AppArmorProfile=). The unit's sandbox is the confinement; this
+# profile adds the one thing no unit option can: no write to the executor's own memory through /proc (<pid>/mem, and
+# task/<tid>/mem, which /proc/self, /proc/thread-self and /proc/self/task reach). Reading it stays allowed. Install:
+# /etc/apparmor.d/fitrah-solver-exec, then `apparmor_parser -r` it; apparmor.service loads it at every boot.
+abi <abi/4.0>,
+include <tunables/global>
+
+profile fitrah-solver-exec {
+  all,
+  deny @{PROC}/@{pid}/mem w,
+  deny @{PROC}/@{pid}/task/@{tid}/mem w,
+}

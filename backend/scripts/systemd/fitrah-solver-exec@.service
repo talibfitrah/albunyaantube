@@ -33,7 +33,17 @@ RestrictAddressFamilies=AF_UNIX
 # PrivateTmp=, its own /tmp and /var/tmp mounts; systemd 255 merges a same-path entry's :ro into them, so each is named
 # here (the 2026-11-03 drill made a directory in /var/tmp, under only /var:ro). PrivateDevices= binds the host's /dev/pts
 # beside its /dev/ptmx, where each open makes a host pty: an empty /dev/pts fails the open, so no host login is starved.
-TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro
+# It binds the host's /dev/mqueue too (the 2026-11-03 probe made a queue there, in the host IPC namespace): PrivateIPC=
+# gives the executor an IPC namespace of its own (SysV and POSIX queues, shared memory), and /dev/mqueue is empty and read-only.
+TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro /dev/mqueue:ro
+PrivateIPC=yes
+# A process may write its own memory through /proc/<pid>/mem, read-only code pages included (FOLL_FORCE): escaped JS could
+# patch node's code and run any syscall the filter allows, past --permission (the 2026-11-03 probe rewrote node's r-xp text
+# by four paths). No unit option stops it on systemd 255 / kernel 6.8: ProtectProc= and ProcSubset= leave it, and
+# InaccessiblePaths=/proc/self/mem leaves /proc/self/task/<tid>/mem and /proc/thread-self/mem; proc_mem.force_override=
+# is kernel 6.12+. This AppArmor profile (scripts/apparmor/fitrah-solver-exec, loaded before this starts) denies the write
+# by every path. Not loaded: the executor does not start, so playback stays at 360p (fail closed).
+AppArmorProfile=fitrah-solver-exec
 # The loader's directory is bound here only so it stays read-only under ExecPaths= below (an ExecPaths= path of its own
 # becomes a mount that ProtectSystem= no longer makes read-only).
 BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu

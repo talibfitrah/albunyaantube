@@ -87,8 +87,8 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.equal(exec.at(-1), '/opt/fitrah-solver/app/executor.mjs');
   assert.deepEqual(execFlags('/R'), ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/app/', '--max-old-space-size=256']);
   for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'User=fsx-%i', 'PrivateNetwork=yes', 'IPAddressDeny=any',
-    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro',
-    'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu', 'ProtectHome=yes', 'ProtectSystem=strict',
+    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro /dev/mqueue:ro', 'PrivateIPC=yes',
+    'AppArmorProfile=fitrah-solver-exec', 'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu', 'ProtectHome=yes', 'ProtectSystem=strict',
     'NoExecPaths=/ /opt/fitrah-solver/app', 'ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu',
     'LimitFSIZE=0', 'MemoryMax=384M', 'OOMScoreAdjust=1000', 'SyslogLevelPrefix=no', 'Before=fitrah-solver.service', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',
     'NoNewPrivileges=yes', 'RestrictNamespaces=yes', 'ProtectProc=invisible']) {
@@ -98,6 +98,11 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   const socket = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'systemd', 'fitrah-solver-exec.socket'), 'utf8').split('\n');
   for (const line of ['ListenStream=/run/fitrah-solver-exec.sock', 'Accept=yes', 'MaxConnections=4']) assert.ok(socket.includes(line), line);
   assert.match(UNIT, /SOLVER_EXEC_SOCKET=\/run\/fitrah-solver-exec\.sock/, 'the gateway connects where the socket listens');
+  // the profile the unit names: no write to its own memory by any /proc path (self, task, thread-self are all <pid>/...)
+  const profile = fs.readFileSync(path.join(SOLVER, '..', 'scripts', 'apparmor', 'fitrah-solver-exec'), 'utf8').split('\n').map((l) => l.trim());
+  for (const line of ['profile fitrah-solver-exec {', 'deny @{PROC}/@{pid}/mem w,', 'deny @{PROC}/@{pid}/task/@{tid}/mem w,']) {
+    assert.ok(profile.includes(line), line);
+  }
 });
 
 test('under the unit flags, reads outside, writes outside the cache and child processes are denied (R40)', (t) => {

@@ -28,7 +28,7 @@ function execProfile(hidden) {
   return ['(version 1)', '(allow default)',
     has('PrivateNetwork=yes') && has('IPAddressDeny=any') ? '(deny network*)' : '',
     has('LimitFSIZE=0') && has('ProtectSystem=strict') ? '(deny file-write*)' : '',
-    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
+    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro /dev/mqueue:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
     has('NoExecPaths=/ /opt/fitrah-solver/app') && has('ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu')
       ? `(deny process-exec*)(allow process-exec* (literal ${JSON.stringify(process.execPath)}))` : '',
   ].join('');

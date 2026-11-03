@@ -356,7 +356,9 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   return { poll, solve, health, dropCrashed, stopped };
 }
 
-const strings = (value) => Array.isArray(value) && value.every((x) => typeof x === 'string');
+/** At most `max` strings. The caps are the backend's (PlaybackSolverService.valid: 4 n, 64 s), which forwards only what it
+ *  accepted, so they never refuse its request; anything more is not the backend's and would run the player once per entry. */
+const strings = (value, max) => Array.isArray(value) && value.length <= max && value.every((x) => typeof x === 'string');
 
 /** The three routes (spec §4.5 table). Bound to 127.0.0.1 by the unit; never logs a body. */
 export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
@@ -389,7 +391,7 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
       if (res.headersSent) return;
       let body;
       try { body = JSON.parse(Buffer.concat(chunks).toString('utf8')); } catch { return send(400, { error: 'malformed' }); }
-      if (typeof body?.playerId !== 'string' || !strings(body.n) || !strings(body.s)) return send(400, { error: 'malformed' });
+      if (typeof body?.playerId !== 'string' || !strings(body.n, 4) || !strings(body.s, 64)) return send(400, { error: 'malformed' });
       solver.solve(body).then(([status, payload]) => send(status, payload), () => send(500, { error: 'solve failed' }));
     });
   });

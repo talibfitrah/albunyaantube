@@ -276,6 +276,34 @@ test('/solve validates, answers 409 for an unknown player, and /player and /heal
   }
 });
 
+test('/solve takes at most 4 n and 64 s, the backend\'s own caps (PlaybackSolverService.valid), and refuses more', async () => {
+  // the backend forwards only what it accepted (its cache misses), so equal caps never refuse a request it sends
+  const java = fs.readFileSync(new URL('../../src/main/java/com/albunyaan/tube/service/PlaybackSolverService.java', import.meta.url), 'utf8');
+  assert.match(java, /n\.size\(\) <= 4 &&/);
+  assert.match(java, /s\.size\(\) <= 64 &&/);
+  const yt = await origin(['aaaaaaaa']);
+  const solver = solverWith({ origin: yt.url, cacheDir: tempDir(), build: fakeBuild(), log: quiet });
+  await solver.poll();
+  const server = serve(solver, { host: '127.0.0.1', port: 0 });
+  await once(server, 'listening');
+  const post = (n, s) => fetch(`http://127.0.0.1:${server.address().port}/solve`,
+    { method: 'POST', body: JSON.stringify({ playerId: 'aaaaaaaa', n, s }) });
+  const list = (count, prefix) => Array.from({ length: count }, (_, i) => `${prefix}${i}`);
+  try {
+    const full = await post(list(4, 'n'), list(64, 's'));
+    assert.equal(full.status, 200);
+    const body = await full.json();
+    assert.equal(Object.keys(body.n).length, 4);
+    assert.equal(Object.keys(body.s).length, 64);
+    assert.equal((await post(list(5, 'n'), [])).status, 400);
+    assert.equal((await post([], list(65, 's'))).status, 400);
+    assert.equal(solver.health().solves, 1, 'a refused request never reaches the executor');
+  } finally {
+    server.close();
+    yt.close();
+  }
+});
+
 // ---- rulings: timeouts throw, solves are bounded, the server outlives a hung build
 const hangingBuild = () => { const ctx = newContext(); vm.runInContext('globalThis.jsc = () => { const e = Date.now() + 2000; while (Date.now() < e) {} }', ctx); return buildPlayer(ctx, 'x', 200); };
 
