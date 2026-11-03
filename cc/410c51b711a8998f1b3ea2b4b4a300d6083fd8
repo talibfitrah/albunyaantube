@@ -1,0 +1,31 @@
+backend/solver/server.mjs
+  s_543f5b01a05d75::t_676cf3d43e9071 394
+  s_543f5b01a05d75::t_de6efe271918ca 359-361
+backend/scripts/apparmor/fitrah-solver-exec
+  s_543f5b01a05d75::t_9f7014881d45f5 1-12
+backend/solver/test/solver.test.mjs
+  s_543f5b01a05d75::t_17d3f0f5756dc7 279-306
+backend/scripts/systemd/fitrah-solver-exec@.service
+  s_543f5b01a05d75::t_d86dfe2cc415c4 36-46
+backend/solver/test/harness.mjs
+  s_543f5b01a05d75::t_c5e35a11a3d782 31
+backend/solver/test/sandbox.test.mjs
+  s_543f5b01a05d75::t_2f2e1cfc4d6bfb 101-105
+  s_543f5b01a05d75::t_c5e35a11a3d782 90-91
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cc410c51b711a8998f1b3ea2b4b4a300d6083fd8",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
