@@ -115,8 +115,9 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     const response = await fetch(url.toString(), { signal: controller.signal });
     if (!response.ok) {
       const status = response.status;
-      // Log full error for debugging but don't expose raw API response to callers
-      console.error(`YouTube API error ${status}:`, await response.text());
+      // Log full error for debugging but don't expose raw API response to callers.
+      // Not awaited: a stalled or failed body read must not hide the status.
+      response.text().then(body => console.error(`YouTube API error ${status}:`, body), () => {});
       throw new Error(`YouTube API request failed (HTTP ${status})`);
     }
     return await response.json();

@@ -109,7 +109,7 @@ describe('youtubeDataApi', () => {
     const timeout = AbortSignal.timeout;
     (AbortSignal as { timeout?: unknown }).timeout = undefined;
     try {
-      mockFetch.mockImplementation((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+      mockFetch.mockImplementationOnce((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
         init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
       }));
       const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
@@ -121,6 +121,21 @@ describe('youtubeDataApi', () => {
       expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request timed out');
     } finally {
       AbortSignal.timeout = timeout;
+      vi.useRealTimers();
+    }
+  });
+
+  // The status is the useful signal (e.g. a 403 quota error); a stalled error body must not hide it.
+  it('reports the HTTP status even when the error body never arrives', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockResolvedValueOnce({ ok: false, status: 403, text: () => new Promise(() => {}) });
+      const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
+
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request failed (HTTP 403)');
+    } finally {
       vi.useRealTimers();
     }
   });
