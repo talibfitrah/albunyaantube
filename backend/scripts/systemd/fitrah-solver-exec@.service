@@ -1,5 +1,5 @@
 [Unit]
-Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret and nothing writable (S20)
+Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret, nothing writable and no exec (S20)
 CollectMode=inactive-or-failed
 # Stopped after the gateway at shutdown: an executor gone first reads to the gateway as a crash, and the next start would
 # skip a healthy player for an hour (S20 review).
@@ -28,12 +28,21 @@ IPAddressDeny=any
 RestrictAddressFamilies=AF_UNIX
 # Its view of the disk: the node binary and its own code, read-only. Nothing of /opt (the backend's .env and jar), /var
 # (the solver cache, logs), /run (every system socket) or /home; /etc and /usr hold no secret and the loader needs them, and
-# the dynamic uid reads only what any user may. /tmp, /var/tmp and /dev/shm are empty and read-only too, not PrivateTmp:
-# a directory, a symlink or a unix socket needs no byte of file size, and each costs the host an inode (S20 review).
-TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /dev/shm:ro
-BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app
+# the dynamic uid reads only what any user may. /tmp, /var/tmp and /dev/shm are empty and read-only too: a directory, a
+# symlink or a unix socket needs no byte of file size, and each costs the host an inode (S20 review). DynamicUser= implies
+# PrivateTmp=, whose /tmp and /var/tmp are mounted over the /var tmpfs; systemd 255 merges a same-path entry's :ro into
+# them, so each is named here (the 2026-11-03 drill made a directory in /var/tmp while only /var:ro was).
+TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro
+# The loader's directory is bound here only so it stays read-only under ExecPaths= below (an ExecPaths= path of its own
+# becomes a mount that ProtectSystem= no longer makes read-only).
+BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu
 ProtectHome=yes
 ProtectSystem=strict
+# Nothing executes but node: no /bin/sh, no tool (the drill spawned `sh -c id`; only --permission refused it). Node needs
+# its ELF loader (/lib64/ld-linux-x86-64.so.2) and its shared libraries (libstdc++, libc, ...) on an exec mount too, all in
+# /usr/lib/x86_64-linux-gnu; the loader there cannot run any other program, whose code would map from a noexec mount.
+NoExecPaths=/
+ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu
 # Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.
 LimitFSIZE=0
 MemoryMax=384M

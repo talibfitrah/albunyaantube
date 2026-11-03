@@ -22,13 +22,15 @@ export function execFlags(root) {
 }
 
 /** sandbox-exec's profile for what the unit promises: no network, no write, and `hidden` (the Mac's places for /opt, /var,
- *  /run) unreadable. Each deny is emitted only while the unit carries the lines that give it on Linux. */
+ *  /run) unreadable, and no exec but node's. Each deny is emitted only while the unit carries the lines that give it on Linux. */
 function execProfile(hidden) {
   const has = (line) => EXEC_UNIT.split('\n').includes(line);
   return ['(version 1)', '(allow default)',
     has('PrivateNetwork=yes') && has('IPAddressDeny=any') ? '(deny network*)' : '',
     has('LimitFSIZE=0') && has('ProtectSystem=strict') ? '(deny file-write*)' : '',
-    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /dev/shm:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
+    has('TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro') ? `(deny file-read* ${hidden.map((d) => `(subpath ${JSON.stringify(d)})`).join(' ')})` : '',
+    has('NoExecPaths=/') && has('ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu')
+      ? `(deny process-exec*)(allow process-exec* (literal ${JSON.stringify(process.execPath)}))` : '',
   ].join('');
 }
 
