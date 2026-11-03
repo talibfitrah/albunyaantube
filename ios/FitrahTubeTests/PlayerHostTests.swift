@@ -282,6 +282,10 @@ struct PlayerHostTests {
             reads.append(PlayerHostView.position(of: player))
         }
         #expect(reads.allSatisfy { abs($0 - 0.4) <= 0.05 }, "reads during the scrub's landing: \(reads)")
+        #expect(abs(player.currentTime().seconds - 0.4) <= 0.05, "the scrub landed")
+        let landed = try #require(player.currentItem as? LandingItem)
+        for _ in 0..<300 where landed.landingTarget != nil { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(landed.landingTarget == nil, "a landed seek hands the position back to the clock")
 
         // The bug's sequence end to end: pick, scrub, a second replacement inside the scrub's landing window.
         _ = PlayerHostView.player(for: state, replacing: player, freshItem: true)

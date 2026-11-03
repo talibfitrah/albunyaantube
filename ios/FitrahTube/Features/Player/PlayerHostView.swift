@@ -871,10 +871,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
         (player.currentItem as? LandingItem)?.landingTarget ?? player.currentTime().seconds
     }
 
-    /// Seeks a just-swapped item; `LandingItem` keeps the target readable (`position(of:)`) until it lands.
+    /// Seeks a just-swapped item; `LandingItem` keeps the target readable (`position(of:)`) until it lands. On the item
+    /// itself, so the app's own seek never depends on how `AVPlayer` forwards one.
     static func seek(_ player: AVPlayer, to seconds: TimeInterval, exact: Bool) {
         let tolerance = exact ? CMTime.zero : .positiveInfinity
-        player.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance, toleranceAfter: tolerance)
+        player.currentItem?.seek(to: CMTime(seconds: seconds, preferredTimescale: 600), toleranceBefore: tolerance,
+                                 toleranceAfter: tolerance, completionHandler: nil)
     }
 
     /// Owner ruling 2026-09-24: nothing plays behind the sign-in wall. Pause and empty, which ends
