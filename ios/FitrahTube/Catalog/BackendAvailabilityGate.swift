@@ -26,14 +26,23 @@ struct BackendAvailabilityGate: AvailabilityGate {
     private let now: @Sendable () -> Date
     /// A reference: every copy of this gate shares one memo (`AppContainer.browseGate`).
     private let memo = ExclusionMemo()
+    /// The signed-in account's uid, nil for none. The memo is keyed by it: a PERSONAL item's lists are its grantee's
+    /// and never answer the next account to sign in, or a guest.
+    private let owner: @Sendable () async -> String?
 
     init(transport: HTTPTransport = URLSessionTransport(), baseURL: URL, timeout: Duration = .seconds(3),
-         now: @escaping @Sendable () -> Date = { Date() }) {
+         now: @escaping @Sendable () -> Date = { Date() }, owner: @escaping @Sendable () async -> String? = { nil }) {
         self.transport = transport
         self.baseURL = baseURL
         self.timeout = timeout
         self.now = now
+        self.owner = owner
     }
+
+    /// `visible`'s bound on one page's channel asks, and on how many run at once.
+    // ponytail: items of a channel past the 8 most frequent show unfiltered; raise it if mixed playlists need more.
+    static let maxChannelAsks = 8
+    static let maxConcurrentAsks = 4
 
     /// §5.2 semantics: `sourceChannelId` present -> check the channel (channel-sourced videos
     /// aren't individually registered); else check the video. 2xx/404 -> available; 410 ->
@@ -49,27 +58,52 @@ struct BackendAvailabilityGate: AvailabilityGate {
     /// fail-open: a failed fetch answers the last good lists, else none. `fresh` = a list's first page, so the next
     /// open shows a new exclusion; a later page reuses an answer younger than `ExclusionMemo.maxAge`.
     func exclusions(channelId: String, fresh: Bool) async -> Exclusions? {
-        await memo.answer("api/v1/channels/\(channelId)", fresh: fresh, now: now()) { await fetch($0) }
+        await answer("api/v1/channels/\(channelId)", fresh: fresh)
     }
 
     /// The playlist's, same semantics. A 404 is a playlist the backend does not list (`registered == false`).
     func exclusions(playlistId: String, fresh: Bool) async -> Exclusions? {
-        await memo.answer("api/v1/playlists/\(playlistId)", fresh: fresh, now: now()) { await fetch($0) }
+        await answer("api/v1/playlists/\(playlistId)", fresh: fresh)
     }
 
-    /// A playlist page minus its exclusions. One the backend does not list -- a channel's own playlist -- takes
-    /// each item's channel's video exclusions instead.
-    func visible(_ items: [VideoItem], in playlist: Exclusions, fresh: Bool) async -> [VideoItem] {
+    /// The signed transport signs as whoever is signed in when it sends, so an account change during the fetch makes
+    /// the answer someone else's: it is a failure, never kept under this key.
+    private func answer(_ path: String, fresh: Bool) async -> Exclusions? {
+        let asker = await owner() ?? ""
+        return await memo.answer("\(asker)|\(path)", fresh: fresh, now: now()) {
+            let fetched = await fetch(path)
+            return (await owner() ?? "") == asker ? fetched : .failed
+        }
+    }
+
+    /// A playlist page minus its exclusions; nil = the playlist is gone. One the backend does not list -- a channel's
+    /// own playlist, usually -- takes each item's channel's exclusions instead: their videos are hidden, a 410
+    /// channel's items are hidden, and a channel that excluded this playlist makes it gone (a deep link to it). Those
+    /// asks are bounded: the `maxChannelAsks` channels with the most items on the page, `maxConcurrentAsks` at a time.
+    func visible(_ items: [VideoItem], in playlist: Exclusions, playlistId: String, fresh: Bool) async -> [VideoItem]? {
         var hidden = playlist.videoIds
+        var goneChannels = Set<String>()
+        var gone = false
         if !playlist.registered {
-            await withTaskGroup(of: Set<String>.self) { group in
-                for channelId in Set(items.compactMap(\.channelId)) {
-                    group.addTask { await exclusions(channelId: channelId, fresh: fresh)?.videoIds ?? [] }
+            let counts = Dictionary(items.compactMap(\.channelId).map { ($0, 1) }, uniquingKeysWith: +)
+            let asked = counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+                .prefix(Self.maxChannelAsks).map(\.key)
+            await withTaskGroup(of: (String, Exclusions?).self) { group in
+                func absorb(_ answer: (String, Exclusions?)?) {
+                    guard let (channelId, lists) = answer else { return }
+                    guard let lists else { goneChannels.insert(channelId); return }
+                    hidden.formUnion(lists.videoIds)
+                    if lists.playlistIds.contains(playlistId) { gone = true }
                 }
-                for await ids in group { hidden.formUnion(ids) }
+                for (n, channelId) in asked.enumerated() {
+                    if n >= Self.maxConcurrentAsks { absorb(await group.next()) }
+                    group.addTask { (channelId, await exclusions(channelId: channelId, fresh: fresh)) }
+                }
+                while let answer = await group.next() { absorb(answer) }
             }
         }
-        return items.filter { !hidden.contains($0.id) }
+        if gone { return nil }
+        return items.filter { !hidden.contains($0.id) && !goneChannels.contains($0.channelId ?? "") }
     }
 
     private func fetch(_ path: String) async -> ExclusionMemo.Fetched {
@@ -139,13 +173,13 @@ actor ExclusionMemo {
     private var inFlight: [String: Task<Fetched, Never>] = [:]
 
     func answer(_ path: String, fresh: Bool, now: Date,
-                fetch: @escaping @Sendable (String) async -> Fetched) async -> Exclusions? {
+                fetch: @escaping @Sendable () async -> Fetched) async -> Exclusions? {
         if let running = inFlight[path] { return settle(path, await running.value) }
         if !fresh {
             if let hit = good[path], now.timeIntervalSince(hit.at) < Self.maxAge { return hit.answer }
             if let failed = failedAt[path], now.timeIntervalSince(failed) < Self.failureHold { return settle(path, .failed) }
         }
-        let task = Task { await fetch(path) }
+        let task = Task { await fetch() }
         inFlight[path] = task
         let fetched = await task.value
         inFlight[path] = nil

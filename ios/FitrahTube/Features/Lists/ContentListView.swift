@@ -124,11 +124,12 @@ struct ContentListView: View {
             paginationGuard.reset()
             Task { await viewModel?.load() }
         }
-        // A return after an idle spell (`Router.catalogToken`): pull-to-refresh's path and its search rule.
+        // A return after an idle spell (`Router.catalogToken`): page 1 refreshed in place, the loaded pages kept. Not
+        // under a search: its results answer the typed query, and clearing the field fetches the full list afresh.
         .onChange(of: router.catalogToken) { _, _ in
             guard viewModel?.isSearchActive != true else { return }
             paginationGuard.reset()
-            Task { await viewModel?.refresh() }
+            Task { await viewModel?.refreshInPlace() }
         }
         .onGeometryChange(for: CGFloat.self) { $0.size.width } action: { containerWidth = $0 }
         .task {

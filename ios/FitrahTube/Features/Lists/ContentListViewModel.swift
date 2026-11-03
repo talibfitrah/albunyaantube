@@ -135,6 +135,8 @@ import Foundation
     private var nextCursor: String?
     private var hasMore = true
     private var isLoadingMore = false
+    /// How many of `items` page 1 brought: the rows `refreshInPlace` replaces.
+    private var firstPageCount = 0
 
     /// Gate wave-2 W2/W3 -- one mechanism, identical in `HomeViewModel` and `FeaturedViewModel`.
     /// `performFullLoad` (load, refresh, search, filter change) bumps `loadGeneration` and holds
@@ -188,6 +190,13 @@ import Foundation
         await performFullLoad(showLoading: false)
     }
 
+    /// The return after an idle spell (`Router.catalogToken`): page 1 again, IN PLACE. The pages loaded below it
+    /// stay, and the user's place in them; a failure changes nothing on screen -- no error state, no banner.
+    func refreshInPlace() async {
+        guard !isFullLoading else { return }
+        await performFullLoad(showLoading: false, inPlace: true)
+    }
+
     /// Returns whether the fetch actually ran. The view commits its `PaginationGuard` attempt only
     /// on `true` (gate wave-2 W2): `shouldAutoLoad` used to spend an attempt -- and advance
     /// `lastCount` -- on a load-more this guard then refused, and after a pull-to-refresh landed
@@ -227,7 +236,7 @@ import Foundation
         if !Task.isCancelled { isSearching = false }
     }
 
-    private func performFullLoad(showLoading: Bool) async {
+    private func performFullLoad(showLoading: Bool, inPlace: Bool = false) async {
         loadGeneration += 1
         let generation = loadGeneration
         isFullLoading = true
@@ -239,7 +248,7 @@ import Foundation
         // actually happens.
         isLoadingMore = false
         loadQuery = queryParam
-        let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
+        let task = Task { await self.fetchFirstPage(showLoading: showLoading, inPlace: inPlace) }
         loadTask = task
         await task.value
         // A superseded full load (`load()` never refuses -- a filter change must win) returns here
@@ -247,7 +256,7 @@ import Foundation
         if generation == loadGeneration { isFullLoading = false }
     }
 
-    private func fetchFirstPage(showLoading: Bool) async {
+    private func fetchFirstPage(showLoading: Bool, inPlace: Bool) async {
         defer { if !Task.isCancelled { keepsFailedList = false } }
         if showLoading { state = .loading }
         let requestFilter = filter.state
@@ -261,14 +270,22 @@ import Foundation
                 announce(Format.localizedFormat("list_footer_status", locale: .current, Int64(page.items.count)))
             }
             reloadPending = false
-            items = page.items
+            if inPlace, itemsFilter == requestFilter, itemsQuery == requestQuery, items.count > firstPageCount {
+                // `refreshInPlace` over more than page 1: the new page 1, then every other loaded row (one it pushed off
+                // page 1 included), whose cursor the next page still follows.
+                let fresh = Set(page.items.map(\.id))
+                items = page.items + items.filter { !fresh.contains($0.id) }
+            } else {
+                items = page.items
+                nextCursor = page.nextCursor
+                hasMore = page.hasMore
+            }
+            firstPageCount = page.items.count
             itemsFilter = requestFilter
             itemsQuery = requestQuery
-            nextCursor = page.nextCursor
-            hasMore = page.hasMore
             state = .content(items: items, hasMore: hasMore, paginationError: false, isSearchActive: isSearchActive)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !inPlace else { return }
             errorToken += 1
             reloadPending = true
             state = .error // initial/refresh failure loses items, matching Android §2.5

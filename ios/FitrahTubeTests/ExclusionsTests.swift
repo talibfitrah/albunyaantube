@@ -25,9 +25,14 @@ struct ExclusionsTests {
         var atom: Data?
         var delay: Duration?
 
+        private var inFlight = 0
+        private var peakInFlight = 0
+
         func answer(_ path: String, _ answer: Answer) { lock.withLock { answers[path] = answer } }
         func requests(_ path: String) -> Int { lock.withLock { counts[path] ?? 0 } }
         var backendMethods: [String] { lock.withLock { methods } }
+        /// The most channel/playlist GETs that were in flight at once.
+        var peak: Int { lock.withLock { peakInFlight } }
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             let path = request.url.path
@@ -35,8 +40,11 @@ struct ExclusionsTests {
                 let answer = lock.withLock {
                     counts[path, default: 0] += 1
                     methods.append(request.method)
+                    inFlight += 1
+                    peakInFlight = max(peakInFlight, inFlight)
                     return answers[path] ?? .status(404)
                 }
+                defer { lock.withLock { inFlight -= 1 } }
                 if let delay { try await Task.sleep(for: delay) }
                 switch answer {
                 case .throwing: throw URLError(.notConnectedToInternet)
@@ -80,8 +88,9 @@ struct ExclusionsTests {
         func advance(_ seconds: TimeInterval) { lock.withLock { value += seconds } }
     }
 
-    private static func gate(_ backend: Backend, clock: Clock = Clock()) -> BackendAvailabilityGate {
-        BackendAvailabilityGate(transport: backend, baseURL: base, now: { clock.now })
+    private static func gate(_ backend: Backend, clock: Clock = Clock(),
+                             owner: @escaping @Sendable () async -> String? = { nil }) -> BackendAvailabilityGate {
+        BackendAvailabilityGate(transport: backend, baseURL: base, now: { clock.now }, owner: owner)
     }
 
     private static func client(_ backend: Backend, _ store: MemoryStore) -> BrowseClient {
@@ -215,7 +224,7 @@ struct ExclusionsTests {
         let gate = Self.gate(backend)
         let lists = try #require(await gate.exclusions(playlistId: "PLown", fresh: true))
         let items = [VideoItem(id: "vidA", title: "A", channelId: "UCowner"), VideoItem(id: "vidB", title: "B", channelId: "UCowner")]
-        #expect(await gate.visible(items, in: lists, fresh: true).map(\.id) == ["vidB"])
+        #expect(await gate.visible(items, in: lists, playlistId: "PLown", fresh: true)?.map(\.id) == ["vidB"])
     }
 
     @Test func aFailureAfterAGoodAnswerKeepsTheGoodAnswer() async {
@@ -390,6 +399,112 @@ struct ExclusionsTests {
         #expect(queued.items.isEmpty && queued.continuation == nil)
         let later = try await Self.source(backend).playlistItems("PL1", continuation: "next")
         #expect(later.items.isEmpty && later.nextContinuation == nil)
+    }
+
+    // MARK: - Bounds, accounts and 410s (review 2026-11-03)
+
+    /// A mixed-uploader playlist the backend does not list asks its channels a few at a time and only so many per
+    /// page, the channels with the most items first.
+    @Test func aMixedPlaylistAsksABoundedNumberOfChannelsAFewAtATime() async throws {
+        let backend = Backend()
+        backend.delay = .milliseconds(20)
+        backend.answer("/api/v1/channels/UCmain", .lists(videos: ["main-1"], playlists: []))
+        backend.answer("/api/v1/channels/UCgone", .status(410))
+        let items = (0..<30).map { VideoItem(id: "one-\($0)", title: "T", channelId: "UCone\($0)") }
+            + (0..<3).map { VideoItem(id: "main-\($0)", title: "T", channelId: "UCmain") }
+            + (0..<2).map { VideoItem(id: "gone-\($0)", title: "T", channelId: "UCgone") }
+        let gate = Self.gate(backend)
+
+        let shown = try #require(await gate.visible(items, in: Exclusions(registered: false), playlistId: "PLmixed", fresh: true))
+
+        let asked = (["UCmain", "UCgone"] + (0..<30).map { "UCone\($0)" }).map { backend.requests("/api/v1/channels/\($0)") }
+        #expect(asked.reduce(0, +) <= BackendAvailabilityGate.maxChannelAsks)
+        #expect(backend.peak <= BackendAvailabilityGate.maxConcurrentAsks)
+        let ids = shown.map(\.id)
+        #expect(!ids.contains("main-1"))                          // the channels with the most items were asked
+        #expect(!ids.contains("gone-0") && !ids.contains("gone-1"))  // a 410 channel's items are gone
+        #expect(ids.contains("one-0") && ids.contains("one-29"))      // asked (404) or past the cap: still shown
+    }
+
+    /// Each account has its own answers: a PERSONAL item's lists never carry over to the next account or a guest.
+    @Test func anotherAccountNeverReadsTheLastAccountsAnswers() async {
+        nonisolated final class Owner: @unchecked Sendable {
+            let lock = NSLock(); var uid: String? = "uid-A"
+            var value: String? { lock.withLock { uid } }
+            func set(_ new: String?) { lock.withLock { uid = new } }
+        }
+        let owner = Owner()
+        let backend = Backend()
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidA"], playlists: []))
+        let gate = Self.gate(backend, owner: { owner.value })
+        #expect(await gate.exclusions(channelId: "UC1", fresh: true)?.videoIds == ["vidA"])
+
+        owner.set("uid-B")
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidB"], playlists: []))
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false)?.videoIds == ["vidB"])
+
+        owner.set(nil)   // signed out: the unsigned GET reads a PERSONAL item as missing
+        backend.answer("/api/v1/channels/UC1", .status(404))
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false) == Exclusions(registered: false))
+
+        // The account switches while a fetch is in flight: its answer, signed for the new account, is not kept
+        // under the old one.
+        owner.set("uid-C")
+        backend.delay = .milliseconds(200)
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidD"], playlists: []))
+        async let inFlight = gate.exclusions(channelId: "UC1", fresh: true)
+        try? await Task.sleep(for: .milliseconds(50))
+        owner.set("uid-D")
+        _ = await inFlight
+        owner.set("uid-C")
+        backend.delay = nil
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false)?.videoIds != ["vidD"])
+    }
+
+    /// A 410 means gone on every channel list: the first page shows it, a later page ends the list.
+    @Test func a410ChannelIsGoneOnEveryTab() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-channel-videos-page1.json")
+        backend.nextPage = Self.fixture("browse-channel-videos-page2.json")
+        backend.answer("/api/v1/channels/UC1", .status(410))
+        let source = Self.source(backend)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelVideos("UC1", continuation: nil) }
+        let later = try await source.channelVideos("UC1", continuation: "next")
+        #expect(later.items.isEmpty && later.nextContinuation == nil)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelTab("UC1", tab: .shorts, continuation: nil) }
+        let shorts = try await source.channelTab("UC1", tab: .shorts, continuation: "next")
+        #expect(shorts.items.isEmpty && shorts.nextContinuation == nil)
+
+        backend.firstPage = Self.fixture("browse-channel-playlists.json")
+        backend.nextPage = Self.fixture("browse-channel-playlists-page2.json")
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelPlaylists("UC1", continuation: nil) }
+        let playlists = try await source.channelPlaylists("UC1", continuation: "next")
+        #expect(playlists.items.isEmpty && playlists.nextContinuation == nil)
+
+        backend.atom = Self.fixture("atom-channel.xml")
+        await #expect(throws: BrowseSourceError.unavailable) {
+            try await Self.source(backend, degraded: true).channelVideos("UC1", continuation: nil)
+        }
+    }
+
+    /// A playlist the backend does not list, excluded from its own channel, is gone when a deep link opens it, and
+    /// the player queues nothing from it.
+    @Test func aPlaylistExcludedFromItsChannelIsGoneFromADeepLink() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.nextPage = Self.fixture("browse-playlist.json")
+        let owner = try #require(try await Self.source(backend).playlistItems("PLown", continuation: nil).items.first?.channelId)
+        backend.answer("/api/v1/channels/\(owner)", .lists(videos: [], playlists: ["PLown"]))
+
+        let source = Self.source(backend)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.playlistItems("PLown", continuation: nil) }
+        let later = try await source.playlistItems("PLown", continuation: "next")
+        #expect(later.items.isEmpty && later.nextContinuation == nil)
+        let queue = LivePlaylistQueueSource(client: Self.client(backend, MemoryStore()),
+                                            titles: TitlesClient(transport: backend, baseURL: Self.base, deviceId: DeviceId(value: "t")),
+                                            gate: Self.gate(backend))
+        let queued = try await queue.page(playlistId: "PLown", continuation: nil)
+        #expect(queued.items.isEmpty && queued.continuation == nil)
     }
 
     // MARK: - Freshness: newly approved content after a foreground

@@ -47,8 +47,10 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private let calendar: Calendar
     private let deadline: Deadline
     private let sleep: Sleep
-    /// A channel's admin exclusions (jar #15); its cached rows are filtered by them at bucketing.
-    private let excludedVideoIds: @Sendable (String) async -> Set<String>
+    /// A channel's admin exclusions (jar #15), as `BackendAvailabilityGate.exclusions(channelId:)` answers them; its
+    /// cached rows are filtered by them at bucketing (`landed`).
+    private let exclusions: @Sendable (String) async -> Exclusions?
+    private let exclusionWait: Duration
 
     /// The loaded prefix of `allWeeks`, newest week first.
     private(set) var weeks: [WeekSection] = []
@@ -65,12 +67,20 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private var allWeeks: [WeekSection] = []
     private var loadedWeekCount = 1
     private var channelIds: [String] = []
-    /// Each channel's exclusions from the last refresh, which `rebucket` reads without a fetch.
+    /// Each channel's exclusions as last answered, which `rebucket` reads without a fetch. Kept across rounds, so a
+    /// video hidden once stays hidden while the next answer is on its way. `goneChannelIds` answered 410.
     private var hiddenByChannel: [String: Set<String>] = [:]
+    private var goneChannelIds: Set<String> = []
+    /// The running round's exclusion asks (`askExclusions`): answers land as they arrive (`landed`), the feed waits
+    /// for them at most `exclusionWait`, and an answer later than that filters the feed in place.
+    private var exclusionsRound = 0
+    private var exclusionsPending: Set<String> = []
+    private var exclusionsWaiting: Task<Void, Never>?
+    private var exclusionsTask: Task<Void, Never>?
     private var filter: String?
     /// The UNFILTERED channel count at the last refresh (`MeViewModel.kt:181-195`).
     private var lastChannelCount: Int?
-    /// Bumped by `setFilter`; a `rebucket` that started under an older one is refused at publish
+    /// Bumped by `setFilter` and by every `rebucket`; a `rebucket` that started under an older one is refused at publish
     /// time. The `PaginationGuard.generation` pattern (`PaginationGuard.swift:14-24`), for the same
     /// reason: the work spans awaits, and the newest decision has to win.
     private var generation = 0
@@ -102,6 +112,13 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         allWeeks = []
         channelIds = []
         hiddenByChannel = [:]
+        goneChannelIds = []
+        exclusionsTask?.cancel()
+        exclusionsWaiting?.cancel()
+        exclusionsTask = nil
+        exclusionsWaiting = nil
+        exclusionsPending = []
+        exclusionsRound += 1
         filter = nil
         lastChannelCount = nil
         loadedWeekCount = 1
@@ -126,14 +143,16 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
          now: @escaping () -> Date, calendar: Calendar,
          deadline: @escaping Deadline = MeFeedRepository.withDeadline,
          sleep: @escaping Sleep = MeFeedRepository.wallClockSleep,
-         excludedVideoIds: @escaping @Sendable (String) async -> Set<String> = { _ in [] }) {
+         exclusions: @escaping @Sendable (String) async -> Exclusions? = { _ in Exclusions() },
+         exclusionWait: Duration = .seconds(2)) {
         self.atom = atom
         self.states = refreshState
         self.now = now
         self.calendar = calendar
         self.deadline = deadline
         self.sleep = sleep
-        self.excludedVideoIds = excludedVideoIds
+        self.exclusions = exclusions
+        self.exclusionWait = exclusionWait
     }
 
     // MARK: - Refresh
@@ -190,10 +209,8 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         self.channelIds = channelIds
 
         // Jar #15: every subscribed channel's exclusions, here and never in `rebucket` -- a chip tap clears the feed
-        // first and must not wait on the network to refill it. Asked alongside the feeds and bounded like them;
-        // no stagger, as the memo answers most of these without a request.
-        async let hidden = Self.fanOut(channelIds, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in },
-                                       run: excludedVideoIds)
+        // first and must not wait on the network to refill it. Asked alongside the feeds.
+        let answered = askExclusions(channelIds)
         let at = now()
         let due = channelIds.filter { MeFeedRefreshGate.decide(state(for: $0), now: at, force: force) == .fetch }
         if due.isEmpty {
@@ -220,10 +237,50 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             // nothing — an error over a feed that just grew would be noise.
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
-        let excluded = await hidden
+        await answered.value
         guard !Task.isCancelled else { return }
-        hiddenByChannel = excluded
         await rebucket(filter: filter)
+    }
+
+    /// Asks every channel's exclusions, bounded like the feeds; no stagger, as the memo answers most of these without
+    /// a request. Returns the wait the feed renders after: every answer in, or `exclusionWait`, whichever is first.
+    /// A slow backend (30 channels could take 24 s) then holds the feed no longer than that.
+    private func askExclusions(_ ids: [String]) -> Task<Void, Never> {
+        exclusionsTask?.cancel()
+        exclusionsWaiting?.cancel()   // a superseded round stops waiting and sees its cancellation
+        exclusionsRound += 1
+        let round = exclusionsRound
+        exclusionsPending = Set(ids)
+        let wait = Task { [exclusionWait] in _ = try? await Task.sleep(for: exclusionWait) }
+        if ids.isEmpty { wait.cancel() }
+        exclusionsWaiting = wait
+        let ask = exclusions
+        exclusionsTask = Task {
+            _ = await Self.fanOut(ids, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in }) { id in
+                await self.landed(id, await ask(id), round: round)
+            }
+        }
+        return wait
+    }
+
+    /// One channel's answer, kept as it lands; one that changes what the feed shows rebuckets it at once (rows of a
+    /// channel not answered yet never show). nil = 410, the catalog pulled the channel. `registered == false` is
+    /// the gate knowing nothing (a failed fetch, or a channel it does not list): the last answer stands, else none.
+    private func landed(_ id: String, _ answer: Exclusions?, round: Int) async {
+        guard round == exclusionsRound else { return }
+        let before = (hiddenByChannel[id], goneChannelIds.contains(id))
+        switch answer {
+        case nil: goneChannelIds.insert(id)
+        case let lists? where lists.registered:
+            hiddenByChannel[id] = lists.videoIds
+            goneChannelIds.remove(id)
+        case _?: hiddenByChannel[id] = hiddenByChannel[id] ?? []
+        }
+        exclusionsPending.remove(id)
+        if exclusionsPending.isEmpty { exclusionsWaiting?.cancel() }
+        if before != (hiddenByChannel[id], goneChannelIds.contains(id)) {
+            await rebucket(filter: filter)
+        }
     }
 
     /// `STAGGER_MS` (`MeFeedRepository.kt:146`): the k-th channel of the opening burst waits
@@ -323,12 +380,16 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         // now — the view model's raw selection — and both sides MASK the same way instead of one
         // of them forgetting.
         let live = channelId.flatMap { channelIds.contains($0) ? $0 : nil }
+        // Every rebucket moves the generation, so the newest owns the publish: a late exclusions answer's rebucket
+        // (`landed`) must not be overtaken by an older one that read the lists before it.
+        generation += 1
         let started = generation
         let ids = live.map { [$0] } ?? channelIds
 
         var items: [VideoItem] = []
-        for id in ids {
-            let hidden = hiddenByChannel[id] ?? []
+        // A channel not answered yet is held back: its rows could include a video it excludes.
+        for id in ids where !goneChannelIds.contains(id) {
+            guard let hidden = hiddenByChannel[id] else { continue }
             items += await atom.cached(id).filter { !hidden.contains($0.id) }
         }
         // A chip tapped during those hops has already cleared the feed and moved the generation

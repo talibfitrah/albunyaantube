@@ -269,7 +269,7 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
         let gate = browseGate
         return MeFeedRepository(atom: innerTube.atom, refreshState: store,
                                 now: { Date() }, calendar: .autoupdatingCurrent,
-                                excludedVideoIds: { await gate.exclusions(channelId: $0, fresh: false)?.videoIds ?? [] })
+                                exclusions: { await gate.exclusions(channelId: $0, fresh: false) })
     }()
 
     /// The hand-written clients' signed transport. Not private and not a detail, for the same
@@ -723,8 +723,10 @@ private struct UserDefaultsKeyValueStore: KeyValueStore, @unchecked Sendable {
     )
     /// The lists' 410 gate and exclusions (jar #15), one instance so the channel screen, the player
     /// queue and the Me feed share its memo. Signed: a PERSONAL channel or playlist answers its lists
-    /// to its grantee only (owner scope 2026-11-03); a fixture gets the canned 503, which fails open.
-    private(set) lazy var browseGate = BackendAvailabilityGate(transport: browseGateTransport, baseURL: apiBaseURL)
+    /// to its grantee only (owner scope 2026-11-03); a fixture gets the canned 503, which fails open. The memo is
+    /// per account (`owner`), so those lists never carry over to the next account or a sign-out.
+    private(set) lazy var browseGate = BackendAvailabilityGate(transport: browseGateTransport, baseURL: apiBaseURL,
+                                                               owner: { [auth] in await auth.currentUser()?.uid })
 
     /// `signedOrFixtureTransport`, except the live rig (`sharedFake` on `-fitrah-api-base-url`, which builds the
     /// LIVE browse): a plain session there, so its lists drop the real exclusions. The fake account has no token.
