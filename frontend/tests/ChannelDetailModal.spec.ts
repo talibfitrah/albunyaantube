@@ -389,6 +389,28 @@ describe('ChannelDetailModal', () => {
     expect(document.body.querySelector('.loading-more')).toBeNull();
   });
 
+  // A failed later page must not wipe the rows already shown; Retry re-fetches that page only.
+  it('keeps loaded rows when a later page fails and retries that page', async () => {
+    vi.mocked(getChannelVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockRejectedValueOnce(new Error('Page 2 failed'))
+      .mockResolvedValueOnce({ items: [{ id: 'video4', title: 'Video 4' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+    await waitFor(() => expect(screen.getByText('Page 2 failed')).toBeInTheDocument());
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByText('Retry'));
+    await waitFor(() => expect(screen.getByText('Video 4')).toBeInTheDocument());
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+    expect(screen.queryByText('Page 2 failed')).toBeNull();
+    expect(getChannelVideos).toHaveBeenLastCalledWith('UCxxxxxx', 'token123', undefined);
+    expect(getChannelDetails).toHaveBeenCalledTimes(1);
+  });
+
   // A scroll fired while a tab switch re-initializes must not start page 1 itself:
   // init's own loadMore would then return early and flash "No results".
   it('ignores scroll while the tab is initializing', async () => {

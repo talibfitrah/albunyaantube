@@ -46,8 +46,8 @@
               <p>{{ $t('common.loading') }}</p>
             </div>
 
-            <!-- Error State -->
-            <div v-else-if="error" class="error-state">
+            <!-- Error State: init or page 1 failed (a later page's failure keeps the rows, below) -->
+            <div v-else-if="error && !nextPageToken" class="error-state">
               <p>{{ error }}</p>
               <button class="retry-btn" @click="loadInitialData">
                 {{ $t('common.retry') }}
@@ -116,6 +116,12 @@
             <!-- Auto-loading paused after a run of empty pages; more pages exist -->
             <div v-if="!hasMore && nextPageToken && !error" class="no-more">
               <button class="retry-btn" @click="continueLoading">{{ $t('common.loadMore') }}</button>
+            </div>
+
+            <!-- A later page failed: its token is still current, so Retry fetches that page again -->
+            <div v-if="error && nextPageToken" class="error-state" role="alert">
+              <p>{{ error }}</p>
+              <button class="retry-btn" @click="continueLoading">{{ $t('common.retry') }}</button>
             </div>
           </div>
 

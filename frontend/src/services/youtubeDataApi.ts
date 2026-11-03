@@ -106,14 +106,20 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     if (value) url.searchParams.set(key, value);
   }
 
-  const response = await fetch(url.toString());
-  if (!response.ok) {
-    const status = response.status;
-    // Log full error for debugging but don't expose raw API response to callers
-    console.error(`YouTube API error ${status}:`, await response.text());
-    throw new Error(`YouTube API request failed (HTTP ${status})`);
+  try {
+    // A hung request would otherwise leave the caller's spinner up forever; 30 s matches apiClient.
+    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(30_000) });
+    if (!response.ok) {
+      const status = response.status;
+      // Log full error for debugging but don't expose raw API response to callers
+      console.error(`YouTube API error ${status}:`, await response.text());
+      throw new Error(`YouTube API request failed (HTTP ${status})`);
+    }
+    return await response.json();
+  } catch (err) {
+    if ((err as Error)?.name === 'TimeoutError') throw new Error('YouTube API request timed out');
+    throw err;
   }
-  return response.json();
 }
 
 /**

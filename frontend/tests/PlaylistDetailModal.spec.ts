@@ -388,6 +388,28 @@ describe('PlaylistDetailModal', () => {
     await scrollToBottomLoadsPage2();
   });
 
+  // A failed later page must not wipe the rows already shown; Retry re-fetches that page only.
+  it('keeps loaded rows when a later page fails and retries that page', async () => {
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'item1', videoId: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockRejectedValueOnce(new Error('Page 2 failed'))
+      .mockResolvedValueOnce({ items: [{ id: 'item4', videoId: 'video4', title: 'Video 4' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+    await waitFor(() => expect(screen.getByText('Page 2 failed')).toBeInTheDocument());
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+
+    await fireEvent.click(screen.getByText('Retry'));
+    await waitFor(() => expect(screen.getByText('Video 4')).toBeInTheDocument());
+    expect(screen.getByText('Video 1')).toBeInTheDocument();
+    expect(screen.queryByText('Page 2 failed')).toBeNull();
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', 'token123', undefined);
+    expect(getPlaylistDetails).toHaveBeenCalledTimes(1);
+  });
+
   // jsdom lays nothing out; give the list a height so an under-filled page is detectable.
   function layOutList() {
     const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);

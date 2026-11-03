@@ -101,6 +101,25 @@ describe('youtubeDataApi', () => {
     });
   });
 
+  // A hung request must fail (into the caller's error state) instead of spinning forever.
+  it('fails a request that does not answer within 30 seconds', async () => {
+    vi.useFakeTimers();
+    try {
+      mockFetch.mockImplementation((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
+        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+      }));
+      const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
+      const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
+
+      await vi.advanceTimersByTimeAsync(29_000);
+      expect(await Promise.race([outcome, 'pending'])).toBe('pending');
+      await vi.advanceTimersByTimeAsync(1_000);
+      expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request timed out');
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
   describe('isYouTubeDataApiAvailable', () => {
     it('should return true when API key is configured', async () => {
       const { isYouTubeDataApiAvailable } = await import('@/services/youtubeDataApi');
