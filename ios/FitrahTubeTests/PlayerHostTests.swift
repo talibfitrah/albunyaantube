@@ -263,9 +263,9 @@ struct PlayerHostTests {
     }
 
     /// A lower pick, then a scrub, then another replacement before the scrub lands: the replacement resumes at the scrub.
-    /// AVKit's scrubber seeks with exactly this call (probed on the iOS 26.2 glass timeline: `AVPlayer.seek(to:
+    /// AVKit's scrubber seeks with exactly this call (probed on the iOS 18.6 and 26.2 timelines: `AVPlayer.seek(to:
     /// toleranceBefore:toleranceAfter:completionHandler:)`). Every read from the scrub to its landing is the scrub target,
-    /// never the cut-off pick's target (the old map entry) nor the swapped-in item's 0 clock.
+    /// never the cut-off pick's target nor the swapped-in item's 0 clock.
     @Test(.timeLimit(.minutes(1))) func aReplacementBeforeAScrubLandsResumesAtTheScrub() async throws {
         let url = try #require(Bundle.main.url(forResource: "player-fixture", withExtension: "mp4"))
         let state = StreamState.rung2Progressive(Self.resolved(.progressive(url: url, label: "360p")))

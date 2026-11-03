@@ -1074,11 +1074,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
 }
 
 /// Every item the host plays. It records where its latest seek is going, whoever made it: ours, the double tap, the lock
-/// screen, or AVKit's scrubber. AVKit's timeline calls `AVPlayer.seek(to:toleranceBefore:toleranceAfter:completionHandler:)`
-/// (probed on iOS 26.2), and every `AVPlayer` CMTime seek reaches one of the two overrides below (probed; the date seeks
-/// do not, and nothing here uses them). Until that seek lands the item's clock reads the old time, or 0 on a swapped-in
-/// item, so a replacement inside the window (a quality pick, recovery, the audio-only swap) resumed at a stale target or
-/// at 0:00 instead of the scrub.
+/// screen, or AVKit's scrubber. AVKit's timeline calls `AVPlayer.seek(to:toleranceBefore:toleranceAfter:completionHandler:)`,
+/// and every `AVPlayer` CMTime seek reaches one of the two overrides below (both probed on iOS 18.6 and 26.2; the date
+/// seeks do not, and nothing here uses them). Until that seek lands the item's clock reads the old time, or 0 on a
+/// swapped-in item, so a replacement inside the window (a quality pick, recovery, the audio-only swap) resumed at a stale
+/// target or at 0:00 instead of the scrub.
 nonisolated final class LandingItem: AVPlayerItem, @unchecked Sendable {
     /// `seek` numbers the seeks; `target` is the latest one's until it completes. A failed item's stays: it never
     /// reached its target, and recovery's replacement resumes there (its completion never runs, measured).
