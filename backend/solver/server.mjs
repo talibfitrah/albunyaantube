@@ -48,9 +48,11 @@ const ms = (value) => (Number.isFinite(value) ? value : 0);
  *  any op's vm timeouts), out of turn, unparseably or too long, or hangs up, is dead: `onDead` runs once. It cannot be stopped
  *  from here (another uid, another namespace), so production's onDead exits this process with the crash marker naming the
  *  connection's player, and the unit's ExecStopPost SIGKILLs every executor. `close` is the gateway's own hang-up: no onDead.
- *  `onRejected` takes no hash: whatever the executor names, the connection's player is the one that ran there. */
+ *  `onRejected` takes no hash: whatever the executor names, the connection's player is the one that ran there. `onDead`'s second
+ *  argument says whether the executor said it was ready, which it does before it reads a request; no request is sent before
+ *  that, so one that died unready never ran a player: no player's doing (e.g. systemd's MaxConnections dropping it). */
 export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000 }) {
-  let buffer = '', waiting = null, timer = null, dead = false;
+  let buffer = '', waiting = null, timer = null, dead = false, ready = false, unsent = null;
   const die = (why) => {
     if (dead) return;
     dead = true;
@@ -58,7 +60,7 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
     stream.destroy();
     waiting?.reject(new Error(`executor ${why}`));
     waiting = null;
-    onDead?.(why);
+    onDead?.(why, ready);
   };
   stream.setEncoding('utf8');
   stream.on('data', (chunk) => {
@@ -69,6 +71,7 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
       buffer = buffer.slice(i + 1);
       let message;
       try { message = JSON.parse(line); } catch { return die('sent an unparseable line'); }
+      if (message?.event === 'ready') { ready = true; if (unsent) stream.write(unsent); unsent = null; continue; }
       if (message?.event === 'rejected') { onRejected(); continue; }
       if (!waiting) return die('answered nothing it was asked');
       const { resolve, reject } = waiting;
@@ -86,7 +89,7 @@ export function connectExecutor(stream, { onRejected, onDead, timeoutMs = 30_000
     if (waiting) return reject(new Error('one executor call at a time'));
     waiting = { resolve, reject };
     timer = setTimeout(() => die(`gave no answer in ${timeoutMs} ms`), timeoutMs);
-    stream.write(`${JSON.stringify(request)}\n`);
+    if (ready) stream.write(`${JSON.stringify(request)}\n`); else unsent = `${JSON.stringify(request)}\n`;
   });
   return {
     build: (hash, text) => call({ op: 'build', hash, text }),
@@ -149,11 +152,14 @@ export function createSolver({ origin = 'https://www.youtube.com', cacheDir, con
   }
 
   /** Opens `hash`'s executor. A rejection there drops the player and closes it; its death leaves the marker naming the player
-   *  for the next start (production's onDead then exits), even between ops, when no marker is up (S20 review). */
+   *  for the next start (production's onDead then exits), even between ops, when no marker is up (S20 review). A death before
+   *  the executor was ready names nobody: the build's marker goes too (Cubic: a full socket is not the next player's crash). */
   function open(hash) {
     const executor = connect(hash, {
       onRejected: () => { dropCrashed(hash); executor.close(); },
-      onDead: () => { try { fs.writeFileSync(marker, hash); } catch { /* a read-only cache could not delete the player either */ } },
+      onDead: (why, ready) => {
+        try { if (ready) fs.writeFileSync(marker, hash); else fs.rmSync(marker, { force: true }); } catch { /* a read-only cache could not delete the player either */ }
+      },
     });
     return executor;
   }
@@ -393,8 +399,8 @@ export function serve(solver, { host = '127.0.0.1', port = 4417 } = {}) {
 
 if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) {
   const socket = process.env.SOLVER_EXEC_SOCKET || '/run/fitrah-solver-exec.sock';
-  const connect = (hash, events) => connectExecutor(net.connect(socket), { ...events, onDead: (why) => {
-    events.onDead(why);         // the marker names the player; ExecStopPost then SIGKILLs every executor, a hung one too
+  const connect = (hash, events) => connectExecutor(net.connect(socket), { ...events, onDead: (why, ready) => {
+    events.onDead(why, ready);  // the marker names the player; ExecStopPost then SIGKILLs every executor, a hung one too
     console.error(`FATAL executor of player ${hash} ${why}; exiting so systemd restarts the solver with fresh executors (S20)`);
     process.exit(1);
   } });

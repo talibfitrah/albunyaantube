@@ -820,13 +820,14 @@ import { Duplex } from 'node:stream';
 
 /** A fake executor connection: `reply(text)` is what the executor sends, `sent` what the gateway wrote; `respond`, if
  *  given, answers each request with the text it returns. */
-function fakeConnection(respond) {
+function fakeConnection(respond, { ready = true } = {}) {
   const sent = [];
   const stream = new Duplex({ read() {}, write(chunk, encoding, done) {
     sent.push(String(chunk));
     if (respond) setImmediate(() => stream.push(respond(JSON.parse(chunk))));
     done();
   } });
+  if (ready) stream.push('{"event":"ready"}\n');                    // as executor.mjs says before it reads a request
   return { stream, sent, reply: (text) => stream.push(text) };
 }
 
@@ -855,6 +856,13 @@ test('connectExecutor answers one call per reply, passes a rejected event on, an
   const c = fakeConnection();
   const named = [];
   const executor = connectExecutor(c.stream, { onRejected: (...h) => named.push(h), onDead: () => assert.fail('not dead') });
+  const early = executor.solve('aaaaaaaa', ['early'], [], 50);
+  assert.equal(c.sent.length, 0, 'nothing is sent before the executor is ready');
+  await new Promise((r) => setImmediate(r));                         // its ready line arrives
+  assert.deepEqual(JSON.parse(c.sent[0]).n, ['early']);
+  c.reply('{"ok":true,"value":null}\n');
+  await early;
+  c.sent.length = 0;
   const first = executor.solve('aaaaaaaa', ['abc'], [], 50);
   await assert.rejects(executor.build('aaaaaaaa', 'x'), /one executor call at a time/);
   assert.deepEqual(JSON.parse(c.sent[0]), { op: 'solve', hash: 'aaaaaaaa', n: ['abc'], s: [], timeoutMs: 50 });
@@ -939,6 +947,25 @@ test('each player has its own executor: a rejection or a death on it names that 
   conns.bbbbbbbb.stream.destroy();                                 // escaped code exits its executor between ops
   await new Promise((r) => setImmediate(r));
   assert.equal(fs.readFileSync(path.join(dir, 'building'), 'utf8'), 'bbbbbbbb', 'the next start must drop this player');
+  yt.close();
+});
+
+/** Cubic r1 (S20): systemd drops a connection past MaxConnections, e.g. while executors an escaped player kept alive fill the
+ *  socket. That executor never ran the player, so the new player is not blamed: the marker goes and the next start builds it. */
+test('an executor that dies before it is ready blames no player (Cubic r1, S20)', async () => {
+  const yt = await origin(['aaaaaaaa']);
+  const dir = tempDir();
+  let dead = null;
+  const solver = createSolver({ origin: yt.url, cacheDir: dir, log: quiet, connect: (hash, events) => {
+    const c = fakeConnection(null, { ready: false });
+    setImmediate(() => c.stream.destroy());                         // systemd's "Too many incoming connections"
+    return connectExecutor(c.stream, { ...events, onDead: (why, ready) => {
+      events.onDead(why, ready);                                     // production exits right here: the state it leaves
+      dead = [why, ready, fs.existsSync(path.join(dir, 'building')), fs.existsSync(path.join(dir, 'aaaaaaaa.js')), c.sent.length];
+    } });
+  } });
+  await solver.poll();
+  assert.deepEqual(dead, ['hung up', false, false, true, 0], '[why, ready, marker, cached player, requests sent before ready]');
   yt.close();
 });
 

@@ -235,7 +235,7 @@ test('a hung executor makes the gateway exit 1 with the crash marker naming the 
   const gateway = spawn(process.execPath, ['--input-type=module', '-e', `
     import net from 'node:net'; import { connectExecutor, createSolver } from ${JSON.stringify(path.join(root, 'app', 'server.mjs'))};
     const connect = (hash, events) => connectExecutor(net.connect(${JSON.stringify(socketPath)}), { timeoutMs: 1500, ...events,
-      onDead: (why) => { events.onDead(why); console.error('DEAD ' + why); process.exit(1); } });
+      onDead: (why, ready) => { events.onDead(why, ready); console.error('DEAD ' + why); process.exit(1); } });
     createSolver({ connect, origin: ${JSON.stringify(yt)}, cacheDir: ${JSON.stringify(cache)}, log: { log() {}, warn: console.error } }).poll();`],
   { stdio: ['ignore', 'ignore', 'pipe'] });
   let stderr = '';

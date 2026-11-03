@@ -157,4 +157,5 @@ if (process.argv[1] && import.meta.url === pathToFileURL(process.argv[1]).href) 
     }
     send(reply);
   }).on('close', () => process.exit(0));         // the gateway hung up: nothing is held for anyone else
+  send({ event: 'ready' });                      // before any player runs here: a death before this is no player's
 }

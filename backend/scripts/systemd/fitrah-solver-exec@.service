@@ -8,8 +8,9 @@ Before=fitrah-solver.service
 [Service]
 # Threat model (Cubic r13 #1, r14 P1): player JS escapes the vm realm to host JS in this process. Everything below is what
 # that host JS can then do, enforced by the kernel. The worst left: wrong answers (the app falls back to 360p), or a hang or
-# crash (the gateway exits, its ExecStopPost SIGKILLs this, systemd restarts both). One process per held player: whatever
-# one does to its process ends when the gateway closes that connection, and never touches another player's answers.
+# crash (the gateway exits, its ExecStopPost SIGKILLs this, systemd restarts both). One process per held player, so one
+# never touches another player's answers. An evicted one is hung up on; one whose escaped code will not exit lingers inside
+# the limits below until the gateway next restarts (a full socket makes it restart, naming no player), then is SIGKILLed.
 ExecStart=/opt/fitrah-solver/node/bin/node --experimental-vm-modules --permission --allow-fs-read=/opt/fitrah-solver/app/ \
   --max-old-space-size=256 /opt/fitrah-solver/app/executor.mjs
 StandardInput=socket
