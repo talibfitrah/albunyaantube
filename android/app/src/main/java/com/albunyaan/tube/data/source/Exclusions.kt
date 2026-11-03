@@ -198,7 +198,7 @@ class Exclusions @VisibleForTesting internal constructor(
     companion object {
         private const val ANSWER_MS = 5 * 60_000L // a list read away from a gate call (Me feed, next page)
         private const val FAILURE_MS = 30_000L
-        private const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
+        internal const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
         private const val MEMO_SIZE = 500
         private const val MAX_CONCURRENT = 4
         private const val MAX_CONCURRENT_PLAYLISTS = 2

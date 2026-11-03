@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -24,6 +25,8 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.doSuspendableAnswer
+import org.mockito.kotlin.stub
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -857,6 +860,28 @@ class GlobalStreamResolverTest {
         assertNotNull(gatedResolver.resolveStreams("lecture_kept", caller = "test"))
         // A channel outside the registry (404) excludes nothing.
         assertNotNull(gatedResolver.resolveStreams("lecture_other", caller = "test"))
+    }
+
+    @Test
+    fun `a stalled uploader channel ask fails open within the list wait`(): Unit = runBlocking {
+        // Real time: the resolver's test scope is Unconfined, so its waits run on the wall clock too.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        api.stub { onBlocking { getChannel("UCstalled") } doSuspendableAnswer { kotlinx.coroutines.awaitCancellation() } }
+        val askScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, askScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_slow", createMockStreams("lecture_slow").copy(uploaderChannelId = "UCstalled"))
+
+        // A hung backend must not eat the player's resolve budget: the video plays.
+        assertNotNull(gatedResolver.resolveStreams("lecture_slow", caller = "test", timeoutMs = 5_000L))
+        askScope.cancel()
     }
 
     @Test
