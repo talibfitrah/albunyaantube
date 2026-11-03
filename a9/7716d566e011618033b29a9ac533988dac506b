@@ -1,0 +1,22 @@
+frontend/tests/ContentSearchView.spec.ts
+  s_543f5b01a05d75::t_12a80eccb31186 88-89,97-117
+  s_543f5b01a05d75::t_c168f06a65036f 118
+frontend/src/views/ContentSearchView.vue
+  s_543f5b01a05d75::t_08a03c6eb57d07 227,229-230,365-366,368,378-380,403,405,537,558
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "a97716d566e011618033b29a9ac533988dac506b",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
