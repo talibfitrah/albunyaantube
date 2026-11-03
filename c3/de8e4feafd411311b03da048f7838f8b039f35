@@ -1,0 +1,21 @@
+android/app/src/test/java/com/albunyaan/tube/data/source/RetrofitContentServiceTest.kt
+  s_543f5b01a05d75::t_781584d7c045e7 187-200
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_543f5b01a05d75::t_bbd361a146e348 148-150
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c3de8e4feafd411311b03da048f7838f8b039f35",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
