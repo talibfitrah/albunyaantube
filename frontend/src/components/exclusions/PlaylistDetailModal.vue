@@ -46,8 +46,8 @@
               <p>{{ $t('common.loading') }}</p>
             </div>
 
-            <!-- Error State: init or page 1 failed (a later page's failure keeps the rows, below) -->
-            <div v-else-if="error && !nextPageToken" class="error-state">
+            <!-- Error State: init failed (a page's failure keeps the rows, below) -->
+            <div v-else-if="error && !initialized" class="error-state">
               <p>{{ error }}</p>
               <button class="retry-btn" @click="loadInitialData">
                 {{ $t('common.retry') }}
@@ -55,7 +55,7 @@
             </div>
 
             <!-- Empty State -->
-            <div v-else-if="items.length === 0 && !nextPageToken" class="empty-state">
+            <div v-else-if="items.length === 0 && !nextPageToken && !error" class="empty-state">
               <p>{{ $t('exclusions.playlistDetail.noResults') }}</p>
             </div>
 
@@ -118,8 +118,8 @@
               <button class="retry-btn" @click="continueLoading">{{ $t('common.loadMore') }}</button>
             </div>
 
-            <!-- A later page failed: its token is still current, so Retry fetches that page again -->
-            <div v-if="error && nextPageToken" class="error-state" role="alert">
+            <!-- A page failed after init: its token is still current, so Retry fetches that page again -->
+            <div v-if="error && initialized" class="error-state" role="alert">
               <p>{{ error }}</p>
               <button class="retry-btn" @click="continueLoading">{{ $t('common.retry') }}</button>
             </div>
@@ -179,6 +179,8 @@ const nextPageToken = ref<string | null>(null)
 const excludedIds = ref<Set<string>>(new Set())
 const actionLoading = reactive<Record<string, boolean>>({})
 const initialLoading = ref(false)
+// Details and exclusions loaded: rows can show their exclusion state, so a page error keeps them.
+const initialized = ref(false)
 const error = ref<string | null>(null)
 const playlistDetails = ref<any>(null)
 let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
@@ -228,6 +230,7 @@ watch(() => props.open, (isOpen) => {
 async function loadInitialData() {
   const id = ++openId
   initialLoading.value = true
+  initialized.value = false
   error.value = null
   items.value = []
   nextPageToken.value = null
@@ -247,6 +250,7 @@ async function loadInitialData() {
     } else {
       excludedIds.value = new Set()
     }
+    initialized.value = true
 
     // Load initial items
     await loadMore()
@@ -324,15 +328,13 @@ function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
   isLoading.value = false
-  // Init or page 1 failed (no token yet), so the exclusion state may be missing:
-  // re-run init (with this query) instead. A later page's failure leaves init intact.
-  const initFailed = !!error.value && !nextPageToken.value
 
   activeSearch.value = searchQuery.value.trim()
   items.value = []
   nextPageToken.value = null
   reset()
-  if (initFailed) loadInitialData()
+  // After an init error the exclusion state may be missing: re-run init (with this query) instead.
+  if (error.value && !initialized.value) loadInitialData()
   else loadMore()
 }
 

@@ -111,13 +111,18 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
   // aborted body read with a plain AbortError, so "our signal aborted" is the timeout test.
   const controller = new AbortController();
   const timer = setTimeout(() => controller.abort(), 30_000);
+  let errorBodyPending = false;
   try {
     const response = await fetch(url.toString(), { signal: controller.signal });
     if (!response.ok) {
       const status = response.status;
       // Log full error for debugging but don't expose raw API response to callers.
-      // Not awaited: a stalled or failed body read must not hide the status.
-      response.text().then(body => console.error(`YouTube API error ${status}:`, body), () => {});
+      // Not awaited: a stalled or failed body read must not hide the status. The timer stays
+      // armed until the read settles, so a stalled body is still aborted at the deadline.
+      errorBodyPending = true;
+      response.text()
+        .then(body => console.error(`YouTube API error ${status}:`, body), () => {})
+        .finally(() => clearTimeout(timer));
       throw new Error(`YouTube API request failed (HTTP ${status})`);
     }
     return await response.json();
@@ -125,7 +130,7 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     if (controller.signal.aborted) throw new Error('YouTube API request timed out');
     throw err;
   } finally {
-    clearTimeout(timer);
+    if (!errorBodyPending) clearTimeout(timer);
   }
 }
 

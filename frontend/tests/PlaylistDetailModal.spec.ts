@@ -410,6 +410,28 @@ describe('PlaylistDetailModal', () => {
     expect(getPlaylistDetails).toHaveBeenCalledTimes(1);
   });
 
+  // A search page can land after init failed (it ran while exclusions were loading): its rows have
+  // no exclusion state, so they stay hidden and the next search re-runs init.
+  it('hides a search page that landed after init failed, and re-inits on the next search', async () => {
+    let failExclusions!: (e: Error) => void;
+    vi.mocked(fetchPlaylistExclusions).mockReturnValueOnce(new Promise((_r, reject) => { failExclusions = reject; }));
+    vi.mocked(getPlaylistVideos).mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'item9', videoId: 'video9', title: 'Needle' }], nextPageToken: 'p2' } as any)
+      .mockResolvedValue({ items: [], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(fetchPlaylistExclusions).toHaveBeenCalled());
+
+    await fireEvent.update(screen.getByPlaceholderText(/search within playlist/i), 'needle');
+    await fireEvent.click(screen.getByText('🔍'));
+    await waitFor(() => expect(getPlaylistVideos).toHaveBeenCalledTimes(1));
+    failExclusions(new Error('Exclusions failed'));
+
+    await waitFor(() => expect(screen.getByText('Exclusions failed')).toBeInTheDocument());
+    expect(screen.queryByText('Needle')).toBeNull();
+    await fireEvent.click(screen.getByText('🔍'));
+    await waitFor(() => expect(getPlaylistDetails).toHaveBeenCalledTimes(2));
+  });
+
   // Init succeeded, so a search after a later-page error needs no re-init (details + exclusions).
   it('searches without re-initializing after a later page failed', async () => {
     vi.mocked(getPlaylistVideos)

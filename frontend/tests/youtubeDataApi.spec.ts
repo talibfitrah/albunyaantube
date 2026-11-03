@@ -125,16 +125,23 @@ describe('youtubeDataApi', () => {
     }
   });
 
-  // The status is the useful signal (e.g. a 403 quota error); a stalled error body must not hide it.
+  // The status is the useful signal (e.g. a 403 quota error); a stalled error body must not hide it,
+  // and the stalled read is still aborted at the deadline instead of staying open.
   it('reports the HTTP status even when the error body never arrives', async () => {
     vi.useFakeTimers();
     try {
-      mockFetch.mockResolvedValueOnce({ ok: false, status: 403, text: () => new Promise(() => {}) });
+      let signal: AbortSignal | undefined;
+      mockFetch.mockImplementationOnce(async (_url: string, init?: RequestInit) => {
+        signal = init?.signal ?? undefined;
+        return { ok: false, status: 403, text: () => new Promise(() => {}) };
+      });
       const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
       const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
 
-      await vi.advanceTimersByTimeAsync(30_000);
+      await vi.advanceTimersByTimeAsync(0);
       expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request failed (HTTP 403)');
+      await vi.advanceTimersByTimeAsync(30_000);
+      expect(signal?.aborted).toBe(true);
     } finally {
       vi.useRealTimers();
     }
