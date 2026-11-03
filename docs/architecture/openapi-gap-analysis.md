@@ -107,7 +107,6 @@ All endpoints documented in the OpenAPI specification have corresponding impleme
 
 | Endpoint | OpenAPI Schema | Actual Implementation | Impact |
 |----------|----------------|----------------------|--------|
-| `GET /admin/youtube/check-existing` | Generic response | Returns `ExistingContentResponse` | High - Missing DTO schema |
 | `GET /admin/users/role/{role}` | Generic response | Returns `List<User>` | Low - Schema exists |
 | `GET /player/next-up/{videoId}` | Generic response | Returns `NextUpDto` | High - Missing DTO schema |
 | `GET /admin/content` | Generic response | Returns `ContentLibraryResponse` | High - Missing DTO schema |
@@ -127,8 +126,8 @@ All endpoints documented in the OpenAPI specification have corresponding impleme
 
 **CRITICAL: Missing DTO Schemas (Need to be added to `components/schemas`)**
 
-1. **ExistingContentResponse** - Check which IDs exist in registry
-2. **ExistingContentRequest** - Request payload for check-existing endpoint
+1. ~~**ExistingContentResponse**~~ (endpoint deleted 2026-11-03)
+2. ~~**ExistingContentRequest**~~ (endpoint deleted 2026-11-03)
 3. **StreamItemDto** - Video/stream items in playlists/channels
 4. **StreamDetailsDto** - Detailed video/stream information
 5. **ChannelDetailsDto** - Already partially documented, needs completion
@@ -330,14 +329,14 @@ PageResponse:
 **Issues:**
 - All CRUD operations documented
 - Exclusion endpoints documented
-- Toggle endpoints documented
+- Toggle endpoints deleted 2026-11-03 (no callers)
 
 ### 6.5 YouTubeSearchController (`/api/admin/youtube`)
 
 **Status:** ⚠️ Partially complete - HIGH PRIORITY
 
 **Issues:**
-1. Missing `ExistingContentRequest` and `ExistingContentResponse` schemas
+1. ~~Missing `ExistingContentRequest` and `ExistingContentResponse` schemas~~ (endpoint deleted 2026-11-03)
 
 **Recommendation:** Add all YouTube-related DTOs to components/schemas
 
@@ -431,7 +430,6 @@ PageResponse:
 ### CRITICAL (Fix Immediately)
 
 1. **Add Missing YouTube DTOs** (Priority: Critical)
-   - `ExistingContentRequest`, `ExistingContentResponse`
    - `ChannelDetailsDto`, `PlaylistDetailsDto`, `StreamDetailsDto`
    - `StreamItemDto`
    
@@ -550,7 +548,6 @@ Create schemas for:
 ## Section 9: Implementation Checklist
 
 ### Phase 1: Critical Fixes (Week 1)
-- [ ] Add `ExistingContentRequest`, `ExistingContentResponse` schemas
 - [ ] Add `ChannelDetailsDto`, `PlaylistDetailsDto`, `StreamDetailsDto` schemas
 - [ ] Add `StreamItemDto` schema
 - [ ] Update `Channel`, `Playlist`, `Video` schemas with missing fields
@@ -601,8 +598,6 @@ Create schemas for:
 ### Implemented DTOs (Need to be Added to OpenAPI)
 
 1. **Search & YouTube Integration**
-   - `ExistingContentRequest`
-   - `ExistingContentResponse`
    - `ChannelDetailsDto`
    - `PlaylistDetailsDto`
    - `StreamDetailsDto`

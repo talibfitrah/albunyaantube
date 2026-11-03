@@ -510,7 +510,7 @@ public class SortOrderService {
 
     /**
      * Remove a content item from sort order across all categories.
-     * Used when content is deleted or rejected.
+     * Used when content is deleted, rejected, or sent back to pending.
      * After deletion, renumbers remaining items in each affected category
      * to maintain contiguous 0..n-1 positions.
      */
