@@ -219,8 +219,9 @@ class ChannelsFragmentNew : Fragment(R.layout.fragment_channels_new) {
 
                             val screenWidthDp = resources.configuration.smallestScreenWidthDp
                             val rv = binding.recyclerView
-                            // A new list (another query) opens at its best match; a page appended below, or the same list, keeps its place.
-                            val replaced = adapter.currentList.let { it.isNotEmpty() && channels.take(it.size) != it }
+                            // A new list (another query) opens at its best match; a page appended below, the same list, or one
+                            // refreshed in place, keeps its place.
+                            val replaced = !state.inPlace && adapter.currentList.let { it.isNotEmpty() && channels.take(it.size) != it }
                             adapter.submitList(channels) {
                                 if (replaced) rv.scrollToPosition(0)
                                 autofillHelper.check(

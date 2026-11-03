@@ -79,11 +79,28 @@ class ShortsFeedRepositoryTest {
     }
 
     @Test
+    fun channelMode_aPageTheExclusionsEmptiedIsFollowedToTheNext() = runBlocking {
+        // The first page held only shorts the dashboard excluded: the player must not open on a blank pager.
+        val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
+        val short = ChannelShort(id = "short-2", title = "t", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), isNull()))
+            .thenReturn(ChannelPage(items = emptyList(), nextPage = nextPage))
+        org.mockito.kotlin.whenever(channelDetailRepository.getShorts(eq("UC1"), eq(nextPage)))
+            .thenReturn(ChannelPage(items = listOf(short), nextPage = null))
+
+        val result = repo.loadChannelShortsPage(channelId = "UC1", cursor = null)
+
+        assertEquals(listOf("short-2"), result.items.map { it.id })
+        assertNull(result.nextCursor)
+    }
+
+    @Test
     fun channelMode_returnsCursorTokenWhenNextPageExists() = runBlocking {
         val nextPage = Page(url = "https://next", id = null, ids = null, cookies = null, body = null)
+        val short = ChannelShort(id = "short-1", title = "t", thumbnailUrl = null, viewCount = null, durationSeconds = 30, publishedTime = null)
         org.mockito.kotlin.whenever(
             channelDetailRepository.getShorts(eq("UC1"), anyOrNull())
-        ).thenReturn(ChannelPage(items = emptyList(), nextPage = nextPage))
+        ).thenReturn(ChannelPage(items = listOf(short), nextPage = nextPage))
 
         val first = repo.loadChannelShortsPage(channelId = "UC1", cursor = null)
 

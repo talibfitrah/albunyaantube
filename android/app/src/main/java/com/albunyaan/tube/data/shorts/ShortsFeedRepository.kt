@@ -92,7 +92,13 @@ class ShortsFeedRepository @Inject constructor(
             }
             resolved
         }
-        val channelPage = channelDetailRepository.getShorts(channelId, page)
+        var channelPage = channelDetailRepository.getShorts(channelId, page)
+        // A page the dashboard's exclusions emptied is not the end: walk on, bounded like the channel tab's append,
+        // or a first page of only excluded shorts opens the player on a blank pager with nothing to page from.
+        var walked = 0
+        while (channelPage.items.isEmpty() && walked++ < MAX_EMPTY_PAGES_WALKED) {
+            channelPage = channelDetailRepository.getShorts(channelId, channelPage.nextPage ?: break)
+        }
         val items = channelPage.items.take(pageSize).map { s: ChannelShort ->
             ShortsItem(
                 id = s.id,
@@ -140,5 +146,7 @@ class ShortsFeedRepository @Inject constructor(
          * keeping retained memory bounded.
          */
         internal const val MAX_TOKENS = 32
+
+        private const val MAX_EMPTY_PAGES_WALKED = 5 // ChannelDetailViewModel's MAX_APPEND_EMPTY_PAGE_FETCHES
     }
 }

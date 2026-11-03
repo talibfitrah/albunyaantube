@@ -108,10 +108,52 @@ class ContentListViewModel(
     // Accumulated items for pagination
     private val allItems = mutableListOf<ContentItem>()
 
+    // How many of [allItems] page 1 holds: a return after idle swaps only those
+    private var firstPageSize = 0
+
     init {
         loadContent()
-        viewModelScope.launch { foregroundReturns.collect { refresh() } } // AppLifecycleTracker.returnsAfterIdle
+        viewModelScope.launch { foregroundReturns.collect { refreshFirstPageInPlace() } } // AppLifecycleTracker.returnsAfterIdle
     }
+
+    /**
+     * A return after idle: page 1 again, swapped in where it stands. The pages loaded below it, their cursor and the
+     * scroll place stay; a failure changes nothing on screen. A load already running fetches fresh rows itself, and a
+     * newer load cancels this one. A failed load on screen (a skeleton has no pull-to-refresh) is retried instead.
+     *
+     * ponytail: rows pushed off page 1 by new ones at the top drop out until a pull-to-refresh, since the kept cursor
+     * is past them; refetch the loaded pages if that matters more than the backend load.
+     */
+    private fun refreshFirstPageInPlace() {
+        if (loadJob?.isActive == true) return
+        if (_content.value !is ContentState.Success) return refresh()
+        loadJob = viewModelScope.launch {
+            val response = try {
+                contentService.fetchContent(contentType, null, PAGE_SIZE, currentFilters, _searchQuery.value.takeIf { it.isNotBlank() })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Return-after-idle reload failed for type=$contentType; keeping the list", e)
+                return@launch
+            }
+            val fresh = response.data.map { it.key }.toSet()
+            val below = allItems.drop(firstPageSize).filter { it.key !in fresh }
+            if (allItems.size <= firstPageSize) nextCursor = response.pageInfo?.nextCursor // only page 1 was loaded
+            allItems.clear()
+            allItems.addAll(response.data + below)
+            firstPageSize = response.data.size
+            _hasMoreData = nextCursor != null
+            markShown()
+            _content.value = ContentState.Success(allItems.toList(), _hasMoreData, isSearchActive = isSearchActive, inPlace = true)
+        }
+    }
+
+    private val ContentItem.key: String
+        get() = when (this) {
+            is ContentItem.Video -> id
+            is ContentItem.Channel -> id
+            is ContentItem.Playlist -> id
+        }
 
     /**
      * Update filters and reload content if filters changed.
@@ -163,6 +205,7 @@ class ContentListViewModel(
                 )
 
                 allItems.addAll(response.data)
+                firstPageSize = response.data.size
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -220,6 +263,7 @@ class ContentListViewModel(
                 )
 
                 allItems.addAll(response.data)
+                firstPageSize = response.data.size
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -274,6 +318,7 @@ class ContentListViewModel(
                     query = _searchQuery.value.takeIf { it.isNotBlank() }
                 )
 
+                if (allItems.isEmpty()) firstPageSize = response.data.size // a page-1 retry after a failed load
                 allItems.addAll(response.data)
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
@@ -328,7 +373,9 @@ class ContentListViewModel(
             override val items: List<ContentItem>,
             val hasMoreData: Boolean = true,
             val paginationError: String? = null,
-            val isSearchActive: Boolean = false
+            val isSearchActive: Boolean = false,
+            /** The rows on screen, refreshed where they stand (a return after idle): the list keeps its scroll place. */
+            val inPlace: Boolean = false,
         ) : ContentState()
         data class Error(val message: String, override val items: List<ContentItem> = emptyList()) : ContentState()
     }

@@ -185,6 +185,26 @@ class HomeViewModelTest {
     }
 
     @Test
+    fun `a return after idle refreshes the first page in place and keeps the sections paged in`() = runTest {
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), "c1", true))
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat2", "Two", 1)), "c2", true))
+        fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat0", "New", 1)), "x1", true))
+        viewModel = createViewModel()
+        advanceUntilIdle()
+        viewModel.loadMoreSections()
+        advanceUntilIdle()
+
+        tracker.onStop(owner); clock += 5 * 60_000L; tracker.onStart(owner)
+        advanceUntilIdle()
+
+        val state = viewModel.homeState.value as HomeViewModel.HomeState.Success
+        assertEquals(listOf("cat0", "cat2"), state.sections.map { it.categoryId })
+        viewModel.loadMoreSections()
+        advanceUntilIdle()
+        assertEquals("c2", fakeContentService.lastCursor) // paging goes on below the sections kept
+    }
+
+    @Test
     fun `no load-more runs on the old cursor while the idle reload is fetching`() = runTest {
         fakeContentService.homeFeedResponses.add(HomeFeedResult(listOf(createSection("cat1", "Old", 1)), "old", true))
         viewModel = createViewModel()
@@ -313,6 +333,7 @@ class HomeViewModelTest {
         var homeFeedError: Exception? = null
         var homeFeedErrorOnCall: Int? = null
         var lastContentLimit: Int? = null
+        var lastCursor: String? = null
         var homeFeedGate: kotlinx.coroutines.CompletableDeferred<Unit>? = null
         private var homeFeedCallCount = 0
 
@@ -323,6 +344,7 @@ class HomeViewModelTest {
             category: String?
         ): HomeFeedResult {
             lastContentLimit = contentLimit
+            lastCursor = cursor
             homeFeedGate?.await()
             val callIndex = homeFeedCallCount++
             if (homeFeedErrorOnCall == callIndex) {

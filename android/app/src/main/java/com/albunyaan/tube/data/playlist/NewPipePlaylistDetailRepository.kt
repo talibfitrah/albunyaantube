@@ -1,6 +1,8 @@
 package com.albunyaan.tube.data.playlist
 
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NewPipePriorityContext
@@ -41,7 +43,7 @@ import javax.inject.Singleton
  * initialized with the shared downloader, localization, and metrics before any extraction.
  */
 @Singleton
-class NewPipePlaylistDetailRepository @Inject constructor(
+class NewPipePlaylistDetailRepository @VisibleForTesting internal constructor(
     // Inject NewPipeExtractorClient to ensure NewPipe is initialized with shared
     // downloader, localization (US), and metrics. The client initializes NewPipe
     // in its constructor via initializeNewPipe().
@@ -49,7 +51,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     private val indexRepository: IndexRepository,
     private val originalTitles: OriginalTitles,
     private val exclusions: Exclusions,
+    private val now: () -> Long,
 ) : PlaylistDetailRepository {
+    @Inject constructor(
+        extractorClient: NewPipeExtractorClient,
+        indexRepository: IndexRepository,
+        originalTitles: OriginalTitles,
+        exclusions: Exclusions,
+    ) : this(extractorClient, indexRepository, originalTitles, exclusions, SystemClock::elapsedRealtime)
 
     private val youtubeService = ServiceList.YouTube
     private val playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance()
@@ -135,14 +144,15 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         playlistId: String,
         page: Page?,
         itemOffset: Int
-    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0)
+    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0, walkUntil = now() + WALK_BUDGET_MS)
 
-    /** [skipped]: pages of only excluded items already walked past for this call. */
+    /** [skipped]: pages of only excluded items already walked past for this call; [walkUntil]: when it stops walking. */
     private suspend fun getItems(
         playlistId: String,
         page: Page?,
         itemOffset: Int,
         skipped: Int,
+        walkUntil: Long,
     ): PlaylistPage<PlaylistItem> {
         return withContext(Dispatchers.IO) {
             try {
@@ -223,10 +233,12 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     playlistIds = listOf(playlistId),
                 )
                 val shown = items.filterNot { it.videoId in hidden }
-                // A page of only excluded items must not read as the end or as an empty playlist. Bounded, so one
-                // call cannot walk a whole excluded history past the callers' page timeouts.
-                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
-                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1)
+                // A page of only excluded items must not read as the end or as an empty playlist. Bounded in pages and
+                // in time, so one call cannot walk a whole excluded history past the callers' page timeouts.
+                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED &&
+                    now() < walkUntil
+                ) {
+                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1, walkUntil)
                 }
 
                 // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.
@@ -576,6 +588,9 @@ class NewPipePlaylistDetailRepository @Inject constructor(
         // accidentally satisfy the registry lookup.
         private val CANONICAL_CHANNEL_ID_REGEX = Regex("^UC[A-Za-z0-9_-]{22}$")
         private const val MAX_EXCLUDED_PAGES_SKIPPED = 5 // pages of only excluded items one call walks past
+        // ponytail: the walk starts no page after 3 s, so the page it hands back (one more fetch, a <=2 s exclusions
+        // wait, a <=1.5 s titles wait) lands inside the player's 10 s page timeout; lower it if field pages are slower.
+        private const val WALK_BUDGET_MS = 3_000L
         private const val CHANNEL_ID_CACHE_TTL_MILLIS = 24 * 60 * 60 * 1000L // 24 hours
         // Short TTL for cached negative results — see [resolveCanonicalChannelId].
         // Long enough to prevent re-fetch storms on persistent failures,

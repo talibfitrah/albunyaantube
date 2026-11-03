@@ -236,6 +236,68 @@ class ContentListViewModelTest {
     }
 
     @Test
+    fun `a return after idle refreshes page one in place and keeps the pages below`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a"), createVideo("b")), CursorResponse.PageInfo("c1")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("c")), CursorResponse.PageInfo("c2")))
+        // Page 1 again: "b" was excluded meanwhile, "n" is new
+        fakeService.responses.add(CursorResponse(listOf(createVideo("n"), createVideo("a")), CursorResponse.PageInfo("x1")))
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        val state = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf("n", "a", "c"), state.items.map { (it as ContentItem.Video).id })
+        assertTrue(state.inPlace) // the fragment keeps its scroll place
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals(null to "c2", fakeService.asked.last()) // paging goes on below the pages kept
+    }
+
+    @Test
+    fun `a return after idle retries a first load that failed`() = runTest {
+        // The tab shows its skeleton with no pull-to-refresh: the return is its automatic retry.
+        fakeService.errorOnCall = 0
+        fakeService.responses.add(CursorResponse(emptyList(), null))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a")), null))
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        assertTrue(vm.content.value is ContentListViewModel.ContentState.Error)
+
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        val state = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf("a"), state.items.map { (it as ContentItem.Video).id })
+    }
+
+    @Test
+    fun `a failed return-after-idle reload keeps the rows and their paging`() = runTest {
+        fakeService.responses.add(CursorResponse(listOf(createVideo("a")), CursorResponse.PageInfo("c1")))
+        fakeService.responses.add(CursorResponse(listOf(createVideo("b")), CursorResponse.PageInfo("c2")))
+        fakeService.errorOnCall = 2
+        val returns = MutableSharedFlow<Unit>(extraBufferCapacity = 1)
+        val vm = ContentListViewModel(fakeService, ContentType.VIDEOS, returns)
+        advanceUntilIdle()
+        vm.loadMore()
+        advanceUntilIdle()
+
+        returns.tryEmit(Unit)
+        advanceUntilIdle()
+
+        val state = vm.content.value as ContentListViewModel.ContentState.Success
+        assertEquals(listOf("a", "b"), state.items.map { (it as ContentItem.Video).id })
+        vm.loadMore()
+        advanceUntilIdle()
+        assertEquals(null to "c2", fakeService.asked.last())
+    }
+
+    @Test
     fun `refresh resets pagination and reloads from beginning`() = runTest {
         // Initial load
         fakeService.responses.add(
