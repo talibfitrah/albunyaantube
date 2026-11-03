@@ -4,7 +4,6 @@ import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
 import com.albunyaan.tube.model.Video;
 
-import java.util.ArrayList;
 import java.util.List;
 
 /**
@@ -45,14 +44,18 @@ public final class PublicDetails {
     }
 
     public static ChannelDetail of(Channel c) {
-        Channel.ExcludedItems excluded = c.getExcludedItems() != null ? c.getExcludedItems() : new Channel.ExcludedItems();
+        Channel.ExcludedItems excluded = c.getExcludedItems(); // never null: its setter and the constructor see to it
         return new ChannelDetail(c.getYoutubeId(), c.getName(), c.getDescription(), c.getThumbnailUrl(),
-                c.getSubscribers(), c.getVideoCount(), excluded.videoIds(), new ArrayList<>(excluded.getPlaylists()));
+                c.getSubscribers(), c.getVideoCount(), excluded.videoIds(), ids(excluded.getPlaylists()));
     }
 
     public static PlaylistDetail of(Playlist p) {
-        List<String> excluded = p.getExcludedVideoIds();
         return new PlaylistDetail(p.getYoutubeId(), p.getTitle(), p.getDescription(), p.getThumbnailUrl(),
-                p.getItemCount(), excluded != null ? new ArrayList<>(excluded) : List.of());
+                p.getItemCount(), ids(p.getExcludedVideoIds()));
+    }
+
+    /** A stored id list as served: never null, no null or blank entry (an app decodes it as strings). */
+    private static List<String> ids(List<String> stored) {
+        return stored == null ? List.of() : stored.stream().filter(id -> id != null && !id.isBlank()).toList();
     }
 }

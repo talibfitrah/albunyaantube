@@ -694,6 +694,30 @@ public class PublicContentControllerTest {
                 .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains("sCQwxFEMlZ4", "video000002")));
     }
 
+    /** Review r1: a null or blank entry in a stored list would break an app that decodes the list as strings. */
+    @Test
+    @DisplayName("Exclusions: null and blank entries are never served")
+    void exclusionListsDropNullAndBlankEntries() throws Exception {
+        Channel channel = new Channel();
+        channel.setYoutubeId("UCabc123");
+        Channel.ExcludedItems excluded = new Channel.ExcludedItems();
+        excluded.setVideos(java.util.Arrays.asList(null, "video000001", " "));
+        excluded.setShorts(java.util.Arrays.asList("", null));
+        excluded.setPlaylists(java.util.Arrays.asList(null, "PLexcluded1"));
+        channel.setExcludedItems(excluded);
+        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+        Playlist playlist = new Playlist();
+        playlist.setYoutubeId("PLabc123");
+        playlist.setExcludedVideoIds(java.util.Arrays.asList("sCQwxFEMlZ4", null, ""));
+        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+
+        mockMvc.perform(get("/api/v1/channels/UCabc123"))
+                .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains("video000001")))
+                .andExpect(jsonPath("$.excludedPlaylistIds", org.hamcrest.Matchers.contains("PLexcluded1")));
+        mockMvc.perform(get("/api/v1/playlists/PLabc123"))
+                .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains("sCQwxFEMlZ4")));
+    }
+
     @Test
     @DisplayName("Exclusions: GET /api/v1/playlists/{id} serves an empty list when the playlist has none")
     void playlistDetailWithoutExclusionsServesEmptyList() throws Exception {
