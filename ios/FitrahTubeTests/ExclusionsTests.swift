@@ -429,8 +429,14 @@ struct ExclusionsTests {
     /// Each account has its own answers: a PERSONAL item's lists never carry over to the next account or a guest.
     @Test func anotherAccountNeverReadsTheLastAccountsAnswers() async {
         nonisolated final class Owner: @unchecked Sendable {
-            let lock = NSLock(); var uid: String? = "uid-A"
-            var value: String? { lock.withLock { uid } }
+            let lock = NSLock(); var uid: String? = "uid-A"; var switchTo: String?
+            /// The signed-in uid; a pending `switchTo` signs in right after this read (mid-fetch, for the ask).
+            var value: String? {
+                lock.withLock {
+                    defer { if let next = switchTo { uid = next; switchTo = nil } }
+                    return uid
+                }
+            }
             func set(_ new: String?) { lock.withLock { uid = new } }
         }
         let owner = Owner()
@@ -450,15 +456,11 @@ struct ExclusionsTests {
         // The account switches while a fetch is in flight: its answer, signed for the new account, is not kept
         // under the old one.
         owner.set("uid-C")
-        backend.delay = .milliseconds(200)
+        owner.lock.withLock { owner.switchTo = "uid-D" }
         backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidD"], playlists: []))
-        async let inFlight = gate.exclusions(channelId: "UC1", fresh: true)
-        try? await Task.sleep(for: .milliseconds(50))
-        owner.set("uid-D")
-        _ = await inFlight
+        _ = await gate.exclusions(channelId: "UC1", fresh: true)
         owner.set("uid-C")
-        backend.delay = nil
-        #expect(await gate.exclusions(channelId: "UC1", fresh: false)?.videoIds != ["vidD"])
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false) == Exclusions(registered: false))
     }
 
     /// A 410 means gone on every channel list: the first page shows it, a later page ends the list.
@@ -505,6 +507,19 @@ struct ExclusionsTests {
                                             gate: Self.gate(backend))
         let queued = try await queue.page(playlistId: "PLown", continuation: nil)
         #expect(queued.items.isEmpty && queued.continuation == nil)
+    }
+
+    /// A playlist whose every item comes from a 410 channel is gone too, not an empty list walked page by page.
+    @Test func aPlaylistOfOnlyPulledChannelsIsGone() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.nextPage = Self.fixture("browse-playlist.json")
+        let channels = Set(try await Self.source(backend).playlistItems("PLown", continuation: nil).items.compactMap(\.channelId))
+        try #require(!channels.isEmpty && channels.count <= BackendAvailabilityGate.maxChannelAsks)
+        for channel in channels { backend.answer("/api/v1/channels/\(channel)", .status(410)) }
+
+        let source = Self.source(backend)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.playlistItems("PLown", continuation: nil) }
     }
 
     // MARK: - Freshness: newly approved content after a foreground

@@ -59,9 +59,11 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     /// `me_refresh_error`, or nil. Never a raw error description: `ChannelRefreshState`'s
     /// `lastErrorMessage` is the diagnostic field and is not user-visible (Task 15, deviation 4).
     private(set) var lastError: String?
-    /// True while `refresh` is in flight. An empty feed under this is LOADING; an empty feed
-    /// without it is a feed with nothing in it, and the two must not render the same blank gap.
-    private(set) var isRefreshing = false
+    /// True while `refresh` is in flight, or while an empty feed waits on exclusions answers (its channels are held
+    /// back). An empty feed under this is LOADING; an empty feed without it is a feed with nothing in it, and the two
+    /// must not render the same blank gap.
+    var isRefreshing: Bool { refreshing || (weeks.isEmpty && !exclusionsPending.isEmpty) }
+    private var refreshing = false
 
     /// Every non-empty week from the last bucketing; `weeks` is its loaded prefix.
     private var allWeeks: [WeekSection] = []
@@ -107,7 +109,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
     private func reset() {
         inFlight?.cancel()
         inFlight = nil
-        isRefreshing = false
+        refreshing = false
         weeks = []
         allWeeks = []
         channelIds = []
@@ -186,14 +188,14 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             running.cancel()
         }
         inFlightForced = force
-        isRefreshing = true
+        refreshing = true
         let task = Task { await self.performRefresh(channelIds: channelIds, force: force) }
         inFlight = task
         await task.value
         // A superseded leader must NOT clear the flag the round that replaced it is still using.
         guard inFlight == task else { return nil }
         inFlight = nil
-        isRefreshing = false
+        refreshing = false
         return lastError
     }
 
@@ -391,6 +393,7 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         for id in ids where !goneChannelIds.contains(id) {
             guard let hidden = hiddenByChannel[id] else { continue }
             items += await atom.cached(id).filter { !hidden.contains($0.id) }
+            guard generation == started else { return }   // a newer rebucket owns it: read no more caches
         }
         // A chip tapped during those hops has already cleared the feed and moved the generation
         // on; publishing here would put the PREVIOUS filter's rows under the new chip, which is

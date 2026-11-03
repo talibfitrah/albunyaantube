@@ -191,7 +191,8 @@ import Foundation
     }
 
     /// The return after an idle spell (`Router.catalogToken`): page 1 again, IN PLACE. The pages loaded below it
-    /// stay, and the user's place in them; a failure changes nothing on screen -- no error state, no banner.
+    /// stay, and the user's place in them, unless page 1 changed; a failure changes nothing on screen -- no error
+    /// state, no banner.
     func refreshInPlace() async {
         guard !isFullLoading else { return }
         await performFullLoad(showLoading: false, inPlace: true)
@@ -270,11 +271,12 @@ import Foundation
                 announce(Format.localizedFormat("list_footer_status", locale: .current, Int64(page.items.count)))
             }
             reloadPending = false
-            if inPlace, itemsFilter == requestFilter, itemsQuery == requestQuery, items.count > firstPageCount {
-                // `refreshInPlace` over more than page 1: the new page 1, then every other loaded row (one it pushed off
-                // page 1 included), whose cursor the next page still follows.
-                let fresh = Set(page.items.map(\.id))
-                items = page.items + items.filter { !fresh.contains($0.id) }
+            if inPlace, itemsFilter == requestFilter, itemsQuery == requestQuery, items.count > firstPageCount,
+               Set(items.prefix(firstPageCount).map(\.id)) == Set(page.items.map(\.id)) {
+                // `refreshInPlace` over more than page 1, and page 1 holds the same rows: the new page 1, then the
+                // pages below it, whose (offset) cursor still lines up. A changed page 1 replaces the list instead: a
+                // removed row must leave, and the old cursor would skip or repeat rows.
+                items = page.items + items.dropFirst(firstPageCount)
             } else {
                 items = page.items
                 nextCursor = page.nextCursor

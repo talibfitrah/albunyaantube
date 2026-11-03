@@ -263,21 +263,37 @@ struct HomeViewModelTests {
         return sections.map(\.id)
     }
 
-    /// The idle reload refreshes page 1 in place and keeps the sections loaded below it (and the scroll with them),
-    /// including one the new section pushed off page 1.
+    /// The idle reload refreshes page 1 in place when it holds the same sections, and keeps the sections loaded below
+    /// it (and the scroll with them).
     @Test func theIdleReloadRefreshesPageOneAndKeepsTheLoadedSections() async {
         let client = SwappableHomeClient([nil: CursorPage(items: [section("a"), section("b")], nextCursor: "1"),
                                           "1": CursorPage(items: [section("c"), section("d")], nextCursor: "2")])
         let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
         await vm.load()
         await vm.loadMore()
-        await client.set(nil, CursorPage(items: [section("new"), section("a")], nextCursor: "1"))
+        await client.set(nil, CursorPage(items: [section("b"), section("a")], nextCursor: "1"))
 
         await vm.refreshInPlace()
 
-        #expect(sectionIDs(vm) == ["new", "a", "b", "c", "d"])
+        #expect(sectionIDs(vm) == ["b", "a", "c", "d"])
         await vm.loadMore()
         #expect(await client.cursors == [nil, "1", nil, "2"])
+    }
+
+    /// A changed page 1 (here a section the catalog removed) replaces Home: the section leaves, none is skipped.
+    @Test func theIdleReloadDropsASectionTheCatalogRemovedFromPageOne() async {
+        let client = SwappableHomeClient([nil: CursorPage(items: [section("a"), section("b")], nextCursor: "1"),
+                                          "1": CursorPage(items: [section("c"), section("d")], nextCursor: "2")])
+        let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
+        await vm.load()
+        await vm.loadMore()
+        await client.set(nil, CursorPage(items: [section("a"), section("c")], nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(sectionIDs(vm) == ["a", "c"])
+        await vm.loadMore()
+        #expect(sectionIDs(vm) == ["a", "c", "d"])   // the new page 1's cursor: "c" is not repeated, "d" not skipped
     }
 
     /// A failed background reload changes nothing on screen and raises no banner.

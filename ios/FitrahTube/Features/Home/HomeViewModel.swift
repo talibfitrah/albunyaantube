@@ -77,7 +77,7 @@ import Foundation
     }
 
     /// The return after an idle spell (`Router.catalogToken`): page 1 again, IN PLACE. The sections loaded below it
-    /// stay, and the user's place in them; a failure changes nothing on screen -- no banner.
+    /// stay, and the user's place in them, unless page 1 changed; a failure changes nothing on screen -- no banner.
     func refreshInPlace() async {
         guard !isFullLoading else { return }
         await performFullLoad(showLoading: false, inPlace: true)
@@ -130,11 +130,12 @@ import Foundation
             let page = try await catalog.home(cursor: nil, categoryLimit: Self.categoryLimit,
                                                contentLimit: contentLimit(), category: category)
             guard !Task.isCancelled else { return }
-            if inPlace, sections.count > firstPageCount {
-                // `refreshInPlace` over more than page 1: the new page 1, then every other loaded section (one it pushed
-                // off page 1 included), whose cursor the next page still follows.
-                let fresh = Set(page.items.map(\.id))
-                sections = page.items + sections.filter { !fresh.contains($0.id) }
+            if inPlace, sections.count > firstPageCount,
+               Set(sections.prefix(firstPageCount).map(\.id)) == Set(page.items.map(\.id)) {
+                // `refreshInPlace` over more than page 1, and page 1 holds the same sections: the new page 1, then the
+                // sections below it, whose cursor still lines up. A changed page 1 replaces Home instead (a removed
+                // section must leave; the old cursor would skip or repeat sections).
+                sections = page.items + sections.dropFirst(firstPageCount)
             } else {
                 sections = page.items
                 nextCursor = page.nextCursor

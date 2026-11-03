@@ -215,6 +215,22 @@ struct MeFeedRepositoryTests {
         #expect(await eventually { allItems(repo) == ["a-0", "b-0"] }, "the late answer must add its channel, filtered")
     }
 
+    /// An empty feed waiting on answers is still loading, not "nothing here": the spinner stays until one lands.
+    @Test func anEmptyFeedWaitingOnAnswersStillReadsAsLoading() async {
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(), late: true)
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0))]), answers)
+
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: false) }
+        await answers.gate.waitUntilBlocked()
+        try? await Task.sleep(for: .milliseconds(200))   // well past `exclusionWait`
+        #expect(repo.weeks.isEmpty && repo.isRefreshing, "an unanswered feed must not read as empty")
+
+        await answers.gate.release()
+        await refresh.value
+        #expect(await eventually { allItems(repo) == ["vid-0"] && !repo.isRefreshing })
+    }
+
     /// No flash: a video hidden by an earlier answer stays hidden while the next round's answer is late.
     @Test func aVideoHiddenBeforeStaysHiddenWhileTheNextAnswerIsLate() async {
         let answers = Answers()
@@ -290,6 +306,17 @@ struct MeFeedRepositoryTests {
         await repo.refresh(channelIds: [Self.alpha], force: false)
 
         #expect(allItems(repo).isEmpty)
+    }
+
+    /// Fail-open: a channel the gate knows nothing about (a failed ask, no answer before) still shows its rows.
+    @Test func aChannelTheGateKnowsNothingAboutStillShows() async {
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(registered: false))
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0))]), answers)
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo) == ["vid-0"])
     }
 
     /// A failed ask after a 410 knows nothing new (the memo's `registered: false`), so the channel stays gone.

@@ -924,22 +924,42 @@ struct ContentListViewModelTests {
         func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
     }
 
-    /// The idle reload refreshes page 1 IN PLACE: the pages below it stay (and the user's place in them), a newly
-    /// approved item still shows at the top, a row it pushed off page 1 is kept (the kept cursor is past it), and the
-    /// next page follows the loaded ones.
+    /// The idle reload refreshes page 1 IN PLACE when it holds the same rows: page 1 shows the new answer (a reorder
+    /// here), the pages below it stay (and the user's place in them), and the next page follows the loaded ones.
     @Test func theIdleReloadRefreshesPageOneAndKeepsTheLoadedPages() async {
         let client = SwappablePagesClient([nil: CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
                                            "1": CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: "2")])
         let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
         await vm.load()
         await vm.loadMore()
-        await client.set(nil, CursorPage(items: items(count: 1, prefix: "new") + items(count: 2, prefix: "p0"), nextCursor: "1"))
+        await client.set(nil, CursorPage(items: Array(items(count: 3, prefix: "p0").reversed()), nextCursor: "1"))
 
         await vm.refreshInPlace()
 
-        #expect(shownIDs(vm) == ["new-0", "p0-0", "p0-1", "p0-2", "p1-0", "p1-1", "p1-2"])
+        #expect(shownIDs(vm) == ["p0-2", "p0-1", "p0-0", "p1-0", "p1-1", "p1-2"])
         await vm.loadMore()
         #expect(await client.cursors == [nil, "1", nil, "2"])
+    }
+
+    /// When page 1 changed (an item approved, or one rejected or excluded), the loaded pages below it no longer line
+    /// up with their offset cursor: the list is replaced, so a removed row leaves and none is skipped.
+    @Test(arguments: ["added", "removed"])
+    func aChangedPageOneReplacesTheListOnTheIdleReload(change: String) async {
+        let client = SwappablePagesClient([nil: CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
+                                           "1": CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: "2")])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.loadMore()
+        let fresh = change == "added"
+            ? items(count: 1, prefix: "new") + items(count: 2, prefix: "p0")
+            : items(count: 3, prefix: "p0").filter { $0.id != "p0-1" } + items(count: 1, prefix: "p1")
+        await client.set(nil, CursorPage(items: fresh, nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(shownIDs(vm) == fresh.map(\.id))
+        await vm.loadMore()
+        #expect(await client.cursors == [nil, "1", nil, "1"])
     }
 
     /// A failed background reload changes nothing on screen: no error state, no banner.

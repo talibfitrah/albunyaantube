@@ -102,7 +102,8 @@ struct BackendAvailabilityGate: AvailabilityGate {
                 while let answer = await group.next() { absorb(answer) }
             }
         }
-        if gone { return nil }
+        // A page of only pulled channels' items is a pulled playlist, not an empty page to skip past.
+        if gone || (!items.isEmpty && items.allSatisfy { goneChannels.contains($0.channelId ?? "") }) { return nil }
         return items.filter { !hidden.contains($0.id) && !goneChannels.contains($0.channelId ?? "") }
     }
 
@@ -172,32 +173,32 @@ actor ExclusionMemo {
     private var failedAt: [String: Date] = [:]
     private var inFlight: [String: Task<Fetched, Never>] = [:]
 
-    func answer(_ path: String, fresh: Bool, now: Date,
+    func answer(_ key: String, fresh: Bool, now: Date,
                 fetch: @escaping @Sendable () async -> Fetched) async -> Exclusions? {
-        if let running = inFlight[path] { return settle(path, await running.value) }
+        if let running = inFlight[key] { return settle(key, await running.value) }
         if !fresh {
-            if let hit = good[path], now.timeIntervalSince(hit.at) < Self.maxAge { return hit.answer }
-            if let failed = failedAt[path], now.timeIntervalSince(failed) < Self.failureHold { return settle(path, .failed) }
+            if let hit = good[key], now.timeIntervalSince(hit.at) < Self.maxAge { return hit.answer }
+            if let failed = failedAt[key], now.timeIntervalSince(failed) < Self.failureHold { return settle(key, .failed) }
         }
         let task = Task { await fetch() }
-        inFlight[path] = task
+        inFlight[key] = task
         let fetched = await task.value
-        inFlight[path] = nil
+        inFlight[key] = nil
         switch fetched {
-        case .failed: failedAt[path] = now
-        case .gone: good[path] = (nil, now); failedAt[path] = nil
-        case .lists(let lists): good[path] = (lists, now); failedAt[path] = nil
+        case .failed: failedAt[key] = now
+        case .gone: good[key] = (nil, now); failedAt[key] = nil
+        case .lists(let lists): good[key] = (lists, now); failedAt[key] = nil
         }
-        return settle(path, fetched)
+        return settle(key, fetched)
     }
 
     /// A failure fails open: the last good lists, never a remembered 410. With none, nothing is known, so
     /// `registered: false` -- a channel's own playlist still takes its channels' lists (`visible`).
-    private func settle(_ path: String, _ fetched: Fetched) -> Exclusions? {
+    private func settle(_ key: String, _ fetched: Fetched) -> Exclusions? {
         switch fetched {
         case .gone: nil
         case .lists(let lists): lists
-        case .failed: good[path]?.answer ?? Exclusions(registered: false)
+        case .failed: good[key]?.answer ?? Exclusions(registered: false)
         }
     }
 }
