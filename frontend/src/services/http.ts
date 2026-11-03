@@ -159,9 +159,13 @@ export async function authorizedJsonFetch<T>(path: string, init: RequestInit = {
   if (callerSignal?.aborted) followCaller();
   callerSignal?.addEventListener('abort', followCaller);
   let timedOut = false;
-  const timer = setTimeout(() => { timedOut = true; controller.abort(); }, READ_TIMEOUT_MS);
+  let timer: ReturnType<typeof setTimeout> | undefined;
+  // The deadline rejects the whole read, not only its fetch: a 401's token refresh can hang too.
+  const deadline = new Promise<never>((_resolve, reject) => {
+    timer = setTimeout(() => { timedOut = true; controller.abort(); reject(new Error('timeout')); }, READ_TIMEOUT_MS);
+  });
   try {
-    return await sendJson<T>(path, { ...init, signal: controller.signal }, allowRetry);
+    return await Promise.race([sendJson<T>(path, { ...init, signal: controller.signal }, allowRetry), deadline]);
   } catch (err) {
     // Our flag, not the error's name: Safari can reject an aborted body read with a plain AbortError.
     if (timedOut) throw new ApiError('Request timed out', 0, 'REQUEST_TIMEOUT');

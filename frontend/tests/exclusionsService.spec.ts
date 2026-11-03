@@ -12,10 +12,12 @@ import {
 import type { ExclusionPage } from '@/types/exclusions';
 import { ApiError, authorizedJsonFetch } from '@/services/http';
 
+const refreshToken = vi.hoisted(() => vi.fn());
 vi.mock('@/stores/auth', () => ({
   useAuthStore: () => ({
     session: { accessToken: 'abc123' },
-    refresh: vi.fn()
+    refresh: vi.fn(),
+    refreshToken
   })
 }));
 
@@ -233,6 +235,21 @@ describe('exclusions service', () => {
         await vi.advanceTimersByTimeAsync(29_000);
         expect(await Promise.race([outcome, 'pending'])).toBe('pending');
         await vi.advanceTimersByTimeAsync(1_000);
+        expect(await Promise.race([outcome, 'pending'])).toBe('REQUEST_TIMEOUT');
+      } finally {
+        vi.useRealTimers();
+      }
+    });
+
+    // A 401 refreshes the token before retrying: a refresh that never settles must not outlive the deadline.
+    it('fails a read whose token refresh hangs', async () => {
+      vi.useFakeTimers();
+      try {
+        global.fetch = vi.fn(async () => new Response('', { status: 401 })) as unknown as typeof fetch;
+        refreshToken.mockReturnValueOnce(new Promise(() => {}));
+        const outcome = fetchPlaylistExclusions('playlist-123').then(() => 'resolved', (e: { code?: string }) => e.code);
+
+        await vi.advanceTimersByTimeAsync(30_000);
         expect(await Promise.race([outcome, 'pending'])).toBe('REQUEST_TIMEOUT');
       } finally {
         vi.useRealTimers();

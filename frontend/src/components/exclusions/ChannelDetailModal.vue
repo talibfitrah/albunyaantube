@@ -249,11 +249,11 @@ let requestIdCounter = 0 // Track in-flight requests to prevent race conditions
 // Bumped on every open, close, re-init and unmount: a late init from an older one is dropped.
 // Separate from requestIdCounter, which a search or page load bumps mid-open.
 let openId = 0
-// Successful exclusion writes, in order. A read of the exclusions can reach the server before a
-// write commits yet answer after it landed, so init replays the writes that landed during its read.
-// ponytail: grows by one entry per click for the component's life; trim if that ever matters.
+// Successful exclusion writes so far. A read of the exclusions can reach the server before a write
+// commits yet answer after that write landed, so init reads again when a write landed during its read
+// (replaying the write instead could undo another admin's later change).
+let writeCount = 0
 type ExclusionWrite = { channelId: string; type: string; itemId: string; excluded: boolean }
-const writeLog: ExclusionWrite[] = []
 
 // Nested modal state
 const showVideoPreview = ref(false)
@@ -322,13 +322,16 @@ async function loadInitialData() {
     // Load exclusions — videos/shorts/live all use the videos exclusion list
     // Skip when channelId is empty (e.g., previewing from search results)
     if (props.channelId) {
-      const writesBefore = writeLog.length
-      const exclusions = await fetchChannelExclusions(props.channelId)
-      if (id !== openId) return
+      let exclusions: Awaited<ReturnType<typeof fetchChannelExclusions>>
+      let writesBefore: number
+      do {
+        writesBefore = writeCount
+        exclusions = await fetchChannelExclusions(props.channelId)
+        if (id !== openId) return
+      } while (writeCount !== writesBefore)
       excludedIds.value = new Set(
         activeTab.value === 'playlists' ? exclusions.playlists : exclusions.videos
       )
-      writeLog.slice(writesBefore).forEach(applyWrite)
     } else {
       excludedIds.value = new Set()
     }
@@ -477,7 +480,7 @@ function applyWrite(write: ExclusionWrite) {
 }
 
 function recordWrite(write: ExclusionWrite) {
-  writeLog.push(write)
+  writeCount++
   applyWrite(write)
 }
 

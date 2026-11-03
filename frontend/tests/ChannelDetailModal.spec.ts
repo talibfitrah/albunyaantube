@@ -645,14 +645,15 @@ describe('ChannelDetailModal', () => {
   });
 
   // Reopened while a write is saving: the reopen's read can reach the server before the write
-  // commits and come back without it, after the write already landed.
+  // commits and come back without it, after the write already landed. A write landing during the read makes init read again.
   it('keeps an exclusion write that lands while the reopen reads exclusions', async () => {
     let finishAdd!: () => void;
     vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
     let finishRead!: () => void;
     vi.mocked(fetchChannelExclusions)
       .mockResolvedValueOnce({ videos: [], playlists: [] } as any)
-      .mockReturnValueOnce(new Promise((resolve) => { finishRead = () => resolve({ videos: [], playlists: [] } as any); }));
+      .mockReturnValueOnce(new Promise((resolve) => { finishRead = () => resolve({ videos: [], playlists: [] } as any); }))
+      .mockResolvedValueOnce({ videos: ['video3'], playlists: [] } as any);
     const { rerender } = renderModal(propsFor('A'));
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
     await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
@@ -666,6 +667,31 @@ describe('ChannelDetailModal', () => {
 
     await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
     expect(screen.getByText('Video 3').closest('.item')).toHaveClass('excluded');
+  });
+
+  // Codex P2: answer order is not commit order. Another admin removed the exclusion after this write
+  // committed, so the server's state, not this write, is what the reopen shows.
+  it('shows the server state, not a write that landed during the reopen read', async () => {
+    let finishAdd!: () => void;
+    vi.mocked(addChannelExclusion).mockReturnValueOnce(new Promise((resolve) => { finishAdd = () => resolve({} as any); }));
+    let finishRead!: () => void;
+    vi.mocked(fetchChannelExclusions)
+      .mockResolvedValueOnce({ videos: [], playlists: [] } as any)
+      .mockReturnValueOnce(new Promise((resolve) => { finishRead = () => resolve({ videos: [], playlists: [] } as any); }))
+      .mockResolvedValueOnce({ videos: [], playlists: [] } as any);
+    const { rerender } = renderModal(propsFor('A'));
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    await fireEvent.click(screen.getByText('Video 3').closest('.item')!.querySelector('button.exclude')!);
+
+    await rerender({ open: false, ...propsFor('A') });
+    await rerender({ open: true, ...propsFor('A') });
+    await waitFor(() => expect(fetchChannelExclusions).toHaveBeenCalledTimes(2));
+    finishAdd();
+    await flush();
+    finishRead();
+
+    await waitFor(() => expect(screen.getByText('Video 3')).toBeInTheDocument());
+    expect(screen.getByText('Video 3').closest('.item')).not.toHaveClass('excluded');
   });
 
   it('shows search rows while the first page it replaced is still loading', async () => {
