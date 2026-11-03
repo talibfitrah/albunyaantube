@@ -444,6 +444,16 @@ extension StreamState {
     /// stream does not need.
     private var proactiveRefresh: Task<Void, Never>?
 
+    /// 2026-11-03 (review P1): a newer video open paused this screen's player (`Router.push`) and holds it, so nothing
+    /// automatic starts it again under the opened one: its first stream landing or an auto-advance (the host's builder),
+    /// recovery's resumed replacement (`Coordinator.observe`), an interruption's `.shouldResume`, a Short's loop, a cast
+    /// session's resume (`apply`). Only the user's Play releases it: an Up Next or Retry tap (`PlayerScreen`), or the
+    /// player seen starting again (its play button, PiP, the lock screen; the host's time observer). A back-navigation
+    /// therefore finds the screen paused, as it always did.
+    var heldByOpen = false
+    /// Every player screen's model, weakly: what a video open holds.
+    static let all = NSHashTable<PlayerViewModel>.weakObjects()
+
     /// M4 (B1 final review): `catalog` and `favorites` were stored and never read -- `PlayerToolbar`
     /// reaches favorites through the environment container on its own, and nothing in the player
     /// touches the catalog.
@@ -468,6 +478,7 @@ extension StreamState {
         self.sleep = sleep
         self.clock = clock
         self.audioOnly = settings.audioOnly
+        Self.all.add(self)
     }
 
     deinit {
@@ -1425,13 +1436,13 @@ extension StreamState {
             pausedForCast = false
             cast.finishClaim(videoId, owner: castOwner)
             claimedVideoId = nil
-            if resume, wasPausedForCast { currentPlayer?.play() }
+            if resume, wasPausedForCast, !heldByOpen { currentPlayer?.play() }
         case .resume:
             // The resume `.dropClaim` couldn't give while this screen was off screen -- no seek
             // (nothing of ours ever reached the receiver, so there is no position to take), just let
             // the phone keep going now that this screen is the one actually on screen.
             droppedWhilePaused = false
-            currentPlayer?.play()
+            if !heldByOpen { currentPlayer?.play() }
         case .release(let videoId):
             cast.releaseClaim(videoId, owner: castOwner)
         case .handBack(let videoId, let resume):
@@ -1568,7 +1579,7 @@ extension StreamState {
             player.seek(to: CMTime(seconds: position, preferredTimescale: 600))
             currentTime = position
         }
-        guard wasPausedForCast, resume else { return }
+        guard wasPausedForCast, resume, !heldByOpen else { return }
         player.play()
     }
 

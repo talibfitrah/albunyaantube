@@ -50,7 +50,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         resumeFallback: model.currentTime,
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
-                                        interrupted: BackgroundPlaybackController.sessionInterrupted,
+                                        interrupted: BackgroundPlaybackController.sessionInterrupted || model.heldByOpen,
                                         onRefused: model.hdRefusalHook(for: state.resolved))
         context.coordinator.lastVideoId = model.hostVideoId
         Self.configurePictureInPicture(controller, backgroundPlay: effectiveBackgroundPlay)
@@ -99,7 +99,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
                                         pausedForCast: model.pausedForCast,
                                         airPlayFellBack: model.airPlayFellBack,
                                         failedItem: context.coordinator.failedItem,
-                                        interrupted: context.coordinator.background.interrupted,
+                                        interrupted: context.coordinator.background.interrupted || model.heldByOpen,
                                         onRefused: model.hdRefusalHook(for: state.resolved), freshItem: freshItem)
         context.coordinator.lastVideoId = model.hostVideoId
         controller.showsPlaybackControls = presentation.showsPlaybackControls
@@ -482,6 +482,7 @@ struct PlayerHostView: UIViewControllerRepresentable {
             super.init()
             // An auto-advance in flight counts too (round 3, m1): its ended item reads paused.
             background.resumeIntentPending = { [weak self] in self?.resumeOnNextItem == true || self?.model?.isAdvancing == true }
+            background.autoplayHeld = { [weak self] in self?.model?.heldByOpen == true }
             monitor.pathUpdateHandler = { [weak self] newPath in
                 MainActor.assumeIsolated {
                     self?.path = newPath
@@ -672,10 +673,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
             case .restart:
                 // B4: Android REPEAT_MODE_ONE (PlayerBinder.kt:154).
                 endObserver = NotificationCenter.default.addObserver(
-                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak player] _ in
+                    forName: .AVPlayerItemDidPlayToEndTime, object: item, queue: .main) { [weak self, weak player] _ in
                     MainActor.assumeIsolated {
                         player?.seek(to: .zero)
-                        player?.play()
+                        if self?.model?.heldByOpen != true { player?.play() }   // an end queued before an open's pause
                     }
                 }
             case .advance:
@@ -713,6 +714,10 @@ struct PlayerHostView: UIViewControllerRepresentable {
                     // stock AVKit chrome republishes here without a second observer. The stall
                     // watchdog is NOT fed from here any more: see `sampleTimer`.
                     self?.background.refreshNowPlaying()
+                    // Nothing automatic plays a held player, so one playing is the user's Play: it ends the hold. Here, as
+                    // playback starts, not at the next 1 s sample: an end inside that second found it still held. `rate`,
+                    // which `pause()` zeroes synchronously, so the open's own pause is never misread as playing.
+                    if (self?.observedPlayer?.rate ?? 0) != 0 { self?.model?.heldByOpen = false }
                 }
             }
             // `.common`, so it keeps ticking while a scroll view tracks a touch.
@@ -721,8 +726,11 @@ struct PlayerHostView: UIViewControllerRepresentable {
             }
             RunLoop.main.add(timer, forMode: .common)
             sampleTimer = timer
-            // Fix r5 N4-1: never during an interruption; its end's `.resume` plays this item.
-            if resumes, self.model?.pausedForCast != true, !background.interrupted { player.play() }
+            // Fix r5 N4-1: never during an interruption; its end's `.resume` plays this item. Nor once a
+            // newer open has paused this screen (`heldByOpen`).
+            if resumes, self.model?.pausedForCast != true, self.model?.heldByOpen != true, !background.interrupted {
+                player.play()
+            }
             // Stamped here for EVERY new item that is starting -- recovery's resumed replacement (N1)
             // and an item the builder already started, like an auto-advance's (final review I1) -- not
             // left to the sampler's first tick a second away: a failure inside that second would read
@@ -922,7 +930,8 @@ struct PlayerHostView: UIViewControllerRepresentable {
     /// says `.shouldResume`, because an advance in flight at the begin counts as playing (round 3, m1:
     /// `resumeIntentPending`), as recovery's replacement does (`Coordinator.observe`). The update pass passes its controller's flag; the
     /// make pass passes the session's (round 2): a host rebuilt mid-interruption (an auto-skip past
-    /// an error state) has a controller that never saw the begin.
+    /// an error state) has a controller that never saw the begin. Both also pass `true` while a newer
+    /// open holds the screen (`PlayerViewModel.heldByOpen`): the same "nothing automatic starts".
     /// Phase 2 (R42): `onRefused` goes on a rebuilt `fitrah-hls` asset (`PlayerViewModel.hdRefusalHook`).
     static func player(for state: StreamState, replacing existing: AVPlayer?, audioOnly: Bool = false,
                        continuesCurrentVideo: Bool = true, resumeFallback: TimeInterval = 0,

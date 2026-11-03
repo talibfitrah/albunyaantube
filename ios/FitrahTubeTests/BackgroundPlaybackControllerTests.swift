@@ -679,6 +679,29 @@ import UIKit
         await advancing.value
     }
 
+    /// 2026-11-03 review P1: an interruption (a call, Siri) began while this lecture played, and a
+    /// newer open paused it before the end. The end's `.shouldResume` played it under the opened one.
+    @Test(.timeLimit(.minutes(1))) func anInterruptionEndingAfterANewerOpenLeavesItPaused() async throws {
+        var actions: [PlaybackPolicyAction] = []
+        let (_, player, coordinator) = try await attachedWhilePlaying { actions.append($0) }
+        defer { coordinator.stopObserving(); coordinator.background.detach(); player.pause() }
+        Self.postInterruptionBegan()
+        defer { Self.postInterruptionEnded(shouldResume: false) }   // never leak the session flag (m7)
+        try await wait { coordinator.background.interrupted }
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, server) = try await PlayerHostTests.openedPlayer()
+        defer { opened.pause(); server.stop() }
+        Self.postInterruptionEnded(shouldResume: true)
+        try await wait { actions.contains(.resume) }
+
+        #expect(opened.rate > 0, "the opened video plays")
+        let playing = [player, opened].filter { $0.rate > 0 }.count
+        #expect(playing == 1, "the interruption's end played the covered lecture")
+    }
+
     /// 1.0.4 round 5 (re-review N2): the user's Play is the route PUSH (a tap or a deep link), not
     /// the screen's mount.
     @Test(.timeLimit(.minutes(1))) func aPlayerRoutePushIsTheUsersPlay() async throws {

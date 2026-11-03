@@ -3,6 +3,7 @@ import AVKit
 import Foundation
 import InnerTubeKit
 import Network
+import SwiftUI
 import Testing
 @testable import FitrahTube
 
@@ -940,6 +941,264 @@ struct PlayerHostTests {
         second.pause()
         coordinator.background.pictureInPictureActive = false
         coordinator.playerViewControllerDidStopPictureInPicture(controller)   // the deferred teardown
+    }
+
+    // MARK: - 2026-11-03 review P1: nothing automatic restarts a player a newer open paused
+
+    /// The covered screen was still loading when a newer video opened over it (a deep link, a tap in
+    /// another tab). Its stream lands after the open's pause, and the fresh player its host builds
+    /// autoplayed under the opened one. Hosted in a window: the make pass is the app's.
+    @Test(.timeLimit(.minutes(1))) func aStreamLandingAfterANewerOpenStaysPaused() async throws {
+        let resolver = RecordingResolver(.progressive)
+        resolver.playedURL = try Self.fixtureURL()
+        resolver.hold("86BEvUxr1LE")
+        let covered = PlayerViewModel(resolver: resolver, settings: Self.settings(),
+                                      args: PlayerArgs(videoId: "86BEvUxr1LE"))
+        let opening = Task { await covered.open() }
+        await resolver.waitUntilCalled(count: 1)
+
+        Router(players: NSHashTable<AVPlayer>.weakObjects()).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, server) = try await Self.openedPlayer()
+        defer { opened.pause(); server.stop() }
+        resolver.release(id: "86BEvUxr1LE")
+        await opening.value
+        let window = Self.host(covered)
+        defer { Self.unhost(window) }
+        let first = try await Self.hostedPlayer(covered)
+
+        #expect(opened.rate > 0, "the opened video plays")
+        #expect(Self.playingCount([first, opened]) == 1, "the covered screen's first stream played under the opened one")
+    }
+
+    /// An auto-advance whose next lecture lands after a newer open paused the screen: "a different
+    /// video always starts" played it under the opened one. The clip plays out for real, so the end,
+    /// the advance and the update pass are all the app's.
+    @Test(.timeLimit(.minutes(1))) func anAutoAdvanceLandingAfterANewerOpenStaysPaused() async throws {
+        let resolver = RecordingResolver(.progressive)
+        resolver.playedURL = try Self.fixtureURL()
+        let settings = Self.settings()
+        settings.safeMode = false                        // Safe Mode disables auto-advance
+        let covered = PlayerViewModel(resolver: resolver, settings: settings,
+                                      args: PlayerArgs(videoId: "86BEvUxr1LE", playlistId: "PL"),
+                                      queueSource: FakeQueueSource(pages: [(ids: ["86BEvUxr1LE", "nhaGO__rxHQ"], next: nil)]))
+        await covered.open()                             // 86BEvUxr1LE on .player, nhaGO__rxHQ on .prefetch
+        resolver.hold("nhaGO__rxHQ")
+        let window = Self.host(covered)
+        defer { Self.unhost(window) }
+        let first = try await Self.hostedPlayer(covered)
+        await resolver.waitUntilCalled(count: 3)         // the 2 s clip ended: the advance's resolve, held
+        let ended = first.currentItem
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(first)
+
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, server) = try await Self.openedPlayer()
+        defer { opened.pause(); server.stop() }
+        resolver.release(id: "nhaGO__rxHQ")
+        let deadline = ContinuousClock.now + .seconds(10)   // the advance's update pass swaps the item
+        while first.currentItem === ended, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+
+        try #require(first.currentItem !== ended, "the advance never landed")
+        #expect(opened.rate > 0, "the opened video plays")
+        #expect(Self.playingCount([first, opened]) == 1, "the auto-advanced lecture played under the opened one")
+    }
+
+    /// Recovery's replacement for an item that died under the user, landing after a newer open paused
+    /// the screen: `observe` played it, as the failure's resume intent said, under the opened one.
+    @Test(.timeLimit(.minutes(1))) func aRecoveryReplacementLandingAfterANewerOpenStaysPaused() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        Self.postFailure(on: player)                     // dies under the user -> resume intent
+        player.pause()                                   // what the failure does to the player
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, server) = try await Self.openedPlayer()
+        defer { opened.pause(); server.stop() }
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+
+        #expect(opened.rate > 0, "the opened video plays")
+        #expect(Self.playingCount([player, opened]) == 1, "recovery's replacement played under the opened one")
+    }
+
+    /// A stall's replacement starts nothing by itself: it follows the live player (`shouldResume`),
+    /// and the open's pause is what that reads. Pinned so it stays that way.
+    @Test(.timeLimit(.minutes(1))) func aStallReplacementLandingAfterANewerOpenStaysPaused() async throws {
+        let server = try StallingServer(body: Data(), withheldFrom: 0)   // accepts, never answers
+        await server.start()
+        defer { server.stop() }
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        try Self.swap(player, to: server.url, coordinator, model)
+        for _ in 0..<300 where player.timeControlStatus != .waitingToPlayAtSpecifiedRate {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        try #require(player.timeControlStatus == .waitingToPlayAtSpecifiedRate, "not a real wait")
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, openServer) = try await Self.openedPlayer()
+        defer { opened.pause(); openServer.stop() }
+        try Self.swap(player, to: Self.fixtureURL(), coordinator, model)   // the stall's replacement
+
+        #expect(opened.rate > 0, "the opened video plays")
+        #expect(Self.playingCount([player, opened]) == 1, "the stall's replacement played under the opened one")
+    }
+
+    /// A Short's end AVFoundation queued on main before a newer open paused it: the loop played it
+    /// again under the opened one.
+    @Test(.timeLimit(.minutes(1))) func aShortsLoopEndingAfterANewerOpenStaysPaused() async throws {
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                    args: PlayerArgs(videoId: "86BEvUxr1LE"))
+        let player = try #require(PlayerHostView.player(for: Self.progressive(try Self.fixtureURL()), replacing: nil))
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .restart)
+        defer { coordinator.stopObserving(); player.pause() }
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+
+        Router(players: players).push(.shorts(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        let (opened, server) = try await Self.openedPlayer()
+        defer { opened.pause(); server.stop() }
+        NotificationCenter.default.post(name: .AVPlayerItemDidPlayToEndTime, object: item)   // runs before `post` returns
+
+        #expect(opened.rate > 0, "the opened video plays")
+        #expect(Self.playingCount([player, opened]) == 1, "the Short's loop played under the opened one")
+    }
+
+    /// The user's Play is never held: played again (the AVKit button, PiP, the lock screen), the
+    /// covered lecture's own automatic starts work again -- here, a failure's resumed replacement.
+    @Test(.timeLimit(.minutes(1))) func theUsersPlayReleasesTheHoldOfANewerOpen() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+
+        await player.seek(to: .zero)
+        let played = Date()
+        player.play()                                    // the user
+        let deadline = ContinuousClock.now + .seconds(10)   // it plays for a while (a sampler tick sees it)
+        while (coordinator.lastPlayingAt ?? .distantPast) <= played, ContinuousClock.now < deadline {
+            try await Task.sleep(for: .milliseconds(10))
+        }
+        Self.postFailure(on: player)                     // dies under the user -> resume intent
+        player.pause()
+        try Self.swap(player, to: Self.unanswered, coordinator, model)
+
+        #expect(player.rate > 0, "a lecture the user played again stayed held")
+    }
+
+    /// The user's Play releases the hold as it starts, not at the next 1 s sample: played with a moment left, a Short's
+    /// end found it still held and never looped.
+    @Test(.timeLimit(.minutes(1))) func aPlayEndingBeforeTheNextSampleStillLoops() async throws {
+        let model = PlayerViewModel(resolver: RecordingResolver(.hls), settings: Self.settings(),
+                                    args: PlayerArgs(videoId: "86BEvUxr1LE"))
+        let player = try #require(PlayerHostView.player(for: Self.progressive(try Self.fixtureURL()), replacing: nil))
+        let item = try #require(player.currentItem)
+        let coordinator = PlayerHostView.Coordinator(backgroundPlay: false)
+        coordinator.observe(item: item, player: player, model: model, isLive: false, playToEnd: .restart)
+        defer { coordinator.stopObserving(); player.pause() }
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+        Router(players: players).push(.shorts(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        for _ in 0..<500 where item.status != .readyToPlay { try await Task.sleep(for: .milliseconds(10)) }
+        try #require(item.status == .readyToPlay)
+
+        await player.seek(to: item.duration - CMTime(seconds: 0.1, preferredTimescale: 600))
+        player.play()                                    // the user, with a moment left
+        let deadline = ContinuousClock.now + .seconds(5) // the end's loop seeks back to the start
+        while player.currentTime().seconds > 1, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+
+        try #require(player.currentTime().seconds <= 1, "the Short never ended")
+        #expect(player.rate > 0, "the user's Play was still held at the end")
+    }
+
+    /// Up Next and Retry are the user's Play too (both call `userAskedToPlay`), at the tap: their work runs in a task,
+    /// and a newer open landing before that task runs holds the lecture again.
+    @Test(.timeLimit(.minutes(1))) func upNextAndRetryReleaseTheHoldAtTheTap() async throws {
+        let resolver = RecordingResolver(.hls)
+        let model = PlayerViewModel(resolver: resolver, settings: Self.settings(),
+                                    args: PlayerArgs(videoId: "86BEvUxr1LE", playlistId: "PL"),
+                                    queueSource: FakeQueueSource(pages: [(ids: ["86BEvUxr1LE", "nhaGO__rxHQ"], next: nil)]))
+        await model.open()
+        let router = Router(players: NSHashTable<AVPlayer>.weakObjects())
+
+        router.push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+        PlayerScreen.playUpNext(model, at: 1)
+        #expect(!model.heldByOpen, "Up Next left the lecture held")
+        var calls = resolver.calls.count
+        router.push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))   // before Up Next's task runs
+        await resolver.waitUntilCalled(count: calls + 1)
+        #expect(model.heldByOpen, "Up Next's task undid a newer open's hold")
+
+        PlayerScreen.retryTapped(model)
+        #expect(!model.heldByOpen, "Retry left the lecture held")
+        calls = resolver.calls.count
+        router.push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))   // before Retry's task runs
+        await resolver.waitUntilCalled(count: calls + 1)
+        #expect(model.heldByOpen, "Retry's task undid a newer open's hold")
+    }
+
+    /// Back-navigation to the covered screen: before and after this fix it stays paused. The pop's
+    /// `.onAppear` (`reconcile(.appear)`) plays nothing, and nothing else runs on a pop.
+    @Test(.timeLimit(.minutes(1))) func goingBackToTheCoveredScreenLeavesItPaused() async throws {
+        let (model, player, coordinator) = try await Self.playingHarness()
+        defer { coordinator.stopObserving(); player.pause() }
+        let players = NSHashTable<AVPlayer>.weakObjects()
+        players.add(player)
+        Router(players: players).push(.player(PlayerArgs(videoId: "nhaGO__rxHQ")))
+
+        model.reconcile(.appear)                         // the pop uncovers it
+        try await Task.sleep(for: .milliseconds(1500))   // a sampler tick passes
+
+        #expect(player.rate == 0, "going back resumed the covered lecture by itself")
+    }
+
+    /// Played after a race: exactly one of these, the opened video's.
+    private static func playingCount(_ players: [AVPlayer]) -> Int { players.filter { $0.rate > 0 }.count }
+
+    /// The opened screen's fresh player, as its host builds it, on a local server that accepts and never answers: it
+    /// wants to play for the whole test. The discard port refuses at once, and a failed item stops playing.
+    static func openedPlayer() async throws -> (player: AVPlayer, server: StallingServer) {
+        let server = try StallingServer(body: Data(), withheldFrom: 0)
+        await server.start()
+        return (try #require(PlayerHostView.player(for: progressive(server.url), replacing: nil)), server)
+    }
+
+    /// `PlayerScreen.stateView`'s mount of the host, in a real window: its make and update passes are the app's.
+    private struct HostedPlayer: View {
+        let model: PlayerViewModel
+        var body: some View {
+            if model.state.isPlayable {
+                PlayerHostView(state: model.state, quality: model.selectedQuality, audioOnly: model.audioOnly, model: model)
+            }
+        }
+    }
+
+    private static func host(_ model: PlayerViewModel) -> UIWindow {
+        let scene = UIApplication.shared.connectedScenes.compactMap { $0 as? UIWindowScene }.first
+        let window = scene.map(UIWindow.init(windowScene:)) ?? UIWindow()
+        window.frame = CGRect(x: 0, y: 0, width: 390, height: 844)
+        window.rootViewController = UIHostingController(rootView: HostedPlayer(model: model))
+        window.isHidden = false
+        return window
+    }
+
+    /// Dismantles the host, whose teardown pauses and releases its player.
+    private static func unhost(_ window: UIWindow) {
+        window.rootViewController = nil
+        window.isHidden = true
+    }
+
+    /// The host's player, once its make pass has handed it to the model.
+    private static func hostedPlayer(_ model: PlayerViewModel) async throws -> AVPlayer {
+        let deadline = ContinuousClock.now + .seconds(10)
+        while model.currentPlayer == nil, ContinuousClock.now < deadline { try await Task.sleep(for: .milliseconds(10)) }
+        return try #require(model.currentPlayer, "the host never built a player")
     }
 
     // MARK: - Task 5: the delegate wiring

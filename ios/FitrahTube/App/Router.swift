@@ -70,10 +70,13 @@ nonisolated enum ReselectAction: Equatable {
         // One video plays at a time (2026-11-03 double audio): every open of a new one -- tap, deep
         // link, the saved copy's Open -- pauses what plays now. The screen it covers stops nothing
         // itself: its host's dismantle pauses, but a live PiP window defers that (`PiPDismantlePolicy`).
+        // And holds them (review P1): an automatic start already in flight must not restart one under
+        // the new video. The opened screen's model is built after this, so it is never held.
         switch route {
         case .player, .shorts:
             BackgroundPlaybackController.userAskedToPlay()
             players.allObjects.forEach { $0.pause() }
+            PlayerViewModel.all.allObjects.forEach { $0.heldByOpen = true }
         default: break
         }
         paths[selectedTab, default: []].append(route)

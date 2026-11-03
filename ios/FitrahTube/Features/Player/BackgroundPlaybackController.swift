@@ -26,6 +26,9 @@ import UIKit
     /// player paused, so the player alone reads "not playing" at an interruption that begins then,
     /// and the end of the interruption would never resume it.
     var resumeIntentPending: (() -> Bool)?
+    /// True while a newer video open holds the host's player (`PlayerViewModel.heldByOpen`): the
+    /// interruption's end does not resume it under the opened one.
+    var autoplayHeld: (() -> Bool)?
     /// True from an interruption's begin to its end (fix r5 N4-1): recovery's replacement must not
     /// play meanwhile (`Coordinator.observe`); the end's `.resume` plays it when iOS says
     /// `.shouldResume`. iOS does not promise the end (Apple: treat the user's Play as one), so the
@@ -278,7 +281,7 @@ import UIKit
             // Fix r5 N4-1(c): headphones out during a call; the call's end must not resume through
             // the speaker.
             if case .routeChanged = event { wasPlayingBeforeInterruption = false }
-        case .resume: player?.play()
+        case .resume: if autoplayHeld?() != true { player?.play() }
         case .swapToAudioOnly: autoSwappedToAudioOnly = true
         // `.restoreVideoNow` never comes from `decide` (only `undoAutoSwapIfAny`, which clears the
         // flag itself), but the same clearing is the right answer if it ever does.

@@ -1475,6 +1475,58 @@ struct CastSessionTests {
         #expect(player.rate == 0, "and the flag is spent exactly once")
     }
 
+    /// 2026-11-03 (review P1): a hidden claimant's owed resume is an automatic start, and a newer open holds it. A casts,
+    /// the user opens B in another tab, the session ends, the user switches back to A: `.resume` played A under B.
+    @Test func anOwedCastResumeAfterANewerOpenStaysPaused() async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.appear)
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+
+        vm.reconcile(.disappear)                                  // another tab ...
+        Router(players: NSHashTable<AVPlayer>.weakObjects()).push(.player(PlayerArgs(videoId: "86BEvUxr1LE")))
+        let (opened, server) = try await PlayerHostTests.openedPlayer()   // ... where B plays
+        defer { opened.pause(); server.stop() }
+        cast.sessionDidEnd()
+        vm.reconcile(.sessionChanged)                             // off screen: the resume is owed to the next appear
+        vm.reconcile(.appear)                                     // back to A's tab
+
+        let playing = [player, opened].filter { $0.rate > 0 }.count
+        #expect(playing == 1, "A's owed cast resume played under B")
+    }
+
+    /// The same hold on the arms that resume at once, on the screen visible again after going back: the session ends
+    /// with nothing of ours on the receiver (`.dropClaim`) or with it (`.handBack`). Only the user's Play plays it.
+    @Test(arguments: [false, true]) func aCastResumeOnAScreenANewerOpenHeldStaysPaused(handBack: Bool) async throws {
+        let cast = CastController()
+        let vm = makeCastModel(RecordingResolver(.hls), cast: cast)
+        cast.sessionDidBegin(deviceName: "Living Room TV")
+        await vm.open()
+        let player = try #require(phonePlayer(vm))
+        vm.currentPlayer = player
+        vm.reconcile(.appear)
+        vm.reconcile(.videoStarted)
+        await settle()
+        #expect(vm.pausedForCast)
+        if handBack { cast.recordLoad(Self.claimed, owner: vm.castOwner) }
+
+        vm.reconcile(.disappear)                                  // covered by B ...
+        Router(players: NSHashTable<AVPlayer>.weakObjects()).push(.player(PlayerArgs(videoId: "86BEvUxr1LE")))
+        vm.reconcile(.appear)                                     // ... and back
+        if handBack { cast.sessionWillEnd(position: 512) }
+        cast.sessionDidEnd()
+        vm.reconcile(.sessionChanged)
+
+        #expect(vm.pausedForCast == false, "the cast pause is spent either way")
+        #expect(player.rate == 0, "a cast resume started a lecture a newer open held")
+    }
+
     /// Fix round 1, I1: the third arm that resumes, and the last one without the visibility rule.
     /// A hidden screen can reach it — it is claimless after its hand-back, but `.sessionChanged`
     /// still fires on an opacity-0 rail tab (T0-1's whole premise), so a receiver RECONNECT makes
