@@ -1,0 +1,26 @@
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_543f5b01a05d75::t_7b45010afcfc35 651-653
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_543f5b01a05d75::t_e5cf5fd5c74766 123-125
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_543f5b01a05d75::t_2b107557039fc1 421,429-438
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_543f5b01a05d75::t_9118d8b4925fd2 829-861
+  s_543f5b01a05d75::t_c1f068456cf9ec 828
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "2ed7d1aaf20d24f43ad33be8d0383c68eb92e969",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
