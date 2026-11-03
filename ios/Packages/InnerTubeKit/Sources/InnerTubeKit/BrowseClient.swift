@@ -461,7 +461,9 @@ public actor BrowseClient {
         if rows.count >= 2, let bylineParts = rows[0]["metadataParts"] as? [[String: Any]], let byline = bylineParts.first {
             channelName = dig(byline, "text", "content") as? String
             let commandRuns = dig(byline, "text", "commandRuns") as? [[String: Any]]
-            channelId = commandRuns?.first.flatMap { dig($0, "onTap", "innertubeCommand", "browseEndpoint", "browseId") as? String }
+            channelId = InnerTubeKit.channelId(commandRuns?.first.flatMap {
+                dig($0, "onTap", "innertubeCommand", "browseEndpoint", "browseId") as? String
+            })
             statsRow = rows[1]
         } else {
             statsRow = rows.first
@@ -498,7 +500,7 @@ public actor BrowseClient {
         return VideoItem(
             id: id, title: text(row["title"]) ?? "",
             channelName: byline?["text"] as? String,
-            channelId: dig(byline, "navigationEndpoint", "browseEndpoint", "browseId") as? String,
+            channelId: channelId(dig(byline, "navigationEndpoint", "browseEndpoint", "browseId") as? String),
             durationSeconds: (row["lengthSeconds"] as? String).flatMap { Int($0) },
             viewCountText: stats.first, publishedText: stats.count > 1 ? stats[1] : nil,
             thumbnailURL: largestImageURL(dig(row, "thumbnail", "thumbnails") as? [[String: Any]]),

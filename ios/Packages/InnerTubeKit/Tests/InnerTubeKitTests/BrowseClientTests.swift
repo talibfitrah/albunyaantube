@@ -189,10 +189,16 @@ import Testing
         #expect(second.ownerChannelId == "UCbunYN0o9Yaid7zHaor_UHA")
         #expect(page2.ownerChannelId == nil)
 
-        let forged = String(decoding: try fixtureResponse("browse-playlist").body, as: UTF8.self)
-            .replacingOccurrences(of: "UCzKh27VVFQijk9K2DuL5peg", with: "x/../../videos/abc")
-        let client2 = makeClient(RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(forged.utf8))]))
-        #expect(try await client2.playlistItems(Self.playlistId, continuation: nil).ownerChannelId == nil)
+        // Owner and bylines alike go into backend paths: anything that is not a channel id is none. Both item shapes.
+        for (fixture, owner) in [("browse-playlist", "UCzKh27VVFQijk9K2DuL5peg"),
+                                 ("browse-playlist-videolist", "UCbunYN0o9Yaid7zHaor_UHA")] {
+            let forged = String(decoding: try fixtureResponse(fixture).body, as: UTF8.self)
+                .replacingOccurrences(of: owner, with: "x/../../videos/abc")
+            let client2 = makeClient(RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(forged.utf8))]))
+            let page = try await client2.playlistItems(Self.playlistId, continuation: nil)
+            #expect(page.ownerChannelId == nil, "\(fixture)")
+            #expect(!page.items.isEmpty && page.items.allSatisfy { $0.channelId == nil }, "\(fixture)")
+        }
     }
 
     @Test func playlistItemsSendsVLPrefixedBrowseId() async throws {
