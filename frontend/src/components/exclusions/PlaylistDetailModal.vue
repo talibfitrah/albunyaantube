@@ -324,13 +324,15 @@ function performSearch() {
   // Invalidate any in-flight requests
   requestIdCounter++
   isLoading.value = false
+  // Init or page 1 failed (no token yet), so the exclusion state may be missing:
+  // re-run init (with this query) instead. A later page's failure leaves init intact.
+  const initFailed = !!error.value && !nextPageToken.value
 
   activeSearch.value = searchQuery.value.trim()
   items.value = []
   nextPageToken.value = null
   reset()
-  // After an error the exclusion state may be missing: re-run init (with this query) instead.
-  if (error.value) loadInitialData()
+  if (initFailed) loadInitialData()
   else loadMore()
 }
 

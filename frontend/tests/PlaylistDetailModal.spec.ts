@@ -410,6 +410,26 @@ describe('PlaylistDetailModal', () => {
     expect(getPlaylistDetails).toHaveBeenCalledTimes(1);
   });
 
+  // Init succeeded, so a search after a later-page error needs no re-init (details + exclusions).
+  it('searches without re-initializing after a later page failed', async () => {
+    vi.mocked(getPlaylistVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'item1', videoId: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockRejectedValueOnce(new Error('Page 2 failed'))
+      .mockResolvedValueOnce({ items: [{ id: 'item9', videoId: 'video9', title: 'Needle' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+    await waitFor(() => expect(screen.getByText('Page 2 failed')).toBeInTheDocument());
+
+    await fireEvent.update(screen.getByPlaceholderText(/search within playlist/i), 'needle');
+    await fireEvent.click(screen.getByText('🔍'));
+
+    await waitFor(() => expect(screen.getByText('Needle')).toBeInTheDocument());
+    expect(getPlaylistVideos).toHaveBeenLastCalledWith('PLxxxxxx', undefined, 'needle');
+    expect(getPlaylistDetails).toHaveBeenCalledTimes(1);
+  });
+
   // jsdom lays nothing out; give the list a height so an under-filled page is detectable.
   function layOutList() {
     const spy = vi.spyOn(HTMLElement.prototype, 'clientHeight', 'get').mockReturnValue(500);

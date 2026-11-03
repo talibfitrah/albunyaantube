@@ -106,9 +106,13 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     if (value) url.searchParams.set(key, value);
   }
 
+  // A hung request would otherwise leave the caller's spinner up forever; 30 s matches apiClient.
+  // Own controller, not AbortSignal.timeout: Safari < 16 lacks it, and Safari can reject an
+  // aborted body read with a plain AbortError, so "our signal aborted" is the timeout test.
+  const controller = new AbortController();
+  const timer = setTimeout(() => controller.abort(), 30_000);
   try {
-    // A hung request would otherwise leave the caller's spinner up forever; 30 s matches apiClient.
-    const response = await fetch(url.toString(), { signal: AbortSignal.timeout(30_000) });
+    const response = await fetch(url.toString(), { signal: controller.signal });
     if (!response.ok) {
       const status = response.status;
       // Log full error for debugging but don't expose raw API response to callers
@@ -117,8 +121,10 @@ async function youtubeGet<T>(endpoint: string, params: Record<string, string>): 
     }
     return await response.json();
   } catch (err) {
-    if ((err as Error)?.name === 'TimeoutError') throw new Error('YouTube API request timed out');
+    if (controller.signal.aborted) throw new Error('YouTube API request timed out');
     throw err;
+  } finally {
+    clearTimeout(timer);
   }
 }
 

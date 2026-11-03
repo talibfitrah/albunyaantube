@@ -102,11 +102,15 @@ describe('youtubeDataApi', () => {
   });
 
   // A hung request must fail (into the caller's error state) instead of spinning forever.
+  // Safari < 16 has no AbortSignal.timeout, and Safari can reject an aborted body read with a
+  // plain AbortError, so both are simulated here.
   it('fails a request that does not answer within 30 seconds', async () => {
     vi.useFakeTimers();
+    const timeout = AbortSignal.timeout;
+    (AbortSignal as { timeout?: unknown }).timeout = undefined;
     try {
       mockFetch.mockImplementation((_url: string, init?: RequestInit) => new Promise((_resolve, reject) => {
-        init?.signal?.addEventListener('abort', () => reject(init.signal!.reason));
+        init?.signal?.addEventListener('abort', () => reject(new DOMException('The operation was aborted.', 'AbortError')));
       }));
       const { listPlaylistVideos } = await import('@/services/youtubeDataApi');
       const outcome = listPlaylistVideos('PL123').then(() => 'resolved', (e: Error) => e.message);
@@ -116,6 +120,7 @@ describe('youtubeDataApi', () => {
       await vi.advanceTimersByTimeAsync(1_000);
       expect(await Promise.race([outcome, 'pending'])).toBe('YouTube API request timed out');
     } finally {
+      AbortSignal.timeout = timeout;
       vi.useRealTimers();
     }
   });

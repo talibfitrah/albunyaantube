@@ -411,6 +411,26 @@ describe('ChannelDetailModal', () => {
     expect(getChannelDetails).toHaveBeenCalledTimes(1);
   });
 
+  // Init succeeded, so a search after a later-page error needs no re-init (details + exclusions).
+  it('searches without re-initializing after a later page failed', async () => {
+    vi.mocked(getChannelVideos)
+      .mockReset()
+      .mockResolvedValueOnce({ items: [{ id: 'video1', title: 'Video 1' }], nextPageToken: 'token123' } as any)
+      .mockRejectedValueOnce(new Error('Page 2 failed'))
+      .mockResolvedValueOnce({ items: [{ id: 'video9', title: 'Needle' }], nextPageToken: null } as any);
+    renderModal();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+    document.body.querySelector('.content-list')!.dispatchEvent(new Event('scroll'));
+    await waitFor(() => expect(screen.getByText('Page 2 failed')).toBeInTheDocument());
+
+    await fireEvent.update(screen.getByPlaceholderText(/search within channel/i), 'needle');
+    await fireEvent.click(screen.getByText('🔍'));
+
+    await waitFor(() => expect(screen.getByText('Needle')).toBeInTheDocument());
+    expect(getChannelVideos).toHaveBeenLastCalledWith('UCxxxxxx', undefined, 'needle');
+    expect(getChannelDetails).toHaveBeenCalledTimes(1);
+  });
+
   // A scroll fired while a tab switch re-initializes must not start page 1 itself:
   // init's own loadMore would then return early and flash "No results".
   it('ignores scroll while the tab is initializing', async () => {
