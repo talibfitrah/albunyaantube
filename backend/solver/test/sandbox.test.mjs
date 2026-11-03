@@ -87,9 +87,9 @@ test('the executor unit runs player JS with no network, no secret and nothing wr
   assert.equal(exec.at(-1), '/opt/fitrah-solver/app/executor.mjs');
   assert.deepEqual(execFlags('/R'), ['--experimental-vm-modules', '--permission', '--allow-fs-read=/R/app/', '--max-old-space-size=256']);
   for (const line of ['StandardInput=socket', 'StandardOutput=socket', 'DynamicUser=yes', 'User=fsx-%i', 'PrivateNetwork=yes', 'IPAddressDeny=any',
-    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro',
+    'RestrictAddressFamilies=AF_UNIX', 'TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro',
     'BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu', 'ProtectHome=yes', 'ProtectSystem=strict',
-    'NoExecPaths=/', 'ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu',
+    'NoExecPaths=/ /opt/fitrah-solver/app', 'ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu',
     'LimitFSIZE=0', 'MemoryMax=384M', 'OOMScoreAdjust=1000', 'SyslogLevelPrefix=no', 'Before=fitrah-solver.service', 'CPUWeight=20', 'TasksMax=32', 'PrivateDevices=yes', 'CapabilityBoundingSet=',
     'NoNewPrivileges=yes', 'RestrictNamespaces=yes', 'ProtectProc=invisible']) {
     assert.ok(EXEC_UNIT.split('\n').includes(line), line);
@@ -384,7 +384,8 @@ for (const route of ['r14', 'r13']) for (const withoutPermissionModel of [false,
       assert.match(report?.escaped ?? '', /^pid \d+/, 'the drill must really escape the realm, or it proves nothing');
       assert.deepEqual(tg.hits, { tcp: 0, http: 0, unix: 0 }, 'escaped player code reached a socket');
       for (const key of ['tcp', 'unix', 'http', 'read', 'write0', 'write1', 'write2']) assert.notEqual(report[key], 'allowed', key);
-      assert.notEqual(report.spawn, 'allowed', 'spawn');                // the permission model, and the kernel's exec deny
+      // the permission model refuses it first; past it, the kernel's exec deny (sandbox-exec's EPERM here, EACCES on Linux)
+      assert.equal(report.spawn, withoutPermissionModel ? 'EPERM' : 'ERR_ACCESS_DENIED', 'spawn');
       assert.equal(fs.existsSync(writes[0]), false, 'escaped code poisoned the cache');
     });
 }

@@ -1,5 +1,5 @@
 [Unit]
-Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret, nothing writable and no exec (S20)
+Description=FitrahTube solver executor: runs YouTube player JS with no network, no secret, nothing writable and no shell (S20)
 CollectMode=inactive-or-failed
 # Stopped after the gateway at shutdown: an executor gone first reads to the gateway as a crash, and the next start would
 # skip a healthy player for an hour (S20 review).
@@ -30,18 +30,21 @@ RestrictAddressFamilies=AF_UNIX
 # (the solver cache, logs), /run (every system socket) or /home; /etc and /usr hold no secret and the loader needs them, and
 # the dynamic uid reads only what any user may. /tmp, /var/tmp and /dev/shm are empty and read-only too: a directory, a
 # symlink or a unix socket needs no byte of file size, and each costs the host an inode (S20 review). DynamicUser= implies
-# PrivateTmp=, whose /tmp and /var/tmp are mounted over the /var tmpfs; systemd 255 merges a same-path entry's :ro into
-# them, so each is named here (the 2026-11-03 drill made a directory in /var/tmp while only /var:ro was).
-TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro
+# PrivateTmp=, its own /tmp and /var/tmp mounts; systemd 255 merges a same-path entry's :ro into them, so each is named
+# here (the 2026-11-03 drill made a directory in /var/tmp, under only /var:ro). PrivateDevices= binds the host's /dev/pts
+# beside its /dev/ptmx, where each open makes a host pty: an empty /dev/pts fails the open, so no host login is starved.
+TemporaryFileSystem=/opt:ro /var:ro /run:ro /tmp:ro /var/tmp:ro /dev/shm:ro /dev/pts:ro
 # The loader's directory is bound here only so it stays read-only under ExecPaths= below (an ExecPaths= path of its own
 # becomes a mount that ProtectSystem= no longer makes read-only).
 BindReadOnlyPaths=/opt/fitrah-solver/node /opt/fitrah-solver/app /usr/lib/x86_64-linux-gnu
 ProtectHome=yes
 ProtectSystem=strict
-# Nothing executes but node: no /bin/sh, no tool (the drill spawned `sh -c id`; only --permission refused it). Node needs
-# its ELF loader (/lib64/ld-linux-x86-64.so.2) and its shared libraries (libstdc++, libc, ...) on an exec mount too, all in
-# /usr/lib/x86_64-linux-gnu; the loader there cannot run any other program, whose code would map from a noexec mount.
-NoExecPaths=/
+# No shell and no tool (the drill spawned `sh -c id`; only --permission refused it): nothing executes outside node's
+# directory and /usr/lib/x86_64-linux-gnu, which node needs for its ELF loader (/lib64/ld-linux-x86-64.so.2) and shared
+# libraries (libstdc++, libc, ...). The few programs in that directory (the loader, libc, a glib helper) run in this same
+# sandbox and map no code from anywhere else, all of it noexec. systemd 255 skips mounts it made itself when it applies
+# NoExecPaths=/, so the app directory is named too.
+NoExecPaths=/ /opt/fitrah-solver/app
 ExecPaths=/opt/fitrah-solver/node /usr/lib/x86_64-linux-gnu
 # Not one byte to any file (EFBIG, then SIGXFSZ): no cache poisoning, no disk fill, nothing that outlives the process.
 LimitFSIZE=0
