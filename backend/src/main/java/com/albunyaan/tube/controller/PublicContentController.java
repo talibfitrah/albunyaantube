@@ -12,6 +12,7 @@ import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
 import com.google.firebase.auth.FirebaseAuth;
+import com.google.firebase.auth.FirebaseAuthException;
 import org.springframework.http.CacheControl;
 import org.springframework.http.HttpHeaders;
 import org.springframework.http.ResponseEntity;
@@ -48,14 +49,18 @@ public class PublicContentController {
      * The caller's uid from a valid Firebase Bearer, else null. FirebaseAuthFilter skips /api/v1/*, so the two
      * routes that serve a PERSONAL item to its grantees read the token here. A missing, malformed, expired or
      * forged token is simply anonymous: never a 401, so it cannot tell the caller anything a missing id would not.
-     * No revocation check, as on every /api/v1/* read (FirebaseAuthFilter): a revoked token keeps a grantee's read
-     * access until it expires (at most 1 h).
+     * ponytail: no revocation and no blocked/deleted check (FirebaseAuthFilter's cheaper /api/v1/* policy), so a
+     * revoked, blocked or deleted grantee keeps this one read until the token expires (at most 1 h). The body is
+     * the item's public metadata and exclusions. If that ever matters, re-verify with checkRevoked for grantees only.
      */
     private String viewerUid(String authorization) {
         if (authorization == null || !authorization.startsWith("Bearer ")) return null;
         try {
             return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length())).getUid();
-        } catch (Exception e) { // FirebaseAuthException, or IllegalArgumentException for an empty token
+        } catch (FirebaseAuthException | IllegalArgumentException e) { // a bad or empty token: anonymous
+            return null;
+        } catch (RuntimeException e) { // a broken Firebase setup: still anonymous, but every grantee would lose exclusions
+            log.warn("Bearer on a public detail route could not be verified: {}", e.toString());
             return null;
         }
     }

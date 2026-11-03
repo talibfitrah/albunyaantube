@@ -956,7 +956,8 @@ public class PublicContentService {
         }
 
         // Finding 3: a PERSONAL item is served only to a grantee (the apps read its exclusions here);
-        // anyone else gets the very 404 a missing id gets (fail-open), so its existence never leaks.
+        // anyone else gets the very 404 a missing id gets (fail-open), so its existence never leaks. This runs after the
+        // 410 on purpose: an admin's REJECT blocks every caller, and a 410 says nothing about PERSONAL vs PUBLIC.
         if (!VisibilityPolicy.isAccessible(channel.getVisibility(), channel.getPersonalGrants(), viewerUid)) {
             throw new ResourceNotFoundException("Channel", channelId);
         }

@@ -249,7 +249,8 @@ paths:
         Bearer optional. A PERSONAL channel (approved for specific users only) answers 200 only when the
         request carries a valid Firebase ID token of one of its grantees, so the grantee's app can read its
         exclusions. Everyone else (no token, another user's token, an invalid or expired token) gets the same
-        404 a missing id gets; a bad token is never a 401 here. Cache-Control is always no-store.
+        404 a missing id gets; a bad token is never a 401 here. A REJECTED, ARCHIVED or UNAVAILABLE id
+        answers 410 to every caller, PERSONAL or not, as before. Cache-Control is always no-store.
       security:
         - {}
         - bearerAuth: []
@@ -281,7 +282,8 @@ paths:
       tags: [Public Content]
       description: >
         Bearer optional, as getPublicChannel: a PERSONAL playlist answers 200 only to a grantee's valid
-        Firebase ID token; everyone else gets the missing-id 404. Cache-Control is always no-store.
+        Firebase ID token; everyone else gets the missing-id 404 (410s as getPublicChannel). Cache-Control is
+        always no-store.
       security:
         - {}
         - bearerAuth: []

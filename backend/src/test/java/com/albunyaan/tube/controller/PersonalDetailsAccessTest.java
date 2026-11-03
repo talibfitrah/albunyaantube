@@ -150,6 +150,28 @@ class PersonalDetailsAccessTest {
         mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isNotFound());
     }
 
+    /** A token that fails to verify never breaks a PUBLIC channel: it is read as anonymous, never a 401. */
+    @Test
+    void aBadTokenStillGetsAPublicChannel() throws Exception {
+        Channel open = personalChannel();
+        open.setVisibility("PUBLIC");
+        when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(open));
+
+        mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "bad-token")).andExpect(status().isOk());
+    }
+
+    /** An admin's REJECT blocks every caller, grantee or not, as before: the gone check runs before the grant check. */
+    @Test
+    void aRejectedPersonalChannelIsGoneForEveryone() throws Exception {
+        Channel rejected = personalChannel();
+        rejected.setStatus("REJECTED");
+        when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(rejected));
+
+        for (String bearer : new String[]{null, "other-token", "grantee-token"}) {
+            mvc.perform(as(get("/api/v1/channels/UCpersonal1"), bearer)).andExpect(status().isGone());
+        }
+    }
+
     /** The 404 body without its timestamp, the one field that differs between any two calls. */
     private String body404(String bearer, String path) throws Exception {
         MvcResult result = mvc.perform(as(get(path), bearer)).andExpect(status().isNotFound()).andReturn();
