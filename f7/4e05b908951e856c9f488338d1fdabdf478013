@@ -1,0 +1,19 @@
+backend/src/main/java/com/albunyaan/tube/controller/PublicContentController.java
+  s_2ce5ef06683986::t_584e11bd5d19e9 13,18-20
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f74e05b908951e856c9f488338d1fdabdf478013",
+  "prompts": {},
+  "sessions": {
+    "s_2ce5ef06683986": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "agent-a699c954ea77caab7",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
