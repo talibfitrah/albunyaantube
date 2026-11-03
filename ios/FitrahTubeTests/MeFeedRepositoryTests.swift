@@ -145,6 +145,30 @@ struct MeFeedRepositoryTests {
         #expect(inFlight.peak == MeFeedRefreshGate.maxConcurrent)
     }
 
+    /// The exclusions are asked alongside the feeds, not after them: a refresh waits for the slower, not the sum.
+    @Test func theExclusionsAreAskedWhileTheFeedsLoad() async {
+        nonisolated final class Overlap: HTTPTransport, @unchecked Sendable {
+            let lock = NSLock(); var asked = false; var sawAsked = false
+            let response: HTTPResponse
+            init(_ response: HTTPResponse) { self.response = response }
+            func send(_ request: HTTPRequest) async throws -> HTTPResponse {
+                for _ in 0..<100 where !lock.withLock({ asked }) { try? await Task.sleep(for: .milliseconds(10)) }
+                lock.withLock { sawAsked = asked }
+                return response
+            }
+        }
+        let overlap = Overlap(feed(entry("vid-0", Self.week0)))
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: overlap, keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    excludedVideoIds: { _ in overlap.lock.withLock { overlap.asked = true }; return [] })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(overlap.lock.withLock { overlap.sawAsked })
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
     // MARK: - Bucketing
 
     @Test func anItemWithNoUploadInstantIsDroppedRatherThanBucketedIntoThisWeek() async {

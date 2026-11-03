@@ -189,6 +189,11 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
         lastChannelCount = channelIds.count
         self.channelIds = channelIds
 
+        // Jar #15: every subscribed channel's exclusions, here and never in `rebucket` -- a chip tap clears the feed
+        // first and must not wait on the network to refill it. Asked alongside the feeds and bounded like them;
+        // no stagger, as the memo answers most of these without a request.
+        async let hidden = Self.fanOut(channelIds, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in },
+                                       run: excludedVideoIds)
         let at = now()
         let due = channelIds.filter { MeFeedRefreshGate.decide(state(for: $0), now: at, force: force) == .fetch }
         if due.isEmpty {
@@ -215,14 +220,9 @@ nonisolated struct WeekSection: Sendable, Equatable, Identifiable {
             // nothing — an error over a feed that just grew would be noise.
             lastError = outcomes.values.contains(.success) ? nil : String(localized: "me_refresh_error")
         }
+        let excluded = await hidden
         guard !Task.isCancelled else { return }
-        // Jar #15: every subscribed channel's exclusions, here and never in `rebucket` -- a chip tap clears the feed
-        // first and must not wait on the network to refill it. Bounded like the feeds; no stagger, as the memo
-        // answers most of these without a request.
-        let hidden = await Self.fanOut(channelIds, limit: MeFeedRefreshGate.maxConcurrent, sleep: { _ in },
-                                       run: excludedVideoIds)
-        guard !Task.isCancelled else { return }
-        hiddenByChannel = hidden
+        hiddenByChannel = excluded
         await rebucket(filter: filter)
     }
 
