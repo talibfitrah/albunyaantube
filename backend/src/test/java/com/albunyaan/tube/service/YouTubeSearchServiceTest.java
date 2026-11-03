@@ -305,7 +305,7 @@ class YouTubeSearchServiceTest {
 
     @Test
     void search_laterPageFetchFails_throwsYouTubeSearchException() throws Exception {
-        String token = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false";   // the one URL NewPipe 0.26.5 issues
+        String token = "https://www.youtube.com/youtubei/v1/search?prettyPrint=false#EqADEgRjYXRz";   // the shape the backend issues
         when(newPipeClient.search("q", YouTubeContentType.VIDEO, token))
                 .thenThrow(new java.io.IOException("continuation 503"));
 
