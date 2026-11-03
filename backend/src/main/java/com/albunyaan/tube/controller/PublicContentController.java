@@ -146,7 +146,9 @@ public class PublicContentController {
      */
     @GetMapping("/channels/{channelId}")
     public ResponseEntity<?> getChannelDetails(@PathVariable String channelId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return ResponseEntity.ok(PublicDetails.of(contentService.getChannelDetails(channelId)));
+        // no-store: the apps read the channel's exclusions here on every open, so no cache may hold one back.
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(PublicDetails.of(contentService.getChannelDetails(channelId)));
     }
 
     /**
@@ -157,7 +159,8 @@ public class PublicContentController {
      */
     @GetMapping("/playlists/{playlistId}")
     public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId) throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        return ResponseEntity.ok(PublicDetails.of(contentService.getPlaylistDetails(playlistId)));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
+                .body(PublicDetails.of(contentService.getPlaylistDetails(playlistId)));
     }
 
     /**

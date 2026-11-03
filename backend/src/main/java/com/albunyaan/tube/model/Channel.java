@@ -217,6 +217,17 @@ public class Channel {
             this.totalExcludedCount = totalExcludedCount;
         }
 
+        /**
+         * Every video id this channel hides: its Videos, Shorts and Live lists, in that order, without repeats. One
+         * rule for search and the apps. Not a bean getter, so neither Firestore nor Jackson stores or serializes it.
+         */
+        public List<String> videoIds() {
+            java.util.LinkedHashSet<String> ids = new java.util.LinkedHashSet<>(videos);
+            ids.addAll(shorts);
+            ids.addAll(liveStreams);
+            return new ArrayList<>(ids);
+        }
+
         private int calculateTotalExcludedCount() {
             return videos.size() + liveStreams.size() + shorts.size() + playlists.size() + posts.size();
         }

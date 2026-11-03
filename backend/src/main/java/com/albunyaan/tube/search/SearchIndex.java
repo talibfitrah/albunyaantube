@@ -1197,11 +1197,7 @@ public class SearchIndex {
     }
 
     private static Set<String> exclusions(Channel c) {
-        Channel.ExcludedItems excluded = c.getExcludedItems();
-        Set<String> out = new HashSet<>(excluded.getVideos());
-        out.addAll(excluded.getShorts());
-        out.addAll(excluded.getLiveStreams());
-        return out;
+        return new HashSet<>(c.getExcludedItems().videoIds());
     }
 
     private static Set<String> exclusions(Playlist p) {

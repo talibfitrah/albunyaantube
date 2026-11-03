@@ -5025,6 +5025,18 @@ components:
         videoCount:
           type: integer
           nullable: true
+        excludedVideoIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Video ids an admin excluded from this channel (its Videos, Shorts and Live lists). The apps list a
+            channel on the device, so they must drop these ids from every list of the channel. Never null.
+        excludedPlaylistIds:
+          type: array
+          items:
+            type: string
+          description: Playlist ids an admin excluded from this channel's Playlists tab. Never null.
 
     PublicPlaylistDetail:
       type: object
@@ -5045,6 +5057,13 @@ components:
         itemCount:
           type: integer
           nullable: true
+        excludedVideoIds:
+          type: array
+          items:
+            type: string
+          description: >-
+            Video ids an admin excluded from this playlist. The apps list a playlist on the device, so they must
+            drop these ids from it. Never null.
 
     # Public API Response Wrappers
     ChannelDetailResponse:

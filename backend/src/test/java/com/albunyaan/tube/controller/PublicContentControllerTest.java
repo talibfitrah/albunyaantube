@@ -604,7 +604,8 @@ public class PublicContentControllerTest {
         when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
 
         JsonNode json = publicDetail("/api/v1/channels/UCabc123", Set.of(
-                "youtubeId", "name", "description", "thumbnailUrl", "subscribers", "videoCount"));
+                "youtubeId", "name", "description", "thumbnailUrl", "subscribers", "videoCount",
+                "excludedVideoIds", "excludedPlaylistIds"));
         assertEquals("UCabc123", json.get("youtubeId").asText());
         assertEquals("Test Channel", json.get("name").asText());
         assertEquals("https://example.com/avatar.jpg", json.get("thumbnailUrl").asText());
@@ -632,9 +633,77 @@ public class PublicContentControllerTest {
         when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
 
         JsonNode json = publicDetail("/api/v1/playlists/PLabc123", Set.of(
-                "youtubeId", "title", "description", "thumbnailUrl", "itemCount"));
+                "youtubeId", "title", "description", "thumbnailUrl", "itemCount", "excludedVideoIds"));
         assertEquals("Test Playlist", json.get("title").asText());
         assertEquals("https://example.com/cover.jpg", json.get("thumbnailUrl").asText());
         assertEquals(12, json.get("itemCount").asInt());
+    }
+
+    // Owner bug 2026-11-03: an exclusion never reached the apps. They list a channel's and a playlist's items on the
+    // device from YouTube, so the only way an exclusion can hide an item there is for the app to read it from here.
+
+    @Test
+    @DisplayName("Exclusions: GET /api/v1/channels/{id} serves the excluded video and playlist ids")
+    void channelDetailServesItsExclusions() throws Exception {
+        Channel channel = new Channel();
+        channel.setYoutubeId("UCabc123");
+        channel.setStatus("APPROVED");
+        Channel.ExcludedItems excluded = new Channel.ExcludedItems();
+        excluded.setVideos(List.of("video000001"));
+        excluded.setShorts(List.of("short000001"));
+        excluded.setLiveStreams(List.of("live0000001", "video000001"));
+        excluded.setPlaylists(List.of("PLexcluded1"));
+        excluded.setPosts(List.of("post0000001"));
+        channel.setExcludedItems(excluded);
+        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+
+        mockMvc.perform(get("/api/v1/channels/UCabc123"))
+                .andExpect(status().isOk())
+                // No cache may hold an exclusion back: the app's next open of the channel must see it.
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains(
+                        "video000001", "short000001", "live0000001")))
+                .andExpect(jsonPath("$.excludedPlaylistIds", org.hamcrest.Matchers.contains("PLexcluded1")));
+    }
+
+    @Test
+    @DisplayName("Exclusions: GET /api/v1/channels/{id} serves empty lists when the channel has none")
+    void channelDetailWithoutExclusionsServesEmptyLists() throws Exception {
+        Channel channel = new Channel();
+        channel.setYoutubeId("UCabc123");
+        channel.setExcludedItems(null);
+        when(contentService.getChannelDetails("UCabc123")).thenReturn(channel);
+
+        mockMvc.perform(get("/api/v1/channels/UCabc123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.excludedVideoIds").isEmpty())
+                .andExpect(jsonPath("$.excludedPlaylistIds").isEmpty());
+    }
+
+    @Test
+    @DisplayName("Exclusions: GET /api/v1/playlists/{id} serves the excluded video ids")
+    void playlistDetailServesItsExclusions() throws Exception {
+        Playlist playlist = new Playlist();
+        playlist.setYoutubeId("PLabc123");
+        playlist.setExcludedVideoIds(List.of("sCQwxFEMlZ4", "video000002"));
+        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+
+        mockMvc.perform(get("/api/v1/playlists/PLabc123"))
+                .andExpect(status().isOk())
+                .andExpect(header().string("Cache-Control", "no-store"))
+                .andExpect(jsonPath("$.excludedVideoIds", org.hamcrest.Matchers.contains("sCQwxFEMlZ4", "video000002")));
+    }
+
+    @Test
+    @DisplayName("Exclusions: GET /api/v1/playlists/{id} serves an empty list when the playlist has none")
+    void playlistDetailWithoutExclusionsServesEmptyList() throws Exception {
+        Playlist playlist = new Playlist();
+        playlist.setYoutubeId("PLabc123");
+        playlist.setExcludedVideoIds(null);
+        when(contentService.getPlaylistDetails("PLabc123")).thenReturn(playlist);
+
+        mockMvc.perform(get("/api/v1/playlists/PLabc123"))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.excludedVideoIds").isEmpty());
     }
 }
