@@ -1,0 +1,22 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_543f5b01a05d75::t_0ae1ff6cfcc337 192-201
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_543f5b01a05d75::t_59aeb247082ba9 464-466
+  s_543f5b01a05d75::t_a44b9211a59b9d 503
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c983b07686a35eba6302330e76cfa1c2db2a0791",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}

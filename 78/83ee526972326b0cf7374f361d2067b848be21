@@ -1,0 +1,38 @@
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_543f5b01a05d75::t_0e2ef2e6cbc6a1 191-195
+ios/FitrahTube/Features/Offline/OfflineGateClient.swift
+  s_543f5b01a05d75::t_810e8dc572bbbd 84-86,90
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_543f5b01a05d75::t_810e8dc572bbbd 991
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_543f5b01a05d75::t_0e2ef2e6cbc6a1 237,241-250
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_543f5b01a05d75::t_c605f54729d2f1 61-65
+ios/FitrahTubeTests/ExclusionsTests.swift
+  s_543f5b01a05d75::t_253afa8ef4c2f6 534-544
+  s_543f5b01a05d75::t_b9860beac8b1db 545-570,598,604
+ios/FitrahTube/Catalog/BackendAvailabilityGate.swift
+  s_543f5b01a05d75::t_810e8dc572bbbd 49-50,53-55,96,99-101,108-113,119-121,125
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_543f5b01a05d75::t_6065ca9918504a 342
+ios/FitrahTubeTests/OfflineGateTests.swift
+  s_543f5b01a05d75::t_b9860beac8b1db 188-193
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_543f5b01a05d75::t_a32e8ada46ecc1 241
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7883ee526972326b0cf7374f361d2067b848be21",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
