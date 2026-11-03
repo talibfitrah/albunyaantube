@@ -113,9 +113,12 @@ class Exclusions @VisibleForTesting internal constructor(
             asks.awaitAll().flatMapTo(HashSet()) { it?.videoIds.orEmpty() }
         }
 
-    /** The videos channel [id] hides, for a playback with no channel context: asked afresh, the same fail-open way. */
-    suspend fun channelVideoIds(id: String): Set<String> =
-        waited("channel:$id") { channel(id, fresh = true) }?.videoIds.orEmpty()
+    /**
+     * Whether channel [channelId] hides [videoId] from a playback with no channel context: excluded, or the channel is
+     * gone (410). [fresh] asks again (a stream resolve); a saved copy reads the memo first. Fails open like the lists.
+     */
+    suspend fun hides(channelId: String, videoId: String, fresh: Boolean = true): Boolean =
+        waited("channel:$channelId") { channel(channelId, fresh) }?.let { it.code == 410 || videoId in it.videoIds } == true
 
     /** The playlists a channel's Playlists tab drops, the same fail-open way. */
     suspend fun playlistIds(channelId: String): Set<String> =

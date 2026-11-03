@@ -863,6 +863,31 @@ class GlobalStreamResolverTest {
     }
 
     @Test
+    fun `a video whose uploader's channel is gone does not play without channel context`() = runTest {
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_gone", createMockStreams("lecture_gone").copy(uploaderChannelId = "UCgone"))
+
+        try {
+            gatedResolver.resolveStreams("lecture_gone", caller = "test")
+            fail("Expected ContentUnavailableException for a video of an archived (410) channel")
+        } catch (e: ContentUnavailableException) {
+            assertEquals("lecture_gone", e.videoId)
+        }
+    }
+
+    @Test
     fun `a stalled uploader channel ask fails open within the list wait`(): Unit = runBlocking {
         // Real time: the resolver's test scope is Unconfined, so its waits run on the wall clock too.
         val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()

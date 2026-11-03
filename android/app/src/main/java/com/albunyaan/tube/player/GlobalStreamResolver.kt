@@ -427,13 +427,13 @@ class GlobalStreamResolver private constructor(
                     null
                 }
                 // No channel context (Favorites, Search, a deep link, a download): a channel video is never registered on
-                // its own, so ask its uploader's channel. Fail open: a failed or slow ask reads the last lists or none;
-                // 404 = none.
+                // its own, so ask its uploader's channel: excluded there, or the channel gone (410), it does not play.
+                // Fail open: a failed or slow ask reads the last answer or none; 404 = none.
                 val uploader = streams?.uploaderChannelId
                 if (sourceChannelId.isNullOrBlank() && !uploader.isNullOrBlank() && exclusions != null &&
-                    videoId in exclusions.channelVideoIds(uploader)
+                    exclusions.hides(uploader, videoId)
                 ) {
-                    Log.i(TAG, "[$caller] $videoId excluded from its uploader's channel; throwing ContentUnavailableException")
+                    Log.i(TAG, "[$caller] $videoId hidden by its uploader's channel; throwing ContentUnavailableException")
                     throw ContentUnavailableException(videoId)
                 }
                 streams
