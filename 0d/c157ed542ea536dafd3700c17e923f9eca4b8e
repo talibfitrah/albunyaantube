@@ -1,0 +1,19 @@
+ios/FitrahTube/Catalog/BackendAvailabilityGate.swift
+  s_543f5b01a05d75::t_3a33dc20618e66 105
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "0dc157ed542ea536dafd3700c17e923f9eca4b8e",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
