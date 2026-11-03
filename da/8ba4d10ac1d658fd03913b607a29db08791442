@@ -1,0 +1,41 @@
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_543f5b01a05d75::t_77b6b6da407acb 894-897,910
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_543f5b01a05d75::t_1091dfec5ff09f 135,142-144
+  s_543f5b01a05d75::t_866b645c06d918 145-146
+android/app/src/main/java/com/albunyaan/tube/data/source/ContentService.kt
+  s_543f5b01a05d75::t_08338c879ebf48 77-83
+  s_1db145d3f0a986::t_a8a22981607bc7 76
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelDownloadPlaybackTest.kt
+  s_543f5b01a05d75::t_85f057fcd93009 522
+android/app/src/main/java/com/albunyaan/tube/data/source/Exclusions.kt
+  s_543f5b01a05d75::t_40afb7abd985ff 118,121,123
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_543f5b01a05d75::t_8d7e135b8622d9 396-397,407,438
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_543f5b01a05d75::t_183ecfed254fe8 995-996,1000,1005-1006
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "da8ba4d10ac1d658fd03913b607a29db08791442",
+  "prompts": {},
+  "sessions": {
+    "s_1db145d3f0a986": {
+      "agent_id": {
+        "tool": "codex",
+        "id": "01a1a32b-be0a-74b0-a5ff-7f9331299209",
+        "model": "gpt-6.1-sol"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    },
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
