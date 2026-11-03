@@ -297,6 +297,23 @@ class PlayerViewModelPlaylistPagingTest {
     }
 
     @Test
+    fun `a page after an emptied one that times out keeps the emptied page's cursor, paging is not failed`() = runTest {
+        val page1 = PlaylistPage(listOf(createPlaylistItem(1, "video_1")), Page("http://page2", "token2", null, null), nextItemOffset = 2)
+        val emptied = PlaylistPage(emptyList<PlaylistItem>(), Page("http://page3", "token3", null, null), nextItemOffset = 7)
+        fakePlaylistRepository.setPages(listOf(page1, emptied))
+        fakePlaylistRepository.hangOnPage = 2
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", targetVideoId = "video_1", startIndexHint = 0)
+        advanceUntilIdle()
+
+        viewModel.skipToNext()
+        advanceUntilIdle()
+
+        assertTrue("paging goes on from the emptied page's cursor", viewModel.state.value.hasNext)
+    }
+
+    @Test
     fun `advanceToNext loads more items when queue empty and hasMore`() = runTest {
         // Arrange: 2 pages, start at last item of first page
         val page1Items = (1..2).map { createPlaylistItem(it, "video_$it") }

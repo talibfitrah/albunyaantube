@@ -411,7 +411,7 @@ class ContentListViewModel(
 /**
  * Whether a tab's next list opens at its top. A new list (another query) opens at its best match; a page appended below,
  * or the same list, keeps its place. One refreshed in place keeps it too, unless the user sat at the top: rows added
- * there would land above the screen.
+ * there would land above the screen. A view rebuilt into an empty list restores its own place.
  */
 internal fun <T> opensAtTop(shown: List<T>, next: List<T>, inPlace: Boolean, atTop: Boolean): Boolean =
-    if (inPlace) atTop else shown.isNotEmpty() && next.take(shown.size) != shown
+    shown.isNotEmpty() && if (inPlace) atTop else next.take(shown.size) != shown

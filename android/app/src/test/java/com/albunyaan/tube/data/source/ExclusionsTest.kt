@@ -315,6 +315,24 @@ class ExclusionsTest {
     }
 
     @Test
+    fun `a list's slow-answer fallback never hands the last user's lists to the next`() = runTest {
+        var calls = 0
+        whenever(api.getChannel("UC1")).doSuspendableAnswer {
+            if (calls++ == 0) entry(listOf("lesson00001")) else { delay(5_000); entry() }
+        }
+        var user: String? = "alice"
+        val exclusions = Exclusions(api, { clock }, backgroundScope) { user }
+        exclusions.channel("UC1")
+        clock += 10 * 60_000L // alice's answer is stale: the list asks again, slowly
+
+        val hidden = async { exclusions.videoIds(channelIds = listOf("UC1")) }
+        delay(1_000)
+        user = "bob" // signs in during the 2 s wait; no other read clears the memo first
+
+        assertEquals(emptySet<String>(), hidden.await())
+    }
+
+    @Test
     fun `a change of signed-in user drops every answer at once`() = runTest {
         whenever(api.getChannel("UC1")).thenReturn(entry(listOf("lesson00001")))
         var user: String? = "alice"

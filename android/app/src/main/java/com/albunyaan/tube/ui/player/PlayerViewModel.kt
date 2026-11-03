@@ -2317,20 +2317,22 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
-     * A playlist page, each fetch inside the page timeout (null when one times out). A page the exclusions emptied but
-     * with more behind it is followed a bounded number of times, so it never reads as an unavailable or ended playlist.
+     * A playlist page within one page timeout (null when the first fetch misses it). A page the exclusions emptied but
+     * with more behind it is followed, a bounded number of times, while time is left, so it never reads as an
+     * unavailable or ended playlist; when time runs out the last page fetched is kept, with its cursor.
      */
     private suspend fun playlistPage(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem>? {
-        var got = withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-            playlistDetailRepository.getItems(playlistId, page, itemOffset, PLAYLIST_WALK_BUDGET_MS)
-        } ?: return null
-        var followed = 0
-        while (got.items.isEmpty() && followed++ < MAX_EMPTIED_PAGES_FOLLOWED) {
-            val next = got.nextPage ?: break
-            val offset = got.nextItemOffset
-            got = withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-                playlistDetailRepository.getItems(playlistId, next, offset, PLAYLIST_WALK_BUDGET_MS)
-            } ?: return null
+        var got: PlaylistPage<PlaylistItem>? = null
+        withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+            var at = page
+            var offset = itemOffset
+            var followed = 0
+            while (true) {
+                val p = playlistDetailRepository.getItems(playlistId, at, offset, PLAYLIST_WALK_BUDGET_MS).also { got = it }
+                if (p.items.isNotEmpty() || followed++ >= MAX_EMPTIED_PAGES_FOLLOWED) break
+                at = p.nextPage ?: break
+                offset = p.nextItemOffset
+            }
         }
         return got
     }

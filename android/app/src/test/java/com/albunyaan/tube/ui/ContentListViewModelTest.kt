@@ -307,6 +307,8 @@ class ContentListViewModelTest {
     fun `a list refreshed in place keeps its place, or its top so the new rows show`() {
         assertTrue(opensAtTop(listOf("a", "b"), listOf("n", "a"), inPlace = true, atTop = true))
         assertFalse(opensAtTop(listOf("a", "b"), listOf("n", "a"), inPlace = true, atTop = false))
+        // A view rebuilt (back from the player, a rotation) replays the state into an empty list: it restores its place
+        assertFalse(opensAtTop(emptyList(), listOf("n", "a"), inPlace = true, atTop = true))
         assertTrue(opensAtTop(listOf("a", "b"), listOf("x", "y"), inPlace = false, atTop = false)) // another query
         assertFalse(opensAtTop(listOf("a", "b"), listOf("a", "b", "c"), inPlace = false, atTop = false)) // a page below
     }

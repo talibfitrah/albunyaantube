@@ -119,7 +119,7 @@ class Exclusions @VisibleForTesting internal constructor(
 
     // The ask keeps running in [scope] after the wait gives up, so its answer still serves the next page.
     private suspend fun waited(key: String, ask: suspend () -> Entry): Entry? =
-        withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key] }
+        withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key].takeIf { user() == owner } }
 
     /** [permits]: the cap a background ask waits under; null for a gate call, which never queues. */
     private suspend fun lookup(
