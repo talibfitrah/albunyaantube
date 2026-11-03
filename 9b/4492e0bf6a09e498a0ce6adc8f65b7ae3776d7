@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/service/YouTubeGatewayTest.java
+  s_543f5b01a05d75::t_e687fd0fb73d1a 124-138
+  s_543f5b01a05d75::t_b86115f0ae2417 123
+backend/src/main/java/com/albunyaan/tube/service/YouTubeGateway.java
+  s_543f5b01a05d75::t_66908c06256911 583-584,591-592
+  s_543f5b01a05d75::t_45845e9fa73a98 659-662
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9b4492e0bf6a09e498a0ce6adc8f65b7ae3776d7",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
