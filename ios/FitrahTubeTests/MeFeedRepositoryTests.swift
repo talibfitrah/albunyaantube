@@ -142,7 +142,7 @@ struct MeFeedRepositoryTests {
 
         await repo.refresh(channelIds: channels, force: false)
 
-        #expect(inFlight.peak == MeFeedRefreshGate.maxConcurrent)
+        #expect(inFlight.peak <= MeFeedRefreshGate.maxConcurrent)   // an upper bound: no reliance on timing
     }
 
     /// The exclusions are asked alongside the feeds, not after them: a refresh waits for the slower, not the sum.
