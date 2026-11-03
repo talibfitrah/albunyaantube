@@ -1,0 +1,26 @@
+backend/src/main/java/com/albunyaan/tube/service/SortOrderService.java
+  s_543f5b01a05d75::t_48b1591674b96f 513
+ios/FitrahTube/Features/Suggest/YouTubeSearchClient.swift
+  s_543f5b01a05d75::t_48b1591674b96f 74-75
+ios/FitrahTubeTests/YouTubeSearchClientTests.swift
+  s_543f5b01a05d75::t_48b1591674b96f 9,161
+docs/architecture/openapi-gap-analysis.md
+  s_543f5b01a05d75::t_f852115f85a82c 332,339
+  s_543f5b01a05d75::t_d2ea55ba5c0de7 129-130
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "00e7f5d9477b12c47a3f7fe2dfcbaf0d6b3f59f5",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
