@@ -24,7 +24,9 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -58,10 +60,11 @@ class PlayerViewModelDownloadPlaybackTest {
         file: File,
         audioOnly: Boolean = false,
         status: DownloadStatus = DownloadStatus.COMPLETED,
+        channelId: String? = null,
     ) = DownloadEntry(
         request = DownloadRequest(
             id = id, title = "Request title", videoId = videoId, audioOnly = audioOnly,
-            thumbnailUrl = "https://i.example/t.jpg",
+            thumbnailUrl = "https://i.example/t.jpg", channelId = channelId,
         ),
         status = status,
         progress = 100,
@@ -464,11 +467,45 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals("https://v.test/v17", (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
     }
 
+    // Owner ruling: a saved copy is played like a stream: what its uploader's channel hides, or a gone channel, does not.
+    @Test fun `a saved copy its uploader's channel hides does not play, and offline it does`() = runTest {
+        api.stub {
+            onBlocking { getChannel("UClecturer") } doReturn retrofit2.Response.success(
+                com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("v20"))
+            )
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(
+            completed("d20", "v20", tmp.newFile("v20.mp4"), channelId = "UClecturer"),
+            completed("d21", "v21", tmp.newFile("v21.mp4"), channelId = "UCgone"),
+        )
+        val vm = createViewModel()
+
+        vm.loadDownload("d20")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        vm.loadVideo(videoId = "v21") // a list's local-first open
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        assertEquals("a hidden saved copy never streams instead", 0, streams.resolveCallCount)
+
+        online = false
+        val offline = createViewModel()
+        offline.loadDownload("d20")
+        advanceUntilIdle()
+        assertTrue("offline, the saved copy plays", offline.state.value.streamState is StreamState.Ready)
+    }
+
+    private val api = mock<com.albunyaan.tube.data.source.api.ContentApi>()
+    private val exclusions = com.albunyaan.tube.data.source.Exclusions(
+        api, { 0L }, kotlinx.coroutines.CoroutineScope(testDispatcher),
+    )
+
     private var online = true
     private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
 
     private fun createViewModel() = playerViewModel(
         repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
-        networkMonitor = network,
+        networkMonitor = network, exclusions = exclusions,
     )
 }

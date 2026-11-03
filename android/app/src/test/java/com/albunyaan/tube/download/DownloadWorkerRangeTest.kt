@@ -125,6 +125,7 @@ class DownloadWorkerRangeTest {
         targetHeight: Int = 0,
         kids: Boolean = false,
         merger: FFmpegMerger = FFmpegMerger(),
+        blocked: Boolean = false,
         onProgress: (DownloadWorker, Data) -> Unit = { _, _ -> },
     ): ListenableWorker.Result {
         var resolves = 0
@@ -135,6 +136,7 @@ class DownloadWorkerRangeTest {
                 priority: Priority,
                 sourceChannelId: String?,
             ): ResolvedStreams {
+                if (blocked) throw com.albunyaan.tube.player.ContentUnavailableException(videoId)
                 // Each resolve mints a fresh URL, as googlevideo's signed URLs are.
                 val n = ++resolves
                 val url = server.url("/videoplayback?itag=140&c=${if (kids) "IOS" else "VISIONOS"}&n=$n").toString()
@@ -149,6 +151,7 @@ class DownloadWorkerRangeTest {
                     videoTracks = videoTracks,
                     audioTracks = listOf(AudioTrack(url = url, mimeType = "audio/mp4", bitrate = 128_000, codec = null)),
                     durationSeconds = 262,
+                    uploaderChannelId = "UClecturer",
                 )
             }
         }
@@ -341,6 +344,22 @@ class DownloadWorkerRangeTest {
         assertTrue("download failed after $drops drops: $result", result is ListenableWorker.Result.Success)
         val file = File((result as ListenableWorker.Result.Success).outputData.getString(KEY_FILE_PATH)!!)
         assertArrayEquals(body, file.readBytes())
+    }
+
+    @Test
+    fun `a download keeps its uploader's channel id for the saved copy's exclusion check`() = runTest {
+        val result = runAudioOnlyDownload()
+
+        assertTrue("download failed: $result", result is ListenableWorker.Result.Success)
+        assertEquals("UClecturer", DownloadStorage(context).getStoredChannelId("lecture_1"))
+    }
+
+    @Test
+    fun `a download the backend hides fails as not available, not unknown`() = runTest {
+        val result = runDownload(blocked = true)
+
+        assertTrue(result is ListenableWorker.Result.Failure)
+        assertEquals(DownloadErrorCode.NO_STREAM, result.outputData.getString(KEY_ERROR_REASON))
     }
 
     @Test

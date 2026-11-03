@@ -55,6 +55,10 @@ internal fun playerViewModel(
         }, ioDispatcher),
     // No cast session: a closed player never hands its heartbeat to the cast watch.
     castWatch: CastRemovalWatch = CastRemovalWatch(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)) { null },
+    // No registry answers by default: every saved copy's check fails open.
+    exclusions: com.albunyaan.tube.data.source.Exclusions = com.albunyaan.tube.data.source.Exclusions(
+        org.mockito.kotlin.mock(), { 0L }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+    ),
 ) = PlayerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
@@ -80,6 +84,7 @@ internal fun playerViewModel(
     networkMonitor = networkMonitor,
     liveChannelResolver = liveChannelResolver,
     castWatch = castWatch,
+    exclusions = exclusions,
 )
 
 internal class FakePlayerRepository : PlayerRepository {

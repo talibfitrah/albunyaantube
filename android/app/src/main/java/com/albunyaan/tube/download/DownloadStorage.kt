@@ -173,6 +173,15 @@ class DownloadStorage(
         return channelName to props.getProperty(META_KEY_DURATION_SECONDS)?.toIntOrNull()
     }
 
+    /** The uploader's `UC…` id, saved once the worker resolved it; null for downloads that predate it. */
+    fun saveChannelId(downloadId: String, channelId: String) {
+        val props = loadMetadataProperties(downloadId)
+        props.setProperty(META_KEY_CHANNEL_ID, channelId)
+        saveMetadataProperties(downloadId, props)
+    }
+
+    fun getStoredChannelId(downloadId: String): String? = loadMetadataProperties(downloadId).getProperty(META_KEY_CHANNEL_ID)
+
     private fun loadMetadataProperties(downloadId: String): Properties {
         val metadataFile = metadataFile(downloadId)
         val props = Properties()
@@ -421,5 +430,6 @@ class DownloadStorage(
         private const val META_KEY_AUDIO_ONLY = "audioOnly"
         private const val META_KEY_CHANNEL_NAME = "channelName"
         private const val META_KEY_DURATION_SECONDS = "durationSeconds"
+        private const val META_KEY_CHANNEL_ID = "channelId"
     }
 }

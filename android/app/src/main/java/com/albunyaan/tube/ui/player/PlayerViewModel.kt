@@ -81,6 +81,7 @@ class PlayerViewModel @Inject constructor(
     private val networkMonitor: com.albunyaan.tube.util.NetworkMonitor,
     private val liveChannelResolver: com.albunyaan.tube.data.extractor.LiveChannelResolver,
     private val castWatch: CastRemovalWatch,
+    private val exclusions: com.albunyaan.tube.data.source.Exclusions,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -991,12 +992,22 @@ class PlayerViewModel @Inject constructor(
             it.request.id == downloadId && it.status == DownloadStatus.COMPLETED
         }
 
-    /** The local-file "resolve": re-reads the entry and file each time, never the network. */
-    private fun resolveDownload(downloadId: String) {
+    /**
+     * The local-file "resolve": re-reads the entry and file each time. Its one network read: online, the uploader's
+     * channel may hide it (excluded, or gone), memo first, at most the lists' 2 s, failing open; offline it plays.
+     */
+    private suspend fun resolveDownload(downloadId: String) {
         val entry = completedDownload(downloadId)
         val file = entry?.filePath?.let(::File)?.takeIf { it.isFile }
         if (entry == null || file == null) {
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+            return
+        }
+        // ponytail: a copy saved before 1.0.8 has no channel id, so it plays unchecked until the 30-day expiry sweep
+        // deletes it; re-saving it (or a one-off id backfill from a resolve) would cover those.
+        val channelId = entry.request.channelId
+        if (channelId != null && networkMonitor.isCurrentlyOnline() && exclusions.hides(channelId, entry.request.videoId, fresh = false)) {
+            updateState { it.copy(streamState = StreamState.ContentUnavailable) }
             return
         }
         val uri = file.toURI().toString()
