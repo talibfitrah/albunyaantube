@@ -1,0 +1,24 @@
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_543f5b01a05d75::t_6606bacb4c6479 430-431,434,436
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_543f5b01a05d75::t_f511e0486a1095 866-889
+  s_543f5b01a05d75::t_d4848ba8ccef8f 865
+android/app/src/main/java/com/albunyaan/tube/data/source/Exclusions.kt
+  s_543f5b01a05d75::t_3846b4b04163c7 116-121
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "67aa0892051f7d97155d88595f8b1d77ce25bc4e",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
