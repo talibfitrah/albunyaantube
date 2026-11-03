@@ -248,7 +248,8 @@ paths:
       description: >
         Bearer optional. A PERSONAL channel (approved for specific users only) answers 200 only when the
         request carries a valid Firebase ID token of one of its grantees, so the grantee's app can read its
-        exclusions. Everyone else (no token, another user's token, an invalid or expired token) gets the same
+        exclusions. Everyone else (no token, another user's token, an invalid, expired or revoked token, a
+        blocked or deleted grantee) gets the same
         404 a missing id gets; a bad token is never a 401 here. A REJECTED, ARCHIVED or UNAVAILABLE id
         answers 410 to every caller, PERSONAL or not, as before. Cache-Control is always no-store.
       security:

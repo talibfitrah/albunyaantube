@@ -13,6 +13,7 @@ import com.albunyaan.tube.service.PublicContentService;
 import com.fasterxml.jackson.databind.ObjectMapper;
 import com.fasterxml.jackson.databind.node.ObjectNode;
 import com.google.firebase.ErrorCode;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import com.google.firebase.auth.FirebaseToken;
@@ -58,14 +59,20 @@ class PersonalDetailsAccessTest {
                 .setControllerAdvice(new GlobalExceptionHandler()).build();
         token("grantee-token", "uid-grantee");
         token("other-token", "uid-other");
-        when(firebaseAuth.verifyIdToken("bad-token")).thenThrow(
+        when(firebaseAuth.verifyIdToken("bad-token", false)).thenThrow(
                 new FirebaseAuthException(ErrorCode.UNAUTHENTICATED, "expired", null, null, null));
+        // A grantee whose account was blocked or deleted (both disable it and revoke its tokens): the plain check
+        // still decodes the token, only the revocation check refuses it.
+        token("revoked-token", "uid-grantee");
+        when(firebaseAuth.verifyIdToken("revoked-token", true)).thenThrow(new FirebaseAuthException(
+                ErrorCode.UNAUTHENTICATED, "disabled", null, null, AuthErrorCode.USER_DISABLED));
     }
 
     private void token(String value, String uid) throws Exception {
         FirebaseToken decoded = mock(FirebaseToken.class);
         when(decoded.getUid()).thenReturn(uid);
-        when(firebaseAuth.verifyIdToken(value)).thenReturn(decoded);
+        when(firebaseAuth.verifyIdToken(value, false)).thenReturn(decoded);
+        when(firebaseAuth.verifyIdToken(value, true)).thenReturn(decoded);
     }
 
     private static Channel personalChannel() {
@@ -126,7 +133,7 @@ class PersonalDetailsAccessTest {
     void nobodyElseCanTellAPersonalChannelFromAMissingOne() throws Exception {
         String missing = body404(null, "/api/v1/channels/UCpersonal1");
         when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(personalChannel()));
-        for (String bearer : new String[]{null, "other-token", "bad-token"}) {
+        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token"}) {
             assertEquals(missing, body404(bearer, "/api/v1/channels/UCpersonal1"), "caller " + bearer);
         }
     }
@@ -135,7 +142,7 @@ class PersonalDetailsAccessTest {
     void nobodyElseCanTellAPersonalPlaylistFromAMissingOne() throws Exception {
         String missing = body404(null, "/api/v1/playlists/PLpersonal1");
         when(playlists.findByYoutubeId("PLpersonal1")).thenReturn(Optional.of(personalPlaylist()));
-        for (String bearer : new String[]{null, "other-token", "bad-token"}) {
+        for (String bearer : new String[]{null, "other-token", "bad-token", "revoked-token"}) {
             assertEquals(missing, body404(bearer, "/api/v1/playlists/PLpersonal1"), "caller " + bearer);
         }
     }
@@ -158,6 +165,10 @@ class PersonalDetailsAccessTest {
         when(channels.findByYoutubeId("UCpersonal1")).thenReturn(Optional.of(open));
 
         mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "bad-token")).andExpect(status().isOk());
+        // The revocation check is a Firebase round trip: a PUBLIC read never pays it, signed in or not.
+        mvc.perform(as(get("/api/v1/channels/UCpersonal1"), "grantee-token")).andExpect(status().isOk());
+        org.mockito.Mockito.verify(firebaseAuth, org.mockito.Mockito.never())
+                .verifyIdToken(org.mockito.ArgumentMatchers.anyString(), org.mockito.ArgumentMatchers.eq(true));
     }
 
     /** An admin's REJECT blocks every caller, grantee or not, as before: the gone check runs before the grant check. */

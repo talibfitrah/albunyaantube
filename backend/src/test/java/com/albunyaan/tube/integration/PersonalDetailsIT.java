@@ -43,7 +43,7 @@ class PersonalDetailsIT extends BaseIntegrationTest {
     void seed() throws Exception {
         token("grantee-token", "uid-it-grantee");
         token("other-token", "uid-it-other");
-        when(firebaseAuth.verifyIdToken("bad-token")).thenThrow(
+        when(firebaseAuth.verifyIdToken("bad-token", false)).thenThrow(
                 new FirebaseAuthException(ErrorCode.UNAUTHENTICATED, "expired", null, null, null));
 
         Channel c = new Channel("UCitPersonal");
@@ -67,7 +67,8 @@ class PersonalDetailsIT extends BaseIntegrationTest {
     private void token(String value, String uid) throws Exception {
         FirebaseToken decoded = Mockito.mock(FirebaseToken.class);
         when(decoded.getUid()).thenReturn(uid);
-        when(firebaseAuth.verifyIdToken(value)).thenReturn(decoded);
+        when(firebaseAuth.verifyIdToken(value, false)).thenReturn(decoded);
+        when(firebaseAuth.verifyIdToken(value, true)).thenReturn(decoded);
     }
 
     private static MockHttpServletRequestBuilder as(String path, String bearer) {

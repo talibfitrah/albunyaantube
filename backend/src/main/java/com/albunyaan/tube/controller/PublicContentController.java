@@ -11,6 +11,11 @@ import com.albunyaan.tube.service.PublicContentService;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import com.albunyaan.tube.exception.ResourceNotFoundException;
+import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.service.VisibilityPolicy;
+import com.google.firebase.auth.AuthErrorCode;
 import com.google.firebase.auth.FirebaseAuth;
 import com.google.firebase.auth.FirebaseAuthException;
 import org.springframework.http.CacheControl;
@@ -49,19 +54,30 @@ public class PublicContentController {
      * The caller's uid from a valid Firebase Bearer, else null. FirebaseAuthFilter skips /api/v1/*, so the two
      * routes that serve a PERSONAL item to its grantees read the token here. A missing, malformed, expired or
      * forged token is simply anonymous: never a 401, so it cannot tell the caller anything a missing id would not.
-     * ponytail: no revocation and no blocked/deleted check (FirebaseAuthFilter's cheaper /api/v1/* policy), so a
-     * revoked, blocked or deleted grantee keeps this one read until the token expires (at most 1 h). The body is
-     * the item's public metadata and exclusions. If that ever matters, re-verify with checkRevoked for grantees only.
+     * {@code checkRevoked}: also ask Firebase whether the account is disabled (blocked or deleted, AuthService) or its
+     * tokens revoked. A network round trip, so only a grantee about to be served a PERSONAL item pays it.
      */
-    private String viewerUid(String authorization) {
+    private String verifiedUid(String authorization, boolean checkRevoked) {
         if (authorization == null || !authorization.startsWith("Bearer ")) return null;
         try {
-            return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length())).getUid();
-        } catch (FirebaseAuthException | IllegalArgumentException e) { // a bad or empty token: anonymous
+            return firebaseAuth.verifyIdToken(authorization.substring("Bearer ".length()), checkRevoked).getUid();
+        } catch (FirebaseAuthException e) { // a bad, expired, revoked or disabled token: anonymous
+            if (e.getAuthErrorCode() == AuthErrorCode.CERTIFICATE_FETCH_FAILED) {
+                log.warn("Firebase signing keys unavailable; grantees get no PERSONAL details: {}", e.getMessage());
+            }
+            return null;
+        } catch (IllegalArgumentException e) { // an empty token
             return null;
         } catch (RuntimeException e) { // a broken Firebase setup: still anonymous, but every grantee would lose exclusions
             log.warn("Bearer on a public detail route could not be verified: {}", e.toString());
             return null;
+        }
+    }
+
+    /** The 404 a missing id gets, for a grantee whose account is blocked, deleted or signed out everywhere. */
+    private void requireActiveGrantee(String visibility, String authorization, String type, String id) {
+        if (!VisibilityPolicy.isPublic(visibility) && verifiedUid(authorization, true) == null) {
+            throw new ResourceNotFoundException(type, id);
         }
     }
 
@@ -164,8 +180,9 @@ public class PublicContentController {
     }
 
     /**
-     * Get channel details by ID. A PERSONAL channel answers 200 only to a grantee's Bearer; anyone else gets the
-     * missing-id 404. The token is verified before the lookup whatever the id, so both 404s take the same path.
+     * Get channel details by ID. A PERSONAL channel answers 200 only to an active grantee's Bearer; anyone else gets
+     * the missing-id 404. The token is verified before the lookup whatever the id, so both 404s take the same path;
+     * only a grantee goes on to the revocation check.
      *
      * @param channelId YouTube channel ID
      * @return Channel details with playlists
@@ -174,11 +191,11 @@ public class PublicContentController {
     public ResponseEntity<?> getChannelDetails(@PathVariable String channelId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        String viewerUid = viewerUid(authorization);
+        Channel channel = contentService.getChannelDetails(channelId, verifiedUid(authorization, false));
+        requireActiveGrantee(channel.getVisibility(), authorization, "Channel", channelId);
         // no-store: the apps read the channel's exclusions here on every open, so no cache may hold one back, and a
         // grantee's answer must never be served to anyone else.
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(PublicDetails.of(contentService.getChannelDetails(channelId, viewerUid)));
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(PublicDetails.of(channel));
     }
 
     /**
@@ -191,9 +208,9 @@ public class PublicContentController {
     public ResponseEntity<?> getPlaylistDetails(@PathVariable String playlistId,
             @RequestHeader(value = HttpHeaders.AUTHORIZATION, required = false) String authorization)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
-        String viewerUid = viewerUid(authorization);
-        return ResponseEntity.ok().cacheControl(CacheControl.noStore())
-                .body(PublicDetails.of(contentService.getPlaylistDetails(playlistId, viewerUid)));
+        Playlist playlist = contentService.getPlaylistDetails(playlistId, verifiedUid(authorization, false));
+        requireActiveGrantee(playlist.getVisibility(), authorization, "Playlist", playlistId);
+        return ResponseEntity.ok().cacheControl(CacheControl.noStore()).body(PublicDetails.of(playlist));
     }
 
     /**
