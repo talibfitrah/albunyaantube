@@ -1,0 +1,31 @@
+frontend/src/components/exclusions/ChannelDetailModal.vue
+  s_543f5b01a05d75::t_cfd63e0025f523 444-446,452
+frontend/src/services/youtubeDataApi.ts
+  s_543f5b01a05d75::t_dd7812093878e3 109-113,115
+  s_543f5b01a05d75::t_74801f73036078 124,126-127
+frontend/tests/ChannelDetailModal.spec.ts
+  s_543f5b01a05d75::t_9551361af3bf1a 414-433
+frontend/tests/youtubeDataApi.spec.ts
+  s_543f5b01a05d75::t_71242399b7fad1 123
+  s_543f5b01a05d75::t_76720aaea349a3 105-106,109-110,113
+frontend/tests/PlaylistDetailModal.spec.ts
+  s_543f5b01a05d75::t_2979da697b286f 413-432
+frontend/src/components/exclusions/PlaylistDetailModal.vue
+  s_543f5b01a05d75::t_6604859cd4353b 327-329,335
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7d93d28a17d24b9aaf6115402679676bb307531a",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
