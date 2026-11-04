@@ -357,6 +357,16 @@ struct QualityCeilingTests {
         #expect(needsFreshItem(Self.p480, .dataSaver, playing: CGSize(width: 854, height: 480)))
     }
 
+    /// Cubic review of 0857311a (P2): the hand-over's reconcile moves a 720p pick to the HD stream's 360p row, and the next
+    /// pass saw a lower cap over the new item (nothing drawn yet) and rebuilt the item just handed over. A lower cap that
+    /// admits the same renditions changes nothing that plays. Unknown renditions (a native master) rebuild as before.
+    @Test func aLowerCapAdmittingTheSameRenditionsKeepsTheItem() {
+        let hd = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
+        #expect(!needsFreshItem(Self.p720, Self.p360, renditions: hd))
+        #expect(needsFreshItem(Self.p1080, Self.p360, renditions: hd))
+        #expect(needsFreshItem(Self.p720, Self.p360))
+    }
+
     @Test func aLowerResolutionPickNeedsAFreshItem() {
         #expect(needsFreshItem(Self.p1080, Self.p480))
         #expect(needsFreshItem(Self.p1080, Self.p720))

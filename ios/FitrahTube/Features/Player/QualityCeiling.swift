@@ -208,13 +208,19 @@ enum QualityOption: Hashable {
         let sizeLowered = isLower(after.resolution.width, than: before.resolution.width)
             || isLower(after.resolution.height, than: before.resolution.height)
         let drawnAbove = playing == .zero || playing.width > after.resolution.width || playing.height > after.resolution.height
-        // A size cap of 0 on an axis is unbounded there, as AVFoundation reads it.
-        let cap = after.resolution
-        let best = renditions.filter { (cap.width == 0 || $0.width <= cap.width) && (cap.height == 0 || $0.height <= cap.height) }
-            .max { area($0) < area($1) }
+        // A lower cap that admits the same renditions changes nothing that plays (Cubic: the hand-over's reconcile moved a
+        // 720p pick to an HD ladder's 360p and rebuilt the item just handed over).
+        let sameRenditions = !renditions.isEmpty
+            && admitted(renditions, by: before.resolution) == admitted(renditions, by: after.resolution)
+        let best = admitted(renditions, by: after.resolution).max { area($0) < area($1) }
         let drawnBelow = new.size != nil
             && best.map { playing != .zero && (playing.width < $0.width || playing.height < $0.height) } ?? false
-        return sizeLowered && drawnAbove || isLower(after.bitrate, than: before.bitrate) || drawnBelow
+        return sizeLowered && drawnAbove && !sameRenditions || isLower(after.bitrate, than: before.bitrate) || drawnBelow
+    }
+
+    /// The renditions a size cap admits; 0 on an axis is unbounded there, as AVFoundation reads it.
+    private static func admitted(_ renditions: [CGSize], by cap: CGSize) -> [CGSize] {
+        renditions.filter { (cap.width == 0 || $0.width <= cap.width) && (cap.height == 0 || $0.height <= cap.height) }
     }
 
     /// A rendition row's pixel size; nil for Auto and Data Saver.

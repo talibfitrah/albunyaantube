@@ -129,6 +129,13 @@ private let syntheticCipherURL = "url=https%3A%2F%2Fexample.test%2Fv%3Fn%3Dxyz%2
         #expect(selection.video.map(\.itag) == [137, 298, 136])
     }
 
+    /// Codex review of 0857311a: the area of a malformed answer's size must not trap (Int overflow) while the 360p plays.
+    @Test func anOversizedRenditionDoesNotTrapTheSort() throws {
+        let huge = video(itag: 299, bitrate: 4_000_000).replacingOccurrences(of: #""width":1920"#, with: #""width":9223372036854775807"#)
+        let selection = try #require(TVAdaptive.select(try parse(video(itag: 137, bitrate: 3_000_000), huge, audio())))
+        #expect(selection.video.map(\.itag) == [299, 137])
+    }
+
     private func parse(_ entries: String...) throws -> [AdaptiveFormat] {
         try PlayerResponseParser().adaptiveFormats(Data(#"{"streamingData":{"adaptiveFormats":[\#(entries.joined(separator: ","))]}}"#.utf8))
     }
