@@ -1,0 +1,26 @@
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/TVAdaptive.swift
+  s_543f5b01a05d75::t_26a885ed2d73ba 28-30,36
+ios/FitrahTubeTests/QualityCeilingTests.swift
+  s_543f5b01a05d75::t_1fbf658946b62d 360-369
+ios/FitrahTube/Features/Player/QualityCeiling.swift
+  s_543f5b01a05d75::t_49d213ee2d5307 213-214
+  s_543f5b01a05d75::t_191611a7cfdb66 211-212,215,218-223
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/TVAdaptiveTests.swift
+  s_543f5b01a05d75::t_5efcbf4791a0e4 132-138
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "d86c5c852f3a157cc2e63ee8420216aa75feaf76",
+  "prompts": {},
+  "sessions": {
+    "s_543f5b01a05d75": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "9e7f9a91-d20b-40da-95ae-d6dcdcde0700",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
