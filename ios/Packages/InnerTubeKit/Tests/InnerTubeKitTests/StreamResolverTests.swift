@@ -1450,6 +1450,34 @@ import Testing
         }
     }
 
+    /// Cubic + Codex: a walk the gate refuses is thrown away, and so are its side effects. Before the gate ran alongside, a
+    /// refused video sent no POST at all: no bot-check trip toward the app-wide cooldown, and no channel learned.
+    @Test func aGateRefusedWalkLeavesNoTrace() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport, gate: StubGate(available: false))
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    private final class RefuseFirstGate: AvailabilityGate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls = 0
+        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { lock.withLock { calls += 1; return calls > 1 } }
+    }
+
+    @Test func aGateRefusedKidsVideoTeachesNoChannel() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidServing(channel: Self.kidsChannel),
+                                            try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport, gate: RefuseFirstGate())
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
+        }
+        _ = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
+        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "101"])
+    }
+
     /// The same order for a 410 that answers after the walk: still `.unavailable`.
     @Test func aLateGateRefusalStillRefuses() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])

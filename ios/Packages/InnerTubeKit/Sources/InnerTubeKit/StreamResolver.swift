@@ -379,23 +379,45 @@ public actor StreamResolver {
         // before anything is handed over or cached; a throw (HTTP/transport error) is fail-open, as before.
         let gate = self.gate
         async let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
-        let walked: Result<Resolved, Error>
+        let walked: Result<Walked, Error>
         do {
             walked = .success(try await walk(videoId, sourceChannelId: sourceChannelId, requiresMuxed: requiresMuxed,
-                                             requiresHLS: requiresHLS, recordsBotCheck: recordsBotCheck))
+                                             requiresHLS: requiresHLS))
         } catch {
             walked = .failure(error)
         }
         let verdict = await available
         // A superseded job's gate was cancelled, and a cancelled HEAD reads as fail-open: it must not cache (Codex P1).
         try Task.checkCancellation()
+        // A refused walk is thrown away with its side effects (Cubic): a refused video left none before the gate ran
+        // alongside, so the trip and the channel memory wait for the verdict.
         guard verdict else { throw ExtractionError.unavailable(videoId: videoId) }
-        return await succeed(try walked.get(), videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+        switch walked {
+        case .success(let walked):
+            if let channel = walked.visionosRefusingChannel { rememberVisionosRefusal(channel) }
+            return await succeed(walked.resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+        case .failure(let failure as BotCheckedWalk):
+            if recordsBotCheck { await sessionStore.recordBotCheck() }
+            throw failure.error
+        case .failure(let error):
+            throw error
+        }
+    }
+
+    /// A walk's answer, and the uploader it found VISIONOS refusing (ANDROID served it after VISIONOS's refusal).
+    private struct Walked: Sendable {
+        let resolved: Resolved
+        let visionosRefusingChannel: String?
+    }
+
+    /// A failed walk that saw a bot check: the trip is `performResolve`'s to record, once the gate has spoken.
+    private struct BotCheckedWalk: Error {
+        let error: Error
     }
 
     private func walk(
-        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, requiresHLS: Bool, recordsBotCheck: Bool
-    ) async throws -> Resolved {
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, requiresHLS: Bool
+    ) async throws -> Walked {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
@@ -443,7 +465,7 @@ public actor StreamResolver {
             } catch {
                 // Owner ruling 2026-09-01: successful walk ends clean — mirrors Android's
                 // player-lane never-trip. A bot check only NOTES here; the (per-walk single,
-                // review F2a) trip is recorded at walk end, and only when the walk fails overall.
+                // review F2a) trip is recorded once the walk has failed overall and the gate let it through (`performResolve`).
                 if case ExtractionError.botCheck = error { sawBotCheck = true }
                 sawOurFailure = true
                 lastError = error
@@ -451,8 +473,8 @@ public actor StreamResolver {
             }
             switch outcome {
             case .resolved(let resolved):
-                if visionosRefused, resolved.client == .android, let channel = resolved.channelId { rememberVisionosRefusal(channel) }
-                return resolved
+                return Walked(resolved: resolved,
+                              visionosRefusingChannel: visionosRefused && resolved.client == .android ? resolved.channelId : nil)
             case .refused:
                 visionosRefused = true
             case .advance:
@@ -466,7 +488,7 @@ public actor StreamResolver {
         // failed one does (the retryable `lastError`; the trip below only if a bot check was seen).
         // A wrapped rung that merely advanced (answered, but has nothing to play) leaves the verdict.
         if let heldVerdict, !sawOurFailure || demotedFamily == nil { throw heldVerdict }
-        if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
+        if sawBotCheck { throw BotCheckedWalk(error: lastError) }
         throw lastError
     }
 
@@ -522,7 +544,7 @@ public actor StreamResolver {
             // bot check below, minus the visitor bootstrap (a non-200 body carries no
             // `responseContext.visitorData` to adopt): rotate once and retry the rung, else
             // surface `.botCheck` so `performResolve` NOTES it -- the (per-walk single) cooldown
-            // trip is recorded at walk end, and only when the walk fails overall (ruling 2026-09-01).
+            // trip is recorded only when the walk fails overall and the gate let it through (ruling 2026-09-01).
             if canRotate, await sessionStore.rotate(family) {
                 return try await runPlayerRung(
                     family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)

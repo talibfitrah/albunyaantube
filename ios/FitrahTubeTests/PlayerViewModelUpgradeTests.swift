@@ -106,11 +106,10 @@ struct PlayerViewModelUpgradeTests {
 
     private func model(_ resolver: ScriptedResolver, hd: HDUpgrade?,
                        args: PlayerArgs = PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"),
-                       queueSource: (any PlaylistQueueSource)? = nil,
-                       clock: @escaping @Sendable () -> Date = { Date() }) -> PlayerViewModel {
+                       queueSource: (any PlaylistQueueSource)? = nil) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerViewModelUpgradeTests.\(UUID().uuidString)")!)
         settings.safeMode = false   // Safe Mode defaults on and disables auto-advance (`playToEnd`)
-        return PlayerViewModel(resolver: resolver, settings: settings, args: args, queueSource: queueSource, hd: hd, clock: clock)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args, queueSource: queueSource, hd: hd)
     }
 
     private func waitForPending(_ vm: PlayerViewModel) async {
@@ -339,17 +338,15 @@ struct PlayerViewModelUpgradeTests {
     /// Owner ruling 2026-11-04 (weak link): a stall within `pickStallWindow` of a manual pick is the pick's -- its forced
     /// start rebuffers -- so the pick goes back to Auto on the same HD stream, and HD stays. The next stall is R43's.
     @Test func aStallRightAfterAPickDropsThePickNotHD() async {
-        let now = Clock()
         let recorder = Recorder()
         let upgrade = Self.hd1080()
         recorder.answer = upgrade
         let resolver = ScriptedResolver([Self.standard])
-        let vm = model(resolver, hd: recorder.upgrade, clock: { now.date })
+        let vm = model(resolver, hd: recorder.upgrade)
         await vm.open()
         await waitForPending(vm)
         _ = vm.commitUpgrade(Self.masterURL(upgrade))
         vm.selectedQuality = .rendition(width: 1920, height: 1080)
-        now.advance(7)                                  // the forced start's stall: 6 s watchdog + a sample
         await vm.handleRecoveryEvent(.stall)
         #expect(vm.state == .ready(upgrade))
         #expect(vm.selectedQuality == .auto)
@@ -361,20 +358,17 @@ struct PlayerViewModelUpgradeTests {
     }
 
     /// Review (Claude adversarial): the watchdog counts 6 s from the last progress, so a forced start that plays its start-up
-    /// buffer and then stalls fires well past 8 s of wall time. It is still the pick's: the window counts playback.
+    /// buffer and then stalls fires some 14 s after the pick. It is still the pick's: the window counts playback.
     @Test func aPicksForcedStartThatPlaysThenStallsKeepsHD() async {
-        let now = Clock()
         let recorder = Recorder()
         let upgrade = Self.hd1080()
         recorder.answer = upgrade
-        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade, clock: { now.date })
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
         await vm.open()
         await waitForPending(vm)
         _ = vm.commitUpgrade(Self.masterURL(upgrade))
         vm.selectedQuality = .rendition(width: 1920, height: 1080)
-        now.advance(3)                                  // the forced start buffers
-        for _ in 0..<5 { vm.recordPlaybackProgress() }  // plays one segment
-        now.advance(11)                                 // drains it, then 6 s of nothing
+        for _ in 0..<5 { vm.recordPlaybackProgress() }  // plays one segment, then nothing for the watchdog's 6 s
         await vm.handleRecoveryEvent(.stall)
         #expect(vm.state == .ready(upgrade))
         #expect(vm.selectedQuality == .auto)
@@ -791,12 +785,4 @@ struct PlayerViewModelUpgradeTests {
         try? await Task.sleep(for: .milliseconds(50))
         #expect(recorder.failed == ["abcdefghijk"])
     }
-}
-
-/// A settable wall clock for the pick window.
-private nonisolated final class Clock: @unchecked Sendable {
-    private let lock = NSLock()
-    private var now = Date(timeIntervalSince1970: 1_800_000_000)
-    var date: Date { lock.withLock { now } }
-    func advance(_ seconds: TimeInterval) { lock.withLock { now += seconds } }
 }
