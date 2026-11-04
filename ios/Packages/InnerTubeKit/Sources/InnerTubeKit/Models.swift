@@ -81,6 +81,10 @@ public struct Resolved: Sendable {
     /// Stage 6 I-M2: the app's identity of the network this stream was minted on (googlevideo URLs are IP-bound, `ip=` in
     /// `sparams`). Set by the app on an HD upgrade; InnerTubeKit never reads it.
     public var mintNetwork: String?
+    /// The answer's mp4 avc1 video sizes (the ANDROID rung's `adaptiveFormats`): the renditions an HD upgrade of this
+    /// 360p can bring (`TVAdaptive.select` keeps mp4 avc1 only), so the quality menu has them before HD lands. Empty
+    /// for every other rung.
+    public var videoSizes: [CGSize] = []
 
     public init(
         stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?, isLiveNow: Bool = false,

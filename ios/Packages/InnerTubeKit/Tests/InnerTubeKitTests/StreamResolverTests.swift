@@ -250,6 +250,29 @@ import Testing
         #expect(resolved.channelId == nil)
     }
 
+    /// Owner report 2026-11-03: the quality menu is there while the 360p plays. The ANDROID answer already lists the
+    /// avc1 renditions the HD upgrade (`TVAdaptive.select`: mp4 avc1 only) can bring; nothing else is a size (VP9,
+    /// AV1, audio), and a repeat (a second frame rate) is one size.
+    @Test func theAndroidRungCarriesItsAvc1Sizes() async throws {
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}],
+         "adaptiveFormats":[
+          {"itag":137,"mimeType":"video/mp4; codecs=\\"avc1.640028\\"","bitrate":4000000,"width":1920,"height":1080},
+          {"itag":399,"mimeType":"video/mp4; codecs=\\"av01.0.08M.08\\"","bitrate":2000000,"width":1920,"height":1080},
+          {"itag":271,"mimeType":"video/webm; codecs=\\"vp9\\"","bitrate":9000000,"width":2560,"height":1440},
+          {"itag":136,"mimeType":"video/mp4; codecs=\\"avc1.4d401f\\"","bitrate":2000000,"width":1280,"height":720},
+          {"itag":298,"mimeType":"video/mp4; codecs=\\"avc1.4d4020\\"","bitrate":3000000,"width":1280,"height":720,"fps":60},
+          {"itag":140,"mimeType":"audio/mp4; codecs=\\"mp4a.40.2\\"","bitrate":130000}]},
+         "videoDetails":{"isLive":false}}
+        """.utf8))
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), android])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        #expect(resolved.videoSizes == [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720)])
+    }
+
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
 
     /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,

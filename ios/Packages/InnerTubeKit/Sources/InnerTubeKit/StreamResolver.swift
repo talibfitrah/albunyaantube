@@ -508,10 +508,12 @@ public actor StreamResolver {
                     isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
-                return .resolved(Resolved(
+                var resolved = Resolved(
                     stream: .progressive(url: itag18, label: "360p"),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    title: streaming.title, channelId: streaming.channelId))
+                    title: streaming.title, channelId: streaming.channelId)
+                resolved.videoSizes = Self.avc1Sizes((try? responseParser.adaptiveFormats(body)) ?? [])
+                return .resolved(resolved)
             }
             return .advance
         case .unplayable:
@@ -622,6 +624,17 @@ public actor StreamResolver {
     }
 
     // MARK: - result builders
+
+    /// `Resolved.videoSizes`: each distinct mp4 avc1 size, in answer order.
+    static func avc1Sizes(_ formats: [AdaptiveFormat]) -> [CGSize] {
+        var sizes: [CGSize] = []
+        for f in formats where f.mimeType.hasPrefix("video/mp4") && f.mimeType.contains("avc1") {
+            guard let width = f.width, let height = f.height else { continue }
+            let size = CGSize(width: width, height: height)
+            if !sizes.contains(size) { sizes.append(size) }
+        }
+        return sizes
+    }
 
     private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {
         streaming.expiresInSeconds.map { now.addingTimeInterval(TimeInterval($0)) }

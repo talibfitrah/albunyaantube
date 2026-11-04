@@ -1,7 +1,7 @@
 import Foundation
 
 /// Memory-only cache of resolved streams, keyed by videoId (spec §9,
-/// `extraction.md` §3.2). Live results are never stored. Capacity 50 with
+/// `extraction.md` §3.2). A stream live now is never stored. Capacity 50 with
 /// LRU eviction, where recency is tracked by `get` only (a `put` on an
 /// existing key updates the value without bumping its position).
 public actor ManifestCache {
@@ -42,7 +42,9 @@ public actor ManifestCache {
     }
 
     public func put(_ resolved: Resolved, videoId: String, now: Date) async {
-        guard !isLive(resolved) else { return }
+        // Live NOW, not the `.hls` case's sticky `isLive`: an ended broadcast plays as a VOD, and skipping it re-POSTed
+        // every replay and wasted every Up Next prefetch of one (owner report 2026-11-03, nhaGO__rxHQ).
+        guard !resolved.isLiveNow else { return }
 
         // Clamp to the stream's real URL expiry: never serve past `resolved.expiresAt`, even if the
         // TTL is longer (a short googlevideo `expiresInSeconds` would otherwise cache a dead URL).
@@ -56,13 +58,6 @@ public actor ManifestCache {
             let evicted = order.removeFirst()
             entries.removeValue(forKey: evicted)
         }
-    }
-
-    private func isLive(_ resolved: Resolved) -> Bool {
-        if case .hls(_, let isLive, _, _, _) = resolved.stream {
-            return isLive
-        }
-        return false
     }
 
     /// CF-B1-11: read live, per-`put`, so a published config change takes effect without a

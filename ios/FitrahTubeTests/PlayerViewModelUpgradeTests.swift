@@ -167,6 +167,63 @@ struct PlayerViewModelUpgradeTests {
         #expect(!vm.commitUpgrade(Self.masterURL(upgrade)))
     }
 
+    /// Owner report 2026-11-03: the choices are there the moment the 360p plays, not after the swap. While HD is on its
+    /// way the rows are the renditions the 360p's own answer listed (`Resolved.videoSizes`); a pick made then is the
+    /// ceiling the HD item is built with. They go when HD will not come, and the swap hands over to the HD stream's
+    /// own rows at once (no gap with no menu); a pick the HD stream has no row for moves to the nearest row at or below it.
+    @Test func the360pOffersTheHDRenditionsWhileHDIsOnItsWay() async {
+        let recorder = Recorder()
+        let gate = AsyncGate()
+        recorder.gate = gate
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720), CGSize(width: 640, height: 360)]
+        let rendition = SyntheticHLS.Rendition(url: URL(string: "https://example.com/v")!, codecs: "avc1", bandwidth: 1,
+                                               initRange: 0...1, indexRange: 2...3, contentLength: 9)
+        var big = rendition, small = rendition
+        (big.width, big.height, small.width, small.height) = (1920, 1080, 640, 360)
+        let upgrade = Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
+                                            audioOnlyURL: nil, captionTracks: [], synthetic: SyntheticHLS(video: [big, small], audio: [])),
+                               client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: nil)
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)
+        await vm.open()
+        #expect(vm.qualityOptions == [.auto, .rendition(width: 1920, height: 1080), .rendition(width: 1280, height: 720),
+                                      .rendition(width: 640, height: 360), .dataSaver])
+        vm.selectedQuality = .rendition(width: 1280, height: 720)      // a row the HD stream turns out not to have
+        await gate.open()
+        await waitForPending(vm)
+        #expect(vm.commitUpgrade(Self.masterURL(upgrade)))
+        #expect(vm.qualityOptions == [.auto, .rendition(width: 1920, height: 1080), .rendition(width: 640, height: 360), .dataSaver])
+        // Review (Codex, cold): the pick stays a ceiling, on a row that exists: the nearest at or below it.
+        #expect(vm.selectedQuality == .rendition(width: 640, height: 360))
+    }
+
+    @Test func theHDRowsGoWhenHDWillNotCome() async {
+        let recorder = Recorder()
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
+        let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)   // `answer` nil: no HD for this video
+        await vm.open()
+        for _ in 0..<500 where !vm.qualityOptions.isEmpty { try? await Task.sleep(for: .milliseconds(2)) }
+        #expect(recorder.asked == ["abcdefghijk"])
+        #expect(vm.qualityOptions.isEmpty)
+    }
+
+    /// Nothing above 360p (or no HD asked: an offline save, no `hd`) is nothing to offer: the 360p keeps its pill.
+    @Test func a360pWithNothingHigherOrNoHDOffersNothing() async {
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 640, height: 360), CGSize(width: 426, height: 240)]
+        let recorder = Recorder()
+        recorder.gate = AsyncGate()
+        let low = model(ScriptedResolver([standard]), hd: recorder.upgrade)
+        await low.open()
+        #expect(low.qualityOptions.isEmpty)
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
+        let none = model(ScriptedResolver([standard]), hd: nil)
+        await none.open()
+        #expect(none.qualityOptions.isEmpty)
+    }
+
     /// Stage 9 I16 (Cubic r6): the committed HD stream is a manifest, which no receiver plays (`CastMedia.make`). A cast
     /// sends the 360p it replaced, with no walk, as before the upgrade. A refused walk left only the HD stream to fall
     /// back on, so the user got "Couldn't play on {TV}".

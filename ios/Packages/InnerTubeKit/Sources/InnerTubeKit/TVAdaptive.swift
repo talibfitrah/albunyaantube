@@ -2,7 +2,8 @@ import Foundation
 
 /// Format selection, challenge collection and URL rewriting for the `tv_samsung` HD upgrade (spec R7, R9-R11). Pure.
 enum TVAdaptive {
-    /// Video: every distinct avc1 rendition, highest bitrate first. Audio: one rendition per group, the default group first.
+    /// Video: every distinct avc1 rendition, biggest first, then highest bitrate (a pick on the master starts on the first
+    /// variant its cap admits, so a 720p60 must not run above a 1080p30). Audio: one rendition per group, the default group first.
     struct Selection: Equatable, Sendable {
         var video: [AdaptiveFormat]
         var audio: [AdaptiveFormat]
@@ -29,7 +30,7 @@ enum TVAdaptive {
         var seenItags = Set<Int>()
         let video = usable
             .filter { $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("avc1") && seenItags.insert($0.itag).inserted }
-            .sorted { $0.bitrate > $1.bitrate }
+            .sorted { (($0.width ?? 0) * ($0.height ?? 0), $0.bitrate) > (($1.width ?? 0) * ($1.height ?? 0), $1.bitrate) }
         var groups: [(id: String?, members: [(index: Int, format: AdaptiveFormat)])] = []
         for (index, format) in usable.enumerated() where format.mimeType.hasPrefix("audio/mp4") && format.mimeType.contains("mp4a") {
             if let g = groups.firstIndex(where: { $0.id == format.audioTrackId }) {

@@ -312,12 +312,37 @@ struct QualityCeilingTests {
     /// A lower ceiling binds only the segments AVPlayer fetches after it: measured on the iPhone 17
     /// simulator against a catalog HLS (C3BXt0zJr3o), a 1080p -> 480p pick kept drawing 1920x1080 for
     /// 36 s and more (the buffered segments), while a fresh item on the same asset drew 854x480 within
-    /// 3 s. A raise needs nothing: the same run drew 1080p within 3 s of the pick.
+    /// 3 s. A raise is the owner's 2026-11-03 report (below): only ABR climbs to it.
     private func needsFreshItem(_ old: QualityOption?, _ new: QualityOption, layer: CGSize = layerSize,
-                                playing: CGSize = .zero, expensive: Bool = false, constrained: Bool = false) -> Bool {
+                                playing: CGSize = .zero, renditions: [CGSize] = [], expensive: Bool = false,
+                                constrained: Bool = false) -> Bool {
         let applied = old.map { ($0, QualityOption.ceiling(for: $0, layerSize: layer, isExpensive: expensive, isConstrained: constrained)) }
-        return QualityOption.needsFreshItem(from: applied, to: new, layerSize: layer, playing: playing, isExpensive: expensive,
-                                            isConstrained: constrained)
+        return QualityOption.needsFreshItem(from: applied, to: new, layerSize: layer, playing: playing, renditions: renditions,
+                                            isExpensive: expensive, isConstrained: constrained)
+    }
+
+    private static let ladder = [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720),
+                                 CGSize(width: 854, height: 480), CGSize(width: 426, height: 240)]
+
+    /// Owner report 2026-11-03: a HIGHER pick "changed nothing". A raised cap only lets ABR climb at its own pace: on the
+    /// iPhone 17 simulator, the synthetic HD path at 4 Mbps took 18.8 s from 426x240 to 1920x1080 after a 1080p pick
+    /// (854x480 at once, 1280x720 at 2.4 s), and a weaker link may never get there. A fresh item of a PICKED rendition on
+    /// the synthetic master starts on it (`apply`), so such a pick rebuilds whenever what is drawn is below the best
+    /// rendition the new cap admits (the host passes `renditions` for a synthetic stream only). Auto keeps AVPlayer's own
+    /// start, so a rebuild would only rebuffer (cold review).
+    @Test func aHigherPickRebuildsWhenWhatPlaysIsBelowTheBestTheNewCapAdmits() {
+        let fullscreen = CGSize(width: 2556, height: 1179)
+        let portrait = CGSize(width: 1179, height: 663)
+        #expect(needsFreshItem(Self.p480, Self.p1080, playing: CGSize(width: 854, height: 480), renditions: Self.ladder))
+        #expect(!needsFreshItem(.rendition(width: 426, height: 240), .auto, layer: fullscreen,
+                                playing: CGSize(width: 426, height: 240), renditions: Self.ladder))
+        #expect(needsFreshItem(.dataSaver, Self.p720, playing: CGSize(width: 854, height: 480), renditions: Self.ladder))
+        // Already drawing the best the new cap admits: portrait Auto admits nothing above 854x480.
+        #expect(!needsFreshItem(Self.p480, .auto, layer: portrait, playing: CGSize(width: 854, height: 480), renditions: Self.ladder))
+        #expect(!needsFreshItem(.auto, Self.p1080, layer: fullscreen, playing: CGSize(width: 1920, height: 1080),
+                                renditions: Self.ladder))
+        // Nothing drawn yet: the item is new, and the raised cap binds its first segments.
+        #expect(!needsFreshItem(Self.p480, Self.p1080, renditions: Self.ladder))
     }
 
     /// Cubic r2 P2: a lower SIZE cap flushes only what is drawn above it. Picking the stream's top rendition from a
@@ -381,6 +406,20 @@ struct QualityCeilingTests {
         let applied = QualityOption.auto.apply(to: item, layerSize: Self.layerSize, isExpensive: true, isConstrained: false)
         #expect(applied.resolution == item.preferredMaximumResolution)
         #expect(applied.bitrate == item.preferredPeakBitRate)
+    }
+
+    /// Owner report 2026-11-03: a `fitrah-hls` master lists its renditions highest first, so a PICK on it starts on that
+    /// rendition (AVPlayer's own guess started 854x480 under a 1080p cap at 4 Mbps, then took 18.8 s to 1080p). Auto keeps
+    /// AVPlayer's start, and so do YouTube's own masters, in no order (nhaGO__rxHQ: 240, 240, 360, 480, 720, 144, 1080, ...).
+    @Test func aPickOnASyntheticMasterStartsOnThePickedRendition() {
+        let synthetic = AVPlayerItem(url: URL(string: "\(SyntheticHLSLoader.scheme)://abc/master.m3u8")!)
+        Self.p1080.apply(to: synthetic, layerSize: Self.layerSize, isExpensive: false, isConstrained: false)
+        #expect(synthetic.startsOnFirstEligibleVariant)
+        QualityOption.auto.apply(to: synthetic, layerSize: Self.layerSize, isExpensive: false, isConstrained: false)
+        #expect(!synthetic.startsOnFirstEligibleVariant)
+        let native = AVPlayerItem(url: URL(string: "https://manifest.googlevideo.com/master.m3u8")!)
+        Self.p1080.apply(to: native, layerSize: Self.layerSize, isExpensive: false, isConstrained: false)
+        #expect(!native.startsOnFirstEligibleVariant)
     }
 
     @Test func labelsMatchTheAndroidFormat() {

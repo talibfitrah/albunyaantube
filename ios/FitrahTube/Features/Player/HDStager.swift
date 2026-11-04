@@ -40,6 +40,10 @@ import UIKit
         startedAt = now
         polledAt = now
         configure(item)
+        // A picked rendition's own start (`QualityOption.apply`) is the visible item's, at the hand-over: the hidden item
+        // only proves HD buffers, and on a link just above the pick's bitrate it would not fill in time (measured at 4 Mbps:
+        // 1080p gains ~0.35 s ahead per second, 29 s to the 10 s the swap needs), costing the video its HD (R41).
+        item.startsOnFirstEligibleVariant = false
         item.preferredForwardBufferDuration = Self.window
         hidden.isMuted = true
         hidden.allowsExternalPlayback = false

@@ -234,6 +234,19 @@ struct HDStagerTests {
         player.replaceCurrentItem(with: nil)
     }
 
+    /// Owner report 2026-11-03: a pick made while the 360p plays is the hidden item's ceiling too, but not its start:
+    /// staged on the picked rendition, a link just above its bitrate never fills the 10 s the swap needs (measured at 4 Mbps)
+    /// and the video loses its HD (R41). The visible item gets the pick's start at the hand-over.
+    @Test func theHiddenItemKeepsAVPlayersOwnStartUnderAPick() {
+        let item = AVPlayerItem(url: URL(string: "\(SyntheticHLSLoader.scheme)://abc/master.m3u8")!)
+        let stager = HDStager(item: item, masterURL: URL(string: "https://example.com/m")!, position: 0, configure: {
+            QualityOption.rendition(width: 1920, height: 1080).apply(to: $0, layerSize: CGSize(width: 750, height: 422),
+                                                                     isExpensive: false, isConstrained: false)
+        })
+        #expect(stager.item.preferredMaximumResolution == CGSize(width: 1920, height: 1080))
+        #expect(!stager.item.startsOnFirstEligibleVariant)
+    }
+
     @Test(.timeLimit(.minutes(1))) func aRefusedCommitLeavesThe360pAndDropsTheUpgrade() async throws {
         let reports = Reports()
         let (vm, player, _) = try await playing(reports)

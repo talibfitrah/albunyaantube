@@ -192,7 +192,16 @@ extension StreamState {
 
     /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
     /// renditions load, and for a single file; Auto and Data Saver alone while its master could not be read.
-    private(set) var qualityOptions: [QualityOption] = []
+    /// Owner report 2026-11-03: a 360p with HD on its way (`hdOnItsWay`) offers the renditions that HD brings, as the
+    /// 360p's own answer listed them (`Resolved.videoSizes`), so the choice is there from the first frame; a pick made then
+    /// is the ceiling the HD item is built with (`HDStager`'s `configure`). Nothing above 360p means no HD (`TVAdaptive.select`).
+    var qualityOptions: [QualityOption] {
+        guard hdOnItsWay, case .rung2Progressive(let standard) = state else { return streamQualityOptions }
+        return standard.videoSizes.contains { min($0.width, $0.height) > 360 } ? QualityOption.menu(for: standard.videoSizes) : []
+    }
+    private var streamQualityOptions: [QualityOption] = []
+    /// From the HD ask until HD commits or will not come (no answer, a failure, a drop, an expiry).
+    private var hdOnItsWay = false
     private(set) var qualityLoad: Task<Void, Never>?
     /// The stream `qualityOptions` belong to, and whether its master could not be read (read again on its next item).
     private var qualityStreamURL: URL?
@@ -205,7 +214,7 @@ extension StreamState {
         let resolved = currentItem == nil ? nil : state.resolved
         let url = resolved.map { PlayerHostView.streamURL($0.stream) }
         guard url != qualityStreamURL || qualityReadFailed else { return }
-        if url != qualityStreamURL { qualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
+        if url != qualityStreamURL { streamQualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
         qualityStreamURL = url
         qualityReadFailed = false
         qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
@@ -215,8 +224,8 @@ extension StreamState {
                 guard !Task.isCancelled, url == qualityStreamURL else { return }
                 // A master that could not be read is read again for the next item built on this stream; meanwhile the two
                 // rows no rendition decides stay, so a carried Data Saver can be turned off (Cubic r2 P3).
-                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else {
-                    qualityOptions = [.auto, .dataSaver]
+                if let sizes { streamQualityOptions = QualityOption.menu(for: sizes) } else {
+                    streamQualityOptions = [.auto, .dataSaver]
                     qualityReadFailed = true
                 }
             }
@@ -1119,6 +1128,7 @@ extension StreamState {
     private func startUpgrade(for standard: Resolved, videoId: String) {
         guard let hd, !isOfflinePlayback, !upgradesStopped else { return }
         let report = hdFailedReport
+        hdOnItsWay = true
         upgradeTask = Task {
             await report?.value
             guard !Task.isCancelled else { return }
@@ -1127,7 +1137,10 @@ extension StreamState {
             // The 360p it was asked for is still on screen (stage 9 I-C9d: not `generation`, which a silent refresh that
             // never lands also moves; every resolve that does land cancels this task).
             guard var upgrade = await hd.upgrade(videoId), !Task.isCancelled, !upgradesStopped,
-                  state == .rung2Progressive(standard), resolvedVideoId == videoId else { return }
+                  state == .rung2Progressive(standard), resolvedVideoId == videoId else {
+                if !Task.isCancelled { hdOnItsWay = false }   // a cancel is `dropUpgrade`'s, which a newer ask may follow
+                return
+            }
             upgrade.mintNetwork = network
             pendingUpgrade = upgrade
         }
@@ -1140,6 +1153,7 @@ extension StreamState {
         guard let pending = pendingUpgrade else { return nil }
         guard !pending.isExpired(now: now), now.timeIntervalSince(pending.resolvedAt) < Self.upgradeMaxAge else {
             pendingUpgrade = nil
+            hdOnItsWay = false
             return nil
         }
         return pending
@@ -1160,6 +1174,21 @@ extension StreamState {
         }
         pendingUpgrade = nil
         standardBeforeUpgrade = standard
+        hdOnItsWay = false
+        // The menu stays up across the swap: the HD stream's own rows, now (its model carries them), so the item the host
+        // builds next finds them in place.
+        qualityLoad?.cancel()
+        qualityStreamURL = masterURL
+        qualityReadFailed = false
+        streamQualityOptions = QualityOption.menu(for: QualityOption.sizes(of: pending.stream.synthetic))
+        // A pick from the 360p answer's rows that the HD stream has none for stays a ceiling, on a row it has: the
+        // biggest at or below it (rows run biggest first), else Auto.
+        if case .rendition(let width, let height) = selectedQuality, !streamQualityOptions.contains(selectedQuality) {
+            selectedQuality = streamQualityOptions.first {
+                guard let size = $0.size else { return false }
+                return size.width <= CGFloat(width) && size.height <= CGFloat(height)
+            } ?? .auto
+        }
         state = .ready(pending)
         return true
     }
@@ -1167,6 +1196,7 @@ extension StreamState {
     /// The staged HD item failed, never buffered, or the 360p had an incident while it staged: stay on 360p; no HD for
     /// this video (R41).
     func upgradeFailed() {
+        hdOnItsWay = false
         guard pendingUpgrade != nil else { return }
         pendingUpgrade = nil
         let videoId = hostVideoId
@@ -1203,6 +1233,7 @@ extension StreamState {
     private func dropUpgrade() {
         upgradeTask?.cancel()
         pendingUpgrade = nil
+        hdOnItsWay = false
     }
 
     // MARK: - Cast (Task 8, spec §10)

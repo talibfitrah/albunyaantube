@@ -117,6 +117,18 @@ private let syntheticCipherURL = "url=https%3A%2F%2Fexample.test%2Fv%3Fn%3Dxyz%2
 
     // MARK: - Small synthetic formats, for the cases the captures do not cover
 
+    /// Owner report 2026-11-03: a pick on the synthetic master starts on the first variant its cap admits, so the master
+    /// runs biggest first: a 720p60 above a 1080p30 by bitrate would start a 1080p pick on 720p. Bitrate orders a size.
+    @Test func renditionsRunBiggestFirstThenByBitrate() throws {
+        let p1080 = video(itag: 137, bitrate: 3_000_000)
+        let p720at60 = video(itag: 298, bitrate: 4_000_000).replacingOccurrences(of: #""width":1920,"height":1080"#,
+                                                                               with: #""width":1280,"height":720"#)
+        let p720 = video(itag: 136, bitrate: 2_000_000).replacingOccurrences(of: #""width":1920,"height":1080"#,
+                                                                           with: #""width":1280,"height":720"#)
+        let selection = try #require(TVAdaptive.select(try parse(p720, p720at60, p1080, audio())))
+        #expect(selection.video.map(\.itag) == [137, 298, 136])
+    }
+
     private func parse(_ entries: String...) throws -> [AdaptiveFormat] {
         try PlayerResponseParser().adaptiveFormats(Data(#"{"streamingData":{"adaptiveFormats":[\#(entries.joined(separator: ","))]}}"#.utf8))
     }
