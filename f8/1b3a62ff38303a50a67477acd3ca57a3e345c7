@@ -1,0 +1,19 @@
+releases-meta.json
+  s_f190d235aa73dd::t_03632988d4d1b5 2-6
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "f81b3a62ff38303a50a67477acd3ca57a3e345c7",
+  "prompts": {},
+  "sessions": {
+    "s_f190d235aa73dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4a02572-c1ec-4d9c-a3dd-070e681c43ff",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
