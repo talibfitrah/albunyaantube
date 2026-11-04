@@ -49,6 +49,8 @@ public actor ManifestCache {
         // Clamp to the stream's real URL expiry: never serve past `resolved.expiresAt`, even if the
         // TTL is longer (a short googlevideo `expiresInSeconds` would otherwise cache a dead URL).
         let expiresAt = min(now.addingTimeInterval(await ttlSeconds()), resolved.expiresAt ?? .distantFuture)
+        // A resolve superseded while the TTL loaded must not write: its replacement's gate may refuse (Codex).
+        guard !Task.isCancelled else { return }
         let isNewKey = entries[videoId] == nil
         entries[videoId] = Entry(resolved: resolved, expiresAt: expiresAt)
 

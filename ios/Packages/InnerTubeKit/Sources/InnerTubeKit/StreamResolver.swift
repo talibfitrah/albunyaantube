@@ -363,19 +363,14 @@ public actor StreamResolver {
         // before anything is handed over or cached; a throw (HTTP/transport error) is fail-open, as before.
         let gate = self.gate
         async let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
-        let walked: Result<Resolved, Error>
-        do {
-            walked = .success(try await walk(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS))
-        } catch {
-            walked = .failure(error)
-        }
+        async let walked = walkResult(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
         let verdict = await available
         // A superseded job's gate was cancelled, and a cancelled HEAD reads as fail-open: it must not cache (Codex P1).
         try Task.checkCancellation()
-        // A refused walk is thrown away with its bot-check trip (Cubic): a refused video left none before the gate ran
-        // alongside, so the trip waits for the verdict.
+        // A 410 refuses at once (Cubic): leaving the scope cancels the walk still out. A refused walk is thrown away with
+        // its bot-check trip: a refused video left none before the gate ran alongside, so the trip waits for the verdict.
         guard verdict else { throw ExtractionError.unavailable(videoId: videoId) }
-        switch walked {
+        switch await walked {
         case .success(let resolved):
             return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
         case .failure(let failure as BotCheckedWalk):
@@ -384,6 +379,10 @@ public actor StreamResolver {
         case .failure(let error):
             throw error
         }
+    }
+
+    private func walkResult(_ videoId: String, requiresMuxed: Bool, requiresHLS: Bool) async -> Result<Resolved, Error> {
+        do { return .success(try await walk(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)) } catch { return .failure(error) }
     }
 
     /// A failed walk that saw a bot check: the trip is `performResolve`'s to record, once the gate has spoken.

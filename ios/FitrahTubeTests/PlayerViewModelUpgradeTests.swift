@@ -375,6 +375,23 @@ struct PlayerViewModelUpgradeTests {
         #expect(recorder.failed.isEmpty)
     }
 
+    /// Cubic: a stall replayed after an outage says nothing about the pick: R43's outage path (drop back, no denial), and the
+    /// pick stays.
+    @Test func aStallAfterAnOutageLeavesThePickAlone() async {
+        let recorder = Recorder()
+        let upgrade = Self.hd1080()
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        _ = vm.commitUpgrade(Self.masterURL(upgrade))
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        await vm.handleRecoveryEvent(.stall, afterOutage: true)
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(vm.selectedQuality == .rendition(width: 1920, height: 1080))
+        #expect(recorder.failed.isEmpty)
+    }
+
     /// Past the window a stall is the link's, pick or not: R43 drops back and denies HD.
     @Test func aStallLongAfterAPickStillDeniesHD() async {
         let recorder = Recorder()

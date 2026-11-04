@@ -1401,6 +1401,17 @@ import Testing
         #expect(await session.loadCooldown().tripCount == 0)
     }
 
+    /// Cubic: a 410 refuses at once, as before the gate ran alongside; the walk still out is cancelled, not waited for.
+    @Test func aGateRefusalDoesNotWaitForTheWalk() async throws {
+        let transport = GatedTransport(try fixtureResponse("player-ok-hls"))   // the first POST hangs 30 s
+        let (resolver, _) = makeResolver(transport: transport, gate: StubGate(available: false))
+        let started = ContinuousClock.now
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(ContinuousClock.now - started < .seconds(2))
+    }
+
     /// The same order for a 410 that answers after the walk: still `.unavailable`.
     @Test func aLateGateRefusalStillRefuses() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])

@@ -41,6 +41,18 @@ import Testing
         #expect(await cache.get("abc123def45", now: now.addingTimeInterval(101)) == nil)
     }
 
+    /// Codex: a superseded resolve whose task is cancelled while `put` waits for the TTL must not write: the replacement's
+    /// gate may refuse the video, and a cache hit never asks the gate.
+    @Test func aCancelledPutWritesNothing() async {
+        let cache = await makeCache(configTTLSeconds: 100)
+        let now = Date(timeIntervalSince1970: 1000)
+        await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
+        }.value
+        #expect(await cache.get("abc123def45", now: now) == nil)
+    }
+
     @Test func liveHLSIsNeverStored() async {
         let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)

@@ -830,7 +830,8 @@ extension StreamState {
         if let standard = standardBeforeUpgrade {    // set only while the committed HD (`.tvSamsung`) stream is on screen
             // Owner ruling 2026-11-04 (weak link): a stall right after a manual pick is the pick's forced start. The pick
             // goes back to Auto on this same HD stream (the host rebuilds the stalled item, `failedItem`); HD stays.
-            if event == .stall, case .rendition = selectedQuality, let pickPlayed, pickPlayed <= Self.pickStallWindow {
+            // Not after an outage: that stall says nothing about the pick (R43's outage path below keeps it, Cubic).
+            if event == .stall, !afterOutage, case .rendition = selectedQuality, let pickPlayed, pickPlayed <= Self.pickStallWindow {
                 selectedQuality = .auto
                 return
             }
