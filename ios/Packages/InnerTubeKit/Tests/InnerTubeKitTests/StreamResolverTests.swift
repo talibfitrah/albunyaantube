@@ -196,67 +196,6 @@ import Testing
         #expect(transport.callCount == 2)
     }
 
-    // MARK: - owner ruling 2026-11-04: a channel VISIONOS refuses starts at ANDROID
-
-    private static let kidsChannel = "UCu8Lth4FT5HxaP0nypE-gTQ"   // the kids fixture's uploader
-
-    private func androidServing(channel: String) -> HTTPResponse {
-        HTTPResponse(status: 200, headers: [:], body: Data("""
-        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"\(channel)"}}
-        """.utf8))
-    }
-
-    /// VISIONOS refuses made-for-kids (~0.5 s a video). Its refusal shape is not kids-specific (a geo-locked or
-    /// members-only refusal is the same `UNPLAYABLE` + localized reason), so the session remembers the uploader only
-    /// when ANDROID then serves the video, and only for that channel: its next video skips the VISIONOS POST (one
-    /// request fewer, never one more). Another channel's video still starts at rung 1.
-    @Test func aChannelWhoseVideoOnlyAndroidServedStartsAtAndroid() async throws {
-        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidServing(channel: Self.kidsChannel),
-                                            androidServing(channel: Self.kidsChannel), try fixtureResponse("player-ok-hls")])
-        let (resolver, _) = makeResolver(transport: transport)
-
-        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-        let next = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-        guard case .progressive = next.stream else { Issue.record("expected .progressive, got \(next.stream)"); return }
-        let other = try await resolver.resolve("bcdefghijkl", purpose: .player, sourceChannelId: "UCmMcOjsVehVlEOteyrhjI2Q",
-                                               forceRefresh: false)
-        guard case .hls = other.stream else { Issue.record("another channel starts at rung 1: \(other.stream)"); return }
-
-        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
-    }
-
-    /// Codex: the channel's memory orders the walk, nothing more. A video of a remembered channel that ANDROID refuses
-    /// still gets VISIONOS, and a VISIONOS failure on our side does not overturn ANDROID's verdict (only a real
-    /// demotion of THIS video does): `.unavailable`, as the old VISIONOS-first order ended.
-    @Test func aRememberedChannelsAndroidRefusalStandsWhenVisionosFailsOnOurSide() async throws {
-        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidServing(channel: Self.kidsChannel),
-                                            try fixtureResponse("player-members-only-android"), try fixtureResponse("player-botcheck")])
-        let (resolver, _) = makeResolver(transport: transport)
-        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-
-        await expectThrows(.unavailable(videoId: "abcdefghijk")) {
-            _ = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-        }
-        #expect(transport.recorded.prefix(4).map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "3", "101"])
-    }
-
-    /// A refusal ANDROID shares (members-only, geo-locked) is the source's verdict on that video, not the channel's
-    /// shape: nothing is remembered, and the channel's next video starts at rung 1.
-    @Test func aRefusalAndroidSharesIsNotRemembered() async throws {
-        let transport = RecordingTransport([try fixtureResponse("player-members-only-visionos"),
-                                            try fixtureResponse("player-members-only-android"),
-                                            try fixtureResponse("player-ok-hls")])
-        let (resolver, _) = makeResolver(transport: transport)
-        let channel = "UCmMcOjsVehVlEOteyrhjI2Q"
-
-        await expectThrows(.unavailable(videoId: Self.videoId)) {
-            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: channel, forceRefresh: false)
-        }
-        _ = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: channel, forceRefresh: false)
-
-        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "101"])
-    }
-
     // MARK: - owner issue 1: the source's own title rides on the Resolved
 
     @Test func theVisionosRungCarriesTheTitleAndTheCacheKeepsIt() async throws {
@@ -1450,9 +1389,9 @@ import Testing
         }
     }
 
-    /// Cubic + Codex: a walk the gate refuses is thrown away, and so are the side effects `performResolve` owns: no bot-check
-    /// trip toward the app-wide cooldown, and no channel learned. (Its POSTs still spend request spacing and may adopt or
-    /// rotate visitorData, as any POST does: the price of running the gate alongside, owner ruling 2026-11-04.)
+    /// Cubic + Codex: a walk the gate refuses is thrown away, and so is its bot-check trip toward the app-wide cooldown.
+    /// (Its POSTs still spend request spacing and may adopt or rotate visitorData, as any POST does: the price of running
+    /// the gate alongside, owner ruling 2026-11-04.)
     @Test func aGateRefusedWalkRecordsNoTrip() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
         let (resolver, session) = makeResolver(transport: transport, gate: StubGate(available: false))
@@ -1460,23 +1399,6 @@ import Testing
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
         #expect(await session.loadCooldown().tripCount == 0)
-    }
-
-    private final class RefuseFirstGate: AvailabilityGate, @unchecked Sendable {
-        private let lock = NSLock()
-        private var calls = 0
-        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool { lock.withLock { calls += 1; return calls > 1 } }
-    }
-
-    @Test func aGateRefusedKidsVideoTeachesNoChannel() async throws {
-        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), androidServing(channel: Self.kidsChannel),
-                                            try fixtureResponse("player-ok-hls")])
-        let (resolver, _) = makeResolver(transport: transport, gate: RefuseFirstGate())
-        await expectThrows(.unavailable(videoId: Self.videoId)) {
-            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-        }
-        _ = try await resolver.resolve("abcdefghijk", purpose: .player, sourceChannelId: Self.kidsChannel, forceRefresh: false)
-        #expect(transport.recorded.map { $0.headers["X-YouTube-Client-Name"] } == ["101", "3", "101"])
     }
 
     /// The same order for a 410 that answers after the walk: still `.unavailable`.
