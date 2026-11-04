@@ -42,6 +42,14 @@ public actor StreamResolver {
     /// Bound it if a session ever demotes thousands.
     private var demoted: [String: ClientFamily] = [:]
 
+    /// Owner ruling 2026-11-04 (start speed, kids): uploaders a video of which VISIONOS refused and ANDROID then served
+    /// (made-for-kids, in practice). Their next videos start at ANDROID, one POST and ~0.5 s fewer. VISIONOS's refusal
+    /// shape is not kids-specific, so only that pair counts, and only for that channel: a channel with one such video
+    /// loses VISIONOS HLS for the session (ANDROID's 360p + the HD upgrade instead).
+    /// ponytail: newest `maxVisionosRefusingChannels` kept, oldest dropped first.
+    private var visionosRefusingChannels: [String] = []
+    private static let maxVisionosRefusingChannels = 200
+
     // MARK: HD upgrade state (spec §4.2 revision 3)
 
     /// R20: the backend's sts lookup and sig/n solve; nil keeps HD off.
@@ -345,6 +353,14 @@ public actor StreamResolver {
     private enum RungResult: Sendable {
         case resolved(Resolved)
         case advance
+        /// VISIONOS's `UNPLAYABLE`: walk on, as `advance`.
+        case refused
+    }
+
+    private func rememberVisionosRefusal(_ channel: String) {
+        guard !visionosRefusingChannels.contains(channel) else { return }
+        visionosRefusingChannels.append(channel)
+        if visionosRefusingChannels.count > Self.maxVisionosRefusingChannels { visionosRefusingChannels.removeFirst() }
     }
 
     private func performResolve(
@@ -359,10 +375,27 @@ public actor StreamResolver {
             throw ExtractionError.cooldown(until: cooldownNow.addingTimeInterval(Self.seconds(remaining)))
         }
 
-        // Availability gate first; a throw (HTTP/transport error) is fail-open.
-        let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
-        guard available else { throw ExtractionError.unavailable(videoId: videoId) }
+        // Owner ruling 2026-11-04 (start speed): the availability gate runs ALONGSIDE the walk, and its answer is awaited
+        // before anything is handed over or cached; a throw (HTTP/transport error) is fail-open, as before.
+        let gate = self.gate
+        async let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
+        let walked: Result<Resolved, Error>
+        do {
+            walked = .success(try await walk(videoId, sourceChannelId: sourceChannelId, requiresMuxed: requiresMuxed,
+                                             requiresHLS: requiresHLS, recordsBotCheck: recordsBotCheck))
+        } catch {
+            walked = .failure(error)
+        }
+        let verdict = await available
+        // A superseded job's gate was cancelled, and a cancelled HEAD reads as fail-open: it must not cache (Codex P1).
+        try Task.checkCancellation()
+        guard verdict else { throw ExtractionError.unavailable(videoId: videoId) }
+        return await succeed(try walked.get(), videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+    }
 
+    private func walk(
+        _ videoId: String, sourceChannelId: String?, requiresMuxed: Bool, requiresHLS: Bool, recordsBotCheck: Bool
+    ) async throws -> Resolved {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
@@ -372,8 +405,12 @@ public actor StreamResolver {
         // A refusal by ANDROID held back in a demoted walk (F4); see the `AndroidRefusal` catch below.
         var heldVerdict: ExtractionError?
         let demotedFamily = demoted[videoId]
+        // A channel VISIONOS refuses starts after it, as a demotion does (VISIONOS tried last). Only the order: a VISIONOS
+        // failure on our side overturns ANDROID's held verdict for a demoted video alone (Codex).
+        let startAfter = demotedFamily ?? (sourceChannelId.map(visionosRefusingChannels.contains) == true ? .visionos : nil)
+        var visionosRefused = false
 
-        for strategy in Self.walkOrder(config.resolverOrder, after: demotedFamily) {
+        for strategy in Self.walkOrder(config.resolverOrder, after: startAfter) {
             let outcome: RungResult
             do {
                 // The 8 s budget (§6.6 "8 s budget before demotion") covers the whole rung —
@@ -392,10 +429,11 @@ public actor StreamResolver {
                 // where it now opens the ladder: VISIONOS served this very video moments ago, so
                 // "the source no longer serves it" is not yet proven (owner rule: a video plays
                 // unless the source no longer serves it). Hold the verdict, try the wrapped rungs,
-                // and throw it if none plays and none failed on our side (see the walk's end). Without
-                // a demotion this is the old terminal throw.
+                // and throw it if none plays and none failed on our side (see the walk's end). A remembered
+                // channel's walk holds it too, as VISIONOS would have been asked first, but there a failure on
+                // our side does not overturn it. Otherwise this is the old terminal throw.
                 let verdict = ExtractionError.unavailable(videoId: videoId)
-                guard demotedFamily != nil else { throw verdict }
+                guard startAfter != nil else { throw verdict }
                 heldVerdict = verdict
                 continue
             } catch is CancellationError {
@@ -413,7 +451,10 @@ public actor StreamResolver {
             }
             switch outcome {
             case .resolved(let resolved):
-                return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+                if visionosRefused, resolved.client == .android, let channel = resolved.channelId { rememberVisionosRefusal(channel) }
+                return resolved
+            case .refused:
+                visionosRefused = true
             case .advance:
                 continue
             }
@@ -424,7 +465,7 @@ public actor StreamResolver {
         // rung that could have confirmed it proves nothing about the source: the walk ends as any
         // failed one does (the retryable `lastError`; the trip below only if a bot check was seen).
         // A wrapped rung that merely advanced (answered, but has nothing to play) leaves the verdict.
-        if let heldVerdict, !sawOurFailure { throw heldVerdict }
+        if let heldVerdict, !sawOurFailure || demotedFamily == nil { throw heldVerdict }
         if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
         throw lastError
     }
@@ -523,7 +564,7 @@ public actor StreamResolver {
             // (43/43 in the 2026-10-14 spike), so its UNPLAYABLE is the source's own verdict --
             // members-only (J-AuO9TNt5I), geo-locked -- and the app says "not available", never the
             // retryable error (owner directive 2026-10-14, spec R6).
-            guard family == .android else { return .advance }
+            guard family == .android else { return .refused }
             throw AndroidRefusal()
         case .ageGate:
             // Terminal, not a hand-off (owner directive 2026-08-27). `ageRestricted` is already one
