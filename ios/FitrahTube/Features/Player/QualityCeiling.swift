@@ -196,7 +196,8 @@ enum QualityOption: Hashable {
     /// Owner report 2026-11-03: a RAISE only lets ABR climb at its own pace (measured: 18.8 s from 240p to 1080p at
     /// 4 Mbps; a weaker link never gets there), while a fresh item of a picked rendition on the synthetic master starts on
     /// it (`apply`). So a rendition pick also rebuilds when what is drawn is below the best of the stream's `renditions`
-    /// the new cap admits (the host passes them for a synthetic stream only); Auto keeps AVPlayer's own start.
+    /// the new cap admits (the host passes the synthetic model's sizes, none for a native stream); Auto keeps AVPlayer's
+    /// own start.
     static func needsFreshItem(from old: (option: QualityOption, ceiling: Ceiling)?,
                                to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero, renditions: [CGSize] = [],
                                isExpensive: Bool, isConstrained: Bool) -> Bool {

@@ -198,15 +198,78 @@ struct PlayerViewModelUpgradeTests {
         #expect(vm.selectedQuality == .rendition(width: 640, height: 360))
     }
 
+    /// Adversarial review: a pick below every HD row keeps its intent (the least data) on the smallest HD row; Auto would
+    /// lift its cap, and on a metered path rebuild the item just handed over.
+    @Test func aPickBelowEveryHDRowMovesToTheSmallestHDRow() async {
+        let recorder = Recorder()
+        let gate = AsyncGate()
+        recorder.gate = gate
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360), CGSize(width: 426, height: 240)]
+        let rendition = SyntheticHLS.Rendition(url: URL(string: "https://example.com/v")!, codecs: "avc1", bandwidth: 1,
+                                               initRange: 0...1, indexRange: 2...3, contentLength: 9)
+        var big = rendition, small = rendition
+        (big.width, big.height, small.width, small.height) = (1920, 1080, 640, 360)
+        let upgrade = Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
+                                            audioOnlyURL: nil, captionTracks: [], synthetic: SyntheticHLS(video: [big, small], audio: [])),
+                               client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: nil)
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)
+        await vm.open()
+        vm.selectedQuality = .rendition(width: 426, height: 240)        // below every row the HD stream has
+        await gate.open()
+        await waitForPending(vm)
+        #expect(vm.commitUpgrade(Self.masterURL(upgrade)))
+        #expect(vm.qualityOptions == [.auto, .rendition(width: 1920, height: 1080), .rendition(width: 640, height: 360), .dataSaver])
+        #expect(vm.selectedQuality == .rendition(width: 640, height: 360))
+    }
+
+    /// A pick made from those rows goes with them (Cubic r2): no menu is left to show or undo it, and a later re-resolve of
+    /// the same video onto another stream would take it as a ceiling no row ticks.
     @Test func theHDRowsGoWhenHDWillNotCome() async {
         let recorder = Recorder()
+        let gate = AsyncGate()
+        recorder.gate = gate
         var standard = Self.standard
         standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
         let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)   // `answer` nil: no HD for this video
         await vm.open()
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        await gate.open()
         for _ in 0..<500 where !vm.qualityOptions.isEmpty { try? await Task.sleep(for: .milliseconds(2)) }
         #expect(recorder.asked == ["abcdefghijk"])
         #expect(vm.qualityOptions.isEmpty)
+        #expect(vm.selectedQuality == .auto)
+    }
+
+    /// The same when the screen goes away (`stopUpgrade`): that play stays on 360p, with no menu.
+    @Test func aPickFromTheHDRowsGoesWhenTheScreenGoesAway() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
+        let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        vm.stopUpgrade()
+        #expect(vm.qualityOptions.isEmpty)
+        #expect(vm.selectedQuality == .auto)
+    }
+
+    /// The same when the staged HD fails (R41).
+    @Test func aPickFromTheHDRowsGoesWhenTheStagedHDFails() async {
+        let recorder = Recorder()
+        recorder.answer = Self.hd()
+        var standard = Self.standard
+        standard.videoSizes = [CGSize(width: 1920, height: 1080), CGSize(width: 640, height: 360)]
+        let vm = model(ScriptedResolver([standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        vm.upgradeFailed()
+        #expect(vm.qualityOptions.isEmpty)
+        #expect(vm.selectedQuality == .auto)
     }
 
     /// Nothing above 360p (or no HD asked: an offline save, no `hd`) is nothing to offer: the 360p keeps its pill.

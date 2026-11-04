@@ -874,7 +874,7 @@ extension StreamState {
             // its result is discarded like any other.
             generation += 1
             resolveTask?.cancel()
-            upgradeTask?.cancel()                // spec R43: nothing can take its answer now
+            dropUpgrade()                        // spec R43: nothing can take its answer now
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
             steppedDownVideoIds.insert(hostVideoId)
@@ -1138,7 +1138,7 @@ extension StreamState {
             // never lands also moves; every resolve that does land cancels this task).
             guard var upgrade = await hd.upgrade(videoId), !Task.isCancelled, !upgradesStopped,
                   state == .rung2Progressive(standard), resolvedVideoId == videoId else {
-                if !Task.isCancelled { hdOnItsWay = false }   // a cancel is `dropUpgrade`'s, which a newer ask may follow
+                if !Task.isCancelled { hdWillNotCome() }   // a cancel is `dropUpgrade`'s, which a newer ask may follow
                 return
             }
             upgrade.mintNetwork = network
@@ -1153,7 +1153,7 @@ extension StreamState {
         guard let pending = pendingUpgrade else { return nil }
         guard !pending.isExpired(now: now), now.timeIntervalSince(pending.resolvedAt) < Self.upgradeMaxAge else {
             pendingUpgrade = nil
-            hdOnItsWay = false
+            hdWillNotCome()
             return nil
         }
         return pending
@@ -1182,21 +1182,28 @@ extension StreamState {
         qualityReadFailed = false
         streamQualityOptions = QualityOption.menu(for: QualityOption.sizes(of: pending.stream.synthetic))
         // A pick from the 360p answer's rows that the HD stream has none for stays a ceiling, on a row it has: the
-        // biggest at or below it (rows run biggest first), else Auto.
+        // biggest at or below it (rows run biggest first), else the smallest (the least data, as asked).
         if case .rendition(let width, let height) = selectedQuality, !streamQualityOptions.contains(selectedQuality) {
             selectedQuality = streamQualityOptions.first {
                 guard let size = $0.size else { return false }
                 return size.width <= CGFloat(width) && size.height <= CGFloat(height)
-            } ?? .auto
+            } ?? streamQualityOptions.last { $0.size != nil } ?? .auto
         }
         state = .ready(pending)
         return true
     }
 
+    /// HD will not come for this 360p: its rows go, and a pick made from them goes too (Cubic r2), as no menu is left to
+    /// show or undo it.
+    private func hdWillNotCome() {
+        if hdOnItsWay, case .rendition = selectedQuality { selectedQuality = .auto }
+        hdOnItsWay = false
+    }
+
     /// The staged HD item failed, never buffered, or the 360p had an incident while it staged: stay on 360p; no HD for
     /// this video (R41).
     func upgradeFailed() {
-        hdOnItsWay = false
+        hdWillNotCome()
         guard pendingUpgrade != nil else { return }
         pendingUpgrade = nil
         let videoId = hostVideoId
@@ -1219,6 +1226,7 @@ extension StreamState {
     /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
     func stopUpgrade() {
         upgradesStopped = true
+        hdWillNotCome()
         dropUpgrade()
         liveFollowUp?.cancel()
     }
