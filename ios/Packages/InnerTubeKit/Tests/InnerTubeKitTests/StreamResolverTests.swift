@@ -1450,9 +1450,10 @@ import Testing
         }
     }
 
-    /// Cubic + Codex: a walk the gate refuses is thrown away, and so are its side effects. Before the gate ran alongside, a
-    /// refused video sent no POST at all: no bot-check trip toward the app-wide cooldown, and no channel learned.
-    @Test func aGateRefusedWalkLeavesNoTrace() async throws {
+    /// Cubic + Codex: a walk the gate refuses is thrown away, and so are the side effects `performResolve` owns: no bot-check
+    /// trip toward the app-wide cooldown, and no channel learned. (Its POSTs still spend request spacing and may adopt or
+    /// rotate visitorData, as any POST does: the price of running the gate alongside, owner ruling 2026-11-04.)
+    @Test func aGateRefusedWalkRecordsNoTrip() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
         let (resolver, session) = makeResolver(transport: transport, gate: StubGate(available: false))
         await expectThrows(.unavailable(videoId: Self.videoId)) {
