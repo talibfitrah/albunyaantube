@@ -363,26 +363,19 @@ public actor StreamResolver {
         // before anything is handed over or cached; a throw (HTTP/transport error) is fail-open, as before.
         let gate = self.gate
         async let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
-        async let walked = walkResult(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
+        async let walked = walk(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
         let verdict = await available
         // A superseded job's gate was cancelled, and a cancelled HEAD reads as fail-open: it must not cache (Codex P1).
         try Task.checkCancellation()
         // A 410 refuses at once (Cubic): leaving the scope cancels the walk still out. A refused walk is thrown away with
         // its bot-check trip: a refused video left none before the gate ran alongside, so the trip waits for the verdict.
         guard verdict else { throw ExtractionError.unavailable(videoId: videoId) }
-        switch await walked {
-        case .success(let resolved):
-            return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
-        case .failure(let failure as BotCheckedWalk):
+        do {
+            return await succeed(try await walked, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+        } catch let failure as BotCheckedWalk {
             if recordsBotCheck { await sessionStore.recordBotCheck() }
             throw failure.error
-        case .failure(let error):
-            throw error
         }
-    }
-
-    private func walkResult(_ videoId: String, requiresMuxed: Bool, requiresHLS: Bool) async -> Result<Resolved, Error> {
-        do { return .success(try await walk(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)) } catch { return .failure(error) }
     }
 
     /// A failed walk that saw a bot check: the trip is `performResolve`'s to record, once the gate has spoken.
