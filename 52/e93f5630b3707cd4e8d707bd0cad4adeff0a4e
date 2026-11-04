@@ -38,6 +38,7 @@ ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
   s_543f5b01a05d75::t_1051f2fe629325 628-638
   s_543f5b01a05d75::t_6a48cea2246344 511,516
   s_543f5b01a05d75::t_8daf764a8c5031 515
+  s_543f5b01a05d75::t_2ed9801594026b 514
 ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
   s_543f5b01a05d75::t_a0500328fcfa0c 253-275
 ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ManifestCacheTests.swift
