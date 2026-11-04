@@ -21,6 +21,17 @@ struct PlayerViewModelUpgradeTests {
                  client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: expiresAt)
     }
 
+    /// An HD stream with 1080p and 360p rows (one row is no menu), for picks that must survive the hand-over.
+    private static func hd1080() -> Resolved {
+        let rendition = SyntheticHLS.Rendition(url: URL(string: "https://example.com/v")!, codecs: "avc1", bandwidth: 1,
+                                               initRange: 0...1, indexRange: 2...3, contentLength: 9)
+        var big = rendition, small = rendition
+        (big.width, big.height, small.width, small.height) = (1920, 1080, 640, 360)
+        return Resolved(stream: .hls(url: URL(string: "fitrah-hls://\(UUID().uuidString)/master.m3u8")!, isLive: false,
+                                     audioOnlyURL: nil, captionTracks: [], synthetic: SyntheticHLS(video: [big, small], audio: [])),
+                        client: .tvSamsung, userAgent: "tv", resolvedAt: Date(), expiresAt: nil)
+    }
+
     private static func masterURL(_ resolved: Resolved) -> URL {
         guard case .hls(let url, _, _, _, _) = resolved.stream else { preconditionFailure("not an .hls stream") }
         return url
@@ -95,10 +106,11 @@ struct PlayerViewModelUpgradeTests {
 
     private func model(_ resolver: ScriptedResolver, hd: HDUpgrade?,
                        args: PlayerArgs = PlayerArgs(videoId: "abcdefghijk", channelId: "ch1"),
-                       queueSource: (any PlaylistQueueSource)? = nil) -> PlayerViewModel {
+                       queueSource: (any PlaylistQueueSource)? = nil,
+                       clock: @escaping @Sendable () -> Date = { Date() }) -> PlayerViewModel {
         let settings = UserDefaultsSettingsStore(defaults: UserDefaults(suiteName: "PlayerViewModelUpgradeTests.\(UUID().uuidString)")!)
         settings.safeMode = false   // Safe Mode defaults on and disables auto-advance (`playToEnd`)
-        return PlayerViewModel(resolver: resolver, settings: settings, args: args, queueSource: queueSource, hd: hd)
+        return PlayerViewModel(resolver: resolver, settings: settings, args: args, queueSource: queueSource, hd: hd, clock: clock)
     }
 
     private func waitForPending(_ vm: PlayerViewModel) async {
@@ -322,6 +334,84 @@ struct PlayerViewModelUpgradeTests {
         await vm.handleRecoveryEvent(.stall)          // the 360p's own incident: Phase 1's same-rung re-resolve, budget intact
         #expect(await resolver.calls == 2)
         #expect(await resolver.demoted.isEmpty)       // a spent budget would have stepped down here
+    }
+
+    /// Owner ruling 2026-11-04 (weak link): a stall within `pickStallWindow` of a manual pick is the pick's -- its forced
+    /// start rebuffers -- so the pick goes back to Auto on the same HD stream, and HD stays. The next stall is R43's.
+    @Test func aStallRightAfterAPickDropsThePickNotHD() async {
+        let now = Clock()
+        let recorder = Recorder()
+        let upgrade = Self.hd1080()
+        recorder.answer = upgrade
+        let resolver = ScriptedResolver([Self.standard])
+        let vm = model(resolver, hd: recorder.upgrade, clock: { now.date })
+        await vm.open()
+        await waitForPending(vm)
+        _ = vm.commitUpgrade(Self.masterURL(upgrade))
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        now.advance(7)                                  // the forced start's stall: 6 s watchdog + a sample
+        await vm.handleRecoveryEvent(.stall)
+        #expect(vm.state == .ready(upgrade))
+        #expect(vm.selectedQuality == .auto)
+        #expect(recorder.failed.isEmpty)
+        #expect(await resolver.calls == 1)
+        await vm.handleRecoveryEvent(.stall)            // Auto stalls too: the link it is, R43 as before
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(recorder.failed == ["abcdefghijk"])
+    }
+
+    /// Review (Claude adversarial): the watchdog counts 6 s from the last progress, so a forced start that plays its start-up
+    /// buffer and then stalls fires well past 8 s of wall time. It is still the pick's: the window counts playback.
+    @Test func aPicksForcedStartThatPlaysThenStallsKeepsHD() async {
+        let now = Clock()
+        let recorder = Recorder()
+        let upgrade = Self.hd1080()
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade, clock: { now.date })
+        await vm.open()
+        await waitForPending(vm)
+        _ = vm.commitUpgrade(Self.masterURL(upgrade))
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        now.advance(3)                                  // the forced start buffers
+        for _ in 0..<5 { vm.recordPlaybackProgress() }  // plays one segment
+        now.advance(11)                                 // drains it, then 6 s of nothing
+        await vm.handleRecoveryEvent(.stall)
+        #expect(vm.state == .ready(upgrade))
+        #expect(vm.selectedQuality == .auto)
+        #expect(recorder.failed.isEmpty)
+    }
+
+    /// Past the window a stall is the link's, pick or not: R43 drops back and denies HD.
+    @Test func aStallLongAfterAPickStillDeniesHD() async {
+        let recorder = Recorder()
+        let upgrade = Self.hd1080()
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        _ = vm.commitUpgrade(Self.masterURL(upgrade))
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        for _ in 0...Int(PlayerViewModel.pickStallWindow) { vm.recordPlaybackProgress() }   // 11 s played at the pick
+        await vm.handleRecoveryEvent(.stall)
+        #expect(vm.state == .rung2Progressive(Self.standard))
+        #expect(recorder.failed == ["abcdefghijk"])
+    }
+
+    /// A pick made on the 360p takes effect at the hand-over (the HD item is built with it), so its window starts there.
+    @Test func aPickMadeBeforeTheHandOverCountsFromTheHandOver() async {
+        let recorder = Recorder()
+        let upgrade = Self.hd1080()
+        recorder.answer = upgrade
+        let vm = model(ScriptedResolver([Self.standard]), hd: recorder.upgrade)
+        await vm.open()
+        await waitForPending(vm)
+        vm.selectedQuality = .rendition(width: 1920, height: 1080)
+        for _ in 0..<60 { vm.recordPlaybackProgress() }  // the 360p plays a minute while the HD item stages
+        _ = vm.commitUpgrade(Self.masterURL(upgrade))
+        await vm.handleRecoveryEvent(.stall)
+        #expect(vm.state == .ready(upgrade))
+        #expect(vm.selectedQuality == .auto)
+        #expect(recorder.failed.isEmpty)
     }
 
     /// Plan review I4: a 360p incident while HD stages means the link cannot carry both. HD is off for the video, and the
@@ -701,4 +791,12 @@ struct PlayerViewModelUpgradeTests {
         try? await Task.sleep(for: .milliseconds(50))
         #expect(recorder.failed == ["abcdefghijk"])
     }
+}
+
+/// A settable wall clock for the pick window.
+private nonisolated final class Clock: @unchecked Sendable {
+    private let lock = NSLock()
+    private var now = Date(timeIntervalSince1970: 1_800_000_000)
+    var date: Date { lock.withLock { now } }
+    func advance(_ seconds: TimeInterval) { lock.withLock { now += seconds } }
 }
