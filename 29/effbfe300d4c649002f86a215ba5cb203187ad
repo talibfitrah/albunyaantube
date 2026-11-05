@@ -1,0 +1,177 @@
+CHANGELOG.md
+  s_f190d235aa73dd::t_55e6d1fad396a4 8-10,14
+android/app/build.gradle.kts
+  s_f190d235aa73dd::t_d9b7192db16dc7 90-91
+android/app/src/androidTest/java/com/albunyaan/tube/data/playlist/FakePlaylistDetailRepository.kt
+  s_f190d235aa73dd::t_4cc03e7981221a 118-119
+android/app/src/main/java/com/albunyaan/tube/data/extractor/NewPipeExtractorClient.kt
+  s_f190d235aa73dd::t_6eee859ab4e8b8 651-653
+android/app/src/main/java/com/albunyaan/tube/data/extractor/StreamModels.kt
+  s_f190d235aa73dd::t_3cb128b9896cda 123-125
+android/app/src/main/java/com/albunyaan/tube/data/playlist/NewPipePlaylistDetailRepository.kt
+  s_f190d235aa73dd::t_4af19f8c265081 3,5,46,54,56-61,146-149,151,157,238-243
+android/app/src/main/java/com/albunyaan/tube/data/playlist/PlaylistDetailRepository.kt
+  s_f190d235aa73dd::t_acdfed20434634 39-40,46-47
+android/app/src/main/java/com/albunyaan/tube/data/shorts/ShortsFeedRepository.kt
+  s_f190d235aa73dd::t_408fc73347c3de 95-101,149-151
+android/app/src/main/java/com/albunyaan/tube/data/source/ContentService.kt
+  s_f190d235aa73dd::t_7b4166de8f0295 76-83
+android/app/src/main/java/com/albunyaan/tube/data/source/Exclusions.kt
+  s_f190d235aa73dd::t_4b92f71e78b020 5-6,14,44,46-49,73-83,89-92,94-96,98-99,107-110,112,116-125,132,134,138,142-152,155-157,159-164,167,170-171,173-175,181-188,196,201,214
+android/app/src/main/java/com/albunyaan/tube/data/source/RetrofitContentService.kt
+  s_f190d235aa73dd::t_a7ef1552354e31 135,142-146
+android/app/src/main/java/com/albunyaan/tube/download/DownloadModels.kt
+  s_f190d235aa73dd::t_33887c13f11ce1 20-22
+android/app/src/main/java/com/albunyaan/tube/download/DownloadRepository.kt
+  s_f190d235aa73dd::t_b188ae0201fa5d 240-241,294-295,611,614
+android/app/src/main/java/com/albunyaan/tube/download/DownloadStorage.kt
+  s_f190d235aa73dd::t_e8be9023ef287b 176-184,433
+android/app/src/main/java/com/albunyaan/tube/download/DownloadWorker.kt
+  s_f190d235aa73dd::t_8531511fd0c94b 113-116,178-179,281,393
+android/app/src/main/java/com/albunyaan/tube/locale/LocaleManager.kt
+  s_f190d235aa73dd::t_1a63d272f4ad84 94,123,199
+android/app/src/main/java/com/albunyaan/tube/player/GlobalStreamResolver.kt
+  s_f190d235aa73dd::t_a002e0a1732d89 396-397,407,423,431-443
+android/app/src/main/java/com/albunyaan/tube/preferences/SettingsPreferences.kt
+  s_f190d235aa73dd::t_81d9ef35d9439d 12,118-120,129-134,145,147,181,199
+android/app/src/main/java/com/albunyaan/tube/ui/ChannelsFragmentNew.kt
+  s_f190d235aa73dd::t_6d478712fcd9ba 222,224
+android/app/src/main/java/com/albunyaan/tube/ui/ContentListViewModel.kt
+  s_f190d235aa73dd::t_050c977278bc44 106-110,115-117,120,123-162,213,271,302-303,326-329,383-385,410-417
+android/app/src/main/java/com/albunyaan/tube/ui/HomeViewModel.kt
+  s_f190d235aa73dd::t_4bded47adffb44 42,67-70,92-99,101-102
+android/app/src/main/java/com/albunyaan/tube/ui/PlaylistsFragmentNew.kt
+  s_f190d235aa73dd::t_0f661dbc27e1a0 212,214
+android/app/src/main/java/com/albunyaan/tube/ui/VideosFragmentNew.kt
+  s_f190d235aa73dd::t_59352e0fa545d2 232,234
+android/app/src/main/java/com/albunyaan/tube/ui/player/PlayerViewModel.kt
+  s_f190d235aa73dd::t_e4d4b01c0ca557 36,84,990-1008,1014-1018,1025-1028,1141,1197,2180-2181,2190-2193,2348-2376,2402
+android/app/src/test/java/com/albunyaan/tube/data/FakeInnerTube.kt
+  s_f190d235aa73dd::t_b9b830c451701d 16-18,22
+android/app/src/test/java/com/albunyaan/tube/data/playlist/PlaylistExclusionsTest.kt
+  s_f190d235aa73dd::t_726babe4db233d 38-39,45,97-126
+android/app/src/test/java/com/albunyaan/tube/data/shorts/ShortsFeedRepositoryTest.kt
+  s_f190d235aa73dd::t_1df744fb86ac94 81-108,112,115
+android/app/src/test/java/com/albunyaan/tube/data/source/ContentApiLiveLinkTest.kt
+  s_f190d235aa73dd::t_6e512eb6ee8938 6-7,29
+android/app/src/test/java/com/albunyaan/tube/data/source/ExclusionsTest.kt
+  s_f190d235aa73dd::t_2a8510a7ee6bf1 220-377
+android/app/src/test/java/com/albunyaan/tube/data/source/RetrofitContentServiceTest.kt
+  s_f190d235aa73dd::t_f414aa2cfc1ba3 10-11,35,166,279
+android/app/src/test/java/com/albunyaan/tube/download/DownloadRepositoryTest.kt
+  s_f190d235aa73dd::t_cce05992f2fa03 229,240
+android/app/src/test/java/com/albunyaan/tube/download/DownloadWorkerRangeTest.kt
+  s_f190d235aa73dd::t_d688982ad6fb80 128,139,154,349-364
+android/app/src/test/java/com/albunyaan/tube/locale/LocaleManagerTest.kt
+  s_f190d235aa73dd::t_80ea6f5335a601 4-6,9-10,21-23,27-28,194-242
+android/app/src/test/java/com/albunyaan/tube/player/GlobalStreamResolverTest.kt
+  s_f190d235aa73dd::t_17f8934836adb1 15,28-29,831-969
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_f190d235aa73dd::t_fb34b11a36afb1 238-354
+android/app/src/test/java/com/albunyaan/tube/ui/HomeViewModelTest.kt
+  s_f190d235aa73dd::t_e3c6018241fd96 187-206,336,347
+android/app/src/test/java/com/albunyaan/tube/ui/detail/PlaylistDetailViewModelTest.kt
+  s_f190d235aa73dd::t_616923c0fb93ff 344-345,441-442,884-885
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelDownloadPlaybackTest.kt
+  s_f190d235aa73dd::t_54ff21724870e6 27,29,63,67,470-545,549-551,553
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelPlaylistPagingTest.kt
+  s_f190d235aa73dd::t_efe44320224e6f 267-332,364-365
+android/app/src/test/java/com/albunyaan/tube/ui/player/PlayerViewModelTestDoubles.kt
+  s_f190d235aa73dd::t_de0cdc63c7180e 58-61,87,176-178,208,210,214-215
+ios/FitrahTube/App/AppContainer.swift
+  s_f190d235aa73dd::t_9cf1949b51e148 170,272,726-729
+ios/FitrahTube/Catalog/BackendAvailabilityGate.swift
+  s_f190d235aa73dd::t_f87cbe70815b87 29-31,34,39,42-46,49-50,53-55,64,69-96,99-115,117-131,133,135-136,205-207,209-210,212-213,215,217-219,221,226,230
+ios/FitrahTube/Features/Detail/BrowseSource.swift
+  s_f190d235aa73dd::t_98b27c825d40f3 95,111,120,125-129,144,152-158
+ios/FitrahTube/Features/Home/HomeView.swift
+  s_f190d235aa73dd::t_736fde03bd2768 85,88
+ios/FitrahTube/Features/Home/HomeViewModel.swift
+  s_f190d235aa73dd::t_a58c5a32ce42ed 34-35,79-85,105,119,127,133-144,147
+ios/FitrahTube/Features/Lists/ContentListView.swift
+  s_f190d235aa73dd::t_ce14126af109c1 127-128,132
+ios/FitrahTube/Features/Lists/ContentListViewModel.swift
+  s_f190d235aa73dd::t_95af9f85ea6a40 138-139,193-200,240,252,260,274-285,290
+ios/FitrahTube/Features/Me/MeFeedRepository.swift
+  s_f190d235aa73dd::t_d95742a0709b13 50-53,62-66,72-73,75-83,87,114,119-125,150-151,158-159,193,200,216-217,244,249-291,389-391,396-398,400
+ios/FitrahTube/Features/Offline/OfflineGateClient.swift
+  s_f190d235aa73dd::t_0b894bf17c149d 16-17,83-86,89-90,110-111,114,126-127,129,133,135
+ios/FitrahTube/Features/Offline/OfflineManager.swift
+  s_f190d235aa73dd::t_f6ecbd646c2a9e 984-992
+ios/FitrahTube/Features/Offline/OfflineResolver.swift
+  s_f190d235aa73dd::t_95e15431fe9e45 6-7,23-25,38-44,54
+ios/FitrahTube/Features/Player/HDStager.swift
+  s_f190d235aa73dd::t_2b96d13126b97c 43-46
+ios/FitrahTube/Features/Player/PlayerHostView.swift
+  s_f190d235aa73dd::t_fe75114b16278d 92-94,97
+ios/FitrahTube/Features/Player/PlayerQueue.swift
+  s_f190d235aa73dd::t_085a5ef84c697c 141-145
+ios/FitrahTube/Features/Player/PlayerScreen.swift
+  s_f190d235aa73dd::t_230d2d6d36e897 150-151,360-361,366-368,370-371,676,829-836
+ios/FitrahTube/Features/Player/PlayerViewModel.swift
+  s_f190d235aa73dd::t_90e5e264b00328 60-62,67-73,191-196,200-209,222,232-233,831-837,889,914,1144,1153-1156,1169,1177-1183,1197-1212,1217-1223,1227,1250,1265
+ios/FitrahTube/Features/Player/QualityCeiling.swift
+  s_f190d235aa73dd::t_6e1ebf61e48b6b 91,100-104,134,137-142,191-200,202,212-230
+ios/FitrahTubeTests/ContentListViewModelTests.swift
+  s_f190d235aa73dd::t_f9c015e05cc2e3 902-979
+ios/FitrahTubeTests/ExclusionsTests.swift
+  s_f190d235aa73dd::t_88bfb47a15239d 28-30,34-35,39,43-44,47,91-93,227,404-615
+ios/FitrahTubeTests/HDStagerTests.swift
+  s_f190d235aa73dd::t_6ff215dd4aa94b 237-249
+ios/FitrahTubeTests/HomeViewModelTests.swift
+  s_f190d235aa73dd::t_c0416a737af358 236-313
+ios/FitrahTubeTests/MeFeedRepositoryTests.swift
+  s_f190d235aa73dd::t_89e434c9084b0b 118,125-140,153,157,180,188-351
+ios/FitrahTubeTests/OfflineGateTests.swift
+  s_f190d235aa73dd::t_d4a7335f10e667 179-193
+ios/FitrahTubeTests/OfflineManagerTests.swift
+  s_f190d235aa73dd::t_78ed6d1c05148f 287-303,3471
+ios/FitrahTubeTests/OfflinePlaybackTests.swift
+  s_f190d235aa73dd::t_8edd6655af7c54 124,142,156,169,181-216,220,234,253,323,622,647
+ios/FitrahTubeTests/PlayerViewModelTests.swift
+  s_f190d235aa73dd::t_5bd77ed53ad5ec 378
+ios/FitrahTubeTests/PlayerViewModelUpgradeTests.swift
+  s_f190d235aa73dd::t_047d1a041a769f 24-34,181-300,338-427
+ios/FitrahTubeTests/QualityCeilingTests.swift
+  s_f190d235aa73dd::t_f4dfd6a07642f6 315,317-318,320-345,360-369,421-434
+ios/FitrahTubeTests/Support/PlayerTestDoubles.swift
+  s_f190d235aa73dd::t_3aa2aa52fb5158 96-97,203,208,211
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/BrowseClient.swift
+  s_f190d235aa73dd::t_d6499be69c64e6 8-9,239,244,330-342,464-466,503
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/ManifestCache.swift
+  s_f190d235aa73dd::t_7e6e67a9874775 4,45-47,52-53
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/Models.swift
+  s_f190d235aa73dd::t_1b61f64575d00a 61-65,78-80,84-87,91,100
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/PlayerResponseParser.swift
+  s_f190d235aa73dd::t_ec8c9ebcd838c0 26-27,37-38,48,121-122,232,234,241
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/StreamResolver.swift
+  s_f190d235aa73dd::t_ef040cdf6177bd 362-384,386-388,431,439,451,507,531,534,537-539,651-661
+ios/Packages/InnerTubeKit/Sources/InnerTubeKit/TVAdaptive.swift
+  s_f190d235aa73dd::t_ad8655a28e54e1 5-6,33,48-50
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/BrowseClientTests.swift
+  s_f190d235aa73dd::t_89f1fb21986339 176-203
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/ManifestCacheTests.swift
+  s_f190d235aa73dd::t_4a730d59a5a29a 23,29-30,44-55,64-73
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/StreamResolverTests.swift
+  s_f190d235aa73dd::t_1dd1c6894cb2c1 226-275,1307-1308,1313-1386,1390-1423
+ios/Packages/InnerTubeKit/Tests/InnerTubeKitTests/TVAdaptiveTests.swift
+  s_f190d235aa73dd::t_391f1b801624c1 120-139
+ios/project.yml
+  s_f190d235aa73dd::t_172def4550234c 28
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29effbfe300d4c649002f86a215ba5cb203187ad",
+  "prompts": {},
+  "sessions": {
+    "s_f190d235aa73dd": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "a4a02572-c1ec-4d9c-a3dd-070e681c43ff",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
