@@ -3,6 +3,8 @@ package com.albunyaan.tube.data.source
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.squareup.moshi.Moshi
 import com.squareup.moshi.kotlin.reflect.KotlinJsonAdapterFactory
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.test.runTest
 import okhttp3.OkHttpClient
 import okhttp3.mockwebserver.MockResponse
@@ -24,7 +26,7 @@ class ContentApiLiveLinkTest {
         .addConverterFactory(MoshiConverterFactory.create(Moshi.Builder().addLast(KotlinJsonAdapterFactory()).build()))
         .build()
         .create(ContentApi::class.java)
-    private val service = RetrofitContentService(api, Exclusions(api))
+    private val service = RetrofitContentService(api, Exclusions(api, { 0L }, CoroutineScope(Dispatchers.IO)))
 
     @After fun tearDown() = server.shutdown()
 

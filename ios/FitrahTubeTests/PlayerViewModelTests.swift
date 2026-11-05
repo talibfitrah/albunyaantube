@@ -375,7 +375,7 @@ struct PlayerViewModelTests {
             sessionStore: SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: keyValueStore),
             cache: ManifestCache(remoteConfig: config), gate: AlwaysAvailable(),
             monotonicClock: clock, wallClock: clock, locale: InnerTubeLocale(hl: "en", gl: "US"),
-            minPostSpacing: .zero))
+            minPostSpacing: .zero), gate: nil)
 
         let first = try await live.resolve("V2Brp_esIVI", purpose: .player, kind: .player,
                                            sourceChannelId: nil, forceRefresh: false)

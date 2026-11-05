@@ -12,6 +12,7 @@ import com.albunyaan.tube.data.source.ContentSearchResult
 import com.albunyaan.tube.data.source.ContentService
 import kotlinx.coroutines.CompletableDeferred
 import kotlinx.coroutines.async
+import kotlinx.coroutines.cancel
 import kotlinx.coroutines.cancelAndJoin
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -24,6 +25,8 @@ import org.junit.After
 import org.junit.Assert.*
 import org.junit.Before
 import org.junit.Test
+import org.mockito.kotlin.doSuspendableAnswer
+import org.mockito.kotlin.stub
 import java.util.concurrent.ConcurrentHashMap
 import java.util.concurrent.atomic.AtomicInteger
 import java.util.concurrent.atomic.AtomicReference
@@ -823,6 +826,145 @@ class GlobalStreamResolverTest {
         assertEquals(1, fakeProvider.getCallCount("vid_kept"))
         // One registry GET per resolve: the exclusion check reads the gate's own answer.
         org.mockito.kotlin.verify(api, org.mockito.kotlin.times(2)).getChannel("UCsource")
+    }
+
+    @Test
+    fun `a video excluded from its uploader's channel does not play without channel context`() = runTest {
+        // Favorites, Downloads, Search, deep links: no sourceChannelId, and a channel video is never registered alone.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCuploader")).thenReturn(
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lecture_hidden")))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCunknown")).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_hidden", createMockStreams("lecture_hidden").copy(uploaderChannelId = "UCuploader"))
+        fakeProvider.setResult("lecture_kept", createMockStreams("lecture_kept").copy(uploaderChannelId = "UCuploader"))
+        fakeProvider.setResult("lecture_other", createMockStreams("lecture_other").copy(uploaderChannelId = "UCunknown"))
+
+        try {
+            gatedResolver.resolveStreams("lecture_hidden", caller = "test")
+            fail("Expected ContentUnavailableException for a video excluded from its uploader's channel")
+        } catch (e: ContentUnavailableException) {
+            assertEquals("lecture_hidden", e.videoId)
+        }
+        assertNotNull(gatedResolver.resolveStreams("lecture_kept", caller = "test"))
+        // A channel outside the registry (404) excludes nothing.
+        assertNotNull(gatedResolver.resolveStreams("lecture_other", caller = "test"))
+    }
+
+    @Test
+    fun `a video whose uploader's channel is gone does not play without channel context`() = runTest {
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_gone", createMockStreams("lecture_gone").copy(uploaderChannelId = "UCgone"))
+
+        try {
+            gatedResolver.resolveStreams("lecture_gone", caller = "test")
+            fail("Expected ContentUnavailableException for a video of an archived (410) channel")
+        } catch (e: ContentUnavailableException) {
+            assertEquals("lecture_gone", e.videoId)
+        }
+    }
+
+    @Test
+    fun `a video approved on its own plays though its uploader's channel is gone`() = runTest {
+        // Specific beats general: the video's own 2xx outranks its channel's 410.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        // The gate's own answer is the approval: a second ask that fails must not turn it into a block.
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any()))
+            .thenReturn(retrofit2.Response.success(Unit))
+            .thenThrow(RuntimeException("second HEAD"))
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_approved", createMockStreams("lecture_approved").copy(uploaderChannelId = "UCgone"))
+
+        assertNotNull(gatedResolver.resolveStreams("lecture_approved", caller = "test"))
+        org.mockito.kotlin.verify(api, org.mockito.kotlin.times(1)).checkVideoAvailable("lecture_approved")
+    }
+
+    @Test
+    fun `a failed video check fails open though its uploader's channel is gone`() = runTest {
+        // Unknown is not "not approved": only a known 404 lets the channel's 410 stand in for the video.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any()))
+            .thenAnswer { throw java.io.IOException("backend down") }
+        org.mockito.kotlin.whenever(api.getChannel("UCgone")).thenReturn(
+            retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        )
+        val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, backgroundScope)
+        val gatedResolver = GlobalStreamResolver.createForTesting(
+            fakeProvider,
+            com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+            exclusions,
+        )
+        fakeProvider.setResult("lecture_unknown", createMockStreams("lecture_unknown").copy(uploaderChannelId = "UCgone"))
+
+        assertNotNull(gatedResolver.resolveStreams("lecture_unknown", caller = "test"))
+    }
+
+    @Test
+    fun `a stalled uploader channel ask fails open within the list wait`(): Unit = runBlocking {
+        // Real time: the resolver's test scope is Unconfined, so its waits run on the wall clock too.
+        val api: com.albunyaan.tube.data.source.api.ContentApi = org.mockito.kotlin.mock()
+        org.mockito.kotlin.whenever(api.checkVideoAvailable(org.mockito.kotlin.any())).thenReturn(
+            retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+        )
+        org.mockito.kotlin.whenever(api.getChannel("UCstalled")).thenReturn(
+            retrofit2.Response.success(com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("lecture_known")))
+        )
+        val askScope = kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.SupervisorJob() + kotlinx.coroutines.Dispatchers.Default)
+        try {
+            val exclusions = com.albunyaan.tube.data.source.Exclusions(api, { 0L }, askScope)
+            exclusions.channel("UCstalled") // an earlier answer in the memo
+            api.stub { onBlocking { getChannel("UCstalled") } doSuspendableAnswer { kotlinx.coroutines.awaitCancellation() } }
+            val gatedResolver = GlobalStreamResolver.createForTesting(
+                fakeProvider,
+                com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions),
+                exclusions,
+            )
+            fakeProvider.setResult("lecture_slow", createMockStreams("lecture_slow").copy(uploaderChannelId = "UCstalled"))
+            fakeProvider.setResult("lecture_known", createMockStreams("lecture_known").copy(uploaderChannelId = "UCstalled"))
+
+            // A hung backend must not eat the player's resolve budget: the video plays.
+            assertNotNull(gatedResolver.resolveStreams("lecture_slow", caller = "test", timeoutMs = 5_000L))
+            // But a stale list beats showing what the admin hid.
+            try {
+                gatedResolver.resolveStreams("lecture_known", caller = "test", timeoutMs = 5_000L)
+                fail("Expected ContentUnavailableException from the memo's last answer")
+            } catch (e: ContentUnavailableException) {
+                assertEquals("lecture_known", e.videoId)
+            }
+        } finally {
+            askScope.cancel()
+        }
     }
 
     @Test

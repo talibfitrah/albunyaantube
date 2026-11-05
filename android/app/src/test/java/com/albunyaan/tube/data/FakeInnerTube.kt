@@ -13,9 +13,13 @@ class FakeInnerTube : Downloader() {
     /** Continuation token the request carries -> the answer. */
     val pages = mutableMapOf<String, String>()
 
+    /** Runs on each InnerTube call, e.g. to let a test clock pass the time a page takes. */
+    var onCall: () -> Unit = {}
+
     override fun execute(request: Request): Response {
         // NewPipe reads the web client version off sw.js before its first InnerTube call.
         if (request.url().contains("sw.js")) return Response(200, "", emptyMap(), SW_JS, request.url())
+        onCall()
         val body = request.dataToSend()?.let { String(it) }.orEmpty()
         val answer = pages.entries.firstOrNull { body.contains("\"continuation\":\"${it.key}\"") }?.value ?: "{}"
         return Response(200, "", emptyMap(), answer, request.url())

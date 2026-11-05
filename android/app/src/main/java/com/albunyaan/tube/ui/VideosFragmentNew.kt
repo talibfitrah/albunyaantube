@@ -229,10 +229,9 @@ class VideosFragmentNew : Fragment(R.layout.fragment_simple_list) {
 
                             val screenWidthDp = resources.configuration.smallestScreenWidthDp
                             val rv = binding.recyclerView
-                            // A new list (another query) opens at its best match; a page appended below, or the same list, keeps its place.
-                            val replaced = adapter.currentList.let { it.isNotEmpty() && videos.take(it.size) != it }
+                            val toTop = opensAtTop(adapter.currentList, videos, state.inPlace, atTop = !rv.canScrollVertically(-1))
                             adapter.submitList(videos) {
-                                if (replaced) rv.scrollToPosition(0)
+                                if (toTop) rv.scrollToPosition(0)
                                 autofillHelper.check(
                                     itemCount = videos.size,
                                     hasMoreData = state.hasMoreData,

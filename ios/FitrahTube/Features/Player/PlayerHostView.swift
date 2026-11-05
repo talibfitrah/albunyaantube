@@ -89,9 +89,12 @@ struct PlayerHostView: UIViewControllerRepresentable {
 
     func updateUIViewController(_ controller: AVPlayerViewController, context: Context) {
         let path = context.coordinator.path
-        let freshItem = QualityOption.needsFreshItem(from: context.coordinator.appliedQuality, to: quality,
+        // The ceilings bind an HLS item only: a pick on the 360p file (while HD is on its way) is for the HD item.
+        let isHLS = if case .hls = state.resolved?.stream { true } else { false }
+        let freshItem = isHLS && QualityOption.needsFreshItem(from: context.coordinator.appliedQuality, to: quality,
                                                      layerSize: context.coordinator.layerSize,
                                                      playing: controller.player?.currentItem?.presentationSize ?? .zero,
+                                                     renditions: QualityOption.sizes(of: state.resolved?.stream.synthetic),
                                                      isExpensive: path.isExpensive, isConstrained: path.isConstrained)
         controller.player = Self.player(for: state, replacing: controller.player, audioOnly: audioOnly,
                                         continuesCurrentVideo: continuesCurrentVideo(context),

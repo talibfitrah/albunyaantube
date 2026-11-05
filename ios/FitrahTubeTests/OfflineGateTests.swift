@@ -176,6 +176,21 @@ import Testing
         #expect(await answer(channel: 410, video: 404, videoBody: Self.notFoundEnvelope) == .gone)
     }
 
+    /// Specific beats general (Android parity, `BackendAvailabilityGate.plays`): a video approved on its own (its route
+    /// answers this video's model) plays through its channel's 410, so it saves and its saved copy keeps. Its own
+    /// `offlineAllowed=false` still blocks.
+    @Test func aVideoApprovedOnItsOwnOutranksItsChannels410() async {
+        #expect(await answer(channel: 410, video: 200, videoBody: #"{"youtubeId":"xc7keR2piUM"}"#) == .allowed)
+        #expect(await answer(channel: 410, video: 200,
+                             videoBody: #"{"youtubeId":"xc7keR2piUM","offlineAllowed":false}"#) == .notAllowed)
+    }
+
+    /// The approval that outranks a channel's 410 could not be asked (the video leg failed): no answer, never a
+    /// delete -- the sweep keeps the copy and asks again.
+    @Test func aChannels410WithAVideoLegThatFailedIsNoAnswer() async {
+        #expect(await answer(channel: 410, video: 503) == .unreachable)
+    }
+
     /// Review P1/P3: a channel playback lets through (200, or 404 — not in the registry) defers to
     /// the video's own answer, and the channel WAS asked: deleting the channel leg turns this red.
     @Test func aChannelPlaybackAllowsDefersToTheVideosOwnAnswer() async {

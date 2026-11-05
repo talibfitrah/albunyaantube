@@ -341,7 +341,8 @@ class PlaylistDetailViewModelTest {
             override suspend fun getItems(
                 playlistId: String,
                 page: Page?,
-                itemOffset: Int
+                itemOffset: Int,
+                walkBudgetMs: Long?,
             ): PlaylistPage<PlaylistItem> {
                 pageNumber++
 
@@ -437,7 +438,8 @@ class PlaylistDetailViewModelTest {
             override suspend fun getItems(
                 playlistId: String,
                 page: Page?,
-                itemOffset: Int
+                itemOffset: Int,
+                walkBudgetMs: Long?,
             ): PlaylistPage<PlaylistItem> {
                 receivedOffsets.add(itemOffset)
                 pageNumber++
@@ -879,7 +881,8 @@ class PlaylistDetailViewModelTest {
         override suspend fun getItems(
             playlistId: String,
             page: Page?,
-            itemOffset: Int
+            itemOffset: Int,
+            walkBudgetMs: Long?,
         ): PlaylistPage<PlaylistItem> {
             itemsCallCount++
             itemsError?.let { throw it }

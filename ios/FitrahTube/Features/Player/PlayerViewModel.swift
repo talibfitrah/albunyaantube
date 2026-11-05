@@ -57,12 +57,20 @@ extension StreamResolving {
 /// exactly what `RateLimitedResolver` (the decorator wrapped around this) now performs.
 struct LiveStreamResolver: StreamResolving {
     let resolver: StreamResolver
+    /// Every stream the app plays, casts or saves resolves here, so this is where the uploader's exclusions
+    /// (`BackendAvailabilityGate.plays`) reach a video opened with no channel context. nil only in tests.
+    let gate: BackendAvailabilityGate?
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind,
                  sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
-        try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
-                                   forceRefresh: forceRefresh, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
+        let resolved = try await resolver.resolve(videoId, purpose: purpose, sourceChannelId: sourceChannelId,
+                                                  forceRefresh: forceRefresh, requiresMuxed: requiresMuxed,
+                                                  requiresHLS: requiresHLS)
+        guard await gate?.plays(videoId, uploader: resolved.channelId, askingTheVideo: false) ?? true else {
+            throw ExtractionError.unavailable(videoId: videoId)
+        }
+        return resolved
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {
@@ -180,11 +188,25 @@ extension StreamState {
     /// Android's -- `QualityTrackSelector` never persists it either (player.md §4.3). `PlayerHostView`
     /// re-applies this to every new `AVPlayerItem` it builds, so a pick made mid-play survives a
     /// re-resolve. A picked rendition ends with its video (`beginStream`).
-    var selectedQuality: QualityOption = .auto
+    var selectedQuality: QualityOption = .auto {
+        didSet { if case .rendition = selectedQuality, selectedQuality != oldValue { pickPlayed = 0 } }
+    }
+    /// Seconds played since the rendition pick took effect on the stream on screen (its `didSet`, or the HD hand-over for
+    /// a pick made on the 360p); nil = no pick yet. Read by `handleRecoveryEvent` against `pickStallWindow`.
+    private var pickPlayed: TimeInterval?
 
     /// The quality menu's rows for the stream on screen (`QualityOption.menu(for:)`): empty -- no menu -- until its
     /// renditions load, and for a single file; Auto and Data Saver alone while its master could not be read.
-    private(set) var qualityOptions: [QualityOption] = []
+    /// Owner report 2026-11-03: a 360p with HD on its way (`hdOnItsWay`) offers the renditions that HD brings, as the
+    /// 360p's own answer listed them (`Resolved.videoSizes`), so the choice is there from the first frame; a pick made then
+    /// is the ceiling the HD item is built with (`HDStager`'s `configure`). Nothing above 360p means no HD (`TVAdaptive.select`).
+    var qualityOptions: [QualityOption] {
+        guard hdOnItsWay, case .rung2Progressive(let standard) = state else { return streamQualityOptions }
+        return standard.videoSizes.contains { min($0.width, $0.height) > 360 } ? QualityOption.menu(for: standard.videoSizes) : []
+    }
+    private var streamQualityOptions: [QualityOption] = []
+    /// From the HD ask until HD commits or will not come (no answer, a failure, a drop, an expiry).
+    private var hdOnItsWay = false
     private(set) var qualityLoad: Task<Void, Never>?
     /// The stream `qualityOptions` belong to, and whether its master could not be read (read again on its next item).
     private var qualityStreamURL: URL?
@@ -197,7 +219,7 @@ extension StreamState {
         let resolved = currentItem == nil ? nil : state.resolved
         let url = resolved.map { PlayerHostView.streamURL($0.stream) }
         guard url != qualityStreamURL || qualityReadFailed else { return }
-        if url != qualityStreamURL { qualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
+        if url != qualityStreamURL { streamQualityOptions = [] }   // a retry on the same stream keeps its two rows (Cubic r3)
         qualityStreamURL = url
         qualityReadFailed = false
         qualityLoad?.cancel()                   // A -> B -> A: the first A's late failure must not clear the second's rows
@@ -207,8 +229,8 @@ extension StreamState {
                 guard !Task.isCancelled, url == qualityStreamURL else { return }
                 // A master that could not be read is read again for the next item built on this stream; meanwhile the two
                 // rows no rendition decides stay, so a carried Data Saver can be turned off (Cubic r2 P3).
-                if let sizes { qualityOptions = QualityOption.menu(for: sizes) } else {
-                    qualityOptions = [.auto, .dataSaver]
+                if let sizes { streamQualityOptions = QualityOption.menu(for: sizes) } else {
+                    streamQualityOptions = [.auto, .dataSaver]
                     qualityReadFailed = true
                 }
             }
@@ -806,6 +828,13 @@ extension StreamState {
         // host's replace-and-seek; `fire` already recorded the resume intent), before the budget machine runs and spending
         // nothing. HD is off for this video (R41). The 360p's own later incidents get Phase 1's full ladder.
         if let standard = standardBeforeUpgrade {    // set only while the committed HD (`.tvSamsung`) stream is on screen
+            // Owner ruling 2026-11-04 (weak link): a stall right after a manual pick is the pick's forced start. The pick
+            // goes back to Auto on this same HD stream (the host rebuilds the stalled item, `failedItem`); HD stays.
+            // Not after an outage: that stall says nothing about the pick (R43's outage path below keeps it, Cubic).
+            if event == .stall, !afterOutage, case .rendition = selectedQuality, let pickPlayed, pickPlayed <= Self.pickStallWindow {
+                selectedQuality = .auto
+                return
+            }
             standardBeforeUpgrade = nil
             state = .rung2Progressive(standard)
             if let hd, !afterOutage { await hd.failed(hostVideoId) }
@@ -857,7 +886,7 @@ extension StreamState {
             // its result is discarded like any other.
             generation += 1
             resolveTask?.cancel()
-            upgradeTask?.cancel()                // spec R43: nothing can take its answer now
+            dropUpgrade()                        // spec R43: nothing can take its answer now
             state = .recoveryExhausted(resolved)
         case .stepDownRung:
             steppedDownVideoIds.insert(hostVideoId)
@@ -882,6 +911,7 @@ extension StreamState {
     /// sustained playback also refunds the lifetime retries (§9.1, Task 32 fix round 1).
     func recordPlaybackProgress(now: Date = Date()) {
         recoveryBudget.recordPlaybackProgress(now: isLiveChannelMode ? now : nil)
+        pickPlayed? += PlaybackRecovery.sampleInterval   // one call per sampler tick that advanced
     }
 
     // MARK: - Live-channel mode (spec §9.1)
@@ -1111,6 +1141,7 @@ extension StreamState {
     private func startUpgrade(for standard: Resolved, videoId: String) {
         guard let hd, !isOfflinePlayback, !upgradesStopped else { return }
         let report = hdFailedReport
+        hdOnItsWay = true
         upgradeTask = Task {
             await report?.value
             guard !Task.isCancelled else { return }
@@ -1119,7 +1150,10 @@ extension StreamState {
             // The 360p it was asked for is still on screen (stage 9 I-C9d: not `generation`, which a silent refresh that
             // never lands also moves; every resolve that does land cancels this task).
             guard var upgrade = await hd.upgrade(videoId), !Task.isCancelled, !upgradesStopped,
-                  state == .rung2Progressive(standard), resolvedVideoId == videoId else { return }
+                  state == .rung2Progressive(standard), resolvedVideoId == videoId else {
+                if !Task.isCancelled { hdWillNotCome() }   // a cancel is `dropUpgrade`'s, which a newer ask may follow
+                return
+            }
             upgrade.mintNetwork = network
             pendingUpgrade = upgrade
         }
@@ -1132,12 +1166,20 @@ extension StreamState {
         guard let pending = pendingUpgrade else { return nil }
         guard !pending.isExpired(now: now), now.timeIntervalSince(pending.resolvedAt) < Self.upgradeMaxAge else {
             pendingUpgrade = nil
+            hdWillNotCome()
             return nil
         }
         return pending
     }
 
     static let upgradeMaxAge: TimeInterval = 30 * 60
+
+    /// Owner ruling 2026-11-04 (weak link): how much PLAYBACK after a manual pick a stall of the HD stream is the pick's.
+    /// The pick rebuilds the item (a forced start, empty buffer). One the link cannot carry plays what it buffered to
+    /// start (AVPlayer starts at about a segment; the `sidx` segments run ~5 s), then stalls, and the watchdog fires 6 s
+    /// after its last progress: well past any short wall-clock window (adversarial review). Played time, not wall time,
+    /// so a pause or the forced start's own buffering spends none of it. Two segments: 10 s. A later stall is the link's.
+    static let pickStallWindow: TimeInterval = 10
 
     /// The host's hand-over, asked synchronously right before it swaps the item: true = the HD stream is still wanted for
     /// the 360p on screen, and `state` is now `.ready` with it (the update pass then reuses the swapped item, whose URL
@@ -1152,13 +1194,37 @@ extension StreamState {
         }
         pendingUpgrade = nil
         standardBeforeUpgrade = standard
+        hdOnItsWay = false
+        // The menu stays up across the swap: the HD stream's own rows, now (its model carries them), so the item the host
+        // builds next finds them in place.
+        qualityLoad?.cancel()
+        qualityStreamURL = masterURL
+        qualityReadFailed = false
+        streamQualityOptions = QualityOption.menu(for: QualityOption.sizes(of: pending.stream.synthetic))
+        // A pick from the 360p answer's rows that the HD stream has none for stays a ceiling, on a row it has: the
+        // biggest at or below it (rows run biggest first), else the smallest (the least data, as asked).
+        if case .rendition(let width, let height) = selectedQuality, !streamQualityOptions.contains(selectedQuality) {
+            selectedQuality = streamQualityOptions.first {
+                guard let size = $0.size else { return false }
+                return size.width <= CGFloat(width) && size.height <= CGFloat(height)
+            } ?? streamQualityOptions.last { $0.size != nil } ?? .auto
+        }
+        if case .rendition = selectedQuality { pickPlayed = 0 }   // the pick's forced start is this swap
         state = .ready(pending)
         return true
+    }
+
+    /// HD will not come for this 360p: its rows go, and a pick made from them goes too (Cubic r2), as no menu is left to
+    /// show or undo it.
+    private func hdWillNotCome() {
+        if hdOnItsWay, case .rendition = selectedQuality { selectedQuality = .auto }
+        hdOnItsWay = false
     }
 
     /// The staged HD item failed, never buffered, or the 360p had an incident while it staged: stay on 360p; no HD for
     /// this video (R41).
     func upgradeFailed() {
+        hdWillNotCome()
         guard pendingUpgrade != nil else { return }
         pendingUpgrade = nil
         let videoId = hostVideoId
@@ -1181,6 +1247,7 @@ extension StreamState {
     /// ponytail: a push-over and a return keeps that play on 360p; ask again on appear if that ever matters.
     func stopUpgrade() {
         upgradesStopped = true
+        hdWillNotCome()
         dropUpgrade()
         liveFollowUp?.cancel()
     }
@@ -1195,6 +1262,7 @@ extension StreamState {
     private func dropUpgrade() {
         upgradeTask?.cancel()
         pendingUpgrade = nil
+        hdOnItsWay = false
     }
 
     // MARK: - Cast (Task 8, spec §10)

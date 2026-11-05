@@ -17,7 +17,9 @@ data class DownloadRequest(
     val playlistSize: Int? = null,
     /** Kept for local playback's favourite (the server needs a channel); null on older downloads. */
     val channelName: String? = null,
-    val durationSeconds: Int? = null
+    val durationSeconds: Int? = null,
+    /** The uploader's `UC…` id, saved by the worker's resolve, so the saved copy is checked like a stream; null before 1.0.8. */
+    val channelId: String? = null,
 )
 
 enum class DownloadStatus { QUEUED, RUNNING, PAUSED, COMPLETED, FAILED, CANCELLED }

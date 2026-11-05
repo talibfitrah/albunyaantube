@@ -31,6 +31,8 @@ import Foundation
     private var hasMore = true // optimistic default, mirrors Android (shell-home.md:B9)
     private var isLoadingMore = false
     private var category: String?
+    /// How many of `sections` page 1 brought: the rows `refreshInPlace` replaces.
+    private var firstPageCount = 0
 
     /// Gate wave-2 W2/W3 -- the same token `ContentListViewModel`/`FeaturedViewModel` use; see the
     /// full rationale there. Home was the P1 case: its `loadMore()` guard was only
@@ -74,6 +76,13 @@ import Foundation
         await performFullLoad(showLoading: false)
     }
 
+    /// The return after an idle spell (`Router.catalogToken`): page 1 again, IN PLACE. The sections loaded below it
+    /// stay, and the user's place in them, unless page 1 changed; a failure changes nothing on screen -- no banner.
+    func refreshInPlace() async {
+        guard !isFullLoading else { return }
+        await performFullLoad(showLoading: false, inPlace: true)
+    }
+
     /// Returns whether the fetch actually ran -- `HomeView` commits its `PaginationGuard` attempt
     /// only then (gate wave-2 W2).
     @discardableResult
@@ -93,7 +102,7 @@ import Foundation
         return generation == loadGeneration
     }
 
-    private func performFullLoad(showLoading: Bool) async {
+    private func performFullLoad(showLoading: Bool, inPlace: Bool = false) async {
         loadGeneration += 1
         let generation = loadGeneration
         isFullLoading = true
@@ -107,7 +116,7 @@ import Foundation
         if case .content(let sections, let hasMore, true) = state {
             state = .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         }
-        let task = Task { await self.fetchFirstPage(showLoading: showLoading) }
+        let task = Task { await self.fetchFirstPage(showLoading: showLoading, inPlace: inPlace) }
         loadTask = task
         await task.value
         // Only the newest full load may reopen pagination -- `load()` never refuses (a filter
@@ -115,18 +124,27 @@ import Foundation
         if generation == loadGeneration { isFullLoading = false }
     }
 
-    private func fetchFirstPage(showLoading: Bool) async {
+    private func fetchFirstPage(showLoading: Bool, inPlace: Bool) async {
         if showLoading { state = .loading }
         do {
             let page = try await catalog.home(cursor: nil, categoryLimit: Self.categoryLimit,
                                                contentLimit: contentLimit(), category: category)
             guard !Task.isCancelled else { return }
-            sections = page.items
-            nextCursor = page.nextCursor
-            hasMore = page.hasMore // CursorPage.hasMore == (nextCursor != nil)
+            if inPlace, sections.count > firstPageCount,
+               Set(sections.prefix(firstPageCount).map(\.id)) == Set(page.items.map(\.id)) {
+                // `refreshInPlace` over more than page 1, and page 1 holds the same sections: the new page 1, then the
+                // sections below it, whose cursor still lines up. A changed page 1 replaces Home instead (a removed
+                // section must leave; the old cursor would skip or repeat sections).
+                sections = page.items + sections.dropFirst(firstPageCount)
+            } else {
+                sections = page.items
+                nextCursor = page.nextCursor
+                hasMore = page.hasMore // CursorPage.hasMore == (nextCursor != nil)
+            }
+            firstPageCount = page.items.count
             state = sections.isEmpty ? .empty : .content(sections: sections, hasMore: hasMore, isLoadingMore: false)
         } catch {
-            guard !Task.isCancelled else { return }
+            guard !Task.isCancelled, !inPlace else { return }
             errorToken += 1
             // Gate wave-2 W4: same policy as the lists (`content-lists.md:277-280`) -- a reload
             // failure with content already on screen keeps that content and says so in a transient

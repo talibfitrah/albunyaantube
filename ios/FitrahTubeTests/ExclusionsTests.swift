@@ -25,18 +25,26 @@ struct ExclusionsTests {
         var atom: Data?
         var delay: Duration?
 
+        private var inFlight = 0
+        private var peakInFlight = 0
+
         func answer(_ path: String, _ answer: Answer) { lock.withLock { answers[path] = answer } }
         func requests(_ path: String) -> Int { lock.withLock { counts[path] ?? 0 } }
         var backendMethods: [String] { lock.withLock { methods } }
+        /// The most channel/playlist GETs that were in flight at once.
+        var peak: Int { lock.withLock { peakInFlight } }
 
         func send(_ request: HTTPRequest) async throws -> HTTPResponse {
             let path = request.url.path
-            if path.hasPrefix("/api/v1/channels/") || path.hasPrefix("/api/v1/playlists/") {
+            if path.hasPrefix("/api/v1/channels/") || path.hasPrefix("/api/v1/playlists/") || path.hasPrefix("/api/v1/videos/") {
                 let answer = lock.withLock {
                     counts[path, default: 0] += 1
                     methods.append(request.method)
+                    inFlight += 1
+                    peakInFlight = max(peakInFlight, inFlight)
                     return answers[path] ?? .status(404)
                 }
+                defer { lock.withLock { inFlight -= 1 } }
                 if let delay { try await Task.sleep(for: delay) }
                 switch answer {
                 case .throwing: throw URLError(.notConnectedToInternet)
@@ -80,8 +88,9 @@ struct ExclusionsTests {
         func advance(_ seconds: TimeInterval) { lock.withLock { value += seconds } }
     }
 
-    private static func gate(_ backend: Backend, clock: Clock = Clock()) -> BackendAvailabilityGate {
-        BackendAvailabilityGate(transport: backend, baseURL: base, now: { clock.now })
+    private static func gate(_ backend: Backend, clock: Clock = Clock(),
+                             owner: @escaping @Sendable () async -> String? = { nil }) -> BackendAvailabilityGate {
+        BackendAvailabilityGate(transport: backend, baseURL: base, now: { clock.now }, owner: owner)
     }
 
     private static func client(_ backend: Backend, _ store: MemoryStore) -> BrowseClient {
@@ -215,7 +224,7 @@ struct ExclusionsTests {
         let gate = Self.gate(backend)
         let lists = try #require(await gate.exclusions(playlistId: "PLown", fresh: true))
         let items = [VideoItem(id: "vidA", title: "A", channelId: "UCowner"), VideoItem(id: "vidB", title: "B", channelId: "UCowner")]
-        #expect(await gate.visible(items, in: lists, fresh: true).map(\.id) == ["vidB"])
+        #expect(await gate.visible(items, in: lists, playlistId: "PLown", owner: nil, fresh: true)?.map(\.id) == ["vidB"])
     }
 
     @Test func aFailureAfterAGoodAnswerKeepsTheGoodAnswer() async {
@@ -390,6 +399,218 @@ struct ExclusionsTests {
         #expect(queued.items.isEmpty && queued.continuation == nil)
         let later = try await Self.source(backend).playlistItems("PL1", continuation: "next")
         #expect(later.items.isEmpty && later.nextContinuation == nil)
+    }
+
+    // MARK: - Bounds, accounts and 410s (review 2026-11-03)
+
+    /// A mixed-uploader playlist the backend does not list asks its channels a few at a time and only so many per
+    /// page, the channels with the most items first.
+    @Test func aMixedPlaylistAsksABoundedNumberOfChannelsAFewAtATime() async throws {
+        let backend = Backend()
+        backend.delay = .milliseconds(20)
+        backend.answer("/api/v1/channels/UCmain", .lists(videos: ["main-1"], playlists: []))
+        backend.answer("/api/v1/channels/UCgone", .status(410))
+        let items = (0..<30).map { VideoItem(id: "one-\($0)", title: "T", channelId: "UCone\($0)") }
+            + (0..<3).map { VideoItem(id: "main-\($0)", title: "T", channelId: "UCmain") }
+            + (0..<2).map { VideoItem(id: "gone-\($0)", title: "T", channelId: "UCgone") }
+        let gate = Self.gate(backend)
+
+        let shown = try #require(await gate.visible(items, in: Exclusions(registered: false), playlistId: "PLmixed", owner: nil, fresh: true))
+
+        let asked = (["UCmain", "UCgone"] + (0..<30).map { "UCone\($0)" }).map { backend.requests("/api/v1/channels/\($0)") }
+        #expect(asked.reduce(0, +) <= BackendAvailabilityGate.maxChannelAsks)
+        #expect(backend.peak <= BackendAvailabilityGate.maxConcurrentAsks)
+        let ids = shown.map(\.id)
+        #expect(!ids.contains("main-1"))                          // the channels with the most items were asked
+        #expect(!ids.contains("gone-0") && !ids.contains("gone-1"))  // a 410 channel's items are gone
+        #expect(ids.contains("one-0") && ids.contains("one-29"))      // asked (404) or past the cap: still shown
+    }
+
+    /// Each account has its own answers: a PERSONAL item's lists never carry over to the next account or a guest.
+    @Test func anotherAccountNeverReadsTheLastAccountsAnswers() async {
+        nonisolated final class Owner: @unchecked Sendable {
+            let lock = NSLock(); var uid: String? = "uid-A"; var switchTo: String?
+            /// The signed-in uid; a pending `switchTo` signs in right after this read (mid-fetch, for the ask).
+            var value: String? {
+                lock.withLock {
+                    defer { if let next = switchTo { uid = next; switchTo = nil } }
+                    return uid
+                }
+            }
+            func set(_ new: String?) { lock.withLock { uid = new } }
+        }
+        let owner = Owner()
+        let backend = Backend()
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidA"], playlists: []))
+        let gate = Self.gate(backend, owner: { owner.value })
+        #expect(await gate.exclusions(channelId: "UC1", fresh: true)?.videoIds == ["vidA"])
+
+        owner.set("uid-B")
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidB"], playlists: []))
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false)?.videoIds == ["vidB"])
+
+        owner.set(nil)   // signed out: the unsigned GET reads a PERSONAL item as missing
+        backend.answer("/api/v1/channels/UC1", .status(404))
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false) == Exclusions(registered: false))
+
+        // The account switches while a fetch is in flight: its answer, signed for the new account, is not kept
+        // under the old one.
+        owner.set("uid-C")
+        owner.lock.withLock { owner.switchTo = "uid-D" }
+        backend.answer("/api/v1/channels/UC1", .lists(videos: ["vidD"], playlists: []))
+        _ = await gate.exclusions(channelId: "UC1", fresh: true)
+        owner.set("uid-C")
+        #expect(await gate.exclusions(channelId: "UC1", fresh: false) == Exclusions(registered: false))
+    }
+
+    /// A 410 means gone on every channel list: the first page shows it, a later page ends the list.
+    @Test func a410ChannelIsGoneOnEveryTab() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-channel-videos-page1.json")
+        backend.nextPage = Self.fixture("browse-channel-videos-page2.json")
+        backend.answer("/api/v1/channels/UC1", .status(410))
+        let source = Self.source(backend)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelVideos("UC1", continuation: nil) }
+        let later = try await source.channelVideos("UC1", continuation: "next")
+        #expect(later.items.isEmpty && later.nextContinuation == nil)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelTab("UC1", tab: .shorts, continuation: nil) }
+        let shorts = try await source.channelTab("UC1", tab: .shorts, continuation: "next")
+        #expect(shorts.items.isEmpty && shorts.nextContinuation == nil)
+
+        backend.firstPage = Self.fixture("browse-channel-playlists.json")
+        backend.nextPage = Self.fixture("browse-channel-playlists-page2.json")
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.channelPlaylists("UC1", continuation: nil) }
+        let playlists = try await source.channelPlaylists("UC1", continuation: "next")
+        #expect(playlists.items.isEmpty && playlists.nextContinuation == nil)
+
+        backend.atom = Self.fixture("atom-channel.xml")
+        await #expect(throws: BrowseSourceError.unavailable) {
+            try await Self.source(backend, degraded: true).channelVideos("UC1", continuation: nil)
+        }
+    }
+
+    /// A playlist the backend does not list, excluded from its own channel, is gone when a deep link opens it, and
+    /// the player queues nothing from it.
+    @Test func aPlaylistExcludedFromItsChannelIsGoneFromADeepLink() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.nextPage = Self.fixture("browse-playlist.json")
+        let owner = try #require(try await Self.source(backend).playlistItems("PLown", continuation: nil).items.first?.channelId)
+        backend.answer("/api/v1/channels/\(owner)", .lists(videos: [], playlists: ["PLown"]))
+
+        let source = Self.source(backend)
+        await #expect(throws: BrowseSourceError.unavailable) { try await source.playlistItems("PLown", continuation: nil) }
+        let later = try await source.playlistItems("PLown", continuation: "next")
+        #expect(later.items.isEmpty && later.nextContinuation == nil)
+        let queue = LivePlaylistQueueSource(client: Self.client(backend, MemoryStore()),
+                                            titles: TitlesClient(transport: backend, baseURL: Self.base, deviceId: DeviceId(value: "t")),
+                                            gate: Self.gate(backend))
+        let queued = try await queue.page(playlistId: "PLown", continuation: nil)
+        #expect(queued.items.isEmpty && queued.continuation == nil)
+    }
+
+    /// A deep-linked playlist whose items all come from OTHER uploaders, excluded by its owner: the owner comes from
+    /// the header (InnerTubeKit), not the bylines, so it is still gone. Registered or not (a channel exclusion beats
+    /// a playlist's approval).
+    @Test func aPlaylistItsOwnerExcludedIsGoneEvenWhenEveryItemIsAnotherUploaders() async throws {
+        let owner = "UCzKh27VVFQijk9K2DuL5peg"
+        var json = try #require(try JSONSerialization.jsonObject(with: Self.fixture("browse-playlist.json")) as? [String: Any])
+        let contents = String(decoding: try JSONSerialization.data(withJSONObject: json["contents"] as Any), as: UTF8.self)
+            .replacingOccurrences(of: owner, with: "UCanotherUploader")
+        json["contents"] = try JSONSerialization.jsonObject(with: Data(contents.utf8))
+        let backend = Backend()
+        backend.firstPage = try JSONSerialization.data(withJSONObject: json)
+        backend.answer("/api/v1/channels/\(owner)", .lists(videos: [], playlists: ["PLown", "PLapproved"]))
+        backend.answer("/api/v1/playlists/PLapproved", .lists(videos: [], playlists: []))
+
+        let source = Self.source(backend)
+        for playlist in ["PLown", "PLapproved"] {
+            await #expect(throws: BrowseSourceError.unavailable, "\(playlist)") {
+                try await source.playlistItems(playlist, continuation: nil)
+            }
+        }
+    }
+
+    /// Specific beats general: an approved (registered) playlist's items stay when its owner's channel is 410 -- only
+    /// the owner's exclusions reach it.
+    @Test func anApprovedPlaylistKeepsItsItemsWhenItsOwnerIs410() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist.json")
+        backend.answer("/api/v1/playlists/PL1", .lists(videos: [], playlists: []))
+        backend.answer("/api/v1/channels/UCzKh27VVFQijk9K2DuL5peg", .status(410))
+
+        #expect(try await Self.source(backend).playlistItems("PL1", continuation: nil).items.count == 5)
+    }
+
+    /// An excluded video always leaves, on every page: a continuation page has no header (no owner), so its items'
+    /// own channels are asked, registered playlist or not.
+    @Test func anUploadersExclusionHidesItsVideoOnALaterPageOfAnApprovedPlaylist() async throws {
+        let backend = Backend()
+        backend.firstPage = Self.fixture("browse-playlist-videolist.json")
+        backend.nextPage = Self.fixture("browse-playlist-videolist-page2.json")
+        backend.answer("/api/v1/playlists/PLw", .lists(videos: [], playlists: []))
+        let excluded = try #require(try await Self.source(backend).playlistItems("PLw", continuation: "next").items.first?.id)
+        backend.answer("/api/v1/channels/UCbunYN0o9Yaid7zHaor_UHA", .lists(videos: [excluded], playlists: []))
+        let after = try await Self.source(backend).playlistItems("PLw", continuation: "next").items.map(\.id)
+        #expect(!after.isEmpty)
+        #expect(!after.contains(excluded))
+    }
+
+    /// The channel-context HEAD (`verify`, a playlist screen's open) follows the same rule as `plays`: a channel's 410
+    /// refuses unless the video was approved on its own; a video probe that gets no answer plays (fail open).
+    @Test func theChannelProbeLetsAVideoApprovedOnItsOwnThroughItsChannels410() async throws {
+        let cases: [(Backend.Answer, plays: Bool)] = [(.status(200), true), (.status(404), false), (.throwing, true)]
+        for (video, plays) in cases {
+            let backend = Backend()
+            backend.answer("/api/v1/channels/UC1", .status(410))
+            backend.answer("/api/v1/videos/vid1", video)
+            #expect(try await Self.gate(backend).verify(videoId: "vid1", sourceChannelId: "UC1") == plays, "\(video)")
+        }
+    }
+
+    // MARK: - Choke point 4: playback, whatever opened the video (Search, Library, Downloads, a deep link)
+
+    static let lecture = "xc7keR2piUM"
+    static let lectureUploader = "UCmMcOjsVehVlEOteyrhjI2Q"   // `player-ok-hls.json`'s `videoDetails.channelId`
+
+    /// The production resolver over a real `StreamResolver`, its player POST answered by `player-ok-hls.json`.
+    private static func playback(_ backend: Backend) -> LiveStreamResolver {
+        let store = MemoryStore()
+        let clock = SystemClock()
+        let config = RemoteConfigStore(transport: backend, keyValueStore: store, url: base)
+        backend.firstPage = fixture("player-ok-hls.json")
+        return LiveStreamResolver(resolver: StreamResolver(
+            transport: backend, remoteConfigStore: config,
+            sessionStore: SessionStore(monotonicClock: clock, wallClock: clock, keyValueStore: store),
+            cache: ManifestCache(remoteConfig: config), gate: AlwaysAvailable(),
+            monotonicClock: clock, wallClock: clock, locale: InnerTubeLocale(hl: "en", gl: "US"), minPostSpacing: .zero),
+            gate: gate(backend))
+    }
+
+    /// The uploader's channel answers for the video: excluded or 410 is the existing unavailable outcome; a channel the
+    /// backend does not list (404), an unrelated exclusion, or a failed ask plays. Specific beats general: a video
+    /// approved on its own (its route 2xx) plays through its channel's 410, never through its channel's exclusion.
+    @Test func playbackAsksTheUploadersExclusions() async {
+        let cases: [(Backend.Answer, video: Int, plays: Bool)] = [
+            (.lists(videos: [Self.lecture], playlists: []), 404, false), (.status(410), 404, false),
+            (.lists(videos: ["other"], playlists: []), 404, true), (.status(404), 404, true), (.throwing, 404, true),
+            (.status(410), 200, true), (.lists(videos: [Self.lecture], playlists: []), 200, false),
+            (.status(410), -1, true),   // -1: the video's HEAD gets no answer, which plays (fail open)
+        ]
+        for (answer, video, plays) in cases {
+            let backend = Backend()
+            let resolver = Self.playback(backend)
+            backend.answer("/api/v1/channels/\(Self.lectureUploader)", answer)
+            backend.answer("/api/v1/videos/\(Self.lecture)", video < 0 ? .throwing : .status(video))
+            var played = true
+            do {
+                _ = try await resolver.resolve(Self.lecture, purpose: .player, kind: .player, sourceChannelId: nil, forceRefresh: false)
+            } catch {
+                #expect(error as? ExtractionError == .unavailable(videoId: Self.lecture), "\(answer)")
+                played = false
+            }
+            #expect(played == plays, "\(answer), video \(video)")
+        }
     }
 
     // MARK: - Freshness: newly approved content after a foreground

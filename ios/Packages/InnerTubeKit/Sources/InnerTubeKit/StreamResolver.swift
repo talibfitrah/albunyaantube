@@ -359,10 +359,33 @@ public actor StreamResolver {
             throw ExtractionError.cooldown(until: cooldownNow.addingTimeInterval(Self.seconds(remaining)))
         }
 
-        // Availability gate first; a throw (HTTP/transport error) is fail-open.
-        let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
-        guard available else { throw ExtractionError.unavailable(videoId: videoId) }
+        // Owner ruling 2026-11-04 (start speed): the availability gate runs ALONGSIDE the walk, and its answer is awaited
+        // before anything is handed over or cached; a throw (HTTP/transport error) is fail-open, as before.
+        let gate = self.gate
+        async let available = (try? await gate.verify(videoId: videoId, sourceChannelId: sourceChannelId)) ?? true
+        async let walked = walk(videoId, requiresMuxed: requiresMuxed, requiresHLS: requiresHLS)
+        let verdict = await available
+        // A superseded job's gate was cancelled, and a cancelled HEAD reads as fail-open: it must not cache (Codex P1).
+        try Task.checkCancellation()
+        // A 410 refuses at once (Cubic): leaving the scope cancels the walk still out. A refused walk is thrown away with
+        // its bot-check trip: a refused video left none before the gate ran alongside, so the trip waits for the verdict.
+        guard verdict else { throw ExtractionError.unavailable(videoId: videoId) }
+        do {
+            return await succeed(try await walked, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+        } catch let failure as BotCheckedWalk {
+            if recordsBotCheck { await sessionStore.recordBotCheck() }
+            throw failure.error
+        }
+    }
 
+    /// A failed walk that saw a bot check: the trip is `performResolve`'s to record, once the gate has spoken.
+    private struct BotCheckedWalk: Error {
+        let error: Error
+    }
+
+    private func walk(
+        _ videoId: String, requiresMuxed: Bool, requiresHLS: Bool
+    ) async throws -> Resolved {
         let config = await remoteConfigStore.current()
         var lastError: Error = ExtractionError.allRungsFailed
         var sawBotCheck = false
@@ -405,7 +428,7 @@ public actor StreamResolver {
             } catch {
                 // Owner ruling 2026-09-01: successful walk ends clean — mirrors Android's
                 // player-lane never-trip. A bot check only NOTES here; the (per-walk single,
-                // review F2a) trip is recorded at walk end, and only when the walk fails overall.
+                // review F2a) trip is recorded once the walk has failed overall and the gate let it through (`performResolve`).
                 if case ExtractionError.botCheck = error { sawBotCheck = true }
                 sawOurFailure = true
                 lastError = error
@@ -413,7 +436,7 @@ public actor StreamResolver {
             }
             switch outcome {
             case .resolved(let resolved):
-                return await succeed(resolved, videoId: videoId, saveWalk: requiresMuxed || requiresHLS)
+                return resolved
             case .advance:
                 continue
             }
@@ -425,7 +448,7 @@ public actor StreamResolver {
         // failed one does (the retryable `lastError`; the trip below only if a bot check was seen).
         // A wrapped rung that merely advanced (answered, but has nothing to play) leaves the verdict.
         if let heldVerdict, !sawOurFailure { throw heldVerdict }
-        if sawBotCheck, recordsBotCheck { await sessionStore.recordBotCheck() }
+        if sawBotCheck { throw BotCheckedWalk(error: lastError) }
         throw lastError
     }
 
@@ -481,7 +504,7 @@ public actor StreamResolver {
             // bot check below, minus the visitor bootstrap (a non-200 body carries no
             // `responseContext.visitorData` to adopt): rotate once and retry the rung, else
             // surface `.botCheck` so `performResolve` NOTES it -- the (per-walk single) cooldown
-            // trip is recorded at walk end, and only when the walk fails overall (ruling 2026-09-01).
+            // trip is recorded only when the walk fails overall and the gate let it through (ruling 2026-09-01).
             if canRotate, await sessionStore.rotate(family) {
                 return try await runPlayerRung(
                     family: family, videoId: videoId, config: config, expectHLS: expectHLS, canRotate: false)
@@ -505,13 +528,15 @@ public actor StreamResolver {
                 return .resolved(Resolved(
                     stream: .hls(url: hls, isLive: streaming.isLive, audioOnlyURL: streaming.itag140URL, captionTracks: streaming.captionTracks),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    isLiveNow: streaming.isLiveNow, title: streaming.title))
+                    isLiveNow: streaming.isLiveNow, title: streaming.title, channelId: streaming.channelId))
             }
             if !expectHLS, let itag18 = streaming.itag18URL {
-                return .resolved(Resolved(
+                var resolved = Resolved(
                     stream: .progressive(url: itag18, label: "360p"),
                     client: family, userAgent: userAgent, resolvedAt: now, expiresAt: expiry(streaming, from: now),
-                    title: streaming.title))
+                    title: streaming.title, channelId: streaming.channelId)
+                resolved.videoSizes = Self.avc1Sizes((try? responseParser.adaptiveFormats(body)) ?? [])
+                return .resolved(resolved)
             }
             return .advance
         case .unplayable:
@@ -622,6 +647,17 @@ public actor StreamResolver {
     }
 
     // MARK: - result builders
+
+    /// `Resolved.videoSizes`: each distinct mp4 avc1 size, in answer order.
+    static func avc1Sizes(_ formats: [AdaptiveFormat]) -> [CGSize] {
+        var sizes: [CGSize] = []
+        for f in formats where f.mimeType.hasPrefix("video/mp4") && f.mimeType.contains("avc1") {
+            guard let width = f.width, let height = f.height else { continue }
+            let size = CGSize(width: width, height: height)
+            if !sizes.contains(size) { sizes.append(size) }
+        }
+        return sizes
+    }
 
     private func expiry(_ streaming: StreamingData, from now: Date) -> Date? {
         streaming.expiresInSeconds.map { now.addingTimeInterval(TimeInterval($0)) }

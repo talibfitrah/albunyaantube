@@ -899,4 +899,82 @@ struct ContentListViewModelTests {
         await vm.searchTask?.value
         #expect(spoken.texts == [count(5), count(5)])
     }
+
+    // MARK: - The return after an idle spell (`Router.catalogToken`)
+
+    /// Pages by cursor (`nil` is page 1), swappable mid-test; after `fail()` every call throws.
+    private actor SwappablePagesClient: CatalogClient {
+        struct Boom: Error {}
+        private var pages: [String?: CursorPage<ContentItem>]
+        private var failing = false
+        private(set) var cursors: [String?] = []
+        init(_ pages: [String?: CursorPage<ContentItem>]) { self.pages = pages }
+        func set(_ cursor: String?, _ page: CursorPage<ContentItem>) { pages[cursor] = page }
+        func fail() { failing = true }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            cursors.append(cursor)
+            if failing { throw Boom() }
+            return pages[cursor] ?? CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
+    }
+
+    /// The idle reload refreshes page 1 IN PLACE when it holds the same rows: page 1 shows the new answer (a reorder
+    /// here), the pages below it stay (and the user's place in them), and the next page follows the loaded ones.
+    @Test func theIdleReloadRefreshesPageOneAndKeepsTheLoadedPages() async {
+        let client = SwappablePagesClient([nil: CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
+                                           "1": CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: "2")])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.loadMore()
+        await client.set(nil, CursorPage(items: Array(items(count: 3, prefix: "p0").reversed()), nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(shownIDs(vm) == ["p0-2", "p0-1", "p0-0", "p1-0", "p1-1", "p1-2"])
+        await vm.loadMore()
+        #expect(await client.cursors == [nil, "1", nil, "2"])
+    }
+
+    /// When page 1 changed (an item approved, or one rejected or excluded), the loaded pages below it no longer line
+    /// up with their offset cursor: the list is replaced, so a removed row leaves and none is skipped.
+    @Test(arguments: ["added", "removed"])
+    func aChangedPageOneReplacesTheListOnTheIdleReload(change: String) async {
+        let client = SwappablePagesClient([nil: CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
+                                           "1": CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: "2")])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.loadMore()
+        let fresh = change == "added"
+            ? items(count: 1, prefix: "new") + items(count: 2, prefix: "p0")
+            : items(count: 3, prefix: "p0").filter { $0.id != "p0-1" } + items(count: 1, prefix: "p1")
+        await client.set(nil, CursorPage(items: fresh, nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(shownIDs(vm) == fresh.map(\.id))
+        await vm.loadMore()
+        #expect(await client.cursors == [nil, "1", nil, "1"])
+    }
+
+    /// A failed background reload changes nothing on screen: no error state, no banner.
+    @Test func aFailedIdleReloadLeavesTheListAndRaisesNoError() async {
+        let client = SwappablePagesClient([nil: CursorPage(items: items(count: 3, prefix: "p0"), nextCursor: "1"),
+                                           "1": CursorPage(items: items(count: 3, prefix: "p1"), nextCursor: nil)])
+        let vm = ContentListViewModel(type: .videos, catalog: client, filter: FakeFilterStore(), sleep: noSleep)
+        await vm.load()
+        await vm.loadMore()
+        let before = vm.state
+        await client.fail()
+
+        await vm.refreshInPlace()
+
+        #expect(vm.state == before)
+        #expect(vm.errorToken == 0)
+    }
 }

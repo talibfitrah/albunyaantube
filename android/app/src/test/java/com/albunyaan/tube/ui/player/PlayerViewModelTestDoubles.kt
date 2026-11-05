@@ -55,6 +55,10 @@ internal fun playerViewModel(
         }, ioDispatcher),
     // No cast session: a closed player never hands its heartbeat to the cast watch.
     castWatch: CastRemovalWatch = CastRemovalWatch(kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined)) { null },
+    // No registry answers by default: every saved copy's check fails open.
+    exclusions: com.albunyaan.tube.data.source.Exclusions = com.albunyaan.tube.data.source.Exclusions(
+        org.mockito.kotlin.mock(), { 0L }, kotlinx.coroutines.CoroutineScope(kotlinx.coroutines.Dispatchers.Unconfined),
+    ),
 ) = PlayerViewModel(
     repository = repository,
     downloadRepository = downloadRepository,
@@ -80,6 +84,7 @@ internal fun playerViewModel(
     networkMonitor = networkMonitor,
     liveChannelResolver = liveChannelResolver,
     castWatch = castWatch,
+    exclusions = exclusions,
 )
 
 internal class FakePlayerRepository : PlayerRepository {
@@ -168,6 +173,9 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
     private var pages: List<PlaylistPage<PlaylistItem>> = emptyList()
     private var currentPageIndex = 0
     var getItemsCallCount = 0
+    val walkBudgets = mutableListOf<Long?>()
+    var hangOnPage: Int? = null // that page never answers (past any page timeout)
+    var failOnPage: Int? = null
     var failOnSecondPage = false
 
     fun setPages(pages: List<PlaylistPage<PlaylistItem>>) {
@@ -197,11 +205,14 @@ internal class FakePlaylistDetailRepository : PlaylistDetailRepository {
         downloadPolicy = downloadPolicy,
     )
 
-    override suspend fun getItems(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem> {
+    override suspend fun getItems(playlistId: String, page: Page?, itemOffset: Int, walkBudgetMs: Long?): PlaylistPage<PlaylistItem> {
         getItemsCallCount++
+        walkBudgets += walkBudgetMs
         if (page != null && failOnSecondPage) throw java.io.IOException("Simulated network error for testing")
         val pageIndex = if (page == null) 0 else currentPageIndex + 1
         currentPageIndex = pageIndex
+        if (pageIndex == hangOnPage) kotlinx.coroutines.awaitCancellation()
+        if (pageIndex == failOnPage) throw java.io.IOException("Simulated network error for testing")
         return pages.getOrNull(pageIndex) ?: PlaylistPage(emptyList(), null)
     }
 

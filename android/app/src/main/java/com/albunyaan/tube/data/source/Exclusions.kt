@@ -2,6 +2,8 @@ package com.albunyaan.tube.data.source
 
 import android.os.SystemClock
 import androidx.annotation.VisibleForTesting
+import com.albunyaan.tube.auth.AuthRepository
+import com.albunyaan.tube.auth.AuthState
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.RegistryEntry
 import kotlinx.coroutines.CancellationException
@@ -9,6 +11,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.CoroutineStart
 import kotlinx.coroutines.Deferred
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.Job
 import kotlinx.coroutines.SupervisorJob
 import kotlinx.coroutines.async
 import kotlinx.coroutines.awaitAll
@@ -38,9 +41,12 @@ class Exclusions @VisibleForTesting internal constructor(
     private val api: ContentApi,
     private val now: () -> Long,
     private val scope: CoroutineScope,
+    private val user: () -> String? = { null },
 ) {
-    @Inject constructor(api: ContentApi) :
-        this(api, SystemClock::elapsedRealtime, CoroutineScope(SupervisorJob() + Dispatchers.IO))
+    @Inject constructor(api: ContentApi, auth: AuthRepository) : this(
+        api, SystemClock::elapsedRealtime, CoroutineScope(SupervisorJob() + Dispatchers.IO),
+        { (auth.authState.value as? AuthState.SignedIn)?.uid },
+    )
 
     /**
      * [code]: 2xx registered, 404 not registered (or a PERSONAL grant this user does not hold: no exclusions known, never
@@ -64,22 +70,33 @@ class Exclusions @VisibleForTesting internal constructor(
     private val answers = object : LinkedHashMap<String, Entry>(64, 0.75f, true) {
         override fun removeEldestEntry(eldest: MutableMap.MutableEntry<String, Entry>) = size > MEMO_SIZE
     }
-    private val inFlight = HashMap<String, Deferred<Entry>>()
-    // ponytail: one app-wide cap on concurrent background asks, so a mixed-uploader playlist page cannot burst the
-    // backend; gate calls and playlist asks skip it.
-    private val permits = Semaphore(MAX_CONCURRENT)
+    // Each running ask, and whether it waits for a permit
+    private val inFlight = HashMap<String, Pair<Deferred<Entry>, Boolean>>()
+    // ponytail: app-wide caps on concurrent background asks, so a mixed-uploader playlist page or the Me feed's saved
+    // playlists cannot burst the backend. Gate calls and one playlist's own page ask skip them.
+    private val channelPermits = Semaphore(MAX_CONCURRENT)
+    private val playlistPermits = Semaphore(MAX_CONCURRENT_PLAYLISTS)
+    // The signed-in user the answers are for, and a count of its changes (guarded by [answers]): PERSONAL lists never
+    // carry over to another. An ask is kept only within its own sign-in: one that spanned a sign-out and back in may
+    // have been signed as the other user.
+    private var owner: String? = null
+    private var generation = 0
 
     /** Bumped each time an answer changes a list, so a list already shown (the Me feed) can filter again. */
     private val _changes = MutableStateFlow(0)
     val changes: StateFlow<Int> = _changes
 
-    /** Channel [id]'s answer. [fresh]: a screen open asks again (joining an ask already running) so a new exclusion shows. */
+    /**
+     * Channel [id]'s answer. [fresh]: a screen open asks again (joining an uncapped ask already running, never a queued
+     * list ask) so a new exclusion shows.
+     */
     suspend fun channel(id: String, fresh: Boolean = false): Entry =
-        lookup("channel:$id", fresh, queued = !fresh) { api.getChannel(id) }
+        lookup("channel:$id", fresh, if (fresh) null else channelPermits) { api.getChannel(id) }
 
-    // A playlist ask is one per page, never a burst: it skips the queue, so its own exclusions beat the wait.
-    suspend fun playlist(id: String, fresh: Boolean = false): Entry =
-        lookup("playlist:$id", fresh, queued = false) { api.getPlaylist(id) }
+    suspend fun playlist(id: String, fresh: Boolean = false): Entry = askPlaylist(id, fresh, permits = null)
+
+    private suspend fun askPlaylist(id: String, fresh: Boolean, permits: Semaphore?): Entry =
+        lookup("playlist:$id", fresh, permits) { api.getPlaylist(id) }
 
     /**
      * The video ids the lists of these channels and playlists drop. An id with no answer within [WAIT_MS] adds its last
@@ -87,10 +104,24 @@ class Exclusions @VisibleForTesting internal constructor(
      */
     suspend fun videoIds(channelIds: Collection<String> = emptyList(), playlistIds: Collection<String> = emptyList()): Set<String> =
         coroutineScope {
+            val playlists = playlistIds.filter { it.isNotBlank() }.distinct()
+            // Several playlists at once (the Me feed's saved ones) queue under their cap; one playlist's own page ask
+            // never waits behind them.
+            val cap = playlistPermits.takeIf { playlists.size > 1 }
             val asks = channelIds.filter { it.isNotBlank() }.distinct().map { async { waited("channel:$it") { channel(it) } } } +
-                playlistIds.filter { it.isNotBlank() }.distinct().map { async { waited("playlist:$it") { playlist(it) } } }
+                playlists.map { async { waited("playlist:$it") { askPlaylist(it, fresh = false, cap) } } }
             asks.awaitAll().flatMapTo(HashSet()) { it?.videoIds.orEmpty() }
         }
+
+    /**
+     * Whether channel [channelId] hides [videoId] from a playback with no channel context. Specific beats general: an
+     * exclusion always hides; a gone channel (410) hides it only when [goneBlocks]: the video's own HEAD said 404
+     * (not registered on its own). Its own 2xx outranks the 410, and an unknown answer fails open.
+     * [fresh] asks again (a stream resolve); a saved copy reads the memo first. Fails open like the lists.
+     */
+    suspend fun hides(channelId: String, videoId: String, fresh: Boolean = true, goneBlocks: Boolean): Boolean =
+        waited("channel:$channelId") { channel(channelId, fresh) }
+            ?.let { videoId in it.videoIds || (it.code == 410 && goneBlocks) } == true
 
     /** The playlists a channel's Playlists tab drops, the same fail-open way. */
     suspend fun playlistIds(channelId: String): Set<String> =
@@ -98,40 +129,63 @@ class Exclusions @VisibleForTesting internal constructor(
 
     // The ask keeps running in [scope] after the wait gives up, so its answer still serves the next page.
     private suspend fun waited(key: String, ask: suspend () -> Entry): Entry? =
-        withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key] }
+        withTimeoutOrNull(WAIT_MS) { ask() } ?: synchronized(answers) { answers[key].takeIf { user() == owner } }
 
+    /** [permits]: the cap a background ask waits under; null for a gate call, which never queues. */
     private suspend fun lookup(
         key: String,
         fresh: Boolean,
-        queued: Boolean,
+        permits: Semaphore?,
         call: suspend () -> Response<RegistryEntry>,
     ): Entry {
         val job = synchronized(answers) {
-            inFlight[key] ?: run {
+            // Checked on every read, so a sign-out or another sign-in never reads the last user's PERSONAL lists.
+            val asker = user()
+            if (asker != owner) {
+                answers.clear()
+                inFlight.clear()
+                owner = asker
+                generation++
+            }
+            val asked = generation
+            // An uncapped ask (a gate, one playlist's own page) never joins an ask waiting for a permit behind a burst.
+            inFlight[key]?.takeUnless { permits == null && it.second }?.first ?: run {
                 val held = answers[key]
                 if (!fresh && held != null && held.until > now()) return held
-                scope.async(start = CoroutineStart.LAZY) {
+                // The newest answer, not the one this ask started from: a gate may have stored one meanwhile.
+                val last = { synchronized(answers) { answers[key].takeIf { asked == generation } ?: held } }
+                val ask = scope.async(start = CoroutineStart.LAZY) {
                     try {
-                        fetch(call, held, queued).also {
-                            synchronized(answers) { answers[key] = it }
+                        fetch(call, last, permits).also {
+                            val changed = synchronized(answers) {
+                                val before = last()
+                                (asked == generation).also { mine -> if (mine) answers[key] = it } &&
+                                    (it.videoIds != before?.videoIds.orEmpty() || it.playlistIds != before?.playlistIds.orEmpty())
+                            }
                             // Only a changed list re-filters what is on screen; an unchanged or empty re-ask must not,
                             // or a memo that evicts its own keys would re-ask forever.
-                            if (it.videoIds != held?.videoIds.orEmpty() || it.playlistIds != held?.playlistIds.orEmpty()) {
-                                _changes.update { n -> n + 1 }
-                            }
+                            if (changed) _changes.update { n -> n + 1 }
                         }
                     } finally {
-                        synchronized(answers) { inFlight.remove(key) }
+                        val self = coroutineContext[Job]
+                        synchronized(answers) { if (inFlight[key]?.first === self) inFlight.remove(key) }
                     }
-                }.also { inFlight[key] = it }
+                }
+                inFlight[key] = ask to (permits != null)
+                ask
             }
         }
         return job.await()
     }
 
-    // [queued]: a list's background channel ask waits for a permit; a gate call or a playlist ask never does.
-    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, held: Entry?, queued: Boolean): Entry = try {
-        val r = if (queued) permits.withPermit { call() } else call()
+    private suspend fun fetch(call: suspend () -> Response<RegistryEntry>, last: () -> Entry?, permits: Semaphore?): Entry = try {
+        val r = if (permits != null) {
+            permits.withPermit {
+                // A gate may have answered while this ask waited its turn: no second call for that id
+                last()?.takeIf { it.error == null && it.until > now() }?.let { return it }
+                call()
+            }
+        } else call()
         val body = r.body()
         when {
             r.isSuccessful -> Entry(
@@ -139,12 +193,12 @@ class Exclusions @VisibleForTesting internal constructor(
                 now() + ANSWER_MS,
             )
             r.code() == 404 || r.code() == 410 -> Entry(r.code(), emptySet(), emptySet(), null, now() + ANSWER_MS)
-            else -> failed(HttpException(r), held)
+            else -> failed(HttpException(r), last())
         }
     } catch (e: CancellationException) {
         throw e
     } catch (e: Exception) {
-        failed(e, held) // IOException, a Moshi error
+        failed(e, last()) // IOException, a Moshi error
     }
 
     // Keeps the last answer's status too: one blip must not make a registered channel read as unregistered.
@@ -157,5 +211,6 @@ class Exclusions @VisibleForTesting internal constructor(
         private const val WAIT_MS = 2_000L // ponytail: a list waits at most this long; raise it if field RTT is higher
         private const val MEMO_SIZE = 500
         private const val MAX_CONCURRENT = 4
+        private const val MAX_CONCURRENT_PLAYLISTS = 2
     }
 }

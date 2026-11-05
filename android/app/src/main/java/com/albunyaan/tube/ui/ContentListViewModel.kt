@@ -103,15 +103,62 @@ class ContentListViewModel(
 
     // Public read-only accessors for Fragment-side guards
     val canLoadMore: Boolean
-        get() = !_isLoadingMore && !_isRefreshing && _hasMoreData
+        get() = !_isLoadingMore && !_isRefreshing && !refreshingInPlace && _hasMoreData
+
+    // The return-after-idle reload: paging waits for it, so a scroll does not cancel it
+    private var inPlaceJob: Job? = null
+    private val refreshingInPlace: Boolean get() = inPlaceJob?.isActive == true
 
     // Accumulated items for pagination
     private val allItems = mutableListOf<ContentItem>()
 
+    // How many of [allItems] page 1 holds: a return after idle swaps only those
+    private var firstPageSize = 0
+
     init {
         loadContent()
-        viewModelScope.launch { foregroundReturns.collect { refresh() } } // AppLifecycleTracker.returnsAfterIdle
+        viewModelScope.launch { foregroundReturns.collect { refreshFirstPageInPlace() } } // AppLifecycleTracker.returnsAfterIdle
     }
+
+    /**
+     * A return after idle: page 1 again, swapped in where it stands. The pages loaded below it, their cursor and the
+     * scroll place stay; a failure changes nothing on screen. A load already running fetches fresh rows itself, and a
+     * newer load cancels this one. A failed load on screen (a skeleton has no pull-to-refresh) is retried instead.
+     *
+     * ponytail: rows pushed off page 1 by new ones at the top drop out until a pull-to-refresh, since the kept cursor
+     * is past them; refetch the loaded pages if that matters more than the backend load.
+     */
+    private fun refreshFirstPageInPlace() {
+        if (loadJob?.isActive == true) return
+        if (_content.value !is ContentState.Success) return refresh()
+        inPlaceJob = viewModelScope.launch {
+            val response = try {
+                contentService.fetchContent(contentType, null, PAGE_SIZE, currentFilters, _searchQuery.value.takeIf { it.isNotBlank() })
+            } catch (e: CancellationException) {
+                throw e
+            } catch (e: Exception) {
+                Log.w(TAG, "Return-after-idle reload failed for type=$contentType; keeping the list", e)
+                return@launch
+            }
+            val fresh = response.data.map { it.key }.toSet()
+            val below = allItems.drop(firstPageSize).filter { it.key !in fresh }
+            if (allItems.size <= firstPageSize) nextCursor = response.pageInfo?.nextCursor // only page 1 was loaded
+            allItems.clear()
+            allItems.addAll(response.data + below)
+            firstPageSize = response.data.size
+            _hasMoreData = nextCursor != null
+            markShown()
+            _content.value = ContentState.Success(allItems.toList(), _hasMoreData, isSearchActive = isSearchActive, inPlace = true)
+        }
+        loadJob = inPlaceJob
+    }
+
+    private val ContentItem.key: String
+        get() = when (this) {
+            is ContentItem.Video -> id
+            is ContentItem.Channel -> id
+            is ContentItem.Playlist -> id
+        }
 
     /**
      * Update filters and reload content if filters changed.
@@ -163,6 +210,7 @@ class ContentListViewModel(
                 )
 
                 allItems.addAll(response.data)
+                firstPageSize = response.data.size
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -220,6 +268,7 @@ class ContentListViewModel(
                 )
 
                 allItems.addAll(response.data)
+                firstPageSize = response.data.size
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -250,8 +299,8 @@ class ContentListViewModel(
      */
     fun loadMore() {
         // Guard: prevent duplicate/spam requests and requests during refresh
-        if (_isLoadingMore || _isRefreshing || !_hasMoreData) {
-            Log.d(TAG, "loadMore skipped: isLoadingMore=$_isLoadingMore, isRefreshing=$_isRefreshing, hasMoreData=$_hasMoreData")
+        if (_isLoadingMore || _isRefreshing || refreshingInPlace || !_hasMoreData) {
+            Log.d(TAG, "loadMore skipped: isLoadingMore=$_isLoadingMore, isRefreshing=$_isRefreshing, inPlace=$refreshingInPlace, hasMoreData=$_hasMoreData")
             return
         }
 
@@ -274,7 +323,10 @@ class ContentListViewModel(
                     query = _searchQuery.value.takeIf { it.isNotBlank() }
                 )
 
-                allItems.addAll(response.data)
+                if (allItems.isEmpty()) firstPageSize = response.data.size // a page-1 retry after a failed load
+                // A cursor kept across a return-after-idle refresh can hand back rows page 1 now shows
+                val shown = allItems.mapTo(HashSet()) { it.key }
+                allItems.addAll(response.data.filter { it.key !in shown })
                 nextCursor = response.pageInfo?.nextCursor
                 _hasMoreData = nextCursor != null
 
@@ -328,7 +380,9 @@ class ContentListViewModel(
             override val items: List<ContentItem>,
             val hasMoreData: Boolean = true,
             val paginationError: String? = null,
-            val isSearchActive: Boolean = false
+            val isSearchActive: Boolean = false,
+            /** The rows on screen, refreshed where they stand (a return after idle): the list keeps its scroll place. */
+            val inPlace: Boolean = false,
         ) : ContentState()
         data class Error(val message: String, override val items: List<ContentItem> = emptyList()) : ContentState()
     }
@@ -353,3 +407,11 @@ class ContentListViewModel(
         private const val PAGE_SIZE = 20
     }
 }
+
+/**
+ * Whether a tab's next list opens at its top. A new list (another query) opens at its best match; a page appended below,
+ * or the same list, keeps its place. One refreshed in place keeps it too, unless the user sat at the top: rows added
+ * there would land above the screen. A view rebuilt into an empty list restores its own place.
+ */
+internal fun <T> opensAtTop(shown: List<T>, next: List<T>, inPlace: Boolean, atTop: Boolean): Boolean =
+    shown.isNotEmpty() && if (inPlace) atTop else next.take(shown.size) != shown

@@ -233,4 +233,82 @@ struct HomeViewModelTests {
         #expect(vm.state == .error)
         #expect(vm.errorToken == 1)
     }
+
+    // MARK: - The return after an idle spell (`Router.catalogToken`)
+
+    /// Sections by cursor (`nil` is page 1), swappable mid-test; after `fail()` every call throws.
+    private actor SwappableHomeClient: CatalogClient {
+        struct Boom: Error {}
+        private var pages: [String?: CursorPage<HomeSection>]
+        private var failing = false
+        private(set) var cursors: [String?] = []
+        init(_ pages: [String?: CursorPage<HomeSection>]) { self.pages = pages }
+        func set(_ cursor: String?, _ page: CursorPage<HomeSection>) { pages[cursor] = page }
+        func fail() { failing = true }
+
+        func categories() async throws -> [FitrahTube.Category] { [] }
+        func home(cursor: String?, categoryLimit: Int, contentLimit: Int, category: String?) async throws -> CursorPage<HomeSection> {
+            cursors.append(cursor)
+            if failing { throw Boom() }
+            return pages[cursor] ?? CursorPage(items: [], nextCursor: nil)
+        }
+        func content(type: ListType?, cursor: String?, limit: Int, filter: FilterState, query: String?) async throws -> CursorPage<ContentItem> {
+            CursorPage(items: [], nextCursor: nil)
+        }
+        func search(query: String, type: ListType?, limit: Int) async throws -> SearchResult { SearchResult(items: []) }
+    }
+
+    private func sectionIDs(_ vm: HomeViewModel) -> [String] {
+        guard case .content(let sections, _, _) = vm.state else { return [] }
+        return sections.map(\.id)
+    }
+
+    /// The idle reload refreshes page 1 in place when it holds the same sections, and keeps the sections loaded below
+    /// it (and the scroll with them).
+    @Test func theIdleReloadRefreshesPageOneAndKeepsTheLoadedSections() async {
+        let client = SwappableHomeClient([nil: CursorPage(items: [section("a"), section("b")], nextCursor: "1"),
+                                          "1": CursorPage(items: [section("c"), section("d")], nextCursor: "2")])
+        let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
+        await vm.load()
+        await vm.loadMore()
+        await client.set(nil, CursorPage(items: [section("b"), section("a")], nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(sectionIDs(vm) == ["b", "a", "c", "d"])
+        await vm.loadMore()
+        #expect(await client.cursors == [nil, "1", nil, "2"])
+    }
+
+    /// A changed page 1 (here a section the catalog removed) replaces Home: the section leaves, none is skipped.
+    @Test func theIdleReloadDropsASectionTheCatalogRemovedFromPageOne() async {
+        let client = SwappableHomeClient([nil: CursorPage(items: [section("a"), section("b")], nextCursor: "1"),
+                                          "1": CursorPage(items: [section("c"), section("d")], nextCursor: "2")])
+        let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
+        await vm.load()
+        await vm.loadMore()
+        await client.set(nil, CursorPage(items: [section("a"), section("c")], nextCursor: "1"))
+
+        await vm.refreshInPlace()
+
+        #expect(sectionIDs(vm) == ["a", "c"])
+        await vm.loadMore()
+        #expect(sectionIDs(vm) == ["a", "c", "d"])   // the new page 1's cursor: "c" is not repeated, "d" not skipped
+    }
+
+    /// A failed background reload changes nothing on screen and raises no banner.
+    @Test func aFailedIdleReloadLeavesHomeAndRaisesNoBanner() async {
+        let client = SwappableHomeClient([nil: CursorPage(items: [section("a")], nextCursor: "1"),
+                                          "1": CursorPage(items: [section("c")], nextCursor: nil)])
+        let vm = HomeViewModel(catalog: client, filter: FakeFilterStore(), widthClass: { .compact })
+        await vm.load()
+        await vm.loadMore()
+        let before = vm.state
+        await client.fail()
+
+        await vm.refreshInPlace()
+
+        #expect(vm.state == before)
+        #expect(vm.errorToken == 0)
+    }
 }

@@ -393,6 +393,8 @@ class GlobalStreamResolver private constructor(
                 // valid cached videos. The downstream resolver / NewPipe
                 // pipeline produces its own user-visible error if the actual
                 // extraction fails.
+                // The video's own answer when there is no channel context: 2xx means approved on its own (null: unknown).
+                var videoCode: Int? = null
                 if (contentService != null) {
                     val available = try {
                         if (!sourceChannelId.isNullOrBlank()) {
@@ -402,7 +404,7 @@ class GlobalStreamResolver private constructor(
                             contentService.verifyAvailable(AvailabilityCheckType.CHANNEL, sourceChannelId) &&
                                 videoId !in exclusions?.channel(sourceChannelId)?.videoIds.orEmpty()
                         } else {
-                            contentService.verifyAvailable(AvailabilityCheckType.VIDEO, videoId)
+                            contentService.videoAvailability(videoId).also { videoCode = it } != 410
                         }
                     } catch (e: kotlinx.coroutines.CancellationException) {
                         throw e
@@ -418,7 +420,7 @@ class GlobalStreamResolver private constructor(
                         throw ContentUnavailableException(videoId)
                     }
                 }
-                try {
+                val streams = try {
                     resolutionProvider.resolveStreams(videoId, forceRefresh, priority)
                 } catch (e: Exception) {
                     if (e is kotlinx.coroutines.CancellationException) throw e
@@ -426,6 +428,19 @@ class GlobalStreamResolver private constructor(
                     Log.e(TAG, "resolveStreams failed for $videoId: ${e.message}")
                     null
                 }
+                // No channel context (Favorites, Search, a deep link, a download): a channel video is never registered on
+                // its own, so ask its uploader's channel: excluded there it does not play; a gone channel (410) blocks it
+                // only when the video's own answer was 404. Fail open: a failed or slow ask reads the last answer or none.
+                // ponytail: approved-playlist items carry no context here (jobs are shared by video id), so a gone
+                // channel blocks them too; pass a playlist id through resolveStreams if that must change.
+                val uploader = streams?.uploaderChannelId
+                if (sourceChannelId.isNullOrBlank() && !uploader.isNullOrBlank() && exclusions != null &&
+                    exclusions.hides(uploader, videoId, goneBlocks = videoCode == 404)
+                ) {
+                    Log.i(TAG, "[$caller] $videoId hidden by its uploader's channel; throwing ContentUnavailableException")
+                    throw ContentUnavailableException(videoId)
+                }
+                streams
                 // Note: cleanup happens via invokeOnCompletion below, not in finally
             }
             val inFlight = InFlight(newJob, priority)

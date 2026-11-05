@@ -110,6 +110,10 @@ class DownloadWorker @AssistedInject constructor(
     @Volatile
     private var muxedFallbackUrl: String? = null
 
+    /** The latest resolve's uploader `UC…` id, saved with the copy so playing it checks that channel's exclusions. */
+    @Volatile
+    private var uploaderChannelId: String? = null
+
     /** Names this run's temp files, so a stopping run never deletes a resumed run's. */
     private val run = UUID.randomUUID().toString()
 
@@ -171,6 +175,8 @@ class DownloadWorker @AssistedInject constructor(
                 is FFmpegMergeException -> DownloadErrorCode.MERGE
                 // NoStreamException carries its own error code for specific failure reason
                 is NoStreamException -> throwable.errorCode
+                // The backend hides it (excluded, or its channel gone): "video may be unavailable"
+                is com.albunyaan.tube.player.ContentUnavailableException -> DownloadErrorCode.NO_STREAM
                 // General network errors (IOException but not our specific subtypes)
                 is IOException -> DownloadErrorCode.NETWORK
                 else -> DownloadErrorCode.UNKNOWN
@@ -272,6 +278,7 @@ class DownloadWorker @AssistedInject constructor(
                 errorCode = DownloadErrorCode.NO_STREAM,
                 message = "Failed to resolve stream for $videoId"
             )
+        uploaderChannelId?.let { storage.saveChannelId(downloadId, it) }
 
         return try {
             executeDownload(resolvedStream, downloadId, title, audioOnly)
@@ -383,6 +390,7 @@ class DownloadWorker @AssistedInject constructor(
         // Match the minting client's UA (see [streamUserAgent]); a mismatch 403s every fetch.
         streamUserAgent = resolved.extractionClient.userAgent()
         muxedFallbackUrl = resolved.videoTracks.filter { !it.isVideoOnly }.maxByOrNull { it.height ?: 0 }?.url
+        uploaderChannelId = resolved.uploaderChannelId
 
         // For audio-only, prefer AAC/M4A but fall back to any audio if not available
         val mp4CompatibleAudio = resolved.audioTracks.filter { isAudioMp4Compatible(it) }

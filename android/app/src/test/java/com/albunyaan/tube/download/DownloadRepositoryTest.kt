@@ -226,6 +226,7 @@ class DownloadRepositoryTest {
                 )
             )
             workManager.cancelAllWork().result.get()
+            storage.saveChannelId(downloadId, "UClecturer") // the worker's, once it resolved
             val tempFile = storage.createTempFile(downloadId, "run")
             tempFile.writeBytes(byteArrayOf(1, 2, 3))
             storage.commit(downloadId, audioOnly = true, tempFile)
@@ -236,6 +237,7 @@ class DownloadRepositoryTest {
             val request = restarted.downloads.value.single { it.request.id == downloadId }.request
             assertEquals("Lecturer", request.channelName)
             assertEquals(1800, request.durationSeconds)
+            assertEquals("UClecturer", request.channelId)
         }
 
     private fun repository(scope: CoroutineScope): DefaultDownloadRepository =

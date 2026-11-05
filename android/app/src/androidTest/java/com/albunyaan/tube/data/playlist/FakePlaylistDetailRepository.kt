@@ -115,7 +115,8 @@ class FakePlaylistDetailRepository : PlaylistDetailRepository {
     override suspend fun getItems(
         playlistId: String,
         page: Page?,
-        itemOffset: Int
+        itemOffset: Int,
+        walkBudgetMs: Long?,
     ): PlaylistPage<PlaylistItem> {
         itemsLoadingStarted = true
 

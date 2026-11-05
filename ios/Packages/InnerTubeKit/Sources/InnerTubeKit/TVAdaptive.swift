@@ -2,7 +2,8 @@ import Foundation
 
 /// Format selection, challenge collection and URL rewriting for the `tv_samsung` HD upgrade (spec R7, R9-R11). Pure.
 enum TVAdaptive {
-    /// Video: every distinct avc1 rendition, highest bitrate first. Audio: one rendition per group, the default group first.
+    /// Video: every distinct avc1 rendition, biggest first, then cheapest first (a pick on the master starts on the first
+    /// variant its cap admits: its own size, with the least to fetch; a 720p60 must not run above a 1080p30). Audio: one rendition per group, the default group first.
     struct Selection: Equatable, Sendable {
         var video: [AdaptiveFormat]
         var audio: [AdaptiveFormat]
@@ -29,7 +30,7 @@ enum TVAdaptive {
         var seenItags = Set<Int>()
         let video = usable
             .filter { $0.mimeType.hasPrefix("video/mp4") && $0.mimeType.contains("avc1") && seenItags.insert($0.itag).inserted }
-            .sorted { $0.bitrate > $1.bitrate }
+            .sorted { (area($0), -$0.bitrate) > (area($1), -$1.bitrate) }
         var groups: [(id: String?, members: [(index: Int, format: AdaptiveFormat)])] = []
         for (index, format) in usable.enumerated() where format.mimeType.hasPrefix("audio/mp4") && format.mimeType.contains("mp4a") {
             if let g = groups.firstIndex(where: { $0.id == format.audioTrackId }) {
@@ -43,6 +44,9 @@ enum TVAdaptive {
         guard video.contains(where: { min($0.width ?? 0, $0.height ?? 0) > 360 }), !audio.isEmpty else { return nil }
         return Selection(video: video, audio: audio)
     }
+
+    /// In Double: an answer's sizes are unchecked, and an Int product can trap.
+    private static func area(_ f: AdaptiveFormat) -> Double { Double(f.width ?? 0) * Double(f.height ?? 0) }
 
     /// An absolute `https` base URL with a host; anything else would throw `notHTTPS` in `solvedURL` and fail the whole
     /// upgrade instead of dropping this one format.

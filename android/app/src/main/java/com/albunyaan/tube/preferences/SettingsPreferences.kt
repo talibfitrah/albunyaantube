@@ -9,7 +9,7 @@ import androidx.datastore.preferences.core.booleanPreferencesKey
 import androidx.datastore.preferences.core.edit
 import androidx.datastore.preferences.core.stringPreferencesKey
 import androidx.datastore.preferences.preferencesDataStore
-import android.os.Build
+import androidx.core.app.LocaleManagerCompat
 import kotlinx.coroutines.flow.Flow
 import kotlinx.coroutines.flow.first
 import kotlinx.coroutines.flow.map
@@ -115,8 +115,9 @@ class SettingsPreferences(private val context: Context) {
         /**
          * Get the effective locale based on device language preferences.
          *
-         * Uses Resources.getSystem().configuration.locales to get the TRUE system locales,
-         * not LocaleList.getDefault() which can reflect the app's overridden locale.
+         * Uses LocaleManagerCompat.getSystemLocales: the device list, without the app's own
+         * override. Resources.getSystem() is NOT that on API 33+: the platform folds the
+         * per-app language into it, so it would answer "ar" right after picking Arabic.
          *
          * Multi-locale priority: On devices with multiple preferred languages (e.g.,
          * French → Arabic → English), iterates in user's priority order and returns
@@ -125,22 +126,12 @@ class SettingsPreferences(private val context: Context) {
          *
          * Falls back to English if no supported locale is found in the preference list.
          */
-        fun getSystemLocale(): String {
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.N) {
-                // Use Resources.getSystem() to get true system locales, not app-overridden ones
-                val systemLocales = android.content.res.Resources.getSystem().configuration.locales
-                for (i in 0 until systemLocales.size()) {
-                    val language = systemLocales[i].language
-                    if (language in SUPPORTED_LOCALES_SET) {
-                        return language
-                    }
-                }
-            } else {
-                // Fallback for older devices - use system Resources configuration
-                @Suppress("DEPRECATION")
-                val deviceLanguage = android.content.res.Resources.getSystem().configuration.locale.language
-                if (deviceLanguage in SUPPORTED_LOCALES_SET) {
-                    return deviceLanguage
+        fun getSystemLocale(context: Context): String {
+            val systemLocales = LocaleManagerCompat.getSystemLocales(context)
+            for (i in 0 until systemLocales.size()) {
+                val language = systemLocales[i]?.language ?: continue
+                if (language in SUPPORTED_LOCALES_SET) {
+                    return language
                 }
             }
             return "en" // Fallback to English
@@ -151,9 +142,9 @@ class SettingsPreferences(private val context: Context) {
          * If selection is "system", returns the best matching system locale.
          * Otherwise returns the explicit selection.
          */
-        fun resolveEffectiveLocale(selection: String): String {
+        fun resolveEffectiveLocale(context: Context, selection: String): String {
             return if (selection == LOCALE_SYSTEM) {
-                getSystemLocale()
+                getSystemLocale(context)
             } else {
                 selection
             }
@@ -187,7 +178,7 @@ class SettingsPreferences(private val context: Context) {
      */
     val effectiveLocale: Flow<String> = context.dataStore.data.map { preferences ->
         val selection = preferences[LOCALE_KEY] ?: DEFAULT_LOCALE
-        resolveEffectiveLocale(selection)
+        resolveEffectiveLocale(context, selection)
     }
 
     /**
@@ -205,7 +196,7 @@ class SettingsPreferences(private val context: Context) {
             preferences[LOCALE_KEY] = localeSelection
         }
         // Update synchronous cache for fast startup reads (cache the effective locale, not selection)
-        val effectiveLocale = resolveEffectiveLocale(localeSelection)
+        val effectiveLocale = resolveEffectiveLocale(context, localeSelection)
         updateLocaleCache(context, effectiveLocale)
     }
 

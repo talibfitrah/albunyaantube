@@ -147,7 +147,8 @@ struct PlayerScreen: View {
             if let offlineItemId = args.offlineItemId {
                 vm = PlayerViewModel(resolver: OfflineResolver(store: container.offlineStore,
                                                                itemId: offlineItemId,
-                                                               base: container.offlineBase),
+                                                               base: container.offlineBase,
+                                                               gate: container.browseGate),
                                      settings: container.settings, args: args,
                                      cast: container.castController)
             } else {
@@ -356,20 +357,18 @@ struct PlayerScreen: View {
                                            identifier: "player.audioOnlyPill")
                                     .allowsHitTesting(false)
                             } else {
-                                // Quality control on rung 1 only -- rung 2 (progressive, single
-                                // rendition) hides it entirely per spec §10 ("Rung 2 hides the
-                                // control") and shows the persistent pill instead.
+                                // Rung 2 (progressive, single rendition) shows the persistent pill;
+                                // spec §10's "Rung 2 hides the control" holds unless HD is coming (below).
                                 // Task 7: neither offline -- a saved file has exactly one
                                 // rendition, and the rung-2 pill is a statement about the
                                 // extraction ladder, which an offline open never walked.
                                 // Rung 1 shows the menu once its stream's renditions load (`qualityOptions`
-                                // stays empty for a single rendition -- nothing to choose).
+                                // stays empty for a single rendition -- nothing to choose). Owner report
+                                // 2026-11-03: rung 2 shows it too while HD is on its way (the renditions HD
+                                // brings), above the pill that still says what plays now.
                                 if !model.isOfflinePlayback {
-                                    if isRung1 {
-                                        if !model.qualityOptions.isEmpty { qualityMenu(model) }
-                                    } else {
-                                        rung2Pill
-                                    }
+                                    if !model.qualityOptions.isEmpty { qualityMenu(model) }
+                                    if !isRung1 { rung2Pill }
                                 }
                                 AudioLanguageMenu(model: model)
                                 CaptionsMenu(model: model)
@@ -674,7 +673,7 @@ struct PlayerScreen: View {
         #endif
         // The `#if DEBUG` fixture resolvers above are returned UNWRAPPED -- the screenshot rig must
         // never be rate limited.
-        return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver),
+        return RateLimitedResolver(wrapping: LiveStreamResolver(resolver: container.resolver, gate: container.browseGate),
                                    rateLimiter: container.innerTube.rateLimiter,
                                    clock: container.innerTube.clock)
     }
@@ -827,8 +826,14 @@ private struct FixtureSyntheticResolver: StreamResolving {
 
     func resolve(_ videoId: String, purpose: Purpose, kind: RequestKind, sourceChannelId: String?, forceRefresh: Bool,
                  requiresMuxed: Bool, requiresHLS: Bool) async throws -> Resolved {
-        Resolved(stream: .progressive(url: base.appending(path: "muxed.mp4"), label: "360p"), client: .android,
-                 userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        var resolved = Resolved(stream: .progressive(url: base.appending(path: "muxed.mp4"), label: "360p"), client: .android,
+                                userAgent: "FitrahTube/DebugFixture", resolvedAt: Date(), expiresAt: nil)
+        // As the ANDROID answer lists them: the HD model's sizes, so the menu is there while the 360p plays.
+        if let data = try? await URLSession.shared.data(from: base.appending(path: "synthetic.json")).0,
+           let model = try? JSONDecoder().decode(SyntheticHLS.self, from: data) {
+            resolved.videoSizes = QualityOption.sizes(of: model)
+        }
+        return resolved
     }
 
     func demote(_ videoId: String, failed: ClientFamily) async {}

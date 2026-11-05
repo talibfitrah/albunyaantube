@@ -1,6 +1,8 @@
 package com.albunyaan.tube.data.playlist
 
+import android.os.SystemClock
 import android.util.Log
+import androidx.annotation.VisibleForTesting
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.NewPipeExtractorClient
 import com.albunyaan.tube.data.extractor.NewPipePriorityContext
@@ -41,7 +43,7 @@ import javax.inject.Singleton
  * initialized with the shared downloader, localization, and metrics before any extraction.
  */
 @Singleton
-class NewPipePlaylistDetailRepository @Inject constructor(
+class NewPipePlaylistDetailRepository @VisibleForTesting internal constructor(
     // Inject NewPipeExtractorClient to ensure NewPipe is initialized with shared
     // downloader, localization (US), and metrics. The client initializes NewPipe
     // in its constructor via initializeNewPipe().
@@ -49,7 +51,14 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     private val indexRepository: IndexRepository,
     private val originalTitles: OriginalTitles,
     private val exclusions: Exclusions,
+    private val now: () -> Long,
 ) : PlaylistDetailRepository {
+    @Inject constructor(
+        extractorClient: NewPipeExtractorClient,
+        indexRepository: IndexRepository,
+        originalTitles: OriginalTitles,
+        exclusions: Exclusions,
+    ) : this(extractorClient, indexRepository, originalTitles, exclusions, SystemClock::elapsedRealtime)
 
     private val youtubeService = ServiceList.YouTube
     private val playlistLinkHandlerFactory = YoutubePlaylistLinkHandlerFactory.getInstance()
@@ -134,15 +143,18 @@ class NewPipePlaylistDetailRepository @Inject constructor(
     override suspend fun getItems(
         playlistId: String,
         page: Page?,
-        itemOffset: Int
-    ): PlaylistPage<PlaylistItem> = getItems(playlistId, page, itemOffset, skipped = 0)
+        itemOffset: Int,
+        walkBudgetMs: Long?,
+    ): PlaylistPage<PlaylistItem> =
+        getItems(playlistId, page, itemOffset, skipped = 0, walkUntil = walkBudgetMs?.let { now() + it } ?: Long.MAX_VALUE)
 
-    /** [skipped]: pages of only excluded items already walked past for this call. */
+    /** [skipped]: pages of only excluded items already walked past for this call; [walkUntil]: when it stops walking. */
     private suspend fun getItems(
         playlistId: String,
         page: Page?,
         itemOffset: Int,
         skipped: Int,
+        walkUntil: Long,
     ): PlaylistPage<PlaylistItem> {
         return withContext(Dispatchers.IO) {
             try {
@@ -223,10 +235,12 @@ class NewPipePlaylistDetailRepository @Inject constructor(
                     playlistIds = listOf(playlistId),
                 )
                 val shown = items.filterNot { it.videoId in hidden }
-                // A page of only excluded items must not read as the end or as an empty playlist. Bounded, so one
-                // call cannot walk a whole excluded history past the callers' page timeouts.
-                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED) {
-                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1)
+                // A page of only excluded items must not read as the end or as an empty playlist. Bounded in pages, and
+                // in time for a caller with a page timeout, so one call cannot walk past it.
+                if (shown.isEmpty() && items.isNotEmpty() && nextPage != null && skipped < MAX_EXCLUDED_PAGES_SKIPPED &&
+                    now() < walkUntil
+                ) {
+                    return@withContext getItems(playlistId, nextPage, nextItemOffset, skipped + 1, walkUntil)
                 }
 
                 // Owner issue 1(b): the titles as their uploaders wrote them, where the server knows them.

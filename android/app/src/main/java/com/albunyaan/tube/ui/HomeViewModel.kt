@@ -39,6 +39,7 @@ class HomeViewModel @Inject constructor(
     private var loadJob: Job? = null
     private var loadMoreJob: Job? = null
     private var currentCategory: String? = null
+    private var firstPageCount = 0 // the sections page 1 holds: a reload kept on screen swaps only those
 
     val canLoadMore: Boolean
         // Not while a reload runs: the feed it keeps on screen pages on a cursor the reload is about to replace.
@@ -63,7 +64,10 @@ class HomeViewModel @Inject constructor(
         }
     }
 
-    /** [keepOnScreen]: a reload on return from the background swaps the feed only on success, with no skeleton. */
+    /**
+     * [keepOnScreen]: a reload on return from the background swaps page 1's sections where they stand, only on
+     * success and with no skeleton; the sections paged in below it and their cursor stay.
+     */
     fun loadInitialFeed(keepOnScreen: Boolean = false) {
         loadJob?.cancel()
         loadMoreJob?.cancel()
@@ -85,10 +89,17 @@ class HomeViewModel @Inject constructor(
                     contentLimit = contentLimit,
                     category = currentCategory
                 )
+                val fresh = result.sections.map { it.categoryId }.toSet()
+                // ponytail: a section pushed off page 1 drops out until a pull-to-refresh, since the kept cursor is
+                // past it; refetch the loaded pages if that matters more than the backend load.
+                val below = if (keepOnScreen) sections.drop(firstPageCount).filter { it.categoryId !in fresh } else emptyList()
+                if (!keepOnScreen || sections.size <= firstPageCount) { // only page 1 was loaded
+                    nextCursor = result.nextCursor
+                    hasMore = result.hasMore
+                }
                 sections.clear()
-                sections.addAll(result.sections)
-                nextCursor = result.nextCursor
-                hasMore = result.hasMore
+                sections.addAll(result.sections + below)
+                firstPageCount = result.sections.size
                 Log.d(TAG, "Initial feed loaded: ${result.sections.size} sections, hasMore=$hasMore")
                 _homeState.value = if (sections.isEmpty()) {
                     HomeState.Empty

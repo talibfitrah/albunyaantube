@@ -132,14 +132,16 @@ class RetrofitContentService(
         val code = when (type) {
             AvailabilityCheckType.CHANNEL -> exclusions.channel(youtubeId, fresh = true).codeOrThrow()
             AvailabilityCheckType.PLAYLIST -> exclusions.playlist(youtubeId, fresh = true).codeOrThrow()
-            AvailabilityCheckType.VIDEO -> api.checkVideoAvailable(youtubeId).let { response ->
-                if (response.isSuccessful || response.code() == 404 || response.code() == 410) response.code()
-                else throw retrofit2.HttpException(response)
-            }
+            AvailabilityCheckType.VIDEO -> videoAvailability(youtubeId)
         }
         // 410 Gone: explicitly admin-blocked — hard stop, never fail-open.
         // 404: not in registry yet; fail-open so NewPipe can resolve directly.
         return code != 410
+    }
+
+    override suspend fun videoAvailability(youtubeId: String): Int = api.checkVideoAvailable(youtubeId).let { response ->
+        if (response.isSuccessful || response.code() == 404 || response.code() == 410) response.code()
+        else throw retrofit2.HttpException(response)
     }
 
     override suspend fun isInApprovedRegistry(type: AvailabilityCheckType, youtubeId: String): Boolean {

@@ -265,6 +265,72 @@ class PlayerViewModelPlaylistPagingTest {
     // =============================================================================
 
     @Test
+    fun `a first page the exclusions emptied is followed to the next one`() = runTest {
+        val emptied = PlaylistPage(emptyList<PlaylistItem>(), Page("http://page2", "token2", null, null), nextItemOffset = 6)
+        val page2 = PlaylistPage((6..7).map { createPlaylistItem(it, "video_$it") }, null, nextItemOffset = 8)
+        fakePlaylistRepository.setPages(listOf(emptied, page2))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_6")
+
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", startIndexHint = 0)
+        advanceUntilIdle()
+
+        assertEquals("video_6", viewModel.state.value.currentItem?.id)
+    }
+
+    @Test
+    fun `a next page the exclusions emptied is followed, not read as the playlist's end`() = runTest {
+        val page1 = PlaylistPage(listOf(createPlaylistItem(1, "video_1")), Page("http://page2", "token2", null, null), nextItemOffset = 2)
+        val emptied = PlaylistPage(emptyList<PlaylistItem>(), Page("http://page3", "token3", null, null), nextItemOffset = 7)
+        val page3 = PlaylistPage(listOf(createPlaylistItem(7, "video_7")), null, nextItemOffset = 8)
+        fakePlaylistRepository.setPages(listOf(page1, emptied, page3))
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", targetVideoId = "video_1", startIndexHint = 0)
+        advanceUntilIdle()
+
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_7")
+        viewModel.skipToNext()
+        advanceUntilIdle()
+
+        assertEquals("video_7", viewModel.state.value.currentItem?.id)
+    }
+
+    @Test
+    fun `a page after an emptied one that times out keeps the emptied page's cursor, paging is not failed`() = runTest {
+        val page1 = PlaylistPage(listOf(createPlaylistItem(1, "video_1")), Page("http://page2", "token2", null, null), nextItemOffset = 2)
+        val emptied = PlaylistPage(emptyList<PlaylistItem>(), Page("http://page3", "token3", null, null), nextItemOffset = 7)
+        fakePlaylistRepository.setPages(listOf(page1, emptied))
+        fakePlaylistRepository.hangOnPage = 2
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", targetVideoId = "video_1", startIndexHint = 0)
+        advanceUntilIdle()
+
+        viewModel.skipToNext()
+        advanceUntilIdle()
+
+        assertTrue("paging goes on from the emptied page's cursor", viewModel.state.value.hasNext)
+    }
+
+    @Test
+    fun `a page after an emptied one that fails keeps the emptied page's cursor, paging is not failed`() = runTest {
+        val page1 = PlaylistPage(listOf(createPlaylistItem(1, "video_1")), Page("http://page2", "token2", null, null), nextItemOffset = 2)
+        val emptied = PlaylistPage(emptyList<PlaylistItem>(), Page("http://page3", "token3", null, null), nextItemOffset = 7)
+        fakePlaylistRepository.setPages(listOf(page1, emptied))
+        fakePlaylistRepository.failOnPage = 2
+        fakePlayerRepository.resolvedStreams = createResolvedStreams("video_1")
+        val viewModel = createViewModel()
+        viewModel.loadPlaylist("PL123", targetVideoId = "video_1", startIndexHint = 0)
+        advanceUntilIdle()
+
+        viewModel.skipToNext()
+        advanceUntilIdle()
+
+        assertTrue("paging goes on from the emptied page's cursor", viewModel.state.value.hasNext)
+    }
+
+    @Test
     fun `advanceToNext loads more items when queue empty and hasMore`() = runTest {
         // Arrange: 2 pages, start at last item of first page
         val page1Items = (1..2).map { createPlaylistItem(it, "video_$it") }
@@ -295,6 +361,8 @@ class PlayerViewModelPlaylistPagingTest {
         assertTrue("Should have advanced", advanced)
         assertEquals("video_3", viewModel.state.value.currentItem?.id)
         assertEquals(2, fakePlaylistRepository.getItemsCallCount)  // Second page fetched
+        // Both fetches bound the walk past excluded pages, so a page lands inside the 10 s page timeout
+        assertEquals(listOf<Long?>(3_000L, 3_000L), fakePlaylistRepository.walkBudgets)
     }
 
     @Test

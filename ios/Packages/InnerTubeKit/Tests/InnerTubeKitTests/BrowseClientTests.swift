@@ -173,6 +173,34 @@ import Testing
         #expect(first.viewCountText != nil)
     }
 
+    /// The playlist's owner, from its header's "by <channel>" link: a deep-linked playlist whose items all come from
+    /// other uploaders still asks its owner's exclusions. Both live header shapes; a continuation page has no header.
+    @Test func playlistItemsParsesTheOwnerFromTheHeader() async throws {
+        let client = makeClient(RecordingTransport([
+            try fixtureResponse("browse-playlist"), try fixtureResponse("browse-playlist-videolist"),
+            try fixtureResponse("browse-playlist-videolist-page2"),
+        ]))
+
+        let first = try await client.playlistItems(Self.playlistId, continuation: nil)
+        let second = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: nil)
+        let page2 = try await client.playlistItems(Self.whiteNoisePlaylistId, continuation: "next")
+
+        #expect(first.ownerChannelId == "UCzKh27VVFQijk9K2DuL5peg")
+        #expect(second.ownerChannelId == "UCbunYN0o9Yaid7zHaor_UHA")
+        #expect(page2.ownerChannelId == nil)
+
+        // Owner and bylines alike go into backend paths: anything that is not a channel id is none. Both item shapes.
+        for (fixture, owner) in [("browse-playlist", "UCzKh27VVFQijk9K2DuL5peg"),
+                                 ("browse-playlist-videolist", "UCbunYN0o9Yaid7zHaor_UHA")] {
+            let forged = String(decoding: try fixtureResponse(fixture).body, as: UTF8.self)
+                .replacingOccurrences(of: owner, with: "x/../../videos/abc")
+            let client2 = makeClient(RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(forged.utf8))]))
+            let page = try await client2.playlistItems(Self.playlistId, continuation: nil)
+            #expect(page.ownerChannelId == nil, "\(fixture)")
+            #expect(!page.items.isEmpty && page.items.allSatisfy { $0.channelId == nil }, "\(fixture)")
+        }
+    }
+
     @Test func playlistItemsSendsVLPrefixedBrowseId() async throws {
         let transport = RecordingTransport([try fixtureResponse("browse-playlist")])
         let client = makeClient(transport)

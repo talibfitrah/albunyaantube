@@ -20,13 +20,14 @@ import Testing
         return ManifestCache(remoteConfig: store)
     }
 
-    private func hlsResolved(isLive: Bool = false) -> Resolved {
+    private func hlsResolved(isLive: Bool = false, isLiveNow: Bool? = nil) -> Resolved {
         Resolved(
             stream: .hls(url: URL(string: "https://example.com/manifest.m3u8")!, isLive: isLive, audioOnlyURL: nil, captionTracks: []),
             client: .visionos,
             userAgent: "ua",
             resolvedAt: Date(timeIntervalSince1970: 0),
-            expiresAt: nil
+            expiresAt: nil,
+            isLiveNow: isLiveNow ?? isLive
         )
     }
 
@@ -40,12 +41,34 @@ import Testing
         #expect(await cache.get("abc123def45", now: now.addingTimeInterval(101)) == nil)
     }
 
+    /// Codex: a superseded resolve whose task is cancelled while `put` waits for the TTL must not write: the replacement's
+    /// gate may refuse the video, and a cache hit never asks the gate.
+    @Test func aCancelledPutWritesNothing() async {
+        let cache = await makeCache(configTTLSeconds: 100)
+        let now = Date(timeIntervalSince1970: 1000)
+        await Task {
+            withUnsafeCurrentTask { $0?.cancel() }
+            await cache.put(hlsResolved(), videoId: "abc123def45", now: now)
+        }.value
+        #expect(await cache.get("abc123def45", now: now) == nil)
+    }
+
     @Test func liveHLSIsNeverStored() async {
         let cache = await makeCache(configTTLSeconds: 100)
         let now = Date(timeIntervalSince1970: 1000)
 
         await cache.put(hlsResolved(isLive: true), videoId: "live12345678", now: now)
         #expect(await cache.get("live12345678", now: now) == nil)
+    }
+
+    /// Owner report 2026-11-03 (slow start): an ENDED broadcast's `.hls` keeps `isLive` (the sticky `isLiveContent`,
+    /// nhaGO__rxHQ live) but is not live now; every replay and every Up Next prefetch of one re-POSTed.
+    @Test func anEndedBroadcastIsStored() async {
+        let cache = await makeCache(configTTLSeconds: 100)
+        let now = Date(timeIntervalSince1970: 1000)
+
+        await cache.put(hlsResolved(isLive: true, isLiveNow: false), videoId: "nhaGO__rxHQ", now: now)
+        #expect(await cache.get("nhaGO__rxHQ", now: now) != nil)
     }
 
     @Test func lruEvictsLeastRecentlyGotten() async {

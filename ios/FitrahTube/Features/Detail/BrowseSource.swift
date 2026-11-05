@@ -92,7 +92,7 @@ struct LiveBrowseSource: BrowseSource {
         }, degraded: {
             // The feed is one page; a continuation request in degraded mode has nothing to add.
             guard continuation == nil else { return BrowsePage(items: [], nextContinuation: nil) }
-            let hidden = await gate.exclusions(channelId: id, fresh: true)?.videoIds ?? []
+            guard let hidden = await gate.exclusions(channelId: id, fresh: true)?.videoIds else { return try Self.pulled(first: true) }
             return BrowsePage(items: try await atom.latest(id).filter { !hidden.contains($0.id) }, nextContinuation: nil)
         })
     }
@@ -108,7 +108,7 @@ struct LiveBrowseSource: BrowseSource {
             try await BrowsePage.skippingEmpty(from: continuation) { c in
                 async let lists = gate.exclusions(channelId: id, fresh: c == nil)   // alongside YouTube, not after it
                 var page = try await client.channelPlaylists(id, continuation: c)
-                let hidden = await lists?.playlistIds ?? []
+                guard let hidden = await lists?.playlistIds else { return try Self.pulled(first: continuation == nil) }
                 page.items.removeAll { hidden.contains($0.id) }
                 return page
             }
@@ -117,15 +117,16 @@ struct LiveBrowseSource: BrowseSource {
 
     func playlistItems(_ playlistId: String, continuation: String?) async throws -> BrowsePage<VideoItem> {
         guard let lists = await gate.exclusions(playlistId: playlistId, fresh: continuation == nil) else {
-            // 410: pulled. A first page shows it; a later one (pulled mid-scroll) ends the list.
-            if continuation == nil { throw BrowseSourceError.unavailable }
-            return BrowsePage(items: [], nextContinuation: nil)
+            return try Self.pulled(first: continuation == nil)
         }
         return try await attempt({
             try await BrowsePage.skippingEmpty(from: continuation) { c in
                 var page = try await client.playlistItems(playlistId, continuation: c)
-                page.items = await gate.visible(page.items, in: lists, fresh: c == nil)
-                page.items = await titles.retitle(page.items)
+                guard let shown = await gate.visible(page.items, in: lists, playlistId: playlistId,
+                                                         owner: page.ownerChannelId, fresh: c == nil) else {
+                    return try Self.pulled(first: continuation == nil)   // excluded from its own channel
+                }
+                page.items = await titles.retitle(shown)
                 Task { [page] in await index.push(sourceType: .playlist, sourceId: playlistId, items: page.items) }
                 return page
             }
@@ -140,12 +141,19 @@ struct LiveBrowseSource: BrowseSource {
         try await BrowsePage.skippingEmpty(from: continuation) { c in
             async let lists = gate.exclusions(channelId: id, fresh: c == nil)
             var page = try await fetch(c)
-            let hidden = await lists?.videoIds ?? []
+            guard let hidden = await lists?.videoIds else { return try Self.pulled(first: continuation == nil) }
             page.items.removeAll { hidden.contains($0.id) }
             page.items = await titles.retitle(page.items)
             Task { [page] in await index.push(sourceType: .channel, sourceId: id, items: page.items) }
             return page
         }
+    }
+
+    /// A 410 (RULING 15) on a list: a first page shows the screen's unavailable state; a later one (pulled
+    /// mid-scroll) ends the list.
+    private static func pulled<T>(first: Bool) throws -> BrowsePage<T> {
+        if first { throw BrowseSourceError.unavailable }
+        return BrowsePage(items: [], nextContinuation: nil)
     }
 
     /// A live latch skips the probe entirely; a fresh bot-check writes the latch and substitutes;

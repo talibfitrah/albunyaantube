@@ -88,15 +88,18 @@ enum QualityOption: Hashable {
     static func variantSizes(of resolved: Resolved, transport: any BoundedHTTPTransport = masterTransport) async -> [CGSize]? {
         // A progressive file, an offline save or a fixture (a local `.hls`): one rendition, no remote master.
         guard case .hls(let url, _, _, _, let synthetic) = resolved.stream, !url.isFileURL else { return [] }
-        if let synthetic {
-            return synthetic.video.compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
-        }
+        if synthetic != nil { return sizes(of: synthetic) }
         let request = HTTPRequest(method: "GET", url: url, headers: ["User-Agent": resolved.userAgent], body: nil)
         guard let response = try? await transport.send(request, maxBodyBytes: maxMasterBytes),
               (200..<300).contains(response.status), response.body.count <= maxMasterBytes else { return nil }
         // A master opens with #EXTM3U (RFC 8216 §4.3.1.1); an empty body (a declared length past the cap) or a page is none.
         let master = String(decoding: response.body, as: UTF8.self)
         return master.hasPrefix("#EXTM3U") ? masterSizes(master) : nil
+    }
+
+    /// A `tv_samsung` model's video sizes (none for a native stream).
+    static func sizes(of synthetic: SyntheticHLS?) -> [CGSize] {
+        (synthetic?.video ?? []).compactMap { v in v.width.flatMap { w in v.height.map { CGSize(width: w, height: $0) } } }
     }
 
     /// `URLSessionTransport`: ephemeral and cookieless (the signed, IP-bound master never reaches a shared disk cache or
@@ -128,8 +131,15 @@ enum QualityOption: Hashable {
     @discardableResult
     func apply(to item: AVPlayerItem, layerSize: CGSize, isExpensive: Bool, isConstrained: Bool) -> Ceiling {
         let ceiling = Self.ceiling(for: self, layerSize: layerSize, isExpensive: isExpensive, isConstrained: isConstrained)
+        let picked = if case .rendition = self { true } else { false }
         item.preferredMaximumResolution = ceiling.resolution
         item.preferredPeakBitRate = ceiling.bitrate
+        // Owner report 2026-11-03: a PICKED rendition on a `fitrah-hls` master (renditions biggest first, `TVAdaptive.select`)
+        // starts on that rendition, as Android's manual pick does (`forceHighestSupportedBitrate`); AVPlayer's own start
+        // guess was 854x480 under a 1080p cap at 4 Mbps, then 18.8 s to 1080p. Auto keeps AVPlayer's guess (a fast start),
+        // and so do YouTube's own masters, which are in no order (the first eligible can be 240p).
+        let synthetic = (item.asset as? AVURLAsset)?.url.scheme == SyntheticHLSLoader.scheme
+        item.startsOnFirstEligibleVariant = picked && synthetic
         // Fix-round-1 F2: defense-in-depth backstop. AVFoundation itself honours these two
         // properties whenever it detects the CURRENT network is expensive, independent of the
         // `isExpensive` this call was made with -- so a mid-playback Wi-Fi -> cellular handover
@@ -137,7 +147,6 @@ enum QualityOption: Hashable {
         // prepare/pick. The manual clamp stays the source of truth the tests pin; this never
         // raises it (AVFoundation applies the more restrictive of the two on an expensive path).
         // A picked rendition sets its own cap here too, or AVFoundation would clamp it to 720p on cellular.
-        let picked = if case .rendition = self { true } else { false }
         item.preferredMaximumResolutionForExpensiveNetworks = picked ? ceiling.resolution : Self.cellularResolution
         item.preferredPeakBitRateForExpensiveNetworks = picked ? ceiling.bitrate : Self.cellularBitrate
         return ceiling
@@ -179,13 +188,18 @@ enum QualityOption: Hashable {
     /// Owner report 2026-11-02: a LOWER ceiling binds only the segments fetched after it, so AVPlayer plays out what it
     /// already buffered above it (measured on the iPhone 17 simulator: 1920x1080 still drawn 36 s after a 480p pick; a
     /// fresh item on the same asset drew 854x480 within 3 s). True when a pick lowers the effective ceiling, so the host
-    /// rebuilds the item at the live position. A raise needs nothing (1080p drawn within 3 s), and `old == nil` is the
-    /// first prepare, not a pick. Width and height are compared apart, as AVFoundation caps them: a portrait layer's Auto
-    /// has more area than 720p yet a narrower width (review of a2c737ba). A lower SIZE cap rebuilds only when what is
-    /// drawn (`playing`, the item's `presentationSize`; `.zero` = nothing yet, unknown) is above it (Cubic r2): picking the
-    /// top rendition from a fullscreen Auto lowers the cap past the layer while ABR already plays under it.
+    /// rebuilds the item at the live position. `old == nil` is the first prepare, not a pick. Width and height are compared
+    /// apart, as AVFoundation caps them: a portrait layer's Auto has more area than 720p yet a narrower width (review of
+    /// a2c737ba). A lower SIZE cap rebuilds only when what is drawn (`playing`, the item's `presentationSize`; `.zero` =
+    /// nothing yet, unknown) is above it (Cubic r2): picking the top rendition from a fullscreen Auto lowers the cap past
+    /// the layer while ABR already plays under it.
+    /// Owner report 2026-11-03: a RAISE only lets ABR climb at its own pace (measured: 18.8 s from 240p to 1080p at
+    /// 4 Mbps; a weaker link never gets there), while a fresh item of a picked rendition on the synthetic master starts on
+    /// it (`apply`). So a rendition pick also rebuilds when what is drawn is below the best of the stream's `renditions`
+    /// the new cap admits (the host passes the synthetic model's sizes, none for a native stream); Auto keeps AVPlayer's
+    /// own start.
     static func needsFreshItem(from old: (option: QualityOption, ceiling: Ceiling)?,
-                               to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero,
+                               to new: QualityOption, layerSize: CGSize, playing: CGSize = .zero, renditions: [CGSize] = [],
                                isExpensive: Bool, isConstrained: Bool) -> Bool {
         guard let old, old.option != new else { return false }
         // What the item holds (`apply`'s result), not a recomputation: no pass re-applies it when the path changes (only the
@@ -195,7 +209,25 @@ enum QualityOption: Hashable {
         let sizeLowered = isLower(after.resolution.width, than: before.resolution.width)
             || isLower(after.resolution.height, than: before.resolution.height)
         let drawnAbove = playing == .zero || playing.width > after.resolution.width || playing.height > after.resolution.height
-        return sizeLowered && drawnAbove || isLower(after.bitrate, than: before.bitrate)
+        // A lower cap that admits the same renditions changes nothing that plays (Cubic: the hand-over's reconcile moved a
+        // 720p pick to an HD ladder's 360p and rebuilt the item just handed over).
+        let sameRenditions = !renditions.isEmpty
+            && admitted(renditions, by: before.resolution) == admitted(renditions, by: after.resolution)
+        let best = admitted(renditions, by: after.resolution).max { area($0) < area($1) }
+        let drawnBelow = new.size != nil
+            && best.map { playing != .zero && (playing.width < $0.width || playing.height < $0.height) } ?? false
+        return sizeLowered && drawnAbove && !sameRenditions || isLower(after.bitrate, than: before.bitrate) || drawnBelow
+    }
+
+    /// The renditions a size cap admits; 0 on an axis is unbounded there, as AVFoundation reads it.
+    private static func admitted(_ renditions: [CGSize], by cap: CGSize) -> [CGSize] {
+        renditions.filter { (cap.width == 0 || $0.width <= cap.width) && (cap.height == 0 || $0.height <= cap.height) }
+    }
+
+    /// A rendition row's pixel size; nil for Auto and Data Saver.
+    var size: CGSize? {
+        if case .rendition(let width, let height) = self { return CGSize(width: width, height: height) }
+        return nil
     }
 
     /// `0` is AVFoundation's "unbounded" for both the resolution and the bitrate cap.

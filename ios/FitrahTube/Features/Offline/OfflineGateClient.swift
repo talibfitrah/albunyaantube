@@ -13,7 +13,8 @@ import InnerTubeKit
 /// (`BackendAvailabilityGate`: only a 410 refuses) may be saved, and an admin's explicit
 /// `offlineAllowed=false` is the one extra block. So a backend 404 → `.allowed` (playback plays it:
 /// a video in the catalog only through an approved channel or playlist, or no public registry row);
-/// admins block by rejecting or archiving, which answers 410 → `.gone`, for the video or its channel.
+/// admins block by rejecting or archiving, which answers 410 → `.gone`, for the video, or for its channel unless
+/// the video was approved on its own (its 200 below).
 /// A 200 that IS this video's Video model (JSON content type + a matching `youtubeId`) reads its
 /// flag: an explicit false → `.notAllowed`; true, null or absent → `.allowed` (the backend serves
 /// the same effective value, `Video.allowsOffline()`). Unlike playback this is fail-CLOSED at save
@@ -79,12 +80,14 @@ nonisolated struct OfflineGateClient: Sendable {
         #if DEBUG
         if videoId == offlineAllowedVideoId { return .allowed }
         #endif
-        // Both legs at once (review P3). Either one's 410 refuses; an explicit false blocks; a
-        // channel nobody could vouch for is no answer at all.
+        // Both legs at once (review P3). The video's 410 refuses; so does the channel's, unless the video was
+        // approved on its own (its model answered: specific beats general, `BackendAvailabilityGate.plays`) or its
+        // leg failed (no answer, never a delete); an explicit false blocks; a channel nobody could vouch for is no
+        // answer at all.
         async let channel = channelAnswer(channelId)
         async let video = videoAnswer(videoId)
-        let (channelVerdict, videoVerdict) = await (channel, video)
-        if channelVerdict == .gone || videoVerdict == .gone { return .gone }
+        let (channelVerdict, (videoVerdict, approved)) = await (channel, video)
+        if videoVerdict == .gone || (channelVerdict == .gone && !approved && videoVerdict != .unreachable) { return .gone }
         if videoVerdict == .notAllowed { return .notAllowed }
         return channelVerdict == .unreachable ? .unreachable : videoVerdict
     }
@@ -104,10 +107,11 @@ nonisolated struct OfflineGateClient: Sendable {
         }
     }
 
-    private func videoAnswer(_ videoId: String) async -> GateAnswer {
+    /// `approved`: the backend answered this video's own model (a 200 with its marker), not just "not gone".
+    private func videoAnswer(_ videoId: String) async -> (GateAnswer, approved: Bool) {
         let request = HTTPRequest(method: "GET", url: baseURL.appending(path: "api/v1/videos/\(videoId)"),
                                   headers: ["X-Device-Id": deviceId.value], body: nil)
-        guard let response = try? await transport.send(request) else { return .unreachable }
+        guard let response = try? await transport.send(request) else { return (.unreachable, false) }
         switch response.status {
         case 200:
             // Security r1 P0-1: `VideoDTO` decodes ANY JSON object, so `{}`, an auth envelope, a WAF
@@ -119,16 +123,16 @@ nonisolated struct OfflineGateClient: Sendable {
             // "no" — anything else is no answer at all.
             guard Self.isJSON(response),
                   let dto = try? JSONDecoder().decode(VideoDTO.self, from: response.body),
-                  dto.youtubeId == videoId else { return .unreachable }
-            return dto.offlineAllowed == false ? .notAllowed : .allowed
+                  dto.youtubeId == videoId else { return (.unreachable, false) }
+            return (dto.offlineAllowed == false ? .notAllowed : .allowed, true)
         case 404:
-            return Self.isBackendNotFound(response) ? .allowed : .unreachable
+            return (Self.isBackendNotFound(response) ? .allowed : .unreachable, false)
         case 410:
             // No envelope check: `ContentGoneException` is the only thing that answers Gone for a
             // video URL — an edge that knows nothing about the resource answers 404, not 410.
-            return .gone
+            return (.gone, false)
         default:
-            return .unreachable
+            return (.unreachable, false)
         }
     }
 }

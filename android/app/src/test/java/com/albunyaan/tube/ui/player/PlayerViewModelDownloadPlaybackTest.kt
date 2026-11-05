@@ -24,7 +24,9 @@ import org.junit.Test
 import org.junit.rules.TemporaryFolder
 import org.junit.runner.RunWith
 import org.mockito.kotlin.doAnswer
+import org.mockito.kotlin.doReturn
 import org.mockito.kotlin.mock
+import org.mockito.kotlin.stub
 import org.robolectric.RobolectricTestRunner
 import org.robolectric.annotation.Config
 import java.io.File
@@ -58,10 +60,11 @@ class PlayerViewModelDownloadPlaybackTest {
         file: File,
         audioOnly: Boolean = false,
         status: DownloadStatus = DownloadStatus.COMPLETED,
+        channelId: String? = null,
     ) = DownloadEntry(
         request = DownloadRequest(
             id = id, title = "Request title", videoId = videoId, audioOnly = audioOnly,
-            thumbnailUrl = "https://i.example/t.jpg",
+            thumbnailUrl = "https://i.example/t.jpg", channelId = channelId,
         ),
         status = status,
         progress = 100,
@@ -464,11 +467,89 @@ class PlayerViewModelDownloadPlaybackTest {
         assertEquals("https://v.test/v17", (vm.state.value.streamState as StreamState.Ready).selection.video?.url)
     }
 
+    // Owner ruling: a saved copy is played like a stream: what its uploader's channel hides, or a gone channel, does not.
+    @Test fun `a saved copy its uploader's channel hides does not play, and offline it does`() = runTest {
+        api.stub {
+            onBlocking { getChannel("UClecturer") } doReturn retrofit2.Response.success(
+                com.albunyaan.tube.data.source.api.RegistryEntry(excludedVideoIds = listOf("v20"))
+            )
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(
+            completed("d20", "v20", tmp.newFile("v20.mp4"), channelId = "UClecturer"),
+            completed("d21", "v21", tmp.newFile("v21.mp4"), channelId = "UCgone"),
+        )
+        val vm = createViewModel()
+
+        vm.loadDownload("d20")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        vm.loadVideo(videoId = "v21") // a list's local-first open
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        assertEquals("a hidden saved copy never streams instead", 0, streams.resolveCallCount)
+
+        online = false
+        val offline = createViewModel()
+        offline.loadDownload("d20")
+        advanceUntilIdle()
+        assertTrue("offline, the saved copy plays", offline.state.value.streamState is StreamState.Ready)
+    }
+
+    // Ruling, specific beats general: a saved copy gets the stream gates in their order. The video's own 410 blocks
+    // (a copy with no channel id too); a gone channel blocks only a video nothing approved on its own.
+    @Test fun `a saved copy the video's own 410 or a gone channel hides does not play, unless the video is approved`() = runTest {
+        val gone = retrofit2.Response.error<Unit>(410, okhttp3.ResponseBody.create(null, ""))
+        api.stub {
+            onBlocking { checkVideoAvailable("v22") } doReturn gone
+            onBlocking { checkVideoAvailable("v23") } doReturn retrofit2.Response.success(Unit)
+            onBlocking { checkVideoAvailable("v24") } doReturn retrofit2.Response.error(404, okhttp3.ResponseBody.create(null, ""))
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(
+            completed("d22", "v22", tmp.newFile("v22.mp4")),                       // saved before channel ids
+            completed("d23", "v23", tmp.newFile("v23.mp4"), channelId = "UCgone"), // approved on its own
+            completed("d24", "v24", tmp.newFile("v24.mp4"), channelId = "UCgone"), // only its gone channel answers
+        )
+        val vm = createViewModel(com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions))
+
+        vm.loadDownload("d22")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+        vm.loadDownload("d23")
+        advanceUntilIdle()
+        assertTrue("the video's own approval outranks its channel's 410", vm.state.value.streamState is StreamState.Ready)
+        org.mockito.kotlin.verify(api, org.mockito.kotlin.times(1)).checkVideoAvailable("v23") // one HEAD, its answer reused
+        vm.loadDownload("d24")
+        advanceUntilIdle()
+        assertEquals(StreamState.ContentUnavailable, vm.state.value.streamState)
+    }
+
+    @Test fun `a saved copy whose video check fails plays though its channel is gone`() = runTest {
+        api.stub {
+            onBlocking { checkVideoAvailable("v25") } doAnswer { throw java.io.IOException("backend down") }
+            onBlocking { getChannel("UCgone") } doReturn retrofit2.Response.error(410, okhttp3.ResponseBody.create(null, ""))
+        }
+        downloads.entries.value = listOf(completed("d25", "v25", tmp.newFile("v25.mp4"), channelId = "UCgone"))
+        val vm = createViewModel(com.albunyaan.tube.data.source.RetrofitContentService(api, exclusions))
+
+        vm.loadDownload("d25")
+        advanceUntilIdle()
+        assertTrue("unknown is not 'not approved'", vm.state.value.streamState is StreamState.Ready)
+    }
+
+    private val api = mock<com.albunyaan.tube.data.source.api.ContentApi>()
+    private val exclusions = com.albunyaan.tube.data.source.Exclusions(
+        api, { 0L }, kotlinx.coroutines.CoroutineScope(testDispatcher),
+    )
+
     private var online = true
     private val network = mock<NetworkMonitor> { on { isCurrentlyOnline() } doAnswer { online } }
 
-    private fun createViewModel() = playerViewModel(
+    private fun createViewModel(
+        contentService: com.albunyaan.tube.data.source.ContentService = com.albunyaan.tube.data.source.FakeContentService(),
+    ) = playerViewModel(
         repository = streams, downloadRepository = downloads, favoritesRepository = favorites, extractorClient = metadata,
-        networkMonitor = network,
+        networkMonitor = network, exclusions = exclusions, contentService = contentService,
     )
 }

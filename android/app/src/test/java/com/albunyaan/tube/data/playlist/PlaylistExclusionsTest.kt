@@ -35,11 +35,14 @@ class PlaylistExclusionsTest {
         NewPipe.init(youtube)
     }
 
+    private var clock = 0L
+
     private fun repository(exclusions: Exclusions) = NewPipePlaylistDetailRepository(
         extractorClient = mock(),
         indexRepository = mock(),
         originalTitles = OriginalTitles(api) { 1_000L },
         exclusions = exclusions,
+        now = { clock },
     )
 
     private fun entry(vararg videos: String) = Response.success(RegistryEntry(excludedVideoIds = videos.toList()))
@@ -89,6 +92,36 @@ class PlaylistExclusionsTest {
         // P1 plus five skipped pages read; the caller continues from P7.
         assertTrue(String(result.nextPage!!.body!!).contains("\"P7\""))
         assertEquals(7, result.nextItemOffset)
+    }
+
+    @Test
+    fun `a caller with no deadline walks past slow excluded pages to the first shown one`() = runTest {
+        whenever(api.fetchTitles(any())).thenReturn(Response.success(emptyMap()))
+        whenever(api.getPlaylist(PLAYLIST)).thenReturn(entry("lesson00001", "lesson00002", "lesson00003"))
+        whenever(api.getChannel(CHANNEL)).thenReturn(Response.error(404, "".toResponseBody(null)))
+        (1..4).forEach { youtube.pages["P$it"] = continuation(listOf("lesson0000$it" to CHANNEL), next = "P${it + 1}") }
+        youtube.onCall = { clock += 1_500 } // each page takes 1.5 s
+
+        // The playlist screen: no page timeout, so a slow excluded first page must not read as an empty playlist.
+        val result = repository(Exclusions(api, { 1_000L }, backgroundScope)).getItems(PLAYLIST, page("P1"), itemOffset = 1)
+
+        assertEquals(listOf("lesson00004"), result.items.map { it.videoId })
+    }
+
+    @Test
+    fun `the walk past excluded pages starts no page after its budget, inside the player's page timeout`() = runTest {
+        whenever(api.fetchTitles(any())).thenReturn(Response.success(emptyMap()))
+        whenever(api.getPlaylist(PLAYLIST)).thenReturn(entry(*(1..9).map { "lesson0000$it" }.toTypedArray()))
+        whenever(api.getChannel(CHANNEL)).thenReturn(Response.error(404, "".toResponseBody(null)))
+        (1..9).forEach { youtube.pages["P$it"] = continuation(listOf("lesson0000$it" to CHANNEL), next = "P${it + 1}") }
+        youtube.onCall = { clock += 1_500 } // each page takes 1.5 s
+
+        val result = repository(Exclusions(api, { 1_000L }, backgroundScope)).getItems(PLAYLIST, page("P1"), itemOffset = 1, walkBudgetMs = 3_000L)
+
+        // P1 ends at 1.5 s, inside the 3 s budget, so P2 is read; P2 ends at 3 s: the caller continues from P3.
+        assertEquals(emptyList<String>(), result.items.map { it.videoId })
+        assertTrue(String(result.nextPage!!.body!!).contains("\"P3\""))
+        assertEquals(3, result.nextItemOffset)
     }
 
     @Test

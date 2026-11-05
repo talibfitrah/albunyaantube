@@ -115,11 +115,27 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    excludedVideoIds: { $0 == alpha ? ["vid-1"] : [] })
+                                    exclusions: { id, _ in Exclusions(videoIds: id == alpha ? ["vid-1"] : []) })
 
         await repo.refresh(channelIds: [Self.alpha], force: false)
 
         #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// A pull to refresh (`force`) asks the exclusions fresh, so a new exclusion shows at once; the automatic
+    /// refreshes reuse the gate's answer (up to `ExclusionMemo.maxAge`).
+    @Test func onlyAPullToRefreshAsksTheExclusionsFresh() async {
+        nonisolated final class Asked: @unchecked Sendable { let lock = NSLock(); var fresh: [Bool] = [] }
+        let asked = Asked()
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: ScriptedTransport([]), keyValueStore: MemoryKV()),
+                                    refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
+                                    sleep: { _ in },
+                                    exclusions: { _, fresh in asked.lock.withLock { asked.fresh.append(fresh) }; return Exclusions() })
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        await repo.refresh(channelIds: [Self.alpha], force: true)
+
+        #expect(asked.lock.withLock { asked.fresh } == [false, true])
     }
 
     /// The exclusions GETs go out at most `maxConcurrent` at a time, like the feeds.
@@ -134,11 +150,11 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: ScriptedTransport([]), keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    excludedVideoIds: { _ in
+                                    exclusions: { _, _ in
                                         inFlight.enter()
                                         try? await Task.sleep(for: .milliseconds(20))
                                         inFlight.leave()
-                                        return [] })
+                                        return Exclusions() })
 
         await repo.refresh(channelIds: channels, force: false)
 
@@ -161,12 +177,176 @@ struct MeFeedRepositoryTests {
         let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: overlap, keyValueStore: MemoryKV()),
                                     refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar,
                                     sleep: { _ in },
-                                    excludedVideoIds: { _ in overlap.lock.withLock { overlap.asked = true }; return [] })
+                                    exclusions: { _, _ in overlap.lock.withLock { overlap.asked = true }; return Exclusions() })
 
         await repo.refresh(channelIds: [Self.alpha], force: false)
 
         #expect(overlap.lock.withLock { overlap.sawAsked })
         #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// Each channel's answer as a test sets it (unset = nothing excluded); a `late` channel's answer waits on `gate`.
+    nonisolated final class Answers: @unchecked Sendable {
+        let lock = NSLock(); var lists: [String: Exclusions?] = [:]; var late: Set<String> = []
+        let gate = Gate()
+        func answer(_ id: String) async -> Exclusions? {
+            let (now, isLate) = lock.withLock { (lists[id, default: Exclusions()], late.contains(id)) }
+            if isLate { await gate.block() }
+            return now
+        }
+        func set(_ id: String, _ new: Exclusions?, late: Bool = false) {
+            lock.withLock { lists[id] = .some(new); if late { self.late.insert(id) } else { self.late.remove(id) } }
+        }
+    }
+
+    private func exclusionsRepo(_ transport: ScriptedTransport, _ answers: Answers) -> MeFeedRepository {
+        MeFeedRepository(atom: AtomFeedFetcher(transport: transport, keyValueStore: MemoryKV()),
+                         refreshState: MemoryKV(), now: { Self.now }, calendar: Self.calendar, sleep: { _ in },
+                         exclusions: { id, _ in await answers.answer(id) }, exclusionWait: .milliseconds(50))
+    }
+
+    /// Up to ~5 s for `condition`, polling: the late-answer cases wait on work the repository started itself.
+    private func eventually(_ condition: () -> Bool) async -> Bool {
+        for _ in 0..<500 where !condition() { try? await Task.sleep(for: .milliseconds(10)) }
+        return condition()
+    }
+
+    /// A slow backend no longer holds the feed: it renders after the bounded wait with the channels already answered,
+    /// and a late channel's rows join when its answer does -- never before, so its excluded video never flashes.
+    @Test func aLateChannelJoinsTheFeedWhenItsAnswerLands() async {
+        let answers = Answers()
+        let transport = ScriptedTransport([feed(entry("a-0", Self.week0)),
+                                           feed(entry("b-0", Self.week0Older), entry("b-1", Self.week0))])
+        let repo = exclusionsRepo(transport, answers)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        answers.set(Self.beta, Exclusions(videoIds: ["b-1"]), late: true)
+
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha, Self.beta], force: false) }
+        await answers.gate.waitUntilBlocked()
+        #expect(await eventually { !repo.isRefreshing }, "the feed waited for the answer")
+        #expect(allItems(repo) == ["a-0"], "an unanswered channel's rows must not show")
+
+        await answers.gate.release()
+        await refresh.value
+        #expect(await eventually { allItems(repo) == ["a-0", "b-0"] }, "the late answer must add its channel, filtered")
+    }
+
+    /// An empty feed waiting on answers is still loading, not "nothing here": the spinner stays until one lands.
+    @Test func anEmptyFeedWaitingOnAnswersStillReadsAsLoading() async {
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(), late: true)
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0))]), answers)
+
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: false) }
+        await answers.gate.waitUntilBlocked()
+        try? await Task.sleep(for: .milliseconds(200))   // well past `exclusionWait`
+        #expect(repo.weeks.isEmpty && repo.isRefreshing, "an unanswered feed must not read as empty")
+
+        await answers.gate.release()
+        await refresh.value
+        #expect(await eventually { allItems(repo) == ["vid-0"] && !repo.isRefreshing })
+    }
+
+    /// No flash: a video hidden by an earlier answer stays hidden while the next round's answer is late.
+    @Test func aVideoHiddenBeforeStaysHiddenWhileTheNextAnswerIsLate() async {
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(videoIds: ["vid-1"]))
+        let transport = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older)),
+                                           feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))])
+        let repo = exclusionsRepo(transport, answers)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(allItems(repo) == ["vid-0"])
+
+        answers.set(Self.alpha, Exclusions(videoIds: ["vid-1"]), late: true)
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: true) }
+        await answers.gate.waitUntilBlocked()   // the second round has started and its answer is late
+        #expect(await eventually { !repo.isRefreshing }, "the feed waited for the answer")
+        #expect(allItems(repo) == ["vid-0"])
+
+        await answers.gate.release()
+        await refresh.value
+    }
+
+    /// An answer that lands while the feeds are still loading filters what is on screen at once.
+    @Test func anAnswerDuringASlowFeedFiltersTheFeedAtOnce() async {
+        let answers = Answers()
+        let parked = Gate()
+        let transport = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older)),
+                                           feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))],
+                                          park: { if $0 == 2 { await parked.block() } })
+        let repo = exclusionsRepo(transport, answers)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+        #expect(allItems(repo) == ["vid-0", "vid-1"])
+
+        answers.set(Self.alpha, Exclusions(videoIds: ["vid-1"]))
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: true) }
+        await parked.waitUntilBlocked()
+        #expect(await eventually { allItems(repo) == ["vid-0"] }, "the answer waited for the feeds")
+
+        await parked.release()
+        await refresh.value
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// Nor does an answer wait for the feeds when nothing is on screen yet (a launch over a saved feed, or a chip
+    /// tapped during a slow refresh): the channel's saved rows show as soon as its answer lands.
+    @Test func anAnswerShowsTheSavedFeedWithoutWaitingForTheFeeds() async {
+        let saved = MemoryKV()
+        let first = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))])
+        await MeFeedRepository(atom: AtomFeedFetcher(transport: first, keyValueStore: saved), refreshState: MemoryKV(),
+                               now: { Self.now }, calendar: Self.calendar, sleep: { _ in })
+            .refresh(channelIds: [Self.alpha], force: false)
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(videoIds: ["vid-1"]))
+        let parked = Gate()
+        let slow = ScriptedTransport([feed(entry("vid-0", Self.week0), entry("vid-1", Self.week0Older))],
+                                     park: { _ in await parked.block() })
+        let repo = MeFeedRepository(atom: AtomFeedFetcher(transport: slow, keyValueStore: saved), refreshState: MemoryKV(),
+                                    now: { Self.now }, calendar: Self.calendar, sleep: { _ in },
+                                    exclusions: { id, _ in await answers.answer(id) }, exclusionWait: .milliseconds(50))
+
+        let refresh = Task { await repo.refresh(channelIds: [Self.alpha], force: false) }
+        await parked.waitUntilBlocked()
+        #expect(await eventually { allItems(repo) == ["vid-0"] }, "the answer waited for the feeds")
+
+        await parked.release()
+        await refresh.value
+    }
+
+    /// A 410 channel (the catalog pulled it) leaves the feed, as it leaves the channel screen.
+    @Test func a410ChannelLeavesTheFeed() async {
+        let answers = Answers()
+        answers.set(Self.alpha, nil)
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0))]), answers)
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo).isEmpty)
+    }
+
+    /// Fail-open: a channel the gate knows nothing about (a failed ask, no answer before) still shows its rows.
+    @Test func aChannelTheGateKnowsNothingAboutStillShows() async {
+        let answers = Answers()
+        answers.set(Self.alpha, Exclusions(registered: false))
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0))]), answers)
+
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        #expect(allItems(repo) == ["vid-0"])
+    }
+
+    /// A failed ask after a 410 knows nothing new (the memo's `registered: false`), so the channel stays gone.
+    @Test func aFailedAskAfterA410KeepsTheChannelGone() async {
+        let answers = Answers()
+        answers.set(Self.alpha, nil)
+        let repo = exclusionsRepo(ScriptedTransport([feed(entry("vid-0", Self.week0)), feed(entry("vid-0", Self.week0))]),
+                                  answers)
+        await repo.refresh(channelIds: [Self.alpha], force: false)
+
+        answers.set(Self.alpha, Exclusions(registered: false))
+        await repo.refresh(channelIds: [Self.alpha], force: true)
+
+        #expect(allItems(repo).isEmpty)
     }
 
     // MARK: - Bucketing

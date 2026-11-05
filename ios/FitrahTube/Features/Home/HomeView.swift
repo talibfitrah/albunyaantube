@@ -82,10 +82,10 @@ struct HomeView: View {
             viewModel = HomeViewModel(catalog: container.catalog, filter: container.filters, widthClass: { widthClass })
             Task { await viewModel?.load() }
         }
-        // A return after an idle spell (`Router.catalogToken`): pull-to-refresh's path, content kept on screen.
+        // A return after an idle spell (`Router.catalogToken`): page 1 refreshed in place, the loaded pages kept.
         .onChange(of: router.catalogToken) { _, _ in
             paginationGuard.reset()
-            Task { await viewModel?.refresh() }
+            Task { await viewModel?.refreshInPlace() }
         }
         // Re-arm autofill after every completed load, the way Android re-runs its guards from the
         // `submitList` completion callback (gate B1-C1).

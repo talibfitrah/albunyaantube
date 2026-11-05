@@ -26,21 +26,33 @@ struct BackendAvailabilityGate: AvailabilityGate {
     private let now: @Sendable () -> Date
     /// A reference: every copy of this gate shares one memo (`AppContainer.browseGate`).
     private let memo = ExclusionMemo()
+    /// The signed-in account's uid, nil for none. The memo is keyed by it: a PERSONAL item's lists are its grantee's
+    /// and never answer the next account to sign in, or a guest.
+    private let owner: @Sendable () async -> String?
 
     init(transport: HTTPTransport = URLSessionTransport(), baseURL: URL, timeout: Duration = .seconds(3),
-         now: @escaping @Sendable () -> Date = { Date() }) {
+         now: @escaping @Sendable () -> Date = { Date() }, owner: @escaping @Sendable () async -> String? = { nil }) {
         self.transport = transport
         self.baseURL = baseURL
         self.timeout = timeout
         self.now = now
+        self.owner = owner
     }
+
+    /// `visible`'s bound on one page's channel asks, and on how many run at once.
+    // ponytail: items of a channel past the 8 most frequent show unfiltered; raise it if mixed playlists need more.
+    static let maxChannelAsks = 8
+    static let maxConcurrentAsks = 4
 
     /// §5.2 semantics: `sourceChannelId` present -> check the channel (channel-sourced videos
     /// aren't individually registered); else check the video. 2xx/404 -> available; 410 ->
-    /// unavailable (admin-blocked/rejected/archived, a hard stop); a thrown transport/HTTP error
+    /// unavailable (admin-blocked/rejected/archived, a hard stop) -- a channel's unless the video was approved on its
+    /// own (specific beats general, `plays`); a thrown transport/HTTP error
     /// fails open so offline users can still play a cached manifest.
     func verify(videoId: String, sourceChannelId: String?) async throws -> Bool {
-        await probe(sourceChannelId.map { "api/v1/channels/\($0)" } ?? "api/v1/videos/\(videoId)")
+        guard let sourceChannelId else { return await probe("api/v1/videos/\(videoId)") }
+        if await probe("api/v1/channels/\(sourceChannelId)") { return true }
+        return Self.approved(await videoStatus(videoId))
     }
 
     // MARK: - Exclusions (jar #15)
@@ -49,27 +61,79 @@ struct BackendAvailabilityGate: AvailabilityGate {
     /// fail-open: a failed fetch answers the last good lists, else none. `fresh` = a list's first page, so the next
     /// open shows a new exclusion; a later page reuses an answer younger than `ExclusionMemo.maxAge`.
     func exclusions(channelId: String, fresh: Bool) async -> Exclusions? {
-        await memo.answer("api/v1/channels/\(channelId)", fresh: fresh, now: now()) { await fetch($0) }
+        await answer("api/v1/channels/\(channelId)", fresh: fresh)
     }
 
     /// The playlist's, same semantics. A 404 is a playlist the backend does not list (`registered == false`).
     func exclusions(playlistId: String, fresh: Bool) async -> Exclusions? {
-        await memo.answer("api/v1/playlists/\(playlistId)", fresh: fresh, now: now()) { await fetch($0) }
+        await answer("api/v1/playlists/\(playlistId)", fresh: fresh)
     }
 
-    /// A playlist page minus its exclusions. One the backend does not list -- a channel's own playlist -- takes
-    /// each item's channel's video exclusions instead.
-    func visible(_ items: [VideoItem], in playlist: Exclusions, fresh: Bool) async -> [VideoItem] {
-        var hidden = playlist.videoIds
-        if !playlist.registered {
-            await withTaskGroup(of: Set<String>.self) { group in
-                for channelId in Set(items.compactMap(\.channelId)) {
-                    group.addTask { await exclusions(channelId: channelId, fresh: fresh)?.videoIds ?? [] }
-                }
-                for await ids in group { hidden.formUnion(ids) }
-            }
+    /// The signed transport signs as whoever is signed in when it sends, so an account change during the fetch makes
+    /// the answer someone else's: it is a failure, never kept under this key.
+    private func answer(_ path: String, fresh: Bool) async -> Exclusions? {
+        let asker = await owner() ?? ""
+        return await memo.answer("\(asker)|\(path)", fresh: fresh, now: now()) {
+            let fetched = await fetch(path)
+            return (await owner() ?? "") == asker ? fetched : .failed
         }
-        return items.filter { !hidden.contains($0.id) }
+    }
+
+    /// Playback's uploader check, whatever opened the video (Search, the library, a saved copy, a deep link). Specific
+    /// beats general (Android parity): the channel excluding this video always blocks; the channel's 410 blocks unless
+    /// the video was approved on its own (its route answers 2xx). `askingTheVideo` (a saved copy, which skips the
+    /// resolver's own HEAD) also asks the video's route, whose 410 blocks. No uploader, a channel the backend does not
+    /// list (404) or a failed ask plays (fail open). The memo first (`fresh: false`); each fetch waits at most 3 s.
+    // ponytail: approved-playlist context never reaches the resolver, so a playlist's approval does not lift a channel's
+    // 410 here; pass the playlist through `StreamResolving` if that case matters.
+    func plays(_ videoId: String, uploader: String?, askingTheVideo: Bool) async -> Bool {
+        async let asked: Int? = askingTheVideo ? videoStatus(videoId) : nil
+        var lists: Exclusions? = Exclusions(registered: false)
+        if let uploader { lists = await exclusions(channelId: uploader, fresh: false) }
+        let video = await asked
+        if video == 410 || lists?.videoIds.contains(videoId) == true { return false }
+        guard lists == nil else { return true }
+        return Self.approved(askingTheVideo ? video : await videoStatus(videoId))
+    }
+
+    /// Under a 410 channel: the video's own route approved it (2xx), or gave no answer (fail open).
+    private static func approved(_ status: Int?) -> Bool { status.map { (200..<300).contains($0) } ?? true }
+
+    /// The video's own route, HEAD; nil when no answer came.
+    private func videoStatus(_ videoId: String) async -> Int? {
+        let request = HTTPRequest(method: "HEAD", url: baseURL.appending(path: "api/v1/videos/\(videoId)"), headers: [:], body: nil)
+        return try? await send(request).status
+    }
+
+    /// A playlist page minus its exclusions; nil = the playlist is gone. Its `owner` (the first page's header) and its
+    /// items' channels are asked, registered or not: their excluded videos are hidden, and a channel that excluded
+    /// this playlist makes it gone (a deep link to it), whoever uploaded its items. A 410 channel's items are hidden
+    /// only from a playlist the backend does not list (a channel's own, usually): an approved playlist's approval
+    /// outranks its channels' 410 (specific beats general). The asks are bounded: the owner plus the channels with
+    /// the most items on the page, `maxChannelAsks` in all, `maxConcurrentAsks` at a time.
+    func visible(_ items: [VideoItem], in playlist: Exclusions, playlistId: String, owner: String?,
+                 fresh: Bool) async -> [VideoItem]? {
+        var hidden = playlist.videoIds
+        var goneChannels = Set<String>()
+        var gone = false
+        let counts = Dictionary(items.compactMap(\.channelId).filter { $0 != owner }.map { ($0, 1) }, uniquingKeysWith: +)
+        let asked = (owner.map { [$0] } ?? []) + counts.sorted { $0.value != $1.value ? $0.value > $1.value : $0.key < $1.key }
+            .prefix(Self.maxChannelAsks - (owner == nil ? 0 : 1)).map(\.key)
+        await withTaskGroup(of: (String, Exclusions?).self) { group in
+            func absorb(_ answer: (String, Exclusions?)?) {
+                guard let (channelId, lists) = answer else { return }
+                guard let lists else { if !playlist.registered { goneChannels.insert(channelId) }; return }
+                hidden.formUnion(lists.videoIds)
+                if lists.playlistIds.contains(playlistId) { gone = true }
+            }
+            for (n, channelId) in asked.enumerated() {
+                if n >= Self.maxConcurrentAsks { absorb(await group.next()) }
+                group.addTask { (channelId, await exclusions(channelId: channelId, fresh: fresh)) }
+            }
+            while let answer = await group.next() { absorb(answer) }
+        }
+        if gone { return nil }
+        return items.filter { !hidden.contains($0.id) && !goneChannels.contains($0.channelId ?? "") }
     }
 
     private func fetch(_ path: String) async -> ExclusionMemo.Fetched {
@@ -138,32 +202,32 @@ actor ExclusionMemo {
     private var failedAt: [String: Date] = [:]
     private var inFlight: [String: Task<Fetched, Never>] = [:]
 
-    func answer(_ path: String, fresh: Bool, now: Date,
-                fetch: @escaping @Sendable (String) async -> Fetched) async -> Exclusions? {
-        if let running = inFlight[path] { return settle(path, await running.value) }
+    func answer(_ key: String, fresh: Bool, now: Date,
+                fetch: @escaping @Sendable () async -> Fetched) async -> Exclusions? {
+        if let running = inFlight[key] { return settle(key, await running.value) }
         if !fresh {
-            if let hit = good[path], now.timeIntervalSince(hit.at) < Self.maxAge { return hit.answer }
-            if let failed = failedAt[path], now.timeIntervalSince(failed) < Self.failureHold { return settle(path, .failed) }
+            if let hit = good[key], now.timeIntervalSince(hit.at) < Self.maxAge { return hit.answer }
+            if let failed = failedAt[key], now.timeIntervalSince(failed) < Self.failureHold { return settle(key, .failed) }
         }
-        let task = Task { await fetch(path) }
-        inFlight[path] = task
+        let task = Task { await fetch() }
+        inFlight[key] = task
         let fetched = await task.value
-        inFlight[path] = nil
+        inFlight[key] = nil
         switch fetched {
-        case .failed: failedAt[path] = now
-        case .gone: good[path] = (nil, now); failedAt[path] = nil
-        case .lists(let lists): good[path] = (lists, now); failedAt[path] = nil
+        case .failed: failedAt[key] = now
+        case .gone: good[key] = (nil, now); failedAt[key] = nil
+        case .lists(let lists): good[key] = (lists, now); failedAt[key] = nil
         }
-        return settle(path, fetched)
+        return settle(key, fetched)
     }
 
     /// A failure fails open: the last good lists, never a remembered 410. With none, nothing is known, so
     /// `registered: false` -- a channel's own playlist still takes its channels' lists (`visible`).
-    private func settle(_ path: String, _ fetched: Fetched) -> Exclusions? {
+    private func settle(_ key: String, _ fetched: Fetched) -> Exclusions? {
         switch fetched {
         case .gone: nil
         case .lists(let lists): lists
-        case .failed: good[path]?.answer ?? Exclusions(registered: false)
+        case .failed: good[key]?.answer ?? Exclusions(registered: false)
         }
     }
 }

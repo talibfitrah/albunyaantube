@@ -33,6 +33,7 @@ import androidx.media3.common.VideoSize
 import com.albunyaan.tube.data.channel.Page
 import com.albunyaan.tube.data.extractor.ExtractorClient
 import com.albunyaan.tube.data.playlist.PlaylistItem
+import com.albunyaan.tube.data.playlist.PlaylistPage
 import dagger.hilt.android.lifecycle.HiltViewModel
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.Dispatchers
@@ -80,6 +81,7 @@ class PlayerViewModel @Inject constructor(
     private val networkMonitor: com.albunyaan.tube.util.NetworkMonitor,
     private val liveChannelResolver: com.albunyaan.tube.data.extractor.LiveChannelResolver,
     private val castWatch: CastRemovalWatch,
+    private val exclusions: com.albunyaan.tube.data.source.Exclusions,
 ) : ViewModel() {
 
     private val dispatcher: CoroutineDispatcher = Dispatchers.Main.immediate
@@ -985,17 +987,43 @@ class PlayerViewModel @Inject constructor(
 
     private fun savedCopyOf(videoId: String): DownloadEntry? = downloadRepository.savedCopyOf(videoId)
 
+    /**
+     * The stream gates for a saved copy, in their order: the video's own answer (410 hides it), then its uploader's
+     * channel ([com.albunyaan.tube.data.source.Exclusions.hides], memo first). Fails open: a failed or slow answer plays.
+     */
+    private suspend fun savedCopyHidden(request: DownloadRequest): Boolean {
+        val code = try {
+            withTimeoutOrNull(SAVED_COPY_CHECK_MS) { contentService.videoAvailability(request.videoId) }
+        } catch (e: kotlinx.coroutines.CancellationException) {
+            throw e
+        } catch (e: Exception) {
+            null
+        }
+        // ponytail: a copy saved before 1.0.8 has no channel id, so only its video answer guards it until the 30-day
+        // expiry sweep deletes it; a one-off id backfill from a resolve would cover its channel too.
+        val channelId = request.channelId
+        return code == 410 || channelId != null &&
+            exclusions.hides(channelId, request.videoId, fresh = false, goneBlocks = code == 404)
+    }
+
     private fun completedDownload(downloadId: String): DownloadEntry? =
         downloadRepository.downloads.value.firstOrNull {
             it.request.id == downloadId && it.status == DownloadStatus.COMPLETED
         }
 
-    /** The local-file "resolve": re-reads the entry and file each time, never the network. */
-    private fun resolveDownload(downloadId: String) {
+    /**
+     * The local-file "resolve": re-reads the entry and file each time. Online it first runs the stream gates
+     * ([savedCopyHidden]); offline it plays.
+     */
+    private suspend fun resolveDownload(downloadId: String) {
         val entry = completedDownload(downloadId)
         val file = entry?.filePath?.let(::File)?.takeIf { it.isFile }
         if (entry == null || file == null) {
             updateState { it.copy(streamState = StreamState.Error(R.string.player_stream_unavailable)) }
+            return
+        }
+        if (networkMonitor.isCurrentlyOnline() && savedCopyHidden(entry.request)) {
+            updateState { it.copy(streamState = StreamState.ContentUnavailable) }
             return
         }
         val uri = file.toURI().toString()
@@ -1110,9 +1138,7 @@ class PlayerViewModel @Inject constructor(
 
         // Load first page (always allowed full timeout - not part of deep-start budget)
         val firstPage = try {
-            withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-                playlistDetailRepository.getItems(playlistId, page = null, itemOffset = 1)
-            }
+            playlistPage(playlistId, page = null, itemOffset = 1)
         } catch (e: Exception) {
             if (e is kotlinx.coroutines.CancellationException) throw e
             android.util.Log.e("PlayerViewModel", "Playlist first page fetch failed: ${e.message}")
@@ -1168,7 +1194,7 @@ class PlayerViewModel @Inject constructor(
             val pageTimeout = minOf(PAGE_FETCH_TIMEOUT_MS, remainingBudget)
             val morePage = try {
                 withTimeoutOrNull(pageTimeout) {
-                    playlistDetailRepository.getItems(playlistId, nextPage, nextItemOffset)
+                    playlistDetailRepository.getItems(playlistId, nextPage, nextItemOffset, PLAYLIST_WALK_BUDGET_MS)
                 }
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
@@ -2151,6 +2177,8 @@ class PlayerViewModel @Inject constructor(
         private const val EXTRACTOR_TIMEOUT_MS = 20000L // 20s timeout for extraction (NewPipe can be slow)
         /** Longest a first open waits for the download list's startup load before it streams. */
         private const val STARTUP_LOAD_WAIT_MS = 2_000L
+        /** Longest a saved copy waits for the video's own answer before it plays (the lists' wait). */
+        private const val SAVED_COPY_CHECK_MS = 2_000L
         private const val QUALITY_SWITCH_DEBOUNCE_MS = 300L // Debounce delay for quality switches
         /** A failed live refresh retries this often inside the lead window (Task 26 hand-off). */
         private const val LIVE_REFRESH_RETRY_MS = 2 * 60 * 1000L
@@ -2159,6 +2187,10 @@ class PlayerViewModel @Inject constructor(
 
         // PR6.6: Playlist paging constants
         private const val PAGE_FETCH_TIMEOUT_MS = 10000L  // 10s timeout per page fetch
+        // ponytail: the walk past excluded pages starts no page after 3 s, so the page it hands back (one more fetch, a
+        // <=2 s exclusions wait, a <=1.5 s titles wait) lands inside PAGE_FETCH_TIMEOUT_MS; lower it if pages are slower.
+        private const val PLAYLIST_WALK_BUDGET_MS = 3_000L
+        private const val MAX_EMPTIED_PAGES_FOLLOWED = 2 // each a fresh walk of up to 5 excluded pages
         private const val PAGE_FETCH_COOLDOWN_MS = 2000L  // 2s minimum gap between page fetches
         private const val MAX_ITEMS_TO_SCAN = 250         // Max items to scan for deep start
         private const val MAX_SCAN_TIME_MS = 3000L        // Max time for deep start scanning
@@ -2314,6 +2346,35 @@ class PlayerViewModel @Inject constructor(
     }
 
     /**
+     * A playlist page within one page timeout (null when the first fetch misses it). A page the exclusions emptied but
+     * with more behind it is followed, a bounded number of times, while time is left, so it never reads as an
+     * unavailable or ended playlist; when time runs out or a follow-up fails, the last page fetched is kept, with its
+     * cursor.
+     */
+    private suspend fun playlistPage(playlistId: String, page: Page?, itemOffset: Int): PlaylistPage<PlaylistItem>? {
+        var got: PlaylistPage<PlaylistItem>? = null
+        withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
+            var at = page
+            var offset = itemOffset
+            var followed = 0
+            while (true) {
+                val p = try {
+                    playlistDetailRepository.getItems(playlistId, at, offset, PLAYLIST_WALK_BUDGET_MS)
+                } catch (e: kotlinx.coroutines.CancellationException) {
+                    throw e
+                } catch (e: Exception) {
+                    if (got == null) throw e else break // a failed follow-up keeps the page already fetched
+                }
+                got = p
+                if (p.items.isNotEmpty() || followed++ >= MAX_EMPTIED_PAGES_FOLLOWED) break
+                at = p.nextPage ?: break
+                offset = p.nextItemOffset
+            }
+        }
+        return got
+    }
+
+    /**
      * PR6.6: Fetch the next page of playlist items.
      * Thread-safe via pagingMutex. Updates queue and paging state.
      *
@@ -2338,13 +2399,7 @@ class PlayerViewModel @Inject constructor(
             android.util.Log.d("PlayerViewModel", "fetchNextPlaylistPage: loading more items, offset=${currentState.nextItemOffset}")
 
             val page = try {
-                withTimeoutOrNull(PAGE_FETCH_TIMEOUT_MS) {
-                    playlistDetailRepository.getItems(
-                        currentState.playlistId,
-                        currentState.nextPage,
-                        currentState.nextItemOffset
-                    )
-                }
+                playlistPage(currentState.playlistId, currentState.nextPage, currentState.nextItemOffset)
             } catch (e: Exception) {
                 if (e is kotlinx.coroutines.CancellationException) throw e
                 android.util.Log.w("PlayerViewModel", "fetchNextPlaylistPage: error ${e.message}")

@@ -5,10 +5,13 @@ stable release.
 
 ## [Unreleased]
 
-- iOS (next build): after a quality change, a scrub that has not landed yet is kept, so playback resumes at the scrubbed position instead of the old one or 0:00.
+- Exclusions (backend, Android 1.0.6, iOS 1.0.8): videos and playlists an admin excludes from a channel or playlist no longer show in that channel's or playlist's lists, the Me feed or Shorts, also for personal channels and playlists (only the person they belong to can see those). On Android a channel-excluded video also stops playing from Favorites, Search, deep links and saved copies opened online (offline, saved copies still play). A rejected or archived channel blocks its videos unless the video itself was approved; an unreachable server never blocks playback.
+- Lists (Android 1.0.6, iOS 1.0.8): coming back after more than 5 minutes refreshes the first page in place, so you keep your place in the list and see new items and exclusions without a manual refresh.
+- iOS (1.0.8): after a quality change, a scrub that has not landed yet is kept, so playback resumes at the scrubbed position instead of the old one or 0:00.
 - Admin dashboard: a failed later page keeps the rows already loaded and offers a retry of that page; YouTube and server reads time out after 30 s with a message in English, Arabic or Dutch; Content Search "load more" errors show with a retry.
 - Android Suggest: "load more" on YouTube search results returns the next page (it returned an empty last page before).
 - Backend: the playback helper is sandboxed further (no shared message queues, no writes to its own memory, at most 4 n / 64 s challenges per request); unused admin endpoints check-existing and registry toggle removed.
+- iOS (1.0.8): the quality menu is there from the moment a video starts, picking a higher quality takes effect, and videos start faster.
 - iOS (1.0.7): the quality menu lists the video's real resolutions (240p to 1080p) instead of a fixed list, and a lower pick takes effect immediately at the same position, also when picking several times in a row.
 - iOS (1.0.5): some playlists that opened empty (e.g. "White Noise for Babies") list their videos again.
 - Live channels (backend, Android 1.0.5, iOS 1.0.6): the "Channels Live" category scales to hundreds of channels. The apps find each channel's current stream on the phone, and the server only checks it against the catalog. The server checks each channel at most once a day while it is live, and an off-air channel every 4 hours at most, within a fixed daily budget of 864 requests; with a few hundred off-air channels that budget stretches each one's check to about once a day, so a channel that goes live can take that long to appear (before, about 4 channels hit the source's rate limit).

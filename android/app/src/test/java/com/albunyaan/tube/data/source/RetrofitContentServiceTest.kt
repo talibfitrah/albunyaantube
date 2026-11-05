@@ -7,6 +7,8 @@ import com.albunyaan.tube.data.model.api.models.PageInfo
 import com.albunyaan.tube.data.source.api.ContentApi
 import com.albunyaan.tube.data.source.api.CursorPage
 import com.albunyaan.tube.data.source.api.RegistryEntry
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.ExperimentalCoroutinesApi
 import kotlinx.coroutines.test.runTest
 import okhttp3.Headers
@@ -30,7 +32,7 @@ import retrofit2.Response
 class RetrofitContentServiceTest {
 
     private val api: ContentApi = mock()
-    private val service = RetrofitContentService(api, Exclusions(api))
+    private val service = RetrofitContentService(api, Exclusions(api, { 0L }, CoroutineScope(Dispatchers.IO)))
 
     // --- VIDEO ---
 
@@ -161,7 +163,7 @@ class RetrofitContentServiceTest {
 
     @Test
     fun `the gate's GET is the answer the channel's lists read, not a second call`() = runTest {
-        val exclusions = Exclusions(api)
+        val exclusions = Exclusions(api, { 0L }, CoroutineScope(Dispatchers.IO))
         whenever(api.getChannel("UCabc"))
             .thenReturn(Response.success(RegistryEntry(excludedVideoIds = listOf("lesson00001"))))
 
@@ -274,7 +276,7 @@ class RetrofitContentServiceTest {
             val api: ContentApi = mock()
             whenever(api.search("quran", null, 50)).thenReturn(unavailable(retryAfter = "5", code = code), Response.success(listOf()))
 
-            val error = runCatching { RetrofitContentService(api, Exclusions(api)).search("quran", null, 50) }.exceptionOrNull()
+            val error = runCatching { RetrofitContentService(api, Exclusions(api, { 0L }, CoroutineScope(Dispatchers.IO))).search("quran", null, 50) }.exceptionOrNull()
 
             assertEquals("a $code was not surfaced as it came", code, (error as? HttpException)?.code())
             verify(api, times(1)).search("quran", null, 50)

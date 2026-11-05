@@ -58,6 +58,11 @@ public enum ClientFamily: Sendable {
     }
 }
 
+/// `id` when it is a channel id (`UC` + 22), else nil: an uploader or owner read from YouTube goes into backend paths.
+func channelId(_ id: String?) -> String? {
+    id.flatMap { $0.wholeMatch(of: /UC[A-Za-z0-9_-]{22}/) != nil ? $0 : nil }
+}
+
 /// A resolved stream plus the context needed to play/expire it.
 public struct Resolved: Sendable {
     public var stream: ResolvedStream
@@ -70,13 +75,20 @@ public struct Resolved: Sendable {
     public var isLiveNow: Bool
     /// The source's own title (`StreamingData.title`, owner issue 1). nil when the answer carries none (TVHTML5, offline).
     public var title: String?
+    /// The uploader's channel (`videoDetails.channelId`), whose exclusions playback asks. nil when the answer carries
+    /// none (offline, a fixture).
+    public var channelId: String?
     /// Stage 6 I-M2: the app's identity of the network this stream was minted on (googlevideo URLs are IP-bound, `ip=` in
     /// `sparams`). Set by the app on an HD upgrade; InnerTubeKit never reads it.
     public var mintNetwork: String?
+    /// The answer's mp4 avc1 video sizes (the ANDROID rung's `adaptiveFormats`): the renditions an HD upgrade of this
+    /// 360p can bring (`TVAdaptive.select` keeps mp4 avc1 only), so the quality menu has them before HD lands. Empty
+    /// for every other rung.
+    public var videoSizes: [CGSize] = []
 
     public init(
         stream: ResolvedStream, client: ClientFamily, userAgent: String, resolvedAt: Date, expiresAt: Date?, isLiveNow: Bool = false,
-        title: String? = nil
+        title: String? = nil, channelId: String? = nil
     ) {
         self.stream = stream
         self.client = client
@@ -85,6 +97,7 @@ public struct Resolved: Sendable {
         self.expiresAt = expiresAt
         self.isLiveNow = isLiveNow
         self.title = title
+        self.channelId = channelId
     }
 
     public func isExpired(now: Date) -> Bool {

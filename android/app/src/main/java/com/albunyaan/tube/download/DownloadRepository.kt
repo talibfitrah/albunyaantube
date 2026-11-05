@@ -237,7 +237,8 @@ class DefaultDownloadRepository(
                 playlistId = playlistMetadata?.first ?: existing?.playlistId,
                 playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel,
                 channelName = storedChannel?.first ?: existing?.channelName,
-                durationSeconds = storedChannel?.second ?: existing?.durationSeconds
+                durationSeconds = storedChannel?.second ?: existing?.durationSeconds,
+                channelId = storage.getStoredChannelId(downloadId) ?: existing?.channelId,
             )
         }
 
@@ -290,7 +291,8 @@ class DefaultDownloadRepository(
                 playlistId = playlistMetadata?.first ?: existing?.playlistId,
                 playlistQualityLabel = playlistMetadata?.second ?: existing?.playlistQualityLabel,
                 channelName = storedChannel?.first ?: existing?.channelName,
-                durationSeconds = storedChannel?.second ?: existing?.durationSeconds
+                durationSeconds = storedChannel?.second ?: existing?.durationSeconds,
+                channelId = storage.getStoredChannelId(downloadId) ?: existing?.channelId,
             )
         }
 
@@ -606,8 +608,10 @@ class DefaultDownloadRepository(
                             val filePath = info.outputData.getString(KEY_FILE_PATH)
                             val metadata = metadataFrom(info)
                             metadata?.let { metrics.onDownloadSizeKnown(request.id, it.sizeBytes) }
+                            val channelId = storage.getStoredChannelId(request.id) // the worker's, once it resolved
                             updateEntry(request) {
                                 it.copy(
+                                    request = it.request.copy(channelId = channelId ?: it.request.channelId),
                                     status = DownloadStatus.COMPLETED,
                                     progress = 100,
                                     filePath = filePath,

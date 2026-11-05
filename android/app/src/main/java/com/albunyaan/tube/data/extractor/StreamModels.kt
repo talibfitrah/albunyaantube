@@ -120,7 +120,9 @@ data class ResolvedStreams(
     /** Wall-clock ms when the URLs were minted; with [urlGeneratedAt] it turns `/expire/<t>/` into a monotonic deadline. */
     val urlGeneratedAtWallMs: Long = System.currentTimeMillis(),
     /** StreamInfo.name = playerResponse.videoDetails.title, the uploader's original (owner issue 1); null for a local file. */
-    val title: String? = null
+    val title: String? = null,
+    /** The uploader's `UC…` id from StreamInfo's uploader URL, so playback without channel context finds its exclusions. */
+    val uploaderChannelId: String? = null,
 ) {
     companion object {
         /**

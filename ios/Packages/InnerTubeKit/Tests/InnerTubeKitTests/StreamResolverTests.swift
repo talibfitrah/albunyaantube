@@ -223,6 +223,56 @@ import Testing
         #expect(resolved.title == "T-android")
     }
 
+    /// Exclusions at playback: the uploader (`videoDetails.channelId`) rides on the Resolved, from either rung and
+    /// from the cache, so the app can ask that channel's exclusions whatever screen opened the video.
+    @Test func bothRungsCarryTheUploaderAndTheCacheKeepsIt() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let (resolver, _) = makeResolver(transport: transport)
+        _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        let cached = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(cached.channelId == "UCmMcOjsVehVlEOteyrhjI2Q")
+        #expect(transport.callCount == 1)
+
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}]},"videoDetails":{"isLive":false,"channelId":"UCandroidUploader0000000"}}
+        """.utf8))
+        let (fallback, _) = makeResolver(transport: RecordingTransport([try fixtureResponse("player-unplayable-kids"), android]))
+        let progressive = try await fallback.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(progressive.channelId == "UCandroidUploader0000000")
+    }
+
+    /// The uploader goes into backend paths and onto saved rows, so anything that is not a channel id is no uploader.
+    @Test func anUploaderThatIsNotAChannelIdIsNone() async throws {
+        let body = String(decoding: try fixtureResponse("player-ok-hls").body, as: UTF8.self)
+            .replacingOccurrences(of: "UCmMcOjsVehVlEOteyrhjI2Q", with: "x/../../videos/abc")
+        let (resolver, _) = makeResolver(transport: RecordingTransport([HTTPResponse(status: 200, headers: [:], body: Data(body.utf8))]))
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        #expect(resolved.channelId == nil)
+    }
+
+    /// Owner report 2026-11-03: the quality menu is there while the 360p plays. The ANDROID answer already lists the
+    /// avc1 renditions the HD upgrade (`TVAdaptive.select`: mp4 avc1 only) can bring; nothing else is a size (VP9,
+    /// AV1, audio), and a repeat (a second frame rate) is one size.
+    @Test func theAndroidRungCarriesItsAvc1Sizes() async throws {
+        let android = HTTPResponse(status: 200, headers: [:], body: Data("""
+        {"playabilityStatus":{"status":"OK"},"streamingData":{"formats":[{"itag":18,"url":"https://rr1.googlevideo.com/videoplayback?itag=18"}],
+         "adaptiveFormats":[
+          {"itag":137,"mimeType":"video/mp4; codecs=\\"avc1.640028\\"","bitrate":4000000,"width":1920,"height":1080},
+          {"itag":399,"mimeType":"video/mp4; codecs=\\"av01.0.08M.08\\"","bitrate":2000000,"width":1920,"height":1080},
+          {"itag":271,"mimeType":"video/webm; codecs=\\"vp9\\"","bitrate":9000000,"width":2560,"height":1440},
+          {"itag":136,"mimeType":"video/mp4; codecs=\\"avc1.4d401f\\"","bitrate":2000000,"width":1280,"height":720},
+          {"itag":298,"mimeType":"video/mp4; codecs=\\"avc1.4d4020\\"","bitrate":3000000,"width":1280,"height":720,"fps":60},
+          {"itag":140,"mimeType":"audio/mp4; codecs=\\"mp4a.40.2\\"","bitrate":130000}]},
+         "videoDetails":{"isLive":false}}
+        """.utf8))
+        let transport = RecordingTransport([try fixtureResponse("player-unplayable-kids"), android])
+        let (resolver, _) = makeResolver(transport: transport)
+
+        let resolved = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+
+        #expect(resolved.videoSizes == [CGSize(width: 1920, height: 1080), CGSize(width: 1280, height: 720)])
+    }
+
     // MARK: - UNPLAYABLE is decided by WHO refused (spec §4.2, R6)
 
     /// Members-only (catalog J-AuO9TNt5I, real captures) and a geo-locked shape: VISIONOS refuses,
@@ -1254,14 +1304,123 @@ import Testing
 
     // MARK: - g) 410 from the availability gate throws .unavailable
 
+    /// Owner ruling 2026-11-04 (start speed): the check runs alongside the first player POST, so that POST may go out,
+    /// but the walk's answer is never handed over or cached: the next open is refused again, not served from the cache.
     @Test func availabilityGateUnavailableThrowsUnavailable() async throws {
         let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
         let (resolver, _) = makeResolver(transport: transport, gate: StubGate(available: false))
 
+        for _ in 0..<2 {
+            await expectThrows(.unavailable(videoId: Self.videoId)) {
+                _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+            }
+        }
+    }
+
+    /// Holds `verify` until `release()`, so a test can see what the walk does meanwhile.
+    private final class HeldGate: AvailabilityGate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var released = false
+        let available: Bool
+        init(available: Bool = true) { self.available = available }
+        func release() { lock.withLock { released = true } }
+        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool {
+            for _ in 0..<2000 where !lock.withLock({ released }) { try await Task.sleep(for: .milliseconds(1)) }
+            return available
+        }
+    }
+
+    private final class Flag: @unchecked Sendable {
+        private let lock = NSLock()
+        private var value = false
+        var isSet: Bool { lock.withLock { value } }
+        func set() { lock.withLock { value = true } }
+    }
+
+    /// Owner ruling 2026-11-04 (start speed): the backend check no longer delays the first player POST; the resolve
+    /// still waits for its answer before handing anything over.
+    @Test func theGateRunsAlongsideTheFirstPlayerPostAndIsAwaited() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let gate = HeldGate()
+        let (resolver, _) = makeResolver(transport: transport, gate: gate)
+        let done = Flag()
+
+        let job = Task {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+            done.set()
+        }
+        for _ in 0..<1000 where transport.callCount == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        #expect(transport.callCount == 1)       // the POST went out while the gate is still out
+        try await Task.sleep(for: .milliseconds(50))
+        #expect(!done.isSet)                    // and the answer waits for the gate
+        gate.release()
+        try await job.value
+        #expect(done.isSet)
+    }
+
+    /// The first call blocks until cancelled (a cancelled HEAD throws, which `verify`'s caller reads as fail-open); later
+    /// calls answer 410.
+    private final class CancelledThenRefusingGate: AvailabilityGate, @unchecked Sendable {
+        private let lock = NSLock()
+        private var calls = 0
+        func verify(videoId: String, sourceChannelId: String?) async throws -> Bool {
+            let first = lock.withLock { calls += 1; return calls == 1 }
+            guard first else { return false }
+            try await Task.sleep(for: .seconds(30))
+            return true
+        }
+    }
+
+    /// Codex P1: a job superseded (forceRefresh) after its walk but before its gate answered must not read the cancelled
+    /// gate as fail-open and cache what it walked: the cache hit would then play a video the backend refuses.
+    @Test func aSupersededJobNeverCachesPastItsCancelledGate() async throws {
+        let ok = try fixtureResponse("player-ok-hls")
+        let transport = RecordingTransport([ok, ok, ok])
+        let (resolver, _) = makeResolver(transport: transport, gate: CancelledThenRefusingGate())
+        let first = Task { try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false) }
+        for _ in 0..<1000 where transport.callCount == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        try await Task.sleep(for: .milliseconds(20))     // the walk is done; the gate is still out
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: true)
+        }
+        _ = try? await first.value
         await expectThrows(.unavailable(videoId: Self.videoId)) {
             _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
         }
-        #expect(transport.callCount == 0)
+    }
+
+    /// Cubic + Codex: a walk the gate refuses is thrown away, and so is its bot-check trip toward the app-wide cooldown.
+    /// (Its POSTs still spend request spacing and may adopt or rotate visitorData, as any POST does: the price of running
+    /// the gate alongside, owner ruling 2026-11-04.)
+    @Test func aGateRefusedWalkRecordsNoTrip() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-botcheck")])
+        let (resolver, session) = makeResolver(transport: transport, gate: StubGate(available: false))
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(await session.loadCooldown().tripCount == 0)
+    }
+
+    /// Cubic: a 410 refuses at once, as before the gate ran alongside; the walk still out is cancelled, not waited for.
+    @Test func aGateRefusalDoesNotWaitForTheWalk() async throws {
+        let transport = GatedTransport(try fixtureResponse("player-ok-hls"))   // the first POST hangs 30 s
+        let (resolver, _) = makeResolver(transport: transport, gate: StubGate(available: false))
+        let started = ContinuousClock.now
+        await expectThrows(.unavailable(videoId: Self.videoId)) {
+            _ = try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false)
+        }
+        #expect(ContinuousClock.now - started < .seconds(2))
+    }
+
+    /// The same order for a 410 that answers after the walk: still `.unavailable`.
+    @Test func aLateGateRefusalStillRefuses() async throws {
+        let transport = RecordingTransport([try fixtureResponse("player-ok-hls")])
+        let gate = HeldGate(available: false)
+        let (resolver, _) = makeResolver(transport: transport, gate: gate)
+        let job = Task { try await resolver.resolve(Self.videoId, purpose: .player, sourceChannelId: nil, forceRefresh: false) }
+        for _ in 0..<1000 where transport.callCount == 0 { try await Task.sleep(for: .milliseconds(1)) }
+        gate.release()
+        await expectThrows(.unavailable(videoId: Self.videoId)) { _ = try await job.value }
     }
 
     // MARK: - h) muxed save-walk (owner ruling 2026-09-01: requiresMuxed enables VIDEO saves)
