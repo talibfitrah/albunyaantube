@@ -1,0 +1,112 @@
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryOfflineAllowedTest.java
+  s_8a936fc306f37b::t_ab13bc6c9941ad 20-21,55-56
+frontend/tests/ContentLibraryTotals.spec.ts
+  s_8a936fc306f37b::t_b08ee0444040a4 79-90
+backend/src/test/java/com/albunyaan/tube/controller/LibrarySearchTest.java
+  s_8a936fc306f37b::t_0ff9a8c1b1753f 24-26,135-138
+  s_8a936fc306f37b::t_7833d29fb35049 1-23,27-134,140,152,154,159-197
+  s_8a936fc306f37b::t_5a491329286a88 139,141-151,153,155-158
+backend/src/main/resources/firestore.indexes.json
+  s_8a936fc306f37b::t_3ed46372c5bff4 69-85,136-152,211-227
+frontend/src/services/sortOrder.ts
+  s_8a936fc306f37b::t_26c1e0c5b2d88e 115-117,125,129-130,132-141
+backend/src/test/java/com/albunyaan/tube/controller/RegistryFake.java
+  s_8a936fc306f37b::t_c1349782a49a24 1-85
+  s_8a936fc306f37b::t_78f2d97ce361ad 86-91
+frontend/tests/e2e-browser/content-library-scroll.spec.ts
+  s_8a936fc306f37b::t_05a1b3a7506fee 99-100,102-103,106-107
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_8a936fc306f37b::t_98d0fa30f24f37 471-483
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_8a936fc306f37b::t_1a7037924ac4e2 461-473
+frontend/src/views/ContentLibraryView.vue
+  s_8a936fc306f37b::t_7ad5d087178f3b 1360
+  s_8a936fc306f37b::t_dbf389dc344a3f 1278-1281,1285,1290,1298-1300
+  s_8a936fc306f37b::t_5f0c415e673981 398
+  s_8a936fc306f37b::t_c557947468cfa6 640
+  s_8a936fc306f37b::t_465c1835243e9c 860-865
+  s_8a936fc306f37b::t_66e930c0d9ac34 1330,1334-1341
+  s_8a936fc306f37b::t_af6899254e13b9 1184,1188-1190,1195-1196
+  s_8a936fc306f37b::t_f1264979ece879 25-28
+  s_8a936fc306f37b::t_4a4f2c42a3495b 8-9
+  s_8a936fc306f37b::t_ae93944d7a0b55 649
+  s_8a936fc306f37b::t_d747f0d6dd495d 673
+  s_8a936fc306f37b::t_0786f05bc80913 1301,1342-1344,1357,1362-1363,1390,1395-1396,1404-1405,1574
+frontend/src/views/ContentSortingView.vue
+  s_8a936fc306f37b::t_8dbfae48754d1e 255,471-474,512-523,526,528,537,542-557,563,881,883-885,888,901,1447-1449
+  s_8a936fc306f37b::t_c9e1242c088767 559
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryVisibilityTest.java
+  s_8a936fc306f37b::t_ab13bc6c9941ad 23-24,75,81,96,109,122,133
+docs/architecture/api-specification.yaml
+  s_8a936fc306f37b::t_05bba4d6450295 3115,3117,3119,3211,3213,3215
+  s_8a936fc306f37b::t_4d6ec6bd0781a1 3168-3169
+  s_8a936fc306f37b::t_ee6834b79085ca 4381-4383,4389-4392
+  s_8a936fc306f37b::t_930069bdee4293 3104-3111,3114,3116,3118,3146-3152,3170-3173,3201,3206,3209
+backend/src/main/java/com/albunyaan/tube/controller/ContentLibraryController.java
+  s_8a936fc306f37b::t_5682eaf8746ddc 231,234,241-248,250-257,259-266,268-284,289,297,309,315-316,321-322,338,341,359,361,365,367,382,385,388-401,403-408,412-413,417-418,420,422,424-426,428,431-441,443-446,448,450-451,453-476,478,481-486,488-493,496-502,505,507,509,586-587,589
+  s_8a936fc306f37b::t_4e9aa5fe197e18 578
+  s_8a936fc306f37b::t_7c555d12856a7c 236-239,249
+  s_8a936fc306f37b::t_776c67b0a02eda 156-160,163,165-173,176-177,180-182,190,192-193,199,205-206,208,210
+  s_8a936fc306f37b::t_91cfed84dff674 16,76,90-91,105,295-296,300,317-319,324-337,340,342-358,362-364,366,368-381,383-384,387,402,409-411,419,423,427,447
+  s_8a936fc306f37b::t_b5be83888bfcde 121
+  s_8a936fc306f37b::t_0c4b808e25b3ad 386,449,506,508,510-511,590,592
+backend/src/main/java/com/albunyaan/tube/service/LibrarySearchSnapshot.java
+  s_8a936fc306f37b::t_69b3e4bf1c7e21 1-197
+  s_8a936fc306f37b::t_e4d8e832f54b41 198-204
+frontend/tests/ContentSortingLive.spec.ts
+  s_8a936fc306f37b::t_b596c4604d6804 203-228
+  s_8a936fc306f37b::t_1e175778fabff4 38
+backend/src/test/java/com/albunyaan/tube/controller/ContentLibraryPagingAndTotalsTest.java
+  s_8a936fc306f37b::t_68ed03a4691281 4-5,15,19,21,24-26,28-29,31,35-38,70,74,80,82-104,106-119,123-126,128,130-134,138-140,142,144-148,152-154,156-157,161-163,165-170,192-205,209-211,215-217,219,221-223,225-228,232-235,237,239-241,243-250,252,254-255,259-269,271-274,276-278,282-285,287,289-292,296-302,304,306-312,338-339,341-345
+  s_8a936fc306f37b::t_0c818d458cb095 65-68,71,75,78-79
+  s_8a936fc306f37b::t_88fc8e2c649e14 174-176,178,180-181,183,185,187-191
+frontend/tests/ContentBrowserModalPaging.spec.ts
+  s_8a936fc306f37b::t_96f08865d56da6 1-49
+frontend/tests/liveErrorsInViews.spec.ts
+  s_8a936fc306f37b::t_df553cbc92a9ad 29-30
+frontend/tests/approvedPicker.spec.ts
+  s_8a936fc306f37b::t_91378dba0645cf 2-3,11-13,19-22,24,26-29,32,35,38,40-42,48-49
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_8a936fc306f37b::t_14307ecc684e8f 321
+  s_8a936fc306f37b::t_8dd393ee589bad 426-429,431-440
+  s_8a936fc306f37b::t_787abd2fcfb154 443,445
+frontend/src/components/exclusions/ContentBrowserModal.vue
+  s_8a936fc306f37b::t_d2dcfe5a8d217c 298,304
+  s_8a936fc306f37b::t_72d39446cf4e11 250,253,256-257
+  s_8a936fc306f37b::t_6b3a1506ef27e6 190-191
+  s_8a936fc306f37b::t_23aa3b25fa8c92 277-278
+  s_8a936fc306f37b::t_75d2855bd03dd5 228
+  s_8a936fc306f37b::t_0a04d4f3314f94 188,272-273,276,281-282,284,303,305
+backend/src/test/java/com/albunyaan/tube/controller/ApprovedPickerTest.java
+  s_8a936fc306f37b::t_5ddccaac67a692 5,11,19-20,26-29,39,42-56,60,62-64,66-67,71-74,76-77,81-92,96-100,102,104-105,109-116,120-123,127,129,133-134,136,138-144
+frontend/tests/ContentLibraryLoadedWindow.spec.ts
+  s_8a936fc306f37b::t_746dcddbd5f51a 253-254,672-677,682
+  s_8a936fc306f37b::t_3ca2f942e1cefc 362-363,365-367
+  s_8a936fc306f37b::t_3888a547686218 248,252,258,388-389,394-398,402-420
+  s_8a936fc306f37b::t_8230e80b05c3e6 151,153
+  s_8a936fc306f37b::t_e295ff54c7a5c6 647,649,655,664
+  s_8a936fc306f37b::t_431f264b55ca32 143-145,150,152,154
+  s_8a936fc306f37b::t_977c6ad96ff45e 663
+  s_8a936fc306f37b::t_a3e96ed9e4e5d8 247,249-251,255-257,259-267
+frontend/src/locales/messages.ts
+  s_8a936fc306f37b::t_74de50b599e84a 3560,3564
+  s_8a936fc306f37b::t_426ee2a89ae551 452,456
+  s_8a936fc306f37b::t_fbe59ea8a03b98 2116,2120
+  s_8a936fc306f37b::t_bd8cf9bb244842 431-433,2095-2097,3539-3541
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "9117244c8a46f25ec28791241a05959b9772378a",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
