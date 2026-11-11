@@ -26,11 +26,13 @@ import org.springframework.cache.annotation.Cacheable;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
+import java.text.Collator;
 import java.time.LocalDateTime;
 import java.time.ZoneId;
 import java.time.temporal.ChronoUnit;
 import java.util.ArrayList;
 import java.util.Base64;
+import java.util.Comparator;
 import java.util.HashMap;
 import java.util.HashSet;
 import java.util.List;
@@ -122,16 +124,21 @@ public class PublicContentService {
         String upperType = type.toUpperCase(Locale.ROOT);
         if (allCategoryIds != null && !"CHANNELS".equals(upperType) && !"PLAYLISTS".equals(upperType)
                 && liveCategoryService.isLive(category)) {
-            return livePage(liveCategoryService.items(category), cursor, limit);
+            return pageOf(liveCategoryService.items(category), cursor, limit);
         }
 
         // For content types that support real cursor pagination
         switch (upperType) {
             case "CHANNELS":
+                if (allCategoryIds == null) return tabOrderPage("CHANNEL", cursor, limit);
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
+                if (allCategoryIds == null) return tabOrderPage("PLAYLIST", cursor, limit);
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
+                if (allCategoryIds == null && isBlank(length) && isBlank(date) && isBlank(sort)) {
+                    return tabOrderPage("VIDEO", cursor, limit);
+                }
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
             case "HOME":
             default:
@@ -155,6 +162,91 @@ public class PublicContentService {
                     return new CursorPageDto<>(items, null);
                 }
         }
+    }
+
+    private static boolean isBlank(String s) {
+        return s == null || s.isBlank();
+    }
+
+    /** Categories by displayOrder (null last), then id: the Content Sorting order Home and the tabs share. */
+    private static final Comparator<Category> DISPLAY_ORDER = Comparator
+            .comparingInt((Category c) -> c.getDisplayOrder() != null ? c.getDisplayOrder() : Integer.MAX_VALUE)
+            .thenComparing(Category::getId);
+
+    /** Parent category id → its child ids, in the order {@code all} lists them. */
+    private static Map<String, List<String>> childrenByParent(List<Category> all) {
+        Map<String, List<String>> children = new HashMap<>();
+        for (Category cat : all) {
+            if (cat.getParentCategoryId() != null) {
+                children.computeIfAbsent(cat.getParentCategoryId(), k -> new ArrayList<>()).add(cat.getId());
+            }
+        }
+        return children;
+    }
+
+    /** A page of a no-filter tab; a cursor that is not an offset (an old document-id cursor) ends the list. */
+    private CursorPageDto<ContentItemDto> tabOrderPage(String dtoType, String cursor, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        if (parseCursorOffset(cursor) < 0) {
+            return new CursorPageDto<>(new ArrayList<>(), null);
+        }
+        return pageOf(buildTabOrder().get(dtoType), cursor, limit);
+    }
+
+    /**
+     * Every approved item per type ("CHANNEL", "PLAYLIST", "VIDEO"): top-level categories in {@link #DISPLAY_ORDER},
+     * each through its Content Sorting order (parent plus subcategories, first category wins), then whatever no
+     * category listed, alphabetically.
+     * ponytail: rebuilds the whole catalog per content change (reads ≈ categories + order rows + ~2-3× approved items); page the walk if that outgrows one rebuild per content change.
+     */
+    private Map<String, List<ContentItemDto>> buildTabOrder()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        List<Category> all = new ArrayList<>(categoryRepository.findAll());
+        Map<String, List<String>> children = childrenByParent(all);
+        List<Category> topLevel = all.stream().filter(c -> c.getParentCategoryId() == null).sorted(DISPLAY_ORDER).toList();
+
+        // Same fan-out as getHomeFeed; a failed category propagates, because a partial list must not be cached.
+        List<CompletableFuture<List<ContentItemDto>>> walks = new ArrayList<>();
+        for (Category cat : topLevel) {
+            List<String> ids = new ArrayList<>();
+            ids.add(cat.getId());
+            ids.addAll(children.getOrDefault(cat.getId(), List.of()));
+            walks.add(asyncSupply(() -> getCategoryContentItems(ids, Integer.MAX_VALUE, 0)));
+        }
+
+        Map<String, List<ContentItemDto>> byType = new HashMap<>();
+        for (String type : List.of("CHANNEL", "PLAYLIST", "VIDEO")) {
+            byType.put(type, new ArrayList<>());
+        }
+        Set<String> seen = new HashSet<>();
+        for (CompletableFuture<List<ContentItemDto>> walk : walks) {
+            for (ContentItemDto dto : walk.join()) {
+                if (seen.add(dto.getType() + ":" + dto.getId())) {
+                    byType.get(dto.getType()).add(dto);
+                }
+            }
+        }
+
+        List<ContentItemDto> rest = new ArrayList<>();
+        for (Channel ch : channelRepository.findByStatus("APPROVED")) {
+            if (isApproved(ch) && isAvailable(ch)) rest.add(toDto(ch));
+        }
+        for (Playlist pl : playlistRepository.findByStatus("APPROVED")) {
+            if (isApproved(pl) && isAvailable(pl)) rest.add(toDto(pl));
+        }
+        for (Video v : videoRepository.findByStatus("APPROVED")) {
+            if (isApproved(v) && isAvailable(v)) rest.add(toDto(v));
+        }
+        // Channel DTOs fill name, playlists and videos title. The id tie-break keeps pages stable across rebuilds;
+        // the collator is built per call because it is not thread-safe.
+        Collator collator = Collator.getInstance(Locale.ROOT);
+        rest.stream()
+                .filter(d -> !seen.contains(d.getType() + ":" + d.getId()))
+                .sorted(Comparator.comparing((ContentItemDto d) -> d.getTitle() != null ? d.getTitle() : d.getName(),
+                                Comparator.nullsLast(collator))
+                        .thenComparing(ContentItemDto::getId))
+                .forEach(d -> byType.get(d.getType()).add(d));
+        return byType;
     }
 
     private List<ContentItemDto> getMixedContent(int limit, String category, List<String> allCategoryIds)
@@ -449,13 +541,7 @@ public class PublicContentService {
         List<Category> allCategories = new ArrayList<>(categoryRepository.findAll());
 
         // Build parent → children mapping for subcategory aggregation
-        Map<String, List<String>> childrenMap = new HashMap<>();
-        for (Category cat : allCategories) {
-            if (cat.getParentCategoryId() != null) {
-                childrenMap.computeIfAbsent(cat.getParentCategoryId(), k -> new ArrayList<>())
-                        .add(cat.getId());
-            }
-        }
+        Map<String, List<String>> childrenMap = childrenByParent(allCategories);
 
         // Filter to parent (top-level) categories only for home feed display.
         // Subcategory content is aggregated under its parent section.
@@ -497,12 +583,7 @@ public class PublicContentService {
             }
         }
 
-        parentCategories.sort((a, b) -> {
-            int orderA = a.getDisplayOrder() != null ? a.getDisplayOrder() : Integer.MAX_VALUE;
-            int orderB = b.getDisplayOrder() != null ? b.getDisplayOrder() : Integer.MAX_VALUE;
-            if (orderA != orderB) return Integer.compare(orderA, orderB);
-            return a.getId().compareTo(b.getId());
-        });
+        parentCategories.sort(DISPLAY_ORDER);
 
         // Apply cursor: skip categories with displayOrder <= cursor value
         int startAfterOrder = -1;
@@ -1079,7 +1160,7 @@ public class PublicContentService {
                     .filter(i -> SearchIndex.matches(q,
                             Objects.toString(i.getTitle(), "") + " " + Objects.toString(i.getChannelTitle(), "")))
                     .toList();
-            return new SearchPage(livePage(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
+            return new SearchPage(pageOf(hits, cursor, limit), hits.isEmpty() ? "none" : "exact");
         }
         searchIndex.awaitReady(); // before the Firestore reads below, not after them (F12)
         List<String> allCategoryIds = (category != null && !category.isBlank()) ? resolveAllCategoryIds(category) : null;
@@ -1426,7 +1507,7 @@ public class PublicContentService {
      * ponytail: every page builds the full list, entries × lives per channel (≤ 30 entries, LIVE_CATEGORY_FULL, a
      * few lives each), still small; page inside items() if the cap or the lives per channel grow.
      */
-    private CursorPageDto<ContentItemDto> livePage(List<ContentItemDto> all, String cursor, int limit) {
+    private CursorPageDto<ContentItemDto> pageOf(List<ContentItemDto> all, String cursor, int limit) {
         int offset = (int) Math.min(decodeCursorOffset(cursor), Integer.MAX_VALUE);
         if (offset >= all.size()) {
             return new CursorPageDto<>(new ArrayList<>(), null);

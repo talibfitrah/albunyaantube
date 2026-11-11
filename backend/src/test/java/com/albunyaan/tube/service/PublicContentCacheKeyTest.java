@@ -48,11 +48,8 @@ class PublicContentCacheKeyTest {
         }
 
         @Bean
-        ChannelRepository channelRepository() throws Exception {
-            ChannelRepository channels = mock(ChannelRepository.class);
-            when(channels.findApprovedBySubscribersDescWithCursor(anyInt(), isNull()))
-                    .thenReturn(new ChannelRepository.PaginatedResult<>(List.of(), null, false));
-            return channels;
+        ChannelRepository channelRepository() {
+            return mock(ChannelRepository.class);
         }
 
         @Bean
@@ -101,7 +98,7 @@ class PublicContentCacheKeyTest {
         // The controller falls through to getContent for q under 2 characters; q no longer reaches the cache key.
         service.getContent("CHANNELS", null, 20, null, null, null, null);
         service.getContent("CHANNELS", null, 20, null, null, null, null);
-        verify(channels, times(1)).findApprovedBySubscribersDescWithCursor(20, null);
+        verify(channels, times(1)).findByStatus("APPROVED");
     }
 
     @Test
@@ -175,7 +172,7 @@ class PublicContentCacheKeyTest {
 
     @Test
     void contentWithCategoryNullNeverBlanksTheUnfilteredTab() throws Exception {
-        newestVideosPageHoldsOneVideo();
+        tabOrderHoldsOneVideo();
         when(videos.findApprovedByCategoryAndUploadedAtDescWithCursor(eq("null"), anyInt(), isNull()))
                 .thenReturn(new VideoRepository.PaginatedResult<>(List.of(), null, false));
 
@@ -187,19 +184,18 @@ class PublicContentCacheKeyTest {
     @Test
     void contentWithSortNullNeverReplacesTheUnsortedTab() throws Exception {
         // sort=null takes the legacy path (empty here), whose page must not answer the unsorted request.
-        newestVideosPageHoldsOneVideo();
+        tabOrderHoldsOneVideo();
 
         assertTrue(service.getContent("VIDEOS", null, 20, null, null, null, "null").getData().isEmpty(), "precondition");
 
         assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
     }
 
-    private void newestVideosPageHoldsOneVideo() throws Exception {
+    private void tabOrderHoldsOneVideo() throws Exception {
         Video video = new Video("vNewest");
         video.setId("v1");
         video.setStatus("APPROVED");
-        when(videos.findApprovedByUploadedAtDescWithCursor(anyInt(), isNull()))
-                .thenReturn(new VideoRepository.PaginatedResult<>(List.of(video), null, false));
+        when(videos.findByStatus("APPROVED")).thenReturn(List.of(video));
     }
 
     private static Category category(String id, int displayOrder) {
