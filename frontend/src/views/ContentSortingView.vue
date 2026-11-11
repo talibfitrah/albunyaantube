@@ -226,7 +226,7 @@
     <teleport to="body">
       <transition name="modal">
         <div v-if="addModalOpen" class="modal-overlay" @click.self="closeAddContentModal">
-          <div ref="addModalContainerRef" class="modal-container" role="dialog" aria-modal="true" :aria-label="t('contentSorting.addContentTitle')">
+          <div ref="addModalContainerRef" class="modal-container" tabindex="-1" role="dialog" aria-modal="true" :aria-label="t('contentSorting.addContentTitle')">
             <div class="modal-header">
               <h2>{{ t('contentSorting.addContentTitle') }}</h2>
               <button @click="closeAddContentModal" class="btn-close" :aria-label="t('contentSorting.close')">&times;</button>
@@ -250,6 +250,9 @@
                 >
                   {{ filter.label }}
                 </button>
+                <span v-if="!addModalLoading" class="add-content-count">
+                  {{ t('contentSorting.addContentCount', { count: addModalMatches.length }) }}
+                </span>
               </div>
             </div>
 
@@ -302,6 +305,15 @@
                 {{ t('contentSorting.addContentSelected', { count: addModalSelected.size }) }}
               </span>
               <div class="footer-actions">
+                <!-- In the footer, outside the scrolling body: auto-load on scroll can't move it out of reach. -->
+                <button
+                  v-if="!addModalLoading && addModalFiltered.length < addModalMatches.length"
+                  type="button"
+                  class="btn btn-load-more"
+                  @click="showMoreAddRows"
+                >
+                  {{ t('contentSorting.addContentLoadMore', { current: addModalFiltered.length, total: addModalMatches.length }) }}
+                </button>
                 <button class="btn" @click="closeAddContentModal">{{ t('contentSorting.cancel') }}</button>
                 <button
                   class="btn btn-primary"
@@ -471,7 +483,7 @@ const { activate: activateFocusTrap, deactivate: deactivateFocusTrap } = useFocu
   onEscape: () => closeAddContentModal()
 });
 
-/** Rows added to the add-content modal each time the reviewer scrolls near the bottom. */
+/** Rows added to the add-content modal per "Load more" click or each time the reviewer scrolls near the bottom. */
 const ADD_MODAL_PAGE = 100;
 const addModalShown = ref(ADD_MODAL_PAGE);
 const { containerRef: addModalBodyRef, isLoading: addModalGrowing } = useInfiniteScroll({
@@ -486,10 +498,17 @@ const { containerRef: addModalBodyRef, isLoading: addModalGrowing } = useInfinit
  */
 async function showMoreAddRows() {
   if (addModalShown.value >= addModalMatches.value.length) return;
+  // The last page removes "Load more": if it held focus, hand it to the dialog itself so the keyboard
+  // stays in it (Escape, Tab) — not a row or the search field, where the next Space would act.
+  // Earlier pages keep focus on the button.
+  const buttonFocused = document.activeElement?.classList.contains('btn-load-more') === true;
   addModalGrowing.value = true;
   addModalShown.value += ADD_MODAL_PAGE;
   await nextTick();
   addModalGrowing.value = false;
+  if (buttonFocused && addModalShown.value >= addModalMatches.value.length) {
+    addModalContainerRef.value?.focus({ preventScroll: true });
+  }
 }
 
 /** Everything matching the current filters, before the render window. */
@@ -1320,6 +1339,10 @@ tr.drag-over {
   padding: 1rem;
 }
 
+.modal-container:focus {
+  outline: none; /* focused only as a fallback target (tabindex="-1"), never a control */
+}
+
 .modal-container {
   background: var(--color-surface);
   border-radius: 8px;
@@ -1385,6 +1408,8 @@ tr.drag-over {
 
 .modal-type-filters {
   display: flex;
+  flex-wrap: wrap;
+  align-items: center;
   gap: 0.25rem;
 }
 
@@ -1392,7 +1417,7 @@ tr.drag-over {
   flex: 1;
   overflow-y: auto;
   padding: 0;
-  min-height: 200px;
+  min-height: 0; /* shrinks on short screens so the footer's buttons stay in view */
 }
 
 .truncation-warning {
@@ -1401,6 +1426,12 @@ tr.drag-over {
   color: var(--color-warning);
   font-size: 0.8125rem;
   border-bottom: 1px solid var(--color-warning);
+}
+
+.add-content-count {
+  margin-inline-start: auto;
+  font-size: 0.8125rem;
+  color: var(--color-text-secondary);
 }
 
 .add-content-list {
@@ -1463,7 +1494,9 @@ tr.drag-over {
 
 .footer-actions {
   display: flex;
+  flex-wrap: wrap;
   gap: 0.5rem;
+  margin-inline-start: auto; /* pinned to the end: removing "Load more" never slides Cancel/Add under the pointer */
 }
 
 /* Modal animation */

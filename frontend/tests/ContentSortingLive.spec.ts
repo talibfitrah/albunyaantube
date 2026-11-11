@@ -225,6 +225,32 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(screen.getByText('Bulk 349')).toBeInTheDocument();
   });
 
+  it('the add picker shows the item count and a Load more button that draws the next page', async () => {
+    status.fn.mockImplementation(ok);
+    svc.approved.mockReturnValueOnce(Array.from({ length: 250 }, (_, i) =>
+      ({ id: `ch-${i}`, type: 'channel', youtubeId: `UC${i}`, title: `Bulk ${i}`, thumbnailUrl: null })));
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Bulk 0');
+    expect(screen.getByText('Items: 250')).toBeInTheDocument();
+
+    const more = screen.getByRole('button', { name: 'Load more (100 of 250)' });
+    more.focus(); // a browser click focuses the button; jsdom's does not
+    await fireEvent.click(more);
+    // More pages remain: focus stays on the button, so Space/Enter loads again.
+    expect(document.activeElement).toBe(await screen.findByRole('button', { name: 'Load more (200 of 250)' }));
+    await fireEvent.click(document.activeElement!);
+    await screen.findByText('Bulk 249');
+    expect(document.querySelectorAll('.add-content-item').length).toBe(250);
+    expect(screen.queryByRole('button', { name: /Load more/ })).toBeNull();
+    // The button is gone: focus moved to the dialog itself (not a row or the search field).
+    expect(document.activeElement).toBe(screen.getByRole('dialog'));
+
+    await fireEvent.update(screen.getByPlaceholderText(/Search/), 'Bulk 24');
+    expect(screen.getByText('Items: 11')).toBeInTheDocument(); // Bulk 24, 240-249
+  });
+
   it('the add picker keeps growing without a scroll when its rows fit on screen (tall viewport)', async () => {
     status.fn.mockImplementation(ok);
     svc.approved.mockReturnValueOnce(Array.from({ length: 350 }, (_, i) =>
