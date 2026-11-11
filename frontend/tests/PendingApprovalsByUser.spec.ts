@@ -133,6 +133,18 @@ describe('the queue and the by-user tab are cleanly split', () => {
     await waitFor(() => expect(screen.getByRole('button', { name: /by user \(5\)/i })).toBeTruthy());
     expect(container.querySelector('.stat-value')?.textContent).toBe('12');
   });
+
+  it('never badges fewer than the by-user tab holds when the total is unavailable', async () => {
+    getPendingCountMock.mockResolvedValue(-1);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+
+    const { container } = await renderView();
+    await fireEvent.click(screen.getByRole('button', { name: /by user/i }));
+
+    await waitFor(() => expect(container.querySelector('.stat-value')?.textContent).toBe('5'));
+  });
 });
 
 describe('the by-user tab', () => {

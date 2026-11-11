@@ -745,9 +745,10 @@ const countUnavailable = ref(false);
 const displayPendingCount = computed(() => {
   // Everything pending, the same number as the Dashboard and the Content Library "Pending" totals.
   // The Queue and By-user tabs carry their own split of it in their labels.
-  if (totalPending.value !== null) return totalPending.value;
-  // Before any count loads, show loaded items count as lower-bound
-  return approvals.value.length;
+  if (totalPending.value !== null && !countUnavailable.value) return totalPending.value;
+  // No server count: the largest lower bound we hold. A tab switch empties `approvals`, so the
+  // by-user roll-up also counts.
+  return Math.max(totalPending.value ?? 0, approvals.value.length, userImportTotal.value);
 });
 
 /** Phone imports waiting, or null while the roll-up is loading, failed, or out of date. */
