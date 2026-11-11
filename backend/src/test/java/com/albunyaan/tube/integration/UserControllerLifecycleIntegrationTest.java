@@ -189,34 +189,6 @@ class UserControllerLifecycleIntegrationTest extends BaseIntegrationTest {
             .andExpect(jsonPath("$[?(@.uid=='" + deadUid + "')]").exists());
     }
 
-    @Test
-    void countAll_keepsDeletedRows_countDeletedCountsThem() throws Exception {
-        String adminUid = seedUser("a-f11-5@t", "admin");
-        seedUser("a-f11-6@t", "admin"); // ensure not last
-        seedUser("live-1@t", "moderator");
-        String dead1 = seedUser("dead-1@t", "moderator");
-        String dead2 = seedUser("dead-2@t", "moderator");
-        stubToken(adminUid, "admin");
-
-        // 5 users total (2 admins + 1 active mod + 2 to-be-deleted mods).
-        long beforeAll = userRepository.countAll();
-
-        // Soft-delete 2 users.
-        mvc.perform(delete("/api/admin/users/" + dead1 + "?reason=test")
-                .header("Authorization", "Bearer fake-token"))
-            .andExpect(status().isNoContent());
-        mvc.perform(delete("/api/admin/users/" + dead2 + "?reason=test")
-                .header("Authorization", "Bearer fake-token"))
-            .andExpect(status().isNoContent());
-
-        long allAfter = userRepository.countAll();
-        long deletedAfter = userRepository.countDeleted();
-        assertEquals(beforeAll, allAfter,
-                "countAll() (includeDeleted) must NOT drop — deleted rows still exist");
-        assertEquals(2L, deletedAfter,
-                "countDeleted() must return exactly the deleted count");
-    }
-
     // ─── Helpers ──────────────────────────────────────────────────────────────
 
     /**

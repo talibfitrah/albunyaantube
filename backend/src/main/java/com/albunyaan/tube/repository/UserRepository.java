@@ -442,24 +442,6 @@ public class UserRepository {
     }
 
     /**
-     * Count all users (including soft-deleted) using server-side aggregation.
-     */
-    public long countAll() throws ExecutionException, InterruptedException, TimeoutException {
-        AggregateQuery countQuery = getCollection().count();
-        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        return snapshot.getCount();
-    }
-
-    /**
-     * Count soft-deleted users. Useful for admin dashboards that want to
-     * expose both "live" and "deleted" totals.
-     */
-    public long countDeleted() throws ExecutionException, InterruptedException, TimeoutException {
-        AggregateQuery q = getCollection().whereEqualTo("status", "deleted").count();
-        return q.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).getCount();
-    }
-
-    /**
      * Count users with admin or moderator role using server-side aggregation.
      *
      * F9: role values are stored canonical-lowercase post-Plan-A (D6). Pre-fix
