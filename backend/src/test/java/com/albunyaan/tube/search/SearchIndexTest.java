@@ -868,7 +868,7 @@ class SearchIndexTest {
     }
 
     @Test
-    void theHeaderIsTodaysUnlessOnlyInnerVideosMatch() throws Exception {
+    void theHeaderIsTheFirstItemsTier() throws Exception {
         SearchIndex idx = alafasy(zubdahnoor());
         SearchIndex.Hits exact = idx.search("zubdahnoor", null, 50);
         assertEquals(List.of("lesson00001"), ids(exact));
@@ -896,6 +896,30 @@ class SearchIndexTest {
         SearchIndex index = zubdahnoorLessons(zubdahnoor(), video("vZubdahnur", "Zubdahnur lesson", "Alafasy"),
                 video("vZubdahnoor", "Zubdahnoor lesson", "Alafasy"));
         assertEquals(List.of("vZubdahnoor", "lesson00001", "vZubdahnur"), ids(index.search("zubdahnoor lesson", null, 50)));
+    }
+
+    /** I₂ gets only the page left after C₁ ++ I₁ ++ C₂: none left, inner tier 2 (its fuzzy rewrites) never runs. */
+    @Test
+    void innerTier2IsSkippedWhenTodaysTiersAndI1FillThePage() throws Exception {
+        Video[] catalog = {video("vZubdahnoor", "Zubdahnoor lesson", "Alafasy"), // C₁ = 1, C₂ = 2
+                video("vZubdahnur", "Zubdahnur lesson", "Alafasy"), video("vZubdahnor", "Zubdahnor lesson", "Alafasy")};
+        SearchIndex withoutI2 = zubdahnoorLessons(zubdahnoor(), catalog);
+        SearchIndex withI2 = zubdahnoorLessons(inner(Map.of(ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600),
+                item("lesson00002", "Zubdahnur lesson", 600))), Map.of(ALAFASY, "Alafasy")), catalog);
+        assertTrue(ids(withI2.search("zubdahnoor lesson", null, 50)).contains("lesson00002"), "an inner tier-2 hit with room");
+        withoutI2.slowSearchMs = withI2.slowSearchMs = -1;
+        withoutI2.search("zubdahnoor lesson", null, 3);
+        String without = lastSlowLine();
+        SearchIndex.Hits page = withI2.search("zubdahnoor lesson", null, 3);
+        String with = lastSlowLine();
+        assertEquals(List.of("vZubdahnoor", "lesson00001"), ids(page).subList(0, 2));
+        assertEquals(loaded(without), loaded(with), "lesson00002 never loaded: " + with);
+    }
+
+    private static String loaded(String slowLine) {
+        java.util.regex.Matcher m = java.util.regex.Pattern.compile(" loaded=(\\d+) ").matcher(slowLine);
+        assertTrue(m.find(), slowLine);
+        return m.group(1);
     }
 
     @Test
@@ -1370,10 +1394,21 @@ class SearchIndexTest {
     }
 
     /**
+     * The E25/E27 pins under the owner rule of 2026-11-11, derived from the rule: C₁ is the three "Surah Ikhlaas" streams
+     * (the three "Mohammad Hijab" streams), BcCLLPZNPHk "Surah Al-Ikhlas" (the channel "Mohammed Hijab") is a C₂ hit one
+     * edit away (theApproximateTierFillsAShortExactListBehindItButTheRelatedTierStaysGated), and I₁ is the one exact-title
+     * adversarial video (advers00002, advers00003; uq7ccPxFN_8 is C's own copy). C₁ ++ I₁ ++ C₂ puts the pin at index 4,
+     * one below today's 3: §7.1's merge and an append-at-the-end merge both leave it at 3.
+     */
+    private static final Map<String, Map<String, Integer>> PINNED = Map.of(
+            "surah al ikhlaas", Map.of("BcCLLPZNPHk", 4), "mohammad hijab", Map.of("UCHDFNoOk8WOXtHo8DIc8efQ", 4));
+
+    /**
      * Acceptance #1 under the owner rule of 2026-11-11 (tiers interleave, curated first within a tier; it replaces spec
-     * §7.1's "no inner hit above #4"): with an adversarial inner corpus, today's items keep their order, the header never
-     * drops a tier, today's exact first hit stays first, and the inner hits sit in at most two runs (I₁, I₂). The pins
-     * (E25 surah al ikhlaas, E27 mohammad hijab) must face inner hits.
+     * §7.1's "no inner hit above #4"), with an adversarial inner corpus: today's items keep their order; the header never
+     * drops below the row's tier; today's exact first hit stays first; the inner hits sit in at most two runs (I₁, I₂);
+     * each row's expected answer stays on the page, within its worst rank shifted by the inner hits above it; the E25/E27
+     * pins sit at their {@link #PINNED} ranks.
      */
     @ParameterizedTest(name = "{0}: {1}")
     @org.junit.jupiter.params.provider.MethodSource("golden")
@@ -1383,7 +1418,8 @@ class SearchIndexTest {
         SearchIndex.Hits on = languages(adversarialInner()).search(query, null, 50);
         String row = language + " '" + query + "'";
         List<String> tiers = List.of("exact", "approximate", "related");
-        assertTrue(tiers.indexOf(on.match()) <= tiers.indexOf(off.match()), row + ": header " + off.match() + " -> " + on.match());
+        assertEquals(tier, off.match(), row + ": today's header");
+        assertTrue(tiers.indexOf(on.match()) <= tiers.indexOf(tier), row + ": header " + tier + " -> " + on.match());
         List<String> offIds = ids(off), onIds = ids(on);
         Set<String> innerOnly = new HashSet<>(onIds);
         innerOnly.removeAll(offIds);
@@ -1393,9 +1429,11 @@ class SearchIndexTest {
         long runs = java.util.stream.IntStream.range(0, onIds.size())
                 .filter(i -> innerOnly.contains(onIds.get(i)) && (i == 0 || !innerOnly.contains(onIds.get(i - 1)))).count();
         assertTrue(runs <= 2, row + ": inner hits outside I₁ and I₂ -> " + onIds);
-        if (Set.of("surah al ikhlaas", "mohammad hijab").contains(query)) { // E25, E27: the pins must face inner hits
-            assertFalse(innerOnly.isEmpty(), row + ": no inner hit, so the pin proves nothing");
-        }
+        int rank = java.util.Arrays.stream(expected.split(" ")).mapToInt(onIds::indexOf).filter(at -> at >= 0).min().orElse(-1);
+        assertTrue(rank >= 0, row + ": the expected answer left the page -> " + onIds);
+        long above = onIds.subList(0, rank).stream().filter(innerOnly::contains).count();
+        assertTrue(rank < worstRank + above, row + ": rank " + rank + " past " + worstRank + " + " + above + " inner hits");
+        PINNED.getOrDefault(query, Map.of()).forEach((id, at) -> assertEquals(at, onIds.indexOf(id), row + ": pin " + id + " -> " + onIds));
     }
 
     /** Task 24 hand-off: the title pass reports ms, titles swapped and a timeout in the slow line; integers only, never the query. */

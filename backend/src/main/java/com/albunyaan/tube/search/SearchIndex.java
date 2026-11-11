@@ -651,9 +651,8 @@ public class SearchIndex {
     /** C₁ ++ I₁ ++ C₂ ++ I₂ ++ C₃ cut to `want` (Cₙ, Iₙ: C's and the inner tier-n hits); the header, the first item's tier. */
     private Hits merged(IndexSearcher shared, Ladder today, Set<String> todays, int want, Trace trace) throws IOException {
         Hits plain = new Hits(today.items(), today.match());
-        int need = want - today.upToTier1(); // ≤ 0: C's exact hits fill the page
-        if (need <= 0) return plain;
-        List<Tiered> found = innerLadder(shared, today.tokens(), need, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
+        if (want <= today.upToTier1()) return plain; // C's exact hits fill the page
+        List<Tiered> found = innerLadder(shared, today, want, new HashSet<>(todays), trace); // dedupe: C's copy keeps its place
         if (found.isEmpty()) return plain;
         int[] ends = {0, today.upToTier1(), today.upToTier2(), today.items().size()};
         List<ContentItemDto> out = new ArrayList<>();
@@ -668,11 +667,12 @@ public class SearchIndex {
 
     /**
      * Tiers 1–2 on the inner index (R17), score order, longer videos before Shorts in each tier (R35), within 40 ms (R30).
+     * Iₙ gets only the page left after C₁ ++ I₁ ++ C₂ up to tier n: none left, tier n never runs.
      * ponytail: the budget is checked per page, per document and per tier, and Lucene checks it between scoring ranges;
      * weight-time work (fuzzy and prefix rewrites, term seeks) is not bounded, so one such step can overrun 40 ms.
      * ExitableDirectoryReader would bound it, if Task 30's max inner ms ever says so.
      */
-    private List<Tiered> innerLadder(IndexSearcher shared, List<String> tokens, int need, Set<String> seen, Trace trace)
+    private List<Tiered> innerLadder(IndexSearcher shared, Ladder today, int want, Set<String> seen, Trace trace)
             throws IOException {
         long started = System.nanoTime();
         List<Tiered> out = new ArrayList<>();
@@ -687,21 +687,23 @@ public class SearchIndex {
                 throw new UncheckedIOException(e);
             }
         });
-        for (int tier = 1; tier <= 2 && out.size() < need; tier++) {
+        for (int tier = 1; tier <= 2; tier++) {
+            int room = want - (tier == 1 ? today.upToTier1() : today.upToTier2()) - out.size(); // out holds I₁ at tier 2
+            if (room <= 0) break;
             if (trace.innerTimedOut || timeout.shouldExit()) { // before the tier's rewrites
                 trace.innerTimedOut = true;
                 break;
             }
             List<ContentItemDto> longer = new ArrayList<>(), shorts = new ArrayList<>();
-            collectInner(searcher, SearchText.tier(tier, tokens, once), need - out.size(), seen, longer, shorts, timeout, trace);
+            collectInner(searcher, SearchText.tier(tier, today.tokens(), once), room, seen, longer, shorts, timeout, trace);
             for (ContentItemDto item : longer) out.add(new Tiered(item, tier));
-            for (ContentItemDto item : shorts) if (out.size() < need) out.add(new Tiered(item, tier));
+            for (int i = 0; i < shorts.size() && longer.size() + i < room; i++) out.add(new Tiered(shorts.get(i), tier));
             if (searcher.timedOut()) trace.innerTimedOut = true; // Lucene stopped scoring mid-tier: no next tier
         }
         if (trace.innerTimedOut) inner.timedOut();
         trace.innerMs = (System.nanoTime() - started) / 1_000_000;
-        trace.innerHits = Math.min(out.size(), need);
-        return out.size() > need ? out.subList(0, need) : out;
+        trace.innerHits = out.size();
+        return out;
     }
 
     /** Pages one inner tier in score order until `want` longer videos are found, the hits run out, or the budget ends. */
