@@ -152,6 +152,15 @@ class SearchTextTest {
     }
 
     @Test
+    void arabicPresentationFormsFoldToThePlainLetters() {
+        // Relevance fixture (2026-11-11): the live title "ﺍﻷﺭﺑﻌﻴﻦ ﺍﻟﻨﻮﻭﻳﺔ 42 حديث كاملا" is typed in Presentation Forms-B
+        // (U+FE8D, the lam-alef ligature U+FEF7, ...), so "الأربعين النووية" found it only in the related tier.
+        assertEquals(tokens(BASE, "الأربعين النووية الله"), tokens(BASE, "ﺍﻷﺭﺑﻌﻴﻦ ﺍﻟﻨﻮﻭﻳﺔ ﷲ"));
+        // A ligature of several words (ﷺ) is not a spelling of one word: it stays as it was.
+        assertEquals(List.of("النبيﷺ"), tokens(BASE, "النبيﷺ"));
+    }
+
+    @Test
     void stemDropsTheArabicArticleAndEnglishPlurals() {
         assertEquals(SearchText.stem("عقيدة"), SearchText.stem("العقيدة"));
         assertEquals("lecture", SearchText.stem("lectures"));

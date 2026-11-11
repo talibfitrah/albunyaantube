@@ -36,6 +36,7 @@ import java.io.InputStreamReader;
 import java.io.Reader;
 import java.io.UncheckedIOException;
 import java.nio.charset.StandardCharsets;
+import java.text.Normalizer;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.Comparator;
@@ -102,6 +103,16 @@ final class SearchText {
         }
         b.add("\u06DD", " ");
         b.add("\u08E2", " ");
+        // Arabic Presentation Forms-A/B (U+FB50-FDFF, U+FE70-FEFF): a letter's positional form or a one-word ligature
+        // (lam-alef, \uFDF2) is that word in plain letters (NFKC). Multi-word ligatures (\uFDFA, \uFDFD) are not one word: they stay.
+        for (char[] range : new char[][]{{'\uFB50', '\uFDFF'}, {'\uFE70', '\uFEFF'}}) {
+            for (char c = range[0]; c <= range[1]; c++) {
+                String plain = Normalizer.normalize(String.valueOf(c), Normalizer.Form.NFKC);
+                if (Character.getType(c) == Character.OTHER_LETTER && !plain.contains(" ") && !plain.equals(String.valueOf(c))) {
+                    b.add(String.valueOf(c), plain);
+                }
+            }
+        }
         // Directional controls (LRM, RLM, ALM, the embeddings/overrides U+202A-202E, the isolates U+2066-2069) and the
         // BOM: invisible format characters the tokenizer keeps inside the word. They never separate words, so they go
         // without a space. ZWNJ/ZWJ stay: they carry meaning inside Persian words.
