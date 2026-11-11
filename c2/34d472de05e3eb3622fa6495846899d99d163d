@@ -1,0 +1,21 @@
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_8a936fc306f37b::t_3c6dbfda4e444d 1159-1181
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_8a936fc306f37b::t_3c6dbfda4e444d 906
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c234d472de05e3eb3622fa6495846899d99d163d",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": null
+    }
+  }
+}
