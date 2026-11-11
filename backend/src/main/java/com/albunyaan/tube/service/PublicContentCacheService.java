@@ -20,6 +20,9 @@ public class PublicContentCacheService {
     /** Stage 9 B13: published on every eviction; the live endpoint's view refreshes at the poller's next tick. */
     public record Evicted() {}
 
+    /** Published when content (not just live status) changed; {@link PublicContentService} drops its kept tab order. */
+    public record ContentChanged() {}
+
     private final org.springframework.context.ApplicationEventPublisher events;
 
     public PublicContentCacheService(org.springframework.context.ApplicationEventPublisher events) {
@@ -43,9 +46,23 @@ public class PublicContentCacheService {
     }, allEntries = true)
     public void evictPublicContentCaches() {
         events.publishEvent(new Evicted());
+        events.publishEvent(new ContentChanged());
         log.debug("Evicted public content caches: {}, {}, {}",
                 CacheConfig.CACHE_PUBLIC_CONTENT,
                 CacheConfig.CACHE_CATEGORY_TREE,
                 CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS);
+    }
+
+    /**
+     * Same eviction for a live-status change, which does not change the tab order: no {@link ContentChanged},
+     * so the kept order survives (a rebuild costs 2-3x the catalog in reads).
+     */
+    @CacheEvict(value = {
+            CacheConfig.CACHE_PUBLIC_CONTENT,
+            CacheConfig.CACHE_CATEGORY_TREE,
+            CacheConfig.CACHE_NEWPIPE_SEARCH_RESULTS
+    }, allEntries = true)
+    public void evictForLiveChange() {
+        events.publishEvent(new Evicted());
     }
 }

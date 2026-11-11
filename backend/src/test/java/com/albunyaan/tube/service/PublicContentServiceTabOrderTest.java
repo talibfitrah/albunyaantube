@@ -30,17 +30,21 @@ import java.util.Base64;
 import java.util.LinkedHashMap;
 import java.util.List;
 import java.util.Map;
+import java.util.concurrent.TimeoutException;
 import java.util.stream.Collectors;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
+import static org.mockito.Mockito.doReturn;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.never;
+import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
@@ -146,6 +150,47 @@ class PublicContentServiceTabOrderTest {
         verify(videoRepository).findAllByOrderByUploadedAtDesc(anyInt());
         verify(channelRepository).findApprovedByCategoryAndSubscribersDescWithCursor("c2", 4, null);
         verify(categoryRepository, never()).findAll(); // none of them walked the tab order
+    }
+
+    @Test void tabOrderIsBuiltOncePerContentChangeNotPerPage() throws Exception {
+        walk("CHANNELS", "CHANNEL"); walk("PLAYLISTS", "PLAYLIST"); walk("VIDEOS", "VIDEO");
+        verify(categoryRepository, times(1)).findAll();
+        verify(orderRepository, times(1)).findByCategoryIdOrderByPosition("c1");
+        verify(channelRepository, times(1)).findByStatus("APPROVED");
+        verify(playlistRepository, times(1)).findByStatus("APPROVED");
+        verify(videoRepository, times(1)).findByStatus("APPROVED");
+    }
+    @Test void aContentChangeServesTheNewOrderOnTheNextRequest() throws Exception {
+        assertEquals("yt-ch-C", first("CHANNELS"));
+        when(categoryRepository.findAll()).thenReturn(List.of(cat("c1", 0, null), cat("c1a", 0, "c1"), cat("c2", 1, null), cat("c3", 2, null)));
+        assertEquals("yt-ch-C", first("CHANNELS"), "kept until a content change");
+        service.onContentChanged(new PublicContentCacheService.ContentChanged());
+        assertEquals("yt-ch-B", first("CHANNELS"));
+    }
+    @Test void aChangeDuringARebuildIsNotKept() throws Exception {
+        when(categoryRepository.findAll()).thenAnswer(inv -> {
+            service.onContentChanged(new PublicContentCacheService.ContentChanged());
+            return categories;
+        }).thenReturn(categories);
+        first("CHANNELS");
+        first("CHANNELS");
+        first("CHANNELS");
+        verify(categoryRepository, times(2)).findAll(); // the overtaken build was served once, never stored
+    }
+    @Test void aFailedRebuildIsNotCached() throws Exception {
+        when(categoryRepository.findAll()).thenThrow(new TimeoutException("firestore")).thenReturn(categories);
+        assertThrows(TimeoutException.class, () -> service.getContent("CHANNELS", null, 4, null, null, null, null));
+        assertEquals("yt-ch-C", first("CHANNELS"));
+    }
+    @Test void aTimedOutCategoryReadSurfacesAsTheTimeoutAndLeavesNothingPartialCached() throws Exception {
+        when(orderRepository.findByCategoryIdsOrderByPosition(List.of("c2"))).thenThrow(new TimeoutException("firestore"));
+        assertThrows(TimeoutException.class, () -> service.getContent("CHANNELS", null, 4, null, null, null, null));
+        doReturn(rows("c2", "C", "A", "G", "P")).when(orderRepository).findByCategoryIdsOrderByPosition(List.of("c2"));
+        assertEquals(List.of("yt-ch-C","yt-ch-A","yt-ch-I","yt-ch-H","yt-ch-B","yt-ch-D","yt-ch-F","yt-ch-O","yt-ch-E"),
+                walk("CHANNELS", "CHANNEL"));
+    }
+    private String first(String tab) throws Exception {
+        return service.getContent(tab, null, 4, null, null, null, null).getData().get(0).getId();
     }
 
     /** Every page of a tab at limit 4: each row is the tab's type; 9 rows = 3 pages, the last without a cursor. */

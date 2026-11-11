@@ -23,6 +23,7 @@ import com.albunyaan.tube.search.SearchIndex;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 import org.springframework.cache.annotation.Cacheable;
+import org.springframework.context.event.EventListener;
 import org.springframework.stereotype.Service;
 
 import java.io.IOException;
@@ -46,6 +47,7 @@ import java.util.concurrent.CompletionException;
 import java.util.concurrent.Executor;
 import java.util.concurrent.ExecutionException;
 import java.util.concurrent.TimeoutException;
+import java.util.concurrent.atomic.AtomicLong;
 import java.util.stream.Collectors;
 
 /**
@@ -184,13 +186,39 @@ public class PublicContentService {
         return children;
     }
 
+    // ponytail: no TTL; a write that skips evictPublicContentCaches() leaves the order stale until the next content change. Add a built-at check if such a path appears.
+    private volatile Map<String, List<ContentItemDto>> tabOrder;
+    private final AtomicLong tabOrderGeneration = new AtomicLong();
+    private final Object tabOrderLock = new Object();
+
+    /** Any content change drops the kept order; the generation bump first makes a build already running discard its result. */
+    @EventListener
+    public void onContentChanged(PublicContentCacheService.ContentChanged event) {
+        tabOrderGeneration.incrementAndGet();
+        tabOrder = null;
+    }
+
+    /** The kept order; one build at a time, and a build that a content change overtook is served once, never stored. */
+    private Map<String, List<ContentItemDto>> tabOrder()
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Map<String, List<ContentItemDto>> order = tabOrder;
+        if (order != null) return order;
+        synchronized (tabOrderLock) {
+            if (tabOrder != null) return tabOrder;
+            long generation = tabOrderGeneration.get();
+            order = buildTabOrder();
+            if (tabOrderGeneration.get() == generation) tabOrder = order;
+            return order;
+        }
+    }
+
     /** A page of a no-filter tab; a cursor that is not an offset (an old document-id cursor) ends the list. */
     private CursorPageDto<ContentItemDto> tabOrderPage(String dtoType, String cursor, int limit)
             throws ExecutionException, InterruptedException, TimeoutException {
         if (parseCursorOffset(cursor) < 0) {
             return new CursorPageDto<>(new ArrayList<>(), null);
         }
-        return pageOf(buildTabOrder().get(dtoType), cursor, limit);
+        return pageOf(tabOrder().get(dtoType), cursor, limit);
     }
 
     /**
@@ -220,7 +248,7 @@ public class PublicContentService {
         }
         Set<String> seen = new HashSet<>();
         for (CompletableFuture<List<ContentItemDto>> walk : walks) {
-            for (ContentItemDto dto : walk.join()) {
+            for (ContentItemDto dto : joinUnwrapped(walk)) {
                 if (seen.add(dto.getType() + ":" + dto.getId())) {
                     byType.get(dto.getType()).add(dto);
                 }
@@ -1543,6 +1571,24 @@ public class PublicContentService {
         if (offset >= 0) return offset;
         log.warn("Invalid content cursor: {}", cursor);
         return 0;
+    }
+
+    /**
+     * join() wraps a failed read as CompletionException(RuntimeException(cause)) (see asyncSupply); hand back the
+     * original checked exception so GlobalExceptionHandler maps a timeout to 504, not 500.
+     */
+    private static <T> T joinUnwrapped(CompletableFuture<T> future)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        try {
+            return future.join();
+        } catch (CompletionException e) {
+            for (Throwable t = e.getCause(); t != null; t = t.getCause()) {
+                if (t instanceof TimeoutException te) throw te;
+                if (t instanceof ExecutionException ee) throw ee;
+                if (t instanceof InterruptedException ie) throw ie;
+            }
+            throw e;
+        }
     }
 
     /** Supplier that can throw checked exceptions. */

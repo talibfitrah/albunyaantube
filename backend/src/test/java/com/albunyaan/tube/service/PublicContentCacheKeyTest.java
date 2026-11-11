@@ -1,5 +1,7 @@
 package com.albunyaan.tube.service;
 
+import com.albunyaan.tube.dto.ContentItemDto;
+import com.albunyaan.tube.dto.CursorPageDto;
 import com.albunyaan.tube.model.Category;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
@@ -16,6 +18,7 @@ import org.springframework.beans.factory.annotation.Autowired;
 import org.springframework.cache.CacheManager;
 import org.springframework.cache.annotation.EnableCaching;
 import org.springframework.cache.concurrent.ConcurrentMapCacheManager;
+import org.springframework.context.ApplicationEventPublisher;
 import org.springframework.context.annotation.Bean;
 import org.springframework.context.annotation.Configuration;
 import org.springframework.test.context.junit.jupiter.SpringJUnitConfig;
@@ -68,6 +71,11 @@ class PublicContentCacheKeyTest {
         }
 
         @Bean
+        PublicContentCacheService cacheService(ApplicationEventPublisher events) {
+            return new PublicContentCacheService(events);
+        }
+
+        @Bean
         PublicContentService publicContentService(ChannelRepository channels, PlaylistRepository playlists,
                                                   VideoRepository videos, CategoryRepository categories) {
             return new PublicContentService(channels, playlists, videos,
@@ -82,9 +90,11 @@ class PublicContentCacheKeyTest {
     @Autowired private CategoryRepository categories;
     @Autowired private VideoRepository videos;
     @Autowired private CacheManager cacheManager;
+    @Autowired private PublicContentCacheService cacheService;
 
     @BeforeEach
     void freshCacheAndCounts() {
+        cacheService.evictPublicContentCaches(); // resets the service's kept tab order, shared by every test here
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
         clearInvocations(channels, playlists, categories);
     }
@@ -189,6 +199,28 @@ class PublicContentCacheKeyTest {
         assertTrue(service.getContent("VIDEOS", null, 20, null, null, null, "null").getData().isEmpty(), "precondition");
 
         assertEquals(1, service.getContent("VIDEOS", null, 20, null, null, null, null).getData().size());
+    }
+
+    @Test
+    void aDashboardChangeShowsOnTheNextTabRequestButALiveChangeKeepsTheOrder() throws Exception {
+        Channel one = new Channel("UCone"), two = new Channel("UCtwo");
+        one.setId("ch1"); one.setStatus("APPROVED");
+        two.setId("ch2"); two.setStatus("APPROVED");
+        when(channels.findByCategoryIds(eq(List.of("c1")), anyInt())).thenReturn(List.of(one));
+        when(channels.findByCategoryIds(eq(List.of("c2")), anyInt())).thenReturn(List.of(two));
+        when(categories.findAll()).thenReturn(List.of(category("c1", 0), category("c2", 1)));
+        assertEquals(List.of("UCone", "UCtwo"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        when(categories.findAll()).thenReturn(List.of(category("c1", 1), category("c2", 0))); // the admin moved c2 up
+        cacheService.evictForLiveChange();
+        assertEquals(List.of("UCone", "UCtwo"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        cacheService.evictPublicContentCaches();
+        assertEquals(List.of("UCtwo", "UCone"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+    }
+
+    private static List<String> ids(CursorPageDto<ContentItemDto> page) {
+        return page.getData().stream().map(ContentItemDto::getId).toList();
     }
 
     private void tabOrderHoldsOneVideo() throws Exception {
