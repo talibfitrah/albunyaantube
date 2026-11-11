@@ -525,6 +525,84 @@ class ContentValidationServiceTest {
     @DisplayName("Video Validation Tests")
     class VideoValidationTests {
 
+        private Video videoAt(String youtubeId, Integer durationSeconds, Instant lastValidated) {
+            Video v = createVideo(youtubeId, youtubeId, ValidationStatus.VALID);
+            v.setDurationSeconds(durationSeconds);
+            v.setLastValidatedAt(Timestamp.ofTimeSecondsAndNanos(lastValidated.getEpochSecond(), 0));
+            return v;
+        }
+
+        /** Serves the rows the way Firestore does (lastValidatedAt ASC), honouring the query limit. */
+        private void stubApprovedVideos(List<Video> firestoreOrder) throws Exception {
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt()))
+                    .thenAnswer(inv -> firestoreOrder.subList(0,
+                            Math.min(inv.<Integer>getArgument(1), firestoreOrder.size())));
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt()))
+                    .thenReturn(Collections.emptyList());
+        }
+
+        @SuppressWarnings("unchecked")
+        private List<String> pickedVideoIds(int limit) throws Exception {
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList()))
+                    .thenReturn(new BatchValidationResult<>());
+            service.validateVideos("SCHEDULED", null, "Video Validation Scheduler", limit);
+            ArgumentCaptor<List<String>> ids = ArgumentCaptor.forClass(List.class);
+            verify(channelOrchestrator).batchValidateVideosDtoWithDetails(ids.capture());
+            return ids.getValue();
+        }
+
+        @Test
+        @DisplayName("Videos with no duration are validated first, still within the run cap")
+        void validateVideos_missingDurationsFirst_withinCap() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            // Firestore's order (lastValidatedAt ASC): 4 long-unvalidated rows with durations ahead of 2
+            // newer rows lacking one (null, then 0), which the old limit*2 fetch never reached.
+            stubApprovedVideos(List.of(
+                    videoAt("Vold0", 600, base),
+                    videoAt("Vold1", 600, base.plusSeconds(1)),
+                    videoAt("Vold2", 600, base.plusSeconds(2)),
+                    videoAt("Vold3", 600, base.plusSeconds(3)),
+                    videoAt("VnoDurationNull", null, Instant.now().minus(2, ChronoUnit.DAYS)),
+                    videoAt("VnoDurationZero", 0, Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(1))));
+
+            List<String> ids = pickedVideoIds(4);
+
+            assertEquals(List.of("VnoDurationNull", "VnoDurationZero", "Vold0", "Vold1"), ids);
+        }
+
+        @Test
+        @DisplayName("Missing-duration-first takes at most half the run, so it cannot starve routine checks")
+        void validateVideos_missingDurationsCappedAtHalf() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            List<Video> firestoreOrder = new ArrayList<>();
+            for (int i = 0; i < 5; i++) {
+                firestoreOrder.add(videoAt("Vold" + i, 600, base.plusSeconds(i)));
+            }
+            for (int i = 0; i < 5; i++) {
+                firestoreOrder.add(videoAt("VnoDuration" + i, null, Instant.now().minus(2, ChronoUnit.DAYS).plusSeconds(i)));
+            }
+            stubApprovedVideos(firestoreOrder);
+
+            List<String> ids = pickedVideoIds(4);
+
+            assertEquals(List.of("VnoDuration0", "VnoDuration1", "Vold0", "Vold1"), ids);
+        }
+
+        @Test
+        @DisplayName("A video with no duration validated within 24h, or in ERROR, does not jump the queue")
+        void validateVideos_missingDurationRespects24hSkipAndError() throws Exception {
+            Instant base = Instant.now().minus(30, ChronoUnit.DAYS);
+            Video error = videoAt("VerrorNoDuration", null, Instant.now().minus(2, ChronoUnit.DAYS));
+            error.setValidationStatus(ValidationStatus.ERROR);
+            stubApprovedVideos(List.of(
+                    videoAt("Vold0", 600, base),
+                    videoAt("Vold1", 600, base.plusSeconds(1)),
+                    videoAt("VnoDurationRecent", null, Instant.now().minus(1, ChronoUnit.HOURS)),
+                    error));
+
+            assertEquals(List.of("Vold0", "Vold1", "VerrorNoDuration"), pickedVideoIds(4));
+        }
+
         @Test
         @DisplayName("Should refresh video metadata when found")
         void validateVideo_whenFound_shouldRefreshMetadata() throws Exception {

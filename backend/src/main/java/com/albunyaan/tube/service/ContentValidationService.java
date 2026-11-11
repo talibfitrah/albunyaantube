@@ -931,12 +931,13 @@ public class ContentValidationService {
     }
 
     private List<Video> getVideosForValidation(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        // Fetch with Firestore-level limit to avoid loading entire collection
-        // Multiply by 2 to account for filtering (some may be recently validated)
-        List<Video> allVideos = fetchApprovedVideos(limit * 2);
+        // Reads every approved video so one with no duration can jump the oldest-first queue: Firestore
+        // cannot query "durationSeconds missing or <= 0". The YouTube budget stays `limit`.
+        // ponytail: one doc read per approved video per run; query a missing-duration flag instead if the catalog reaches tens of thousands.
+        List<Video> allVideos = fetchApprovedVideos();
         Instant oneDayAgo = Instant.now().minus(1, ChronoUnit.DAYS);
 
-        List<Video> result = allVideos.stream()
+        List<Video> eligible = allVideos.stream()
                 .filter(v -> {
                     ValidationStatus status = v.getValidationStatus();
 
@@ -965,8 +966,19 @@ public class ContentValidationService {
                         Video::getLastValidatedAt,
                         Comparator.nullsFirst(Comparator.naturalOrder())
                 ))
-                .limit(limit)
                 .collect(Collectors.toList());
+
+        // Videos with no duration (null or <= 0) jump the queue, capped at half the run; ERROR rows keep
+        // their oldest-first turn so a video that keeps failing to fetch cannot win a slot every day.
+        List<Video> result = eligible.stream()
+                .filter(v -> (v.getDurationSeconds() == null || v.getDurationSeconds() <= 0)
+                        && v.getValidationStatus() != ValidationStatus.ERROR)
+                .limit(limit / 2)
+                .collect(Collectors.toCollection(ArrayList::new));
+        eligible.stream()
+                .filter(v -> !result.contains(v))
+                .limit(limit - result.size())
+                .forEach(result::add);
 
         // Log breakdown for debugging
         long neverValidated = result.stream().filter(v -> v.getValidationStatus() == null).count();
@@ -1349,14 +1361,13 @@ public class ContentValidationService {
     }
 
     /**
-     * Fetch approved videos with Firestore-level limit, tolerating legacy lowercase status values.
-     * Uses limit parameter to avoid loading entire collection into memory.
-     * Orders by lastValidatedAt ascending to prevent validation starvation - items that haven't
-     * been validated recently are prioritized over recently validated items.
+     * Fetch every approved video, tolerating legacy lowercase status values, ordered by
+     * lastValidatedAt ascending. Reads them all so missing durations can be found (see
+     * {@link #getVideosForValidation}).
      */
-    private List<Video> fetchApprovedVideos(int limit) throws ExecutionException, InterruptedException, TimeoutException {
+    private List<Video> fetchApprovedVideos() throws ExecutionException, InterruptedException, TimeoutException {
         List<Video> merged = new ArrayList<>();
-        int perCaseLimit = limit;
+        int perCaseLimit = Integer.MAX_VALUE; // no effective limit: the query API takes one
         // Order by lastValidatedAt ASC to prioritize oldest-validated items (prevents starvation)
         merged.addAll(videoRepository.findByStatusOrderByLastValidatedAtAsc("APPROVED", perCaseLimit));
         try {
