@@ -1,0 +1,22 @@
+docs/superpowers/plans/2026-11-11-android-playback-stop.md
+  s_8a936fc306f37b::t_cf0f67d89c4e06 47-104
+  s_8a936fc306f37b::t_585ee7e34a643a 1-46,105-226
+docs/superpowers/specs/2026-11-11-sorting-search-playback-design.md
+  s_8a936fc306f37b::t_585ee7e34a643a 1-189
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "3e30b11311405edb30aae2bf2f2516e76e0b9d8b",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
