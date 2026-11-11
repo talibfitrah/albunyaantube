@@ -735,13 +735,13 @@ public class PaginationIntegrationTest extends BaseIntegrationTest {
 
             String cursor = page.getPageInfo().getNextCursor();
 
-            // Assert: Cursor should be base64-encoded, not a raw document ID
+            // Assert: Cursor should be a Base64-encoded offset, not a raw document ID
             assertNotNull(cursor);
             assertFalse(cursor.startsWith("channel-"),
                     "Cursor should not expose raw document IDs");
-            // Base64 URL-safe characters only
-            assertTrue(cursor.matches("^[A-Za-z0-9_-]+$"),
-                    "Cursor should be URL-safe base64");
+            // Standard Base64 alphabet with padding (HTTP clients percent-encode it as a query value)
+            assertTrue(cursor.matches("^[A-Za-z0-9+/]+=*$"),
+                    "Cursor should be a Base64-encoded offset");
         }
 
         @Test
