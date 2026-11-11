@@ -1,0 +1,24 @@
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_8a936fc306f37b::t_b1e7abe1332731 528-605
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_8a936fc306f37b::t_9d23aea0a34fe1 971-981
+  s_8a936fc306f37b::t_f4f890e6e927bc 934-937,940
+  s_8a936fc306f37b::t_da734c1b3eb686 1364-1366,1368,1370
+  s_8a936fc306f37b::t_6c9c9767cf8022 982
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7994918bc23768748ce5bf6cb065b578a253a790",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
