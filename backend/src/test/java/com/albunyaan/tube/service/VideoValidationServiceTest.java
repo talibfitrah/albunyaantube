@@ -26,6 +26,7 @@ import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.argThat;
 import static org.mockito.ArgumentMatchers.eq;
+import static org.mockito.Mockito.doThrow;
 import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
@@ -122,6 +123,26 @@ class VideoValidationServiceTest {
         service.validateStandaloneVideos(ValidationRun.TRIGGER_MANUAL, "admin", "admin@test.com", null);
 
         verify(publicContentCacheService).evictPublicContentCaches();
+    }
+
+    /** A failed announce is logged; the run it ends is still recorded COMPLETED with its counts. */
+    @Test
+    void validateStandaloneVideos_aFailedAnnounceStillCompletesTheRun() throws Exception {
+        Video gone = new Video("remove-me");
+        gone.setId("v-2");
+        when(videoRepository.findByStatus("APPROVED")).thenReturn(List.of(gone));
+        when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        when(validationRunRepository.save(any(ValidationRun.class))).thenAnswer(invocation -> invocation.getArgument(0));
+        BatchValidationResult<StreamDetailsDto> validationResult = new BatchValidationResult<>();
+        validationResult.addNotFound("remove-me");
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(validationResult);
+        doThrow(new RuntimeException("Redis down")).when(publicContentCacheService).evictPublicContentCaches();
+
+        ValidationRun run = service.validateStandaloneVideos(ValidationRun.TRIGGER_MANUAL, "admin", "admin@test.com", null);
+
+        assertEquals("COMPLETED", run.getStatus());
+        assertEquals(1, run.getVideosChecked());
+        assertEquals(1, run.getVideosMarkedUnavailable());
     }
 
     /** Nothing left the tab (valid and error videos stay listed), so there is no content change to announce. */

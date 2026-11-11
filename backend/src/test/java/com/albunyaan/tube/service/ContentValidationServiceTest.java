@@ -755,6 +755,31 @@ class ContentValidationServiceTest {
         }
 
         @Test
+        @DisplayName("A run that refreshed metadata and then failed in a later phase still announces once")
+        void validateAllContent_refreshedThenFailed_announcesOnce() throws Exception {
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(channelRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt()))
+                    .thenReturn(List.of(createChannel("UCabc", "Test Channel", null)));
+            when(playlistRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
+            BatchValidationResult<ChannelDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("UCabc", new ChannelDetailsDto());
+            when(channelOrchestrator.batchValidateChannelsDtoWithDetails(anyList())).thenReturn(result);
+            // The channel phase (and its refresh) is written; the run then fails entering the playlist phase.
+            when(validationRunRepository.save(any())).thenAnswer(inv -> {
+                ValidationRun r = inv.getArgument(0);
+                if ("PLAYLISTS".equals(r.getCurrentPhase())) throw new TimeoutException("firestore");
+                return r;
+            });
+
+            ValidationRun run = service.validateAllContent("MANUAL", "test-user", "Test User", 30);
+
+            assertEquals(ValidationRun.STATUS_FAILED, run.getStatus());
+            assertEquals(1, run.getChannelsChecked());
+            verify(publicContentCacheService, times(1)).evictPublicContentCaches();
+        }
+
+        @Test
         @DisplayName("A completed run that checked nothing announces nothing")
         void validateChannels_nothingChecked_doesNotEvict() throws Exception {
             when(channelRepository.findByStatusOrderByLastValidatedAtAsc(anyString(), anyInt())).thenReturn(Collections.emptyList());
@@ -853,14 +878,19 @@ class ContentValidationServiceTest {
             // The archive commits; every run-record save after it fails (Firestore brownout).
             java.util.concurrent.atomic.AtomicBoolean archived = new java.util.concurrent.atomic.AtomicBoolean();
             when(videoRepository.save(any())).thenAnswer(inv -> { archived.set(true); return inv.getArgument(0); });
+            java.util.concurrent.atomic.AtomicInteger announcedAtFailedSave = new java.util.concurrent.atomic.AtomicInteger(-1);
             when(validationRunRepository.save(any())).thenAnswer(inv -> {
-                if (archived.get()) throw new java.util.concurrent.TimeoutException("firestore");
+                if (archived.get()) {
+                    announcedAtFailedSave.compareAndSet(-1, mockingDetails(publicContentCacheService).getInvocations().size());
+                    throw new java.util.concurrent.TimeoutException("firestore");
+                }
                 return inv.getArgument(0);
             });
 
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService).evictPublicContentCaches();
+            assertEquals(1, announcedAtFailedSave.get(), "the archive is announced before the run save that fails");
+            verify(publicContentCacheService, times(2)).evictPublicContentCaches(); // + the failed run's refresh announce
         }
 
         // --- Cache eviction resilience (N6) ---

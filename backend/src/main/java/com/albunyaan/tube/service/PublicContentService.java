@@ -212,7 +212,11 @@ public class PublicContentService {
     private final AtomicReference<CompletableFuture<Map<String, List<ContentItemDto>>>> tabOrderBuild = new AtomicReference<>();
     /** How long a request waits on another request's build before answering 504: two Firestore bulk-query timeouts. */
     private static final long TAB_ORDER_WAIT_SECONDS = 60;
-    /** How long a failed build is answered from memory, so a persistent failure cannot re-read the catalog per request. */
+    /**
+     * How long a failed build is answered from memory, so a persistent failure (index, permission, bad data) cannot
+     * re-read the catalog per request. Timeouts are not remembered: they are often transient, and single-flight
+     * already limits them to one build at a time.
+     */
     static final Duration TAB_ORDER_FAILURE_BACKOFF = Duration.ofSeconds(30);
     LongSupplier nanoClock = System::nanoTime; // tests replace it
     private record TabOrderFailure(Throwable error, long atNanos) {}
@@ -262,8 +266,9 @@ public class PublicContentService {
             mine.complete(order);
             return order;
         } catch (Throwable t) {
-            // Remembered like the order (store, then re-check); an interrupt is this thread's, not the build's.
-            if (!(t instanceof InterruptedException)) {
+            // Remembered like the order (store, then re-check). Not a timeout (transient; the next request retries)
+            // and not an interrupt (this thread's, not the build's).
+            if (!(t instanceof TimeoutException) && !(t instanceof InterruptedException)) {
                 tabOrderFailure = new TabOrderFailure(t, nanoClock.getAsLong());
                 if (tabOrderGeneration.get() != generation) tabOrderFailure = null;
             }

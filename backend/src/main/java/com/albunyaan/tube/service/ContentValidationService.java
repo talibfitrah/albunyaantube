@@ -142,7 +142,6 @@ public class ContentValidationService {
             validateVideosInternalWithItems(validationRun, triggeredByDisplayName, videosToValidate);
 
             validationRun.setCurrentPhase("COMPLETE");
-            announceRefreshedMetadata(validationRun);
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
@@ -160,6 +159,8 @@ public class ContentValidationService {
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
             }
+        } finally {
+            announceRefreshedMetadata(validationRun);
         }
 
         return validationRun;
@@ -246,7 +247,6 @@ public class ContentValidationService {
             validateVideosInternalCore(validationRun, triggeredByDisplayName, videosToValidate);
 
             validationRun.setCurrentPhase("COMPLETE");
-            announceRefreshedMetadata(validationRun);
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
@@ -265,6 +265,8 @@ public class ContentValidationService {
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
             }
+        } finally {
+            announceRefreshedMetadata(validationRun);
         }
     }
 
@@ -287,7 +289,6 @@ public class ContentValidationService {
             int limit = maxItems != null ? maxItems : validationProperties.getChannel().getMaxItemsPerRun();
             validateChannelsInternal(validationRun, triggeredByDisplayName, limit);
 
-            announceRefreshedMetadata(validationRun);
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
@@ -303,6 +304,8 @@ public class ContentValidationService {
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
             }
+        } finally {
+            announceRefreshedMetadata(validationRun);
         }
 
         return validationRun;
@@ -327,7 +330,6 @@ public class ContentValidationService {
             int limit = maxItems != null ? maxItems : validationProperties.getPlaylist().getMaxItemsPerRun();
             validatePlaylistsInternal(validationRun, triggeredByDisplayName, limit);
 
-            announceRefreshedMetadata(validationRun);
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
@@ -345,6 +347,8 @@ public class ContentValidationService {
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
             }
+        } finally {
+            announceRefreshedMetadata(validationRun);
         }
 
         return validationRun;
@@ -369,7 +373,6 @@ public class ContentValidationService {
             int limit = maxItems != null ? maxItems : validationProperties.getVideo().getMaxItemsPerRun();
             validateVideosInternal(validationRun, triggeredByDisplayName, limit);
 
-            announceRefreshedMetadata(validationRun);
             validationRun.complete(ValidationRun.STATUS_COMPLETED);
             validationRunRepository.save(validationRun);
 
@@ -385,6 +388,8 @@ public class ContentValidationService {
             } catch (Exception saveEx) {
                 logger.error("Failed to save validation run after error", saveEx);
             }
+        } finally {
+            announceRefreshedMetadata(validationRun);
         }
 
         return validationRun;
@@ -1260,8 +1265,8 @@ public class ContentValidationService {
     // ==================== Metadata Refresh Helpers ====================
 
     /**
-     * A completed run that checked anything rewrote names, titles, thumbnails and counts the public lists show:
-     * announce it once (archives announce on their own, in their phase). Before the run's final save, as there.
+     * A run that checked anything rewrote names, titles, thumbnails and counts the public lists show, even when a
+     * later phase failed: announce it once, whatever the run's own saves did (archives also announce in their phase).
      */
     private void announceRefreshedMetadata(ValidationRun run) {
         if (run.getChannelsChecked() + run.getPlaylistsChecked() + run.getVideosChecked() == 0) {

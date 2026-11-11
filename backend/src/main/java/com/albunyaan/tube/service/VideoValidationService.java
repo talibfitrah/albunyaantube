@@ -185,7 +185,11 @@ public class VideoValidationService {
             }
 
             if (unavailableCount > 0) {
-                publicContentCacheService.evictPublicContentCaches();   // UNAVAILABLE videos left the Videos tab
+                try {
+                    publicContentCacheService.evictPublicContentCaches();   // UNAVAILABLE videos left the Videos tab
+                } catch (Exception e) {
+                    logger.warn("Cache eviction failed after marking videos unavailable; run continues", e);
+                }
             }
 
             // Update validation run with results.
