@@ -1,0 +1,26 @@
+backend/src/test/java/com/albunyaan/tube/service/PublicContentCacheKeyTest.java
+  s_8a936fc306f37b::t_8ad4e430cf60ac 51
+  s_8a936fc306f37b::t_f120d6d6a05aee 52,101,175,187,194,198
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_65e653990accc4 35,127,133,136,139-141,167-251,544,586,1163,1510
+  s_8a936fc306f37b::t_f120d6d6a05aee 29
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceTabOrderTest.java
+  s_8a936fc306f37b::t_125304c8bcf6b6 1-27,29-73,77-191,193,195-199,201-204,208-212,216-220,224-230,232-245
+  s_8a936fc306f37b::t_56c000e9dab1d7 28,74-76,192,194,200,205-207,213-215,221-223,231
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "5845a669d183b1a3dc86077feef48848c2285dd7",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
