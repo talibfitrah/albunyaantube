@@ -81,10 +81,6 @@ class ChannelVideosTabFragment : BaseChannelListTabFragment<ChannelVideo>() {
         adapter.submitList(items)
     }
 
-    override fun matchesQuery(item: ChannelVideo, lowerQuery: String): Boolean =
-        item.title.lowercase().contains(lowerQuery) ||
-        item.uploaderName?.lowercase()?.contains(lowerQuery) == true
-
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
         if (featureFlags.isPredictivePrefetchEnabled) {

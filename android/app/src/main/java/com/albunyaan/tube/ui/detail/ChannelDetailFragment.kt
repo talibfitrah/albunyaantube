@@ -2,13 +2,8 @@ package com.albunyaan.tube.ui.detail
 
 import android.content.Intent
 import android.os.Bundle
-import android.os.Handler
-import android.os.Looper
-import android.text.Editable
-import android.text.TextWatcher
 import android.util.Log
 import android.view.View
-import android.view.inputmethod.EditorInfo
 import androidx.appcompat.content.res.AppCompatResources
 import androidx.core.view.isVisible
 import androidx.fragment.app.Fragment
@@ -91,7 +86,6 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     private var pageChangeCallback: androidx.viewpager2.widget.ViewPager2.OnPageChangeCallback? = null
     private var appBarOffsetListener: AppBarLayout.OnOffsetChangedListener? = null
     private var currentHeader: ChannelHeader? = null
-    private val searchHandler = Handler(Looper.getMainLooper())
 
     override fun onViewCreated(view: View, savedInstanceState: Bundle?) {
         super.onViewCreated(view, savedInstanceState)
@@ -99,7 +93,7 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
 
         setupToolbar()
         setupTabs()
-        setupSearch()
+        setupSearchButton()
         observeHeaderState()
         observeSubscriptionState()
 
@@ -109,36 +103,8 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         }
     }
 
-    private fun setupSearch() {
-        val editText = binding?.searchEditText ?: return
-        val clearBtn = binding?.searchClearButton ?: return
-
-        editText.addTextChangedListener(object : TextWatcher {
-            override fun beforeTextChanged(s: CharSequence?, start: Int, count: Int, after: Int) {}
-            override fun onTextChanged(s: CharSequence?, start: Int, before: Int, count: Int) {}
-            override fun afterTextChanged(s: Editable?) {
-                val query = s?.toString() ?: ""
-                clearBtn.visibility = if (query.isNotEmpty()) View.VISIBLE else View.GONE
-                searchHandler.removeCallbacksAndMessages(null)
-                searchHandler.postDelayed({
-                    viewModel.setSearchQuery(query)
-                }, SEARCH_DEBOUNCE_MS)
-            }
-        })
-
-        editText.setOnEditorActionListener { _, actionId, _ ->
-            if (actionId == EditorInfo.IME_ACTION_SEARCH) {
-                searchHandler.removeCallbacksAndMessages(null)
-                viewModel.setSearchQuery(editText.text?.toString() ?: "")
-                true
-            } else false
-        }
-
-        clearBtn.setOnClickListener {
-            searchHandler.removeCallbacksAndMessages(null)
-            editText.text?.clear()
-            viewModel.setSearchQuery("")
-        }
+    private fun setupSearchButton() {
+        binding?.searchButton?.setOnClickListener { findNavController().navigate(R.id.searchFragment) }
     }
 
     private fun setupToolbar() {
@@ -499,7 +465,6 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
     }
 
     override fun onDestroyView() {
-        searchHandler.removeCallbacksAndMessages(null)
         tabLayoutMediator?.detach()
         tabLayoutMediator = null
         pageChangeCallback?.let { binding?.viewPager?.unregisterOnPageChangeCallback(it) }
@@ -519,7 +484,6 @@ class ChannelDetailFragment : Fragment(R.layout.fragment_channel_detail) {
         const val ARG_CHANNEL_AVATAR_URL = "channelAvatarUrl"
         const val ARG_EXCLUDED = "excluded"
         private const val STATE_SELECTED_TAB = "selectedTab"
-        private const val SEARCH_DEBOUNCE_MS = 300L
     }
 }
 

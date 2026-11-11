@@ -436,7 +436,7 @@
             android:layout_height="match_parent"
             android:orientation="vertical">
 
-            <!-- Search bar (client-side filtering for playlist items) -->
+            <!-- Search button (opens global search) -->
             <LinearLayout
                 android:id="@+id/searchBar"
                 android:layout_width="match_parent"
@@ -446,38 +446,16 @@
                 android:paddingEnd="@dimen/spacing_sm"
                 android:paddingTop="@dimen/spacing_sm"
                 android:paddingBottom="@dimen/spacing_sm"
-                android:gravity="center_vertical">
-
-                <com.google.android.material.textfield.TextInputLayout
-                    android:id="@+id/searchInputLayout"
-                    style="@style/Widget.MaterialComponents.TextInputLayout.OutlinedBox.Dense"
-                    android:layout_width="0dp"
-                    android:layout_height="wrap_content"
-                    android:layout_weight="1"
-                    android:hint="@string/search_hint"
-                    app:startIconDrawable="@drawable/ic_search"
-                    app:startIconContentDescription="@string/search_hint">
-
-                    <com.google.android.material.textfield.TextInputEditText
-                        android:id="@+id/searchEditText"
-                        android:layout_width="match_parent"
-                        android:layout_height="wrap_content"
-                        android:imeOptions="actionSearch"
-                        android:inputType="text"
-                        android:maxLines="1"
-                        android:textAlignment="viewStart" />
-
-                </com.google.android.material.textfield.TextInputLayout>
+                android:gravity="end|center_vertical">
 
                 <ImageButton
-                    android:id="@+id/searchClearButton"
-                    android:layout_width="@dimen/icon_small"
-                    android:layout_height="@dimen/icon_small"
-                    android:layout_marginStart="@dimen/spacing_sm"
+                    android:id="@+id/searchButton"
+                    android:layout_width="@dimen/touch_target_min"
+                    android:layout_height="@dimen/touch_target_min"
                     android:background="?attr/selectableItemBackgroundBorderless"
-                    android:src="@drawable/ic_close"
-                    android:visibility="gone"
-                    android:contentDescription="@string/search_clear" />
+                    android:src="@drawable/ic_search"
+                    android:contentDescription="@string/search"
+                    app:tint="@color/primary_green" />
 
             </LinearLayout>
 
