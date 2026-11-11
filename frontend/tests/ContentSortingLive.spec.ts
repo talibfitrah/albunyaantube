@@ -35,7 +35,7 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
   ]),
   addContentToCategorySort: (...a: unknown[]) => add.fn(...a),
   getCategoryContentOrder: () => svc.getCategoryContentOrder(),
-  getApprovedContent: () => Promise.resolve({ truncated: false, items: svc.approved() })
+  getApprovedContent: () => Promise.resolve(svc.approved())
 }));
 vi.mock('@/services/liveChannels', async (importOriginal) => ({
   ...(await importOriginal<typeof import('@/services/liveChannels')>()),
@@ -198,6 +198,32 @@ describe('Content Sorting on a live category (spec §8)', () => {
 
     expect(await screen.findByText('Some channel')).toBeInTheDocument();
     expect(screen.getByText('Some playlist')).toBeInTheDocument();
+  });
+
+  it('the add picker counts every approved item, as the Library does, and says why some cannot be added', async () => {
+    status.fn.mockImplementation(ok);
+    svc.approved.mockReturnValueOnce([
+      { id: 'channel_UCa', type: 'channel', youtubeId: 'UCa', title: 'Zad', thumbnailUrl: null, visibility: 'PUBLIC' },
+      { id: 'doc-1', type: 'video', youtubeId: 'vid00000001', title: 'A stream', thumbnailUrl: null, visibility: 'PUBLIC' },
+      { id: 'ch-p', type: 'channel', youtubeId: 'UCp', title: 'Granted', thumbnailUrl: null, visibility: 'PERSONAL' },
+      { id: 'ch-9', type: 'channel', youtubeId: 'UCz', title: 'Some channel', thumbnailUrl: null, visibility: 'PUBLIC' }
+    ]);
+    mount();
+    await fireEvent.click(await screen.findByText('Other'));
+    await fireEvent.click(await screen.findByText(/Add Content/));
+    await screen.findByText('Some channel');
+    const dialog = within(screen.getByRole('dialog'));
+    const tab = (label: string) =>
+      dialog.getByRole('button', { name: new RegExp(`^${label}`) }).textContent!.replace(/\s+/g, ' ').trim();
+
+    // The headline is the approved total; the two already filed and the personal grant are named, not hidden.
+    expect([tab('All'), tab('Channels'), tab('Videos')]).toEqual(['All 4', 'Channels 3', 'Videos 1']);
+    expect(dialog.getByText('2 already in this category · 1 limited to specific users')).toBeInTheDocument();
+    expect(document.querySelectorAll('.add-content-item').length).toBe(1);
+    expect(dialog.queryByText('Granted')).toBeNull();
+
+    await fireEvent.click(dialog.getByRole('button', { name: /^Videos/ }));
+    expect(dialog.getByText('1 already in this category')).toBeInTheDocument();
   });
 
   it('the add picker renders more rows on scroll until every item is reachable (no fixed cap)', async () => {

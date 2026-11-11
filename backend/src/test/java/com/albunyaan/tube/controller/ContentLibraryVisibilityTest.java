@@ -20,6 +20,8 @@ import java.util.Optional;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.Mockito.when;
 
@@ -70,13 +72,13 @@ class ContentLibraryVisibilityTest {
     }
 
     private ContentLibraryController.ContentItem firstItem() throws Exception {
-        return controller.getContent("video", "all", null, null, "newest", 0, 20)
+        return controller.getContent("video", "all", null, null, "newest", null, 20)
                 .getBody().content.get(0);
     }
 
     @Test
     void aPersonallyApprovedItemNamesWhoItWasApprovedFor() throws Exception {
-        when(videoRepository.findAll(anyInt()))
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt()))
                 .thenReturn(List.of(video("v1", "PERSONAL", List.of("uid-ahmed"))));
         when(userRepository.findByUid("uid-ahmed"))
                 .thenReturn(Optional.of(user("uid-ahmed", "Ahmed", "ahmed@example.com")));
@@ -91,7 +93,7 @@ class ContentLibraryVisibilityTest {
     void aPubliclyApprovedItemCarriesNoGrantees() throws Exception {
         // Stale grants survive a personal→public promotion in Firestore. A public item is for
         // everyone, so listing grantees for it would state a restriction that does not exist.
-        when(videoRepository.findAll(anyInt()))
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt()))
                 .thenReturn(List.of(video("v2", "PUBLIC", List.of("uid-stale"))));
 
         ContentLibraryController.ContentItem item = firstItem();
@@ -104,7 +106,7 @@ class ContentLibraryVisibilityTest {
     void aLegacyItemWithNoStoredVisibilityReadsAsPublic() throws Exception {
         // Docs written before personal approval existed have no visibility field. They were
         // public, and must not be presented as a restricted grant.
-        when(videoRepository.findAll(anyInt()))
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt()))
                 .thenReturn(List.of(video("v3", null, null)));
 
         ContentLibraryController.ContentItem item = firstItem();
@@ -117,7 +119,7 @@ class ContentLibraryVisibilityTest {
     void aGranteeWhoCannotBeResolvedStillShowsSomething() throws Exception {
         // A deleted account must not render as a blank chip — fall back to the raw uid so the
         // admin can still see that a grant exists and to whom.
-        when(videoRepository.findAll(anyInt()))
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt()))
                 .thenReturn(List.of(video("v4", "PERSONAL", List.of("uid-ghost"))));
         when(userRepository.findByUid("uid-ghost")).thenReturn(Optional.empty());
 
@@ -128,7 +130,7 @@ class ContentLibraryVisibilityTest {
 
     @Test
     void aGranteeWithNoDisplayNameIsNamedByEmail() throws Exception {
-        when(videoRepository.findAll(anyInt()))
+        when(videoRepository.findPageAfter(any(), any(), anyBoolean(), any(), any(), anyInt()))
                 .thenReturn(List.of(video("v5", "PERSONAL", List.of("uid-noname"))));
         when(userRepository.findByUid("uid-noname"))
                 .thenReturn(Optional.of(user("uid-noname", null, "quiet@example.com")));

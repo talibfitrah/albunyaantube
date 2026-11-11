@@ -140,13 +140,18 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
       const params = config?.params ?? {};
       const status = String(params.status ?? 'all');
       const category = params.category ? String(params.category) : null;
-      const page = Number(params.page ?? 0);
+      // Like the server: the cursor is the position of the last row served (newest first), so
+      // a page resumes strictly after it however many rows were added or removed above it.
+      const after = params.cursor ? String(params.cursor) : null;
       const size = Number(params.size ?? 25);
       const read = () => {
         const rows = library.filter(item =>
           (status === 'all' || item.status.toLowerCase() === status)
-          && (!category || item.categoryIds.includes(category)));
-        return { data: { content: rows.slice(page * size, page * size + size), totalItems: rows.length, truncated: false } };
+          && (!category || item.categoryIds.includes(category))
+          && (!after || String(item.createdAt) < after));
+        const content = rows.slice(0, size);
+        const nextCursor = rows.length > size ? String(content[content.length - 1].createdAt) : null;
+        return { data: { content, nextCursor, pageSize: size, truncated: false } };
       };
       if (deferListing) {
         deferListing = false;
@@ -239,6 +244,27 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     await waitFor(() => expect(screen.getByText('Video 50')).toBeInTheDocument());
   }
 
+  it('follows one listing to its end when the sort changes while it loads', async () => {
+    library = makeItems(75);
+    renderView();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+    const select = document.querySelector('.sort-select') as HTMLSelectElement;
+    const before = listingCalls();
+
+    deferListing = true;
+    await fireEvent.update(select, 'date-asc'); // refetches oldest first, held open
+    await fireEvent.update(select, 'name-asc'); // a client-side sort, chosen before it lands
+    releaseListing!();
+    await waitFor(() => expect(rowCount()).toBe(75));
+
+    // Every page of that listing asks for the order its cursor was cut in: an oldest-first
+    // cursor sent as newest-first resumes at the wrong end, serving duplicates and losing rows.
+    const sorts = getMock.mock.calls.filter(call => call[0] === '/api/admin/content').slice(before)
+      .map(call => (call[1] as { params: Record<string, unknown> }).params.sort);
+    expect(sorts.length).toBeGreaterThan(1);
+    expect(new Set(sorts)).toEqual(new Set(['oldest']));
+  });
+
   it('keeps the second page when a row is deleted', async () => {
     await loadTwoPages();
 
@@ -322,7 +348,6 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     library = makeItems(75);
     renderView();
     await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
-    // Leaves 24 rows, so the next page overlaps what is already held.
     await fireEvent.click(within(rowFor('Video 5')).getByTitle('Delete'));
     await waitFor(() => expect(screen.queryByText('Video 5')).not.toBeInTheDocument());
 
@@ -334,16 +359,12 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     releaseListing!();
     await settle();
 
-    // That page was read before the delete: it still carries Video 10, and its offsets no longer
-    // point where they did, so the row on its boundary would fall between what is held and what
-    // it carries. Discarded whole — along with its total, which predates the delete too.
+    // The page resumes after the last loaded row, so it carries only rows the admin had not
+    // loaded: the deletes above it neither come back nor shift it, and nothing is skipped.
     expect(screen.queryByText('Video 10')).not.toBeInTheDocument();
-    expect(screen.getByRole('button', { name: /Load More/i }).textContent).toContain('73');
-
-    // Discarding must not deadlock: the next request is computed from where the list now stands
-    // and picks up the row that fell between.
-    await fireEvent.click(screen.getByRole('button', { name: /Load More/i }));
-    await waitFor(() => expect(screen.getByText('Video 26')).toBeInTheDocument());
+    expect(screen.getByText('Video 26')).toBeInTheDocument();
+    expect(screen.getByText('Video 50')).toBeInTheDocument();
+    expect(rowCount()).toBe(48);
   });
 
   it('refills the list when a bulk action empties every loaded row', async () => {
@@ -364,19 +385,39 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     expect(screen.queryByText(messages.en.contentLibrary.empty)).not.toBeInTheDocument();
   });
 
-  it('tops up a client-side sort mode after a row is removed from its page', async () => {
-    library = makeItems(150);
+  it('holds the whole list in a client-side sort mode, so a removal needs no refetch', async () => {
+    library = makeItems(250);
     renderView();
     await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
     await fireEvent.update(document.querySelector('.sort-select') as HTMLSelectElement, 'name-asc');
     await fireEvent.click(screen.getByLabelText('Pending'));
-    await waitFor(() => expect(screen.getByText('Video 100')).toBeInTheDocument());
+
+    // A name order is only right over every row, and this mode has no Load More: it loads them all.
+    await waitFor(() => expect(screen.getByText('Video 250')).toBeInTheDocument());
+    expect(rowCount()).toBe(250);
+    const before = listingCalls();
 
     await fireEvent.click(within(rowFor('Video 100')).getByTitle('Delete'));
 
-    // This mode holds one fixed page of a longer list and has no Load More, so a row removed from
-    // that page shrinks the working set with nothing to top it up.
-    await waitFor(() => expect(screen.getByText('Video 101')).toBeInTheDocument());
+    await waitFor(() => expect(screen.queryByText('Video 100')).not.toBeInTheDocument());
+    expect(rowCount()).toBe(249);
+    expect(listingCalls()).toBe(before);
+  });
+
+  it('lists every row by cursor with no truncation warning', async () => {
+    library = makeItems(80);
+    renderView();
+    await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
+
+    for (const last of ['Video 50', 'Video 75', 'Video 80']) {
+      await fireEvent.click(screen.getByRole('button', { name: /Load More/i }));
+      await waitFor(() => expect(screen.getByText(last)).toBeInTheDocument());
+    }
+
+    expect(rowCount()).toBe(80);
+    expect(screen.queryByRole('button', { name: /Load More/i })).not.toBeInTheDocument();
+    expect(document.querySelector('.truncation-warning')).toBeNull();
+    expect(screen.queryByText(/may be incomplete/i)).not.toBeInTheDocument();
   });
 
   it('keeps the second page when a subset is bulk deleted', async () => {
@@ -603,51 +644,42 @@ describe('ContentLibraryView keeps the loaded window across mutations', () => {
     expect(screen.getByText('Video 50')).toBeInTheDocument();
   });
 
-  it('refills once when a grouped assignment shrinks a client-sorted page, not once per group', async () => {
+  it('refills once when a grouped assignment empties the list, not once per group', async () => {
     library = makeItems(150, n => ({
-      categoryIds: n <= 40 ? ['cat-a', 'cat-c'] : n <= 80 ? ['cat-a', 'cat-d'] : ['cat-a']
+      categoryIds: n <= 10 ? ['cat-a', 'cat-c'] : n <= 25 ? ['cat-a', 'cat-d'] : ['cat-a']
     }));
     assignPayload.unchangedIds = ['cat-c', 'cat-d'];
     renderView();
     await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
-    // Client-side sorts hold one fixed page of a longer list, so they refill on any shrink at all.
-    await fireEvent.update(document.querySelector('.sort-select') as HTMLSelectElement, 'name-asc');
     await fireEvent.click(screen.getByLabelText('Aqeedah'));
-    await waitFor(() => expect(screen.getByText('Video 100')).toBeInTheDocument());
+    await waitFor(() => expect(screen.getByRole('button', { name: /Load More/i })).toBeInTheDocument());
     const before = listingCalls();
 
     await fireEvent.click(selectAllRows());
     await fireEvent.click(screen.getByRole('button', { name: 'Bulk Actions' }));
     await fireEvent.click(screen.getByRole('button', { name: 'Assign Categories' }));
-    // Hold the first refill open, which is the real shape: a 100-row listing takes longer than the
-    // small batch writes, so the later groups all patch while it is still out.
-    deferListing = true;
     await fireEvent.click(screen.getByTestId('assign-categories'));
 
-    // Each group shrinks the page again, so each would ask the server for the whole list — one
-    // request per group, all but the last discarded.
+    // Two groups each take rows out, but only the last leaves the list empty: one request.
+    await waitFor(() => expect(screen.getByText('Video 26')).toBeInTheDocument());
     expect(listingCalls()).toBe(before + 1);
-
-    releaseListing!();
-    await waitFor(() => expect(screen.getByText('Video 101')).toBeInTheDocument());
-    // That refill was retired by the later groups' writes, so it is re-issued exactly once.
-    expect(listingCalls()).toBe(before + 2);
   });
 
   it('keeps making progress when rows appear ahead of the loaded window', async () => {
     renderView();
     await waitFor(() => expect(screen.getByText('Video 1')).toBeInTheDocument());
 
-    // Another admin adds a page worth of newer content. Every later row shifts down by that much,
-    // so the page derived from what is held now lands entirely on rows already loaded.
-    library = [...makeItems(25).map((item, i) => ({ ...item, id: `n${i + 1}`, title: `New ${i + 1}` })), ...library];
+    // Another admin adds a page worth of newer content above the loaded window. Offset paging
+    // would land the next page on rows already held; the cursor resumes after the last one.
+    library = [...makeItems(25).map((item, i) => ({
+      ...item, id: `n${i + 1}`, title: `New ${i + 1}`,
+      createdAt: new Date(Date.UTC(2026, 1, 1) - i * 60_000).toISOString()
+    })), ...library];
 
     await fireEvent.click(screen.getByRole('button', { name: /Load More/i }));
-    await waitFor(() => expect(screen.getByRole('button', { name: /Load More/i })).toBeInTheDocument());
-    await fireEvent.click(screen.getByRole('button', { name: /Load More/i }));
 
-    // A page that adds nothing must not be asked for again, or the button is dead for good.
     await waitFor(() => expect(screen.getByText('Video 26')).toBeInTheDocument());
+    expect(screen.getByText('Video 50')).toBeInTheDocument();
   });
 
   it('does not reload the listing when an exclusion is changed', async () => {

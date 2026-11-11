@@ -185,8 +185,10 @@ const items = ref<ContentItem[]>([])
 const isLoading = ref(false)
 const isLoadingMore = ref(false)
 const error = ref<string | null>(null)
+const loadMoreError = ref<string | null>(null)
 const hasMore = ref(false)
-const currentPage = ref(0)
+// Position after the last row loaded; null before the first page and after the last.
+let nextCursor: string | null = null
 const searchQuery = ref('')
 const activeSearch = ref('')
 const typeFilter = ref<'all' | 'channel' | 'playlist'>('all')
@@ -223,7 +225,7 @@ watch(() => props.open, (isOpen) => {
     }
     // Reset state
     items.value = []
-    currentPage.value = 0
+    nextCursor = null
     searchQuery.value = ''
     activeSearch.value = ''
     typeFilter.value = 'all'
@@ -245,13 +247,14 @@ async function loadContent() {
   error.value = null
   loadMoreError.value = null
   items.value = []
-  currentPage.value = 0
+  nextCursor = null
 
   try {
-    const params = buildParams(0)
+    const params = buildParams(null)
     const response = await apiClient.get('/api/admin/content', { params, signal })
     items.value = response.data.content.map(mapItem)
-    hasMore.value = items.value.length < (response.data.totalItems || 0)
+    nextCursor = response.data.nextCursor ?? null
+    hasMore.value = nextCursor !== null
   } catch (err: any) {
     if (err.name === 'CanceledError' || signal.aborted) return
     error.value = err.message || $t('common.error')
@@ -260,23 +263,25 @@ async function loadContent() {
   }
 }
 
-const loadMoreError = ref<string | null>(null)
 
 async function loadMore() {
   if (isLoadingMore.value || !hasMore.value) return
 
   isLoadingMore.value = true
   loadMoreError.value = null
-  const nextPage = currentPage.value + 1
+  // The listing's signal: a new search or tab aborts this page with the listing it continues.
+  const signal = loadAbortController?.signal
 
   try {
-    const params = buildParams(nextPage)
-    const response = await apiClient.get('/api/admin/content', { params })
+    const params = buildParams(nextCursor)
+    const response = await apiClient.get('/api/admin/content', { params, signal })
+    if (signal?.aborted) return
     const newItems = response.data.content.map(mapItem)
     items.value.push(...newItems)
-    currentPage.value = nextPage
-    hasMore.value = items.value.length < (response.data.totalItems || 0)
+    nextCursor = response.data.nextCursor ?? null
+    hasMore.value = nextCursor !== null
   } catch (err: any) {
+    if (err.name === 'CanceledError' || signal?.aborted) return
     loadMoreError.value = err.message || $t('common.error')
     hasMore.value = false
   } finally {
@@ -290,11 +295,13 @@ function retryLoadMore() {
   loadMore()
 }
 
-function buildParams(page: number): Record<string, any> {
+function buildParams(cursor: string | null): Record<string, any> {
   const params: Record<string, any> = {
-    page,
     size: PAGE_SIZE,
     status: 'APPROVED'
+  }
+  if (cursor) {
+    params.cursor = cursor
   }
   if (activeSearch.value) {
     params.search = activeSearch.value

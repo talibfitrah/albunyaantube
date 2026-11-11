@@ -1,6 +1,8 @@
 package com.albunyaan.tube.controller;
 
 import com.albunyaan.tube.model.Channel;
+import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
 import com.albunyaan.tube.repository.VideoRepository;
@@ -10,22 +12,30 @@ import org.junit.jupiter.api.extension.ExtendWith;
 import org.mockito.ArgumentCaptor;
 import org.mockito.InjectMocks;
 import org.mockito.Mock;
+import org.mockito.invocation.InvocationOnMock;
 import org.mockito.junit.jupiter.MockitoExtension;
-import org.springframework.http.ResponseEntity;
 
 import java.util.ArrayList;
+import java.util.Comparator;
 import java.util.List;
+import java.util.function.Function;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertFalse;
+import static org.junit.jupiter.api.Assertions.assertNull;
+import static org.junit.jupiter.api.Assertions.assertThrows;
 import static org.junit.jupiter.api.Assertions.assertTrue;
+import static org.mockito.ArgumentMatchers.any;
+import static org.mockito.ArgumentMatchers.anyBoolean;
 import static org.mockito.ArgumentMatchers.anyInt;
+import static org.mockito.Mockito.lenient;
 import static org.mockito.Mockito.when;
 
 /**
- * Field bug: the Content Library stopped at 200 items per type — deeper pages came back empty and
- * {@code totalItems} reported the cap as the library size. Pins the two properties that fix it:
- * a deep page asks Firestore for enough rows to actually fill it, and the registry totals are
- * counted independently of that bound, on their own endpoint.
+ * Field bugs: the Content Library stopped at a per-type ceiling (200, later 2000) and warned
+ * "results may be incomplete" on every unfiltered view. Pins what fixes it: browsing follows a
+ * per-type cursor to the last row with no ceiling, each page reads only its own rows, and the
+ * registry totals are counted independently, on their own endpoint.
  */
 @ExtendWith(MockitoExtension.class)
 class ContentLibraryPagingAndTotalsTest {
@@ -52,54 +62,220 @@ class ContentLibraryPagingAndTotalsTest {
     @InjectMocks
     private ContentLibraryController controller;
 
-    /** A stand-in registry far larger than the old 200 ceiling. */
-    private static final int LIBRARY_SIZE = 900;
+    private final RegistryFake registry = new RegistryFake();
+    private final List<Channel> channelRows = registry.channels;
+    private final List<Playlist> playlistRows = registry.playlists;
+    private final List<Video> videoRows = registry.videos;
 
-    private static List<Channel> channels(int howMany) {
-        List<Channel> out = new ArrayList<>(howMany);
-        for (int i = 0; i < howMany; i++) {
+    private void stubRegistry() throws Exception {
+        registry.stub(channelRepository, playlistRepository, videoRepository);
+    }
+
+    private static Timestamp at(int i) {
+        return RegistryFake.at(i);
+    }
+
+    private static <T> Comparator<T> firestoreOrder(Function<T, Timestamp> at, Function<T, String> id, boolean oldest) {
+        return RegistryFake.order(at, id, oldest);
+    }
+
+    private void seed(int channels, int playlists, int videos) {
+        for (int i = 0; i < channels; i++) {
             Channel c = new Channel("UC" + i);
-            c.setId("id-" + i);
-            c.setName("Channel " + i);
-            c.setStatus("APPROVED");
-            // Descending createdAt so the controller's newest-first sort preserves insertion order.
-            c.setCreatedAt(Timestamp.ofTimeSecondsAndNanos(LIBRARY_SIZE - i, 0));
-            out.add(c);
+            c.setId(String.format("c%05d", i));
+            c.setStatus(i % 4 == 0 ? "PENDING" : "APPROVED");
+            c.setCreatedAt(at(i));
+            channelRows.add(c);
         }
-        return out;
+        for (int i = 0; i < playlists; i++) {
+            Playlist p = new Playlist("PL" + i);
+            p.setId(String.format("p%05d", i));
+            p.setStatus("APPROVED");
+            p.setCreatedAt(at(i * 7));
+            playlistRows.add(p);
+        }
+        for (int i = 0; i < videos; i++) {
+            Video v = new Video("v" + i);
+            v.setId(String.format("v%05d", i));
+            v.setStatus("PENDING");
+            v.setCreatedAt(at(i * 2));
+            videoRows.add(v);
+        }
     }
 
-    private void stubChannelCollection() throws Exception {
-        when(channelRepository.findAll(anyInt()))
-                .thenAnswer(inv -> channels(Math.min(inv.getArgument(0, Integer.class), LIBRARY_SIZE)));
+    /** Follows nextCursor to the end, as the Library's Load More does. */
+    private List<ContentLibraryController.ContentItem> walk(String types, String status, String sort, int size) throws Exception {
+        List<ContentLibraryController.ContentItem> all = new ArrayList<>();
+        String cursor = null;
+        int pages = 0;
+        do {
+            ContentLibraryController.ContentLibraryResponse body =
+                    controller.getContent(types, status, null, null, sort, cursor, size).getBody();
+            assertTrue(body.content.size() <= size);
+            all.addAll(body.content);
+            cursor = body.nextCursor;
+            assertTrue(++pages < 10_000, "cursor never ran out");
+        } while (cursor != null);
+        return all;
     }
 
     @Test
-    void deepPageIsReachablePastTheOldTwoHundredCeiling() throws Exception {
-        stubChannelCollection();
+    void loadMoreReachesEveryRowWithNoCeiling() throws Exception {
+        // 2500 channels: past the old 2000-per-type browse ceiling.
+        seed(2500, 30, 700);
+        stubRegistry();
 
-        // Page 15 at size 20 = items 300..319 — unreachable while the fetch stopped at 200.
-        ResponseEntity<ContentLibraryController.ContentLibraryResponse> response =
-                controller.getContent("channel", "all", null, null, "newest", 15, 20);
+        List<ContentLibraryController.ContentItem> all = walk(null, "all", "newest", 100);
 
-        ContentLibraryController.ContentLibraryResponse body = response.getBody();
-        assertEquals(20, body.content.size(), "deep page came back short — the fetch bound cut it off");
-        assertEquals("id-300", body.content.get(0).id);
-        assertEquals("id-319", body.content.get(19).id);
+        assertEquals(3230, all.size());
+        assertEquals(3230, all.stream().map(i -> i.type + ":" + i.id).distinct().count(), "a row was served twice");
+        for (int i = 1; i < all.size(); i++) {
+            assertFalse(all.get(i).createdAt.after(all.get(i - 1).createdAt), "out of order at " + i);
+        }
     }
 
     @Test
-    void fetchAsksForEnoughRowsToFillTheRequestedPage() throws Exception {
-        stubChannelCollection();
+    void oldestFirstWalksTheSameRowsAscending() throws Exception {
+        seed(250, 30, 70);
+        stubRegistry();
 
-        controller.getContent("channel", "all", null, null, "newest", 15, 20);
+        List<ContentLibraryController.ContentItem> all = walk(null, "all", "oldest", 25);
+
+        assertEquals(350, all.size());
+        assertEquals(350, all.stream().map(i -> i.type + ":" + i.id).distinct().count());
+        for (int i = 1; i < all.size(); i++) {
+            assertFalse(all.get(i).createdAt.before(all.get(i - 1).createdAt), "out of order at " + i);
+        }
+    }
+
+    @Test
+    void aStatusListingWalksOnlyThatStatus() throws Exception {
+        seed(400, 30, 70);
+        stubRegistry();
+
+        // Pending: every fourth channel and every video, as GET /totals?status=pending counts them.
+        assertEquals(100 + 70, walk(null, "pending", "newest", 25).size());
+    }
+
+    @Test
+    void eachPageReadsAtMostOnePagePerType() throws Exception {
+        seed(2500, 30, 700);
+        stubRegistry();
+
+        controller.getContent(null, "all", null, null, "newest", null, 25);
 
         ArgumentCaptor<Integer> limit = ArgumentCaptor.forClass(Integer.class);
-        org.mockito.Mockito.verify(channelRepository).findAll(limit.capture());
-        // The invariant the 200-cap violated: the query must cover every row up to the end of the
-        // requested page, or that page cannot be served.
-        assertTrue(limit.getValue() > 16 * 20,
-                "fetch limit " + limit.getValue() + " cannot cover page 15 at size 20");
+        org.mockito.Mockito.verify(channelRepository).findPageAfter(any(), any(), anyBoolean(), any(), any(), limit.capture());
+        // Cursor paging: a page costs its own rows, never the prefix before it.
+        assertTrue(limit.getValue() <= 26, "read " + limit.getValue() + " rows for a 25-row page");
+    }
+
+    @Test
+    void aPageEdgeInsideOneInstantSkipsNothing() throws Exception {
+        // One bulk import: 60 channels with the same createdAt, so page edges fall inside the run.
+        for (int i = 0; i < 60; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%05d", i));
+            c.setStatus("APPROVED");
+            c.setCreatedAt(at(0));
+            channelRows.add(c);
+        }
+        stubRegistry();
+
+        List<ContentLibraryController.ContentItem> all = walk("channel", "all", "newest", 25);
+
+        assertEquals(60, all.size());
+        assertEquals(60, all.stream().map(i -> i.id).distinct().count(), "a row was served twice");
+    }
+
+    @Test
+    void aDeletedRowAtThePageEdgeSkipsNothing() throws Exception {
+        seed(120, 0, 0);
+        stubRegistry();
+        ContentLibraryController.ContentLibraryResponse first =
+                controller.getContent("channel", "all", null, null, "newest", null, 25).getBody();
+        String lastId = first.content.get(24).id;
+        String nextId = channelRows.stream().sorted(firestoreOrder(Channel::getCreatedAt, Channel::getId, false))
+                .map(Channel::getId).toList().get(25);
+
+        channelRows.removeIf(c -> c.getId().equals(lastId));
+        ContentLibraryController.ContentLibraryResponse second =
+                controller.getContent("channel", "all", null, null, "newest", first.nextCursor, 25).getBody();
+
+        assertEquals(nextId, second.content.get(0).id);
+    }
+
+    @Test
+    void theApprovedListingLeavesArchivedRowsToTheArchivedPage() throws Exception {
+        // 60 archived rows ahead of 40 live ones: every live row is listed, no archived one is.
+        for (int i = 0; i < 100; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%03d", i));
+            c.setStatus("APPROVED");
+            c.setCreatedAt(at(1000 - i));
+            if (i < 60) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            channelRows.add(c);
+        }
+        stubRegistry();
+
+        ContentLibraryController.ContentLibraryResponse first =
+                controller.getContent("channel", "approved", null, null, "newest", null, 20).getBody();
+        List<ContentLibraryController.ContentItem> all = walk("channel", "approved", "newest", 20);
+
+        // Same definition as GET /totals?status=approved, so the list and its header agree.
+        assertEquals(20, first.content.size(), "archived rows left the first page short");
+        assertEquals(40, all.size());
+        assertTrue(all.stream().allMatch(i -> Integer.parseInt(i.id.substring(1)) >= 60));
+    }
+
+    @Test
+    void archivedRowsAreReadOnceNotOnEveryPage() throws Exception {
+        // 300 archived channels, newer than every live channel, while newer videos fill the first
+        // pages: the channel cursor must move past the archived run, not re-read it each page.
+        for (int i = 0; i < 330; i++) {
+            Channel c = new Channel("UC" + i);
+            c.setId(String.format("c%05d", i));
+            c.setStatus("APPROVED");
+            c.setCreatedAt(at(i < 30 ? i : 470 + i));
+            if (i >= 30) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
+            channelRows.add(c);
+        }
+        for (int i = 0; i < 200; i++) {
+            Video v = new Video("v" + i);
+            v.setId(String.format("v%05d", i));
+            v.setStatus("APPROVED");
+            v.setCreatedAt(at(1000 + i));
+            videoRows.add(v);
+        }
+        stubRegistry();
+
+        assertEquals(230, walk(null, "approved", "newest", 25).size());
+
+        // Ten pages: the archived run once, then at most one page of channels each.
+        assertTrue(registry.channelRowsRead <= 300 + 10 * 26, "read " + registry.channelRowsRead + " channel rows");
+    }
+
+    @Test
+    void aMalformedCursorIsRefused() {
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.getContent(null, "all", null, null, "newest", "not-a-cursor", 20));
+    }
+
+    @Test
+    void aCursorOfJsonNullIsRefused() {
+        // "bnVsbA" is base64url for the JSON literal null: well-formed, but no cursor.
+        assertThrows(IllegalArgumentException.class,
+                () -> controller.getContent(null, "all", null, null, "newest", "bnVsbA", 20));
+    }
+
+    @Test
+    void anUnknownTypeEndsTheListing() throws Exception {
+        seed(30, 0, 0);
+        stubRegistry();
+
+        // Was an empty page whose cursor led back to itself, forever.
+        assertNull(controller.getContent("bogus", "all", null, null, "newest", null, 20).getBody().nextCursor);
+        assertEquals(30, walk("channel,bogus", "all", "newest", 20).size());
     }
 
     @Test
@@ -137,157 +313,6 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
-    void theApprovedListingLeavesArchivedRowsToTheArchivedPage() throws Exception {
-        Channel live = new Channel("UClive");
-        live.setId("c-live");
-        live.setStatus("APPROVED");
-        Channel archived = new Channel("UCgone");
-        archived.setId("c-gone");
-        archived.setStatus("APPROVED");
-        archived.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenReturn(List.of(live, archived));
-
-        ContentLibraryController.ContentLibraryResponse body =
-                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
-
-        // Same definition as GET /totals?status=approved, so the list and its header agree.
-        assertEquals(1, body.content.size());
-        assertEquals("c-live", body.content.get(0).id);
-    }
-
-    @Test
-    void archivedRowsNeverLeaveAnApprovedPageShort() throws Exception {
-        // 60 archived rows ahead of 40 live ones. Page 0 of 20 normally reads 70 rows: dropping the
-        // archived would leave 10, and offset paging would then skip live rows 10-19 for good.
-        List<Channel> rows = new ArrayList<>();
-        for (int i = 0; i < 100; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%03d", i));
-            c.setStatus("APPROVED");
-            if (i < 60) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-            rows.add(c);
-        }
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
-
-        ContentLibraryController.ContentLibraryResponse body =
-                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
-
-        assertEquals(20, body.content.size());
-        assertEquals(40, body.totalItems);
-        // Deepened by the rows it dropped, not by a registry-wide count on the listing's path.
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countApprovedArchived();
-    }
-
-    @Test
-    void anApprovedPageWithNothingArchivedIsOneQuery() throws Exception {
-        List<Channel> rows = new ArrayList<>();
-        for (int i = 0; i < 500; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%03d", i));
-            c.setStatus("APPROVED");
-            rows.add(c);
-        }
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
-
-        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
-
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
-                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
-    }
-
-    @Test
-    void aFewArchivedRowsAreAbsorbedByTheReadBuffer() throws Exception {
-        List<Channel> rows = new ArrayList<>();
-        for (int i = 0; i < 500; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%03d", i));
-            c.setStatus("APPROVED");
-            if (i == 0) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-            rows.add(c);
-        }
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
-
-        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
-
-        // 69 live rows in a 70-row window still fill page 0 and signal more: no second query.
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
-                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
-    }
-
-    @Test
-    void aLongArchivedRunCostsAFewRoundsNotOnePerRow() throws Exception {
-        // 1500 archived rows ahead of 100 live ones: linear deepening would re-query ~20 times.
-        List<Channel> rows = new ArrayList<>();
-        for (int i = 0; i < 1600; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%04d", i));
-            c.setStatus("APPROVED");
-            if (i < 1500) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-            rows.add(c);
-        }
-        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
-                .thenAnswer(inv -> rows.subList(0, Math.min(rows.size(), (int) inv.getArgument(1))));
-
-        ContentLibraryController.ContentLibraryResponse body =
-                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
-
-        assertEquals(20, body.content.size());
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.atMost(6))
-                .findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt());
-    }
-
-    @Test
-    void anApprovedSearchDropsArchivedMatchesBeforeTrimming() throws Exception {
-        // 75 archived matches ahead of 30 live ones. Trimming to the 70-row window first would keep
-        // only archived rows and report nothing, though the live matches were already fetched.
-        List<Channel> matches = new ArrayList<>();
-        for (int i = 0; i < 105; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%03d", i));
-            c.setName("term " + i);
-            c.setStatus("APPROVED");
-            if (i < 75) c.setValidationStatus(com.albunyaan.tube.model.ValidationStatus.ARCHIVED);
-            matches.add(c);
-        }
-        when(channelRepository.searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(matches);
-        when(channelRepository.searchByKeyword(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(List.of());
-
-        ContentLibraryController.ContentLibraryResponse body =
-                controller.getContent("channel", "approved", null, "term", "newest", 0, 20).getBody();
-
-        assertEquals(20, body.content.size());
-        assertEquals(30, body.totalItems);
-        // Archived rows go before the trim, so the search never re-runs its scans to deepen.
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
-                .searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt());
-    }
-
-    @Test
-    void aBroadApprovedSearchWithFewLiveMatchesRunsItsScansOnce() throws Exception {
-        // The name scan hits its 200-row bound but only 5 rows are approved, so the window is
-        // short with hitLimit set. Deepening could never add a match: the scan bound is fixed.
-        List<Channel> matches = new ArrayList<>();
-        for (int i = 0; i < 200; i++) {
-            Channel c = new Channel("UC" + i);
-            c.setId(String.format("c%03d", i));
-            c.setName("term " + i);
-            c.setStatus(i < 5 ? "APPROVED" : "PENDING");
-            matches.add(c);
-        }
-        when(channelRepository.searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(matches);
-        when(channelRepository.searchByKeyword(org.mockito.ArgumentMatchers.anyString(), anyInt())).thenReturn(List.of());
-
-        controller.getContent("channel", "approved", null, "term", "newest", 0, 20);
-
-        org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.times(1))
-                .searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt());
-    }
-
-    @Test
     void totalsRejectAStatusTheFilterDoesNotOffer() throws Exception {
         assertEquals(400, controller.getTotals("archived").getStatusCode().value());
         assertEquals(400, controller.getTotals("").getStatusCode().value());
@@ -310,36 +335,19 @@ class ContentLibraryPagingAndTotalsTest {
 
     @Test
     void theListingNeverPaysForTheCounts() throws Exception {
-        stubChannelCollection();
+        seed(100, 0, 0);
+        stubRegistry();
 
-        // Browse page, scroll page and search alike: the counts live on their own endpoint, so a
-        // slow or failing aggregation can never delay or fail a listing.
-        controller.getContent("channel", "all", null, null, "newest", 0, 20);
-        controller.getContent("channel", "all", null, null, "newest", 1, 20);
-        controller.getContent("channel", "approved", null, null, "newest", 0, 20);
+        // First page, next page and approved page alike: the counts live on their own endpoint,
+        // so a slow or failing aggregation can never delay or fail a listing.
+        String next = controller.getContent("channel", "all", null, null, "newest", null, 20).getBody().nextCursor;
+        controller.getContent("channel", "all", null, null, "newest", next, 20);
+        controller.getContent("channel", "approved", null, null, "newest", null, 20);
 
         org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countAll();
         org.mockito.Mockito.verify(playlistRepository, org.mockito.Mockito.never()).countAll();
         org.mockito.Mockito.verify(videoRepository, org.mockito.Mockito.never()).countAll();
         org.mockito.Mockito.verify(channelRepository, org.mockito.Mockito.never()).countApprovedArchived();
-    }
-
-    @Test
-    void searchScanStaysBoundedIndependentlyOfTheBrowseCeiling() throws Exception {
-        when(channelRepository.searchByKeyword(org.mockito.ArgumentMatchers.anyString(), anyInt()))
-                .thenReturn(List.of());
-        when(channelRepository.searchByNameLower(org.mockito.ArgumentMatchers.anyString(), anyInt()))
-                .thenReturn(List.of());
-
-        controller.getContent("channel", "all", null, "history", "newest", 0, 20);
-
-        // Search runs on every debounced keystroke and issues two queries per type at a fixed
-        // limit, so it must not inherit the (much higher) browse ceiling.
-        ArgumentCaptor<Integer> limit = ArgumentCaptor.forClass(Integer.class);
-        org.mockito.Mockito.verify(channelRepository)
-                .searchByKeyword(org.mockito.ArgumentMatchers.anyString(), limit.capture());
-        assertTrue(limit.getValue() <= 200,
-                "search scan limit " + limit.getValue() + " tracks the browse ceiling");
     }
 
 }

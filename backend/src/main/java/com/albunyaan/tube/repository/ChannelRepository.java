@@ -318,7 +318,7 @@ public class ChannelRepository {
     /**
      * Find approved channels by category ID with deterministic ordering.
      * NOTE: This unbounded method is retained for backwards compatibility but
-     * callers should prefer findByCategoryId(categoryId, limit) for quota safety.
+     * callers should prefer a bounded query (e.g. findPageAfter) for quota safety.
      *
      * @param categoryId Category ID to filter by
      * @return List of approved channels in the category, ordered by createdAt descending
@@ -328,25 +328,6 @@ public class ChannelRepository {
                 .whereArrayContains("categoryIds", categoryId)
                 .whereEqualTo("status", "APPROVED")
                 .orderBy("createdAt", Query.Direction.DESCENDING)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by category ID with limit (bounded query).
-     * This prevents quota exhaustion for large categories.
-     *
-     * @param categoryId Category ID to filter by
-     * @param limit Maximum number of results
-     * @return List of approved channels in the category
-     */
-    public List<Channel> findByCategoryId(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -363,26 +344,6 @@ public class ChannelRepository {
     public List<Channel> findByCategoryIdAllStatus(String categoryId, int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .whereArrayContains("categoryIds", categoryId)
-                .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by category ID and specific status.
-     * This allows admin Content Library to filter by both category and status.
-     *
-     * @param categoryId Category ID to filter by
-     * @param status Status to filter by (APPROVED, PENDING, REJECTED)
-     * @param limit Maximum number of results
-     * @return List of channels matching both category and status
-     */
-    public List<Channel> findByCategoryIdAndStatus(String categoryId, String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereArrayContains("categoryIds", categoryId)
-                .whereEqualTo("status", status)
                 .orderBy("createdAt", Query.Direction.DESCENDING)
                 .limit(limit)
                 .get();
@@ -461,41 +422,27 @@ public class ChannelRepository {
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
+    /**
+     * One page of the admin Content Library: createdAt order with the document id as tie-break,
+     * resuming strictly after ({@code afterCreatedAt}, {@code afterId}) when given. {@code status}
+     * and {@code category} are optional filters (null = any). The id ordering has the createdAt
+     * direction, so it is Firestore's implicit tie-break and the existing createdAt indexes serve it.
+     */
+    public List<Channel> findPageAfter(String status, String category, boolean oldest,
+                                       com.google.cloud.Timestamp afterCreatedAt, String afterId, int limit)
+            throws ExecutionException, InterruptedException, TimeoutException {
+        Query.Direction dir = oldest ? Query.Direction.ASCENDING : Query.Direction.DESCENDING;
+        Query query = getCollection();
+        if (status != null) query = query.whereEqualTo("status", status);
+        if (category != null) query = query.whereArrayContains("categoryIds", category);
+        query = query.orderBy("createdAt", dir).orderBy(com.google.cloud.firestore.FieldPath.documentId(), dir);
+        if (afterCreatedAt != null) query = query.startAfter(afterCreatedAt, afterId);
+        return query.limit(limit).get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
+    }
+
     public List<Channel> findAll(int limit) throws ExecutionException, InterruptedException, TimeoutException {
         ApiFuture<QuerySnapshot> query = getCollection()
                 .orderBy("createdAt", Query.Direction.DESCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find all channels ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested.
-     *
-     * @param limit Maximum number of results
-     * @return List of channels ordered oldest-first
-     */
-    public List<Channel> findAllOrderByCreatedAtAsc(int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .orderBy("createdAt", Query.Direction.ASCENDING)
-                .limit(limit)
-                .get();
-        return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Find channels by status ordered by createdAt ascending (oldest first) with limit.
-     * Used by admin Content Library when sort=oldest is requested with status filter.
-     *
-     * @param status Status to filter by
-     * @param limit Maximum number of results
-     * @return List of channels ordered oldest-first
-     */
-    public List<Channel> findByStatusOrderByCreatedAtAsc(String status, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> query = getCollection()
-                .whereEqualTo("status", status)
-                .orderBy("createdAt", Query.Direction.ASCENDING)
                 .limit(limit)
                 .get();
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
@@ -567,43 +514,6 @@ public class ChannelRepository {
                 .get();
 
         return query.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Search channels by normalized nameLower field for case-insensitive prefix matching.
-     * This is the preferred search method as it supports case-insensitive queries.
-     *
-     * @param queryLower Lowercase search prefix
-     * @param limit Maximum number of results
-     * @return List of matching channels
-     */
-    public List<Channel> searchByNameLower(String queryLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .orderBy("nameLower")
-                .startAt(queryLower)
-                .endAt(queryLower + "\uf8ff")
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
-    }
-
-    /**
-     * Search channels by keyword using array-contains on keywordsLower.
-     * Finds channels where any keyword exactly matches the query (case-insensitive).
-     * Complements prefix-based name search for improved recall.
-     *
-     * @param keywordLower Lowercase keyword to search for
-     * @param limit Maximum number of results
-     * @return List of matching channels
-     */
-    public List<Channel> searchByKeyword(String keywordLower, int limit) throws ExecutionException, InterruptedException, TimeoutException {
-        ApiFuture<QuerySnapshot> querySnapshot = getCollection()
-                .whereArrayContains("keywordsLower", keywordLower)
-                .limit(limit)
-                .get();
-
-        return querySnapshot.get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS).toObjects(Channel.class);
     }
 
     /**

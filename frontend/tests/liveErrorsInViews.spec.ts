@@ -26,8 +26,8 @@ vi.mock('@/services/sortOrder', async (importOriginal) => ({
     { id: 'live', name: 'Channels Live', icon: null, localizedNames: null, displayOrder: 17, contentCount: 0, parentCategoryId: null }
   ]),
   getCategoryContentOrder: () => Promise.resolve([]),
-  getApprovedContent: () => Promise.resolve({ items: [
-    { id: 'pl-1', type: 'playlist', youtubeId: null, title: 'A playlist', thumbnailUrl: null }], truncated: false }),
+  getApprovedContent: () => Promise.resolve([
+    { id: 'pl-1', type: 'playlist', youtubeId: null, title: 'A playlist', thumbnailUrl: null }]),
   addContentToCategorySort: () => Promise.reject(Object.assign(new Error('Request failed with status code 400'), {
     response: { status: 400, data: { code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED', message: 'x',
       details: { offenders: [{ ref: 'playlist:pl-1', code: 'LIVE_CATEGORY_TYPE_NOT_ALLOWED' }] } } }

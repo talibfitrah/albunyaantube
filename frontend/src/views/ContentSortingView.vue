@@ -252,14 +252,12 @@
                   <span v-if="!addModalLoading" class="filter-count">{{ addModalTypeCount(filter.value) }}</span>
                 </button>
               </div>
+              <p v-if="!addModalLoading && addModalBreakdown" class="add-breakdown">{{ addModalBreakdown }}</p>
             </div>
 
             <div v-if="addModalError" class="add-error" role="alert">{{ addModalError }}</div>
 
             <div ref="addModalBodyRef" class="modal-body">
-              <div v-if="addModalTruncated" class="truncation-warning">
-                <p>{{ t('contentSorting.addContentTruncated', { count: addModalAvailable.length }) }}</p>
-              </div>
               <div v-if="addModalLoading" class="loading-state" role="status" aria-live="polite">
                 <span class="spinner" aria-hidden="true"></span>
                 <p>{{ t('contentSorting.addContentLoading') }}</p>
@@ -470,11 +468,13 @@ const addModalSubmitting = ref(false);
 const addModalError = ref('');
 const addModalSearch = ref('');
 const addModalTypeFilter = ref('all');
-const addModalAvailable = ref<ApprovedContentItem[]>([]);
+// Every approved item, as the Library counts them; the list offers only those that can be added.
+const addModalAll = ref<ApprovedContentItem[]>([]);
+const addModalExisting = ref<Set<string>>(new Set());
+const addModalLive = ref(false);
 const addModalSelected = ref<Set<string>>(new Set());
 let addModalCategoryId = '';
 let addModalLoadToken = 0;
-const addModalTruncated = ref(false);
 const addModalContainerRef = ref<HTMLElement | null>(null);
 
 const { activate: activateFocusTrap, deactivate: deactivateFocusTrap } = useFocusTrap(addModalContainerRef, {
@@ -509,11 +509,23 @@ async function showMoreAddRows() {
   }
 }
 
+type NotAddable = 'inCategory' | 'personal' | 'livePlaylist';
+
+/** Why an item cannot be added here, first reason only, so the breakdown's parts add up. */
+function notAddable(i: ApprovedContentItem): NotAddable | null {
+  if (addModalExisting.value.has(contentKey(i))) return 'inCategory';
+  if (i.visibility === 'PERSONAL') return 'personal'; // a grant to specific people renders in no category
+  if (addModalLive.value && i.type === 'playlist') return 'livePlaylist'; // the server refuses it
+  return null;
+}
+
+const addModalAvailable = computed(() => addModalAll.value.filter(i => !notAddable(i)));
+
 /** Everything matching the search, any type: what the type tabs count. */
 const addModalSearchMatches = computed(() => {
-  if (!addModalSearch.value.trim()) return addModalAvailable.value;
+  if (!addModalSearch.value.trim()) return addModalAll.value;
   const q = addModalSearch.value.toLowerCase();
-  return addModalAvailable.value.filter(i => i.title.toLowerCase().includes(q));
+  return addModalAll.value.filter(i => i.title.toLowerCase().includes(q));
 });
 
 /** Per-tab count, like the category toolbar's tabs: how many items each type tab holds for this search. */
@@ -522,17 +534,33 @@ function addModalTypeCount(type: string): number {
 }
 
 /** Everything matching the current filters, before the render window. */
-const addModalMatches = computed(() =>
+const addModalTabMatches = computed(() =>
   addModalTypeFilter.value === 'all'
     ? addModalSearchMatches.value
     : addModalSearchMatches.value.filter(i => i.type === addModalTypeFilter.value));
 
+const addModalMatches = computed(() => addModalTabMatches.value.filter(i => !notAddable(i)));
+
+/** "13 already in this category · 3 limited to specific users", for the tab's matches. */
+const addModalBreakdown = computed(() => {
+  const counts: Record<NotAddable, number> = { inCategory: 0, personal: 0, livePlaylist: 0 };
+  for (const i of addModalTabMatches.value) {
+    const reason = notAddable(i);
+    if (reason) counts[reason]++;
+  }
+  const parts: string[] = [];
+  if (counts.inCategory) parts.push(t('contentSorting.addContentInCategory', { count: counts.inCategory }));
+  if (counts.personal) parts.push(t('contentSorting.addContentPersonal', { count: counts.personal }));
+  if (counts.livePlaylist) parts.push(t('contentSorting.addContentLivePlaylists', { count: counts.livePlaylist }));
+  return parts.join(' · ');
+});
+
 /**
- * What is drawn: the whole registry is fetched in one request, but rows are rendered a page at a
+ * What is drawn: every approved item is fetched up front, but rows are rendered a page at a
  * time as the reviewer scrolls (incremental, not bounded: scrolling to the end draws every row).
  */
 const addModalFiltered = computed(() => addModalMatches.value.slice(0, addModalShown.value));
-watch([addModalAvailable, addModalSearch, addModalTypeFilter], () => {
+watch([addModalAll, addModalSearch, addModalTypeFilter], () => {
   if (!addModalOpen.value) return; // closing clears the list: leave the fading modal as it was; the next load resets
   if (addModalBodyRef.value) addModalBodyRef.value.scrollTop = 0; // new matches start at the top
   addModalShown.value = 0;
@@ -841,7 +869,6 @@ async function openAddContentModal(categoryId: string) {
   addModalTypeFilter.value = 'all';
   addModalSelected.value = new Set();
   addModalLoading.value = true;
-  addModalTruncated.value = false;
 
   await nextTick();
   activateFocusTrap();
@@ -851,16 +878,14 @@ async function openAddContentModal(categoryId: string) {
     // The category's own type decides, not the live-status call (still loading, or failed, or a moderator's 403).
     // Types unknown (the fetch failed): playlists stay offered. Hiding them would hide them from every ordinary
     // category, and the server refuses one in a live category anyway, naming it in this modal.
-    const [result, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds().catch(() => new Set<string>())]);
+    const [items, liveIds] = await Promise.all([getApprovedContent(), liveCategoryIds().catch(() => new Set<string>())]);
     if (token !== addModalLoadToken) return;
-    addModalTruncated.value = result.truncated;
-    const existingKeys = new Set(contentItems.value.map(contentKey));
-    // The server refuses a playlist in the live category: do not offer one.
-    const live = liveIds.has(categoryId);
-    addModalAvailable.value = result.items.filter(i => !existingKeys.has(contentKey(i)) && !(live && i.type === 'playlist'));
+    addModalExisting.value = new Set(contentItems.value.map(contentKey));
+    addModalLive.value = liveIds.has(categoryId);
+    addModalAll.value = items;
   } catch (e: any) {
     if (token !== addModalLoadToken) return;
-    addModalAvailable.value = [];
+    addModalAll.value = [];
     toast.error(t('contentSorting.addContentLoadError'));
   } finally {
     if (token === addModalLoadToken) {
@@ -873,9 +898,8 @@ function closeAddContentModal() {
   deactivateFocusTrap();
   addModalOpen.value = false;
   addModalError.value = '';
-  addModalAvailable.value = [];
+  addModalAll.value = [];
   addModalSelected.value = new Set();
-  addModalTruncated.value = false;
 }
 
 function toggleAddSelection(item: ApprovedContentItem) {
@@ -1420,12 +1444,10 @@ tr.drag-over {
   min-height: 0; /* shrinks on short screens so the footer's buttons stay in view */
 }
 
-.truncation-warning {
-  padding: 0.5rem 1.5rem;
-  background: var(--color-warning-soft);
-  color: var(--color-warning);
+.add-breakdown {
+  margin: 0.5rem 0 0;
+  color: var(--color-text-secondary);
   font-size: 0.8125rem;
-  border-bottom: 1px solid var(--color-warning);
 }
 
 .add-content-list {
