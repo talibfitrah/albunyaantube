@@ -29,6 +29,7 @@ import java.util.Optional;
 import java.util.Set;
 
 import static org.junit.jupiter.api.Assertions.assertEquals;
+import static org.junit.jupiter.api.Assertions.assertNull;
 import static org.junit.jupiter.api.Assertions.assertTrue;
 import static org.mockito.ArgumentMatchers.any;
 import static org.mockito.ArgumentMatchers.anyString;
@@ -163,6 +164,26 @@ class SimpleImportServiceTest {
         assertEquals(180, saved.getDurationSeconds());
         assertEquals(1_000L, saved.getViewCount());
         assertEquals(List.of("cat-3"), saved.getCategoryIds());
+    }
+
+    @Test
+    void anImportWithoutADurationStoresNull() throws Exception {
+        Map<String, String> videos = Map.of("VID124", "Video Title|CatC");
+        List<Map<String, String>> payload = List.of(Collections.emptyMap(), Collections.emptyMap(), videos);
+        StreamDetailsDto dto = new StreamDetailsDto();
+        dto.setId("VID124");
+        dto.setName("DTO Video");
+        dto.setUploaderUrl("https://www.youtube.com/channel/UCCHAN123");
+        when(videoRepository.findByYoutubeId("VID124")).thenReturn(Optional.empty());
+        when(channelOrchestrator.getVideoDetailsDto("VID124")).thenReturn(dto);
+        when(categoryMappingService.mapCategoryNamesToIds("CatC")).thenReturn(List.of("cat-3"));
+        when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormat(payload, "APPROVED", "user-3", false, Set.of());
+
+        ArgumentCaptor<Video> videoCaptor = ArgumentCaptor.forClass(Video.class);
+        verify(videoRepository).save(videoCaptor.capture());
+        assertNull(videoCaptor.getValue().getDurationSeconds());
     }
 
     /** B17: the shared breaker no longer records a /player bot check, so an import stops asking after the first. */

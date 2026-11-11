@@ -1323,7 +1323,9 @@ public class PublicContentService {
     private boolean matchesLengthFilter(Video video, String length) {
         if (length == null || length.isBlank()) return true;
 
-        int duration = video.getDurationSeconds() / 60; // Convert to minutes
+        Integer seconds = video.getDurationSeconds();
+        if (seconds == null || seconds <= 0) return false; // unknown length matches no length filter
+        int duration = seconds / 60; // Convert to minutes
         switch (length.toUpperCase(Locale.ROOT)) {
             case "SHORT":
                 return duration < 4;

@@ -63,10 +63,10 @@ class UploadsFetcherTest {
     }
 
     @Test
-    void aLiveOrUnknownDurationIsZeroAndAMissingDateIsLeftOut() {
-        InnerCorpus.Item it = UploadsFetcher.item(stream("kRNck4MdV2g", "Live", -1), false);
-        assertEquals(0, it.d());
-        assertNull(it.a());
+    void aLiveOrUnknownDurationIsNullAndAMissingDateIsLeftOut() {
+        assertNull(UploadsFetcher.item(stream("kRNck4MdV2g", "Live", -1), false).d());
+        assertNull(UploadsFetcher.item(stream("kRNck4MdV2g", "Live", 0), false).d());
+        assertNull(UploadsFetcher.item(stream("kRNck4MdV2g", "Live", -1), false).a());
     }
 
     @Test

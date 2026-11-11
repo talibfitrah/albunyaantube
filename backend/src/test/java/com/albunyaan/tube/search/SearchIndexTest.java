@@ -332,7 +332,7 @@ class SearchIndexTest {
         return built;
     }
 
-    private static InnerCorpus.Item item(String id, String title, int seconds) {
+    private static InnerCorpus.Item item(String id, String title, Integer seconds) {
         return new InnerCorpus.Item(id, title, seconds, null, null, null);
     }
 
@@ -1108,6 +1108,27 @@ class SearchIndexTest {
         assertEquals("Alafasy", hit.getChannelTitle());
         assertEquals("CHANNEL", hit.getSourceType());
         assertEquals("UCalafasy", hit.getSourceId());
+    }
+
+    @Test
+    void unknownDurationsAreNullOnEveryHitKind() throws Exception {
+        Video catalogNull = video("catalogNull1", "Qxzdur catalognull", "Alafasy");
+        Video catalogZero = video("catalogZero1", "Qxzdur catalogzero", "Alafasy");
+        catalogZero.setDurationSeconds(0);
+        SearchableStream streamNull = stream("streamNull01", "Qxzdur streamnull", ALAFASY);
+        SearchableStream streamZero = stream("streamZero01", "Qxzdur streamzero", ALAFASY);
+        streamZero.setDurationSeconds(0L);
+        InnerIndex inner = inner(Map.of(ALAFASY, List.of(item("innerNull001", "Qxzdur innernull", null),
+                item("innerZero001", "Qxzdur innerzero", 0), item("inner600sec1", "Qxzdur innerknown", 600))),
+                Map.of(ALAFASY, "Alafasy"));
+        SearchIndex idx = started(newIndex(List.of(channel("UCalafasy", "Alafasy")), List.of(),
+                List.of(catalogNull, catalogZero), List.of(streamNull, streamZero), 5_000, inner));
+        for (String t : List.of("catalognull", "catalogzero", "streamnull", "streamzero", "innernull", "innerzero")) {
+            List<ContentItemDto> hits = idx.search(t, null, 50).items();
+            assertEquals(1, hits.size(), t);
+            assertNull(hits.get(0).getDurationSeconds(), t);
+        }
+        assertEquals(600, idx.search("innerknown", null, 50).items().get(0).getDurationSeconds());
     }
 
     @Test

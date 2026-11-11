@@ -1318,7 +1318,7 @@ public class ContentValidationService {
         if (dto.getViewCount() != null && dto.getViewCount() >= 0) {
             video.setViewCount(dto.getViewCount());
         }
-        if (dto.getDuration() != null && dto.getDuration() >= 0) {
+        if (dto.getDuration() != null && dto.getDuration() > 0) {
             video.setDurationSeconds(dto.getDuration().intValue());
         }
         if (dto.getUploaderName() != null && !dto.getUploaderName().isBlank()) {

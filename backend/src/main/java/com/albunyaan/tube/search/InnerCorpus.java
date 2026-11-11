@@ -41,10 +41,10 @@ final class InnerCorpus {
     /** `channel:` or `playlist:` plus a YouTube id (UC/UU/PL/OL/RD/LL...): the id alphabet is the path-traversal guard, the cap keeps the file name legal. */
     private static final Pattern SOURCE_KEY = Pattern.compile("(channel|playlist):[A-Za-z0-9_-]{1,64}");
 
-    /** `d` seconds (0 = unknown or live); `a` approximate upload day (days since epoch); `c`/`u` only for playlist sources. */
+    /** `d` seconds (null = unknown or live); `a` approximate upload day (days since epoch); `c`/`u` only for playlist sources. */
     @JsonInclude(JsonInclude.Include.NON_NULL)
     @JsonIgnoreProperties(ignoreUnknown = true)
-    record Item(String id, String t, int d, Integer a, String c, String u) {}
+    record Item(String id, String t, Integer d, Integer a, String c, String u) {}
 
     private InnerCorpus() {
     }

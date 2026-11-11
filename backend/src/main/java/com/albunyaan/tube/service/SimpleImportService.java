@@ -509,11 +509,9 @@ public class SimpleImportService {
                         video.setThumbnailUrl(ytVideo.getThumbnailUrl());
                     }
 
-                    if (ytVideo.getDuration() != null && ytVideo.getDuration() >= 0) {
+                    if (ytVideo.getDuration() != null && ytVideo.getDuration() > 0) {
                         video.setDurationSeconds(ytVideo.getDuration().intValue());
                         logger.debug("Video duration: {} seconds", ytVideo.getDuration());
-                    } else {
-                        video.setDurationSeconds(0);
                     }
 
                     if (ytVideo.getViewCount() != null && ytVideo.getViewCount() >= 0) {

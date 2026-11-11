@@ -34,6 +34,15 @@ class InnerCorpusTest {
     }
 
     @Test
+    void anUnknownDurationIsLeftOffTheLineAndReadsBackNull() throws IOException {
+        Path f = InnerCorpus.file(dir, "channel:UCnoDuration");
+        InnerCorpus.write(f, List.of(new InnerCorpus.Item("ilgiwqpcOC8", "Lezing", null, null, null, null)));
+        String text = new String(new GZIPInputStream(Files.newInputStream(f)).readAllBytes(), StandardCharsets.UTF_8);
+        assertFalse(text.contains("\"d\""), text);
+        assertNull(InnerCorpus.read(f).get(0).d());
+    }
+
+    @Test
     void aFileNameMapsBackToItsSourceKeyEvenWithUnderscoresInTheId() {
         Path f = InnerCorpus.file(dir, "playlist:PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_");
         assertEquals("playlist_PLXS0usquloW_VC2gPb6nu1FFQTxWc1Ww_.jsonl.gz", f.getFileName().toString());

@@ -558,10 +558,8 @@ public class ContentImportService {
                         video.setThumbnailUrl(dto.getThumbnailUrl());
                     }
 
-                    if (dto.getDuration() != null && dto.getDuration() >= 0) {
+                    if (dto.getDuration() != null && dto.getDuration() > 0) {
                         video.setDurationSeconds(dto.getDuration().intValue());
-                    } else {
-                        video.setDurationSeconds(0);
                     }
 
                     if (dto.getViewCount() != null && dto.getViewCount() >= 0) {

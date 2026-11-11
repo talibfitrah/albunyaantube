@@ -562,6 +562,29 @@ class ContentValidationServiceTest {
             assertEquals(600, savedVideo.getDurationSeconds());
             assertEquals("Channel Name", savedVideo.getChannelTitle());
         }
+
+        @Test
+        @DisplayName("A zero duration never overwrites a known one")
+        void validateVideo_aZeroDurationNeverOverwritesAKnownOne() throws Exception {
+            Video video = createVideo("abc123", "Old Title", null);
+            video.setDurationSeconds(754);
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("APPROVED"), anyInt())).thenReturn(List.of(video));
+            when(videoRepository.findByStatusOrderByLastValidatedAtAsc(eq("approved"), anyInt())).thenReturn(Collections.emptyList());
+
+            StreamDetailsDto dto = new StreamDetailsDto();
+            dto.setName("Updated Title");
+            dto.setDuration(0L);
+            BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
+            result.addValid("abc123", dto);
+            when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenReturn(result);
+            when(validationRunRepository.save(any())).thenAnswer(inv -> inv.getArgument(0));
+
+            service.validateVideos("MANUAL", "test-user", "Test User", 100);
+
+            ArgumentCaptor<Video> videoCaptor = ArgumentCaptor.forClass(Video.class);
+            verify(videoRepository).save(videoCaptor.capture());
+            assertEquals(754, videoCaptor.getValue().getDurationSeconds());
+        }
     }
 
     @Nested

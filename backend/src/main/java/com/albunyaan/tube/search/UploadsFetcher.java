@@ -108,6 +108,6 @@ public class UploadsFetcher {
             Matcher m = CHANNEL_ID.matcher(String.valueOf(s.getUploaderUrl()));
             u = m.find() ? m.group() : null;
         }
-        return new InnerCorpus.Item(id, s.getName(), (int) Math.max(0, s.getDuration()), day, c, u);
+        return new InnerCorpus.Item(id, s.getName(), s.getDuration() > 0 ? (Integer) (int) s.getDuration() : null, day, c, u);
     }
 }

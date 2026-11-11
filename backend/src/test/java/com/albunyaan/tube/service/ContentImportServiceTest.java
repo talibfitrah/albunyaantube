@@ -656,6 +656,28 @@ class ContentImportServiceTest {
         return dto;
     }
 
+    @Test
+    void anImportWithoutADurationStoresNull() throws Exception {
+        List<Map<String, String>> simpleData = List.of(Collections.emptyMap(), Collections.emptyMap(), Map.of("VID1", "Video 1|Global"));
+        ValidationRun run = new ValidationRun(ValidationRun.TRIGGER_IMPORT, "test-user", "test@example.com");
+        when(videoRepository.findByYoutubeId(anyString())).thenReturn(Optional.empty());
+        when(channelOrchestrator.batchValidateVideosDtoWithDetails(anyList())).thenAnswer(invocation -> {
+            BatchValidationResult<StreamDetailsDto> result = new BatchValidationResult<>();
+            StreamDetailsDto dto = createVideoDto("VID1", "Video 1");
+            dto.setDuration(null);
+            result.addValid("VID1", dto);
+            return result;
+        });
+        when(categoryMappingService.mapCategoryNamesToIds(anyString())).thenReturn(List.of("cat-1"));
+        when(videoRepository.save(any(Video.class))).thenAnswer(invocation -> invocation.getArgument(0));
+
+        service.importSimpleFormatAsync(run, simpleData, "APPROVED", "test-user");
+
+        ArgumentCaptor<Video> videoCaptor = ArgumentCaptor.forClass(Video.class);
+        verify(videoRepository).save(videoCaptor.capture());
+        assertNull(videoCaptor.getValue().getDurationSeconds());
+    }
+
     /** §7 row 16 (K11): a live check that cannot run (503) fails the run with its code, before any validation or write. */
     @Test
     void importSimpleFormatAsync_anUnavailableLiveCheckFailsTheRunWithItsCode() throws Exception {

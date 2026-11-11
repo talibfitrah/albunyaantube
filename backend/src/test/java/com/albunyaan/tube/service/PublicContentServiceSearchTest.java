@@ -258,4 +258,22 @@ class PublicContentServiceSearchTest {
 
         verify(searchIndex).searchPage("quran", "VIDEO", 21, Set.of("vShort"), -1);
     }
+
+    @Test
+    void aLengthFilterSkipsVideosWithUnknownDurationInsteadOfFailing() throws Exception {
+        Video vShort = new Video("vShort");
+        vShort.setStatus("APPROVED");
+        vShort.setDurationSeconds(120);
+        Video vNull = new Video("vNull");
+        vNull.setStatus("APPROVED");
+        Video vZero = new Video("vZero");
+        vZero.setStatus("APPROVED");
+        vZero.setDurationSeconds(0);
+        when(videoRepository.findAllByOrderByUploadedAtDesc(anyInt())).thenReturn(List.of(vShort, vNull, vZero));
+        when(searchIndex.searchPage(eq("quran"), eq("VIDEO"), eq(21), any(), eq(-1L))).thenReturn(SearchIndex.Hits.NONE);
+
+        service.searchContent("VIDEOS", null, 20, null, "SHORT", null, "quran");
+
+        verify(searchIndex).searchPage("quran", "VIDEO", 21, Set.of("vShort"), -1);
+    }
 }

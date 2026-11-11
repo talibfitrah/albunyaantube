@@ -313,7 +313,7 @@ public class InnerIndex {
         doc.add(new StoredField("t", item.t()));
         if (channel != null && !channel.isEmpty()) doc.add(new StoredField("c", channel));
         if (item.u() != null) doc.add(new StoredField("u", item.u()));
-        doc.add(new StoredField("d", item.d()));
+        if (item.d() != null) doc.add(new StoredField("d", item.d()));
         if (item.a() != null) doc.add(new StoredField("a", item.a()));
         return doc;
     }
