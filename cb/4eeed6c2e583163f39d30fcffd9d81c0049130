@@ -1,0 +1,28 @@
+frontend/src/views/ContentSortingView.vue
+  s_83b05ee01cfee6::t_e314dc807be2e4 513,518
+  s_83b05ee01cfee6::t_c0daf1d52f5436 477,479,482-495,516,519-521
+  s_83b05ee01cfee6::t_ffcbf0878355f1 258,288,323,345,474-476,478,480,512,515
+  s_83b05ee01cfee6::t_073296a57f8f80 517
+frontend/tests/ContentSortingLive.spec.ts
+  s_83b05ee01cfee6::t_2d6692fd90c74c 205,224-225
+  s_83b05ee01cfee6::t_f4de1cf398751e 226,228-238,242,244-247
+  s_83b05ee01cfee6::t_e314dc807be2e4 215-222,239-241,243
+  s_83b05ee01cfee6::t_63285591bf9b13 15-18,38,203-204,206-214,223
+  s_83b05ee01cfee6::t_9ed385ed6d4ca9 227
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "cb4eeed6c2e583163f39d30fcffd9d81c0049130",
+  "prompts": {},
+  "sessions": {
+    "s_83b05ee01cfee6": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "708111a7-564b-4708-84c5-ef706bef2891",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
