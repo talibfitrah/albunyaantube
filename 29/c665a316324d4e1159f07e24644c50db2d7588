@@ -1,0 +1,21 @@
+android/app/src/test/java/com/albunyaan/tube/ui/ContentListViewModelTest.kt
+  s_8a936fc306f37b::t_ca5c80e25697d2 468-503
+android/app/src/main/java/com/albunyaan/tube/ui/ContentListViewModel.kt
+  s_8a936fc306f37b::t_92f32d6aaff08a 124
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "29c665a316324d4e1159f07e24644c50db2d7588",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
