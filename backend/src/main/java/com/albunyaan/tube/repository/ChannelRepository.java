@@ -640,63 +640,6 @@ public class ChannelRepository {
     }
 
     /**
-     * Find approved channels ordered by subscribers with cursor-based pagination.
-     *
-     * @param limit Number of items to fetch (fetch limit + 1 to detect hasNext)
-     * @param cursor Encoded cursor string from previous page, or null for first page
-     * @return PaginatedResult containing channels and next cursor
-     */
-    public PaginatedResult<Channel> findApprovedBySubscribersDescWithCursor(int limit, String cursor)
-            throws ExecutionException, InterruptedException, TimeoutException {
-
-        Query query = getCollection()
-                .whereEqualTo("status", "APPROVED")
-                .orderBy("subscribers", Query.Direction.DESCENDING)
-                .limit(limit + 1); // Fetch one extra to detect hasNext
-
-        // Apply cursor if provided. If the cursor's document no longer exists
-        // (deleted, or cursor came from a different collection / content type),
-        // fall back to returning the first page — graceful degradation matching
-        // CursorUtils.decode()'s null-on-malformed behaviour.
-        if (cursor != null && !cursor.isEmpty()) {
-            CursorUtils.CursorData cursorData = CursorUtils.decode(cursor);
-            if (cursorData != null && cursorData.getId() != null) {
-                DocumentReference cursorDoc = getCollection().document(cursorData.getId());
-                var cursorSnapshot = cursorDoc.get().get(timeoutProperties.getRead(), TimeUnit.SECONDS);
-                if (cursorSnapshot.exists()) {
-                    query = query.startAfter(cursorSnapshot);
-                }
-                // else: stale/foreign cursor — restart from the beginning
-            }
-        }
-
-        QuerySnapshot snapshot = query.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
-        List<QueryDocumentSnapshot> docs = snapshot.getDocuments();
-
-        boolean hasNext = docs.size() > limit;
-        if (hasNext) {
-            docs = docs.subList(0, limit);
-        }
-
-        List<Channel> channels = new ArrayList<>();
-        String nextCursor = null;
-
-        for (int i = 0; i < docs.size(); i++) {
-            QueryDocumentSnapshot doc = docs.get(i);
-            Channel channel = doc.toObject(Channel.class);
-            channel.setId(doc.getId());
-            channels.add(channel);
-
-            // Generate cursor from last item
-            if (i == docs.size() - 1 && hasNext) {
-                nextCursor = CursorUtils.encodeFromSnapshot(doc, "subscribers");
-            }
-        }
-
-        return new PaginatedResult<>(channels, nextCursor, hasNext);
-    }
-
-    /**
      * Find approved channels by category ordered by subscribers with cursor-based pagination.
      *
      * @param category Category ID to filter by

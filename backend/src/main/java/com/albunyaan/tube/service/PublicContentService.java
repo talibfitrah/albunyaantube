@@ -330,13 +330,8 @@ public class PublicContentService {
             return new CursorPageDto<>(items, null);
         }
 
-        ChannelRepository.PaginatedResult<Channel> result;
-
-        if (category != null && !category.isBlank()) {
-            result = channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(category, limit, cursor);
-        } else {
-            result = channelRepository.findApprovedBySubscribersDescWithCursor(limit, cursor);
-        }
+        ChannelRepository.PaginatedResult<Channel> result =
+                channelRepository.findApprovedByCategoryAndSubscribersDescWithCursor(category, limit, cursor);
 
         // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
         // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
@@ -384,13 +379,8 @@ public class PublicContentService {
             return new CursorPageDto<>(items, null);
         }
 
-        PlaylistRepository.PaginatedResult<Playlist> result;
-
-        if (category != null && !category.isBlank()) {
-            result = playlistRepository.findApprovedByCategoryAndItemCountDescWithCursor(category, limit, cursor);
-        } else {
-            result = playlistRepository.findApprovedByItemCountDescWithCursor(limit, cursor);
-        }
+        PlaylistRepository.PaginatedResult<Playlist> result =
+                playlistRepository.findApprovedByCategoryAndItemCountDescWithCursor(category, limit, cursor);
 
         // Finding 3 (review fix): cursor feeds query status=APPROVED but must also exclude
         // PERSONAL-visibility items — isApproved adds the visibility gate (isAvailable alone doesn't).
