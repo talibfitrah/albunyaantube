@@ -693,7 +693,7 @@ class ContentValidationServiceTest {
 
             service.validateChannels("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService, atLeastOnce()).evictPublicContentCaches();
+            verify(publicContentCacheService, times(2)).evictPublicContentCaches(); // the phase archive eviction + the run announce
         }
 
         @Test
@@ -807,7 +807,7 @@ class ContentValidationServiceTest {
 
             service.validatePlaylists("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService, atLeastOnce()).evictPublicContentCaches();
+            verify(publicContentCacheService, times(2)).evictPublicContentCaches(); // the phase archive eviction + the run announce
         }
 
         @Test
@@ -844,7 +844,7 @@ class ContentValidationServiceTest {
 
             service.validateVideos("MANUAL", "test-user", "Test User", 100);
 
-            verify(publicContentCacheService, atLeastOnce()).evictPublicContentCaches();
+            verify(publicContentCacheService, times(2)).evictPublicContentCaches(); // the phase archive eviction + the run announce
         }
 
         @Test
