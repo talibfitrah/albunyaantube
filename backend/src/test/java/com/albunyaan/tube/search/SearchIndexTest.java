@@ -1132,17 +1132,42 @@ class SearchIndexTest {
     }
 
     @Test
-    void aVideoListedByTwoSourcesShowsThroughTheOneThatKeepsIt() throws Exception {
+    void aVideoExcludedByOneOfTwoListingSourcesIsHiddenThroughBoth() throws Exception { // was: shown through the other source, before the global-exclusion ruling
         InnerIndex inner = inner(Map.of(
                 ALAFASY, List.of(item("lesson00001", "Zubdahnoor lesson", 600)),
                 "playlist:PLtafsir", List.of(item("lesson00001", "Zubdahnoor lesson", 600))), Map.of());
         SearchIndex idx = started(newIndex(
                 List.of(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("lesson00001")))),
                 List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")), List.of(), List.of(), 5_000, inner));
-        List<ContentItemDto> hits = idx.search("zubdahnoor", null, 50).items();
-        assertEquals(1, hits.size());
-        assertEquals("PLAYLIST", hits.get(0).getSourceType());
-        assertEquals("PLtafsir", hits.get(0).getSourceId());
+        assertTrue(idx.search("zubdahnoor", null, 50).items().isEmpty());
+    }
+
+    /** Owner ruling: an id excluded under ANY admitted source is hidden on every path, whichever source the hit came from. */
+    @Test
+    void anIdExcludedByAnySourceIsHiddenOnEveryPath() throws Exception {
+        InnerIndex inner = inner(Map.of("playlist:PLtafsir", List.of(item("vKahf", "Surah Al-Kahf inner copy", 600))), Map.of());
+        SearchIndex idx = started(newIndex(
+                List.of(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("vKahf")))),
+                List.of(playlist("PLtafsir", "Tafsir Ibn Kathir – Surah Al-Fatiha")),
+                List.of(video("vKahf", "Surah Al-Kahf", "Alafasy")),
+                List.of(stream("vKahf", "Surah Al-Kahf stream", "playlist:PLtafsir")), 5_000, inner));
+        assertFalse(ids(idx.search("Surah Al-Kahf", null, 50)).contains("vKahf"));
+        assertEquals(SearchIndex.Hits.NONE, idx.byId("vKahf", null));
+        assertFalse(ids(idx.searchPage("Surah Al-Kahf", "VIDEO", 50, null, -1)).contains("vKahf")); // the in-tab path too
+    }
+
+    @Test
+    void anExclusionTakesEffectOnTheNextSearchAndALiftedOneComesBack() throws Exception {
+        index = alafasy(zubdahnoor());
+        assertEquals(List.of("lesson00001"), ids("Zubdahnoor"));
+
+        saved(with(channel("UCalafasy", "Alafasy"), c -> c.getExcludedItems().setVideos(List.of("lesson00001"))));
+        index.awaitWrites();
+        assertTrue(ids("Zubdahnoor").isEmpty(), "excluded: gone at the next search");
+
+        saved(channel("UCalafasy", "Alafasy"));
+        index.awaitWrites();
+        assertEquals(List.of("lesson00001"), ids("Zubdahnoor"), "lifted: back");
     }
 
     @Test

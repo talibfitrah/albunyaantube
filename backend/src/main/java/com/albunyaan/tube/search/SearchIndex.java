@@ -721,7 +721,7 @@ public class SearchIndex {
                 }
                 Document doc = fields.document(hit.doc);
                 trace.loaded++;
-                String keeper = keeper(doc, trace);
+                String keeper = excludedAnywhere(doc.get("id")) ? null : keeper(doc, trace);
                 if (keeper == null) {
                     trace.hidden++;
                     continue;
@@ -796,6 +796,7 @@ public class SearchIndex {
     private Copy innerCopy(IndexSearcher searcher, String id, String preferredKey, boolean blockedByVideo) throws IOException {
         StoredFields fields = searcher.storedFields();
         Copy first = null;
+        if (excludedAnywhere(id)) return null; // hidden everywhere: it cannot be returned nor lend its title or duration
         for (ScoreDoc hit : searcher.search(new TermQuery(new Term("id", id)), TITLE_COPIES).scoreDocs) {
             Document doc = fields.document(hit.doc);
             String keeper = keeper(doc, null, blockedByVideo), title = doc.get("t"); // an INNER copy never reaches the stream gate
@@ -1109,6 +1110,10 @@ public class SearchIndex {
                 trace.loaded++;
                 String id = doc.get("id");
                 if (allowedIds != null && !allowedIds.contains(id)) continue;
+                if (excludedAnywhere(id)) {
+                    trace.hidden++;
+                    continue;
+                }
                 if (now != null && now.count(new BooleanQuery.Builder() // withdrawn since the pinned first page
                         .add(new TermQuery(new Term("id", id)), Occur.FILTER)
                         .add(new TermQuery(new Term("source", "CATALOG")), Occur.FILTER).build()) == 0) {
@@ -1154,6 +1159,17 @@ public class SearchIndex {
             return key;
         }
         return null;
+    }
+
+    /**
+     * Owner ruling: an id excluded under ANY admitted source never shows in search, whichever source the hit came from.
+     * ponytail: O(admitted sources) per hit, fresh on every edit; keep a union set updated in applyCatalogChange/replaceCatalog if the slow-search line ever shows it.
+     */
+    private boolean excludedAnywhere(String id) {
+        for (Admitted source : admittedSources.values()) {
+            if (source.excluded().contains(id)) return true;
+        }
+        return false;
     }
 
     /** R28: a stream or inner hit names the source that keeps it. Installed apps ignore both fields (F31). */
