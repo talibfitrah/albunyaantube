@@ -6,6 +6,7 @@ import android.view.ViewGroup
 import android.widget.ImageButton
 import android.widget.ImageView
 import android.widget.TextView
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -13,6 +14,7 @@ import coil.load
 import coil.transform.RoundedCornersTransformation
 import com.albunyaan.tube.R
 import com.albunyaan.tube.data.local.FavoriteVideo
+import com.albunyaan.tube.util.DurationFormat
 
 /**
  * Adapter for displaying favorite videos in a RecyclerView.
@@ -50,7 +52,9 @@ class FavoritesAdapter(
         fun bind(favorite: FavoriteVideo) {
             title.text = favorite.title
             channelName.text = favorite.channelName
-            duration.text = formatDuration(favorite.durationSeconds)
+            val badge = DurationFormat.badge(favorite.durationSeconds)
+            duration.text = badge ?: ""
+            duration.isVisible = badge != null
 
             // Accessibility: set content descriptions for screen readers
             thumbnail.contentDescription = favorite.title
@@ -72,18 +76,6 @@ class FavoritesAdapter(
 
             itemView.setOnClickListener { onItemClick(favorite) }
             removeButton.setOnClickListener { onRemoveClick(favorite) }
-        }
-
-        private fun formatDuration(seconds: Int): String {
-            val absoluteSeconds = seconds.coerceAtLeast(0)
-            val hours = absoluteSeconds / 3600
-            val minutes = (absoluteSeconds % 3600) / 60
-            val secs = absoluteSeconds % 60
-
-            return when {
-                hours > 0 -> String.format("%d:%02d:%02d", hours, minutes, secs)
-                else -> String.format("%d:%02d", minutes, secs)
-            }
         }
     }
 

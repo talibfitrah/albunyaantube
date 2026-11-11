@@ -46,12 +46,21 @@ class HomeFeaturedA11yTest {
 
     @Test fun `unknown duration leaves no Duration field`() {
         assertEquals(
-            "Tafsir • 1K views • 3 days ago",
+            "Video: Tafsir, 1K views, 3 days ago",
             HomeFeaturedAdapter.videoDescription(res(), "Tafsir", null, "1K views", "3 days ago"),
         )
         assertEquals(
-            "Tafsir • 1K views",
+            "Video: Tafsir, 1K views",
             HomeFeaturedAdapter.videoDescription(res(), "Tafsir", null, "1K views", null),
+        )
+    }
+
+    @Test
+    @Config(qualifiers = "ar")
+    fun `unknown duration keeps the localized Video prefix in Arabic`() {
+        assertEquals(
+            "فيديو: تفسير, 1K",
+            HomeFeaturedAdapter.videoDescription(res(), "تفسير", null, "1K", null),
         )
     }
 

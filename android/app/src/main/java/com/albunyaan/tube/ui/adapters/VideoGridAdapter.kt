@@ -3,16 +3,16 @@ package com.albunyaan.tube.ui.adapters
 import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
-import com.albunyaan.tube.util.DurationFormat
-import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemVideoGridBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
+import com.albunyaan.tube.util.DurationFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
 import com.google.android.material.chip.Chip
 
@@ -81,8 +81,6 @@ class VideoGridAdapter(
                 onVideoClick(video)
             }
         }
-
-
 
         private fun safeQuantityForPlural(count: Long): Int {
             return count.coerceAtMost(Int.MAX_VALUE.toLong()).toInt()

@@ -3,6 +3,7 @@ package com.albunyaan.tube.ui.detail.adapters
 import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
@@ -11,8 +12,8 @@ import com.albunyaan.tube.data.channel.ChannelVideo
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
+import com.albunyaan.tube.util.DurationFormat
 import com.albunyaan.tube.util.ImageLoading.loadYouTubeThumbnail
-import java.util.Locale
 
 /**
  * Adapter for channel videos in the Videos tab.
@@ -45,8 +46,9 @@ class ChannelVideoAdapter(
         fun bind(video: ChannelVideo) {
             binding.videoTitle.text = video.title
 
-            // Format duration
-            binding.videoDuration.text = video.durationSeconds?.let { formatDuration(it) } ?: ""
+            val badge = DurationFormat.badge(video.durationSeconds)
+            binding.videoDuration.text = badge ?: ""
+            binding.videoDuration.isVisible = badge != null
 
             // Format metadata (views + time) using app's per-app locale
             val appLocale = LocaleManager.getCurrentLocale(context)
@@ -76,17 +78,6 @@ class ChannelVideoAdapter(
 
             binding.root.setOnClickListener {
                 onVideoClick(video)
-            }
-        }
-
-        private fun formatDuration(totalSeconds: Int): String {
-            val hours = totalSeconds / 3600
-            val mins = (totalSeconds % 3600) / 60
-            val secs = totalSeconds % 60
-            return if (hours > 0) {
-                String.format(Locale.US, "%d:%02d:%02d", hours, mins, secs)
-            } else {
-                String.format(Locale.US, "%d:%02d", mins, secs)
             }
         }
     }

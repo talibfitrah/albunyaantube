@@ -3,18 +3,18 @@ package com.albunyaan.tube.ui.adapters
 import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import com.albunyaan.tube.R
-import com.albunyaan.tube.util.DurationFormat
-import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemHomeChannelBinding
 import com.albunyaan.tube.databinding.ItemHomePlaylistBinding
 import com.albunyaan.tube.databinding.ItemHomeVideoBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
+import com.albunyaan.tube.util.DurationFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnail
 
 /**
@@ -196,13 +196,12 @@ class HomeFeaturedAdapter(
                 onItemClick(video)
             }
         }
-
     }
 
     companion object {
         /**
          * a11y_video_item, or its age-less sibling when the age is unknown (no empty trailing field).
-         * Unknown duration drops the "Duration:" field; the fields are then joined like the visible meta line.
+         * Unknown duration drops the "Duration:" field (no template for that; keeps the "Video:" prefix).
          */
         internal fun videoDescription(
             res: android.content.res.Resources,
@@ -210,7 +209,7 @@ class HomeFeaturedAdapter(
             duration: String?,
             views: String,
             age: String?,
-        ): String = if (duration == null) UploadAge.joinMeta(title, views, age)
+        ): String = if (duration == null) listOfNotNull("${res.getString(R.string.type_video)}: $title", views, age).joinToString(", ")
             else if (age != null) res.getString(R.string.a11y_video_item, title, duration, views, age)
             else res.getString(R.string.a11y_video_item_no_age, title, duration, views)
 

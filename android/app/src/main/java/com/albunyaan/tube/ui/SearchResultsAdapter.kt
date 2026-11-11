@@ -3,19 +3,19 @@ package com.albunyaan.tube.ui
 import com.albunyaan.tube.util.UploadAge
 import android.view.LayoutInflater
 import android.view.ViewGroup
+import androidx.core.view.isVisible
 import androidx.recyclerview.widget.DiffUtil
 import androidx.recyclerview.widget.ListAdapter
 import androidx.recyclerview.widget.RecyclerView
 import coil.ImageLoader
 import com.albunyaan.tube.R
-import com.albunyaan.tube.util.DurationFormat
-import androidx.core.view.isVisible
 import com.albunyaan.tube.data.model.ContentItem
 import com.albunyaan.tube.databinding.ItemChannelBinding
 import com.albunyaan.tube.databinding.ItemPlaylistBinding
 import com.albunyaan.tube.databinding.ItemVideoListBinding
 import com.albunyaan.tube.locale.LocaleManager
 import com.albunyaan.tube.util.CountFormat
+import com.albunyaan.tube.util.DurationFormat
 import com.albunyaan.tube.util.ImageLoading.loadThumbnailUrl
 import com.google.android.material.chip.Chip
 import java.text.NumberFormat
@@ -211,8 +211,6 @@ class SearchResultsAdapter(
                 onItemClick(video)
             }
         }
-
-
     }
 
     companion object {
