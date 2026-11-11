@@ -1,0 +1,25 @@
+backend/src/main/java/com/albunyaan/tube/repository/ChannelRepository.java
+  s_8a936fc306f37b::t_b1d37b010fdc0c 522-523
+backend/src/test/java/com/albunyaan/tube/repository/FindByCategoryIdsLimitTest.java
+  s_8a936fc306f37b::t_4c7473488c0248 1-96
+backend/src/main/java/com/albunyaan/tube/repository/PlaylistRepository.java
+  s_8a936fc306f37b::t_b1d37b010fdc0c 362-363
+backend/src/main/java/com/albunyaan/tube/repository/VideoRepository.java
+  s_8a936fc306f37b::t_b1d37b010fdc0c 403-404
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "7b43172dc17f0a7aada3aa01e89332efadb9c609",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
