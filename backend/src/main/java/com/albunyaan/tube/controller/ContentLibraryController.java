@@ -113,8 +113,9 @@ public class ContentLibraryController {
      *
      * <p>{@code status} follows the listing's status filter (all, approved, pending, rejected), so
      * the header reads e.g. "approved channels" while the admin views approved content. Approved
-     * means live, as in the listing and the Content Sorting picker: archived items keep status
-     * APPROVED, but the apps hide them and the Archived page counts them. Pending and rejected
+     * means live, as in the listing: archived items keep status APPROVED, but the apps hide them
+     * and the Archived page counts them. (The Content Sorting picker also leaves out personal
+     * grants, which cannot go into a public category.) Pending and rejected
      * count every doc with that status, so pending equals the Pending Approvals queue.</p>
      */
     @GetMapping("/totals")
@@ -372,7 +373,7 @@ public class ContentLibraryController {
 
         if (contentTypes.contains("channel")) {
             BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort,
-                    fetchLimit + (liveOnly ? (int) channelRepository.countApprovedArchived() : 0));
+                    fetchLimit + archivedBuffer(liveOnly, search, channelRepository::countApprovedArchived));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -388,7 +389,7 @@ public class ContentLibraryController {
 
         if (contentTypes.contains("playlist")) {
             BoundedFetchResult<Playlist> result = fetchPlaylistsBounded(status, category, search, sort,
-                    fetchLimit + (liveOnly ? (int) playlistRepository.countApprovedArchived() : 0));
+                    fetchLimit + archivedBuffer(liveOnly, search, playlistRepository::countApprovedArchived));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -405,7 +406,7 @@ public class ContentLibraryController {
 
         if (contentTypes.contains("video")) {
             BoundedFetchResult<Video> result = fetchVideosBounded(status, category, search, sort,
-                    fetchLimit + (liveOnly ? (int) videoRepository.countApprovedArchived() : 0));
+                    fetchLimit + archivedBuffer(liveOnly, search, videoRepository::countApprovedArchived));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
@@ -492,6 +493,22 @@ public class ContentLibraryController {
                 pagedContent.size(), totalItems, page + 1, response.totalPages, isTruncated);
 
         return ResponseEntity.ok(response);
+    }
+
+    /**
+     * Extra rows an approved browse fetches so dropping archived ones never leaves a page short.
+     * Search scans its own bound and ignores the limit, so it skips the count. A failed count costs
+     * only the buffer, never the listing.
+     */
+    private int archivedBuffer(boolean liveOnly, String search, java.util.concurrent.Callable<Long> countArchived) {
+        if (!liveOnly || (search != null && !search.isBlank())) return 0;
+        try {
+            return (int) (long) countArchived.call();
+        } catch (Exception e) {
+            if (e instanceof InterruptedException) Thread.currentThread().interrupt();
+            log.warn("Archived count unavailable; an approved page may run short: {}", e.getMessage());
+            return 0;
+        }
     }
 
     /**

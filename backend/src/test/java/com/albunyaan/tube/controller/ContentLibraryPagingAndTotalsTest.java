@@ -180,6 +180,21 @@ class ContentLibraryPagingAndTotalsTest {
     }
 
     @Test
+    void aFailedArchivedCountNeverFailsTheApprovedListing() throws Exception {
+        Channel live = new Channel("UClive");
+        live.setId("c-live");
+        live.setStatus("APPROVED");
+        when(channelRepository.countApprovedArchived()).thenThrow(new java.util.concurrent.TimeoutException("slow"));
+        when(channelRepository.findByStatus(org.mockito.ArgumentMatchers.eq("APPROVED"), anyInt()))
+                .thenReturn(List.of(live));
+
+        ContentLibraryController.ContentLibraryResponse body =
+                controller.getContent("channel", "approved", null, null, "newest", 0, 20).getBody();
+
+        assertEquals(1, body.content.size());
+    }
+
+    @Test
     void theListingNeverPaysForTheCounts() throws Exception {
         stubChannelCollection();
 
