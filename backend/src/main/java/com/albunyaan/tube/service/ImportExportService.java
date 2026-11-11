@@ -50,6 +50,7 @@ public class ImportExportService {
     private final AuditLogService auditLogService;
     private final VideoValidationService videoValidationService;
     private final LiveCategoryGuard liveCategoryGuard;
+    private final PublicContentCacheService publicContentCacheService;
 
     public ImportExportService(
             CategoryRepository categoryRepository,
@@ -58,7 +59,8 @@ public class ImportExportService {
             VideoRepository videoRepository,
             AuditLogService auditLogService,
             VideoValidationService videoValidationService,
-            LiveCategoryGuard liveCategoryGuard
+            LiveCategoryGuard liveCategoryGuard,
+            PublicContentCacheService publicContentCacheService
     ) {
         this.categoryRepository = categoryRepository;
         this.channelRepository = channelRepository;
@@ -67,6 +69,7 @@ public class ImportExportService {
         this.auditLogService = auditLogService;
         this.videoValidationService = videoValidationService;
         this.liveCategoryGuard = liveCategoryGuard;
+        this.publicContentCacheService = publicContentCacheService;
     }
 
     /**
@@ -397,6 +400,10 @@ public class ImportExportService {
                 response.addError("VALIDATION", "import", "Video validation failed: " + e.getMessage());
                 counts.incrementTotalErrors();
             }
+        }
+
+        if (counts.getCategoriesImported() + counts.getChannelsImported() + counts.getPlaylistsImported() + counts.getVideosImported() > 0) {
+            publicContentCacheService.evictPublicContentCaches();   // imported docs may be APPROVED, and categories shape the tab order
         }
 
         logger.info("Import completed by {}: {} categories, {} channels, {} playlists, {} videos (Strategy: {}, Errors: {})",
