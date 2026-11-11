@@ -32,8 +32,8 @@ import static org.mockito.ArgumentMatchers.anyInt;
 import static org.mockito.ArgumentMatchers.anyList;
 import static org.mockito.ArgumentMatchers.eq;
 import static org.mockito.ArgumentMatchers.isNull;
-import static org.mockito.Mockito.clearInvocations;
 import static org.mockito.Mockito.mock;
+import static org.mockito.Mockito.reset;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
@@ -96,7 +96,7 @@ class PublicContentCacheKeyTest {
     void freshCacheAndCounts() {
         cacheService.evictPublicContentCaches(); // resets the service's kept tab order, shared by every test here
         cacheManager.getCacheNames().forEach(name -> cacheManager.getCache(name).clear());
-        clearInvocations(channels, playlists, categories);
+        reset(channels, playlists, categories, videos); // stubs too, so one test's findByStatus answer never leaks
     }
 
     private static String cursor(String decoded) {
@@ -106,6 +106,7 @@ class PublicContentCacheKeyTest {
     @Test
     void aOneCharacterQueryIsServedFromThePlainListCache() throws Exception {
         // The controller falls through to getContent for q under 2 characters; q no longer reaches the cache key.
+        // The plain tab's cache is the kept tab order (it skips the page cache): the catalog is still read once.
         service.getContent("CHANNELS", null, 20, null, null, null, null);
         service.getContent("CHANNELS", null, 20, null, null, null, null);
         verify(channels, times(1)).findByStatus("APPROVED");
@@ -217,6 +218,21 @@ class PublicContentCacheKeyTest {
 
         cacheService.evictPublicContentCaches();
         assertEquals(List.of("UCtwo", "UCone"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+    }
+
+    @Test
+    void aTabPageFromABuildAContentChangeOvertookIsNeverCached() throws Exception {
+        // The change lands mid-build: the overtaken build answers once, then the page cache must not keep it.
+        Channel old = new Channel("UCold"), fresh = new Channel("UCnew");
+        old.setId("ch1"); old.setStatus("APPROVED");
+        fresh.setId("ch2"); fresh.setStatus("APPROVED");
+        when(channels.findByStatus("APPROVED"))
+                .thenAnswer(inv -> { cacheService.evictPublicContentCaches(); return List.of(old); })
+                .thenReturn(List.of(fresh));
+
+        assertEquals(List.of("UCold"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
+
+        assertEquals(List.of("UCnew"), ids(service.getContent("CHANNELS", null, 20, null, null, null, null)));
     }
 
     private static List<String> ids(CursorPageDto<ContentItemDto> page) {

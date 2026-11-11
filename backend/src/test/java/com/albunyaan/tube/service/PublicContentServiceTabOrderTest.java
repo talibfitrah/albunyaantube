@@ -152,6 +152,15 @@ class PublicContentServiceTabOrderTest {
         verify(categoryRepository, never()).findAll(); // none of them walked the tab order
     }
 
+    @Test void sortDefaultServesTheCuratedVideosTab() throws Exception {
+        // api-specification.yaml lists DEFAULT as a sort value: it means "no sort", not the newest-first path.
+        for (String sort : List.of("DEFAULT", "default")) {
+            assertEquals(List.of("yt-v-C", "yt-v-A", "yt-v-I", "yt-v-H"),
+                    service.getContent("VIDEOS", null, 4, null, null, null, sort).getData().stream()
+                            .map(ContentItemDto::getId).toList(), sort);
+        }
+    }
+
     @Test void tabOrderIsBuiltOncePerContentChangeNotPerPage() throws Exception {
         walk("CHANNELS", "CHANNEL"); walk("PLAYLISTS", "PLAYLIST"); walk("VIDEOS", "VIDEO");
         verify(categoryRepository, times(1)).findAll();

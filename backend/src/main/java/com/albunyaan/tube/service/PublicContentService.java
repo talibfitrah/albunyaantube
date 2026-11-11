@@ -102,7 +102,8 @@ public class PublicContentService {
      * @return Paginated content
      */
     @Cacheable(value = CacheConfig.CACHE_PUBLIC_CONTENT,
-               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null",
+               condition = "T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) != null"
+                       + " && !T(com.albunyaan.tube.service.PublicContentService).servesTabOrder(#type, #category, #length, #date, #sort)",
                key = "(#type == null || #type.isBlank() ? 'HOME' : #type).toUpperCase(T(java.util.Locale).ROOT) + '-' + T(com.albunyaan.tube.service.PublicContentService).cacheCursorKey(#type, #cursor) + '-' + #limit + '-' + (#category == null ? '' : 'c:' + #category) + '-' + (#length == null ? '' : 'l:' + #length) + '-' + (#date == null ? '' : 'd:' + #date) + '-' + (#sort == null ? '' : 's:' + #sort)")
     public CursorPageDto<ContentItemDto> getContent(
             String type, String cursor, int limit,
@@ -132,13 +133,13 @@ public class PublicContentService {
         // For content types that support real cursor pagination
         switch (upperType) {
             case "CHANNELS":
-                if (allCategoryIds == null) return tabOrderPage("CHANNEL", cursor, limit);
+                if (servesTabOrder(upperType, category, length, date, sort)) return tabOrderPage("CHANNEL", cursor, limit);
                 return getChannelsWithCursor(limit, category, allCategoryIds, cursor);
             case "PLAYLISTS":
-                if (allCategoryIds == null) return tabOrderPage("PLAYLIST", cursor, limit);
+                if (servesTabOrder(upperType, category, length, date, sort)) return tabOrderPage("PLAYLIST", cursor, limit);
                 return getPlaylistsWithCursor(limit, category, allCategoryIds, cursor);
             case "VIDEOS":
-                if (allCategoryIds == null && isBlank(length) && isBlank(date) && isBlank(sort)) {
+                if (servesTabOrder(upperType, category, length, date, sort)) {
                     return tabOrderPage("VIDEO", cursor, limit);
                 }
                 return getVideosWithCursor(limit, category, allCategoryIds, cursor, length, date, sort);
@@ -170,6 +171,21 @@ public class PublicContentService {
         return s == null || s.isBlank();
     }
 
+    /**
+     * True exactly when getContent serves the kept tab order: a no-category CHANNELS or PLAYLISTS tab, or a
+     * VIDEOS tab with no category, length, date or sort (DEFAULT counts as no sort). Those pages skip the page
+     * cache, because the kept order already is their cache and a page from an overtaken build must not be stored.
+     * Public static so the @Cacheable condition calls the same rule as the dispatch.
+     */
+    public static boolean servesTabOrder(String type, String category, String length, String date, String sort) {
+        if (type == null || !isBlank(category)) return false;
+        return switch (type.toUpperCase(Locale.ROOT)) {
+            case "CHANNELS", "PLAYLISTS" -> true;
+            case "VIDEOS" -> isBlank(length) && isBlank(date) && (isBlank(sort) || "DEFAULT".equalsIgnoreCase(sort));
+            default -> false;
+        };
+    }
+
     /** Categories by displayOrder (null last), then id: the Content Sorting order Home and the tabs share. */
     private static final Comparator<Category> DISPLAY_ORDER = Comparator
             .comparingInt((Category c) -> c.getDisplayOrder() != null ? c.getDisplayOrder() : Integer.MAX_VALUE)
@@ -187,6 +203,7 @@ public class PublicContentService {
     }
 
     // ponytail: no TTL; a write that skips evictPublicContentCaches() leaves the order stale until the next content change. Add a built-at check if such a path appears.
+    // ponytail: uploadedDaysAgo in the kept DTOs is frozen until the next ContentChanged (the daily validation schedulers evict, so about a day); rebuild when the UTC day changes if that drift matters.
     private volatile Map<String, List<ContentItemDto>> tabOrder;
     private final AtomicLong tabOrderGeneration = new AtomicLong();
     private final Object tabOrderLock = new Object();
@@ -199,6 +216,7 @@ public class PublicContentService {
     }
 
     /** The kept order; one build at a time, and a build that a content change overtook is served once, never stored. */
+    // ponytail: waiters rebuild one after another when a build fails (k-th waits ~k x Firestore timeout); share the in-flight future if brownouts make that bite.
     private Map<String, List<ContentItemDto>> tabOrder()
             throws ExecutionException, InterruptedException, TimeoutException {
         Map<String, List<ContentItemDto>> order = tabOrder;
