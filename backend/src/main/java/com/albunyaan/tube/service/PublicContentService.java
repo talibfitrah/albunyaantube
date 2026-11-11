@@ -236,6 +236,11 @@ public class PublicContentService {
             }
         }
         try {
+            order = tabOrder; // a build that finished between the fast-path read and the CAS
+            if (order != null) {
+                mine.complete(order);
+                return order;
+            }
             long generation = tabOrderGeneration.get();
             order = buildTabOrder();
             // Store, then re-check: onContentChanged bumps before it nulls, so a change racing the store always wins.

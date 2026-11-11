@@ -66,13 +66,20 @@ class FindByCategoryIdsLimitTest {
     void playlistsLimitIsTheHeadOfTheFullUnion() throws Exception {
         PlaylistRepository repo = spy(new PlaylistRepository(mock(Firestore.class), new FirestoreTimeoutProperties(),
                 mock(ApplicationEventPublisher.class)));
+        // Newest first is the reverse of most items first: a fetch ordered by createdAt keeps the wrong top L.
+        java.util.function.Function<String, Playlist> doc = id -> {
+            Playlist p = new Playlist("yt-" + id);
+            p.setId(id);
+            p.setItemCount(rank(id));
+            return p;
+        };
         for (String cat : IDS) {
-            doAnswer(inv -> top(BY_CATEGORY.get(cat), inv.getArgument(1), id -> {
-                Playlist p = new Playlist("yt-" + id);
-                p.setId(id);
-                p.setItemCount(rank(id));
-                return p;
-            })).when(repo).findByCategoryId(eq(cat), anyInt());
+            doAnswer(inv -> top(BY_CATEGORY.get(cat), inv.getArgument(1), doc))
+                    .when(repo).findByCategoryOrderByItemCountDesc(eq(cat), anyInt());
+            List<String> newestFirst = new ArrayList<>(BY_CATEGORY.get(cat));
+            java.util.Collections.reverse(newestFirst);
+            doAnswer(inv -> top(newestFirst, inv.getArgument(1), doc))
+                    .when(repo).findByCategoryId(eq(cat), anyInt());
         }
         List<String> all = idsOf(repo.findByCategoryIds(IDS, Integer.MAX_VALUE));
         assertEquals(all.subList(0, 6), idsOf(repo.findByCategoryIds(IDS, 6)));
