@@ -1,0 +1,23 @@
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_8a936fc306f37b::t_bd1bc1bc1d0a5a 891-894,897
+  s_8a936fc306f37b::t_2d87aa847ab219 859-860
+backend/src/test/resources/search/relevance-fixture.json
+  s_8a936fc306f37b::t_a0af7bcf363c1c 476
+  s_8a936fc306f37b::t_69ff7e0b211239 455,471-475,477-492,548
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "c582608b8d60692627185354c939da687f25fc30",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
