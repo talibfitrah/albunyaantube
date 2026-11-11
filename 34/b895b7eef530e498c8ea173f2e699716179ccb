@@ -1,0 +1,22 @@
+backend/src/test/java/com/albunyaan/tube/scheduler/VideoValidationSchedulerTest.java
+  s_8a936fc306f37b::t_0b2c9c22de5306 8,53,72,125,151,230,245,282,319,328,343
+backend/src/main/java/com/albunyaan/tube/scheduler/VideoValidationScheduler.java
+  s_8a936fc306f37b::t_e99be13f41d6a4 278-280,284-285
+  s_8a936fc306f37b::t_999eff1a993cb9 8,58,72,78
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "34b895b7eef530e498c8ea173f2e699716179ccb",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "unknown"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
