@@ -5,6 +5,7 @@ import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
@@ -54,6 +55,7 @@ public class VideoValidationScheduler {
 
     private final ContentValidationService contentValidationService;
     private final CacheManager cacheManager;
+    private final PublicContentCacheService publicContentCacheService;
     private final ValidationProperties validationProperties;
     private final YouTubeCircuitBreaker circuitBreaker;
     private final SystemSettingsRepository systemSettingsRepository;
@@ -67,11 +69,13 @@ public class VideoValidationScheduler {
     public VideoValidationScheduler(
             ContentValidationService contentValidationService,
             CacheManager cacheManager,
+            PublicContentCacheService publicContentCacheService,
             ValidationProperties validationProperties,
             YouTubeCircuitBreaker circuitBreaker,
             SystemSettingsRepository systemSettingsRepository) {
         this.contentValidationService = contentValidationService;
         this.cacheManager = cacheManager;
+        this.publicContentCacheService = publicContentCacheService;
         this.validationProperties = validationProperties;
         this.circuitBreaker = circuitBreaker;
         this.systemSettingsRepository = systemSettingsRepository;
@@ -271,15 +275,14 @@ public class VideoValidationScheduler {
     /**
      * Evict public content caches after validation runs.
      * This ensures the mobile app doesn't serve stale cached data that might
-     * include videos that were just archived.
+     * include videos that were just archived or whose metadata was refreshed.
+     * Goes through {@link PublicContentCacheService} so the content change is
+     * announced and the kept tab order is rebuilt too.
      */
     private void evictPublicContentCaches() {
         try {
-            var publicContentCache = cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT);
-            if (publicContentCache != null) {
-                publicContentCache.clear();
-                logger.debug("Evicted {} cache after validation", CacheConfig.CACHE_PUBLIC_CONTENT);
-            }
+            publicContentCacheService.evictPublicContentCaches();
+            logger.debug("Evicted public content caches after validation");
 
             var videosCache = cacheManager.getCache(CacheConfig.CACHE_VIDEOS);
             if (videosCache != null) {

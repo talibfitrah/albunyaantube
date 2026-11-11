@@ -5,6 +5,7 @@ import com.albunyaan.tube.config.ValidationProperties;
 import com.albunyaan.tube.model.ValidationRun;
 import com.albunyaan.tube.repository.SystemSettingsRepository;
 import com.albunyaan.tube.service.ContentValidationService;
+import com.albunyaan.tube.service.PublicContentCacheService;
 import com.albunyaan.tube.service.YouTubeCircuitBreaker;
 import org.junit.jupiter.api.BeforeEach;
 import org.junit.jupiter.api.DisplayName;
@@ -49,7 +50,7 @@ class VideoValidationSchedulerTest {
     private SystemSettingsRepository systemSettingsRepository;
 
     @Mock
-    private Cache publicContentCache;
+    private PublicContentCacheService publicContentCacheService;
 
     @Mock
     private Cache videosCache;
@@ -68,6 +69,7 @@ class VideoValidationSchedulerTest {
         scheduler = new VideoValidationScheduler(
                 contentValidationService,
                 cacheManager,
+                publicContentCacheService,
                 validationProperties,
                 circuitBreaker,
                 systemSettingsRepository
@@ -94,7 +96,6 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(false);
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
@@ -121,7 +122,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().setMaxItemsPerRun(25);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+                contentValidationService, cacheManager, publicContentCacheService, validationProperties, circuitBreaker, systemSettingsRepository);
 
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -129,7 +130,6 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(false);
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
@@ -148,7 +148,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().getScheduler().setEnabled(false);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+                contentValidationService, cacheManager, publicContentCacheService, validationProperties, circuitBreaker, systemSettingsRepository);
 
         // Act
         scheduler.scheduledValidation();
@@ -183,7 +183,6 @@ class VideoValidationSchedulerTest {
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
         when(circuitBreaker.isOpen()).thenReturn(false);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Simulate lock contention: first call acquires, second call fails
@@ -228,7 +227,7 @@ class VideoValidationSchedulerTest {
     }
 
     @Test
-    @DisplayName("Should evict public content cache after successful validation")
+    @DisplayName("Should announce the content change (public caches + kept tab order) after successful validation")
     void validation_shouldEvictPublicContentCache() {
         // Arrange
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_SCHEDULED, null, "Test");
@@ -237,14 +236,13 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(false);
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
         scheduler.scheduledValidation();
 
         // Assert
-        verify(publicContentCache).clear();
+        verify(publicContentCacheService).evictPublicContentCaches();
         verify(videosCache).clear();
     }
 
@@ -258,7 +256,6 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(false);
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(null);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(null);
 
         // Act - should not throw
@@ -282,6 +279,7 @@ class VideoValidationSchedulerTest {
 
         // Assert - caches should not be evicted when exception occurs
         verify(cacheManager, never()).getCache(anyString());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
     }
 
     @Test
@@ -318,6 +316,7 @@ class VideoValidationSchedulerTest {
 
         // Assert - caches should NOT be evicted when status is FAILED
         verify(cacheManager, never()).getCache(anyString());
+        verify(publicContentCacheService, never()).evictPublicContentCaches();
     }
 
     @Test
@@ -326,7 +325,7 @@ class VideoValidationSchedulerTest {
         // Arrange
         validationProperties.getVideo().getScheduler().setEnabled(false);
         scheduler = new VideoValidationScheduler(
-                contentValidationService, cacheManager, validationProperties, circuitBreaker, systemSettingsRepository);
+                contentValidationService, cacheManager, publicContentCacheService, validationProperties, circuitBreaker, systemSettingsRepository);
 
         ValidationRun mockRun = new ValidationRun(ValidationRun.TRIGGER_MANUAL, null, "Test");
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
@@ -334,7 +333,6 @@ class VideoValidationSchedulerTest {
         when(circuitBreaker.isOpen()).thenReturn(false);
         when(contentValidationService.validateVideos(anyString(), any(), anyString(), anyInt()))
                 .thenReturn(mockRun);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Act
@@ -342,6 +340,7 @@ class VideoValidationSchedulerTest {
 
         // Assert - manual trigger should work even when scheduler is disabled
         assertTrue(result);
+        verify(publicContentCacheService).evictPublicContentCaches();
         verify(contentValidationService).validateVideos(
                 eq(ValidationRun.TRIGGER_MANUAL), any(), anyString(), anyInt());
     }
@@ -369,7 +368,6 @@ class VideoValidationSchedulerTest {
         mockRun.complete(ValidationRun.STATUS_COMPLETED);
 
         when(circuitBreaker.isOpen()).thenReturn(false);
-        when(cacheManager.getCache(CacheConfig.CACHE_PUBLIC_CONTENT)).thenReturn(publicContentCache);
         when(cacheManager.getCache(CacheConfig.CACHE_VIDEOS)).thenReturn(videosCache);
 
         // Simulate lock contention: first call acquires, second call fails
