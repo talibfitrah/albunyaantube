@@ -1,5 +1,5 @@
 import '@testing-library/jest-dom';
-import { render, screen, fireEvent } from '@testing-library/vue';
+import { render, screen, fireEvent, within } from '@testing-library/vue';
 import { createI18n } from 'vue-i18n';
 import { describe, it, expect, vi } from 'vitest';
 import ContentSortingView from '@/views/ContentSortingView.vue';
@@ -225,15 +225,19 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(screen.getByText('Bulk 349')).toBeInTheDocument();
   });
 
-  it('the add picker shows the item count and a Load more button that draws the next page', async () => {
+  it('the add picker shows per-type counts on the tabs and a Load more button that draws the next page', async () => {
     status.fn.mockImplementation(ok);
-    svc.approved.mockReturnValueOnce(Array.from({ length: 250 }, (_, i) =>
-      ({ id: `ch-${i}`, type: 'channel', youtubeId: `UC${i}`, title: `Bulk ${i}`, thumbnailUrl: null })));
+    // Every fifth item a video: 50 videos, 200 channels.
+    svc.approved.mockReturnValueOnce(Array.from({ length: 250 }, (_, i) => i % 5 === 0
+      ? { id: `v-${i}`, type: 'video', youtubeId: `vid${i}`, title: `Bulk ${i}`, thumbnailUrl: null }
+      : { id: `ch-${i}`, type: 'channel', youtubeId: `UC${i}`, title: `Bulk ${i}`, thumbnailUrl: null }));
     mount();
     await fireEvent.click(await screen.findByText('Other'));
     await fireEvent.click(await screen.findByText(/Add Content/));
     await screen.findByText('Bulk 0');
-    expect(screen.getByText('Items: 250')).toBeInTheDocument();
+    const tab = (label: string) =>
+      within(screen.getByRole('dialog')).getByRole('button', { name: new RegExp(`^${label}`) }).textContent!.replace(/\s+/g, ' ').trim();
+    expect([tab('All'), tab('Channels'), tab('Playlists'), tab('Videos')]).toEqual(['All 250', 'Channels 200', 'Playlists 0', 'Videos 50']);
 
     const more = screen.getByRole('button', { name: 'Load more (100 of 250)' });
     more.focus(); // a browser click focuses the button; jsdom's does not
@@ -248,7 +252,8 @@ describe('Content Sorting on a live category (spec §8)', () => {
     expect(document.activeElement).toBe(screen.getByRole('dialog'));
 
     await fireEvent.update(screen.getByPlaceholderText(/Search/), 'Bulk 24');
-    expect(screen.getByText('Items: 11')).toBeInTheDocument(); // Bulk 24, 240-249
+    // "Bulk 24" matches 24 and 240-249: videos 240 and 245, the other 9 channels.
+    expect([tab('All'), tab('Channels'), tab('Videos')]).toEqual(['All 11', 'Channels 9', 'Videos 2']);
   });
 
   it('the add picker keeps growing without a scroll when its rows fit on screen (tall viewport)', async () => {

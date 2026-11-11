@@ -249,10 +249,8 @@
                   @click="addModalTypeFilter = filter.value"
                 >
                   {{ filter.label }}
+                  <span v-if="!addModalLoading" class="filter-count">{{ addModalTypeCount(filter.value) }}</span>
                 </button>
-                <span v-if="!addModalLoading" class="add-content-count">
-                  {{ t('contentSorting.addContentCount', { count: addModalMatches.length }) }}
-                </span>
               </div>
             </div>
 
@@ -511,21 +509,23 @@ async function showMoreAddRows() {
   }
 }
 
-/** Everything matching the current filters, before the render window. */
-const addModalMatches = computed(() => {
-  let items = addModalAvailable.value;
-
-  if (addModalTypeFilter.value !== 'all') {
-    items = items.filter(i => i.type === addModalTypeFilter.value);
-  }
-
-  if (addModalSearch.value.trim()) {
-    const q = addModalSearch.value.toLowerCase();
-    items = items.filter(i => i.title.toLowerCase().includes(q));
-  }
-
-  return items;
+/** Everything matching the search, any type: what the type tabs count. */
+const addModalSearchMatches = computed(() => {
+  if (!addModalSearch.value.trim()) return addModalAvailable.value;
+  const q = addModalSearch.value.toLowerCase();
+  return addModalAvailable.value.filter(i => i.title.toLowerCase().includes(q));
 });
+
+/** Per-tab count, like the category toolbar's tabs: how many items each type tab holds for this search. */
+function addModalTypeCount(type: string): number {
+  return type === 'all' ? addModalSearchMatches.value.length : addModalSearchMatches.value.filter(i => i.type === type).length;
+}
+
+/** Everything matching the current filters, before the render window. */
+const addModalMatches = computed(() =>
+  addModalTypeFilter.value === 'all'
+    ? addModalSearchMatches.value
+    : addModalSearchMatches.value.filter(i => i.type === addModalTypeFilter.value));
 
 /**
  * What is drawn: the whole registry is fetched in one request, but rows are rendered a page at a
@@ -1426,12 +1426,6 @@ tr.drag-over {
   color: var(--color-warning);
   font-size: 0.8125rem;
   border-bottom: 1px solid var(--color-warning);
-}
-
-.add-content-count {
-  margin-inline-start: auto;
-  font-size: 0.8125rem;
-  color: var(--color-text-secondary);
 }
 
 .add-content-list {
