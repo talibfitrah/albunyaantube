@@ -100,9 +100,9 @@ describe('the queue and the by-user tab are cleanly split', () => {
     expect(getPendingApprovalsMock).toHaveBeenCalledTimes(1);
   });
 
-  it('counts only what the queue shows, not the imports it hands to the other tab', async () => {
-    // 12 pending in total, 5 of them phone imports — the queue lists 7 and must say 7, or the
-    // reviewer is left hunting for five items that are not on this tab.
+  it('badges everything pending and splits it across the tab labels', async () => {
+    // 12 pending in total, 5 of them phone imports. The header says 12, the same number as the
+    // Dashboard and the Content Library "Pending" totals; the tabs say which part each one lists.
     getPendingCountMock.mockResolvedValue(12);
     getPendingSubmittersMock.mockResolvedValue([
       { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 3 },
@@ -113,22 +113,37 @@ describe('the queue and the by-user tab are cleanly split', () => {
       nextCursor: null
     });
 
-    await renderView();
+    const { container } = await renderView();
 
-    await waitFor(() => expect(screen.getByText('7')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /queue \(7\)/i })).toBeTruthy());
+    expect(screen.getByRole('button', { name: /by user \(5\)/i })).toBeTruthy();
+    expect(container.querySelector('.stat-value')?.textContent).toBe('12');
   });
 
-  it('shows the imports tally on the by-user tab', async () => {
+  it('keeps the header total when the by-user tab is open', async () => {
     getPendingCountMock.mockResolvedValue(12);
     getPendingSubmittersMock.mockResolvedValue([
       { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 3 },
       { uid: 'uid-fatima', label: 'Fatima', email: 'f@x.com', pendingCount: 2 }
     ]);
 
-    await renderView();
+    const { container } = await renderView();
     await fireEvent.click(screen.getByRole('button', { name: /by user/i }));
 
-    await waitFor(() => expect(screen.getByText('5')).toBeTruthy());
+    await waitFor(() => expect(screen.getByRole('button', { name: /by user \(5\)/i })).toBeTruthy());
+    expect(container.querySelector('.stat-value')?.textContent).toBe('12');
+  });
+
+  it('never badges fewer than the by-user tab holds when the total is unavailable', async () => {
+    getPendingCountMock.mockResolvedValue(-1);
+    getPendingSubmittersMock.mockResolvedValue([
+      { uid: 'uid-ahmed', label: 'Ahmed', email: 'a@x.com', pendingCount: 5 }
+    ]);
+
+    const { container } = await renderView();
+    await fireEvent.click(screen.getByRole('button', { name: /by user/i }));
+
+    await waitFor(() => expect(container.querySelector('.stat-value')?.textContent).toBe('5'));
   });
 });
 

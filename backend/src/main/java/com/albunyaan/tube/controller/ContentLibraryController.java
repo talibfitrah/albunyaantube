@@ -3,6 +3,7 @@ package com.albunyaan.tube.controller;
 import com.albunyaan.tube.config.FirestoreTimeoutProperties;
 import com.albunyaan.tube.model.Channel;
 import com.albunyaan.tube.model.Playlist;
+import com.albunyaan.tube.model.ValidationStatus;
 import com.albunyaan.tube.model.Video;
 import com.albunyaan.tube.repository.ChannelRepository;
 import com.albunyaan.tube.repository.PlaylistRepository;
@@ -103,20 +104,46 @@ public class ContentLibraryController {
     /**
      * Registry-wide per-type counts for the Content Library header.
      *
-     * <p>Deliberately its own request rather than a field on the listing response. The counts do
-     * not depend on any listing parameter, and the client needs them once — piggybacking them put
+     * <p>Deliberately its own request rather than a field on the listing response. The counts
+     * follow only the status filter, never search, category or paging — piggybacking them put
      * three serialized aggregation round-trips on the listing's critical path, where they were
      * recomputed on every debounced search keystroke, discarded on every infinite-scroll page, and
      * able to fail a listing that had already been fetched and sorted. On their own endpoint a
      * slow or failing count costs nothing but an unpopulated header.</p>
+     *
+     * <p>{@code status} follows the listing's status filter (all, approved, pending, rejected), so
+     * the header reads e.g. "approved channels" while the admin views approved content. Approved
+     * means live, as in the listing: archived items keep status APPROVED, but the apps hide them
+     * and the Archived page counts them. (The Content Sorting picker also leaves out personal
+     * grants, which cannot go into a public category.) Pending and rejected
+     * count every doc with that status, so pending equals the Pending Approvals queue.</p>
      */
     @GetMapping("/totals")
-    public ResponseEntity<RegistryTotals> getTotals()
+    public ResponseEntity<RegistryTotals> getTotals(@RequestParam(defaultValue = "all") String status)
             throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        if ("all".equalsIgnoreCase(status)) {
+            return ResponseEntity.ok(new RegistryTotals(
+                    channelRepository.countAll(),
+                    playlistRepository.countAll(),
+                    videoRepository.countAll()
+            ));
+        }
+        if ("approved".equalsIgnoreCase(status)) {
+            // Two reads, so a concurrent status change can skew one moment by an item; never below 0.
+            return ResponseEntity.ok(new RegistryTotals(
+                    Math.max(0, channelRepository.countByStatus("APPROVED") - channelRepository.countApprovedArchived()),
+                    Math.max(0, playlistRepository.countByStatus("APPROVED") - playlistRepository.countApprovedArchived()),
+                    Math.max(0, videoRepository.countByStatus("APPROVED") - videoRepository.countApprovedArchived())
+            ));
+        }
+        if (!"pending".equalsIgnoreCase(status) && !"rejected".equalsIgnoreCase(status)) {
+            return ResponseEntity.badRequest().build();
+        }
+        String upper = status.toUpperCase(java.util.Locale.ROOT);
         return ResponseEntity.ok(new RegistryTotals(
-                channelRepository.countAll(),
-                playlistRepository.countAll(),
-                videoRepository.countAll()
+                channelRepository.countByStatus(upper),
+                playlistRepository.countByStatus(upper),
+                videoRepository.countByStatus(upper)
         ));
     }
 
@@ -158,7 +185,7 @@ public class ContentLibraryController {
         truncated |= probedChannel.size() > MAX_ITEMS_PER_TYPE;
         List<Channel> channels = withinBound(probedChannel);
         for (Channel c : channels) {
-            if (!offerableInPicker(c.getStatus(), c.getVisibility())) continue;
+            if (!offerableInPicker(c.getStatus(), c.getVisibility(), c.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("channel", c.getId(), c.getName(), c.getThumbnailUrl(), c.getYoutubeId()));
         }
 
@@ -166,7 +193,7 @@ public class ContentLibraryController {
         truncated |= probedPlaylist.size() > MAX_ITEMS_PER_TYPE;
         List<Playlist> playlists = withinBound(probedPlaylist);
         for (Playlist p : playlists) {
-            if (!offerableInPicker(p.getStatus(), p.getVisibility())) continue;
+            if (!offerableInPicker(p.getStatus(), p.getVisibility(), p.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("playlist", p.getId(), p.getTitle(), p.getThumbnailUrl(), p.getYoutubeId()));
         }
 
@@ -174,7 +201,7 @@ public class ContentLibraryController {
         truncated |= probedVideo.size() > MAX_ITEMS_PER_TYPE;
         List<Video> videos = withinBound(probedVideo);
         for (Video v : videos) {
-            if (!offerableInPicker(v.getStatus(), v.getVisibility())) continue;
+            if (!offerableInPicker(v.getStatus(), v.getVisibility(), v.getValidationStatus())) continue;
             items.add(new ApprovedPickerItem("video", v.getId(), v.getTitle(), v.getThumbnailUrl(), v.getYoutubeId()));
         }
 
@@ -193,10 +220,12 @@ public class ContentLibraryController {
      *
      * <p>A personal grant is not catalogue content — it exists only for the people it was
      * approved for, and the public feed filters it out. Filing one into a category's sort order
-     * would leave an entry there that never renders for anybody.
+     * would leave an entry there that never renders for anybody. An archived item is the same:
+     * the apps hide it, so it is not live approved content.
      */
-    private static boolean offerableInPicker(String status, String visibility) {
-        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility);
+    private static boolean offerableInPicker(String status, String visibility, ValidationStatus validationStatus) {
+        return "APPROVED".equalsIgnoreCase(status) && VisibilityPolicy.isPublic(visibility)
+                && !ValidationStatus.holds(validationStatus);
     }
 
     /**
@@ -339,13 +368,23 @@ public class ContentLibraryController {
         // This prevents false-negatives where post-filtering might reduce count below limit
         List<ContentItem> allContent = new ArrayList<>();
         boolean anyTypeTruncated = false;
+        // "Approved" is live content, matching GET /totals: archived rows belong to the Archived page.
+        boolean liveOnly = "approved".equalsIgnoreCase(status);
+        // Search drops archived rows itself before trimming, and its scan bound does not grow
+        // with the limit, so only a browse deepens its window.
+        boolean deepen = liveOnly && (search == null || search.isBlank());
+        // Enough live rows to fill this page and tell the client more exist; the +50 read buffer
+        // absorbs a few archived rows without a second query.
+        int liveNeeded = Math.min(fetchLimit, (page + 1) * cappedSize + 1);
 
         if (contentTypes.contains("channel")) {
-            BoundedFetchResult<Channel> result = fetchChannelsBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Channel> result = fetchLive(deepen, fetchLimit, liveNeeded, Channel::getValidationStatus,
+                    limit -> fetchChannelsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
             for (Channel ch : result.items) {
+                if (liveOnly && ValidationStatus.holds(ch.getValidationStatus())) continue;
                 allContent.add(withVisibility(new ContentItem("channel", ch.getId(), ch.getYoutubeId(), ch.getName(),
                         ch.getDescription(), ch.getThumbnailUrl(), ch.getStatus(), ch.getCategoryIds(),
                         ch.getCreatedAt() != null ? ch.getCreatedAt().toDate() : null,
@@ -355,11 +394,13 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("playlist")) {
-            BoundedFetchResult<Playlist> result = fetchPlaylistsBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Playlist> result = fetchLive(deepen, fetchLimit, liveNeeded, Playlist::getValidationStatus,
+                    limit -> fetchPlaylistsBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
             for (Playlist pl : result.items) {
+                if (liveOnly && ValidationStatus.holds(pl.getValidationStatus())) continue;
                 allContent.add(withVisibility(new ContentItem("playlist", pl.getId(), pl.getYoutubeId(), pl.getTitle(),
                         pl.getDescription(), pl.getThumbnailUrl(), pl.getStatus(), pl.getCategoryIds(),
                         pl.getCreatedAt() != null ? pl.getCreatedAt().toDate() : null,
@@ -370,11 +411,13 @@ public class ContentLibraryController {
         }
 
         if (contentTypes.contains("video")) {
-            BoundedFetchResult<Video> result = fetchVideosBounded(status, category, search, sort, fetchLimit);
+            BoundedFetchResult<Video> result = fetchLive(deepen, fetchLimit, liveNeeded, Video::getValidationStatus,
+                    limit -> fetchVideosBounded(status, category, search, sort, limit));
             if (result.hitLimit) {
                 anyTypeTruncated = true;
             }
             for (Video v : result.items) {
+                if (liveOnly && ValidationStatus.holds(v.getValidationStatus())) continue;
                 ContentItem item = new ContentItem("video", v.getId(), v.getYoutubeId(), v.getTitle(),
                         v.getDescription(), v.getThumbnailUrl(), v.getStatus(), v.getCategoryIds(),
                         v.getCreatedAt() != null ? v.getCreatedAt().toDate() : null,
@@ -456,6 +499,37 @@ public class ContentLibraryController {
                 pagedContent.size(), totalItems, page + 1, response.totalPages, isTruncated);
 
         return ResponseEntity.ok(response);
+    }
+
+    @FunctionalInterface
+    private interface BoundedFetch<T> {
+        BoundedFetchResult<T> fetch(int limit)
+                throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException;
+    }
+
+    /**
+     * Fetch a type's window and, for approved (live) listings, deepen it by the archived rows it
+     * held, so dropping them never leaves a page short (offset paging would skip the live rows a
+     * short page could not serve). Only when rows exist beyond the window; never past
+     * {@link #MAX_ITEMS_PER_TYPE}, where the truncated flag already says the list is partial.
+     */
+    private <T> BoundedFetchResult<T> fetchLive(boolean deepen, int fetchLimit, int liveNeeded,
+                                                java.util.function.Function<T, ValidationStatus> validationStatus,
+                                                BoundedFetch<T> fetch)
+            throws ExecutionException, InterruptedException, java.util.concurrent.TimeoutException {
+        int limit = fetchLimit;
+        BoundedFetchResult<T> result = fetch.fetch(limit);
+        while (deepen && result.hitLimit) {
+            long held = result.items.stream().filter(t -> ValidationStatus.holds(validationStatus.apply(t))).count();
+            if (result.items.size() - held >= liveNeeded) break; // enough live rows already
+            // Add exactly the rows held: one archived row costs one more row, and a window that is
+            // all archived doubles, so a long archived run costs a few rounds, not one per row.
+            int deeper = (int) Math.min(limit + held, MAX_ITEMS_PER_TYPE);
+            if (deeper <= limit) break;
+            limit = deeper;
+            result = fetch.fetch(limit);
+        }
+        return result;
     }
 
     /**
@@ -585,6 +659,10 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(ch -> !status.equalsIgnoreCase(ch.getStatus()));
             }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(ch -> ValidationStatus.holds(ch.getValidationStatus()));
+            }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || nameResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
@@ -659,6 +737,10 @@ public class ContentLibraryController {
             }
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(pl -> !status.equalsIgnoreCase(pl.getStatus()));
+            }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(pl -> ValidationStatus.holds(pl.getValidationStatus()));
             }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
@@ -735,6 +817,10 @@ public class ContentLibraryController {
             if (!"all".equalsIgnoreCase(status)) {
                 results.removeIf(v -> !status.equalsIgnoreCase(v.getStatus()));
             }
+            if ("approved".equalsIgnoreCase(status)) {
+                // Live only, and before the trim below, so held rows never take a live match's place.
+                results.removeIf(v -> ValidationStatus.holds(v.getValidationStatus()));
+            }
             // Detect truncation: if either query returned exactly MAX_SEARCH_SCAN_PER_TYPE, more may exist
             boolean hitLimit = keywordResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
                     || titleResults.size() >= MAX_SEARCH_SCAN_PER_TYPE
@@ -806,9 +892,9 @@ public class ContentLibraryController {
     /**
      * Registry-wide counts per content type, from Firestore server-side aggregation.
      *
-     * <p>Deliberately NOT filtered by status/category/search: these answer "how much is in the
-     * library", which is why they stay stable while the user filters, and why they are counted
-     * separately from the listing rather than derived from them. {@code videos} counts only
+     * <p>Filtered by status only, never by category or search: these answer "how much is in the
+     * library" for that status, which is why they stay stable while the user searches, and why
+     * they are counted separately from the listing rather than derived from them. {@code videos} counts only
      * individually-curated video documents — approving a channel or playlist does not create
      * Video documents, so videos reachable through a channel or playlist are not counted here.</p>
      */

@@ -33,5 +33,9 @@ public enum ValidationStatus {
     public static boolean holds(ValidationStatus status) {
         return status == ARCHIVED || status == UNAVAILABLE;
     }
+
+    /** {@link #holds} as stored names, for Firestore {@code whereIn} queries. */
+    public static final java.util.List<String> HELD_NAMES = java.util.Arrays.stream(values())
+            .filter(ValidationStatus::holds).map(Enum::name).toList();
 }
 

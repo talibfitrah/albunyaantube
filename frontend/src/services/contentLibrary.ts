@@ -142,8 +142,8 @@ export interface RegistryTotals {
   videos: number;
 }
 
-export async function fetchRegistryTotals(): Promise<RegistryTotals> {
-  return await authorizedJsonFetch('/api/admin/content/totals');
+export async function fetchRegistryTotals(status = 'all'): Promise<RegistryTotals> {
+  return await authorizedJsonFetch(`/api/admin/content/totals?status=${encodeURIComponent(status)}`);
 }
 
 /**

@@ -3101,8 +3101,8 @@ paths:
     get:
       summary: Approved content for the category picker
       description: |
-        Every approved item, carrying only the fields the "add content to a category" picker
-        renders. One request, no paging.
+        Every live approved item (archived and personal-grant items left out), carrying only
+        the fields the "add content to a category" picker renders. One request, no paging.
 
         Replaces a client-side loop over `/admin/content` that could not terminate on its own:
         that endpoint's `totalPages` describes its current fetch window, which grows by one page
@@ -3182,7 +3182,9 @@ paths:
             example: channel,playlist,video
         - name: status
           in: query
-          description: Filter by approval status
+          description: |
+            Filter by approval status. `approved` lists live content only: archived items
+            keep status APPROVED but are listed on the Archived page.
           schema:
             type: string
             enum: [all, approved, pending, rejected]
@@ -3233,13 +3235,22 @@ paths:
     get:
       summary: Registry-wide content counts per type
       description: |
-        Per-type counts of everything in the registry, from server-side aggregation.
-        Separate from the listing endpoint on purpose: the counts depend on no listing
-        parameter, so keeping them off that request means a slow or failing count never
-        delays or fails the content itself. Unaffected by filters, paging or the listing
-        query bounds.
+        Per-type counts of the registry for one approval status (or all), from server-side
+        aggregation. Separate from the listing endpoint on purpose: keeping them off that
+        request means a slow or failing count never delays or fails the content itself.
+        Unaffected by search, category, paging or the listing query bounds.
       operationId: getContentTotals
       tags: [Content Library]
+      parameters:
+        - name: status
+          in: query
+          description: |
+            Count only this approval status, matching the listing's status filter (`approved`
+            leaves out archived items). Any other value is a 400.
+          schema:
+            type: string
+            enum: [all, approved, pending, rejected]
+            default: all
       responses:
         '200':
           description: Registry-wide counts per content type
@@ -3247,6 +3258,8 @@ paths:
             application/json:
               schema:
                 $ref: '#/components/schemas/RegistryTotals'
+        '400':
+          description: '`status` is not one of all, approved, pending, rejected'
 
   /admin/content/bulk/approve:
     post:
@@ -4404,9 +4417,9 @@ components:
       description: |
         Registry-wide counts per content type, from server-side aggregation. Served by
         GET /api/admin/content/totals, deliberately separate from the listing response so
-        a slow count never delays or fails the content itself. Deliberately
-        NOT filtered by status/category/search, so they stay stable while the user filters
-        and may legitimately exceed the number of rows shown. `videos` counts only
+        a slow count never delays or fails the content itself. Filtered by the `status`
+        parameter only (approved = live, archived left out), never by category or search,
+        so they stay stable while the user searches and may exceed the rows shown. `videos` counts only
         individually-curated video documents — approving a channel or playlist does not
         create video documents, so videos reachable through a channel or playlist are not
         counted here.

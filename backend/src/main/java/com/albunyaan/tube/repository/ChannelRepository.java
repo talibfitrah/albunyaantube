@@ -627,6 +627,19 @@ public class ChannelRepository {
     }
 
     /**
+     * Count approved docs that are archived ({@link com.albunyaan.tube.model.ValidationStatus#holds}): they
+     * keep status APPROVED, but the apps hide them and the Archived page counts them.
+     */
+    public long countApprovedArchived() throws ExecutionException, InterruptedException, TimeoutException {
+        AggregateQuery countQuery = getCollection()
+                .whereEqualTo("status", "APPROVED")
+                .whereIn("validationStatus", com.albunyaan.tube.model.ValidationStatus.HELD_NAMES)
+                .count();
+        AggregateQuerySnapshot snapshot = countQuery.get().get(timeoutProperties.getBulkQuery(), TimeUnit.SECONDS);
+        return snapshot.getCount();
+    }
+
+    /**
      * Find approved channels ordered by subscribers with cursor-based pagination.
      *
      * @param limit Number of items to fetch (fetch limit + 1 to detect hasNext)

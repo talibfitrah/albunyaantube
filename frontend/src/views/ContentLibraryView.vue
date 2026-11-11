@@ -4,11 +4,11 @@
       <div class="header-content">
         <h1 class="heading">{{ t('contentLibrary.heading') }}</h1>
         <p class="subtitle">{{ t('contentLibrary.subtitle') }}</p>
-        <!-- Registry-wide totals from the server, independent of filters and of the fetch
-             bound, so they stay exact even when the result list is truncated. The caption says so
-             explicitly: filtered to PENDING, these numbers are legitimately larger than the list. -->
+        <!-- Registry-wide totals from the server for the selected status, independent of the
+             other filters and of the fetch bound, so they stay exact even when the result list is
+             truncated. The caption names the status they count. -->
         <div v-if="registryTotals" class="registry-totals-block">
-          <p class="registry-totals-caption">{{ t('contentLibrary.totalsCaption') }}</p>
+          <p class="registry-totals-caption">{{ t('contentLibrary.totalsCaption', { status: totalsStatusLabel }) }}</p>
           <dl class="registry-totals">
             <div class="registry-total">
               <dt>{{ t('contentLibrary.totalsChannels') }}</dt>
@@ -580,7 +580,7 @@
 </template>
 
 <script setup lang="ts">
-import { ref, reactive, computed, onMounted, onUnmounted } from 'vue';
+import { ref, reactive, computed, watch, onMounted, onUnmounted } from 'vue';
 import { useI18n } from 'vue-i18n';
 import apiClient from '@/services/api/client';
 import { getThumbnailUrl, getThumbnailFallbacks, formatNumber } from '@/utils/formatters';
@@ -644,9 +644,12 @@ const isTruncated = ref(false);
 // Reorder safety - tracks whether the current view can safely be reordered
 // Reorder is unsafe when: truncated, paginated (totalItems > displayed), search active, filters active, or non-approved items visible
 const totalItemsFromServer = ref(0);
-// Registry-wide per-type totals, fetched once. Null until loaded, and left null on failure —
-// the header simply doesn't render rather than blocking or breaking the listing.
+// Registry-wide per-type totals for the selected status. Null until loaded, and left null on
+// failure — the header simply doesn't render rather than blocking or breaking the listing.
 const registryTotals = ref<contentLibraryService.RegistryTotals | null>(null);
+// The status the shown totals were counted for, so the caption never names a status the numbers
+// don't belong to while a newer request is in flight.
+const registryTotalsStatus = ref('all');
 const isReorderSafe = computed(() => {
   // Cannot reorder if results are truncated (server hit safety limit)
   if (isTruncated.value) return false;
@@ -933,6 +936,8 @@ async function bulkChangeStatus(status: string) {
     }
 
     clearSelection();
+    // Approve / mark-pending move items between statuses, so the per-status counts change.
+    loadRegistryTotals();
     // A partial write cannot say which items took the new status, so only then ask the server.
     if (errors.length > 0) {
       await loadContent();
@@ -1001,8 +1006,7 @@ async function bulkDelete() {
     } else {
       updateLoadedItems(items); // no patch = these rows are gone
     }
-    // Delete is a hard Firestore delete, so it is the one bulk action that moves the registry
-    // counts. Approve/reject don't — the totals span all statuses.
+    // A hard Firestore delete moves the counts for every status.
     loadRegistryTotals();
   } catch (err: any) {
     alert(t('contentLibrary.errorBulkAction') + ': ' + (err.message || ''));
@@ -1646,15 +1650,31 @@ async function saveOrder() {
 
 /**
  * Header counts are decorative relative to the listing, so a failure is logged and swallowed —
- * the totals row just stays hidden. Never surfaced as an error banner over working content.
+ * the totals row just hides. Never surfaced as an error banner over working content.
  */
+let totalsRequest = 0;
 async function loadRegistryTotals() {
+  const status = filters.value.status;
+  const request = ++totalsRequest;
   try {
-    registryTotals.value = await contentLibraryService.fetchRegistryTotals();
+    const totals = await contentLibraryService.fetchRegistryTotals(status);
+    // Responses can land out of order (status switches, back-to-back bulk actions); keep the newest.
+    if (request !== totalsRequest) return;
+    registryTotals.value = totals;
+    registryTotalsStatus.value = status;
   } catch (err) {
     console.warn('Registry totals unavailable', err);
+    // Hide rather than keep numbers that no longer describe this status or this list.
+    if (request === totalsRequest) registryTotals.value = null;
   }
 }
+
+const totalsStatusLabel = computed(
+  () => statuses.value.find(s => s.value === registryTotalsStatus.value)?.label ?? ''
+);
+
+// Covers the desktop radios, the mobile chips and Reset alike.
+watch(() => filters.value.status, loadRegistryTotals);
 
 onMounted(() => {
   loadCategories();

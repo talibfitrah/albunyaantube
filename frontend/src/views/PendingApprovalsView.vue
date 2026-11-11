@@ -480,7 +480,7 @@ async function loadSubmitters() {
  * How many phone imports are waiting, across everybody.
  *
  * Summed from the by-user roll-up, which scans a bounded number of pending documents. Past that
- * bound this under-counts, so the queue badge — which subtracts it from an exact total — would
+ * bound this under-counts, so the Queue tab label — which subtracts it from an exact total — would
  * over-report by however many imports went uncounted. Bounded by a queue depth far past what a
  * person reviews by hand, and the server logs when it hits it.
  */
@@ -743,16 +743,12 @@ const contentTypes = [
 const totalPending = ref<number | null>(null);
 const countUnavailable = ref(false);
 const displayPendingCount = computed(() => {
-  // The by-user tab counts its own; the queue's badge must not include the imports it no longer
-  // shows, or the number and the list disagree by exactly that many.
-  if (adminTab.value === 'byUser' && !isModeratorView.value) return userImportTotal.value;
-  if (totalPending.value !== null) {
-    return isModeratorView.value
-      ? totalPending.value
-      : Math.max(0, totalPending.value - userImportTotal.value);
-  }
-  // Before any count loads, show loaded items count as lower-bound
-  return approvals.value.length;
+  // Everything pending, the same number as the Dashboard and the Content Library "Pending" totals.
+  // The Queue and By-user tabs carry their own split of it in their labels.
+  if (totalPending.value !== null && !countUnavailable.value) return totalPending.value;
+  // No server count: the largest lower bound we hold. A tab switch empties `approvals`, so the
+  // by-user roll-up also counts.
+  return Math.max(totalPending.value ?? 0, approvals.value.length, userImportTotal.value);
 });
 
 /** Phone imports waiting, or null while the roll-up is loading, failed, or out of date. */
@@ -1060,7 +1056,7 @@ onMounted(async () => {
   loadApprovals();
   const counted = loadPendingCount();
   if (isModeratorView.value) return;
-  // Needed by the queue badge too, which subtracts the imports it no longer lists.
+  // Needed by the Queue tab label too, which subtracts the imports it no longer lists.
   await Promise.all([counted, loadSubmitters()]);
   // An empty queue must not hide imports that are waiting on the other tab.
   if (!tabChosen.value && adminTab.value === 'queue' && queueCount.value === 0 && (importCount.value ?? 0) > 0) {

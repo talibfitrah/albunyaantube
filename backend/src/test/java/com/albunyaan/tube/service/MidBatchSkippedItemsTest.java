@@ -84,7 +84,8 @@ class MidBatchSkippedItemsTest {
                 streamIndexService,
                 mock(com.albunyaan.tube.util.ThumbnailRepairMigration.class),
                 mock(ContentReportService.class),
-                mock(LiveCategoryGuard.class)
+                mock(LiveCategoryGuard.class),
+                mock(SortOrderService.class)
         );
     }
 
