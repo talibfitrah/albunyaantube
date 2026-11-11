@@ -1,0 +1,55 @@
+backend/src/main/java/com/albunyaan/tube/dto/ContentItemMapper.java
+  s_8a936fc306f37b::t_71d3eb7b043338 61
+backend/src/test/java/com/albunyaan/tube/service/ContentImportServiceTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 659-680
+backend/src/main/java/com/albunyaan/tube/service/PublicContentService.java
+  s_8a936fc306f37b::t_71d3eb7b043338 1326-1328
+backend/src/main/java/com/albunyaan/tube/service/SimpleImportService.java
+  s_8a936fc306f37b::t_71d3eb7b043338 512
+backend/src/test/java/com/albunyaan/tube/service/SimpleImportServiceTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 169-188
+  s_8a936fc306f37b::t_f178e4e1233182 32
+backend/src/test/java/com/albunyaan/tube/search/InnerCorpusTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 37-44
+  s_8a936fc306f37b::t_3c34a0ed49a278 36
+backend/src/main/java/com/albunyaan/tube/search/SearchIndex.java
+  s_8a936fc306f37b::t_71d3eb7b043338 802,1252
+backend/src/main/java/com/albunyaan/tube/search/InnerCorpus.java
+  s_8a936fc306f37b::t_f178e4e1233182 44,47
+backend/src/test/java/com/albunyaan/tube/dto/ContentItemMapperTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 6,20-28
+  s_8a936fc306f37b::t_5f1240aa85701d 29-30
+backend/src/test/java/com/albunyaan/tube/service/PublicContentServiceSearchTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 261-278
+backend/src/test/java/com/albunyaan/tube/search/UploadsFetcherTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 66-69
+backend/src/main/java/com/albunyaan/tube/search/InnerIndex.java
+  s_8a936fc306f37b::t_71d3eb7b043338 316
+backend/src/main/java/com/albunyaan/tube/search/UploadsFetcher.java
+  s_8a936fc306f37b::t_71d3eb7b043338 111
+backend/src/test/java/com/albunyaan/tube/search/SearchIndexTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 335,1113-1131
+  s_8a936fc306f37b::t_8b52375d449ee1 1132-1133
+backend/src/test/java/com/albunyaan/tube/service/ContentValidationServiceTest.java
+  s_8a936fc306f37b::t_dc658cf58470ff 565-587
+backend/src/main/java/com/albunyaan/tube/service/ContentImportService.java
+  s_8a936fc306f37b::t_71d3eb7b043338 561
+backend/src/main/java/com/albunyaan/tube/service/ContentValidationService.java
+  s_8a936fc306f37b::t_71d3eb7b043338 1321
+---
+{
+  "schema_version": "authorship/3.0.0",
+  "git_ai_version": "1.7.5",
+  "base_commit_sha": "fd6a5a0937835a11cd4ab1e48afab873cf0ef63f",
+  "prompts": {},
+  "sessions": {
+    "s_8a936fc306f37b": {
+      "agent_id": {
+        "tool": "claude",
+        "id": "88109bb3-6d83-4bb7-84d4-a5c4ff95482a",
+        "model": "claude-opus-5-5"
+      },
+      "human_author": "farouq abou umar <farouqabouumar@farouqs-iMac.local>"
+    }
+  }
+}
